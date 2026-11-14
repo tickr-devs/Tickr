@@ -38,7 +38,8 @@ def _status(path: Path) -> int:
     print(f"environment: {cfg.environment_name}")
     print(f"trading gate: {'open' if gate.open else 'closed'} ({gate.cause})")
     pid = recorded_holder(lock_path)
-    print("bot: not running" if pid is None else f"bot: running (pid {pid})")
+    print("bot: not running" if pid is None
+          else f"bot: pid {pid} recorded, process exists (lock not verified)")
     if not database.exists():
         print("database: not created yet")
         return 0
