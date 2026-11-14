@@ -25,6 +25,7 @@ class ConfigError(ValueError):
 class RunConfig:
     environment: str
     data_dir: str
+    database_busy_timeout_seconds: Decimal
 
 
 @dataclass(frozen=True)
@@ -224,6 +225,25 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
 _KEY_LINE = re.compile(r"^\s*([A-Za-z0-9_\-\"\.]+)\s*=")
 
 
+def _has_trailing_comment(value: str) -> bool:
+    """True if a `#` appears outside any quoted string in the value part of a line."""
+    quote: str | None = None
+    escaped = False
+    for char in value:
+        if quote is None:
+            if char == "#":
+                return True
+            if char in "\"'":
+                quote = char
+        elif escaped:
+            escaped = False
+        elif char == "\\" and quote == '"':
+            escaped = True
+        elif char == quote:
+            quote = None
+    return False
+
+
 def uncommented_keys(text: str) -> list[tuple[int, str]]:
     """Return (line number, key) for every key without a comment on its line or the line above.
 
@@ -235,7 +255,7 @@ def uncommented_keys(text: str) -> list[tuple[int, str]]:
         stripped = line.strip()
         match = _KEY_LINE.match(line)
         if match and not stripped.startswith("#"):
-            inline = "#" in line.split("=", 1)[1]
+            inline = _has_trailing_comment(line.split("=", 1)[1])
             if not inline and not previous.startswith("#"):
                 problems.append((number, match.group(1)))
         if stripped:
