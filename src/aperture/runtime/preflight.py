@@ -191,7 +191,7 @@ def _check_calendar(cfg: config_module.Config, now: datetime) -> tuple[Check, bo
 
 ENV_FILE_HINT = ("add one NAME='value' line per missing name to the env file the launchd jobs load "
                  "(the --env-file given to render-launchd, e.g. ~/.config/aperture/env; create it "
-                 "with chmod 600, see docs/operations.md, Install step 2)")
+                 "with chmod 600, see docs/operations.md, One-time setup, step 2)")
 
 
 def _check_credentials(cfg: config_module.Config, environ: Mapping[str, str]) -> Check:
