@@ -31,6 +31,8 @@ def test_limits_come_from_config(lim):
     assert lim.max_daily_loss_usd == D(300)
     assert lim.max_open_positions == 1
     assert lim.max_quote_age_seconds == D(5)
+    assert lim.max_clock_skew_seconds == D(1)
+    assert lim.active_strategy == "price-action-v1"
 
 
 def test_there_are_seven_checks():
@@ -86,7 +88,15 @@ REFUSALS = [
     (C.POSITION_LIMIT_REACHED, lambda: inputs(open_positions=1)),
     # 5
     (C.DECISION_NOT_ENTER, lambda: inputs(decision=decision(verdict=Verdict.WATCH))),
+    (C.DECISION_NOT_ACTIVE, lambda: inputs(decision=decision(strategy="observer-x"))),
     (C.DECISION_INCOMPLETE, lambda: inputs(decision=decision(stop=None))),
+    (C.ORDER_PRICES_MISSING, lambda: inputs(limit_price=None)),
+    (C.ORDER_PRICES_MISSING, lambda: inputs(stop_price=None)),
+    (C.ORDER_PRICES_INVALID, lambda: inputs(limit_price=D("10.21"))),
+    (C.ORDER_PRICES_INVALID, lambda: inputs(limit_price=D("9.99"))),
+    (C.ORDER_PRICES_INVALID, lambda: inputs(stop_price=D("10.20"))),
+    (C.ORDER_PRICES_INVALID, lambda: inputs(stop_price=D("0"))),
+    (C.ORDER_PRICES_INVALID, lambda: inputs(stop_price=D("NaN"))),
     (C.DECISION_INCOMPLETE, lambda: inputs(decision=decision(quantity=None))),
     (C.DECISION_INVALID, lambda: inputs(decision=decision(stop=D("10.00")))),
     (C.DECISION_INVALID, lambda: inputs(decision=decision(entry_low=D("10.30")))),
@@ -98,12 +108,16 @@ REFUSALS = [
     (C.QUOTE_INVALID, lambda: inputs(quote=quote(bid=D("10.11")))),
     (C.QUOTE_INVALID, lambda: inputs(quote=quote(bid=D("0")))),
     (C.QUOTE_INVALID, lambda: inputs(quote=quote(ask=D("Infinity")))),
-    (C.QUOTE_TIME_INVALID, lambda: inputs(quote=quote(provider_time=NOW + timedelta(seconds=1)))),
+    (C.QUOTE_TIME_INVALID, lambda: inputs(quote=quote(
+        provider_time=NOW + timedelta(seconds=1.001)))),
     (C.QUOTE_TIME_INVALID, lambda: inputs(quote=quote(receipt_time=NOW + timedelta(seconds=1)))),
     (C.QUOTE_TIME_INVALID, lambda: inputs(quote=quote(receipt_time=datetime(2026, 11, 16)))),
     (C.QUOTE_STALE, lambda: inputs(quote=quote(provider_time=NOW - timedelta(seconds=5.001)))),
     (C.PRICE_OUTSIDE_WINDOW, lambda: inputs(quote=quote(ask=D("10.21")))),
     (C.PRICE_OUTSIDE_WINDOW, lambda: inputs(quote=quote(bid=D("9.98"), ask=D("9.99")))),
+    # Ask inside the strategy window but above the rounded-down limit that will be sent.
+    (C.PRICE_OUTSIDE_WINDOW, lambda: inputs(limit_price=D("10.15"),
+                                            quote=quote(ask=D("10.17")))),
     # 6
     (C.QUANTITY_NOT_WHOLE, lambda: inputs(decision=decision(quantity=D("10.5")))),
     (C.QUANTITY_BELOW_ONE, lambda: inputs(decision=decision(quantity=D("0")))),
@@ -156,7 +170,7 @@ def test_size_limits_exactly_at_cap_are_admitted(lim):
     # floor(2500 / 10.20) = 245 shares; risk 0.40 x 245 = 98 > 50, so widen nothing: use a
     # tighter stop so the notional cap binds.
     d = decision(stop=D("10.00"), entry_low=D("10.10"), quantity=D("245"))
-    assert admit(inputs(decision=d), lim).ok
+    assert admit(inputs(decision=d, stop_price=D("10.00")), lim).ok
     # floor(50 / 0.40) = 125 shares: the planned-loss limit binds.
     assert admit(inputs(decision=decision(quantity=D("125"))), lim).ok
 
@@ -209,3 +223,37 @@ def test_dst_change_day(lim):
     assert admit(_moved(_at(15, 44, day), session=CALENDAR.day(day)), lim).ok
     assert admit(_moved(_at(15, 45, day), session=CALENDAR.day(day)), lim).cause \
         is C.AFTER_LAST_ENTRY
+
+
+def test_size_runs_on_final_rounded_prices(lim):
+    # Raw decision risk 10.20 - 9.80 = 0.40 x 125 = 50.00, exactly the limit. If the stop that
+    # will be sent is rounded one tick down, the real risk is 0.41 x 125 = 51.25: refused.
+    at_limit = decision(quantity=D("125"))
+    assert admit(inputs(decision=at_limit), lim).ok
+    rounded = admit(inputs(decision=at_limit, stop_price=D("9.79")), lim)
+    assert rounded.cause is C.PLANNED_LOSS_OVER_LIMIT
+    # A limit rounded down and a stop rounded up only shrink the risk; the reservation follows
+    # the prices that will be sent.
+    tighter = admit(inputs(decision=at_limit, limit_price=D("10.19"), stop_price=D("9.81"),
+                           quote=quote(ask=D("10.19"))), lim)
+    assert tighter.ok and tighter.planned_loss_usd == D("47.50")
+
+
+def test_daily_reservation_uses_final_prices(lim):
+    # 200 + 60 + 100 x (10.20 - 9.80) = 300 admitted; one tick lower stop = 301 refused.
+    money = dict(realized_loss_today_usd=D("200"), open_reservations_usd=D("60"))
+    assert admit(inputs(**money), lim).ok
+    assert admit(inputs(stop_price=D("9.79"), **money), lim).cause is C.DAILY_CEILING
+
+
+def test_clock_skew_tolerance(lim):
+    # Provider clock up to max_clock_skew_seconds ahead of ours counts as a fresh quote.
+    ahead = quote(provider_time=NOW + timedelta(seconds=1))
+    assert admit(inputs(quote=ahead), lim).ok
+    small = quote(provider_time=NOW + timedelta(milliseconds=50))
+    assert admit(inputs(quote=small), lim).ok
+    beyond = quote(provider_time=NOW + timedelta(seconds=1, milliseconds=1))
+    assert admit(inputs(quote=beyond), lim).cause is C.QUOTE_TIME_INVALID
+    # Zero tolerance: any lead refuses.
+    strict = replace(lim, max_clock_skew_seconds=Decimal(0))
+    assert admit(inputs(quote=small), strict).cause is C.QUOTE_TIME_INVALID

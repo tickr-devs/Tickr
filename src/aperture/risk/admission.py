@@ -2,6 +2,10 @@
 
 `admit(inputs, limits)` is pure: no clock, no I/O. All checks must hold; the first failure is
 the single recorded cause. A refusal never guesses: missing or unknown values refuse.
+
+Size, notional, planned loss and the reservation are computed on the FINAL order prices
+(tick-rounded entry limit and stop that will be sent), never on the strategy's raw prices, so
+rounding can never push the real planned loss over a limit.
 """
 
 from __future__ import annotations
@@ -31,10 +35,13 @@ class AdmissionLimits:
     max_daily_loss_usd: Decimal
     max_open_positions: int
     max_quote_age_seconds: Decimal
+    max_clock_skew_seconds: Decimal
     broker_read_max_age_seconds: Decimal
     last_entry_minutes_before_close: int
     flatten_minutes_before_close: int
     half_days_enabled: bool
+    active_strategy: str
+    """Only decisions tagged with this strategy name may be admitted."""
 
     @classmethod
     def from_config(cls, config: Config) -> AdmissionLimits:
@@ -45,10 +52,12 @@ class AdmissionLimits:
             max_daily_loss_usd=risk.max_daily_loss_usd,
             max_open_positions=risk.max_open_positions,
             max_quote_age_seconds=risk.max_quote_age_seconds,
+            max_clock_skew_seconds=risk.max_clock_skew_seconds,
             broker_read_max_age_seconds=config.orders.broker_read_max_age_seconds,
             last_entry_minutes_before_close=session.last_entry_minutes_before_close,
             flatten_minutes_before_close=session.flatten_minutes_before_close,
             half_days_enabled=session.half_days_enabled,
+            active_strategy=config.strategy.active,
         )
 
 
@@ -79,6 +88,10 @@ class AdmissionInputs:
     open_positions: int
     """All positions at the broker (own + foreign), for the position limit."""
     decision: Decision
+    limit_price: Decimal | None
+    """Final entry LIMIT price that will be sent (tick-rounded); None = not computed."""
+    stop_price: Decimal | None
+    """Final protective STOP price that will be sent (tick-rounded); None = not computed."""
     setup_valid: bool
     """The setup is still valid at `now` (the strategy's latest evaluation still says ENTER)."""
     quote: Quote | None
@@ -96,7 +109,7 @@ class Admission:
     cause: AdmissionCause | None
     detail: str
     planned_loss_usd: Decimal | None = None
-    """On success: the reservation to record for this entry (quantity x (entry_high - stop))."""
+    """On success: the reservation to record for this entry (quantity x (limit - stop price))."""
 
 
 def _refuse(cause: AdmissionCause, detail: str) -> Admission:
@@ -186,6 +199,9 @@ def _check_quote_and_setup(i: AdmissionInputs, lim: AdmissionLimits) -> Admissio
     d = i.decision
     if d.verdict is not Verdict.ENTER:
         return _refuse(C.DECISION_NOT_ENTER, f"verdict is {d.verdict}")
+    if d.strategy != lim.active_strategy:
+        return _refuse(C.DECISION_NOT_ACTIVE,
+                       f"decision from {d.strategy} {d.version}, active is {lim.active_strategy}")
     missing = [name for name in ("entry_low", "entry_high", "stop", "quantity")
                if getattr(d, name) is None]
     if missing:
@@ -197,6 +213,17 @@ def _check_quote_and_setup(i: AdmissionInputs, lim: AdmissionLimits) -> Admissio
         return _refuse(C.DECISION_INVALID,
                        f"need 0 < stop {d.stop} < entry_low {d.entry_low} <= "
                        f"entry_high {d.entry_high}")
+    if i.limit_price is None or i.stop_price is None:
+        return _refuse(C.ORDER_PRICES_MISSING, "final limit and stop prices not computed")
+    prices = (i.limit_price, i.stop_price)
+    if not all(isinstance(n, Decimal) and n.is_finite() for n in prices):
+        return _refuse(C.ORDER_PRICES_INVALID, f"non-finite or non-Decimal order price in {prices}")
+    if not (d.entry_low <= i.limit_price <= d.entry_high):
+        return _refuse(C.ORDER_PRICES_INVALID,
+                       f"limit {i.limit_price} outside window {d.entry_low}..{d.entry_high}")
+    if not (Decimal(0) < i.stop_price < i.limit_price):
+        return _refuse(C.ORDER_PRICES_INVALID,
+                       f"need 0 < stop price {i.stop_price} < limit {i.limit_price}")
     if not i.setup_valid:
         return _refuse(C.SETUP_INVALIDATED, "setup no longer valid")
     q = i.quote
@@ -210,21 +237,26 @@ def _check_quote_and_setup(i: AdmissionInputs, lim: AdmissionLimits) -> Admissio
         return _refuse(C.QUOTE_INVALID, f"bid {q.bid} / ask {q.ask} not executable")
     if not (_aware(q.provider_time) and _aware(q.receipt_time)):
         return _refuse(C.QUOTE_TIME_INVALID, "quote times must be aware datetimes")
-    if q.provider_time > i.now or q.receipt_time > i.now:
-        return _refuse(C.QUOTE_TIME_INVALID, "quote time is after now (clock skew)")
+    if q.receipt_time > i.now:
+        return _refuse(C.QUOTE_TIME_INVALID, "quote receipt time is after now")
     age = Decimal(str((i.now - q.provider_time).total_seconds()))
+    if -age > lim.max_clock_skew_seconds:
+        return _refuse(C.QUOTE_TIME_INVALID,
+                       f"provider time {-age} s ahead of our clock "
+                       f"> {lim.max_clock_skew_seconds} s")
+    age = max(age, Decimal(0))
     if age > lim.max_quote_age_seconds:
         return _refuse(C.QUOTE_STALE, f"quote {age} s old > {lim.max_quote_age_seconds} s")
-    if not (d.entry_low <= q.ask <= d.entry_high):
+    if not (d.entry_low <= q.ask <= i.limit_price):
         return _refuse(C.PRICE_OUTSIDE_WINDOW,
-                       f"ask {q.ask} outside window {d.entry_low}..{d.entry_high}")
+                       f"ask {q.ask} outside {d.entry_low}..limit {i.limit_price}")
     return None
 
 
 def _check_money(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     d = i.decision
-    assert d.quantity is not None and d.entry_high is not None and d.stop is not None
-    size = check_size(d.quantity, d.entry_high, d.stop, lim.planned_loss_usd,
+    assert d.quantity is not None and i.limit_price is not None and i.stop_price is not None
+    size = check_size(d.quantity, i.limit_price, i.stop_price, lim.planned_loss_usd,
                       lim.position_notional_cap_usd)
     if not size.ok:
         assert size.cause is not None
@@ -265,7 +297,8 @@ def admit(inputs: AdmissionInputs, limits: AdmissionLimits) -> Admission:
         if refused is not None:
             return refused
     d = inputs.decision
-    assert d.quantity is not None and d.entry_high is not None and d.stop is not None
-    planned_loss = d.quantity * (d.entry_high - d.stop)
+    assert d.quantity is not None
+    assert inputs.limit_price is not None and inputs.stop_price is not None
+    planned_loss = d.quantity * (inputs.limit_price - inputs.stop_price)
     return Admission(True, None, f"admitted {d.quantity} {d.symbol}", planned_loss)
 
