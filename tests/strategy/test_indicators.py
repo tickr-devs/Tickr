@@ -15,8 +15,8 @@ from aperture.strategy import indicators as ind
 
 def test_ema_hand_computed():
     values = [d(x) for x in (1, 2, 3, 4, 5)]
-    # period 3: seed = (1+2+3)/3 = 2; alpha = 0.5; 4 -> 3; 5 -> 4
-    assert ind.ema_series(values, 3) == [None, None, d(2), d(3), d(4)]
+    # period 3: seed = first value; alpha = 0.5
+    assert ind.ema_series(values, 3) == [d(1), d("1.5"), d("2.25"), d("3.125"), d("4.0625")]
 
 
 def test_atr_hand_computed():
@@ -49,10 +49,9 @@ def test_vwap_is_none_until_volume_appears():
 def _reference_ema(values, period):
     """Independent float-free reference using Fractions."""
     xs = [Fraction(v) for v in values]
-    out = [None] * (period - 1)
-    prev = sum(xs[:period]) / period
-    out.append(prev)
-    for x in xs[period:]:
+    prev = xs[0]
+    out = [prev]
+    for x in xs[1:]:
         prev = prev + (x - prev) * Fraction(2, period + 1)
         out.append(prev)
     return out

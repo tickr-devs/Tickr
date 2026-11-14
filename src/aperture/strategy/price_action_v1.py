@@ -12,21 +12,23 @@ Rule order:
 3. History: enough bars for the slow EMA, ATR and both setup patterns.
 4. Filters: relative cumulative volume, session dollar volume, last close above session
    VWAP, fast EMA above slow EMA, ATR positive.
-5. Setup (breakout first, then continuation; the first armed setup is used):
-   - breakout: the last completed close is above the highest high of the `lookback_bars`
-     bars before it; trigger = that high, invalidation = their lowest low.
+5. Setup (continuation first, then breakout; the first armed setup is used):
    - continuation: `impulse_bars` impulse bars then `base_bars` base bars (the last bars);
      impulse (last impulse close - first impulse open) >= `minimum_impulse_atr` ATR, base
      high-low range <= `maximum_base_range_atr` ATR, last close no further than
      `maximum_pre_breakout_distance_atr` ATR below the base high; trigger = base high,
      invalidation = base low.
+   - breakout: trigger = highest high of the `lookback_bars` bars before the last one,
+     invalidation = their lowest low (must be below the trigger). Armed when the last close
+     is above the trigger (confirmed) or, before the break, no further than
+     `maximum_pre_breakout_distance_atr` ATR below it.
 6. Without a quote: WATCH(trigger, invalidation).
 7. Quote: valid, spread ratio within the liquidity limit, bid above invalidation (else
    IGNORE), ask above trigger (else WATCH), ask inside the price window
    trigger + `entry_extension_max_atr` ATR (else IGNORE: missed, never chased), stop
    distance (ask - invalidation) at least max(`minimum_stop_spreads` spreads,
    `minimum_stop_percent` percent of ask), cost rule on the round trip (2 x spread)
-   against ATR and against per-share risk. Then ENTER with entry window
+   against ATR and against per-share risk (top of window - stop). Then ENTER with entry window
    [trigger, trigger + extension], stop = invalidation.
 
 Quote freshness is the platform's rule (the strategy never reads the clock). Prices are
@@ -315,12 +317,12 @@ class PriceActionV1:
         if not checks[-1].passed:
             return ignore()
 
-        breakout = self._breakout(bars)
         continuation = self._continuation(bars, atr)
-        setup = next((x for x in (breakout, continuation) if x.armed), None)
+        breakout = self._breakout(bars, atr)
+        setup = next((x for x in (continuation, breakout) if x.armed), None)
         if setup is None:
-            checks.extend(breakout.checks)
             checks.extend(continuation.checks)
+            checks.extend(breakout.checks)
             return ignore()
         checks.extend(setup.checks)
 
@@ -368,12 +370,12 @@ class PriceActionV1:
             return ignore()
 
         stop = setup.invalidation
-        risk = quote.ask - stop
         minimum = max(s.minimum_stop_spreads * spread, s.minimum_stop_percent / PERCENT * quote.ask)
-        checks.append(_check("stop_distance", risk, ">=", minimum))
+        checks.append(_check("stop_distance", quote.ask - stop, ">=", minimum))
         if not checks[-1].passed:
             return ignore()
 
+        risk = entry_high - stop
         round_trip = TWO * spread
         checks.append(
             _check("round_trip_atr_ratio", round_trip / atr, "<=", s.max_round_trip_atr_ratio)
@@ -386,11 +388,17 @@ class PriceActionV1:
         if not checks[-1].passed:
             return ignore()
 
-        # Per-share risk for sizing: worst fill (top of window) to the stop, plus the
-        # slippage reserve on both legs. Recorded so the platform can size from it.
-        sizing_risk = entry_high - stop + TWO * s.slippage_reserve_atr * atr
+        # Per-share risk for sizing: worst fill (top of window) to the stop, plus the spread
+        # and the slippage reserve on both legs. Recorded so the platform can size from it.
+        sizing_risk = risk + spread + TWO * s.slippage_reserve_atr * atr
         checks.append(
-            _check("sizing_risk_per_share", sizing_risk, ">", ZERO, "entry_high - stop + reserve")
+            _check(
+                "sizing_risk_per_share",
+                sizing_risk,
+                ">",
+                ZERO,
+                "entry_high - stop + spread + 2 legs x slippage reserve",
+            )
         )
         return self._decide(
             context,
@@ -402,12 +410,26 @@ class PriceActionV1:
             **levels,
         )
 
-    def _breakout(self, bars: Sequence[Bar]) -> _Setup:
-        reference = bars[-self.settings.lookback_bars - 1 : -1]
+    def _breakout(self, bars: Sequence[Bar], atr: Decimal) -> _Setup:
+        s = self.settings
+        reference = bars[-s.lookback_bars - 1 : -1]
         trigger = max(b.high for b in reference)
         invalidation = min(b.low for b in reference)
-        check = _check("breakout_close_above_trigger", bars[-1].close, ">", trigger)
-        return _Setup(BREAKOUT, (check,), trigger, invalidation)
+        close = bars[-1].close
+        if close > trigger:
+            arming = _check("breakout_close_above_trigger", close, ">", trigger, "confirmed")
+        else:
+            arming = _check(
+                "breakout_pre_breakout_distance_atr",
+                (trigger - close) / atr,
+                "<=",
+                s.maximum_pre_breakout_distance_atr,
+                "close at or below trigger: arm before the break",
+            )
+        checks = _until_failure(
+            (_check("breakout_invalidation_below_trigger", invalidation, "<", trigger), arming)
+        )
+        return _Setup(BREAKOUT, checks, trigger, invalidation)
 
     def _continuation(self, bars: Sequence[Bar], atr: Decimal) -> _Setup:
         s = self.settings
@@ -415,28 +437,37 @@ class PriceActionV1:
         impulse = bars[-s.base_bars - s.impulse_bars : -s.base_bars]
         base_high = max(b.high for b in base)
         base_low = min(b.low for b in base)
-        checks = (
-            _check(
-                "impulse_atr",
-                (impulse[-1].close - impulse[0].open) / atr,
-                ">=",
-                s.minimum_impulse_atr,
-            ),
-            _check("base_range_atr", (base_high - base_low) / atr, "<=", s.maximum_base_range_atr),
-            _check(
-                "pre_breakout_distance_atr",
-                (base_high - bars[-1].close) / atr,
-                "<=",
-                s.maximum_pre_breakout_distance_atr,
-            ),
+        checks = _until_failure(
+            (
+                _check(
+                    "impulse_atr",
+                    (impulse[-1].close - impulse[0].open) / atr,
+                    ">=",
+                    s.minimum_impulse_atr,
+                ),
+                _check(
+                    "base_range_atr", (base_high - base_low) / atr, "<=", s.maximum_base_range_atr
+                ),
+                _check("continuation_invalidation_below_trigger", base_low, "<", base_high),
+                _check(
+                    "pre_breakout_distance_atr",
+                    (base_high - bars[-1].close) / atr,
+                    "<=",
+                    s.maximum_pre_breakout_distance_atr,
+                ),
+            )
         )
-        # Only the checks up to the first failure are kept, like every other rule.
-        kept = []
-        for c in checks:
-            kept.append(c)
-            if not c.passed:
-                break
-        return _Setup(CONTINUATION, tuple(kept), base_high, base_low)
+        return _Setup(CONTINUATION, checks, base_high, base_low)
+
+
+def _until_failure(checks: Sequence[Check]) -> tuple[Check, ...]:
+    """Checks up to and including the first failure, like every other rule."""
+    kept: list[Check] = []
+    for c in checks:
+        kept.append(c)
+        if not c.passed:
+            break
+    return tuple(kept)
 
 
 def create(values: Mapping[str, Any]) -> PriceActionV1:

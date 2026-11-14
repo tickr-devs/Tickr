@@ -120,6 +120,7 @@ def test_breakout_enter():
         "close_above_vwap",
         "fast_ema_above_slow_ema",
         "atr",
+        "breakout_invalidation_below_trigger",
         "breakout_close_above_trigger",
         "quote_valid",
         "spread_ratio",
@@ -136,9 +137,9 @@ def test_breakout_enter():
     assert by_rule["stop_distance"].measured == d("23.00") - INVALIDATION
     assert by_rule["stop_distance"].threshold == d("0.005") * d("23.00")
     assert by_rule["round_trip_atr_ratio"].measured == d("0.02") / ATR
-    # worst fill to stop plus 0.05 ATR on each leg
-    assert (
-        by_rule["sizing_risk_per_share"].measured == TRIGGER + ATR - INVALIDATION + d("0.1") * ATR
+    # worst fill to stop, plus the spread, plus 0.05 ATR on each leg
+    assert by_rule["sizing_risk_per_share"].measured == (
+        TRIGGER + ATR - INVALIDATION + d("0.01") + d("0.1") * ATR
     )
 
 
@@ -229,17 +230,35 @@ def test_fast_ema_below_slow_refused():
 # ---------------------------------------------------------------- setups
 
 
+def test_breakout_arms_before_the_break():
+    # Last bar closes 0.07 below the trigger (0.5 ATR): WATCH, not yet broken.
+    bars = BREAKOUT_BARS[:-1] + [bar(TODAY, 29, 22.9, 22.9, 22.84, 22.85, 10_000)]
+    decision = make().evaluate(ctx(bars))
+    assert decision.verdict == Verdict.WATCH
+    assert decision.setup == "breakout"
+    assert (decision.trigger, decision.invalidation) == (TRIGGER, INVALIDATION)
+    assert rules(decision)[-1] == "breakout_pre_breakout_distance_atr"
+    # The same bars refuse when arming before the break is not allowed.
+    strict = make(continuation__maximum_pre_breakout_distance_atr=0)
+    decision = strict.evaluate(ctx(bars))
+    assert decision.verdict == Verdict.IGNORE
+    assert decision.checks[-1].rule == "breakout_pre_breakout_distance_atr"
+
+
 def test_no_setup_records_both_setups():
-    # Last bar closes inside the prior range; the continuation base is too wide.
+    # Last bar closes below the trigger; arming distance 0; the continuation base is too wide.
     last = bar(TODAY, 29, 21.45, 21.47, 21.43, 21.44, 10_000)
     bars = rising_session(TODAY, 29, step=0.05) + [last]
-    decision = make().evaluate(ctx(bars, GOOD_QUOTE))
+    decision = make(continuation__maximum_pre_breakout_distance_atr=0).evaluate(
+        ctx(bars, GOOD_QUOTE)
+    )
     assert decision.verdict == Verdict.IGNORE
-    assert decision.decisive.rule == "breakout_close_above_trigger"
-    assert rules(decision)[-3:] == [
-        "breakout_close_above_trigger",
+    assert decision.decisive.rule == "base_range_atr"
+    assert rules(decision)[-4:] == [
         "impulse_atr",
         "base_range_atr",
+        "breakout_invalidation_below_trigger",
+        "breakout_pre_breakout_distance_atr",
     ]
     assert decision.trigger is None
 
@@ -263,7 +282,12 @@ def test_continuation_enter():
     assert decision.setup == "continuation"
     assert (decision.trigger, decision.stop) == (d("23.15"), d("23.0"))
     assert decision.entry_high == d("23.15") + atr
-    assert rules(decision)[7:10] == ["impulse_atr", "base_range_atr", "pre_breakout_distance_atr"]
+    assert rules(decision)[7:11] == [
+        "impulse_atr",
+        "base_range_atr",
+        "continuation_invalidation_below_trigger",
+        "pre_breakout_distance_atr",
+    ]
     assert "breakout_close_above_trigger" not in rules(decision)
     by_rule = {c.rule: c for c in decision.checks}
     assert by_rule["impulse_atr"].measured == d("0.6") / atr
@@ -283,11 +307,16 @@ def test_continuation_rule_failures(rule, key, factor):
     bars = continuation_bars()
     measured = {c.rule: c for c in make().evaluate(ctx(bars)).checks}[rule].measured
     decision = make(**{key: float(measured) * factor}).evaluate(ctx(bars))
-    # Neither setup armed: the decisive cause is the breakout, the record shows why
-    # continuation did not arm either.
-    assert decision.verdict == Verdict.IGNORE
-    assert decision.decisive.rule == "breakout_close_above_trigger"
-    assert decision.checks[-1].rule == rule and not decision.checks[-1].passed
+    if rule == "pre_breakout_distance_atr":
+        # The same key also limits breakout arming (0.05 below its trigger 23.15): no setup,
+        # and the continuation failure is the recorded cause.
+        assert decision.verdict == Verdict.IGNORE
+        assert decision.decisive.rule == rule
+    else:
+        # Continuation fails; the breakout setup arms before its break instead, and only the
+        # chosen setup's checks are recorded.
+        assert decision.verdict == Verdict.WATCH
+        assert decision.setup == "breakout"
 
 
 # ---------------------------------------------------------------- quote rules
@@ -369,9 +398,9 @@ def test_cost_rule_against_atr():
 
 
 def test_cost_rule_against_risk():
-    # round trip 0.02 / risk 0.62 = 0.032258...
+    # round trip 0.02 / (top of window 23.06 - stop 22.38 = 0.68) = 0.029411...
     assert_refused(
-        make(entry__max_round_trip_risk_ratio=0.032).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE)),
+        make(entry__max_round_trip_risk_ratio=0.029).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE)),
         Verdict.IGNORE,
         "round_trip_risk_ratio",
     )

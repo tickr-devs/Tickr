@@ -43,19 +43,14 @@ def current_session(bars: Sequence[Bar]) -> Sequence[Bar]:
 
 
 def ema_series(values: Sequence[Decimal], period: int) -> list[Decimal | None]:
-    """Exponential moving average, seeded with the simple average of the first `period`
-    values, then `ema = prev + (value - prev) * 2 / (period + 1)`."""
+    """Exponential moving average seeded with the first value, then
+    `ema = prev + (value - prev) * 2 / (period + 1)`. Defined from the first value; callers
+    require enough history for the seed to have decayed."""
     out: list[Decimal | None] = []
     alpha = TWO / (period + 1)
     prev: Decimal | None = None
-    for i, value in enumerate(values):
-        if i + 1 < period:
-            out.append(None)
-            continue
-        if prev is None:
-            prev = sum(values[: i + 1], ZERO) / period
-        else:
-            prev = prev + (value - prev) * alpha
+    for value in values:
+        prev = value if prev is None else prev + (value - prev) * alpha
         out.append(prev)
     return out
 
