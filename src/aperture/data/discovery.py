@@ -257,8 +257,8 @@ def spread_check(instrument: Instrument, quote: Quote | None, now: datetime,
 def completed_session_bars(bars: Sequence[Bar], session_open: datetime,
                            now: datetime) -> tuple[Bar, ...]:
     """Bars of the current regular session whose minute has ended by `now`, oldest first."""
-    return tuple(sorted((b for b in bars if b.start >= session_open and b.start + BAR_LENGTH <= now),
-                        key=lambda b: b.start))
+    kept = (b for b in bars if b.start >= session_open and b.start + BAR_LENGTH <= now)
+    return tuple(sorted(kept, key=lambda b: b.start))
 
 
 def session_dollar_volume(bars: Sequence[Bar]) -> Decimal:
