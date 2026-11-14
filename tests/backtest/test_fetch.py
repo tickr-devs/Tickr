@@ -12,7 +12,8 @@ from aperture.backtest import fetch
 from aperture.backtest.errors import BacktestError
 from aperture.backtest.settings import load_settings
 from aperture.backtest.universe import read_pool, select_pool, write_pool
-from aperture.broker.budget import BudgetExhausted
+from aperture.broker.base import RateLimited
+from aperture.broker.budget import BudgetExhausted, RequestBudget, RouteLimit
 from aperture.broker.webull import InstrumentPage
 
 from .helpers import ROOT, UTC, FakeHistory, calendar, cfg, daily_bar, flat_bars, row
@@ -87,7 +88,8 @@ def test_daily_maps_labels_to_sessions_and_pool_selects_gainers(tmp_path):
     rows = fetch.load_daily(directory)
     assert {(r["symbol"], r["date"]) for r in rows} >= {("UP", "2026-11-09")}
     window = [d.ny_date for d in fetch.daily_window(calendar(), DAYS[1], DAYS[-1], 14)]
-    pool = select_pool(rows, window, Decimal(5), Decimal(5_000_000), 200)
+    pool, caps = select_pool(rows, window, Decimal(5), Decimal(5_000_000), 200)
+    assert [(c.candidates, c.dropped) for c in caps][-1] == (1, 0)
     assert [(e.symbol, e.session_date) for e in pool] == [("UP", DAYS[-1])]
     assert pool[0].day_high_change_percent == Decimal("12.0")
     write_pool(pool, tmp_path / "pool.csv")
@@ -157,3 +159,38 @@ def test_daily_splits_a_chunk_to_isolate_refused_symbols(tmp_path):
     assert got == set(symbols) - {"S02", "S05"}
     refused = [r["symbol"] for r in fetch.read_lines(directory / "00000.refused")]
     assert sorted(refused) == ["S02", "S05"]
+
+
+def test_pool_cap_records_dropped_candidates():
+    rows = []
+    for name, high in (("A", "12"), ("B", "11"), ("C", "10.6")):
+        rows.append({"symbol": name, "date": "2026-11-12", "open": "10", "high": "10",
+                     "low": "10", "close": "10", "volume": "1000000"})
+        rows.append({"symbol": name, "date": "2026-11-13", "open": "10", "high": high,
+                     "low": "10", "close": "10", "volume": "1000000"})
+    pool, caps = select_pool(rows, [date(2026, 11, 12), date(2026, 11, 13)], Decimal(5),
+                             Decimal(1), 2)
+    assert [e.symbol for e in pool] == ["A", "B"]
+    assert (caps[0].candidates, caps[0].kept, caps[0].dropped) == (3, 2, 1)
+
+
+def test_patiently_after_a_provider_429_waits_for_the_budget_pause():
+    clock = [0.0]
+    budget = RequestBudget(RouteLimit(30, 60, 60), clock=lambda: clock[0])
+    waits: list[float] = []
+    answers = iter(["429", "ok"])
+
+    def call():
+        budget.take("/bars")
+        answer = next(answers)
+        if answer == "429":
+            budget.pause("/bars")
+            raise RateLimited("HTTP 429")
+        return answer
+
+    def sleep(seconds: float) -> None:
+        waits.append(seconds)
+        clock[0] += seconds
+
+    assert fetch.patiently(call, sleep, quiet) == "ok"
+    assert len(waits) == 1 and waits[0] > 0

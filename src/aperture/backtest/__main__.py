@@ -17,7 +17,14 @@ from aperture.backtest import fetch
 from aperture.backtest.errors import BacktestError
 from aperture.backtest.sessions import sessions_before
 from aperture.backtest.settings import BacktestSettings, load_settings
-from aperture.backtest.universe import POOL_FILE, read_pool, select_pool, write_pool
+from aperture.backtest.universe import (
+    CAP_FILE,
+    POOL_FILE,
+    read_pool,
+    select_pool,
+    write_caps,
+    write_pool,
+)
 from aperture.broker.base import BrokerError
 from aperture.calendar import CalendarRefused, SessionCalendar
 from aperture.config import Config, ConfigError
@@ -41,10 +48,15 @@ def step_select(cfg: Config, settings: BacktestSettings, out: Path, first: date,
     window = fetch.daily_window(_calendar(cfg), first, last,
                                 cfg.market_data.history_max_lookback_days)
     rows = fetch.load_daily(out / fetch.DAILY_DIR)
-    pool = select_pool(rows, [d.ny_date for d in window], settings.gainer_change_percent,
+    pool, caps = select_pool(rows, [d.ny_date for d in window], settings.gainer_change_percent,
                        cfg.market_data.min_session_dollar_volume_usd, settings.max_pool_per_day)
     path = out / POOL_FILE
     write_pool(pool, path)
+    write_caps(caps, out / CAP_FILE)
+    bound = [c for c in caps if c.dropped]
+    if bound:
+        print(f"pool cap {settings.max_pool_per_day} bound on {len(bound)} sessions, "
+              f"{sum(c.dropped for c in bound)} symbol-days dropped (look-ahead: raise the cap)")
     days = len({e.session_date for e in pool})
     print(f"pool: {len(pool)} symbol-days over {days} sessions, "
           f"{len({e.symbol for e in pool})} symbols -> {path}")

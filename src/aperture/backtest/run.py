@@ -24,7 +24,7 @@ from aperture.backtest.errors import BacktestError
 from aperture.backtest.gate import GainerGate
 from aperture.backtest.sessions import sessions_before
 from aperture.backtest.settings import BacktestSettings
-from aperture.backtest.universe import POOL_FILE, PoolEntry, read_pool
+from aperture.backtest.universe import CAP_FILE, POOL_FILE, PoolEntry, read_caps, read_pool
 from aperture.calendar import SessionCalendar, ny_date_of
 from aperture.config import Config
 from aperture.replay.bars import load_bars
@@ -79,7 +79,8 @@ def run_symbol(task: Task) -> ReplayResult:
 
 
 def tradable_days(cfg: Config, calendar: SessionCalendar, pool: list[PoolEntry], out: Path,
-                  history_sessions: int) -> tuple[dict[str, list[date]], list[dict[str, str]]]:
+                  history_sessions: int, tolerance_percent: Decimal,
+                  ) -> tuple[dict[str, list[date]], list[dict[str, str]]]:
     """Pool days per symbol that can be replayed as live would see them, and the skipped ones."""
     incomplete: dict[str, set[date]] = defaultdict(set)
     for status in fetch.load_statuses(out):
@@ -88,7 +89,7 @@ def tradable_days(cfg: Config, calendar: SessionCalendar, pool: list[PoolEntry],
             last = date.fromisoformat(status["last_session"])
             incomplete[status["symbol"]].update(
                 d.ny_date for d in fetch.sessions_between(calendar, first, last))
-    session_days: dict[str, set[date]] = {}
+    session_days: dict[str, dict[date, Decimal]] = {}
     days: dict[str, list[date]] = defaultdict(list)
     skipped: list[dict[str, str]] = []
     lookback = cfg.market_data.history_max_lookback_days
@@ -104,21 +105,35 @@ def tradable_days(cfg: Config, calendar: SessionCalendar, pool: list[PoolEntry],
                             "cause": "FETCH_INCOMPLETE"})
             continue
         if symbol not in session_days:
-            session_days[symbol] = _days_with_bars(path)
+            session_days[symbol] = _last_closes(path)
+        closes = session_days[symbol]
         wanted = [d.ny_date for d in sessions_before(calendar, day, history_sessions, lookback)]
-        missing = [d for d in [*wanted, day] if d not in session_days[symbol]]
+        missing = [d for d in [*wanted, day] if d not in closes]
         if missing:
             skipped.append({"symbol": symbol, "session_date": day.isoformat(),
                             "cause": "SESSION_WITHOUT_BARS: "
                             + " ".join(d.isoformat() for d in missing)})
             continue
+        # Daily bars are forward-adjusted, M1 bars are not: the ratio daily/M1 is the same on
+        # both days unless a split falls between them.
+        before = entry.previous_close / closes[wanted[-1]] if wanted else None
+        after = entry.day_close / closes[day]
+        if before is not None and abs(before / after - 1) * 100 > tolerance_percent:
+            skipped.append({"symbol": symbol, "session_date": day.isoformat(),
+                            "cause": f"SPLIT_BETWEEN_SESSIONS: daily/M1 scale {before:.4f} "
+                            f"before, {after:.4f} on the day"})
+            continue
         days[symbol].append(day)
     return dict(days), skipped
 
 
-def _days_with_bars(path: Path) -> set[date]:
-    bars = load_bars([path])
-    return {ny_date_of(b.start) for series in bars.values() for b in series}
+def _last_closes(path: Path) -> dict[date, Decimal]:
+    """Last M1 close of every session date in the file (bars are oldest first)."""
+    closes: dict[date, Decimal] = {}
+    for series in load_bars([path]).values():
+        for bar in series:
+            closes[ny_date_of(bar.start)] = bar.close
+    return closes
 
 
 def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: ReplaySettings,
@@ -129,7 +144,9 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
         values = tomllib.load(handle)
     factory(strategy_module, values)  # refuse bad values before any work
     pool = read_pool(out / POOL_FILE)
-    days, skipped = tradable_days(cfg, calendar, pool, out, replay_settings.history_sessions)
+    days, skipped = tradable_days(cfg, calendar, pool, out, replay_settings.history_sessions,
+                                  settings.split_tolerance_percent)
+    caps = read_caps(out / CAP_FILE)
     floor = cfg.market_data.min_session_dollar_volume_usd
     tasks = [Task(symbol, out / fetch.MINUTES_DIR / f"{symbol}.jsonl", tuple(sorted(d)),
                   strategy_module, values, settings.gainer_change_percent, floor, calendar_dir,
@@ -148,7 +165,7 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
         writer.writeheader()
         writer.writerows(skipped)
     traded_days = sum(len(t.pool_days) for t in tasks)
-    text = report.write_report(merged, pool, traded_days, skipped, cfg, settings,
+    text = report.write_report(merged, pool, caps, traded_days, skipped, cfg, settings,
                                replay_settings, results)
     print(text)
 

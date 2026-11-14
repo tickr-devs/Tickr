@@ -8,9 +8,10 @@
 # previous session's last close (proxy for being on Webull's top-200 gainers list); a day enters the pool when its
 # daily high reaches it. Percent; read by backtest/universe.py and backtest/gate.py.
 gainer_change_percent = 5.0
-# Most pool symbols per session, best daily-high change first (the gainers screener returns 200 rows); count; read by
+# Most pool symbols per session, best daily-high change first. The ranking uses the day's high (look-ahead), so this
+# is set high enough not to bind; pool_cap.csv and the report show any session where it did; count; read by
 # backtest/universe.py.
-max_pool_per_day = 200
+max_pool_per_day = 2000
 # Most instrument-list pages read before refusing (guards a pagination key that never ends); count; read by
 # backtest/fetch.py.
 instrument_max_pages = 100
@@ -31,3 +32,7 @@ confidence_percent = 95
 # Entry-price bucket edges for the report breakdown, USD, increasing (buckets: below the first, between edges, at or
 # above the last); read by backtest/report.py.
 price_bucket_edges_usd = [5, 20, 50]
+# Largest disagreement between the daily (forward-adjusted) and M1 (unadjusted) price scales of the previous session
+# and the pool day, percent; more means a split or reverse split between them, and the day is skipped with a cause
+# (the gate's change against the previous M1 close would be meaningless); read by backtest/run.py.
+split_tolerance_percent = 2

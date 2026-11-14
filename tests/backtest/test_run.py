@@ -13,7 +13,7 @@ from aperture.backtest.gate import RULE_GAINER, RULE_POOL, GainerGate
 from aperture.backtest.report import bootstrap_interval, bot_view, price_bucket, stats
 from aperture.backtest.run import run_backtest
 from aperture.backtest.settings import load_settings
-from aperture.backtest.universe import PoolEntry, write_pool
+from aperture.backtest.universe import CapRecord, PoolEntry, write_caps, write_pool
 from aperture.data.capture import bar_record
 from aperture.replay.settings import load_settings as load_replay
 from aperture.strategy.base import Decision, SymbolContext, Verdict
@@ -94,10 +94,14 @@ def test_run_end_to_end(tmp_path):
                     Decimal(15), Decimal(30000)) for i in range(5)]
     write_symbol(out, "ABCD", prior + rising("ABCD", "20", "0.30", 30, "300000") + collapse)
     write_symbol(out, "GAP", flat_bars("GAP", TODAY))  # no history sessions
-    pool = [PoolEntry(TODAY, 1, "ABCD", Decimal(20), Decimal(50), Decimal(10**8)),
-            PoolEntry(TODAY, 2, "GAP", Decimal(20), Decimal(50), Decimal(10**8)),
-            PoolEntry(TODAY, 3, "NONE", Decimal(20), Decimal(50), Decimal(10**8))]
+    write_symbol(out, "SPLIT", [b for d in PRIOR for b in flat_bars("SPLIT", d, "2", "3000")]
+                 + flat_bars("SPLIT", TODAY, "20"))  # 1:10 reverse split overnight
+    pool = [PoolEntry(TODAY, 1, "ABCD", Decimal(20), Decimal(15), Decimal(50), Decimal(10**8)),
+            PoolEntry(TODAY, 2, "GAP", Decimal(20), Decimal(10), Decimal(50), Decimal(10**8)),
+            PoolEntry(TODAY, 3, "NONE", Decimal(20), Decimal(20), Decimal(50), Decimal(10**8)),
+            PoolEntry(TODAY, 4, "SPLIT", Decimal(20), Decimal(20), Decimal(50), Decimal(10**8))]
     write_pool(pool, out / "pool.csv")
+    write_caps([CapRecord(TODAY, 4, 4)], out / "pool_cap.csv")
     run_backtest(cfg(), SETTINGS, load_replay(ROOT / "config" / "replay.toml"), out, results,
                  "aperture.strategy.price_action_v1",
                  ROOT / "strategies" / "price-action-v1" / "strategy.toml")
@@ -108,24 +112,28 @@ def test_run_end_to_end(tmp_path):
         causes = {r["symbol"]: r["cause"] for r in csv.DictReader(handle)}
     assert causes["NONE"] == "NO_MINUTE_FILE"
     assert causes["GAP"].startswith("SESSION_WITHOUT_BARS")
+    assert causes["SPLIT"].startswith("SPLIT_BETWEEN_SESSIONS")
     report = json.loads((results / "report.json").read_text())
     assert report["label"] == "simulated" and report["bot"]["trades"] == len(trades)
     assert (results / "report.md").read_text().startswith("# SIMULATED backtest")
 
 
-def test_bot_view_keeps_one_position_and_the_daily_ceiling(tmp_path):
+def test_bot_view_applies_live_sizing_positions_and_the_daily_ceiling():
     from aperture.replay.engine import ExitReason, SimulatedTrade
 
-    def trade(symbol, start, end, entry, exit_):
+    def trade(symbol, start, end, entry, exit_, quantity="40"):
         return SimulatedTrade("s", "1", symbol, TODAY, "x", minute(TODAY, start),
                               minute(TODAY, start), Decimal(entry), Decimal(entry) - 1,
                               minute(TODAY, end), Decimal(exit_), ExitReason.STOP, 1,
-                              Decimal(100))
+                              Decimal(quantity), Decimal(entry))
 
-    trades = [trade("A", 0, 10, "10", "9"), trade("B", 5, 8, "10", "11"),  # B overlaps A
-              trade("C", 11, 12, "10", "8"), trade("D", 13, 14, "10", "9")]
-    view = bot_view(trades, cfg(), Decimal(50))
-    # A loses 100, C loses 200: net -300, so -(-300) + 50 > 300 refuses D.
-    assert view["trades"] == 2
-    assert view["refused"] == {"daily loss ceiling": 1, "position open": 1}
-    assert view["total_usd"] == Decimal(-300)
+    trades = [trade("A", 0, 10, "10", "5"),        # -200
+              trade("B", 5, 8, "10", "11"),        # overlaps A
+              trade("C", 11, 12, "10", "8"),       # -80: net -280
+              trade("D", 13, 14, "10", "9"),       # 280 + 40 > 300: daily ceiling
+              trade("E", 15, 16, "10", "9", "60"),  # planned loss 60 > 50
+              trade("F", 17, 18, "100", "99", "30")]  # notional 3000 > 2500
+    view = bot_view(trades, cfg())
+    assert view["trades"] == 2 and view["total_usd"] == Decimal(-280)
+    assert view["refused"] == {"DAILY_CEILING": 1, "NOTIONAL_OVER_CAP": 1,
+                               "PLANNED_LOSS_OVER_LIMIT": 1, "POSITION_OPEN": 1}

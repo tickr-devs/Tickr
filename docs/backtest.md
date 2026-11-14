@@ -31,7 +31,9 @@ names. The first response of each kind and every failed one are kept in `<out>/r
 3. **Pool** (`pool.csv`): per session, symbols whose daily high reached `gainer_change_percent`
    above the previous close and whose day dollar volume reached bot.toml
    `min_session_dollar_volume_usd`; at most `max_pool_per_day`, best first. This is a superset of
-   the minute-level rule below and uses no minute data.
+   the minute-level rule below and uses no minute data. Ranking by the day's high is look-ahead,
+   so the cap is set not to bind; `pool_cap.csv` records each session's candidates and drops,
+   and the report states on how many sessions it bound.
 4. **Minute bars** (`minutes/<SYMBOL>.jsonl`, replay bar format; `minutes_status.jsonl`): each
    pool day plus replay.toml `history_sessions` sessions before it, merged into contiguous runs
    and paged back with `end_time` (probe M4). Symbols that page from the same end share a request.
@@ -43,7 +45,9 @@ names. The first response of each kind and every failed one are kept in `<out>/r
 
 - Skipped (with cause) when the symbol lacks bars on the day or on any of the `history_sessions`
   sessions before it, or its run is incomplete: live, the bot refuses a symbol with incomplete
-  history.
+  history. Also skipped when the daily (forward-adjusted) to M1 (unadjusted) price scale differs
+  between the previous session and the day by more than `split_tolerance_percent`: a split
+  between them would make the gate's change meaningless.
 - The strategy sits behind a gate (`backtest/gate.py`): it is asked only from the first completed
   bar at which close >= previous session's last close x (1 + `gainer_change_percent` / 100) and the
   session's dollar volume so far reached the discovery floor; then for the rest of the day. Before
@@ -58,9 +62,11 @@ names. The first response of each kind and every failed one are kept in `<out>/r
   percentile bootstrap interval of the mean R (`bootstrap_samples`, `bootstrap_seed`,
   `confidence_percent`). An interval above 0 is evidence of an edge under these assumptions; an
   interval containing 0 is not.
-- **Bot limits**: trades in entry order, at most bot.toml `max_open_positions` open, and no new
-  entry once the day's net realized result plus `planned_loss_usd` would pass `max_daily_loss_usd`.
-  USD = (exit - entry) x the strategy's quantity, gross (no commissions or fees).
+- **Bot limits**: trades in entry order, at most bot.toml `max_open_positions` open, each through
+  the live money checks: `risk.sizing.check_size` (planned loss and notional caps at the window
+  top and the stop) and `risk.daily.check_daily` (net realized loss of the day + planned loss of
+  open positions + this trade's planned loss within `max_daily_loss_usd`). Refusals are counted by
+  cause. USD = (exit - entry) x the strategy's quantity, gross (no commissions or fees).
 - Breakdowns by month, setup, exit reason, entry hour (New York) and entry price
   (`price_bucket_edges_usd`).
 

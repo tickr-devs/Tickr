@@ -4,10 +4,10 @@ Two views of the same simulated trades (all `simulated`):
 1. Every signal: each pool symbol replayed on its own (the replay engine's view). Mean R per
    trade with a bootstrap confidence interval: an interval above 0 is evidence of an edge
    under these fill assumptions, one that contains 0 is not.
-2. The bot: trades taken in entry order under bot.toml [risk] `max_open_positions` and the
-   daily loss ceiling `max_daily_loss_usd` (net realized result of the day plus the next trade's
-   `planned_loss_usd` must stay within it, decisions 2026-11-14). USD = (exit - entry) x the
-   strategy's quantity, gross: commissions and regulatory fees are not modelled.
+2. The bot: trades taken in entry order through the live money checks (`risk.sizing.check_size`,
+   `risk.daily.check_daily` with the day's net realized loss, decisions 2026-11-14) and
+   `max_open_positions`. USD = (exit - entry) x the strategy's quantity, gross: commissions and
+   regulatory fees are not modelled.
 
 Breakdowns by month, setup, exit reason, entry hour (New York) and entry price help find where
 an edge, if any, lives. Outputs: report.json and report.md in the results directory.
@@ -25,12 +25,14 @@ from pathlib import Path
 from typing import Any
 
 from aperture.backtest.settings import BacktestSettings
-from aperture.backtest.universe import PoolEntry
+from aperture.backtest.universe import CapRecord, PoolEntry
 from aperture.calendar import NEW_YORK
 from aperture.config import Config
 from aperture.replay.engine import LABEL, ReplayResult, SimulatedTrade
 from aperture.replay.report import summarize
 from aperture.replay.settings import ReplaySettings
+from aperture.risk.daily import check_daily
+from aperture.risk.sizing import check_size
 
 REPORT_JSON = "report.json"
 REPORT_MD = "report.md"
@@ -93,29 +95,40 @@ def price_bucket(price: Decimal, edges: Sequence[Decimal]) -> str:
     return f">={edges[-1]}"
 
 
-def bot_view(trades: Sequence[SimulatedTrade], cfg: Config,
-             planned_loss: Decimal) -> dict[str, Any]:
-    """Trades the bot could have taken: at most `max_open_positions` at once, first come first
-    served, and no new entry once the day's net realized loss plus the planned loss of the next
-    trade would pass the daily ceiling. Trades without a quantity are not taken."""
-    limit = cfg.risk.max_open_positions
-    ceiling = cfg.risk.max_daily_loss_usd
+def bot_view(trades: Sequence[SimulatedTrade], cfg: Config) -> dict[str, Any]:
+    """Trades the bot could have taken, first come first served, through the live money checks
+    (risk/admission.py `_check_money`): the strategy's quantity must pass `check_size` against
+    bot.toml [risk] `planned_loss_usd` and `position_notional_cap_usd` at the window top and
+    the stop, and `check_daily` must pass with the day's net realized loss, the planned loss of
+    positions still open, and this trade's own planned loss = quantity x (entry_high - stop).
+    At most `max_open_positions` at once. Refusals are counted by cause."""
+    risk = cfg.risk
     taken: list[SimulatedTrade] = []
+    planned: dict[int, Decimal] = {}
     refused: dict[str, int] = defaultdict(int)
     for trade in sorted(trades, key=lambda t: (t.entry_time, t.signal_bar_start, t.symbol)):
-        if trade.pnl_usd is None:
-            refused["no quantity"] += 1
+        if trade.quantity is None or trade.entry_high is None:
+            refused["DECISION_WITHOUT_QUANTITY"] += 1
             continue
         open_now = [t for t in taken if t.exit_time > trade.entry_time]
-        if len(open_now) >= limit:
-            refused["position open"] += 1
+        if len(open_now) >= risk.max_open_positions:
+            refused["POSITION_OPEN"] += 1
             continue
-        realized = sum((t.pnl_usd for t in taken if t.session_date == trade.session_date
-                        and t.exit_time <= trade.entry_time), ZERO)
-        if -realized + planned_loss > ceiling:
-            refused["daily loss ceiling"] += 1
+        size = check_size(trade.quantity, trade.entry_high, trade.stop, risk.planned_loss_usd,
+                          risk.position_notional_cap_usd)
+        if not size.ok or size.planned_loss_usd is None:
+            refused[str(size.cause)] += 1
+            continue
+        net = sum((t.pnl_usd or ZERO for t in taken if t.session_date == trade.session_date
+                   and t.exit_time <= trade.entry_time), ZERO)
+        reserved = sum((planned[id(t)] for t in open_now), ZERO)
+        daily = check_daily(max(-net, ZERO), reserved, size.planned_loss_usd,
+                            risk.max_daily_loss_usd)
+        if not daily.ok:
+            refused[str(daily.cause)] += 1
             continue
         taken.append(trade)
+        planned[id(trade)] = size.planned_loss_usd
     per_day: dict[date, Decimal] = defaultdict(lambda: ZERO)
     for trade in taken:
         per_day[trade.session_date] += trade.pnl_usd or ZERO
@@ -148,9 +161,9 @@ def _plain(value: Any, places: int) -> Any:
     return value
 
 
-def build(result: ReplayResult, pool: Sequence[PoolEntry], traded_days: int,
-          skipped: Sequence[dict[str, str]], cfg: Config, settings: BacktestSettings,
-          planned_loss: Decimal) -> dict[str, Any]:
+def build(result: ReplayResult, pool: Sequence[PoolEntry], caps: Sequence[CapRecord],
+          traded_days: int, skipped: Sequence[dict[str, str]], cfg: Config,
+          settings: BacktestSettings) -> dict[str, Any]:
     trades = result.trades
     r_values = [t.r_multiple for t in trades]
     summary = summarize(result)
@@ -165,7 +178,11 @@ def build(result: ReplayResult, pool: Sequence[PoolEntry], traded_days: int,
         "window": [sessions[0].isoformat(), sessions[-1].isoformat()] if sessions else None,
         "pool": {"symbol_days": len(pool), "sessions": len(sessions),
                  "symbols": len({e.symbol for e in pool}), "replayed_symbol_days": traded_days,
-                 "skipped": dict(sorted(causes.items()))},
+                 "skipped": dict(sorted(causes.items())),
+                 "cap": settings.max_pool_per_day,
+                 "cap_bound_sessions": sum(1 for c in caps if c.dropped),
+                 "cap_dropped_symbol_days": sum(c.dropped for c in caps),
+                 "most_candidates_in_a_session": max((c.candidates for c in caps), default=0)},
         "signals_by_outcome": summary.signals_by_outcome,
         "all_signals": {
             **stats(r_values),
@@ -176,7 +193,7 @@ def build(result: ReplayResult, pool: Sequence[PoolEntry], traded_days: int,
             "max_drawdown_r": summary.max_drawdown_r,
             "total_usd": sum((t.pnl_usd or ZERO for t in trades), ZERO),
         },
-        "bot": bot_view(trades, cfg, planned_loss),
+        "bot": bot_view(trades, cfg),
         "by_month": breakdown(trades, lambda t: t.session_date.strftime("%Y-%m")),
         "by_setup": breakdown(trades, lambda t: t.setup or "none"),
         "by_exit": breakdown(trades, lambda t: t.exit_reason.value),
@@ -205,6 +222,10 @@ def markdown(data: dict[str, Any]) -> str:
         f"symbol-days ({data['pool']['symbols']} symbols), replayed "
         f"{data['pool']['replayed_symbol_days']}, skipped {data['pool']['skipped']}.",
         f"Signals: {data['signals_by_outcome']}.",
+        f"Pool cap {data['pool']['cap']} (ranks by the day's high, look-ahead if it binds): bound "
+        f"on {data['pool']['cap_bound_sessions']} sessions, "
+        f"{data['pool']['cap_dropped_symbol_days']} symbol-days dropped; most candidates in a "
+        f"session {data['pool']['most_candidates_in_a_session']}.",
         "",
         "| view | trades | win rate | mean R | total R | profit factor |",
         "|---|---|---|---|---|---|",
@@ -230,10 +251,11 @@ def markdown(data: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_report(result: ReplayResult, pool: Sequence[PoolEntry], traded_days: int,
+def write_report(result: ReplayResult, pool: Sequence[PoolEntry], caps: Sequence[CapRecord],
+                 traded_days: int,
                  skipped: Sequence[dict[str, str]], cfg: Config, settings: BacktestSettings,
                  replay_settings: ReplaySettings, out: Path) -> str:
-    data = build(result, pool, traded_days, skipped, cfg, settings, cfg.risk.planned_loss_usd)
+    data = build(result, pool, caps, traded_days, skipped, cfg, settings)
     places = replay_settings.output_decimal_places
     (out / REPORT_JSON).write_text(json.dumps(_plain(data, places), indent=2) + "\n", "utf-8")
     text = markdown(data)
