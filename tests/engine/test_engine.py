@@ -667,6 +667,36 @@ def test_rate_limited_cancels_do_not_use_up_the_cancel_attempts(store):
     assert e.trade(t).state is TradeState.CLOSED
 
 
+def test_a_cancel_that_never_leaves_alerts_the_operator_then_clears(store):
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e)
+    blocked = [True]
+
+    def budget(cid):
+        if blocked[0]:
+            raise RateLimited("429")
+        FakeBroker.cancel(b, cid)
+
+    b.cancel = budget
+    e.cancel_entry(t, "test")
+    wait, start = float(CFG.orders.cancel_not_sent_alert_seconds), e.clock.now
+    while e.clock.now - start < wait - POLL:  # the entry guard asks again every pass
+        run(e)
+        e.cancel_entry(t, "test")
+        assert not has(e, Fence.CANCEL_NOT_SENT)  # a short burst stays quiet
+    for _ in range(2):
+        run(e)
+        e.cancel_entry(t, "test")
+    assert has(e, Fence.CANCEL_NOT_SENT)  # entries stop, the operator is told
+    blocked[0] = False  # the budget is back: the cancel leaves and the fence clears
+    e.cancel_entry(t, "test")
+    assert not has(e, Fence.CANCEL_NOT_SENT)
+    run(e, 2)
+    assert not has(e, Fence.CANCEL_NOT_SENT)
+    assert e.trade(t).state is TradeState.CLOSED
+
+
 def test_an_entry_that_will_not_cancel_does_not_block_closing_its_filled_shares(store):
     b = FakeBroker()
     e = make(store, b)
