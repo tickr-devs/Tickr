@@ -35,6 +35,8 @@ public extension Indicators {
 
 public extension ChartSeries {
   /// The ATR line, one value per candle: the M1 ATR at each candle's last bar, like the other lines.
+  /// It warms up on the shown day's bars only, so the first `atrPeriod` M1 bars have no value; the
+  /// bot may also have seen earlier bars.
   static func atr(bars: [BarV1], timeframe: Timeframe) -> [Double?] {
     let values = Indicators.atr(bars, period: Indicators.atrPeriod)
     return Candles.groups(bars, timeframe: timeframe).map { values[$0.lastBar] }

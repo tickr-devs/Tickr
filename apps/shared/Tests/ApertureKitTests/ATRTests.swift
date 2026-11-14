@@ -54,10 +54,12 @@ struct ATRTests {
 
   @Test("Each candle takes the M1 ATR at its last bar")
   func sampledPerCandle() throws {
-    let bars = try (0..<30).map { minute in try bar(minute, "10", "11", "9", "10") }
+    let bars = try (0..<30).map { minute in try bar(minute, "10", String(11 + minute), "9", "10") }
+    let values = Indicators.atr(bars, period: Indicators.atrPeriod)
     let line = ChartSeries.atr(bars: bars, timeframe: .m15)
     #expect(line.count == 2)
-    #expect(near(line[0], 2))
-    #expect(near(line[1], 2))
+    #expect(line[0] == values[14])
+    #expect(line[1] == values[29])
+    #expect(line[0] != line[1])
   }
 }
