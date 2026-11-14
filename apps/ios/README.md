@@ -36,14 +36,17 @@ Pick the `Aperture iOS` scheme and an iPhone Simulator, Run. With the API runnin
 `http://127.0.0.1:8766`, the default address there. To try Face ID in the Simulator: Features ›
 Face ID › Enrolled, then Matching Face when asked.
 
-On your iPhone: in Xcode select your Apple ID team under Signing & Capabilities (a free Apple ID
-works; the app then runs for 7 days before Xcode has to install it again), connect the phone, Run.
+On your iPhone: copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` (git-ignored) and
+put your team id in it (a free Apple ID works; the app then runs for 7 days before Xcode has to
+install it again), connect the phone, Run. Do not pick the team in Signing & Capabilities: that
+writes it into the committed project. Likewise never accept Xcode's "Update to recommended
+settings": the project is generated, so such changes go into `project.yml`.
 The phone reaches the Mac through Tailscale; that setup is described when the API accepts remote
 requests.
 
 The project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 Swift files under `Aperture/` are picked up automatically; only after changing `project.yml` run
-`brew install xcodegen && cd apps/ios && xcodegen` and commit the result. CI fails when the
+XcodeGen 2.46.0 (the version CI uses): `cd apps/ios && xcodegen` and commit the result. CI fails when the
 committed project differs from what `project.yml` generates.
 
 Shared code (contract models, API client, palette, animated pieces) lives in `apps/shared`.

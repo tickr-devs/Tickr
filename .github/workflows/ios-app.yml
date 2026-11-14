@@ -29,7 +29,12 @@ jobs:
           newest=$(ls -d /Applications/Xcode_*.app | grep -viE "beta|rc" | sort -V | tail -n 1)
           sudo xcode-select -s "$newest"
           xcodebuild -version
-      - run: brew install xcodegen
+      # Pinned: a new XcodeGen release could change the output and fail the check below.
+      - name: Install XcodeGen 2.46.0
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
       # The committed Aperture.xcodeproj must be exactly what project.yml generates.
       - name: Check the committed Xcode project matches project.yml
         run: |
