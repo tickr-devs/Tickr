@@ -1,29 +1,19 @@
 @testable import ApertureKit
 import XCTest
 
-/// The String Catalog ships in the package and answers in English and Russian.
+/// Entries read through the package's String Catalog, with their arguments filled in. The Russian
+/// translations are checked by apps/scripts/check_swift_rules.py (rule `catalog`): `swift build`
+/// copies a String Catalog into the bundle instead of compiling it, so a `swift test` run can
+/// only read the English default values.
 final class L10nTests: XCTestCase {
-  /// The resource in `language`, read from that language's folder of the package bundle (the
-  /// test process itself runs in English).
-  func text(_ resource: LocalizedStringResource, _ language: String) throws -> String {
-    let folder = try XCTUnwrap(Bundle.module.url(forResource: language, withExtension: "lproj"),
-      "no \(language).lproj in the package bundle")
-    var resource = resource
-    resource.locale = Locale(identifier: language)
-    resource.bundle = .atURL(folder)
-    return String(localized: resource)
+  func testEntriesResolve() {
+    XCTAssertEqual(String(localized: L10n.commandFlatten), "Flatten")
+    XCTAssertEqual(String(localized: L10n.tagEnter), "ENTER")
   }
 
-  func testEnglishAndRussian() throws {
-    XCTAssertEqual(try text(L10n.commandFlatten, "en"), "Flatten")
-    XCTAssertEqual(try text(L10n.commandFlatten, "ru"), "Закрыть всё")
-    XCTAssertEqual(try text(L10n.tagEnter, "ru"), "ВХОД")
-  }
-
-  func testArgumentsFillTheTranslation() throws {
-    XCTAssertEqual(try text(L10n.apiRefused(409, "busy", "later"), "en"), "API refused (409 busy): later")
-    XCTAssertEqual(try text(L10n.apiRefused(409, "busy", "later"), "ru"), "API отказал (409 busy): later")
-    let headline = try text(L10n.headlineNoVerifiedStop("ABCD", "missing"), "ru")
-    XCTAssertEqual(headline, "У позиции ABCD нет подтверждённого стопа (missing). ")
+  func testArgumentsFillTheText() {
+    XCTAssertEqual(String(localized: L10n.apiRefused(409, "busy", "later")), "API refused (409 busy): later")
+    XCTAssertEqual(String(localized: L10n.headlineNoVerifiedStop("ABCD", "missing")),
+      "Position ABCD has no verified stop (missing). ")
   }
 }
