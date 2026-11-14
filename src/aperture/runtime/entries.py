@@ -68,8 +68,9 @@ class EntryDesk:
     # --- money -----------------------------------------------------------------------------
 
     def _realized_loss(self, now: datetime) -> Decimal | None:
-        """Today's net realized loss as a non-negative amount (wins offset losses); None if a
-        trade closed today has fills whose prices are unknown."""
+        """Today's realized loss as a non-negative amount: the sum of losing trades only (wins
+        do not buy more risk the same day); None if a trade closed today has fills whose
+        prices are unknown."""
         today = now.astimezone(NEW_YORK).date()
         for row in self.engine.store.query(
                 "SELECT trade_id, closed_at FROM trades WHERE closed_at IS NOT NULL"):
@@ -78,8 +79,8 @@ class EntryDesk:
             for order in self.engine.orders(row["trade_id"]):
                 if order.filled_quantity > 0 and order.average_fill_price is None:
                     return None
-        net = sum((t.result_gross_usd for t in trades_today(self.engine, now)), ZERO)
-        return max(-net, ZERO)
+        return sum((-t.result_gross_usd for t in trades_today(self.engine, now)
+                    if t.result_gross_usd < 0), ZERO)
 
     def _reservations(self) -> Decimal:
         return sum((t.planned_loss_usd for t in self.engine.trades()), ZERO)
