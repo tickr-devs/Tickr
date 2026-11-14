@@ -395,7 +395,8 @@ class Engine:
                  None if entry_low_price is None else str(entry_low_price)))
             self.store.append("trade-opened", {
                 "symbol": symbol, "quantity": quantity, "limit_price": limit_price,
-                "stop_price": stop_price, "planned_loss_usd": planned_loss_usd},
+                "stop_price": stop_price, "planned_loss_usd": planned_loss_usd,
+                "entry_low_price": entry_low_price},
                 key=trade_id, run_id=self.run_id)
             cid = self._write_intent(trade_id, Leg.ENTRY, symbol, Side.BUY, OrderType.LIMIT,
                                      quantity, limit_price=limit_price)
@@ -540,6 +541,11 @@ class Engine:
         with self.store.transaction():
             self.store.execute("UPDATE orders SET cancel_state = ?, updated_at = ? "
                                "WHERE client_order_id = ?", (outcome, self.store.stamp(), cid))
+            if outcome == "not-sent":
+                # Refused by the budget or a 429 before reaching the broker: no cancel was
+                # sent, so it does not use up one of the attempts that end in CANCEL_FAILED.
+                self.store.execute("UPDATE orders SET cancel_attempts = cancel_attempts - 1 "
+                                   "WHERE client_order_id = ?", (cid,))
             self.store.append(f"cancel-{outcome}", {}, key=cid, run_id=self.run_id)
             if outcome in ("unknown", "refused"):
                 self._fence_row(Fence.CANCEL_UNKNOWN, cid, f"cancel {outcome}; waiting for Detail")
@@ -884,10 +890,13 @@ class Engine:
         """Teardown in a safe order: entry first (stops keep protecting late fills), then the
         stops, then one closing order for exactly the agreed quantity. Whenever the close
         cannot be sent, protection is restored instead of waiting unprotected."""
-        if entry.live:
+        if entry.live and not self._has_fence(Fence.CANCEL_FAILED, entry.client_order_id):
             self._cancel(entry)
             self._protect(trade, stops, expected)
             return
+        # An entry still working after every cancel (CANCEL_FAILED, operator alerted) must not
+        # keep the filled shares from being closed: they are closed now, and any later fill
+        # of that entry is protected and closed by the following passes.
         if any(e.live for e in exits):
             return
         if held != expected or expected <= 0:
