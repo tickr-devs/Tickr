@@ -220,6 +220,17 @@ def test_recorded_profiles_admit_common_stock_and_adrs_only():
     assert admitted == ["AAPL", "BABA", "TSM"]  # ETF and warrants refused, ADRs pass
 
 
+@pytest.mark.parametrize(("security_type", "admitted"), [("COMMON_STOCK", True), ("ETF", False)])
+def test_nyse_arca_listing_is_judged_by_type_not_exchange(security_type, admitted):
+    md, _ = adapter(ok([screener_row("ARCA", exchange_code="PSE")]),
+                    ok({"data": [profile("ARCA", security_type)]}))
+    cfg = config.load(ROOT / "config" / "bot.toml")
+    settings = DiscoverySettings.from_config(cfg)
+    instruments, _ = merge(md.screener(ScreenerKind.GAINERS))
+    cause = universe_cause(instruments[0], settings)
+    assert (cause is None) is admitted
+
+
 def test_multi_row_symbol_resolved_by_the_screener_instrument_id():
     md, _ = adapter(
         ok([screener_row("OPENW", instrument_id="951011795"), screener_row("X")]),
