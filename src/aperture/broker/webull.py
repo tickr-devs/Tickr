@@ -83,6 +83,7 @@ HTTP_TOO_MANY_REQUESTS = 429
 
 CODE_NON_TRADING_HOURS = "OPENAPI_CAN_NOT_TRADING_FOR_NON_TRADING_HOURS"
 CODE_PARAM_ERROR = "OPENAPI_PARAM_ERR"
+CODE_INVALID_SYMBOL = "INVALID_SYMBOL"
 GATE_CLOSED = "GATE_CLOSED"
 MESSAGE_ORDER_NOT_PRESENT = "order not present"
 
@@ -153,6 +154,11 @@ class BrokerReadFailed(BrokerError):
         self.route = route
         self.http_status = http_status
         self.code = code
+
+
+class SymbolsRefused(BrokerReadFailed):
+    """A bars read was refused because a requested symbol is unknown to the bars route
+    (HTTP 417 INVALID_SYMBOL, seen 2026-11-14 for listed-but-odd symbols such as 1ESC011)."""
 
 
 class AdapterConfigError(BrokerError):
@@ -1124,6 +1130,8 @@ class WebullHistory:
             (self._raw_dir / name).write_text(
                 json.dumps({"status": response.status, "body": response.body}), "utf-8")
         if not response.ok:
+            if response.error_code == CODE_INVALID_SYMBOL:
+                raise SymbolsRefused(route.name, response.status, response.error_code)
             raise BrokerReadFailed(route.name, response.status, response.error_code)
         return response.body
 

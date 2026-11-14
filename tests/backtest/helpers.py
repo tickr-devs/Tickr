@@ -10,7 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from aperture import config
-from aperture.broker.webull import DailyBar, InstrumentPage, InstrumentRow
+from aperture.broker.webull import DailyBar, InstrumentPage, InstrumentRow, SymbolsRefused
 from aperture.calendar import SessionCalendar
 from aperture.types import Bar
 
@@ -48,6 +48,7 @@ class FakeHistory:
     daily: dict
     minutes: dict
     requests: int = 0
+    invalid: frozenset = frozenset()
 
     def __post_init__(self):
         self.calls: list[tuple] = []
@@ -60,6 +61,8 @@ class FakeHistory:
     def daily_bars(self, symbols: Sequence[str], end: datetime, count: int) -> list[DailyBar]:
         self.requests += 1
         self.calls.append(("daily", tuple(symbols), end, count))
+        if any(s in self.invalid for s in symbols):
+            raise SymbolsRefused("BARS", 417, "INVALID_SYMBOL")
         out = []
         for s in symbols:
             out.extend([b for b in self.daily.get(s, []) if b.time < end][-count:])

@@ -95,3 +95,11 @@ def test_minute_bars_refuse_stray_symbols():
     h, _ = history(WireResponse(200, body))
     with pytest.raises(MalformedResponse, match="not requested"):
         h.minute_bars(["AAA"], END, 10)
+
+
+def test_invalid_symbol_is_a_typed_refusal():
+    from aperture.broker.webull import SymbolsRefused
+
+    h, _ = history(WireResponse(417, {"error_code": "INVALID_SYMBOL", "message": "x"}))
+    with pytest.raises(SymbolsRefused):
+        h.daily_bars(["1ESC011"], END, 5)

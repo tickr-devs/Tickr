@@ -145,3 +145,15 @@ def test_minutes_ignore_bars_outside_the_run(tmp_path):
     lines = (tmp_path / "minutes" / "AAA.jsonl").read_text().splitlines()
     starts = {json.loads(x)["start"][:10] for x in lines}
     assert starts == {"2026-11-10", "2026-11-11"} and len(lines) == 2 * 390
+
+
+def test_daily_splits_a_chunk_to_isolate_refused_symbols(tmp_path):
+    symbols = [f"S{i:02d}" for i in range(8)]
+    daily = {s: [daily_bar(s, d, "10", "10", "10", "10", "1") for d in DAYS] for s in symbols}
+    source = FakeHistory({}, daily, {}, invalid=frozenset({"S02", "S05"}))
+    directory = fetch.fetch_daily(source, calendar(), cfg(), symbols, DAYS[1], DAYS[-1],
+                                  tmp_path, no_sleep, quiet)
+    got = {r["symbol"] for r in fetch.load_daily(directory)}
+    assert got == set(symbols) - {"S02", "S05"}
+    refused = [r["symbol"] for r in fetch.read_lines(directory / "00000.refused")]
+    assert sorted(refused) == ["S02", "S05"]

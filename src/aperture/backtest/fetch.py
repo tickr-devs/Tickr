@@ -26,6 +26,7 @@ from aperture.backtest.sessions import ONE_DAY, sessions_before, sessions_betwee
 from aperture.backtest.settings import BacktestSettings
 from aperture.broker.base import RateLimited
 from aperture.broker.budget import BudgetExhausted
+from aperture.broker.webull import SymbolsRefused
 from aperture.calendar import NEW_YORK, MarketDay, SessionCalendar, ny_date_of
 from aperture.config import Config
 from aperture.data.capture import bar_record
@@ -234,12 +235,30 @@ def fetch_daily(source: HistorySource, calendar: SessionCalendar, cfg: Config,
         path = directory / f"{number:05d}.jsonl"
         if path.exists():
             continue
-        bars = patiently(lambda c=chunk: source.daily_bars(c, end, len(sessions)), sleep, log)
+        bars, refused = _daily_without_refused(source, chunk, end, len(sessions), sleep, log)
+        _write_lines(directory / f"{number:05d}.refused", ({"symbol": s} for s in refused))
         _write_lines(path, daily_records(bars, sessions))
         if number % 25 == 0:
             log(f"daily: chunk {number + 1} of {len(chunks)}, {source.requests} requests")
     log(f"daily: {len(chunks)} chunks in {directory}")
     return directory
+
+
+def _daily_without_refused(source: HistorySource, symbols: Sequence[str], end: datetime,
+                           count: int, sleep: Sleep, log: Log) -> tuple[list[Any], list[str]]:
+    """Daily bars of `symbols`; when the route refuses the request for an unknown symbol, the
+    chunk is split in halves until each refused symbol is alone, and those symbols are returned
+    as refused (recorded, never part of the pool). Reads only; each split is a new request."""
+    try:
+        return patiently(lambda: source.daily_bars(symbols, end, count), sleep, log), []
+    except SymbolsRefused:
+        if len(symbols) == 1:
+            log(f"daily: {symbols[0]} refused as an unknown symbol")
+            return [], list(symbols)
+    middle = len(symbols) // 2
+    left = _daily_without_refused(source, symbols[:middle], end, count, sleep, log)
+    right = _daily_without_refused(source, symbols[middle:], end, count, sleep, log)
+    return left[0] + right[0], left[1] + right[1]
 
 
 def load_daily(directory: Path) -> list[dict[str, Any]]:
