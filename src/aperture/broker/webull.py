@@ -45,9 +45,9 @@ from aperture.broker.base import (
     RateLimited,
     Refused,
 )
-from aperture.broker.budget import RequestBudget
+from aperture.broker.budget import RequestBudget, RouteLimit
 from aperture.broker.status import map_status
-from aperture.config import GateResult
+from aperture.config import Config, GateResult, trading_gate
 from aperture.types import (
     OrderDetail,
     OrderRequest,
@@ -83,6 +83,7 @@ ORDER_MARKET = "US"
 SDK_API_VERSION = "v3"
 SDK_LOGGER_PREFIX = "webull"
 LOGGING_OFF = logging.CRITICAL + 1
+SECONDS_PER_MINUTE = 60
 
 
 class Route(Enum):
@@ -754,3 +755,52 @@ class SdkTransport:
         except ValueError:
             return WireResponse(raw.status_code, {"error_code": "UNPARSEABLE_BODY"})
         return WireResponse(raw.status_code, parsed)
+
+
+# --------------------------------------------------------------------------------------------
+# Construction from config (the only place adapter numbers come from)
+# --------------------------------------------------------------------------------------------
+
+
+def settings_from_config(config: Config) -> WebullSettings:
+    env = config.environment
+    return WebullSettings(
+        trading_host=env.http_host,
+        http_port=env.http_port,
+        allowed_hosts=env.hosts,
+        region_id=env.region_id,
+        connect_timeout_seconds=env.http_connect_timeout_seconds,
+        read_timeout_seconds=env.http_read_timeout_seconds,
+        token_dir=str(config.root / config.run.data_dir / env.token_dir),
+        token_check_duration_seconds=env.token_check_duration_seconds,
+        token_check_interval_seconds=env.token_check_interval_seconds,
+        app_key_env=env.app_key_variable,
+        app_secret_env=env.app_secret_variable,
+        account_id_env=env.account_variable,
+    )
+
+
+def budget_from_config(
+    config: Config, clock: Callable[[], float] = time.monotonic
+) -> RequestBudget:
+    env = config.environment
+    pause = float(env.rate_limit_cooldown_seconds)
+    default = RouteLimit(env.requests_per_route_per_minute, SECONDS_PER_MINUTE, pause)
+    limits = {
+        route: RouteLimit(count, float(window), pause)
+        for route, (count, window) in env.route_limits.items()
+    }
+    return RequestBudget(default, limits, clock=clock)
+
+
+def broker_from_config(config: Config, transport: Transport | None = None) -> WebullBroker:
+    """The adapter for the active environment. `transport` defaults to the SDK transport
+    (which reads credentials); tests pass a recorded one."""
+    return WebullBroker(
+        transport if transport is not None else SdkTransport(settings_from_config(config)),
+        budget_from_config(config),
+        config.environment.open_orders_max_pages,
+        config.orders.client_order_id_max_length,
+        (config.orders.client_order_id_prefix, config.orders.probe_client_order_id_prefix),
+        gate=lambda: trading_gate(config),
+    )
