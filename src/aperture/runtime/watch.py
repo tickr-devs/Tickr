@@ -8,6 +8,8 @@ journaled as `alert`, whether shown, suppressed or failed.
 
 from __future__ import annotations
 
+import os
+import sqlite3
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -22,6 +24,7 @@ BACKUP = "backup"
 BACKUP_FAILED = "backup-failed"
 BACKUP_PREFIX = "aperture-"
 BACKUP_SUFFIX = ".sqlite3"
+TEMP_PREFIX = "partial-"
 
 FENCE_ALERTS: dict[str, AlertKind] = {
     Fence.UNPROTECTED_TIMEOUT: AlertKind.UNPROTECTED_POSITION,
@@ -35,6 +38,7 @@ FENCE_ALERTS: dict[str, AlertKind] = {
     Fence.CANCEL_FAILED: AlertKind.UNKNOWN_ORDER_STATUS,
     Fence.RESURRECTED: AlertKind.UNKNOWN_ORDER_STATUS,
     Fence.QUANTITY_MISMATCH: AlertKind.UNKNOWN_ORDER_STATUS,
+    Fence.OVER_PROTECTED: AlertKind.UNKNOWN_ORDER_STATUS,  # an extra stop could sell short
     Fence.FOREIGN_POSITION: AlertKind.FOREIGN_EXPOSURE,
     Fence.FOREIGN_ORDER: AlertKind.FOREIGN_EXPOSURE,
     Fence.BROKER_READ: AlertKind.BROKER_READS_FAILING,
@@ -90,19 +94,27 @@ class Watch:
         self._backup_day = day
         folder = self.config.root / self.config.run.data_dir / self.config.run.backups_dir
         target = folder / f"{BACKUP_PREFIX}{day.isoformat()}{BACKUP_SUFFIX}"
+        # Written under a temporary name and verified before it takes the final name, so a
+        # file with the final name is always a verified backup (also after a crash).
+        temporary = folder / f"{TEMP_PREFIX}{target.name}"
         store = self.engine.store
-        if not target.exists():
-            try:
-                store.backup(target)
-            except (OSError, RuntimeError) as exc:
+        try:
+            if not target.exists():
+                temporary.unlink(missing_ok=True)
+                try:
+                    store.backup(temporary)  # VACUUM INTO + integrity_check
+                except BaseException:
+                    temporary.unlink(missing_ok=True)
+                    raise
+                os.replace(temporary, target)
                 with store.transaction():
-                    store.append(BACKUP_FAILED, {"error": type(exc).__name__,
-                                                 "detail": str(exc)}, run_id=self.engine.run_id)
-                return
+                    store.append(BACKUP, {"file": target.name}, run_id=self.engine.run_id)
+            for old in _older_backups(folder, target):
+                old.unlink()
+        except (OSError, RuntimeError, sqlite3.Error) as exc:
             with store.transaction():
-                store.append(BACKUP, {"file": target.name}, run_id=self.engine.run_id)
-        for old in _older_backups(folder, target):
-            old.unlink()
+                store.append(BACKUP_FAILED, {"error": type(exc).__name__, "detail": str(exc)},
+                             run_id=self.engine.run_id)
 
 
 def _older_backups(folder: Path, keep: Path) -> list[Path]:

@@ -142,3 +142,59 @@ def test_drain_deadline_alerts(tmp_path):
 
     assert not bot.run(should_stop=lambda: True, sleep=sleep, monotonic=lambda: clock[0])
     assert AlertKind.BOT_DID_NOT_STOP in rig.kinds()
+
+
+def test_failed_verification_never_leaves_a_final_name_or_deletes_the_old(tmp_path):
+    import sqlite3
+
+    rig = Rig(tmp_path)
+    folder = tmp_path / CFG.run.data_dir / CFG.run.backups_dir
+    folder.mkdir(parents=True)
+    old = folder / "aperture-2026-11-13.sqlite3"
+    old.write_bytes(b"old")
+    real = rig.store.backup
+
+    def unverified(target):
+        real(target)
+        raise RuntimeError("backup failed integrity_check: test")
+
+    rig.store.backup = unverified
+    rig.watch.backup_daily()
+    assert sorted(p.name for p in folder.iterdir()) == [old.name]
+
+    def vacuum_fails(target):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    rig.watch._backup_day = None
+    rig.store.backup = vacuum_fails
+    rig.watch.backup_daily()  # never raises into the loop
+    assert [r.body["error"] for r in rig.store.journal(BACKUP_FAILED)] == [
+        "RuntimeError", "OperationalError"]
+    rig.watch._backup_day = None
+    rig.store.backup = real
+    rig.watch.backup_daily()
+    assert sorted(p.name for p in folder.iterdir()) == ["aperture-2026-11-16.sqlite3"]
+
+
+def test_cleanup_failure_is_journaled_not_raised(tmp_path, monkeypatch):
+    rig = Rig(tmp_path)
+    folder = tmp_path / CFG.run.data_dir / CFG.run.backups_dir
+    folder.mkdir(parents=True)
+    (folder / "aperture-2026-11-13.sqlite3").write_bytes(b"old")
+
+    def refuse(self, missing_ok=False):
+        raise PermissionError("read-only")
+
+    rig.watch.backup_daily()
+    monkeypatch.setattr(Path, "unlink", refuse)
+    rig.now += timedelta(days=1)
+    rig.watch.backup_daily()
+    assert rig.store.journal(BACKUP_FAILED)[-1].body["error"] == "PermissionError"
+
+
+def test_over_protection_alerts_when_it_lasts(tmp_path):
+    rig = Rig(tmp_path)
+    rig.fence(Fence.OVER_PROTECTED, "t1")
+    rig.clock[0] += AFTER
+    rig.watch.check()
+    assert rig.kinds() == [AlertKind.UNKNOWN_ORDER_STATUS]
