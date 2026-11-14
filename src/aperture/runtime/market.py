@@ -125,7 +125,7 @@ class MarketRuntime:
 
     def tick(self) -> None:
         self._journal_stream_events()
-        self._sync_subscriptions()
+        self._sync_subscriptions()  # new candidates: on the next pass, a second later
         self._exit_on_stream_loss()
         self._discover_if_due()
 
@@ -145,9 +145,16 @@ class MarketRuntime:
                 symbols.add(trade.symbol)
         return symbols
 
+    def _candidate_symbols(self) -> set[str]:
+        if self.discovery is None:
+            return set()
+        best = self.discovery.candidates[:self.config.market_data.candidate_subscriptions]
+        return {c.instrument.symbol for c in best}
+
     def _sync_subscriptions(self) -> None:
-        """L1 for the open position and the strategy's WATCH symbols (spec 6)."""
-        desired = self._position_symbols() | self.watch
+        """L1 for the open position, the strategy's WATCH symbols (spec 6) and the best
+        discovery candidates, so a quote is there the first minute the strategy says ENTER."""
+        desired = self._position_symbols() | self.watch | self._candidate_symbols()
         added, removed = desired - self.subscribed, self.subscribed - desired
         if removed:
             try:

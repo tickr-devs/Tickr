@@ -255,3 +255,24 @@ def test_a_failing_subscribe_is_journaled_never_raised(tmp_path):
     rig.market.tick()
     errors = rig.store.journal(STREAM_ERROR)
     assert {"where": "subscribe", "error": "MarketDataError"} in [e.body for e in errors]
+
+
+def test_best_candidates_are_subscribed_up_to_the_configured_count(tmp_path):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from aperture.runtime.market import DiscoveryState
+
+    rig = Rig(tmp_path, now=SATURDAY)
+    limit = 2
+    rig.market.config = replace(CFG, market_data=replace(CFG.market_data,
+                                                         candidate_subscriptions=limit))
+    best_first = [SimpleNamespace(instrument=SimpleNamespace(symbol=s))
+                  for s in ("AAA", "BBB", "CCC")]
+    rig.market.discovery = DiscoveryState(rig.now, "x", tuple(best_first))  # type: ignore[arg-type]
+    rig.market.watch = {"WAT"}
+    rig.market.tick()
+    assert rig.source.subscribed == {"AAA", "BBB", "WAT"}
+    rig.market.discovery = DiscoveryState(rig.now, "x", ())
+    rig.market.tick()
+    assert rig.source.subscribed == {"WAT"}
