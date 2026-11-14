@@ -32,6 +32,8 @@ targets:
       path: Support/Info.plist
       properties:
         CFBundleDisplayName: Aperture
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
