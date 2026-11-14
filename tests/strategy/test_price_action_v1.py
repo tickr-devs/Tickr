@@ -27,6 +27,9 @@ from aperture.strategy.base import PositionView, SymbolContext, Verdict
 
 
 def make(**overrides):
+    """Strategy from the repo toml. Rule tests use a warm-up multiple of 1 so short generated
+    sessions are enough; the warm-up itself is tested with the repo value."""
+    overrides = {"indicators__warmup_period_multiple": 1, **overrides}
     values = copy.deepcopy(strategy_values())
     for dotted, value in overrides.items():
         section, key = dotted.split("__")
@@ -61,9 +64,22 @@ def assert_refused(decision, verdict, rule):
 
 
 def test_create_from_repo_toml():
-    s = make()
+    s = pa.create(strategy_values())
     assert (s.name, s.version) == ("price-action-v1", "1")
     assert s.settings.minimum_relative_volume == d("2.0")
+    # 10 periods of EMA20 = 200 bars, ATR14 = 141 bars.
+    assert s.settings.required_bars == 200
+
+
+def test_warmup_history_may_come_from_prior_sessions():
+    s = pa.create(strategy_values())
+    today = rising_session(TODAY, 30)
+    assert_refused(s.evaluate(ctx(today, GOOD_QUOTE)), Verdict.IGNORE, "history_bars")
+    # 170 rising bars yesterday ending where today starts (20.0), same 0.14 true range.
+    yesterday = rising_session(PRIOR_DAYS[-1], 170, start=3.0)
+    decision = s.evaluate(ctx(yesterday + today, GOOD_QUOTE))
+    assert decision.verdict == Verdict.ENTER
+    assert decision.entry_high == TRIGGER + ATR
 
 
 @pytest.mark.parametrize(

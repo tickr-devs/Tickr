@@ -9,7 +9,8 @@ Rule order:
 1. Open position: HOLD (v1 has no strategy exit rule; the resting stop and the session
    flatten exit the position).
 2. Data integrity: bars of this symbol, strictly increasing start times.
-3. History: enough bars for the slow EMA, ATR and both setup patterns.
+3. History: `warmup_period_multiple` periods for the slow EMA and ATR (prior sessions may
+   supply them; ATR deliberately spans overnight gaps) and both setup patterns.
 4. Filters: relative cumulative volume, session dollar volume, last close above session
    VWAP, fast EMA above slow EMA, ATR positive.
 5. Setup (continuation first, then breakout; the first armed setup is used):
@@ -114,6 +115,7 @@ _SCHEMA: dict[str, dict[str, Callable[[Any], Any]]] = {
         "relative_volume_sessions": _positive_int,
         "minimum_relative_volume": _positive,
         "refuse_when_relative_volume_unavailable": _boolean,
+        "warmup_period_multiple": _positive_int,
     },
     "breakout": {"lookback_bars": _positive_int},
     "continuation": {
@@ -145,6 +147,7 @@ class Settings:
     relative_volume_sessions: int
     minimum_relative_volume: Decimal
     refuse_when_relative_volume_unavailable: bool
+    warmup_period_multiple: int
     lookback_bars: int
     impulse_bars: int
     base_bars: int
@@ -162,11 +165,13 @@ class Settings:
 
     @property
     def required_bars(self) -> int:
-        """Bars needed before any rule can be evaluated."""
+        """Bars needed before any rule can be evaluated: the indicator warm-up and both
+        setup patterns."""
+        warmup = self.warmup_period_multiple
         return max(
-            self.slow_ema_period,
-            self.fast_ema_period,
-            self.atr_period,
+            self.slow_ema_period * warmup,
+            self.fast_ema_period * warmup,
+            self.atr_period * warmup + 1,
             self.lookback_bars + 1,
             self.impulse_bars + self.base_bars,
         )
