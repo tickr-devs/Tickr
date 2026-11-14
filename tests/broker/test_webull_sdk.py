@@ -241,3 +241,13 @@ def test_token_not_confirmed_in_time_is_a_typed_refusal(env, monkeypatch, sdk_cl
     with pytest.raises(AdapterConfigError, match="not confirmed in the Webull app in time"):
         SdkTransport(settings(env), lambda: calls.append("x"))
     assert calls == ["x"]
+
+
+def test_a_failing_hook_never_stops_token_creation(env, monkeypatch, sdk_clock, capsys):
+    install_token(monkeypatch, "PENDING", ["PENDING", "NORMAL"])
+
+    def hook():
+        raise OSError("notifier down")
+
+    SdkTransport(settings(env), hook)  # no exception: the token still becomes usable
+    assert "token-pending alert failed (OSError)" in capsys.readouterr().err

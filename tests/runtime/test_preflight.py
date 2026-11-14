@@ -120,6 +120,35 @@ def test_missing_strategy_file_is_invalid_config(config_path, repo):
     assert _run(config_path, {}).cause is PreflightCause.CONFIG_INVALID
 
 
+def _set_history(config_path: Path, sessions: int) -> None:
+    text = config_path.read_text("utf-8").replace("history_sessions = 5",
+                                                  f"history_sessions = {sessions}", 1)
+    config_path.write_text(text, "utf-8")
+
+
+def test_history_shorter_than_the_strategy_needs_fails_but_does_not_block_start(config_path):
+    _set_history(config_path, 4)
+    result = _run(config_path, _ready(config_path))
+    assert result.cause is PreflightCause.STRATEGY_REFUSED
+    assert result.exit_code is ExitCode.FAILED
+    assert "needs 5 prior sessions, [market_data] history_sessions = 4" in result.summary()
+    assert not result.blocks_start  # the bot starts with entries off to protect positions
+
+
+def test_unbuildable_strategy_fails_the_strategy_check(config_path, repo):
+    strategy = repo / "strategies" / "price-action-v1" / "strategy.toml"
+    strategy.write_text(strategy.read_text("utf-8").replace(
+        "relative_volume_sessions = 5", "relative_volume_sessions = -5"), "utf-8")
+    assert _run(config_path, _ready(config_path)).cause is PreflightCause.STRATEGY_REFUSED
+
+
+def test_other_failures_and_no_session_block_start(config_path):
+    assert _run(config_path, {}).blocks_start
+    environ = _ready(config_path)
+    assert not _run(config_path, environ).blocks_start
+    assert _run(config_path, environ, now=SATURDAY).blocks_start
+
+
 def test_bad_schedule_is_invalid_config(config_path):
     text = config_path.read_text("utf-8").replace('bot_start_local = "09:00"',
                                                   'bot_start_local = "08:00"')
@@ -169,3 +198,20 @@ def test_token_is_not_probed_without_a_session_or_after_a_failure(config_path, n
     result = run_preflight(config_path, now=now, environ=environ,
                            disk_free=lambda _: PLENTY, token_probe=_probe(None, calls))
     assert calls == [] and "token" not in [c.name.value for c in result.checks]
+
+
+@pytest.mark.parametrize("kind", ["missing", "text", "bool", "negative", "raises"])
+def test_misbehaving_strategy_is_refused_never_crashes(config_path, break_strategy, kind):
+    break_strategy(kind)
+    result = _run(config_path, _ready(config_path))
+    assert result.cause is PreflightCause.STRATEGY_REFUSED
+    assert not result.blocks_start
+
+
+def test_token_is_probed_when_only_the_strategy_is_refused(config_path, break_strategy):
+    break_strategy("raises")
+    calls: list[str] = []
+    result = run_preflight(config_path, now=MONDAY, environ=_ready(config_path),
+                           disk_free=lambda _: PLENTY, token_probe=_probe(None, calls))
+    assert result.cause is PreflightCause.STRATEGY_REFUSED and not result.blocks_start
+    assert len(calls) == 1 and result.checks[-1].name.value == "token"

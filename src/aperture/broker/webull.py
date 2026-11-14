@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -1380,7 +1381,10 @@ def _init_token(client: Any, on_token_pending: Callable[[], None]) -> None:
         def create_token(self, token_operation: Any, local_token: Any) -> Any:
             created = TokenManager.create_token(token_operation, local_token)
             if created.get("status") == TOKEN_PENDING:
-                on_token_pending()
+                try:
+                    on_token_pending()
+                except Exception as exc:  # a failed alert never stops token creation
+                    print(f"token-pending alert failed ({type(exc).__name__})", file=sys.stderr)
             return created
 
     silence_sdk_loggers()
