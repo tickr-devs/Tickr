@@ -114,6 +114,13 @@ class MarketRuntime:
         self._next_discovery = monotonic()
         self._started = now()
 
+    def bind(self) -> None:
+        """Bind the stream listener before the stream starts, so the first connect is seen."""
+        try:
+            self.source.subscribe([], self.listener)
+        except Exception as exc:  # noqa: BLE001 - see _sync_subscriptions
+            self.inbox.on_error("bind", exc)
+
     # --- one pass, called by the service after the engine's broker work ---------------------
 
     def tick(self) -> None:
@@ -145,7 +152,7 @@ class MarketRuntime:
         if removed:
             try:
                 self.source.unsubscribe(sorted(removed))
-            except (MarketDataError, BrokerError) as exc:
+            except Exception as exc:  # noqa: BLE001 - a stream problem never ends the loop
                 self.inbox.on_error("unsubscribe", exc)
             self.health.untrack(removed)
             for symbol in removed:
@@ -155,7 +162,7 @@ class MarketRuntime:
             self.health.track(added)
             try:
                 self.source.subscribe(sorted(added), self.listener)
-            except (MarketDataError, BrokerError) as exc:
+            except Exception as exc:  # noqa: BLE001 - a stream problem never ends the loop
                 self.inbox.on_error("subscribe", exc)
                 self.health.untrack(added)
                 return

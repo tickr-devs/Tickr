@@ -914,14 +914,26 @@ class WebullMarketData:
         return read_bars(body)
 
     def subscribe(self, symbols: Iterable[str], listener: QuoteListener) -> None:
+        """Any failure (budget, HTTP, SDK) is a MarketDataError naming only its type: the
+        caller is the trading loop, which must never be ended by a stream problem."""
         if self._stream is None:
             raise MarketDataError("no L1 stream configured for this adapter")
-        self._stream.subscribe(symbols, listener)
+        try:
+            self._stream.subscribe(symbols, listener)
+        except MarketDataError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - see docstring
+            raise MarketDataError(f"subscribe failed ({type(exc).__name__})") from None
 
     def unsubscribe(self, symbols: Iterable[str]) -> None:
         if self._stream is None:
             raise MarketDataError("no L1 stream configured for this adapter")
-        self._stream.unsubscribe(symbols)
+        try:
+            self._stream.unsubscribe(symbols)
+        except MarketDataError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - see subscribe
+            raise MarketDataError(f"unsubscribe failed ({type(exc).__name__})") from None
 
 
 # --------------------------------------------------------------------------------------------
@@ -1063,11 +1075,19 @@ class StreamSession:
         with self._lock:
             if self._listener is not None and listener is not self._listener:
                 raise MarketDataError("one stream listener per session; use FanOut")
+            first = self._listener is None
             self._listener = listener
             self._symbols.update(symbols)
             up = self._up
         if up:
             self._sync_or_reconnect(raise_error=True)
+        if first:
+            # A connect before any listener was bound was reported to nobody: tell the new
+            # listener now, so its health never stays "never connected" on a live stream.
+            with self._lock:
+                up = self._up
+            if up:
+                self._notify(True, "connected (listener bound after connect)")
 
     def unsubscribe(self, symbols: Iterable[str]) -> None:
         with self._lock:

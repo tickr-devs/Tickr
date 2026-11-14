@@ -184,3 +184,74 @@ def test_bot_adapters_share_one_transport_and_budget(monkeypatch):
     session = stream.args[1]
     assert session._budget is broker._budget
     assert market._stream is stream
+
+
+class SessionSource(FakeMarketData):
+    """FakeMarketData whose stream is the real SDK-free StreamSession."""
+
+    def __init__(self, session) -> None:
+        super().__init__()
+        self.session = session
+
+    def subscribe(self, symbols, listener):
+        self.session.subscribe(symbols, listener)
+
+    def unsubscribe(self, symbols):
+        self.session.unsubscribe(symbols)
+
+
+class Budget:
+    def __init__(self, fail: Exception | None = None) -> None:
+        self.fail = fail
+
+    def take(self, path):
+        if self.fail is not None:
+            raise self.fail
+
+
+def real_session(budget):
+    from aperture.broker.webull import StreamSession
+    session = StreamSession(budget, lambda: MONDAY_11, lambda where, exc: None)
+    session.bind(lambda symbols: None, lambda symbols: None, lambda: None)
+    return session
+
+
+def test_connect_before_the_first_subscription_is_seen_as_up(tmp_path):
+    session = real_session(Budget())
+    rig = Rig(tmp_path, source=SessionSource(session))
+    session.on_connected()  # the stream connects at startup, before anything is subscribed
+    rig.market.tick()
+    rig.advance(LOST_AFTER.total_seconds() * 4)
+    t = rig.position()
+    rig.market.tick()  # first subscription on a live connection
+    assert session.up and rig.market.health.transport.up
+    rig.advance(LOST_AFTER.total_seconds() * 2)
+    rig.market.tick()
+    assert rig.engine.trade(t).exit_requested is None
+
+
+def test_bind_before_start_sees_the_first_connect(tmp_path):
+    session = real_session(Budget())
+    rig = Rig(tmp_path, source=SessionSource(session))
+    rig.market.bind()
+    session.on_connected()
+    assert rig.market.health.transport.up
+
+
+def test_a_failing_subscribe_is_journaled_never_raised(tmp_path):
+    from aperture.broker.webull import WebullMarketData
+
+    session = real_session(Budget(fail=RuntimeError("bare SDK exception")))
+    adapter = WebullMarketData.__new__(WebullMarketData)
+    adapter._stream = session
+    source = SessionSource(session)
+    source.subscribe = adapter.subscribe
+    source.unsubscribe = adapter.unsubscribe
+    rig = Rig(tmp_path, source=source)
+    session.on_connected()
+    rig.position()
+    rig.market.tick()  # must not raise into the service loop
+    assert rig.market.subscribed == set()  # tried again next pass
+    rig.market.tick()
+    errors = rig.store.journal(STREAM_ERROR)
+    assert {"where": "subscribe", "error": "MarketDataError"} in [e.body for e in errors]

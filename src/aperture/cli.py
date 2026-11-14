@@ -254,17 +254,23 @@ def _run(path: Path) -> int:
                                    monotonic=time.monotonic)
             bot = service.Service(engine, now=NOW, calendar=calendar, strategy=strategy,
                                   paths=service.ServicePaths.from_config(cfg), market=market)
+            market.bind()
             adapters.start_stream()
             clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP)
             cause = f"stopped ({stop.signal_name})" if clean else "shutdown-deadline"
         finally:
-            if adapters is not None:
-                adapters.stop_stream()
-            if capture is not None:
-                capture.close()
-            restore_handlers(previous)
-            store.end_run(run_id, cause)
-            store.close()
+            # Each step guarded: a failing SDK disconnect must not skip recording the run end.
+            for step in ((adapters.stop_stream if adapters is not None else None),
+                         (capture.close if capture is not None else None),
+                         lambda: restore_handlers(previous),
+                         lambda: store.end_run(run_id, cause),
+                         store.close):
+                if step is None:
+                    continue
+                try:
+                    step()
+                except Exception as exc:  # noqa: BLE001 - finish the remaining steps
+                    print(f"shutdown step failed: {type(exc).__name__}", file=sys.stderr)
     if not clean:
         print("shutdown deadline reached with work pending: check orders and position in the "
               "Webull app, then `aperture status`", file=sys.stderr)
