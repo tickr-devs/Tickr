@@ -1,4 +1,5 @@
 @testable import ApertureMac
+import Foundation
 import Testing
 
 @Suite("Chart zoom")
