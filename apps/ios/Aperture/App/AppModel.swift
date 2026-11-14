@@ -38,6 +38,9 @@ final class AppModel {
     /// Used only until the first answer gives the server's poll_seconds.
     @ObservationIgnored private let initialPollSeconds: Double = 3
 
+    /// A pairing link opened from outside (AirDrop, Notes), waiting for the owner to confirm.
+    var pendingPairing: Pairing?
+
     var status: StatusV1? { response?.status }
     var isConfigured: Bool { connection.url != nil }
 
@@ -86,7 +89,7 @@ final class AppModel {
             return
         }
         do {
-            let fresh = try await APIClient(baseURL: url).status()
+            let fresh = try await APIClient(baseURL: url, token: connection.bearer).status()
             response = fresh
             fetchError = nil
             resolveAwaited(fresh)
@@ -126,7 +129,7 @@ final class AppModel {
             return
         }
         do {
-            let accepted = try await APIClient(baseURL: url).send(command)
+            let accepted = try await APIClient(baseURL: url, token: connection.bearer).send(command)
             awaited[accepted.command.commandId] = command.kind
             if let warning = accepted.warning {
                 notice = Notice(text: "\(title) queued. \(warning)", tone: .failure)
@@ -148,6 +151,12 @@ final class AppModel {
             case .refused: notice = Notice(text: "\(title) refused: \(record.cause ?? "no cause given")", tone: .failure)
             }
         }
+    }
+
+    /// Uses a pairing link: the Mac's HTTPS address and its token replace the current connection.
+    func pair(_ pairing: Pairing) {
+        connection = Connection(address: pairing.url.absoluteString, token: pairing.token)
+        notice = Notice(text: "Paired with \(pairing.url.host ?? "the Mac").", tone: .success)
     }
 
     static func describe(_ error: Error) -> String {
