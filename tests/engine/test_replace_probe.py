@@ -87,6 +87,7 @@ def test_accepted_same_id(setup):
     assert verdict is Verdict.CONFIRMED
     assert broker.replaced == [(stop.client_order_id, D(1), D("9.90"))]
     assert engine.order(stop.client_order_id).stop_price == D("9.90")
+    assert engine.trade(trade).stop_price == D("9.90")
     assert engine.fences() == {}
     assert kinds(engine, stop.client_order_id) == [
         "replace-intent", "replace-attempted", "replace-acknowledged", "replace-confirmed"]
@@ -113,6 +114,66 @@ def test_new_id_is_adopted_and_exit_tears_it_down(setup):
         engine.step()
         broker.tick()
     assert engine.trade(trade).state is TradeState.CLOSED
+    assert broker.positions() == [] and broker.open_orders() == []
+
+
+def hide_stop_price(broker):
+    """Webull rows without `stop_price` (the field name is unproven, docs/webull-facts.md F5)."""
+    from dataclasses import replace
+    detail, open_orders = broker.order_detail, broker.open_orders
+    broker.order_detail = lambda cid: replace(detail(cid), stop_price=None)
+    broker.open_orders = lambda: [replace(o, stop_price=None) for o in open_orders()]
+
+
+def working_sells(broker) -> list[str]:
+    return [o.client_order_id for o in broker.open_orders() if o.side == "SELL"]
+
+
+def test_new_id_without_price_shown_is_adopted_not_doubled(setup):
+    engine, broker, trade, stop = setup
+    hide_stop_price(broker)
+    broker.replace_outcomes.append("new-id")
+    verdict, _ = run(engine)
+    assert verdict is Verdict.ADOPTED
+    new = engine.order(f"{stop.client_order_id}-r")
+    assert new.stop_price == D("9.90") and new.verified  # the expectation; shown: none
+    engine.reconcile()
+    assert working_sells(broker) == [new.client_order_id]
+    assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
+    engine.request_exit(trade, "operator-exit")
+    for _ in range(6):
+        engine.step()
+        broker.tick()
+    assert broker.positions() == [] and broker.open_orders() == []
+
+
+def test_unresolved_replace_never_adds_a_second_stop_or_sells(setup):
+    engine, broker, trade, stop = setup
+    hide_stop_price(broker)
+    broker.replace_outcomes.append("new-id")
+    reads = broker.open_orders
+
+    def fail_once():
+        from aperture.broker.base import OutcomeUnknown
+        broker.open_orders = reads
+        raise OutcomeUnknown("read lost")
+
+    broker.open_orders = fail_once  # observe cannot see the new order: not adopted
+    verdict, _ = run(engine)
+    assert verdict is Verdict.UNRESOLVED
+    foreign = f"{stop.client_order_id}-r"
+    engine.reconcile()
+    engine.request_exit(trade, "operator-exit")
+    for _ in range(6):
+        engine.step()
+        broker.tick()
+    assert working_sells(broker) == [foreign]  # Webull's only: no stop, no sale from us
+    assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
+    assert broker.positions()[0].quantity == D(1) and fence(stop) in engine.fences()
+    broker.cancel(foreign)  # the operator resolves it in the app
+    for _ in range(6):
+        engine.reconcile()
+        broker.tick()
     assert broker.positions() == [] and broker.open_orders() == []
 
 
@@ -321,3 +382,44 @@ def test_cli_unknown_outcome_needs_the_operator(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "F5 result: unresolved" in out and "fence replace-unresolved:" in out
     assert len(broker.replaced) == 1
+
+
+# -- check-quote ---------------------------------------------------------------------------
+
+
+class NoOrders(Market):
+    """Any order method fails the test: check-quote is read-only."""
+
+    def place(self, request):
+        pytest.fail("check-quote placed an order")
+
+    def cancel(self, client_order_id):
+        pytest.fail("check-quote cancelled an order")
+
+    def replace_stop_price(self, *args):
+        pytest.fail("check-quote replaced an order")
+
+
+class FailingQuotes(FakeMarketData):
+    def snapshot(self, symbols):
+        from aperture.data.base import MarketDataError
+        raise MarketDataError("read failed")
+
+
+@pytest.mark.parametrize("market, code, verdict", [
+    (quotes(age=1), 0, "OK: quote is 1.0 s old (limit 5 s)"),
+    (quotes(age=900), 3, "STALE: quote is 900.0 s old (limit 5 s): the probes will refuse; "
+                         "the quotes may be delayed"),
+    (FailingQuotes(), 3, "refused: quote read failed: MarketDataError"),
+    (FakeMarketData(), 3, "refused: no quote for ABC"),
+])
+def test_cli_check_quote(monkeypatch, capsys, market, code, verdict):
+    assert CFG.risk.max_quote_age_seconds == D(5)  # the verdict texts below assume it
+    monkeypatch.setattr(cli, "PROBE_ADAPTERS", lambda cfg: (NoOrders(), market))
+    monkeypatch.setattr(cli, "NOW", lambda: NOW)
+    bot = str(ROOT / "config" / "bot.toml")
+    assert cli.main(["--config", bot, "check-quote", "ABC"]) == code
+    captured = capsys.readouterr()
+    assert verdict in captured.out + captured.err
+    if code == 0 or "STALE" in verdict:
+        assert "bid 10.00 ask 10.02" in captured.out and "provider time" in captured.out
