@@ -61,7 +61,7 @@ public enum Board {
         text: "\(trade.symbol) \(trade.quantity) @ \(trade.entryPrice)", tone: .teal))
       let result = trade.resultGrossUsd.value
       events.append(Event(
-        id: "\(tradeID)\(index)\(exitID)", time: trade.closedAt.date, tag: trade.exitReason.uppercased(),
+        id: "\(tradeID)\(index)\(exitID)", time: trade.closedAt.date, tag: exitReasonTitle(trade.exitReason).uppercased(),
         text: "\(trade.symbol) @ \(trade.exitPrice) \(signed(trade.resultGrossUsd))",
         tone: result > 0 ? .green : result < 0 ? .red : .muted))
     }
@@ -100,6 +100,23 @@ public enum Board {
     }
   }
 
+  /// A stop state in a sentence ("missing", "pending"), in the person's language.
+  public static func stopStateTitle(_ state: StopState) -> String {
+    switch state {
+    case .verified: return String(localized: L10n.stateVerified)
+    case .pending: return String(localized: L10n.statePending)
+    case .missing: return String(localized: L10n.stateMissing)
+    case .unknown: return String(localized: L10n.stateUnknown)
+    }
+  }
+
+  /// Why a trade closed (`exit_reason`, a protocol value), in the person's language. A reason this
+  /// app does not know is shown as it arrived, never guessed.
+  public static func exitReasonTitle(_ raw: String) -> String {
+    guard let reason = ExitReason(rawValue: raw) else { return raw }
+    return String(localized: reason.title)
+  }
+
   public static func commandTitle(_ kind: CommandKind) -> String {
     switch kind {
     case .entryStopOn: return String(localized: L10n.commandPauseEntries)
@@ -111,5 +128,39 @@ public enum Board {
 
   static func signed(_ value: DecimalString) -> String {
     value.isNegative ? value.text : "+" + value.text
+  }
+}
+
+/// The exit reasons the bot records for a closed trade (`trades.close_cause` in the bot's store).
+enum ExitReason: String {
+  case stoppedOut = "stopped-out"
+  case strategyExit = "strategy-exit"
+  case operatorExit = "operator-exit"
+  case operatorFlatten = "operator-flatten"
+  case operatorInterrupt = "operator-interrupt"
+  case sessionFlatten = "session-flatten"
+  case streamLost = "stream-lost"
+  case stopRejected = "stop-rejected"
+  case unprotectedTooLong = "unprotected-too-long"
+  case entryNotFilled = "entry-not-filled"
+  case entryNotFilledInTime = "entry-not-filled-in-time"
+  case holdElapsed = "hold-elapsed"
+  case closed
+
+  var title: LocalizedStringResource {
+    switch self {
+    case .stoppedOut: return L10n.exitStoppedOut
+    case .strategyExit: return L10n.exitStrategy
+    case .operatorExit: return L10n.exitOperator
+    case .operatorFlatten: return L10n.exitOperatorFlatten
+    case .operatorInterrupt: return L10n.exitInterrupted
+    case .sessionFlatten: return L10n.exitSessionEnd
+    case .streamLost: return L10n.exitStreamLost
+    case .stopRejected: return L10n.exitStopRejected
+    case .unprotectedTooLong: return L10n.exitUnprotected
+    case .entryNotFilled, .entryNotFilledInTime: return L10n.exitEntryNotFilled
+    case .holdElapsed: return L10n.exitHoldElapsed
+    case .closed: return L10n.exitClosed
+    }
   }
 }

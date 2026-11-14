@@ -30,7 +30,7 @@ public struct Headline: Equatable, Sendable {
     }
     if let position = status.position, position.stop.state != .verified {
       return Headline(
-        text: String(localized: L10n.headlineNoVerifiedStop(position.symbol, position.stop.state.rawValue))
+        text: String(localized: L10n.headlineNoVerifiedStop(position.symbol, Board.stopStateTitle(position.stop.state)))
           + response.summary,
         severity: .alarm)
     }
