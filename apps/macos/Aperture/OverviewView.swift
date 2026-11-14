@@ -388,41 +388,67 @@ private struct MiniChart: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let values = closes.map(Self.double)
-            let levels = [Self.double(entry)] + (stop.map { [Self.double($0)] } ?? [])
-            let low = (values + levels).min() ?? 0
-            let high = (values + levels).max() ?? 1
-            let pad = max((high - low) * 0.12, 0.01)
-            let y = { (v: Double) -> CGFloat in
-                proxy.size.height * CGFloat(1 - (v - (low - pad)) / ((high + pad) - (low - pad)))
-            }
-            ZStack(alignment: .topLeading) {
-                level(y(Self.double(entry)), width: proxy.size.width, color: Palette.blue, label: "entry \(Money.plain(entry))")
-                if let stop {
-                    level(y(Self.double(stop)), width: proxy.size.width, color: Palette.red, label: "stop \(Money.plain(stop))")
-                }
-                if values.count > 1 {
-                    let path = Path { p in
-                        for (i, v) in values.enumerated() {
-                            let point = CGPoint(x: proxy.size.width * CGFloat(i) / CGFloat(values.count - 1), y: y(v))
-                            if i == 0 { p.move(to: point) } else { p.addLine(to: point) }
-                        }
-                    }
-                    path.trim(from: 0, to: drawn)
-                        .stroke(Palette.teal, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-                    PulseDot(Palette.teal, size: 8)
-                        .position(x: proxy.size.width, y: y(values.last ?? 0))
-                } else {
-                    Text("Waiting for the first bars since the entry")
-                        .font(.caption).foregroundStyle(Palette.dim)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
+            chart(size: proxy.size)
         }
         .padding(8)
         .background(Palette.deep, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onAppear { withAnimation(.easeOut(duration: 1.6)) { drawn = 1 } }
         .accessibilityLabel("Price since entry with entry and stop lines")
+    }
+
+    /// Maps a price to a y coordinate, with some room above and below every value shown.
+    private struct Scale {
+        let low: Double
+        let high: Double
+        let height: CGFloat
+
+        init(values: [Double], height: CGFloat) {
+            let lowest = values.min() ?? 0
+            let highest = values.max() ?? 1
+            let pad = max((highest - lowest) * 0.12, 0.01)
+            low = lowest - pad
+            high = highest + pad
+            self.height = height
+        }
+
+        func y(_ value: Double) -> CGFloat {
+            let fraction = (value - low) / (high - low)
+            return height * CGFloat(1 - fraction)
+        }
+    }
+
+    @ViewBuilder private func chart(size: CGSize) -> some View {
+        let values: [Double] = closes.map(Self.double)
+        let entryValue = Self.double(entry)
+        let stopValue: Double? = stop.map(Self.double)
+        let scale = Scale(values: values + [entryValue] + (stopValue.map { [$0] } ?? []), height: size.height)
+        ZStack(alignment: .topLeading) {
+            level(scale.y(entryValue), width: size.width, color: Palette.blue, label: "entry \(Money.plain(entry))")
+            if let stop, let stopValue {
+                level(scale.y(stopValue), width: size.width, color: Palette.red, label: "stop \(Money.plain(stop))")
+            }
+            if values.count > 1 {
+                line(values: values, scale: scale, width: size.width)
+                    .trim(from: 0, to: drawn)
+                    .stroke(Palette.teal, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                PulseDot(Palette.teal, size: 8)
+                    .position(x: size.width, y: scale.y(values[values.count - 1]))
+            } else {
+                Text("Waiting for the first bars since the entry")
+                    .font(.caption).foregroundStyle(Palette.dim)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func line(values: [Double], scale: Scale, width: CGFloat) -> Path {
+        var path = Path()
+        let step = width / CGFloat(values.count - 1)
+        for (index, value) in values.enumerated() {
+            let point = CGPoint(x: step * CGFloat(index), y: scale.y(value))
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
     }
 
     private func level(_ y: CGFloat, width: CGFloat, color: Color, label: String) -> some View {
