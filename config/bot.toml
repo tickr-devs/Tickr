@@ -82,6 +82,26 @@ host = "127.0.0.1"
 # Local API port; read by the api server and the status screen.
 port = 8766
 
+[runtime]
+# Minimum free disk space on the data_dir volume, megabytes; below it preflight fails; read by runtime.preflight.
+min_free_disk_mb = 2048
+# Seconds between checks of the bot child process and the stop flag by the launchd supervisor; read by runtime.supervisor.
+supervisor_poll_seconds = 0.5
+# Seconds launchd waits after SIGTERM before SIGKILL of the bot job (time to cancel entries and close); read by runtime.launchd.
+bot_exit_timeout_seconds = 120
+# Preflight job start, Mac local time HH:MM, weekdays below; read by runtime.launchd when rendering plists.
+preflight_start_local = "08:30"
+# Bot job start, Mac local time HH:MM (must be before the 09:30 ET open), weekdays below; read by runtime.launchd.
+bot_start_local = "09:00"
+# launchd weekdays for the preflight and bot jobs (1 = Monday ... 5 = Friday); the calendar still decides; read by runtime.launchd.
+launch_weekdays = [1, 2, 3, 4, 5]
+
+[alerts]
+# Same alert (kind + text) repeated within this many seconds is not shown again (still returned for the journal); read by runtime.alerts.
+dedupe_window_seconds = 600
+# Seconds to wait for the macOS notification command before giving up; read by runtime.alerts.
+notification_timeout_seconds = 5
+
 [environments.sandbox]
 # May this process send trading requests in this environment; read by the trading gate.
 trading_enabled = true
