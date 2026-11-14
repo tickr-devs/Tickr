@@ -155,7 +155,7 @@ private struct PairingSheet: View {
         if let pairing {
           Section {
             LabeledContent {
-              Text(verbatim: pairing.url.host ?? Format.missing)
+              Text(verbatim: Connection.displayHost(pairing.url) ?? Format.missing)
             } label: {
               Text(L10n.Pair.address)
             }

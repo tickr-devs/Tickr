@@ -149,9 +149,15 @@ final class AppModel {
   }
 
   /// Uses a pairing link: the Mac's HTTPS address and its token replace the current connection.
+  /// Refused, with the earlier connection kept, when the Keychain does not take the token.
   func pair(_ pairing: Pairing) {
+    guard Container.shared.keychain().saveToken(pairing.token) else {
+      notice = Notice(L10n.Pair.notSaved, tone: .failure)
+      return
+    }
     connection = Connection(pairing)
-    notice = Notice(L10n.Pair.paired(pairing.url.host ?? String(localized: L10n.Pair.thisMac)), tone: .success)
+    notice = Notice(L10n.Pair.paired(Connection.displayHost(pairing.url) ?? String(localized: L10n.Pair.thisMac)),
+      tone: .success)
   }
 
   private func resolveAwaited(_ fresh: StatusResponseV1) {

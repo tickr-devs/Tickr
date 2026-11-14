@@ -455,6 +455,11 @@ enum L10n {
         defaultValue: "That link is not an Aperture pairing link.",
         bundle: L10n.bundle)
     }
+    static var notSaved: LocalizedStringResource {
+      LocalizedStringResource("pair.notSaved",
+        defaultValue: "Not paired: the phone could not keep the token in its Keychain.",
+        bundle: L10n.bundle)
+    }
     static var invalid: LocalizedStringResource {
       LocalizedStringResource("pair.invalid",
         defaultValue: "This is not a pairing link.",

@@ -69,6 +69,12 @@ struct Connection: Equatable {
     return origin.string
   }
 
+  /// Host and, when it is not the scheme's default, port: what the owner confirms when pairing.
+  static func displayHost(_ url: URL) -> String? {
+    guard let host = url.host else { return nil }
+    return url.port.map { "\(host):\($0)" } ?? host
+  }
+
   /// Keeps the token only while `address` has the paired origin; any other address drops it, so
   /// the token is never sent to a host it was not paired with.
   func moved(to address: String) -> Connection {
@@ -92,8 +98,8 @@ struct Connection: Equatable {
   func save(_ defaults: UserDefaults = .standard) {
     defaults.set(address, forKey: Self.defaultsKey)
     let keychain = Container.shared.keychain()
-    if let token, let pairedAddress {
-      keychain.saveToken(token)
+    // The paired address is kept only when the token really is in the Keychain.
+    if let token, let pairedAddress, keychain.saveToken(token) {
       defaults.set(pairedAddress, forKey: Self.pairedKey)
     } else {
       keychain.deleteToken()

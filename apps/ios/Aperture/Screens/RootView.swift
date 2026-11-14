@@ -33,7 +33,7 @@ struct RootView: View {
       }
     }
     .alert(
-      Text(L10n.Pair.ask(model.pendingPairing?.url.host ?? String(localized: L10n.Pair.thisMac))),
+      Text(L10n.Pair.ask(model.pendingPairing.flatMap { Connection.displayHost($0.url) } ?? String(localized: L10n.Pair.thisMac))),
       isPresented: Binding(get: { model.pendingPairing != nil }, set: { if !$0 { model.pendingPairing = nil } }),
       presenting: model.pendingPairing
     ) { pairing in

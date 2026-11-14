@@ -1633,6 +1633,23 @@
         }
       }
     },
+    "pair.notSaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not paired: the phone could not keep the token in its Keychain."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Связь не установлена: телефону не удалось сохранить токен в Связке ключей."
+          }
+        }
+      }
+    },
     "pair.pair": {
       "extractionState": "manual",
       "localizations": {
