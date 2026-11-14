@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import time
+from datetime import time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -107,11 +107,22 @@ def test_end_of_data_closes_at_last_close(settings, scripted):
     assert trade.exit_price == D("10.08") - settings.slippage(D("10.08"))
 
 
-def test_no_fill_after_last_entry_time(settings, scripted):
+def test_enter_decided_at_last_entry_time_is_rejected(settings, scripted):
+    # The 15:44 bar completes at 15:45 = last entry: live admission would refuse it.
     bars = series("15:44", [FLAT, ("10.05", "10.12", "10.02", "10.08")])
     result = run(settings, scripted({0: enter("10.00", "10.10", "9.80")}), bars)
     assert result.trades == ()
-    assert result.signals[0].cause == "last entry time"
+    (signal,) = result.signals
+    assert (signal.outcome, signal.cause) == (SignalOutcome.REJECTED, "after last entry time")
+
+
+def test_pending_entry_is_missed_at_last_entry_time(settings, scripted):
+    above = ("10.50", "10.60", "10.40", "10.55")
+    bars = series("15:43", [FLAT, above, ("10.05", "10.12", "10.02", "10.08")])
+    result = run(settings, scripted({0: enter("10.00", "10.10", "9.80")}), bars)
+    assert result.trades == ()
+    (signal,) = result.signals
+    assert (signal.outcome, signal.cause) == (SignalOutcome.MISSED, "last entry time")
 
 
 def test_enter_before_regular_open_is_rejected(settings, scripted):
@@ -177,13 +188,23 @@ def test_no_look_ahead(settings, scripted):
     run(settings, first, bars)
     for i, context in enumerate(first.contexts):
         assert context.bars == bars[: i + 1]
-        assert context.quote is None
+        quote = context.quote
+        assert quote is not None and quote.provider_time == bars[i].start + timedelta(minutes=1)
+        spread = settings.synthetic_spread(bars[i].close)
+        assert (quote.bid, quote.ask) == (bars[i].close - spread / 2, bars[i].close + spread / 2)
 
     # Altering bars after index 2 must not change any context up to index 2.
     altered = bars[:3] + tuple(replace(b, high=D("99"), close=D("98")) for b in bars[3:])
     second = scripted({})
     run(settings, second, altered)
     assert [c.bars for c in second.contexts[:3]] == [c.bars for c in first.contexts[:3]]
+    assert [c.quote for c in second.contexts[:3]] == [c.quote for c in first.contexts[:3]]
+
+
+def test_synthetic_quote_can_be_disabled(settings, scripted):
+    strategy = scripted({})
+    run(replace(settings, synthesize_quote=False), strategy, series("10:00", [FLAT]))
+    assert strategy.contexts[0].quote is None
 
 
 def test_sessions_split_by_new_york_date_with_prior_history(settings, scripted):
@@ -194,8 +215,21 @@ def test_sessions_split_by_new_york_date_with_prior_history(settings, scripted):
     strategy = scripted({})
     result = run(settings, strategy, day1 + day2)
     assert result.sessions == 2 and result.bars == 4
-    assert strategy.contexts[2].bars == day2[:1]
+    # History is in `bars` too (contract: current session plus history), oldest first.
+    assert strategy.contexts[2].bars == day1 + day2[:1]
     assert strategy.contexts[2].prior_sessions == (day1,)
+
+
+def test_history_is_limited_to_configured_sessions(settings, scripted):
+    from datetime import date
+
+    days = [series("10:00", [FLAT], day=date(2026, 11, n)) for n in (9, 10, 11, 12)]
+    strategy = scripted({})
+    run(settings, strategy, sum(days, ()))
+    assert settings.history_sessions == 2
+    last = strategy.contexts[-1]
+    assert last.prior_sessions == (days[1], days[2])
+    assert last.bars == days[1] + days[2] + days[3]
 
 
 def test_position_never_crosses_sessions(settings, scripted):

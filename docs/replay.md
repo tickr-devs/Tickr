@@ -14,7 +14,7 @@ python -m aperture.replay \
   --bars data/history/ABC-2026-11.jsonl data/history/XYZ-2026-11.jsonl \
   --strategy aperture.strategy.price_action_v1 \
   --values strategies/price-action-v1/strategy.toml \
-  --settings replay.toml \
+  --settings config/replay.toml \
   --last-entry 15:45 --flatten 15:55 \
   --out out/replay-2026-11
 ```
@@ -41,27 +41,23 @@ date; earlier sessions of the same symbol are passed as `prior_sessions`.
 
 ## Settings
 
-All simulation numbers live in a settings TOML with a comment per key. Missing or unknown
-keys are refused. Example (tested to load):
-
-```toml
-[replay]
-# Adverse slippage per simulated fill, percent of the fill price; read by replay/engine.py.
-slippage_percent = 0.05
-# Minimum adverse slippage per simulated fill, USD per share; read by replay/engine.py.
-slippage_min_usd = 0.01
-# Bars after an ENTER decision during which the simulated entry may fill; read by replay/engine.py.
-entry_wait_bars = 1
-# Exchange time zone for session dates and clock parameters (IANA name); read by replay/engine.py.
-session_timezone = "America/New_York"
-# Regular session open, HH:MM exchange time; no entry is decided on an earlier bar; read by replay/engine.py.
-regular_open = "09:30"
-# Decimal places for prices, R and percent in CSV and summary outputs; read by replay/report.py.
-output_decimal_places = 4
-```
+All simulation numbers live in `config/replay.toml`, one comment per key (tested). Missing or
+unknown keys are refused. The bot never reads this file.
 
 Slippage per fill = max(price x `slippage_percent` / 100, `slippage_min_usd`), always against
 us.
+
+**History.** The strategy gets the same shape of input as live: `bars` = the last
+`history_sessions` sessions of the symbol plus today's completed bars (oldest first), and the
+same sessions in `prior_sessions`. Indicators therefore warm up as they do live.
+
+**Synthetic quote.** Recorded bars carry no bid/ask. With `synthesize_quote = true` the
+strategy receives, after each completed bar, a quote around its close:
+spread = max(close x `synthetic_spread_percent` / 100, `synthetic_spread_min_usd`),
+bid = close - spread / 2, ask = close + spread / 2, sizes `synthetic_quote_size_shares`,
+provider and receipt time = bar end. This lets quote-based strategies (price-action-v1) decide
+ENTER; the fill model below stays conservative regardless. It is a model, not market data:
+results remain `simulated`. With `false` the quote is `None`.
 
 ## Simulation rules
 
@@ -74,16 +70,16 @@ For bar `i` of a session, in this order:
    touches the price window `[entry_low, entry_high]` fills it at **`entry_high` plus
    slippage**, never better. If that bar also reaches the stop, the stop is taken in the same
    bar. After `entry_wait_bars` bars without a touch the entry is missed; it is never chased.
-3. **Strategy.** The strategy is evaluated with bars `0..i` only (no look-ahead; tested by
-   altering later bars). `quote` is always `None` because bars carry no bid/ask; a strategy
-   that needs a quote must refuse on its own. With a position open it receives a
-   `PositionView` with quantity 1.
+3. **Strategy.** The strategy is evaluated with history plus bars `0..i` only (no look-ahead;
+   tested by altering later bars) and the synthetic quote of bar `i`. With a position open it
+   receives a `PositionView` with quantity 1.
 
 Every exit pays slippage. A position still open on the last bar closes at that bar's close
 (`end_of_data`); positions never cross sessions. Each symbol is replayed independently with a
 fresh strategy instance, so the one-open-position platform limit is not applied across symbols.
 ENTER decisions while a position or an entry is pending are recorded as `ignored`; ENTER
-before `regular_open` or without `entry_high`/`stop`, or with the stop not below `entry_high`,
+on a bar starting before `regular_open`, or completing at or after `--last-entry` (live
+admission would refuse it), or without `entry_high`/`stop`, or with the stop not below `entry_high`,
 is `rejected` with the cause.
 
 R per trade = (exit - entry) / (entry - stop), where entry already includes slippage.
@@ -102,6 +98,7 @@ Percent per trade = (exit - entry) / entry x 100.
 
 ## Not yet
 
-- Replaying captured L1 quotes (`data/capture/...`) for quote-based entries and spreads.
+- Replaying captured L1 quotes (`data/capture/...`) instead of the synthetic quote.
 - A shared portfolio across symbols (one open position at a time, daily loss ceiling).
-- Reading the trading calendar for half days automatically.
+- Taking session times from `config/bot.toml` and half days from the calendar instead of
+  `--last-entry`/`--flatten` (after the config and calendar PRs merge).

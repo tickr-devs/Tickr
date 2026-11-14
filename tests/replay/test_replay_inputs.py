@@ -136,12 +136,8 @@ def test_test_settings_every_key_commented():
     assert keys == commented == KEYS
 
 
-def test_docs_example_settings_are_valid_and_commented(tmp_path):
-    doc = (HERE.parent.parent / "docs" / "replay.md").read_text()
-    blocks = re.findall(r"```toml\n(.*?)```", doc, re.S)
-    (example,) = [b for b in blocks if "[replay]" in b]
-    keys, commented = _commented_keys(example)
+def test_config_replay_toml_is_valid_and_every_key_commented():
+    path = HERE.parent.parent / "config" / "replay.toml"
+    keys, commented = _commented_keys(path.read_text())
     assert keys == commented == KEYS
-    path = tmp_path / "replay.toml"
-    path.write_text(example)
     load_settings(path)

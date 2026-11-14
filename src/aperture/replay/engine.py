@@ -8,8 +8,10 @@ Timeline per symbol and NY session. Bar `i` is processed in three steps:
 2. A pending entry may fill on bar `i` if the bar trades inside the decision's price window.
    The fill price is always the TOP of the window plus slippage, never better. If the same
    bar also reaches the stop, the stop is assumed hit after the fill (worst case).
-3. The strategy is evaluated with bars `0..i` only (bar `i` is now complete). An ENTER
-   becomes a pending entry for the following bars; an EXIT is executed on bar `i + 1`.
+3. The strategy is evaluated with the last `history_sessions` sessions plus bars `0..i` of
+   this session in `bars` (bar `i` is now complete), the same sessions in `prior_sessions`,
+   and, if enabled, a synthetic quote around bar `i`'s close stamped at the bar's end. An
+   ENTER becomes a pending entry for the following bars; an EXIT is executed on bar `i + 1`.
 
 The strategy never sees bar `i + 1` before its decision on bar `i`, so it cannot look ahead.
 Every exit pays adverse slippage. Each symbol is replayed independently (no portfolio limit),
@@ -20,17 +22,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
 
 from aperture.replay.errors import ReplayError, StrategyContractError
 from aperture.replay.settings import ReplaySettings
 from aperture.strategy.base import Decision, PositionView, Strategy, SymbolContext, Verdict
-from aperture.types import Bar
+from aperture.types import Bar, Quote
 
 LABEL = "simulated"
 SIMULATED_QUANTITY = Decimal(1)
+M1 = timedelta(minutes=1)
 
 
 class ExitReason(StrEnum):
@@ -175,6 +178,7 @@ class _SessionReplay:
         self.day = day
         self.bars = tuple(bars)
         self.prior = prior
+        self.history = tuple(b for session in prior for b in session)
         self.settings = settings
         self.last_entry = last_entry
         self.flatten = flatten
@@ -277,6 +281,21 @@ class _SessionReplay:
             self.pending = None
             self._signal(decision, pending.bar_start, SignalOutcome.MISSED, "price outside window")
 
+    def _quote(self, bar: Bar) -> Quote | None:
+        """Synthetic quote at the end of the completed bar, or None when disabled."""
+        settings = self.settings
+        if not settings.synthesize_quote:
+            return None
+        half = settings.synthetic_spread(bar.close) / 2
+        bid, ask = bar.close - half, bar.close + half
+        if bid <= 0:
+            raise ReplayError(
+                f"{self.symbol} {bar.start.isoformat()}: synthetic bid {bid} is not positive"
+            )
+        end = bar.start + M1
+        size = settings.synthetic_quote_size_shares
+        return Quote(self.symbol, bid, ask, size, size, end, end)
+
     def _evaluate(self, index: int, bar: Bar) -> None:
         view = None
         if self.open is not None:
@@ -288,9 +307,9 @@ class _SessionReplay:
             )
         context = SymbolContext(
             symbol=self.symbol,
-            bars=self.bars[: index + 1],
+            bars=self.history + self.bars[: index + 1],
             prior_sessions=self.prior,
-            quote=None,
+            quote=self._quote(bar),
             position=view,
         )
         decision = self.strategy.evaluate(context)
@@ -310,6 +329,9 @@ class _SessionReplay:
             return
         if self.clock(bar) < self.settings.regular_open:
             self._signal(decision, bar.start, SignalOutcome.REJECTED, "before regular open")
+            return
+        if (bar.start + M1).astimezone(self.settings.session_timezone).time() >= self.last_entry:
+            self._signal(decision, bar.start, SignalOutcome.REJECTED, "after last entry time")
             return
         problem = _entry_problem(decision)
         if problem is not None:
@@ -378,6 +400,8 @@ def replay(
             for verdict, count in session.verdicts.items():
                 verdicts[verdict] = verdicts.get(verdict, 0) + count
             prior.append(day_bars)
+            if len(prior) > settings.history_sessions:
+                prior.pop(0)
             session_count += 1
             bar_count += len(day_bars)
     if name is None or version is None:

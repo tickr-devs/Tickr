@@ -1,4 +1,4 @@
-# Replay settings used by tests/replay (same keys as the example in docs/replay.md).
+# Replay settings used by tests/replay (same keys as config/replay.toml).
 
 [replay]
 # Adverse slippage per simulated fill, percent of the fill price; read by replay/engine.py.
@@ -13,3 +13,13 @@ session_timezone = "America/New_York"
 regular_open = "09:30"
 # Decimal places for prices, R and percent in CSV and summary outputs; read by replay/report.py.
 output_decimal_places = 4
+# Prior sessions passed to the strategy as history; read by replay/engine.py.
+history_sessions = 2
+# true = synthetic quote around each completed bar's close; read by replay/engine.py.
+synthesize_quote = true
+# Synthetic quote spread, percent of the close; read by replay/engine.py.
+synthetic_spread_percent = 0.1
+# Minimum synthetic quote spread, USD; read by replay/engine.py.
+synthetic_spread_min_usd = 0.02
+# Bid and ask size of the synthetic quote, shares; read by replay/engine.py.
+synthetic_quote_size_shares = 100
