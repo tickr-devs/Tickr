@@ -78,11 +78,15 @@ class Evaluator:
                                                    trade.stop_price)
         return views
 
-    def _loss_budget(self, now: datetime) -> Decimal:
-        """The strategy sizes into this room (owner decision 2026-11-14). Unknown money = no
-        room: admission refuses that case anyway, never guessed as zero loss."""
+    def _loss_budget(self, now: datetime) -> Decimal | None:
+        """The strategy sizes into this room (owner decision 2026-11-14). None when today's
+        money is unknown or the room is below `[risk] min_daily_room_usd`: the strategy then
+        sizes normally and admission refuses with its typed cause (DAILY_MONEY_UNKNOWN or
+        DAILY_CEILING), so the refusal is recorded once, by the platform."""
         room = daily_loss_room(self.engine, self.config, now)
-        return ZERO if room is None else room
+        if room is None or room < self.config.risk.min_daily_room_usd:
+            return None
+        return room
 
     def tick(self, candidates: Sequence[str]) -> None:
         """Once per loop pass; does work only when a new minute has completed."""

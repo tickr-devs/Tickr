@@ -349,6 +349,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
+    if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
+        raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")

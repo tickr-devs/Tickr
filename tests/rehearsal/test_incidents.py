@@ -154,3 +154,7 @@ def test_near_the_daily_ceiling_trades_shrink_then_stop(tmp_path, monkeypatch):
     block = seen["status"].entry_block
     assert block is not None and block.cause == "daily_ceiling"  # the app does not say "open"
     assert "GGG" not in {s for _, s, *_ in r.world.exchange.fills}
+    # GGG's breakout is still an ENTER; the platform refuses it with the typed cause.
+    ggg = [d for d in r.decisions() if d["symbol"] == "GGG" and d["verdict"] == "ENTER"]
+    assert ggg and all(d["admission"] == "refused" for d in ggg)
+    assert all(d["refusal_cause"].startswith("DAILY_CEILING") for d in ggg)

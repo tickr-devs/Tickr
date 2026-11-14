@@ -370,8 +370,8 @@ class Service:
         if room is None:
             return api.EntryBlock("daily_money_unknown",
                                   "A trade closed today has fills without a known price.")
-        if room <= 0:
-            risk = self.config.risk
+        risk = self.config.risk
+        if room < risk.min_daily_room_usd:
             return api.EntryBlock("daily_ceiling",
                                   f"Daily loss ceiling {risk.max_daily_loss_usd} USD: less than "
                                   f"{risk.min_daily_room_usd} USD of room left today.")
