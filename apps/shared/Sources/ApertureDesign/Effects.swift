@@ -11,7 +11,7 @@ public struct PulseDot: View {
     let size: CGFloat
     let pulsing: Bool
 
-    public init(_ color: Color, size: CGFloat = 8, pulsing: Bool = true) {
+    public init(_ color: Color, size: CGFloat = Tokens.Size.dot, pulsing: Bool = true) {
         self.color = color
         self.size = size
         self.pulsing = pulsing
@@ -24,10 +24,11 @@ public struct PulseDot: View {
             .overlay {
                 if pulsing && !reduceMotion {
                     Circle()
-                        .stroke(color, lineWidth: 2)
-                        .scaleEffect(expanded ? 2.2 : 1)
-                        .opacity(expanded ? 0 : 0.7)
-                        .animation(.easeOut(duration: 2.4).repeatForever(autoreverses: false), value: expanded)
+                        .stroke(color, lineWidth: Tokens.Stroke.bold)
+                        .scaleEffect(expanded ? Tokens.Motion.pulseScale : 1)
+                        .opacity(expanded ? 0 : Tokens.Opacity.medium)
+                        .animation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false),
+                                   value: expanded)
                 }
             }
             .onAppear { expanded = true }
@@ -45,14 +46,18 @@ public struct Rise: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .offset(y: shown || reduceMotion ? 0 : 12)
+            .offset(y: shown || reduceMotion ? 0 : Tokens.Size.riseOffset)
             .onAppear {
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(delay)) { shown = true }
+                withAnimation(Tokens.Motion.entrance.delay(delay)) { shown = true }
             }
     }
 }
 
 public extension View {
+    /// Rises in as the `step`-th card of a screen: 0 first, then `Tokens.Motion.stagger` apart.
+    func rise(step: Int) -> some View { modifier(Rise(delay: Double(step) * Tokens.Motion.stagger)) }
+
+    /// Rises in after `delay` seconds. Prefer `rise(step:)`, which keeps one rhythm on every screen.
     func rise(_ delay: Double = 0) -> some View { modifier(Rise(delay: delay)) }
 }
 
@@ -66,7 +71,12 @@ public struct ResultRing<Center: View>: View {
     let lineWidth: CGFloat
     let center: Center
 
-    public init(fraction: Double, color: Color, lineWidth: CGFloat = 10, @ViewBuilder center: () -> Center) {
+    /// Reach of the halo behind the ring, in points.
+    static let haloRadius: CGFloat = 60
+    /// The ring starts at twelve o'clock.
+    static let startAngle = Angle.degrees(-90)
+
+    public init(fraction: Double, color: Color, lineWidth: CGFloat = Tokens.Stroke.ring, @ViewBuilder center: () -> Center) {
         self.fraction = min(max(fraction, 0), 1)
         self.color = color
         self.lineWidth = lineWidth
@@ -76,23 +86,26 @@ public struct ResultRing<Center: View>: View {
     public var body: some View {
         ZStack {
             Circle()
-                .fill(RadialGradient(colors: [color.opacity(0.4), .clear], center: .center, startRadius: 0, endRadius: 60))
-                .padding(10)
-                .scaleEffect(breathing ? 1.08 : 1)
-                .opacity(breathing ? 0.95 : 0.55)
-            Circle().stroke(Palette.line, lineWidth: lineWidth)
+                .fill(RadialGradient(colors: [color.opacity(Tokens.Opacity.border), .clear], center: .center,
+                                     startRadius: 0, endRadius: Self.haloRadius))
+                .padding(lineWidth)
+                .scaleEffect(breathing ? Tokens.Motion.breatheScale : 1)
+                .opacity(breathing ? Tokens.Opacity.overlay : Tokens.Opacity.faint)
+            Circle().stroke(Palette.separator, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: drawn ? fraction : 0)
                 .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.spring(response: 1.2, dampingFraction: 0.9), value: fraction)
+                .rotationEffect(Self.startAngle)
+                .animation(Tokens.Motion.fill, value: fraction)
             center
         }
         .padding(lineWidth / 2)
         .onAppear {
-            withAnimation(reduceMotion ? nil : .spring(response: 1.4, dampingFraction: 0.9)) { drawn = true }
+            withAnimation(reduceMotion ? nil : Tokens.Motion.fill) { drawn = true }
             if !reduceMotion {
-                withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) { breathing = true }
+                withAnimation(.easeInOut(duration: Tokens.Motion.breatheSeconds).repeatForever(autoreverses: true)) {
+                    breathing = true
+                }
             }
         }
     }
@@ -142,13 +155,13 @@ public struct TickerItem: Identifiable, Hashable, Sendable {
 extension TickerItem.Tone {
     var color: Color {
         switch self {
-        case .teal: return Palette.tealStrong
-        case .green: return Palette.greenStrong
-        case .blue: return Palette.blueStrong
-        case .amber: return Palette.amberStrong
-        case .violet: return Palette.violetStrong
-        case .red: return Palette.redStrong
-        case .muted: return Palette.muted
+        case .teal: return Palette.accentText
+        case .green: return Palette.profitText
+        case .blue: return Palette.infoText
+        case .amber: return Palette.warningText
+        case .violet: return Palette.highlightText
+        case .red: return Palette.lossText
+        case .muted: return Palette.textTertiary
         }
     }
 }
@@ -163,7 +176,10 @@ public struct Ticker: View {
     /// Points per second.
     let speed: Double
 
-    public init(_ items: [TickerItem], moving: Bool = true, speed: Double = 22) {
+    /// Share of the strip's width that fades out at each end.
+    static let fadeEdge = 0.06
+
+    public init(_ items: [TickerItem], moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed) {
         self.items = items
         self.moving = moving
         self.speed = speed
@@ -191,25 +207,25 @@ public struct Ticker: View {
             }
         }
         .mask(LinearGradient(
-            stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.06),
-                    .init(color: .black, location: 0.94), .init(color: .clear, location: 1)],
+            stops: [.init(color: .clear, location: 0), .init(color: .black, location: Self.fadeEdge),
+                    .init(color: .black, location: 1 - Self.fadeEdge), .init(color: .clear, location: 1)],
             startPoint: .leading, endPoint: .trailing))
         .accessibilityElement(children: .combine)
     }
 
     private var row: some View {
-        HStack(spacing: 22) {
+        HStack(spacing: Tokens.Space.xl) {
             ForEach(items) { item in
-                HStack(spacing: 6) {
+                HStack(spacing: Tokens.Space.s) {
                     Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
-                    Text(item.text).foregroundStyle(Palette.muted)
+                    Text(item.text).foregroundStyle(Palette.textTertiary)
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(Tokens.Typography.annotation)
                 .lineLimit(1)
                 .fixedSize()
             }
         }
-        .padding(.trailing, 22)
+        .padding(.trailing, Tokens.Space.xl)
     }
 
     private struct WidthKey: PreferenceKey {
