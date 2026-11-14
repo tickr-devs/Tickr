@@ -97,6 +97,12 @@ def check_timings(config: Config) -> None:
             f"[session] flatten_grace_seconds ({grace}) must be above "
             f"[orders] reconcile_interval_seconds ({config.orders.reconcile_interval_seconds})")
     runtime = config.runtime
+    stale = runtime.watchdog_status_stale_seconds
+    floor = max(config.orders.detail_poll_seconds, config.orders.reconcile_interval_seconds)
+    if not stale > floor:
+        raise ConfigError(
+            f"[runtime] watchdog_status_stale_seconds ({stale}) must be above [orders] "
+            f"detail_poll_seconds and reconcile_interval_seconds ({floor})")
     after, before = runtime.watchdog_after_flatten_seconds, runtime.watchdog_before_close_seconds
     if not grace < after:
         raise ConfigError(f"[runtime] watchdog_after_flatten_seconds ({after}) must be above "

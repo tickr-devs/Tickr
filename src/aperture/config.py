@@ -167,6 +167,7 @@ class RuntimeConfig:
     watchdog_after_flatten_seconds: int
     watchdog_before_close_seconds: int
     watchdog_bot_check_seconds: int
+    watchdog_status_stale_seconds: int
     watchdog_journal_file: str
 
 

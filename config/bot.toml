@@ -262,6 +262,10 @@ watchdog_before_close_seconds = 60
 # Seconds between watchdog checks, during the regular session, that the bot runs whenever the database shows an open trade;
 # read by runtime.watchdog.
 watchdog_bot_check_seconds = 60
+# The bot counts as running only while its status file (written every loop pass, about every [orders] detail_poll_seconds)
+# is at most this many seconds old AND its lock records a live pid; must be above detail_poll_seconds and
+# reconcile_interval_seconds; read by runtime.watchdog.
+watchdog_status_stale_seconds = 60
 # Watchdog journal (JSON lines: checks and alerts), relative to data_dir; never the bot's database; read by runtime.watchdog.
 watchdog_journal_file = "watchdog.jsonl"
 

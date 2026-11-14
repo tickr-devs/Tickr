@@ -74,8 +74,10 @@ def _alert(config_path: Path, environment: str | None, kind: AlertKind, text: st
                         "error": None, "at": datetime.now(UTC).isoformat()})
         return
     title = f"{TITLE} {environment}" if environment else TITLE
-    outcome = Alerter(alerts, title, default_notifier(alerts)).alert(kind, text)
-    _emit("alert", outcome.journal_body())
+    alerter = Alerter(alerts, title, default_notifier(alerts))
+    _emit("alert", alerter.alert(kind, text).journal_body())
+    for outcome in alerter.flush():  # background channels (iMessage) before this process exits
+        _emit("alert", outcome.journal_body())
 
 
 def _token_probe(config_path: Path) -> TokenProbe:
@@ -190,6 +192,7 @@ def _watchdog(config_path: Path) -> int:
         guard = watchdog.Watchdog(
             cfg, day, alerter=alerter, journal=journal, clock=WATCHDOG_NOW,
             sleep=WATCHDOG_SLEEP, lock_path=lock_path, database=database,
+            status_path=cfg.root / cfg.run.data_dir / cfg.api.status_file,
             connect=lambda: watchdog.ReadOnlyBroker(WATCHDOG_BROKER(cfg, token_pending)))
     except CalendarRefused as exc:
         if exc.cause in watchdog.CLOSED_CAUSES:
@@ -198,7 +201,8 @@ def _watchdog(config_path: Path) -> int:
         outcome = alerter.alert(AlertKind.WATCHDOG_CANNOT_CHECK,
                                 f"calendar refused today ({exc.cause.value}): check the "
                                 "Webull app yourself after the flatten time")
-        journal.write(watchdog.ALERT, outcome.journal_body())
+        for done in (outcome, *alerter.flush()):
+            journal.write(watchdog.ALERT, done.journal_body())
         return int(ExitCode.FAILED)
     return guard.run()
 

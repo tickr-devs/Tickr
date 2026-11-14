@@ -13,9 +13,13 @@ On an open market day (half days too: a position after the flatten time is wrong
   Any position or any open order (ours or not) alerts `watchdog-not-flat`; a failed read alerts
   `watchdog-cannot-check`. Checks whose time passed before the job started collapse into one
   check at once.
-- every `watchdog_bot_check_seconds` in the regular session until its last check: if the bot's
-  lock file records no live process while the database shows an open trade, it alerts
-  `bot-down-with-open-trade`.
+- every `watchdog_bot_check_seconds` in the regular session until its last check: unless the
+  bot looks alive, while the database shows an open trade, it alerts `bot-down-with-open-trade`.
+  Alive means BOTH a live pid in the bot's lock file AND a status file (`[api] status_file`,
+  written on every loop pass) whose `written_at` is at most `watchdog_status_stale_seconds`
+  old. A pid alone is not proof: after a crash or a reboot it may belong to another process
+  (or user), and a hung bot keeps its pid. A missing, unreadable or future-dated status file
+  means not running.
 Every broker check, every "bot down" finding and every alert is one JSON line on stdout (the
 job log) and in `<data_dir>/<watchdog_journal_file>`.
 """
@@ -29,6 +33,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
+from aperture.api import contract
 from aperture.broker.base import Broker, BrokerError
 from aperture.calendar import NEW_YORK, CalendarCause, CalendarRefused, MarketDay, SessionCalendar
 from aperture.config import Config
@@ -130,10 +135,13 @@ def _cause(exc: Exception) -> str:
 class Watchdog:
     def __init__(self, config: Config, day: MarketDay, *, connect: Callable[[], Reads],
                  alerter: Alerter, journal: Journal, clock: Callable[[], datetime],
-                 sleep: Callable[[float], None], lock_path: Path, database: Path) -> None:
+                 sleep: Callable[[float], None], lock_path: Path, database: Path,
+                 status_path: Path) -> None:
         self.day = day
         self.times = check_times(config, day)
         self.interval = float(config.runtime.watchdog_bot_check_seconds)
+        self.stale_seconds = config.runtime.watchdog_status_stale_seconds
+        self._status_path = status_path
         self._connect = connect
         self._reads: Reads | None = None
         self._alerter = alerter
@@ -148,12 +156,18 @@ class Watchdog:
         self.alerted = True
         self.journal.write(ALERT, self._alerter.alert(kind, text).journal_body())
 
+    def _background_outcomes(self, flush: bool = False) -> None:
+        """Journal finished background sends (iMessage); at exit wait for them first."""
+        for outcome in self._alerter.flush() if flush else self._alerter.completed():
+            self.journal.write(ALERT, outcome.journal_body())
+
     def run(self) -> int:
         """Until the last broker check; 1 if anything alerted, else 0."""
         self.journal.write(START, {"day": self.day.ny_date.isoformat(),
                                    "checks": [t.isoformat() for t in self.times]})
         pending = list(self.times)
         while pending:
+            self._background_outcomes()
             now = self._clock()
             if now >= pending[0]:
                 pending = [t for t in pending if t > now]
@@ -162,6 +176,7 @@ class Watchdog:
             if self.day.in_regular_session(now):
                 self.bot_check(now)
             self._sleep(min(self.interval, (pending[0] - now).total_seconds()))
+        self._background_outcomes(flush=True)
         return 1 if self.alerted else 0
 
     def broker_check(self, now: datetime) -> None:
@@ -189,8 +204,26 @@ class Watchdog:
                        + ". Open the Webull app: close it, or place a stop by hand; the stop "
                        f"is DAY and expires at {_ny(self.day.regular_close)}")
 
+    def not_running(self, now: datetime) -> str | None:
+        """Why the bot does not count as running, or None when it does."""
+        if recorded_holder(self._lock_path) is None:
+            return "no live pid in its lock file"
+        try:
+            status = contract.read_status(self._status_path)
+        except FileNotFoundError:
+            return "no status file"
+        except (contract.ContractError, OSError):
+            return "status file unreadable"
+        age = contract.seconds_between(status.written_at, now)
+        if age < 0:
+            return "status file dated in the future"
+        if age > self.stale_seconds:
+            return f"status file older than {self.stale_seconds} s"
+        return None
+
     def bot_check(self, now: datetime) -> None:
-        if recorded_holder(self._lock_path) is not None:
+        why = self.not_running(now)
+        if why is None:
             return
         try:
             count = open_trades(self._database)
@@ -200,8 +233,10 @@ class Watchdog:
             return
         if count == 0:
             return
-        self.journal.write(BOT_DOWN, {"at": now.isoformat(), "open_trades": count})
+        self.journal.write(BOT_DOWN, {"at": now.isoformat(), "open_trades": count,
+                                      "why": why})
         self.alert(AlertKind.BOT_DOWN_WITH_OPEN_TRADE,
-                   f"the bot is not running and the database shows {count} open trade(s): "
+                   f"the bot is not running ({why}) and the database shows {count} open "
+                   "trade(s): "
                    "nothing will flatten it. Open the Webull app: check the stop, close by hand "
                    f"before {_ny(self.day.regular_close)}")

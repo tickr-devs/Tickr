@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from aperture import config as config_module
+from aperture.api import contract
 from aperture.broker.fake import FakeBroker
 from aperture.calendar import NEW_YORK
 from aperture.cli import data_paths
@@ -20,6 +22,7 @@ from aperture.store import Store
 from aperture.types import OrderDetail, OrderState, OrderType, Position, Side
 
 MONDAY_OPEN = datetime(2026, 11, 16, 14, 30, tzinfo=UTC)  # 09:30 ET
+STATUS_EXAMPLE = Path(__file__).resolve().parents[1] / "api" / "fixtures" / "status-v1.example.json"
 MORNING = datetime(2026, 11, 16, 14, 5, tzinfo=UTC)       # 09:05 ET, the job's start
 FIRST = datetime(2026, 11, 16, 20, 57, 30, tzinfo=UTC)    # 15:55 ET flatten + 150 s
 LAST = datetime(2026, 11, 16, 20, 59, tzinfo=UTC)         # 16:00 ET close - 60 s
@@ -29,6 +32,7 @@ class Clock:
     def __init__(self, start: datetime) -> None:
         self.now = start
         self.sleeps = 0
+        self.on_sleep = None
 
     def __call__(self) -> datetime:
         return self.now
@@ -37,6 +41,8 @@ class Clock:
         assert seconds > 0
         self.sleeps += 1
         self.now += timedelta(seconds=seconds)
+        if self.on_sleep is not None:
+            self.on_sleep(self.now)
 
 
 class Recorder:
@@ -75,8 +81,25 @@ def make(cfg, clock: Clock, connect, tmp_path: Path):
     guard = watchdog.Watchdog(
         cfg, day, connect=connect, alerter=Alerter(cfg.alerts, "Aperture", recorder, clock),
         journal=watchdog.Journal(tmp_path / "watchdog.jsonl"), clock=clock, sleep=clock.sleep,
-        lock_path=lock_path, database=database)
+        lock_path=lock_path, database=database, status_path=status_path(cfg))
     return guard, recorder
+
+
+def status_path(cfg) -> Path:
+    return cfg.root / cfg.run.data_dir / cfg.api.status_file
+
+
+def write_status(cfg, written_at: datetime) -> None:
+    """The example status document, re-dated, written where the bot writes it."""
+    example = contract.loads(contract.StatusV1, STATUS_EXAMPLE.read_bytes())
+    contract.write_status(status_path(cfg), dataclasses.replace(example, written_at=written_at))
+
+
+def write_pid(lock_path: Path, pid: int) -> None:
+    """A lock file naming a live process, without holding the lock (a crashed bot's pid,
+    reused after a reboot by another process)."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(str(pid))
 
 
 def records(path: Path) -> list[dict]:
@@ -172,16 +195,59 @@ def test_bot_down_with_an_open_trade_alerts_during_the_session(cfg, tmp_path):
     assert not lock_path.exists()  # the watchdog never creates or takes the bot's lock
 
 
-def test_running_bot_holds_its_lock_and_no_alert(cfg, tmp_path):
+def test_running_bot_with_fresh_status_stays_silent(cfg, tmp_path):
     database, lock_path = data_paths(cfg)
     database.parent.mkdir(parents=True)
     _open_trade(database)
     clock = Clock(datetime(2026, 11, 16, 20, 50, tzinfo=UTC))
+    clock.on_sleep = lambda now: write_status(cfg, now)  # "the bot" writes every loop pass
+    write_status(cfg, clock.now)
     guard, recorder = make(cfg, clock, lambda: watchdog.ReadOnlyBroker(trap(FakeBroker())),
                            tmp_path)
     with SingleInstanceLock(lock_path):  # "the bot": the watchdog runs beside it
         assert guard.run() == 0
     assert recorder.shown == []
+
+
+AT = datetime(2026, 11, 16, 18, tzinfo=UTC)  # 13:00 ET, in the session
+
+
+@pytest.mark.parametrize("pid", [1, os.getpid()])
+def test_alive_pid_with_stale_status_is_bot_down(cfg, tmp_path, pid):
+    database, lock_path = data_paths(cfg)
+    database.parent.mkdir(parents=True)
+    _open_trade(database)
+    write_pid(lock_path, pid)  # alive, but not our bot: reused after a crash, or a hung bot
+    write_status(cfg, AT - timedelta(seconds=cfg.runtime.watchdog_status_stale_seconds + 1))
+    guard, recorder = make(cfg, Clock(AT), None, tmp_path)
+    guard.bot_check(AT)
+    (shown,) = recorder.shown
+    assert "bot-down-with-open-trade" in shown and "status file older than" in shown
+
+
+@pytest.mark.parametrize("status,why", [
+    (None, "no status file"),
+    (b"{not json", "status file unreadable"),
+    ("future", "status file dated in the future"),
+    ("fresh", None),
+])
+def test_alive_pid_needs_a_fresh_readable_status(cfg, tmp_path, status, why):
+    _, lock_path = data_paths(cfg)
+    write_pid(lock_path, os.getpid())
+    if status == "future":
+        write_status(cfg, AT + timedelta(seconds=1))
+    elif status == "fresh":
+        write_status(cfg, AT - timedelta(seconds=cfg.runtime.watchdog_status_stale_seconds))
+    elif status is not None:
+        status_path(cfg).write_bytes(status)
+    guard, _ = make(cfg, Clock(AT), None, tmp_path)
+    assert guard.not_running(AT) == why
+
+
+def test_fresh_status_without_a_live_pid_is_not_running(cfg, tmp_path):
+    write_status(cfg, AT)
+    guard, _ = make(cfg, Clock(AT), None, tmp_path)
+    assert guard.not_running(AT) == "no live pid in its lock file"
 
 
 def test_no_database_means_no_open_trade(cfg, tmp_path):

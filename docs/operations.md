@@ -10,6 +10,7 @@ renders the job files, reads them, and loads them.
 | preflight | `local.aperture.preflight` | `[runtime] preflight_start_local` on `launch_weekdays` | never |
 | bot | `local.aperture.bot` | `[runtime] bot_start_local` on `launch_weekdays` | never (a crash raises an alert) |
 | watchdog | `local.aperture.watchdog` | `[runtime] watchdog_start_local` on `launch_weekdays`; runs until its last check | never |
+| test-alert | `local.aperture.test-alert` | only on `launchctl kickstart` (grants the Messages permission, see below) | never |
 | api | `local.aperture.api` | at login, always on, loopback only | launchd keeps it alive |
 
 Times in `[runtime]` are the **Mac's local time**. The calendar decides whether there is a
@@ -103,17 +104,20 @@ All checks are reported; the first failure is the recorded cause.
    `APERTURE_IMESSAGE_TO='+15551234567'` (or your Apple ID email). It is personal data: never
    put it in the repo or in a plist. To test by hand in Terminal:
    `set -a; . ~/.config/aperture/env; set +a` first.
+   **Deadline:** `APERTURE_IMESSAGE_TO` must be in this file before the first preflight run
+   (08:30 Mac time on Monday with the default `[runtime] preflight_start_local`). Without it
+   preflight fails with `alert-recipient-missing` and the bot job does not start the bot.
 3. Data and token folders: `mkdir -p data/<token_dir>` (see `[environments.*] token_dir`).
 4. Alerts: sign in to iMessage in the Messages app on this Mac (Messages > Settings > iMessage)
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m aperture.runtime alert preflight-failed "test"` once. You should get a
    notification on the Mac and an iMessage on the phone. macOS shows notifications from
    `osascript` under "Script Editor"; allow them in System Settings > Notifications if nothing
-   appears. The first iMessage send asks to let Terminal (and later the launchd job's python)
-   control Messages: allow it, or the job's sends fail. The JSON line says
-   `"delivery": "shown"` when both channels worked; otherwise `"error"` names the channel that
-   failed (for example `imessage: osascript exited with code 1 (shown: macos)`) and the other
-   channel was still used. A failed send is never retried; the next alert tries again.
+   appears. The first iMessage send asks to let Terminal control Messages: allow it. This only
+   covers Terminal; the launchd jobs need their own permission (see "Alerts from launchd"
+   below). The first JSON line is the Mac notification (`"delivery": "shown"`,
+   `"pending": ["imessage"]`); a second line with `"channel": "imessage"` follows with the
+   iMessage result. A failed send is never retried; the next alert tries again.
 5. Run preflight by hand: `.venv/bin/python -m aperture.runtime preflight; echo $?`.
 
 ## Install the jobs
@@ -126,14 +130,34 @@ mkdir -p ~/Library/Logs/Aperture
     --env-file ~/.config/aperture/env \
     --log-dir ~/Library/Logs/Aperture \
     --out data/launchd
-# Read the four files in data/launchd, then:
+# Read the five files in data/launchd, then:
 cp data/launchd/local.aperture.preflight.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.aperture.preflight.plist
 ```
 
-Load `local.aperture.bot.plist`, `local.aperture.watchdog.plist` and `local.aperture.api.plist`
-the same way. After changing `[runtime]` values, render again, then `launchctl bootout` and `bootstrap`
+Load `local.aperture.bot.plist`, `local.aperture.watchdog.plist`, `local.aperture.api.plist` and
+`local.aperture.test-alert.plist` the same way. After changing `[runtime]` values, render again, then `launchctl bootout` and `bootstrap`
 the changed jobs.
+
+### Alerts from launchd (do this once, at the Mac)
+
+macOS grants the Automation permission ("allow ... to control Messages") per calling program.
+Allowing it for Terminal does not cover the launchd jobs, and a job cannot click "OK": without
+the permission every iMessage from the bot and the watchdog fails (recorded as
+`imessage: osascript exited with code 1`) while the Mac notification still works. So, while you
+are at the Mac, after loading `local.aperture.test-alert.plist`:
+
+```sh
+launchctl kickstart gui/$(id -u)/local.aperture.test-alert
+```
+
+A dialog asks to allow control of Messages: click OK. You should get a notification and an
+iMessage "test alert from launchd". Check `~/Library/Logs/Aperture/test-alert.log`: the
+`"channel": "imessage"` line must say `"delivery": "shown"`. The test-alert job runs the same
+program chain as the bot and watchdog jobs (`/bin/sh`, then the venv python) and has no
+schedule, so it can stay installed; kickstart it again after recreating the venv or upgrading
+macOS. If no dialog appears and the send fails, open System Settings > Privacy & Security >
+Automation and allow Messages for the listed program.
 
 ## Everyday commands
 
@@ -172,6 +196,9 @@ straight to the supervisor. Limits:
 `exit-refused`, `observers-stopped`, `not-flat-after-flatten`, and from the watchdog
 `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`. Every alert goes to
 the Mac notification and to iMessage (`[alerts] imessage_recipient_variable`, see setup step 4).
+The iMessage is sent on a background thread, so the bot's loop never waits for Messages.app; its
+result is journaled as its own `alert` record (`"channel": "imessage"`) once known. An alert
+counts as shown, for repeat suppression, when either channel delivered it.
 The same kind and text inside `[alerts] dedupe_window_seconds` is shown once; every occurrence is
 still recorded (in the bot's journal, the watchdog's journal, or the job log for these commands).
 
@@ -246,8 +273,12 @@ and orders yourself, as above. Then look at `watchdog.log` for the cause.
 
 ### `bot-down-with-open-trade`
 
-During the regular session the bot's lock records no running process while its database shows
-an open trade. The bot crashed or was stopped, and nothing will flatten that trade at 15:55 ET.
+During the regular session the bot does not count as running while its database shows an
+open trade. Running means both: its lock file names a live process, and `data/status.json`
+(written every loop pass) is at most `[runtime] watchdog_status_stale_seconds` old. The text
+says which failed: "no live pid in its lock file" (crashed or stopped), "status file older
+than ..." (hung, or the pid now belongs to another process after a crash or reboot), "no status
+file" or "status file unreadable". Nothing will flatten that trade at 15:55 ET.
 
 1. Open the Webull app: is the position still there, and is its stop working?
 2. Close the position by hand, or keep it with its stop and close it before 16:00 ET yourself.
