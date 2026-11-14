@@ -171,3 +171,17 @@ def test_realized_loss_is_the_net_loss_of_the_day(tmp_path, monkeypatch):
     monkeypatch.setattr("aperture.runtime.entries.trades_today",
                         lambda engine, now: (trade(D(-20)), trade(D(50))))
     assert desk.desk._realized_loss(NOW) == D(0)
+
+
+def test_record_failure_after_send_is_journaled_and_never_raises(tmp_path):
+    desk = Desk(tmp_path)
+
+    def broken(record):
+        raise OSError("disk full")
+
+    desk.desk.log.append = broken
+    record = desk.decide(decision())
+    assert record.admission == "taken"
+    assert len(desk.engine.trades()) == 1  # the entry went out; the loop goes on
+    (row,) = desk.store.journal("decision-record-failed")
+    assert row.body["error"] == "OSError" and row.body["admission"] == "taken"

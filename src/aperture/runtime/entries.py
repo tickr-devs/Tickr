@@ -156,6 +156,14 @@ class EntryDesk:
                 if trade.symbol == decision.symbol and not trade.exit_requested:
                     self.engine.request_exit(trade.trade_id, "strategy-exit")
         record = DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission, cause)
-        self.log.append(record)
+        try:
+            self.log.append(record)
+        except (OSError, ValueError) as exc:
+            # Research data only: never let it stop the loop that protects what was just sent.
+            with self.engine.store.transaction():
+                self.engine.store.append("decision-record-failed", {
+                    "symbol": decision.symbol, "verdict": decision.verdict,
+                    "admission": admission, "error": type(exc).__name__,
+                    "detail": str(exc)}, run_id=self.engine.run_id)
         return record
 
