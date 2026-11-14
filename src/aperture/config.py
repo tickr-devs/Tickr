@@ -82,6 +82,21 @@ class ApiConfig:
 
 
 @dataclass(frozen=True)
+class MarketDataConfig:
+    discovery_interval_seconds: Decimal
+    allowed_exchanges: tuple[str, ...]
+    allowed_currencies: tuple[str, ...]
+    allowed_security_types: tuple[str, ...]
+    max_spread_ratio: Decimal
+    min_session_dollar_volume_usd: Decimal
+    snapshot_symbols_per_request: int
+    bars_symbols_per_request: int
+    bars_per_symbol: int
+    quiet_after_seconds: Decimal
+    capture_dir: str
+
+
+@dataclass(frozen=True)
 class EnvironmentConfig:
     trading_enabled: bool
     requires_owner_authorization: bool
@@ -121,6 +136,7 @@ class Config:
     orders: OrdersConfig
     probe: ProbeConfig
     api: ApiConfig
+    market_data: MarketDataConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -142,6 +158,7 @@ _SECTIONS: dict[str, type] = {
     "orders": OrdersConfig,
     "probe": ProbeConfig,
     "api": ApiConfig,
+    "market_data": MarketDataConfig,
 }
 
 
