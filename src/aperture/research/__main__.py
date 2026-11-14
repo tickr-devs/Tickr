@@ -19,6 +19,7 @@ from aperture.replay.errors import ReplayError
 from aperture.replay.settings import load_settings
 from aperture.research import compare, observer_report, report
 from aperture.research.errors import ResearchError
+from aperture.research.latency import latency_report
 from aperture.research.outcomes import outcomes
 from aperture.research.records import load_records, write_records
 from aperture.research.settings import load_research_settings
@@ -73,6 +74,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--candidate-strategy", help="NAME or NAME:VERSION to keep from candidate")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
     p.add_argument("--out", type=Path, required=True, help="output directory")
+
+    p = sub.add_parser("latency", help="quote latency and stream notice counters from capture")
+    p.add_argument("--quotes", type=Path, nargs="+", required=True, help="captured quotes.jsonl")
+    p.add_argument("--notices", type=Path, nargs="*", default=[],
+                   help="captured notices.jsonl")
+    p.add_argument("--source", choices=("stream", "snapshot"), default="stream",
+                   help="which captured quotes to measure")
+    p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    p.add_argument("--out", type=Path, required=True, help="output directory")
     return parser
 
 
@@ -99,6 +109,12 @@ def _run(args: argparse.Namespace) -> dict:
             settings.session_timezone,
         )
         return report.write_diff(result, args.out, settings.output_decimal_places)
+    if args.command == "latency":
+        settings = load_research_settings(args.settings)
+        result = latency_report(args.quotes, args.notices, args.source,
+                                settings.session_timezone)
+        return report.write_latency(result, args.source, args.out,
+                                    settings.output_decimal_places)
     replay_settings = load_settings(args.replay_settings)
     clock_for = session_clock(args.config)
     places = replay_settings.output_decimal_places
