@@ -43,6 +43,8 @@ class RiskConfig:
     max_open_positions: int
     max_quote_age_seconds: Decimal
     max_clock_skew_seconds: Decimal
+    symbol_cooldown_after_loss_enabled: bool
+    symbol_cooldown_minutes_after_loss: int
 
 
 @dataclass(frozen=True)
@@ -169,6 +171,7 @@ class RuntimeConfig:
     watchdog_bot_check_seconds: int
     watchdog_status_stale_seconds: int
     watchdog_journal_file: str
+    evaluation_budget_seconds: Decimal
 
 
 @dataclass(frozen=True)
@@ -348,6 +351,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             "[market_data] candidate_subscriptions must leave stream_reserved_symbols free "
             "within stream_max_symbols"
         )
+    risk: RiskConfig = built["risk"]
+    if risk.symbol_cooldown_minutes_after_loss < 1:
+        raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
+                          "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
