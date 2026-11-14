@@ -5,9 +5,9 @@ Per completed minute, in the regular session: the open positions' symbols, then 
 symbols, then the latest discovery candidates. Today's completed regular-session M1 bars come
 from `MarketData.bars`, the prior sessions from `HistoryReader` (once per symbol per day, then
 cached). A history refusal is not an error here: the strategy gets no prior sessions and
-refuses with its own cause, and the decision is recorded like any other. A budget refusal or
-delayed data stops the remaining symbols for this minute (journaled); a strategy exception is
-journaled and that symbol skipped. Nothing here ever ends the trading loop.
+refuses with its own cause, and the decision is recorded like any other. A budget refusal,
+delayed data or a failed read stops the remaining symbols for this minute (journaled); a
+strategy exception is journaled and that symbol skipped. Nothing here ever ends the trading loop.
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 
-from aperture.broker.base import BrokerError, RateLimited
+from aperture.broker.base import BrokerError
 from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
 from aperture.config import Config
-from aperture.data.base import DelayedData, MarketData, MarketDataError
+from aperture.data.base import MarketData, MarketDataError
 from aperture.data.history import HistoryReader, HistoryUnavailable, SessionHistory
 from aperture.engine.core import Engine, Leg
 from aperture.runtime.entries import EntryDesk
@@ -93,7 +93,7 @@ class Evaluator:
         for chunk in _chunks(ordered, md.bars_symbols_per_request):
             try:
                 bars = self.source.bars(list(chunk), md.bars_per_symbol)
-            except (RateLimited, DelayedData, MarketDataError, BrokerError) as exc:
+            except (MarketDataError, BrokerError) as exc:  # RateLimited, DelayedData included
                 self._journal(EVALUATION_STOPPED, {"bar_start": bar_start.isoformat(),
                                                    "stage": "bars",
                                                    "error": type(exc).__name__})
@@ -103,27 +103,29 @@ class Evaluator:
                        and day.regular_open <= b.start and b.start + M1 <= now]
                 if not own:
                     continue
-                go_on, history = self._history(symbol, today)
-                if not go_on:
+                error, history = self._history(symbol, today)
+                if error is not None:
                     self._journal(EVALUATION_STOPPED, {"bar_start": bar_start.isoformat(),
-                                                       "stage": "history", "symbol": symbol})
+                                                       "stage": "history", "symbol": symbol,
+                                                       "error": error})
                     return
                 self._evaluate(symbol, own, history, positions.get(symbol), now)
 
-    def _history(self, symbol: str, today: date) -> tuple[bool, SessionHistory | None]:
-        """(go on, prior sessions). None when refused (recorded once a day); go on = False on
-        budget or delayed data: stop this minute and try again later."""
+    def _history(self, symbol: str, today: date) -> tuple[str | None, SessionHistory | None]:
+        """(error type, prior sessions). History None when refused (recorded once a day); an
+        error (budget, delayed data, a failed or malformed read) stops this minute: the next
+        minute tries again."""
         try:
-            return True, self.history.prior_sessions(symbol, today,
+            return None, self.history.prior_sessions(symbol, today,
                                                      self.config.market_data.history_sessions)
         except HistoryUnavailable as exc:
             if (symbol, today) not in self._history_refused:
                 self._history_refused.add((symbol, today))
                 self._journal(HISTORY_REFUSED, {"symbol": symbol, "cause": exc.cause,
                                                 "detail": exc.detail})
-            return True, None
-        except (RateLimited, DelayedData):
-            return False, None
+            return None, None
+        except (MarketDataError, BrokerError) as exc:  # RateLimited, DelayedData included
+            return type(exc).__name__, None
 
     def _evaluate(self, symbol: str, today_bars: list[Bar], history: SessionHistory | None,
                   position: PositionView | None, now: datetime) -> None:
