@@ -9,6 +9,7 @@ Newest first. Only decisions that are in force. Each line: date, decision, where
 | 2026-11-14 | Rewrite in this new repository from scratch; the old `Trading` project is frozen and used as a read-only reference. Port knowledge (broker facts, recorded responses, config values), not code. | everything |
 | 2026-11-14 | First release scope: one active strategy, regular session only, long only, one open position, no trailing stop, minimal status screen. | spec-v1 |
 | 2026-11-14 | Bot is a headless service exposing state and commands through a small local API (127.0.0.1). Next UI stage: native macOS app in SwiftUI, later iOS with push notifications. The old web dashboard is not ported. | spec-v1, backlog |
+| 2026-11-14 | Per-symbol pause of 30 min after a trade in that symbol closes at a loss; no limit on the number of entries per day or per symbol. | config `risk`, risk/admission.py |
 | 2026-11-14 | Daily loss ceiling 300 USD: today's net realized loss + open reservations + new planned loss. | config `risk` |
 | 2026-11-14 | "Realized loss today" in the daily rule is the net realized result of the day: winning trades offset losing ones. Replaces "losses count gross during the proving period" (2026-10-31). | runtime/entries.py |
 | 2026-11-14 | First protected probe order: 1 share, price at most 50 USD, entry at ask + 0.01, stop 2 percent below the fill, maximum loss 5 USD, window 10:00-15:30 ET, owner present. | config `probe` |

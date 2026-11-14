@@ -43,9 +43,7 @@ class AdmissionLimits:
     active_strategy: str
     """Only decisions tagged with this strategy name may be admitted."""
     symbol_cooldown_minutes_after_loss: int | None
-    max_entries_per_day: int | None
-    max_entries_per_symbol_per_day: int | None
-    """Re-entry limits; None = turned off by its `_enabled` config key."""
+    """None = cooldown turned off (`symbol_cooldown_after_loss_enabled = false`)."""
 
     @classmethod
     def from_config(cls, config: Config) -> AdmissionLimits:
@@ -65,11 +63,6 @@ class AdmissionLimits:
             symbol_cooldown_minutes_after_loss=(
                 risk.symbol_cooldown_minutes_after_loss
                 if risk.symbol_cooldown_after_loss_enabled else None),
-            max_entries_per_day=(
-                risk.max_entries_per_day if risk.max_entries_per_day_enabled else None),
-            max_entries_per_symbol_per_day=(
-                risk.max_entries_per_symbol_per_day
-                if risk.max_entries_per_symbol_per_day_enabled else None),
         )
 
 
@@ -99,11 +92,6 @@ class AdmissionInputs:
     own_working_orders: int
     open_positions: int
     """All positions at the broker (own + foreign), for the position limit."""
-    entries_today: int
-    """Own entry orders of trades opened today (New York date) not proven uncreated
-    (acknowledged, outcome unknown or in flight), all symbols."""
-    symbol_entries_today: int
-    """The same count for the decision's symbol only."""
     symbol_last_loss_at: datetime | None
     """When the latest trade in the decision's symbol that closed today (New York date) at a
     loss, or with an unknown result, closed; None = no such trade today."""
@@ -201,9 +189,7 @@ def _check_session(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None
 def _check_own_state(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     counts = {"own_open_positions": i.own_open_positions,
               "own_working_orders": i.own_working_orders,
-              "open_positions": i.open_positions,
-              "entries_today": i.entries_today,
-              "symbol_entries_today": i.symbol_entries_today}
+              "open_positions": i.open_positions}
     for name, value in counts.items():
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return _refuse(C.COUNT_INVALID, f"{name} {value!r} is not a count")
@@ -214,19 +200,11 @@ def _check_own_state(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | No
     if i.open_positions >= lim.max_open_positions:
         return _refuse(C.POSITION_LIMIT_REACHED,
                        f"{i.open_positions} open position(s), limit {lim.max_open_positions}")
-    return _check_reentry(i, lim)
+    return _check_cooldown(i, lim)
 
 
-def _check_reentry(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
-    """Re-entry limits (part of check 4); each one may be turned off in config."""
-    if lim.max_entries_per_day is not None and i.entries_today >= lim.max_entries_per_day:
-        return _refuse(C.DAILY_ENTRY_LIMIT,
-                       f"{i.entries_today} entr(ies) today, limit {lim.max_entries_per_day}")
-    if (lim.max_entries_per_symbol_per_day is not None
-            and i.symbol_entries_today >= lim.max_entries_per_symbol_per_day):
-        return _refuse(C.SYMBOL_ENTRY_LIMIT,
-                       f"{i.symbol_entries_today} entr(ies) in {i.decision.symbol} today, "
-                       f"limit {lim.max_entries_per_symbol_per_day}")
+def _check_cooldown(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
+    """Per-symbol pause after a loss (part of check 4); may be turned off in config."""
     loss_at = i.symbol_last_loss_at
     if lim.symbol_cooldown_minutes_after_loss is not None and loss_at is not None:
         if not _aware(loss_at):

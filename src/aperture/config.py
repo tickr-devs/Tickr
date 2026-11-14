@@ -45,10 +45,6 @@ class RiskConfig:
     max_clock_skew_seconds: Decimal
     symbol_cooldown_after_loss_enabled: bool
     symbol_cooldown_minutes_after_loss: int
-    max_entries_per_day_enabled: bool
-    max_entries_per_day: int
-    max_entries_per_symbol_per_day_enabled: bool
-    max_entries_per_symbol_per_day: int
 
 
 @dataclass(frozen=True)
@@ -348,11 +344,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             "within stream_max_symbols"
         )
     risk: RiskConfig = built["risk"]
-    for key in ("symbol_cooldown_minutes_after_loss", "max_entries_per_day",
-                "max_entries_per_symbol_per_day"):
-        if getattr(risk, key) < 1:
-            raise ConfigError(f"[risk] {key} must be at least 1; to turn the limit off set "
-                              f"its _enabled key to false")
+    if risk.symbol_cooldown_minutes_after_loss < 1:
+        raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
+                          "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
