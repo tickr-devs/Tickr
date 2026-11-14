@@ -147,7 +147,10 @@ class MarketRuntime:
         return symbols
 
     def _candidate_symbols(self) -> set[str]:
-        if self.discovery is None or self.monotonic() < self._candidates_retry_at:
+        # Only on a live transport: a subscribe while down is queued silently and sent by the
+        # next connect's resubscribe of the full set, where a refusal cannot be rolled back.
+        if (self.discovery is None or not self.health.transport.up
+                or self.monotonic() < self._candidates_retry_at):
             return set()
         best = self.discovery.candidates[:self.config.market_data.candidate_subscriptions]
         return {c.instrument.symbol for c in best}
@@ -155,9 +158,9 @@ class MarketRuntime:
     def _sync_subscriptions(self) -> None:
         """L1 for the open position and the strategy's WATCH symbols (spec 6), then the best
         discovery candidates, so a quote is there the first minute the strategy says ENTER.
-        Candidates are subscribed in their own request: a refusal (the per-connection symbol
-        limit is unproven) never touches the position's subscription, and candidates then
-        stay off for `candidate_retry_seconds`."""
+        Candidates are kept only while the transport is up, and go in their own request: a
+        refusal (the per-connection symbol limit is unproven) never touches the position's
+        subscription, and candidates then stay off for `candidate_retry_seconds`."""
         essential = self._position_symbols() | self.watch
         candidates = self._candidate_symbols() - essential
         desired = essential | candidates

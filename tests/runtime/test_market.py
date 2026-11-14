@@ -272,6 +272,9 @@ def test_best_candidates_are_subscribed_up_to_the_configured_count(tmp_path):
     rig.market.discovery = DiscoveryState(rig.now, "x", tuple(best_first))  # type: ignore[arg-type]
     rig.market.watch = {"WAT"}
     rig.market.tick()
+    assert rig.source.subscribed == {"WAT"}  # transport not up: no candidates
+    rig.source.transport(True, rig.now, "up")
+    rig.market.tick()
     assert rig.source.subscribed == {"AAA", "BBB", "WAT"}
     rig.market.discovery = DiscoveryState(rig.now, "x", ())
     rig.market.tick()
@@ -316,3 +319,54 @@ def test_refused_candidates_never_take_the_position_off_the_stream(tmp_path):
     rig.advance(float(CFG.market_data.candidate_retry_seconds))
     rig.market.tick()
     assert rig.market.subscribed == {"ABC"} and session.up  # refused again, still up
+
+
+def test_candidates_are_dropped_while_the_transport_is_down(tmp_path):
+    """Review probe #43: candidates queued while down must not loop the reconnect."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from aperture.broker.webull import StreamSession
+    from aperture.runtime.market import DiscoveryState
+
+    limit, sent = 2, set()
+    reconnects = []
+
+    def send_subscribe(symbols):
+        if len(sent | set(symbols)) > limit:
+            raise RuntimeError("symbol limit")
+        sent.update(symbols)
+
+    clock = [MONDAY_11]
+    session = StreamSession(Budget(), lambda: clock[0], lambda where, exc: None)
+    session.bind(send_subscribe, lambda symbols: sent.difference_update(symbols),
+                 lambda: reconnects.append(1))  # the SDK reconnects later
+    rig = Rig(tmp_path, source=SessionSource(session))
+    clock[0] = rig.now
+    rig.market.config = replace(CFG, market_data=replace(CFG.market_data,
+                                                         candidate_subscriptions=3))
+    rig.market.bind()
+    session.on_connected()
+    t = rig.position()
+    rig.market.tick()  # ABC subscribed while up
+    session.on_disconnected("network blip")
+    rig.market.discovery = DiscoveryState(rig.now, "x", tuple(
+        SimpleNamespace(instrument=SimpleNamespace(symbol=s)) for s in ("AAA", "BBB", "CCC")))
+    rig.market.tick()  # down: no candidates
+    assert rig.market.subscribed == {"ABC"} and session.symbols == {"ABC"}
+    for _ in range(5):  # the SDK reconnects every 10 s
+        sent.clear()
+        session.on_connected()
+    assert session.up and rig.market.health.transport.up
+    rig.advance(LOST_AFTER.total_seconds() * 2)
+    clock[0] = rig.now
+    rig.market.tick()  # up again: candidates tried in their own request, refused, rolled back
+    assert rig.engine.trade(t).exit_requested is None
+    assert rig.market.subscribed == {"ABC"} and session.symbols == {"ABC"}
+    sent.clear()
+    session.on_connected()  # the SDK reconnect sends only the position
+    assert session.up
+    rig.advance(LOST_AFTER.total_seconds() * 2)
+    clock[0] = rig.now
+    rig.market.tick()  # candidates are in their retry pause
+    assert rig.engine.trade(t).exit_requested is None
