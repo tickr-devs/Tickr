@@ -74,9 +74,10 @@ def load_strategy(root: Path, folder: str, modules: Mapping[str, str]) -> Loaded
         strategy = create(values)
     except Exception as exc:  # any failure to build is a refusal, never a crash of the caller
         raise ObserverError(f"{folder}: values refused by {module_name}: {exc}") from exc
-    if strategy.name != name or strategy.version != table.get("version"):
+    reported = (getattr(strategy, "name", None), getattr(strategy, "version", None))
+    if reported != (name, table.get("version")):
         raise ObserverError(
-            f"{folder}: strategy reports {strategy.name} v{strategy.version}, "
+            f"{folder}: strategy reports {reported[0]} v{reported[1]}, "
             f"file says {name} v{table.get('version')}"
         )
     return LoadedStrategy(folder, strategy)
