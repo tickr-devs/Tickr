@@ -28,3 +28,6 @@ bootstrap_samples = 2000
 bootstrap_seed = 7
 # Two-sided confidence level of the interval for the mean R per trade, percent; read by backtest/report.py.
 confidence_percent = 95
+# Entry-price bucket edges for the report breakdown, USD, increasing (buckets: below the first, between edges, at or
+# above the last); read by backtest/report.py.
+price_bucket_edges_usd = [5, 20, 50]

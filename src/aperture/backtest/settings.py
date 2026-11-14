@@ -25,6 +25,7 @@ KEYS = frozenset({
     "bootstrap_samples",
     "bootstrap_seed",
     "confidence_percent",
+    "price_bucket_edges_usd",
 })
 
 
@@ -39,6 +40,7 @@ class BacktestSettings:
     bootstrap_samples: int
     bootstrap_seed: int
     confidence_percent: Decimal
+    price_bucket_edges_usd: tuple[Decimal, ...]
 
 
 def _count(key: str, raw: Any, minimum: int) -> int:
@@ -77,7 +79,17 @@ def settings_from_mapping(data: dict[str, Any]) -> BacktestSettings:
         bootstrap_samples=_count("bootstrap_samples", table["bootstrap_samples"], 1),
         bootstrap_seed=_count("bootstrap_seed", table["bootstrap_seed"], 0),
         confidence_percent=confidence,
+        price_bucket_edges_usd=_edges(table["price_bucket_edges_usd"]),
     )
+
+
+def _edges(raw: Any) -> tuple[Decimal, ...]:
+    if not isinstance(raw, list) or not raw:
+        raise BacktestError("[backtest] price_bucket_edges_usd must be a non-empty list")
+    edges = tuple(_number("price_bucket_edges_usd", x) for x in raw)
+    if list(edges) != sorted(set(edges)):
+        raise BacktestError("[backtest] price_bucket_edges_usd must be strictly increasing")
+    return edges
 
 
 def load_settings(path: Path) -> BacktestSettings:
