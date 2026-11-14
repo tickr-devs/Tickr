@@ -185,3 +185,81 @@ def test_record_failure_after_send_is_journaled_and_never_raises(tmp_path):
     assert len(desk.engine.trades()) == 1  # the entry went out; the loop goes on
     (row,) = desk.store.journal("decision-record-failed")
     assert row.body["error"] == "OSError" and row.body["admission"] == "taken"
+
+
+class Clock:
+    def __init__(self, at: datetime) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+def _round_trip(engine: Engine, broker: FakeBroker, clock: Clock, symbol: str,
+                opened: datetime, closed: datetime, exit_price: str) -> str:
+    """Open, fill and close one trade (10 shares bought at 10.05) through the fake broker."""
+    clock.at = opened
+    trade_id = engine.open_trade(symbol, D(10), D("10.10"), D("9.75"), D("3.50"))
+    broker.fill(engine.orders(trade_id)[0].client_order_id, D(10), D("10.05"))
+    for _ in range(3):
+        engine.step()
+    (stop,) = [o for o in engine.orders(trade_id) if o.leg is Leg.STOP and o.live]
+    clock.at = closed
+    broker.fill(stop.client_order_id, D(10), D(exit_price))
+    for _ in range(3):
+        engine.step()
+    assert not engine.trades(), "the trade should be closed"
+    return trade_id
+
+
+def test_reentry_inputs_are_built_from_the_store_across_a_restart(tmp_path):
+    def at(day: int, hh: int, mm: int) -> datetime:
+        return datetime(2026, 11, day, hh, mm, tzinfo=NEW_YORK)
+
+    clock = Clock(at(13, 11, 0))
+    broker = FakeBroker()
+    path = tmp_path / "db.sqlite3"
+    store = Store.open(path, busy_timeout_seconds=0, now=clock)
+    engine = Engine(store, broker, CFG, "run00001", lambda: GateResult(True, "t"))
+    engine.recover()
+    # Yesterday (Friday) ABC lost: another New York day, counts for nothing today.
+    _round_trip(engine, broker, clock, "ABC", at(13, 11, 0), at(13, 11, 5), "9.75")
+    # Today: XYZ won, then ABC lost (closed 10:41), then an ABC entry the broker refused.
+    _round_trip(engine, broker, clock, "XYZ", at(16, 10, 0), at(16, 10, 10), "10.50")
+    _round_trip(engine, broker, clock, "ABC", at(16, 10, 30), at(16, 10, 41), "9.75")
+    clock.at = at(16, 10, 50)
+    broker.script("refuse")
+    engine.open_trade("ABC", D(10), D("10.10"), D("9.75"), D("3.50"))
+    for _ in range(3):
+        engine.step()
+    assert not engine.trades()
+    store.close()
+
+    # Restart: a new store connection, engine and desk read the same database.
+    clock.at = at(16, 11, 0)
+    store = Store.open(path, busy_timeout_seconds=0, now=clock)
+    engine = Engine(store, broker, CFG, "run00002", lambda: GateResult(True, "t"))
+    engine.recover()
+    desk = EntryDesk(engine, CFG, calendar=CALENDAR, last_broker_read_at=clock,
+                     log=DecisionLog(tmp_path / "decisions"))
+    built = desk._inputs(decision(), quote(), clock.at)
+    assert (built.entries_today, built.symbol_entries_today) == (2, 1)
+    assert built.symbol_last_loss_at == at(16, 10, 41)
+    assert desk._inputs(decision(symbol="XYZ"), quote(), clock.at).symbol_last_loss_at is None
+
+    def decide(now: datetime):
+        clock.at = now
+        q = Quote("ABC", D("10.04"), D("10.05"), D(100), D(100), now, now)
+        return desk.on_decision(decision(), bar_start=now - timedelta(minutes=1), quote=q,
+                                now=now)
+
+    # The 30-minute cooldown after the 10:41 loss ends at 11:11 exactly.
+    assert decide(at(16, 11, 10)).refusal_cause.startswith("SYMBOL_COOLDOWN")
+    assert decide(at(16, 11, 11)).admission == "taken"
+    # The second ABC entry today reaches the per-symbol limit of 2.
+    for trade in engine.trades():
+        engine.request_exit(trade.trade_id, "test")
+    for _ in range(5):
+        engine.step()
+    assert not engine.trades()
+    assert decide(at(16, 11, 30)).refusal_cause.startswith("SYMBOL_ENTRY_LIMIT")

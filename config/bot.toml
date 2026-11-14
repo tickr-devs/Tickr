@@ -23,7 +23,7 @@ observers = []
 planned_loss_usd = 50
 # Maximum notional per position in USD (owner 2026-10-31); read by safety.
 position_notional_cap_usd = 2500
-# Daily loss ceiling in USD, gross: realized loss + open reservations + new planned loss (owner 2026-11-14); read by safety.
+# Daily loss ceiling in USD: today's NET realized loss (wins offset losses) + open reservations + new planned loss (owner 2026-11-14); read by safety.
 max_daily_loss_usd = 300
 # Maximum simultaneous open positions (v1 supports 1); read by safety.
 max_open_positions = 1
@@ -31,6 +31,21 @@ max_open_positions = 1
 max_quote_age_seconds = 5
 # Allowed lead of the provider clock over ours, seconds: a quote time up to this far ahead counts as age 0, further ahead = refuse; read by safety.
 max_clock_skew_seconds = 1
+# Re-entry limits (spec section 7, check 4). Each one is turned off by setting its _enabled key
+# to false; its number is then not read, but must still be at least 1 (refused at load).
+# Per-symbol cooldown after a loss: true = after a trade in a symbol closes at a loss today
+# (New York date), no new entry in that symbol for the minutes below; read by safety.
+symbol_cooldown_after_loss_enabled = true
+# Cooldown length in minutes from the losing trade's close; an entry exactly at the end is allowed; read by safety.
+symbol_cooldown_minutes_after_loss = 30
+# Daily entry count limit: true = at most max_entries_per_day entries per New York day; read by safety.
+max_entries_per_day_enabled = true
+# Entries per New York day, all symbols: every entry order not proven uncreated (acknowledged, unknown or in flight) counts; 6 = ceiling 300 / planned loss 50; read by safety.
+max_entries_per_day = 6
+# Per-symbol daily entry count limit: true = at most max_entries_per_symbol_per_day entries in one symbol per New York day; read by safety.
+max_entries_per_symbol_per_day_enabled = true
+# Entries per symbol per New York day, counted like max_entries_per_day; read by safety.
+max_entries_per_symbol_per_day = 2
 
 [session]
 # Market time zone for all session times; read by the calendar and the scheduler.

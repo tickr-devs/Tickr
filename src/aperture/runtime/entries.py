@@ -21,7 +21,7 @@ from aperture.calendar import (
     SessionCalendar,
 )
 from aperture.config import Config, trading_gate
-from aperture.engine.core import Engine, EntryRefused, Fence, Leg
+from aperture.engine.core import Engine, EntryRefused, Fence, Leg, SendState
 from aperture.observers.log import DecisionLog
 from aperture.research.records import Admission as RecordAdmission
 from aperture.research.records import DecisionRecord
@@ -62,6 +62,38 @@ def realized_loss_today(engine: Engine, now: datetime) -> Decimal | None:
                 return None
     net = sum((t.result_gross_usd for t in trades_today(engine, now)), ZERO)
     return max(-net, ZERO)
+
+
+# Entry orders proven never created at the broker; every other entry counts as an entry.
+NOT_CREATED = (SendState.REFUSED, SendState.ABSENT)
+
+
+def entries_today(engine: Engine, now: datetime) -> list[str]:
+    """Symbol of every own entry order of a trade opened today (New York date) that the
+    broker acknowledged, whose outcome is unknown, or that is still in flight."""
+    today = now.astimezone(NEW_YORK).date()
+    rows = engine.store.query(
+        "SELECT t.symbol, t.opened_at, o.send_state FROM orders o "
+        "JOIN trades t ON t.trade_id = o.trade_id WHERE o.leg = ?", (Leg.ENTRY,))
+    return [r["symbol"] for r in rows
+            if SendState(r["send_state"]) not in NOT_CREATED
+            and datetime.fromisoformat(r["opened_at"]).astimezone(NEW_YORK).date() == today]
+
+
+def last_loss_at(engine: Engine, symbol: str, now: datetime) -> datetime | None:
+    """Close time of the latest trade in `symbol` closed today (New York date) at a loss; a
+    closed trade with fills whose prices are unknown counts as a loss (the stricter answer)."""
+    closes = [t.closed_at for t in trades_today(engine, now)
+              if t.symbol == symbol and t.result_gross_usd < 0]
+    today = now.astimezone(NEW_YORK).date()
+    for row in engine.store.query("SELECT trade_id, closed_at FROM trades "
+                                  "WHERE closed_at IS NOT NULL AND symbol = ?", (symbol,)):
+        closed = datetime.fromisoformat(row["closed_at"])
+        if closed.astimezone(NEW_YORK).date() == today and any(
+                o.filled_quantity > 0 and o.average_fill_price is None
+                for o in engine.orders(row["trade_id"])):
+            closes.append(closed)
+    return max(closes, default=None)
 
 
 class EntryDesk:
@@ -105,6 +137,7 @@ class EntryDesk:
         limit = None if decision.entry_high is None else round_to_tick(decision.entry_high)
         stop = None if decision.stop is None else round_to_tick(decision.stop)
         last_read = self.last_broker_read_at()
+        entered = entries_today(engine, now)
         return AdmissionInputs(
             gate=trading_gate(self.config),
             reconciliation=Reconciliation(
@@ -118,6 +151,9 @@ class EntryDesk:
             own_open_positions=own_positions,
             own_working_orders=working,
             open_positions=own_positions + foreign_positions,
+            entries_today=len(entered),
+            symbol_entries_today=entered.count(decision.symbol),
+            symbol_last_loss_at=last_loss_at(engine, decision.symbol, now),
             decision=decision,
             limit_price=limit,
             stop_price=stop,
