@@ -62,7 +62,7 @@ struct RootView: View {
     @ViewBuilder private var detail: some View {
         switch section {
         case .overview: OverviewView()
-        case .chart: ComingNext(section: .chart)
+        case .chart: ChartView()
         case .trades: ComingNext(section: .trades)
         case .risk: ComingNext(section: .risk)
         case .lab: ComingNext(section: .lab)

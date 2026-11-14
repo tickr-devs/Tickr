@@ -68,7 +68,9 @@ public final class AppModel {
     public private(set) var days: [DaySummary] = []
     public private(set) var historyError: String?
     /// nil = today (live). Otherwise a recorded day from `days`.
-    public var selectedDay: WireDate? { didSet { if oldValue != selectedDay { Task { await loadSelectedDay() } } } }
+    public var selectedDay: WireDate? {
+        didSet { if oldValue != selectedDay { Task { await loadSelectedDay(); await loadChart() } } }
+    }
     public private(set) var dayDocument: DayV1?
     public private(set) var todayDocument: DayV1?
 
@@ -188,6 +190,7 @@ public final class AppModel {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.refreshPositionBars()
+                if self.isLive { await self.loadChart() }
                 try? await Task.sleep(for: .seconds(Pace.barsSeconds))
             }
         })
@@ -277,6 +280,50 @@ public final class AppModel {
             // The position still shows its entry and stop; only "last" stays empty.
             barsBySymbol[symbol] = nil
         }
+    }
+
+    // MARK: chart
+
+    /// Symbols with captured bars on the shown day, open positions first.
+    public var chartSymbols: [String] {
+        var symbols = positions.map(\.position.symbol)
+        let document = isLive ? todayDocument : dayDocument
+        for symbol in (document?.barSymbols ?? []) + shownTrades.map(\.symbol) where !symbols.contains(symbol) {
+            symbols.append(symbol)
+        }
+        return symbols
+    }
+
+    /// The symbol the Chart section shows; nil picks the first of `chartSymbols`.
+    public var chartSymbol: String? { didSet { if oldValue != chartSymbol { Task { await loadChart() } } } }
+    public var shownChartSymbol: String? { chartSymbol.flatMap { chartSymbols.contains($0) ? $0 : nil } ?? chartSymbols.first }
+    public private(set) var chartBars: BarsV1?
+    public private(set) var chartError: String?
+
+    /// Loads the bars of the shown chart symbol on the shown day.
+    public func loadChart() async {
+        guard let symbol = shownChartSymbol else {
+            chartBars = nil
+            chartError = nil
+            return
+        }
+        let day = shownDay
+        do {
+            let bars = try await client.bars(symbol: symbol, day: day)
+            // The operator may have moved to another day or symbol while this was loading.
+            guard symbol == shownChartSymbol, day == shownDay else { return }
+            chartBars = bars
+            chartError = nil
+        } catch {
+            guard symbol == shownChartSymbol, day == shownDay else { return }
+            chartBars = nil
+            chartError = Self.describe(error)
+        }
+    }
+
+    /// Trades of the shown day for one symbol, for the chart's markers.
+    public func trades(of symbol: String) -> [DayTrade] {
+        shownTrades.filter { $0.symbol == symbol }
     }
 
     // MARK: day navigation
