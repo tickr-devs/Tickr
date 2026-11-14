@@ -8,17 +8,23 @@ import pytest
 
 from aperture.config import AlertsConfig
 from aperture.runtime.alerts import (
+    IMESSAGE,
+    MACOS,
     OSASCRIPT,
     Alerter,
     AlertKind,
+    Channels,
     Delivery,
+    IMessageNotifier,
     MacNotifier,
     NotifyError,
     default_notifier,
+    recipient_missing,
 )
 
 CONFIG = AlertsConfig(dedupe_window_seconds=Decimal(600), notification_timeout_seconds=Decimal(5),
-                      fence_alert_after_seconds=Decimal(30))
+                      fence_alert_after_seconds=Decimal(30),
+                      imessage_recipient_variable="APERTURE_TEST_TO")
 T0 = datetime(2026, 11, 16, 14, 30, tzinfo=UTC)
 
 
@@ -47,7 +53,8 @@ def test_kinds_cover_spec_section_11():
         "broker-reads-failing", "stream-lost-with-position", "daily-ceiling-reached",
         "bot-crashed", "bot-did-not-start", "bot-did-not-stop", "preflight-failed",
         "token-needs-confirmation", "exit-refused", "observers-stopped",
-        "not-flat-after-flatten",
+        "not-flat-after-flatten", "watchdog-not-flat", "watchdog-cannot-check",
+        "bot-down-with-open-trade",
     }
 
 
@@ -119,5 +126,62 @@ def test_osascript_failures_become_notify_error(effect):
 
 
 def test_default_notifier_by_platform():
-    assert isinstance(default_notifier(CONFIG, "darwin"), MacNotifier)
+    assert isinstance(default_notifier(CONFIG, "darwin", {}), Channels)
     assert default_notifier(CONFIG, "linux") is None
+
+
+RECIPIENT = "+15550001234-canary"
+
+
+def _capture(code: int = 0):
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, code)
+
+    return calls, runner
+
+
+def test_imessage_passes_the_variable_name_and_text_as_argv_never_the_recipient():
+    calls, runner = _capture()
+    text = 'quote " and \\ end tell'
+    IMessageNotifier(CONFIG, {"APERTURE_TEST_TO": RECIPIENT}, runner).notify("Title", text)
+    (argv,) = calls
+    assert argv[0] == OSASCRIPT
+    assert argv[-2:] == ["APERTURE_TEST_TO", f"Title\n{text}"]
+    assert all(text not in part for part in argv[:-1])
+    assert RECIPIENT not in " ".join(argv)
+    assert "system attribute (item 1 of argv)" in " ".join(argv)
+
+
+def test_imessage_refuses_without_the_recipient_variable():
+    calls, runner = _capture()
+    for environ in ({}, {"APERTURE_TEST_TO": ""}):
+        with pytest.raises(NotifyError, match="alert-recipient-missing: APERTURE_TEST_TO"):
+            IMessageNotifier(CONFIG, environ, runner).notify("t", "x")
+    assert calls == []
+    assert recipient_missing(CONFIG, {}) == "APERTURE_TEST_TO"
+    assert recipient_missing(CONFIG, {"APERTURE_TEST_TO": RECIPIENT}) is None
+
+
+def test_one_failing_channel_does_not_stop_the_other_and_is_recorded_once():
+    mac, mac_runner = _capture()
+    phone, phone_runner = _capture(code=1)
+    channels = Channels(((MACOS, MacNotifier(Decimal(5), mac_runner)),
+                         (IMESSAGE, IMessageNotifier(CONFIG, {"APERTURE_TEST_TO": RECIPIENT},
+                                                     phone_runner))))
+    clock = Clock()
+    outcome = Alerter(CONFIG, "Aperture", channels, clock).alert(AlertKind.BOT_CRASHED, "x")
+    assert outcome.delivery is Delivery.FAILED
+    assert outcome.error == "imessage: osascript exited with code 1 (shown: macos)"
+    assert RECIPIENT not in str(outcome.journal_body())
+    assert len(mac) == 1 and len(phone) == 1  # one attempt each, no retry loop
+    # The other order: the Mac notification failing still sends the iMessage.
+    mac, mac_runner = _capture(code=1)
+    phone, phone_runner = _capture()
+    with pytest.raises(NotifyError, match=r"macos: .*\(shown: imessage\)"):
+        Channels(((MACOS, MacNotifier(Decimal(5), mac_runner)),
+                  (IMESSAGE, IMessageNotifier(CONFIG, {"APERTURE_TEST_TO": RECIPIENT},
+                                              phone_runner)))).notify("t", "x")
+    assert len(phone) == 1

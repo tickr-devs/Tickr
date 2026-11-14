@@ -163,6 +163,11 @@ class RuntimeConfig:
     preflight_start_local: str
     bot_start_local: str
     launch_weekdays: tuple[int, ...]
+    watchdog_start_local: str
+    watchdog_after_flatten_seconds: int
+    watchdog_before_close_seconds: int
+    watchdog_bot_check_seconds: int
+    watchdog_journal_file: str
 
 
 @dataclass(frozen=True)
@@ -170,6 +175,7 @@ class AlertsConfig:
     dedupe_window_seconds: Decimal
     notification_timeout_seconds: Decimal
     fence_alert_after_seconds: Decimal
+    imessage_recipient_variable: str
 
 
 @dataclass(frozen=True)

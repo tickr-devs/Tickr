@@ -1,4 +1,4 @@
-"""Owner alerts (spec section 11): a macOS notification now, phone push in the app stage.
+"""Owner alerts (spec section 11): a macOS notification and an iMessage to the owner's phone.
 
 `Alerter.alert(kind, text)` never raises and never retries. It returns an `AlertOutcome` that the
 caller always writes to its journal, whether the notification was shown, suppressed as a repeat,
@@ -6,13 +6,17 @@ or could not be delivered. Repeats of the same kind and text inside the configur
 suppressed so that a condition that persists does not flood the owner.
 
 Alert text must never contain a secret value: callers pass variable NAMES, never contents.
+The iMessage recipient is personal data: Aperture code only knows the NAME of the environment
+variable that holds it (`[alerts] imessage_recipient_variable`) and checks its presence; the
+AppleScript reads the value itself (`system attribute`), so it is never in Python, argv or logs.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -29,7 +33,21 @@ _APPLESCRIPT = (
     "display notification (item 2 of argv) with title (item 1 of argv)",
     "end run",
 )
+# Sends argv item 2 by iMessage to the address held by the environment variable NAMED in argv
+# item 1. A missing recipient is an AppleScript error (non-zero exit), never a silent skip.
+_IMESSAGE_SCRIPT = (
+    "on run argv",
+    "set recipient to system attribute (item 1 of argv)",
+    'if recipient is "" then error "recipient variable not set"',
+    'tell application "Messages"',
+    "set imessage to 1st account whose service type = iMessage",
+    "send (item 2 of argv) to participant recipient of imessage",
+    "end tell",
+    "end run",
+)
 DARWIN = "darwin"
+MACOS = "macos"
+IMESSAGE = "imessage"
 
 
 class AlertKind(StrEnum):
@@ -54,6 +72,13 @@ class AlertKind(StrEnum):
     OBSERVERS_STOPPED = "observers-stopped"
     # Broker reads after the flatten time (plus grace) still show our position or order.
     NOT_FLAT_AFTER_FLATTEN = "not-flat-after-flatten"
+    # Raised by the separate watchdog job (runtime/watchdog.py), which outlives a crashed bot:
+    # broker reads after the flatten time show any position or any open order;
+    WATCHDOG_NOT_FLAT = "watchdog-not-flat"
+    # the watchdog could not tell (broker read, database or calendar failed);
+    WATCHDOG_CANNOT_CHECK = "watchdog-cannot-check"
+    # during the session the bot process is not running while the database shows an open trade.
+    BOT_DOWN_WITH_OPEN_TRADE = "bot-down-with-open-trade"
 
 
 class Delivery(StrEnum):
@@ -68,11 +93,30 @@ class NotifyError(Exception):
 
 
 class Notifier(Protocol):
+    """One alert delivery channel (`MacNotifier`, `IMessageNotifier`), or several at once
+    (`Channels`). `default_notifier` chooses them for the bot and the watchdog alike."""
+
     def notify(self, title: str, text: str) -> None:
         """Show one notification or raise NotifyError."""
 
 
 Runner = Callable[..., subprocess.CompletedProcess[bytes]]
+
+
+def _osascript(runner: Runner, timeout: float, script: tuple[str, ...],
+               args: list[str]) -> None:
+    """Run one AppleScript with `args` as its argv (an argument list, never a shell string).
+    The error names the exit code only: stderr could echo the arguments."""
+    argv = [OSASCRIPT]
+    for line in script:
+        argv += ["-e", line]
+    argv += args
+    try:
+        result = runner(argv, capture_output=True, timeout=timeout, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise NotifyError(f"osascript did not run: {type(exc).__name__}") from exc
+    if result.returncode != 0:
+        raise NotifyError(f"osascript exited with code {result.returncode}")
 
 
 class MacNotifier:
@@ -83,22 +127,63 @@ class MacNotifier:
         self._runner = runner
 
     def notify(self, title: str, text: str) -> None:
-        argv = [OSASCRIPT]
-        for line in _APPLESCRIPT:
-            argv += ["-e", line]
-        argv += [title, text]
-        try:
-            result = self._runner(argv, capture_output=True, timeout=self._timeout, check=False)
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise NotifyError(f"osascript did not run: {type(exc).__name__}") from exc
-        if result.returncode != 0:
-            raise NotifyError(f"osascript exited with code {result.returncode}")
+        _osascript(self._runner, self._timeout, _APPLESCRIPT, [title, text])
 
 
-def default_notifier(config: AlertsConfig, platform: str = sys.platform) -> Notifier | None:
-    """The notifier for this machine, or None where there is none (CI, Linux)."""
+def recipient_missing(config: AlertsConfig, environ: Mapping[str, str]) -> str | None:
+    """The recipient variable's NAME when it is not set, else None. Presence only: the value is
+    compared with "" and never stored, printed or returned."""
+    name = config.imessage_recipient_variable
+    return None if environ.get(name) else name
+
+
+class IMessageNotifier:
+    """iMessage through Messages.app, driven by osascript. Messages must be signed in to
+    iMessage on this Mac. The recipient never passes through Python: the script reads the
+    variable named `variable`. One attempt per alert, never retried."""
+
+    def __init__(self, config: AlertsConfig, environ: Mapping[str, str] = os.environ,
+                 runner: Runner = subprocess.run) -> None:
+        self._config = config
+        self._environ = environ
+        self._timeout = float(config.notification_timeout_seconds)
+        self._runner = runner
+
+    def notify(self, title: str, text: str) -> None:
+        missing = recipient_missing(self._config, self._environ)
+        if missing is not None:
+            raise NotifyError(f"alert-recipient-missing: {missing} not set")
+        _osascript(self._runner, self._timeout, _IMESSAGE_SCRIPT,
+                   [self._config.imessage_recipient_variable, f"{title}\n{text}"])
+
+
+class Channels:
+    """Every alert through every channel: a failing channel never stops the others, and its
+    failure is raised (after all were tried) so the caller records it."""
+
+    def __init__(self, channels: tuple[tuple[str, Notifier], ...]) -> None:
+        self._channels = channels
+
+    def notify(self, title: str, text: str) -> None:
+        failed, shown = [], []
+        for name, channel in self._channels:
+            try:
+                channel.notify(title, text)
+            except NotifyError as exc:
+                failed.append(f"{name}: {exc}")
+            else:
+                shown.append(name)
+        if failed:
+            raise NotifyError("; ".join(failed) + f" (shown: {', '.join(shown) or 'none'})")
+
+
+def default_notifier(config: AlertsConfig, platform: str = sys.platform,
+                     environ: Mapping[str, str] = os.environ) -> Notifier | None:
+    """The channels for this machine (Mac notification and iMessage), or None where there are
+    none (CI, Linux)."""
     if platform == DARWIN:
-        return MacNotifier(config.notification_timeout_seconds)
+        return Channels(((MACOS, MacNotifier(config.notification_timeout_seconds)),
+                         (IMESSAGE, IMessageNotifier(config, environ))))
     return None
 
 
