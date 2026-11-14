@@ -4,7 +4,7 @@ import json
 import shutil
 import tomllib
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -18,7 +18,7 @@ from aperture.advisor.__main__ import main
 from aperture.advisor.client import AdvisorReply, AnthropicClient
 from aperture.advisor.errors import AdvisorError
 from aperture.advisor.proposal import SCHEMA, next_version, parse_reply
-from aperture.advisor.run import Status, day_files, run_advisor
+from aperture.advisor.run import Status, captured_bars, day_files, run_advisor
 from aperture.data.capture import BAR_KEYS, CAPTURE_KEYS, CaptureWriter
 from aperture.observers.log import DecisionLog
 from aperture.replay.settings import load_settings
@@ -214,19 +214,31 @@ def test_bad_capture_line_is_refused_typed(tmp_path):
         run(cfg, FakeClient(answer()), tmp_path)
 
 
-def test_same_bar_in_two_days_is_refused(tmp_path):
+def test_bars_repeated_at_the_next_open_count_once_and_a_later_revision_wins(tmp_path):
     cfg = make_root(tmp_path)
     _, first = day_files(cfg, DAYS[0])
     _, second = day_files(cfg, DAYS[1])
-    with second.open("a") as handle:
-        handle.write(first.read_text().splitlines()[0] + "\n")
-    with pytest.raises(AdvisorError, match="is in both"):
-        run(cfg, FakeClient(answer()), tmp_path)
+    before = captured_bars([first, second])
+    # Discovery just after the next open asks for the latest bars: yesterday's come back and
+    # are written into today's file (receipt day), one of them revised by the provider.
+    old = [_bar("ABC", datetime.combine(DAYS[0], time(10, 0), NY).astimezone(UTC) + i * M1,
+                Decimal("10") + i) for i in range(10)]
+    revised = replace(old[-1], close=Decimal("18.5"), low=Decimal("18.5"))
+    at_open = datetime.combine(DAYS[1], time(9, 31), NY).astimezone(UTC)
+    capture = CaptureWriter.from_config(cfg, PROVIDER)
+    capture.bars([*old[:-1], revised], PROVIDER, at_open)
+    capture.close()
+    lines = [json.loads(line) for line in second.read_text().splitlines()]
+    assert {line["start"] for line in lines} >= {b.start.isoformat() for b in old}  # overlap
+    merged = captured_bars([first, second])["ABC"]
+    assert len(merged) == len(before["ABC"])
+    assert [b for b in merged if b.start == revised.start] == [revised]
+    assert run(cfg, FakeClient(answer([("breakout", "lookback_bars", "8")])),
+               tmp_path).status is Status.PROPOSED
 
 
 def test_evidence_too_big_is_refused_not_cut(tmp_path):
     cfg = make_root(tmp_path)
-    from dataclasses import replace
     small = replace(cfg, advisor=replace(cfg.advisor, max_evidence_bytes=100))
     client = FakeClient(answer())
     with pytest.raises(AdvisorError, match="max_evidence_bytes is 100"):
@@ -390,7 +402,6 @@ def test_client_failures_are_typed(message, raises, cause):
 
 
 def test_client_checks_only_the_key_name():
-    from dataclasses import replace
     with pytest.raises(AdvisorError, match="ANTHROPIC_API_KEY is not set"):
         AnthropicClient(_settings(), environ={}, sdk=FakeSdk(_message()))
     with pytest.raises(AdvisorError, match="must be ANTHROPIC_API_KEY"):
