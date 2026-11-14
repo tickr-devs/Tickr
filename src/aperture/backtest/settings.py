@@ -1,0 +1,89 @@
+"""Backtest settings from `config/backtest.toml` (one comment per key, tested).
+
+Exactly the keys in `KEYS` under `[backtest]`; missing, unknown, mistyped or out-of-range values
+are refused. Platform values (universe lists, dollar-volume floor, request sizes, risk limits)
+are read from `config/bot.toml`, simulation values from `config/replay.toml`, never duplicated.
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+from aperture.backtest.errors import BacktestError
+
+KEYS = frozenset({
+    "gainer_change_percent",
+    "max_pool_per_day",
+    "instrument_max_pages",
+    "minute_max_pages_per_run",
+    "symbols_per_wave",
+    "workers",
+    "bootstrap_samples",
+    "bootstrap_seed",
+    "confidence_percent",
+})
+
+
+@dataclass(frozen=True)
+class BacktestSettings:
+    gainer_change_percent: Decimal
+    max_pool_per_day: int
+    instrument_max_pages: int
+    minute_max_pages_per_run: int
+    symbols_per_wave: int
+    workers: int
+    bootstrap_samples: int
+    bootstrap_seed: int
+    confidence_percent: Decimal
+
+
+def _count(key: str, raw: Any, minimum: int) -> int:
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < minimum:
+        raise BacktestError(f"[backtest] {key} must be an integer >= {minimum}, got {raw!r}")
+    return raw
+
+
+def _number(key: str, raw: Any) -> Decimal:
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        raise BacktestError(f"[backtest] {key} must be a number, got {raw!r}")
+    value = Decimal(str(raw))
+    if value <= 0:
+        raise BacktestError(f"[backtest] {key} must be positive, got {raw!r}")
+    return value
+
+
+def settings_from_mapping(data: dict[str, Any]) -> BacktestSettings:
+    if set(data) != {"backtest"} or not isinstance(data["backtest"], dict):
+        raise BacktestError("settings must contain exactly one table: [backtest]")
+    table = data["backtest"]
+    missing, unknown = sorted(KEYS - set(table)), sorted(set(table) - KEYS)
+    if missing or unknown:
+        raise BacktestError(f"[backtest] keys mismatch: missing={missing} unknown={unknown}")
+    confidence = _number("confidence_percent", table["confidence_percent"])
+    if confidence >= 100:
+        raise BacktestError("[backtest] confidence_percent must be below 100")
+    return BacktestSettings(
+        gainer_change_percent=_number("gainer_change_percent", table["gainer_change_percent"]),
+        max_pool_per_day=_count("max_pool_per_day", table["max_pool_per_day"], 1),
+        instrument_max_pages=_count("instrument_max_pages", table["instrument_max_pages"], 1),
+        minute_max_pages_per_run=_count(
+            "minute_max_pages_per_run", table["minute_max_pages_per_run"], 1),
+        symbols_per_wave=_count("symbols_per_wave", table["symbols_per_wave"], 1),
+        workers=_count("workers", table["workers"], 1),
+        bootstrap_samples=_count("bootstrap_samples", table["bootstrap_samples"], 1),
+        bootstrap_seed=_count("bootstrap_seed", table["bootstrap_seed"], 0),
+        confidence_percent=confidence,
+    )
+
+
+def load_settings(path: Path) -> BacktestSettings:
+    try:
+        with open(path, "rb") as handle:
+            data = tomllib.load(handle)
+    except tomllib.TOMLDecodeError as exc:
+        raise BacktestError(f"{path}: invalid TOML: {exc}") from exc
+    return settings_from_mapping(data)

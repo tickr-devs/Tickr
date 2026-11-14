@@ -29,6 +29,7 @@ def test_bot_toml_loads():
 COMMENTED_TOML = [
     BOT,
     ROOT / "config" / "replay.toml",
+    ROOT / "config" / "backtest.toml",
     *sorted((ROOT / "strategies").glob("*/strategy.toml")),
 ]
 

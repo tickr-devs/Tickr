@@ -1,0 +1,30 @@
+# Settings of the offline backtest tool (python -m aperture.backtest). Every result is SIMULATED.
+# Read only by src/aperture/backtest/; the trading bot never reads this file. See docs/backtest.md.
+# Universe lists, the dollar-volume floor and request sizes come from config/bot.toml, fills and
+# history depth from config/replay.toml.
+
+[backtest]
+# A symbol counts as a gainer from the first completed M1 bar whose close is at least this many percent above the
+# previous session's last close (proxy for being on Webull's top-200 gainers list); a day enters the pool when its
+# daily high reaches it. Percent; read by backtest/universe.py and backtest/gate.py.
+gainer_change_percent = 5.0
+# Most pool symbols per session, best daily-high change first (the gainers screener returns 200 rows); count; read by
+# backtest/universe.py.
+max_pool_per_day = 200
+# Most instrument-list pages read before refusing (guards a pagination key that never ends); count; read by
+# backtest/fetch.py.
+instrument_max_pages = 100
+# Most M1 pages per symbol and contiguous run of sessions before that run is recorded incomplete (1200 bars per page
+# is about three sessions); count; read by backtest/fetch.py.
+minute_max_pages_per_run = 40
+# Symbols fetched together before their bar files are written (bounds memory; a rerun skips written symbols); count;
+# read by backtest/fetch.py.
+symbols_per_wave = 200
+# Worker processes for the strategy run (one symbol per task); count; read by backtest/run.py.
+workers = 4
+# Bootstrap resamples of the per-trade R for the confidence interval of the mean; count; read by backtest/report.py.
+bootstrap_samples = 2000
+# Seed of the bootstrap random generator, so a report is reproducible; integer; read by backtest/report.py.
+bootstrap_seed = 7
+# Two-sided confidence level of the interval for the mean R per trade, percent; read by backtest/report.py.
+confidence_percent = 95
