@@ -166,3 +166,37 @@ def test_info_plist_texts_need_a_russian_translation(tmp_path):
     }
     (tmp_path / "App" / "InfoPlist.xcstrings").write_text(json.dumps(catalog), encoding="utf-8")
     assert load().plist_violations(plist) == []
+
+
+def test_flags_outdated_apple_apis(tmp_path):
+    source = (
+        "import XCTest\n"
+        "final class Model: ObservableObject {\n"
+        "  @Published var value = 0\n"
+        "}\n"
+        "// NavigationView in a comment is fine\n"
+        "let view = NavigationView { EmptyView() }\n"
+        'Text("NavigationView in a string is fine")\n'
+        "DispatchQueue.main.async {}\n"
+        "NSApplication.shared.activate(ignoringOtherApps: true)\n"
+        "Text(title).foregroundColor(.red)\n"
+    )
+    found = load().legacy_violations(write(tmp_path, source))
+    assert [line for line, _ in found] == [1, 2, 3, 6, 8, 9, 10]
+
+
+def test_current_apple_apis_pass(tmp_path):
+    source = (
+        "import Testing\n"
+        "@Observable final class Model { var value = 0 }\n"
+        "let view = NavigationStack { EmptyView() }\n"
+        "NSApplication.shared.activate()\n"
+        "Text(title).foregroundStyle(.red)\n"
+    )
+    assert load().legacy_violations(write(tmp_path, source)) == []
+
+
+def test_ui_tests_may_use_xctest(tmp_path):
+    folder = tmp_path / "ApertureUITests"
+    folder.mkdir()
+    assert load().legacy_violations(write(folder, "import XCTest\n", "LaunchTests.swift")) == []

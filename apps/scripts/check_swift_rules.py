@@ -17,6 +17,12 @@ text     No words in code. A string literal holding a letter may appear only
 numbers  No magic numbers: see check_swift_literals.py.
 indent   2-space indentation: no tabs, every indent even, and a line indents at most 2 deeper
          than the line before.
+legacy   The current Apple stack only (CLAUDE.md, "Swift code rules"): no XCTest outside UI tests
+         (Swift Testing instead), no ObservableObject / @Published / @StateObject / @ObservedObject /
+         @EnvironmentObject (Observation instead), no NavigationView, no Combine, no DispatchQueue
+         (async/await instead), no PreviewProvider (#Preview), no NSLocalizedString (String Catalogs),
+         no deprecated SwiftUI and AppKit calls (foregroundColor, cornerRadius,
+         activate(ignoringOtherApps:)). Checked in tests too.
 catalog  Every key of an `L10n.swift` has a Russian translation in the target's String Catalog
          (`*.xcstrings` next to it), and every user-facing Info.plist text (`NS…UsageDescription`)
          has one in an `InfoPlist.xcstrings` of the same app.
@@ -273,6 +279,36 @@ def plist_violations(path: Path) -> list[tuple[int, str]]:
 # MARK: - running
 
 
+LEGACY = [
+    (re.compile(r"^\s*import\s+XCTest\b"), "XCTest: use Swift Testing (import Testing, @Test, #expect)"),
+    (re.compile(r"\bObservableObject\b"), "ObservableObject: use @Observable"),
+    (re.compile(r"@(?:Published|StateObject|ObservedObject|EnvironmentObject)\b"),
+     "Combine-era property wrapper: use @Observable with @State / @Environment / @Bindable"),
+    (re.compile(r"\bNavigationView\b"), "NavigationView: use NavigationStack or NavigationSplitView"),
+    (re.compile(r"^\s*import\s+Combine\b"), "Combine: use async/await and Observation"),
+    (re.compile(r"\bDispatchQueue\b"), "DispatchQueue: use async/await, Task and actors"),
+    (re.compile(r"\bPreviewProvider\b"), "PreviewProvider: use #Preview"),
+    (re.compile(r"\bNSLocalizedString\b"), "NSLocalizedString: use L10n.swift and a String Catalog"),
+    (re.compile(r"\.foregroundColor\("), "foregroundColor is deprecated: use foregroundStyle"),
+    (re.compile(r"\.cornerRadius\("), "cornerRadius is deprecated: use clipShape(.rect(cornerRadius:))"),
+    (re.compile(r"ignoringOtherApps"), "activate(ignoringOtherApps:) is deprecated: use NSApp.activate()"),
+]
+UI_TESTS = re.compile(r"UITests?$")
+
+
+def legacy_violations(path: Path) -> list[tuple[int, str]]:
+    """Outdated APIs, in code (comments ignored). UI test targets may still use XCTest."""
+    ui_tests = any(UI_TESTS.search(part) for part in path.parts)
+    found, in_block = [], False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        for pattern, _ in LEGACY:
+            if pattern.search(code) and not (ui_tests and "XCTest" in pattern.pattern):
+                found.append((number, code.strip()))
+                break
+    return found
+
+
 def number_violations(path: Path) -> list[tuple[int, str]]:
     if path.name in check_swift_literals.SKIPPED_FILES:
         return []
@@ -284,6 +320,7 @@ RULES = {
     "numbers": (number_violations, "magic number; use a token or a documented constant"),
     "indent": (indent_violations, "indent with 2 spaces"),
     "catalog": (catalog_violations, "text without a Russian translation in a String Catalog"),
+    "legacy": (legacy_violations, "outdated API; use the current Apple stack (CLAUDE.md, Swift code rules)"),
 }
 
 
@@ -295,6 +332,18 @@ def swift_files() -> list[Path]:
             if path.name in SKIPPED_FILES or SKIPPED_DIRS.intersection(relative.parts):
                 continue
             files.append(path)
+    return files
+
+
+def test_swift_files() -> list[Path]:
+    """Swift files in test targets: only the legacy rule applies to them."""
+    files = []
+    for root in ROOTS:
+        for path in sorted((REPO / root).rglob("*.swift")):
+            parts = path.relative_to(REPO).parts
+            if "Tests" in parts or any(part.endswith("Tests") for part in parts):
+                if not ({".build", "build", "DerivedData", "SourcePackages"} & set(parts)):
+                    files.append(path)
     return files
 
 
@@ -311,6 +360,10 @@ def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
             found = check(path)
             if found:
                 result[rule][key] = found
+    for path in test_swift_files():
+        found = legacy_violations(path)
+        if found:
+            result["legacy"][path.relative_to(REPO).as_posix()] = found
     for path in plist_files():
         found = plist_violations(path)
         if found:
