@@ -1447,14 +1447,28 @@ def market_data_from_config(
     )
 
 
-def broker_from_config(config: Config, transport: Transport | None = None) -> WebullBroker:
+def broker_from_config(config: Config, transport: Transport | None = None,
+                       budget: RequestBudget | None = None) -> WebullBroker:
     """The adapter for the active environment. `transport` defaults to the SDK transport
     (which reads credentials); tests pass a recorded one."""
     return WebullBroker(
         transport if transport is not None else SdkTransport(settings_from_config(config)),
-        budget_from_config(config),
+        budget if budget is not None else budget_from_config(config),
         config.environment.open_orders_max_pages,
         config.orders.client_order_id_max_length,
         (config.orders.client_order_id_prefix, config.orders.probe_client_order_id_prefix),
         gate=lambda: trading_gate(config),
     )
+
+
+def bot_adapters(
+    config: Config, on_stream_error: Callable[[str, Exception], None]
+) -> tuple[WebullBroker, WebullMarketData, SdkQuoteStream]:
+    """Broker, market data and L1 stream for `aperture run`: one SDK transport (one token)
+    and one request budget shared by all of them. The stream is not started."""
+    transport = SdkTransport(settings_from_config(config))
+    budget = budget_from_config(config)
+    broker = broker_from_config(config, transport, budget)
+    session = StreamSession(budget, lambda: datetime.now(UTC), on_stream_error)
+    stream = SdkQuoteStream(stream_settings_from_config(config), session)
+    return broker, market_data_from_config(config, transport, budget, stream), stream
