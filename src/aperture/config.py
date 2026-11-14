@@ -51,6 +51,7 @@ class SessionConfig:
     calendar_file: str
     last_entry_minutes_before_close: int
     flatten_minutes_before_close: int
+    flatten_grace_seconds: Decimal
     half_days_enabled: bool
 
 
@@ -82,6 +83,8 @@ class ProbeConfig:
     window_end: str
     entry_wait_seconds: int
     hold_seconds: int
+    replace_max_move_usd: Decimal
+    replace_observe_seconds: int
 
 
 @dataclass(frozen=True)

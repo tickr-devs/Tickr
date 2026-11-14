@@ -29,6 +29,7 @@ from aperture.types import (
     OrderRequest,
     OrderState,
     OrderType,
+    Position,
     Side,
     TimeInForce,
     TradingSession,
@@ -81,12 +82,14 @@ class Fence(StrEnum):
     QUANTITY_MISMATCH = "quantity-mismatch"
     SHUTTING_DOWN = "shutting-down"
     ENTRY_STOP = "entry-stop"  # operator command; only the entry-stop-off command clears it
+    REPLACE_UNRESOLVED = "replace-unresolved"  # a stop replace whose result is not confirmed
 
 
 # Fences that need the operator to look before entries resume; all others clear themselves
 # when their condition is gone.
 OPERATOR_FENCES = frozenset({Fence.STOP_REJECTED, Fence.EXIT_REFUSED, Fence.CANCEL_FAILED,
-                             Fence.RESURRECTED, Fence.UNPROTECTED_TIMEOUT})
+                             Fence.RESURRECTED, Fence.UNPROTECTED_TIMEOUT,
+                             Fence.REPLACE_UNRESOLVED})
 
 _LEG_LETTER = {Leg.ENTRY: "e", Leg.STOP: "s", Leg.EXIT: "x"}
 _LIVE_SEND = (SendState.INTENT, SendState.ATTEMPTED, SendState.ACKNOWLEDGED, SendState.UNKNOWN)
@@ -209,6 +212,15 @@ def _detail_priority(row: OrderRow, poll_seconds: float) -> float:
     return (row.last_detail_at or 0.0) - boost * poll_seconds
 
 
+@dataclass(frozen=True)
+class BrokerView:
+    """What one successful reconcile pass read: open orders, then positions. For reports
+    only (day end); never used to size or send anything."""
+
+    positions: tuple[Position, ...]
+    open_orders: tuple[OrderDetail, ...]
+
+
 class Engine:
     def __init__(self, store: Store, broker: Broker, config: Config, run_id: str,
                  gate: Callable[[], GateResult],
@@ -219,6 +231,9 @@ class Engine:
         self.run_id = run_id
         self.gate = gate
         self.clock = clock
+        self._positions: list[Position] | None = None  # this pass's positions read
+        # The latest reconcile's reads; None after a failed read (or when a caller drops it).
+        self.broker_view: BrokerView | None = None
 
     # --- fences ----------------------------------------------------------------------------
 
@@ -645,11 +660,14 @@ class Engine:
 
     def step(self) -> None:
         """One pass: read positions, observe orders within budget, advance every trade."""
+        self._positions = None
         try:
             positions = self.broker.positions()
         except BrokerError as exc:
+            self.broker_view = None  # the latest read failed: what the broker holds is unknown
             self._set_fence(Fence.BROKER_READ, "", f"positions read failed: {type(exc).__name__}")
             return
+        self._positions = positions
         self._clear_fence(Fence.BROKER_READ)
         held = {p.symbol: p.quantity for p in positions if p.quantity != 0}
 
@@ -879,6 +897,70 @@ class Engine:
         for fence in (Fence.UNPROTECTED, Fence.QUANTITY_MISMATCH, Fence.OVER_PROTECTED):
             self._clear_fence(fence, trade.trade_id)
 
+    # --- stop replace (probe F5) --------------------------------------------------------------
+
+    def replace_intent(self, stop: OrderRow, stop_price: Decimal, facts: dict[str, Any]) -> None:
+        """Durable BEFORE the replace request: the intent, and an operator fence that only a
+        confirmed result (`replace_confirmed`) or the operator clears, so a crash or an
+        unknown outcome leaves entries blocked until someone has looked."""
+        cid = stop.client_order_id
+        with self.store.transaction():
+            self.store.append("replace-intent", {"from": stop.stop_price, "to": stop_price,
+                                                 "quantity": stop.quantity, **facts},
+                              key=cid, run_id=self.run_id)
+            self._fence_row(Fence.REPLACE_UNRESOLVED, cid,
+                            f"stop replace to {stop_price} not confirmed; operator must look")
+        with self.store.transaction():
+            self.store.append("replace-attempted", {}, key=cid, run_id=self.run_id)
+
+    def replace_outcome(self, cid: str, outcome: str, body: dict[str, Any],
+                        *, unchanged: bool = False) -> None:
+        """Record the answer to the replace request. Only an answer proving the order did not
+        change (Refused, or the local budget) lifts the fence here."""
+        with self.store.transaction():
+            self.store.append(f"replace-{outcome}", body, key=cid, run_id=self.run_id)
+            if unchanged:
+                self._drop_replace_fence(cid, f"replace-{outcome}")
+
+    def replace_confirmed(self, cid: str, stop_price: Decimal, how: dict[str, Any]) -> None:
+        """Detail and open orders showed the same order working at the new price."""
+        with self.store.transaction():
+            self.store.execute("UPDATE orders SET stop_price = ?, updated_at = ? "
+                               "WHERE client_order_id = ?",
+                               (str(stop_price), self.store.stamp(), cid))
+            self.store.append("replace-confirmed", {"stop_price": stop_price, **how}, key=cid,
+                              run_id=self.run_id)
+            self._drop_replace_fence(cid, "replace-confirmed")
+
+    def _drop_replace_fence(self, cid: str, by: str) -> None:
+        """Inside a transaction."""
+        name = f"{Fence.REPLACE_UNRESOLVED}:{cid}"
+        if self.store.execute("DELETE FROM fences WHERE name = ?", (name,)):
+            self.store.append("fence-cleared", {"by": by}, key=name, run_id=self.run_id)
+
+    def adopt_replacement(self, old: OrderRow, old_detail: OrderDetail,
+                          detail: OrderDetail) -> None:
+        """Webull answered the replace with a NEW order (`old_detail` shows the old one
+        terminal): track it as this trade's stop so protection and teardown see it. The
+        replace fence stays set."""
+        with self.store.transaction():
+            self._apply_detail(old, old_detail, resurrected=False)
+            self.store.execute(
+                "INSERT INTO orders(client_order_id, trade_id, leg, symbol, side, order_type, "
+                "quantity, limit_price, stop_price, send_state, broker_state, "
+                "filled_quantity, average_fill_price, broker_order_id, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                (detail.client_order_id, old.trade_id, Leg.STOP, detail.symbol, detail.side,
+                 detail.order_type, str(detail.quantity),
+                 None if detail.stop_price is None else str(detail.stop_price),
+                 SendState.ACKNOWLEDGED, detail.state, str(detail.filled_quantity),
+                 None if detail.average_fill_price is None else str(detail.average_fill_price),
+                 detail.broker_order_id, self.store.stamp()))
+            self.store.append("order-adopted", {"replaces": old.client_order_id,
+                                                "stop_price": detail.stop_price,
+                                                "state": detail.state},
+                              key=detail.client_order_id, run_id=self.run_id)
+
     # --- shutdown --------------------------------------------------------------------------
 
     def shutdown_pending(self) -> list[str]:
@@ -931,6 +1013,7 @@ class Engine:
     def reconcile(self) -> bool:
         """Compare broker open orders with our records, then step. Returns False if a read
         failed. The startup fence clears on the first success, whenever that is."""
+        self.broker_view = None
         try:
             open_orders = self.broker.open_orders()
         except BrokerError as exc:
@@ -956,7 +1039,8 @@ class Engine:
             if fence == Fence.FOREIGN_ORDER and cid not in broker_ids:
                 self._clear_fence(Fence.FOREIGN_ORDER, cid)
         self.step()
-        if self._has_fence(Fence.BROKER_READ):
+        if self._has_fence(Fence.BROKER_READ) or self._positions is None:
             return False
+        self.broker_view = BrokerView(tuple(self._positions), tuple(open_orders))
         self._clear_fence(Fence.STARTUP_RECONCILE)
         return True
