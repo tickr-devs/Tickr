@@ -1,5 +1,5 @@
-import XCTest
 @testable import ApertureKit
+import XCTest
 
 final class PairingTests: XCTestCase {
   func testParsesThePrintedLink() throws {
