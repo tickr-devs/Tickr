@@ -162,6 +162,9 @@ strategy_modules = ["price-action-v1=aperture.strategy.price_action_v1"]
 max_observers = 4
 # Seconds one observer evaluation may take; slower = that observer is switched off for the run with a cause; read by observers.runner.
 max_evaluation_seconds = 0.5
+# Evaluations waiting for the observer worker thread; when full, a new one is dropped and recorded (never blocks trading);
+# read by observers.runner.
+queue_size = 256
 # Decision records folder relative to [run] data_dir; files go to <decisions_dir>/<environment>/<NY date>/decisions.jsonl;
 # read by observers.log.
 decisions_dir = "decisions"

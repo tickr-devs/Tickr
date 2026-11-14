@@ -35,23 +35,34 @@ from aperture.observers.loader import load_observers
 from aperture.observers.log import DecisionLog
 from aperture.observers.runner import ObserverSet
 
+settings = config.observers
 observers = ObserverSet(load_observers(config), DecisionLog.from_config(config),
-                        config.observers.max_evaluation_seconds)
+                        settings.max_evaluation_seconds, settings.queue_size)
 
 # per evaluation, right after the active strategy decided on `context` at time `now`:
-for failure in observers.on_evaluation(context, now):
-    journal("observer-off", failure)      # and alert once
+for failure in observers.on_evaluation(context, now):   # only "queue full: dropped"
+    journal("observer-dropped", failure)
+# on every engine step:
+for failure in observers.take_failures():
+    journal("observer-off", failure)                     # and alert once
+# at shutdown:
+observers.close(timeout)                                  # False = a hung observer
 ```
 
-- Call it after the active decision has been handled, so observers never delay an entry.
-- Pass the same `SymbolContext` the active strategy got. Observers get it without the position.
-- The active decision should be written with the same `DecisionLog.append` (role `active`,
-  admission `taken` / `refused` + cause, `not_applicable` for non-ENTER) so the daily report has
-  both sides in one file.
-- `on_evaluation` never raises for an observer fault. An exception, a contract break (wrong
-  tag or symbol) or an evaluation slower than `max_evaluation_seconds` switches that observer
-  off for the run and is returned as an `ObserverFailure`; a failed log write switches all of
-  them off. It raises ValueError only for a caller bug (decision time before the bar ended).
+- `on_evaluation` never evaluates on the caller's thread and never blocks: it freezes the
+  context (bars as tuples, position removed) and puts it on a bounded queue (`queue_size`).
+  One worker thread evaluates the observers in order and writes their records. When the queue
+  is full the evaluation is dropped and returned as a failure.
+- On the worker, an exception, a contract break (wrong tag or symbol) or an evaluation slower
+  than `max_evaluation_seconds` switches that observer off for the run; a failed log write
+  switches all of them off. `take_failures()` hands these to the trading thread. A hung
+  observer keeps the worker busy; the queue then overflows and further evaluations are dropped
+  and recorded, still without blocking trading.
+- The active decision should be written through the same log, `observers.log.append(record)`
+  (role `active`, admission `taken` / `refused` + cause, `not_applicable` for non-ENTER), so the
+  daily report has both sides in one file. The log is thread-safe (one lock, whole lines).
+- `on_evaluation` raises ValueError only for a caller bug (decision time before the bar ended).
+- The log flushes each line but does not fsync: research data, not trading state.
 
 Files: `<data_dir>/<decisions_dir>/<environment>/<NY date>/decisions.jsonl`, one decision record
 per line (format in `docs/research.md`).

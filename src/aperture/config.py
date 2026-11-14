@@ -122,6 +122,7 @@ class ObserversConfig:
     strategy_modules: tuple[str, ...]
     max_observers: int
     max_evaluation_seconds: Decimal
+    queue_size: int
     decisions_dir: str
 
 

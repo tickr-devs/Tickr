@@ -1,22 +1,30 @@
 """The engine hook: evaluate every observer on the context the active strategy just saw.
 
 `ObserverSet.on_evaluation(context, at)` is called once per active evaluation, after it, with
-the same SymbolContext (same completed bars, same quote) and the decision time. Each observer
-gets that context WITHOUT the position (observers never hold one), and its decision is
-recorded with role `observer` (admission `not_evaluated` for ENTER). Nothing is returned to the
-trading path except the list of new failures, which the caller journals and alerts on.
+the same SymbolContext and the decision time. It never evaluates anything on the caller's
+thread: it freezes the context (bars as tuples, position removed: observers never hold one)
+and puts it on a bounded queue, without blocking. One worker thread evaluates the observers in
+order and appends each decision to the decision log with role `observer` (admission
+`not_evaluated` for ENTER). So a slow or hung observer can never delay Detail polls, stops or
+exits on the trading thread.
 
 An observer is never allowed to hurt trading:
-- any exception from its evaluate(), or a decision that breaks the contract (not a Decision,
-  wrong name/version tag, wrong symbol), switches that observer off for the rest of the run;
+- queue full: that evaluation is dropped and recorded as an ObserverFailure (returned to the
+  caller at once); nothing waits;
+- on the worker, any exception from evaluate(), or a decision that breaks the contract (not a
+  Decision, wrong name/version tag, wrong symbol), switches that observer off for the run;
 - an evaluation slower than `[observers] max_evaluation_seconds` is still recorded, then the
-  observer is switched off;
-- a failed write of the decision log switches every observer off.
-Each switch-off is one ObserverFailure with one cause. Nothing is retried or guessed.
+  observer is switched off (a hung one keeps the worker busy; the queue then overflows and
+  every further evaluation is dropped and recorded, still without blocking);
+- a failed decision log write switches every observer off.
+Worker failures are collected; the caller takes them with `take_failures()` (for example on
+each engine step) and journals and alerts. Each failure has one cause; nothing is retried.
 """
 
 from __future__ import annotations
 
+import queue
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -27,6 +35,9 @@ from aperture.observers.loader import LoadedStrategy
 from aperture.observers.log import DecisionLog
 from aperture.research.records import M1, Admission, DecisionRecord
 from aperture.strategy.base import Decision, Role, SymbolContext, Verdict
+
+ALL_OBSERVERS = "all observers"
+_STOP = object()
 
 
 @dataclass(frozen=True)
@@ -50,53 +61,135 @@ def _contract_problem(observer: LoadedStrategy, symbol: str, decision: object) -
     return None
 
 
+def freeze(context: SymbolContext) -> SymbolContext:
+    """An immutable copy for the worker: tuples of bars, no position."""
+    return replace(
+        context,
+        bars=tuple(context.bars),
+        prior_sessions=tuple(tuple(session) for session in context.prior_sessions),
+        position=None,
+    )
+
+
 class ObserverSet:
     def __init__(
         self,
         observers: Sequence[LoadedStrategy],
         log: DecisionLog,
         max_evaluation_seconds: Decimal,
+        queue_size: int,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        if queue_size < 1:
+            raise ValueError("queue_size must be at least 1")
         self.log = log
         self.max_seconds = float(max_evaluation_seconds)
         self.monotonic = monotonic
         self._enabled = list(observers)
-        self.failures: list[ObserverFailure] = []
+        self._lock = threading.Lock()
+        self._failures: list[ObserverFailure] = []
+        self._queue: queue.Queue[object] = queue.Queue(maxsize=queue_size)
+        self._idle = threading.Condition()
+        self._pending = 0
+        self._worker: threading.Thread | None = None
+        if self._enabled:
+            self._worker = threading.Thread(target=self._run, name="observers", daemon=True)
+            self._worker.start()
 
     @property
     def enabled(self) -> tuple[LoadedStrategy, ...]:
-        return tuple(self._enabled)
+        with self._lock:
+            return tuple(self._enabled)
 
-    def _fail(self, observer: LoadedStrategy, at: datetime, cause: str) -> ObserverFailure:
-        failure = ObserverFailure(observer.folder, observer.identity, at, cause)
-        self.failures.append(failure)
-        self._enabled.remove(observer)
-        return failure
+    # ----------------------------------------------------------- caller (trading) thread
 
     def on_evaluation(self, context: SymbolContext, at: datetime) -> tuple[ObserverFailure, ...]:
-        """Evaluate and record every enabled observer; return the failures of this call.
+        """Queue one evaluation for every enabled observer; never blocks, never evaluates.
 
-        `at` is the active decision's time; it must not be before the last bar completed
-        (ValueError: a caller bug, not an observer fault)."""
+        Returns a failure only when the queue is full (the evaluation is dropped). `at` before
+        the end of the last bar is a caller bug (ValueError)."""
         if not context.bars:
             raise ValueError("observers need at least one completed bar")
-        bar_start = context.bars[-1].start
-        if at < bar_start + M1:
+        if at < context.bars[-1].start + M1:
             raise ValueError(f"decision time {at.isoformat()} is before the bar completed")
-        shadow = replace(context, position=None)
-        new: list[ObserverFailure] = []
-        for observer in list(self._enabled):
+        if self._worker is None or not self.enabled:
+            return ()
+        frozen = freeze(context)
+        with self._idle:
+            try:
+                self._queue.put_nowait((frozen, at))
+            except queue.Full:
+                failure = ObserverFailure(
+                    ALL_OBSERVERS, ALL_OBSERVERS, at,
+                    f"queue full ({self._queue.maxsize}): evaluation of {context.symbol} dropped",
+                )
+                with self._lock:
+                    self._failures.append(failure)
+                return (failure,)
+            self._pending += 1
+        return ()
+
+    def take_failures(self) -> tuple[ObserverFailure, ...]:
+        """Failures recorded since the last call (worker and overflow), oldest first."""
+        with self._lock:
+            taken = tuple(self._failures)
+            self._failures.clear()
+        return taken
+
+    def wait_idle(self, timeout: float) -> bool:
+        """True once every queued evaluation is done (tests, orderly shutdown)."""
+        with self._idle:
+            return self._idle.wait_for(lambda: self._pending == 0, timeout)
+
+    def close(self, timeout: float) -> bool:
+        """Stop the worker after the queued work; False if it did not finish in time
+        (a hung observer; the daemon thread is then abandoned). Closes the log when done."""
+        if self._worker is None:
+            self.log.close()
+            return True
+        try:
+            self._queue.put(_STOP, timeout=timeout)
+        except queue.Full:
+            return False
+        self._worker.join(timeout)
+        if self._worker.is_alive():
+            return False
+        self.log.close()
+        return True
+
+    # ----------------------------------------------------------- worker thread
+
+    def _fail(self, observer: LoadedStrategy, at: datetime, cause: str) -> None:
+        with self._lock:
+            self._failures.append(ObserverFailure(observer.folder, observer.identity, at, cause))
+            self._enabled.remove(observer)
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is _STOP:
+                return
+            try:
+                context, at = item  # type: ignore[misc]
+                self._evaluate(context, at)
+            finally:
+                with self._idle:
+                    self._pending -= 1
+                    self._idle.notify_all()
+
+    def _evaluate(self, context: SymbolContext, at: datetime) -> None:
+        bar_start = context.bars[-1].start
+        for observer in self.enabled:
             started = self.monotonic()
             try:
-                decision = observer.strategy.evaluate(shadow)
-            except Exception as exc:  # noqa: BLE001 - an observer must never stop trading
-                new.append(self._fail(observer, at, f"evaluate raised {type(exc).__name__}: {exc}"))
+                decision = observer.strategy.evaluate(context)
+            except Exception as exc:  # an observer must never stop the worker
+                self._fail(observer, at, f"evaluate raised {type(exc).__name__}: {exc}")
                 continue
             elapsed = self.monotonic() - started
             problem = _contract_problem(observer, context.symbol, decision)
             if problem is not None:
-                new.append(self._fail(observer, at, problem))
+                self._fail(observer, at, problem)
                 continue
             assert isinstance(decision, Decision)
             enter = decision.verdict is Verdict.ENTER
@@ -110,12 +203,9 @@ class ObserverSet:
             try:
                 self.log.append(record)
             except (OSError, ValueError) as exc:
-                for other in list(self._enabled):
-                    new.append(self._fail(other, at, f"decision log write failed: {exc}"))
-                return tuple(new)
+                for other in self.enabled:
+                    self._fail(other, at, f"decision log write failed: {exc}")
+                return
             if elapsed > self.max_seconds:
-                new.append(
-                    self._fail(observer, at, f"evaluation took {elapsed:.3f} s, "
-                                             f"limit {self.max_seconds} s")
-                )
-        return tuple(new)
+                self._fail(observer, at,
+                           f"evaluation took {elapsed:.3f} s, limit {self.max_seconds} s")
