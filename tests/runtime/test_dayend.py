@@ -184,3 +184,12 @@ def test_day_end_is_recorded_once_per_day_across_restarts(tmp_path):
     day.start()
     day.run(GRACE_PASSES)
     assert len(day.records()) == 1
+
+
+def test_a_run_started_after_flatten_and_grace_records_a_known_clean_day(tmp_path):
+    day = Day(tmp_path)
+    day.now = FLATTEN + timedelta(seconds=float(CFG.session.flatten_grace_seconds) + 60)
+    day.start()  # a restart past flatten + grace on a flat account
+    day.run(GRACE_PASSES)  # flatten_at is the start itself; the grace counts from there
+    (record,) = day.records()
+    assert (record["broker_read"], record["agree"], record["day_clean"]) == (True, True, True)
