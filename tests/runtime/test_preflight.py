@@ -107,6 +107,15 @@ def test_no_alert_channel_refuses_with_its_own_cause(config_path):
     assert calls == []  # a blocked start never reaches the token probe
 
 
+def test_no_alert_channel_is_reported_before_a_missing_recipient(config_path):
+    environ = _ready(config_path)
+    del environ[config_module.load(config_path).alerts.imessage_recipient_variable]
+    result = _run(config_path, environ, platform=LINUX)
+    assert result.cause is PreflightCause.ALERT_CHANNEL_MISSING  # the real blocker first
+    failed = [c.name.value for c in result.checks if not c.passed]
+    assert failed == ["alert-channel", "alert-recipient"]
+
+
 def test_missing_token_dir(config_path):
     environ = _ready(config_path)
     cfg = config_module.load(config_path)

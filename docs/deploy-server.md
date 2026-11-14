@@ -13,14 +13,14 @@ alert channel is an owner decision (see "Open owner decisions").
 
 | Area | On the Mac | On Linux / in Docker | Done here |
 |---|---|---|---|
-| Alert channels | `runtime/alerts.py`: Mac notification and iMessage through `/usr/bin/osascript` and Messages.app. | `default_notifier` returns no channel off macOS. Before this change every alert was journaled `"delivery": "no-notifier"` and preflight still passed: the bot would have run with nobody told. Nothing crashed (no import of `osascript`, it is only a path). | Preflight check `alert-channel` refuses with cause `alert-channel-missing` (blocks the start, exit 1). The watchdog journals `watchdog-alert-channel-refused` with that cause and still runs (its journal is then the only record). **Blocker.** |
+| Alert channels | `runtime/alerts.py`: Mac notification and iMessage through `/usr/bin/osascript` and Messages.app. | `default_notifier` returns no channel off macOS. Before this change every alert was journaled `"delivery": "no-notifier"` and preflight still passed: the bot would have run with nobody told. Nothing crashed (no import of `osascript`, it is only a path). | Preflight check `alert-channel` (before `alert-recipient`, so it is the reported cause) refuses with `alert-channel-missing` (blocks the start, exit 1). The watchdog journals `watchdog-alert-channel-refused` with that cause, still runs and journals, and never exits 0 (1 instead of 0; 3 on a closed day), so its unit shows failed. **Blocker.** |
 | caffeinate | `/usr/bin/caffeinate` in the bot and watchdog plists' shell line. | Not needed: a server does not sleep. Not called anywhere in Python. | Nothing. |
 | launchd | Five plists rendered by `render-launchd` from `[runtime]` times. | No launchd. `render-launchd` still works but its output is useless. | `ops/docker/compose.yaml` plus host systemd timers (below). The times are copied by hand from `[runtime]` into the timers: there is no `render-systemd` yet. |
 | Paths | Logs in `~/Library/Logs/Aperture`; env file `~/.config/aperture/env`; repo root = parent of `config/`. | Logs are the container logs (`docker compose logs`), rotated by the json-file driver. Env file: any host path, mounted read-only at `/run/aperture/env`. Repo root is `/app` in the image. Preflight's hint still names `~/.config/aperture/env` (text only). | Compose file. |
 | Watchdog schedule | Starts at `[runtime] watchdog_start_local`, **Mac local time**; its checks then come from the calendar (New York time). | Same command. The start time is the host timer's; give the timer the `America/New_York` zone so daylight-saving changes cannot move it. | Timer example below. |
 | Clock | macOS syncs time automatically. Code uses UTC and converts with `zoneinfo` (`America/New_York`); `[risk] max_clock_skew_seconds` = 1 s against quote times. | Containers use the host kernel clock: the host must run NTP (chrony or systemd-timesyncd). `zoneinfo` needs tzdata. | `tzdata` installed in the image. NTP is an owner decision. |
 | SQLite | `data/` in the repo; `fullfsync` on macOS (`store.py`). | `synchronous=FULL` and `fsync` are durable on a local Linux disk. WAL and the bot's `flock` lock need a local filesystem: never NFS/SMB. | Data folder is a local named volume shared by all jobs on one host. |
-| Lock and watchdog | The watchdog checks the pid in the bot's lock file. | Separate containers have separate pid namespaces, so the watchdog would always see "no live pid" and alert `bot-down-with-open-trade`. | `pid: host` on the bot and watchdog services. |
+| Lock and watchdog | The watchdog checks the pid in the bot's lock file. | Separate containers have separate pid namespaces, so the watchdog would always see "no live pid" and alert `bot-down-with-open-trade`. | `pid: host` on the bot and watchdog services (see "Before real money"). |
 | API binding | `[api] host` = 127.0.0.1, enforced by the API (refuses a non-loopback host). | With Docker's bridge network a 127.0.0.1 bind inside the container is unreachable from the host, and publishing a port would need a 0.0.0.0 bind, which the API refuses. | `network_mode: host`: the API is on the server's own loopback only; Docker publishes no ports. Phone access works as on the Mac (`tailscale serve` on the host to `[api] remote_port`). |
 | Env file | Sourced by `/bin/sh` (`set -a; . file`) in the plist; Aperture never reads it. | Compose `env_file:` would put the values into `docker inspect`. | Bind-mounted read-only; the entrypoint sources it the same way. Only its path is in the container environment. A set-but-unreadable file refuses the start (exit 2). |
 | Stopping | `launchctl kill TERM`; launchd `ExitTimeOut` = `bot_exit_timeout_seconds`. | `docker compose stop bot` sends SIGTERM; `stop_grace_period` is the SIGKILL delay. `init: true` (tini) forwards the signal to the supervisor. | `stop_grace_period: 120s`, kept equal to `[runtime] bot_exit_timeout_seconds` by hand. |
@@ -53,7 +53,7 @@ alert channel is an owner decision (see "Open owner decisions").
    APERTURE_CONFIG_HOST=/srv/aperture/etc/bot.toml
    APERTURE_ENV_FILE_HOST=/srv/aperture/etc/env
    ```
-4. Build as the user that owns the env file:
+4. Build as the dedicated service account that owns the env file (see "Before real money"):
    ```sh
    cd /srv/aperture/repo
    set -a; . /srv/aperture/etc/compose.env; set +a
@@ -88,7 +88,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
-User=aperture-owner
+User=aperture
 WorkingDirectory=/srv/aperture/repo
 EnvironmentFile=/srv/aperture/etc/compose.env
 ExecStart=/usr/bin/docker compose -f ops/docker/compose.yaml --profile jobs up -d bot
@@ -105,6 +105,27 @@ WantedBy=timers.target
 `aperture-preflight` uses `run --rm preflight` at 08:30 and `aperture-watchdog` uses
 `up -d watchdog` at 09:05, otherwise the same. The `User` must be in the `docker` group.
 
+## Before real money
+
+- **Dedicated service account.** With `pid: host` the bot and watchdog containers see every
+  process on the server. Run Aperture under its own account (for example `aperture`), not a
+  personal or admin one: build with that account's uid and gid as `APERTURE_UID` and
+  `APERTURE_GID`, and make it the owner of the env file (`chmod 600`) and of the systemd units'
+  `User=`.
+- **The local API has no authentication.** With `network_mode: host` it listens on the
+  server's own 127.0.0.1, which every local account can reach: it can switch entries and send
+  cancel-own-orders and flatten commands. Fine on a single-user box; not on a shared VPS where
+  other people or services have accounts.
+- **Pin the base image by digest** (`FROM python:3.12-slim-bookworm@sha256:...`), so a rebuild
+  cannot pull a different Python or Debian without a reviewed change.
+- **Render the times from `[runtime]`.** `stop_grace_period` (`bot_exit_timeout_seconds`) and the
+  timer times (`preflight_start_local`, `bot_start_local`, `watchdog_start_local`,
+  `launch_weekdays`) are copied by hand today. Add a `render-systemd` command that writes them
+  from `bot.toml`, as `render-launchd` does for the plists, before first use.
+- **Until an alert channel exists, a failed systemd unit is the only signal.** Preflight and the
+  bot job exit 1 and the watchdog never exits 0 without a channel; nothing reaches the phone.
+  Watch `systemctl list-units --failed` and the container logs yourself.
+
 ## Open owner decisions
 
 1. **Linux alert channel (blocker).** iMessage needs Messages.app on a signed-in Mac. Choices
@@ -114,5 +135,5 @@ WantedBy=timers.target
    on it, since root can read the env file and the token folder).
 3. **How its clock is synced** (chrony or systemd-timesyncd, which servers), and whether
    preflight should check `timedatectl`'s "synchronized" flag (it does not today).
-4. Whether to add a `render-systemd` command so the timer times come from `[runtime]` like the
-   plists do, instead of being copied by hand.
+4. The `render-systemd` command (see "Before real money"): its shape, and whether it should also
+   write the compose `stop_grace_period`.

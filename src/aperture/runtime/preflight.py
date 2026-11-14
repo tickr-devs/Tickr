@@ -8,11 +8,11 @@ Checks, all reported, the first failure is the single cause:
    "no session today", which is not a failure;
 4. credential environment variables present: only their NAMES are checked and reported, values
    are never read beyond "set and non-empty";
-4b. the iMessage recipient variable (`[alerts] imessage_recipient_variable`) present, the same
-   way: it is personal data;
-4c. this machine has an alert channel (`alerts.default_notifier`): today only macOS
+4b. this machine has an alert channel (`alerts.default_notifier`): today only macOS
    (notification and iMessage through osascript). Elsewhere (a Linux server, a container) the
    bot would run with no way to reach the owner, so the start is refused;
+4c. the iMessage recipient variable (`[alerts] imessage_recipient_variable`) present, the same
+   way: it is personal data;
 5. broker token folder present;
 6. active strategy builds from its file and `[market_data] history_sessions` covers the prior
    sessions it needs. A failure here is reported but does not stop the bot from starting: the
@@ -267,7 +267,7 @@ def run_preflight(
     disk = _check_disk(cfg, disk_free)
     calendar, session_today = _check_calendar(cfg, now)
     checks = (config_check, disk, calendar, _check_credentials(cfg, environ),
-              _check_alert_recipient(cfg, environ), _check_alert_channel(cfg, platform, environ),
+              _check_alert_channel(cfg, platform, environ), _check_alert_recipient(cfg, environ),
               _check_token_dir(cfg), _check_strategy(cfg))
     blocking = any(not c.passed and c.cause is not PreflightCause.STRATEGY_REFUSED
                    for c in checks)

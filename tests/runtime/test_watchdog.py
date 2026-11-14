@@ -288,3 +288,21 @@ def test_cli_watchdog_day_through_the_read_only_broker(config_path, monkeypatch,
     assert kinds.count("alert") == 2 and broker.sent == []
     journal = cfg.root / cfg.run.data_dir / cfg.runtime.watchdog_journal_file
     assert [json.loads(x) for x in journal.read_text("utf-8").splitlines()] == lines
+
+
+@pytest.mark.parametrize(("channel", "code"), [(True, 0), (False, 1)])
+def test_cli_watchdog_without_a_channel_never_exits_0(config_path, monkeypatch, capsys,
+                                                      channel, code):
+    clock = Clock(datetime(2026, 11, 16, 20, 56, tzinfo=UTC))
+    monkeypatch.setattr(runtime_main, "WATCHDOG_NOW", clock)
+    monkeypatch.setattr(runtime_main, "WATCHDOG_SLEEP", clock.sleep)
+    monkeypatch.setattr(runtime_main, "WATCHDOG_BROKER", lambda c, hook: trap(FakeBroker()))
+    monkeypatch.setattr(runtime_main, "default_notifier",
+                        lambda alerts: Recorder() if channel else None)
+    # A flat broker: every check clears, so only a missing channel can make the exit non-zero.
+    assert runtime_main.main(["--config", str(config_path), "watchdog"]) == code
+    lines = [json.loads(x) for x in capsys.readouterr().out.splitlines()]
+    assert [x["record"] for x in lines].count("alert") == 0
+    refused = any(x["record"] == watchdog.CHANNEL_REFUSED
+                  and x.get("cause") == "alert-channel-missing" for x in lines)
+    assert refused is not channel

@@ -179,7 +179,8 @@ def _watchdog(config_path: Path) -> int:
                       clock=WATCHDOG_NOW)
     if notifier is None:
         # No channel on this machine (not macOS): every alert is journaled "no-notifier" only.
-        # Recorded once at the start so the journal says why nobody was told.
+        # Recorded once at the start so the journal says why nobody was told; the exit code is
+        # then never 0, so the host scheduler shows a failed job.
         journal.write(watchdog.CHANNEL_REFUSED, {"cause": PreflightCause.ALERT_CHANNEL_MISSING,
                                                  "platform": sys.platform})
     missing = recipient_missing(cfg.alerts, os.environ)
@@ -210,7 +211,10 @@ def _watchdog(config_path: Path) -> int:
         for done in (outcome, *alerter.flush()):
             journal.write(watchdog.ALERT, done.journal_body())
         return int(ExitCode.FAILED)
-    return guard.run()
+    code = guard.run()
+    if notifier is None and code == ExitCode.READY:
+        return int(ExitCode.FAILED)
+    return code
 
 
 def _render(args: argparse.Namespace) -> int:
