@@ -111,6 +111,7 @@ class MarketDataConfig:
     snapshot_symbols_per_request: int
     bars_symbols_per_request: int
     bars_per_symbol: int
+    stream_reconnect_delay_seconds: Decimal
     quiet_after_seconds: Decimal
     capture_dir: str
 

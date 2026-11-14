@@ -58,7 +58,8 @@ def session(limit=30):
     budget = RequestBudget(RouteLimit(limit, 60, 60), clock=lambda: 0.0)
     s = StreamSession(budget, lambda: NOW, lambda where, exc: errors.append((where, exc)))
     sent: list = []
-    s.bind(lambda syms: sent.append(("sub", syms)), lambda syms: sent.append(("unsub", syms)))
+    s.bind(lambda syms: sent.append(("sub", syms)), lambda syms: sent.append(("unsub", syms)),
+           lambda: sent.append(("reconnect", [])))
     return s, sent, errors, budget
 
 
@@ -101,13 +102,47 @@ def test_unsubscribe_while_connected():
     assert sent[-1] == ("unsub", ["BBB"]) and s.symbols == {"AAA"}
 
 
-def test_subscribe_budget_refusal_fails_the_connection():
-    s, sent, _, budget = session(limit=1)
-    s.subscribe(["AAA"], Recorder())
+def test_resubscribe_failure_reports_down_and_reconnects_without_raising():
+    s, sent, errors, budget = session(limit=1)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
     budget.take(STREAM_SUBSCRIBE_PATH)
-    with pytest.raises(RateLimited):
-        s.on_connected()
-    assert sent == [] and not s.up
+    s.on_connected()  # must not raise into the provider thread
+    assert sent == [("reconnect", [])] and not s.up
+    assert rec.transport == [(False, "resubscribe failed (BudgetExhausted); reconnecting")]
+    assert [(w, type(e).__name__) for w, e in errors] == [("subscribe", "BudgetExhausted")]
+    assert isinstance(errors[0][1], RateLimited)
+
+
+def test_sdk_http_failure_while_resubscribing_is_caught():
+    s, _, errors, _ = session()
+
+    def boom(symbols):
+        raise RuntimeError("HTTP 500")
+
+    s.bind(boom, lambda syms: None, lambda: errors.append(("reconnect", None)))
+    s.subscribe(["AAA"], Recorder())
+    s.on_connected()
+    assert not s.up and [w for w, _ in errors] == ["subscribe", "reconnect"]
+
+
+def test_subscribe_racing_with_connect_is_sent_before_up():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    raced = {"done": False}
+
+    def send(symbols):
+        sent.append(("sub", symbols))
+        if not raced["done"]:  # the bot subscribes while the connect is resubscribing
+            raced["done"] = True
+            s.subscribe(["BBB"], rec)
+            s.unsubscribe(["AAA"])
+
+    s.bind(send, lambda syms: sent.append(("unsub", syms)), lambda: None)
+    s.on_connected()
+    assert sent == [("sub", ["AAA"]), ("sub", ["BBB"]), ("unsub", ["AAA"])]
+    assert s.up and rec.transport == [(True, "connected, 1 symbol(s) subscribed")]
 
 
 def test_messages_reach_the_listener_only_for_wanted_symbols_and_notices():
@@ -183,7 +218,8 @@ def _settings(tmp_path, mqtt="data-api.sandbox.webull.com"):
     return StreamSettings(mqtt_host=mqtt, mqtt_port=1883, http_host="api.sandbox.webull.com",
                           allowed_hosts=allowed, region_id="us",
                           token_dir=str(tmp_path / "token"), app_key_env="T_APP_KEY",
-                          app_secret_env="T_APP_SECRET", category="US_STOCK")
+                          app_secret_env="T_APP_SECRET", category="US_STOCK",
+                          reconnect_delay_seconds=0.0)
 
 
 def test_sdk_stream_refuses_host_outside_allowlist(tmp_path):
@@ -217,3 +253,29 @@ def test_sdk_stream_wires_callbacks(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr()
     assert "CANARY" not in out.out + out.err
     assert not list(tmp_path.glob("*.log"))
+
+
+def test_sdk_stream_reconnects_after_the_loop_ends(tmp_path, monkeypatch):
+    pytest.importorskip("webull")
+    from aperture.broker.webull import SdkQuoteStream
+    monkeypatch.setenv("T_APP_KEY", "k")
+    monkeypatch.setenv("T_APP_SECRET", "s")
+    monkeypatch.chdir(tmp_path)
+    s = StreamSession(RequestBudget(RouteLimit(30, 60, 60), clock=lambda: 0.0), lambda: NOW,
+                      lambda w, e: None)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    stream = SdkQuoteStream(_settings(tmp_path), s)
+    runs: list = []
+
+    def loop(logger_enable=True):
+        runs.append(logger_enable)
+        if len(runs) == 1:
+            raise RuntimeError("gave up")
+        stream._stopping.set()  # second run: stop() from the bot
+
+    monkeypatch.setattr(stream._client, "connect_and_loop_forever", loop)
+    stream._run()
+    assert runs == [False, False]
+    assert [d for _, d in rec.transport] == ["stream loop stopped (RuntimeError)",
+                                             "stream loop exited"]

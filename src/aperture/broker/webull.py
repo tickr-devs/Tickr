@@ -942,11 +942,14 @@ class StreamSession:
     """Desired subscriptions and event translation for one MQTT connection, without the SDK.
 
     - Every (re)connect resubscribes the FULL desired set (the SDK reconnects but never
-      resubscribes, docs/webull-facts.md); only after that succeeds is the transport "up".
-    - A subscribe call takes request budget first; a refusal raises, the connection attempt
-      fails and the SDK reconnects later. Nothing is retried here.
+      resubscribes, docs/webull-facts.md). The transport is reported "up" only when what the
+      broker has been sent equals the desired set, decided under the same lock, so a
+      subscribe() racing with a connect is never lost.
+    - Every subscribe/unsubscribe POST takes request budget first. A failure while connecting
+      (budget, HTTP) reports the transport down with its cause, goes to `on_error`, and asks
+      for a deliberate reconnect; nothing is retried here and nothing raises into the
+      provider thread.
     - Disconnect, entitlement pre-emption (notice 1002) and a stopped loop report "down".
-    - Listener errors never reach the provider thread: they go to `on_error`.
     """
 
     def __init__(self, budget: RequestBudget, utc_now: Callable[[], datetime],
@@ -956,9 +959,12 @@ class StreamSession:
         self._on_error = on_error
         self._lock = threading.Lock()
         self._symbols: set[str] = set()
+        self._sent: set[str] = set()  # subscribed on the current connection
         self._listener: QuoteListener | None = None
         self._send_subscribe: Callable[[list[str]], None] | None = None
         self._send_unsubscribe: Callable[[list[str]], None] | None = None
+        self._reconnect: Callable[[], None] | None = None
+        self._connected = False
         self._up = False
 
     @property
@@ -972,13 +978,14 @@ class StreamSession:
             return self._up
 
     def bind(self, send_subscribe: Callable[[list[str]], None],
-             send_unsubscribe: Callable[[list[str]], None]) -> None:
+             send_unsubscribe: Callable[[list[str]], None],
+             reconnect: Callable[[], None]) -> None:
         self._send_subscribe = send_subscribe
         self._send_unsubscribe = send_unsubscribe
+        self._reconnect = reconnect
 
-    def _transport(self, up: bool, detail: str) -> None:
+    def _notify(self, up: bool, detail: str) -> None:
         with self._lock:
-            self._up = up
             listener = self._listener
         if listener is not None:
             try:
@@ -986,11 +993,32 @@ class StreamSession:
             except Exception as exc:  # noqa: BLE001 - never into the provider thread
                 self._on_error("transport", exc)
 
-    def _subscribe_now(self, symbols: list[str]) -> None:
-        if not symbols or self._send_subscribe is None:
-            return
-        self._budget.take(STREAM_SUBSCRIBE_PATH)
-        self._send_subscribe(symbols)
+    def _send(self, subscribe: bool, symbols: list[str]) -> None:
+        send = self._send_subscribe if subscribe else self._send_unsubscribe
+        if send is None:
+            raise MarketDataError("stream session is not bound to a client")
+        self._budget.take(STREAM_SUBSCRIBE_PATH if subscribe else STREAM_UNSUBSCRIBE_PATH)
+        send(symbols)
+
+    def _sync(self) -> bool:
+        """Send until the broker set equals the desired set. True once in sync (then up)."""
+        while True:
+            with self._lock:
+                if not self._connected:
+                    return False
+                pending = sorted(self._symbols - self._sent)
+                stale = sorted(self._sent - self._symbols)
+                if not pending and not stale:
+                    self._up = True
+                    return True
+            if pending:
+                self._send(True, pending)
+                with self._lock:
+                    self._sent.update(pending)
+            if stale:
+                self._send(False, stale)
+                with self._lock:
+                    self._sent.difference_update(stale)
 
     # -- calls from the bot
     def subscribe(self, symbols: Iterable[str], listener: QuoteListener) -> None:
@@ -998,30 +1026,43 @@ class StreamSession:
             if self._listener is not None and listener is not self._listener:
                 raise MarketDataError("one stream listener per session; use FanOut")
             self._listener = listener
-            new = sorted(set(symbols) - self._symbols)
-            self._symbols.update(new)
-            connected = self._up
-        if connected:
-            self._subscribe_now(new)
+            self._symbols.update(symbols)
+            up = self._up
+        if up:
+            self._sync()
 
     def unsubscribe(self, symbols: Iterable[str]) -> None:
         with self._lock:
-            gone = sorted(set(symbols) & self._symbols)
-            self._symbols.difference_update(gone)
-            connected = self._up
-        if connected and gone and self._send_unsubscribe is not None:
-            self._budget.take(STREAM_UNSUBSCRIBE_PATH)
-            self._send_unsubscribe(gone)
+            self._symbols.difference_update(symbols)
+            up = self._up
+        if up:
+            self._sync()
 
     # -- calls from the provider thread
     def on_connected(self) -> None:
         with self._lock:
-            desired = sorted(self._symbols)
-        self._subscribe_now(desired)  # raises on budget or HTTP failure: connection fails
-        self._transport(True, f"connected, {len(desired)} symbol(s) subscribed")
+            self._connected, self._up, self._sent = True, False, set()
+        try:
+            self._sync()
+        except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK failure while subscribing
+            with self._lock:
+                self._connected = self._up = False
+            self._notify(False, f"resubscribe failed ({type(exc).__name__}); reconnecting")
+            self._on_error("subscribe", exc)
+            if self._reconnect is not None:
+                self._reconnect()
+            return
+        with self._lock:
+            count = len(self._sent)
+        self._notify(True, f"connected, {count} symbol(s) subscribed")
 
     def on_disconnected(self, detail: str) -> None:
-        self._transport(False, detail)
+        with self._lock:
+            was = self._connected or self._up
+            self._connected = self._up = False
+            self._sent = set()
+        if was or detail:
+            self._notify(False, detail)
 
     def on_message(self, topic: str, payload: Any) -> None:
         try:
@@ -1035,7 +1076,9 @@ class StreamSession:
             elif topic == STREAM_TOPIC_NOTICE and isinstance(payload, Mapping):
                 kind = str(payload.get("type", ""))
                 if kind == NOTICE_ENTITLEMENT_PREEMPTED:
-                    self._transport(False, "entitlement taken by another device (notice 1002)")
+                    with self._lock:
+                        self._up = False
+                    self._notify(False, "entitlement taken by another device (notice 1002)")
                 elif kind != NOTICE_STATUS:
                     log.warning("stream notice of unknown type %r", kind)
         except Exception as exc:  # noqa: BLE001 - never into the provider thread
@@ -1055,6 +1098,7 @@ class StreamSettings:
     app_key_env: str
     app_secret_env: str
     category: str
+    reconnect_delay_seconds: float
 
 
 class SdkQuoteStream:
@@ -1085,6 +1129,7 @@ class SdkQuoteStream:
         session.bind(
             lambda symbols: client.subscribe(symbols, category, [STREAM_SUB_TYPE_QUOTE]),
             lambda symbols: client.unsubscribe(symbols, category, [STREAM_SUB_TYPE_QUOTE]),
+            client.disconnect,  # ends this loop; _run starts a new connection after the delay
         )
         client.on_connect_success = lambda _c, _api, _sid: session.on_connected()
         client.on_quotes_message = lambda _c, topic, payload: session.on_message(topic, payload)
@@ -1093,6 +1138,8 @@ class SdkQuoteStream:
         silence_sdk_loggers()
         self._client = client
         self._session = session
+        self._delay = settings.reconnect_delay_seconds
+        self._stopping = threading.Event()
         self._thread: threading.Thread | None = None
 
     def subscribe(self, symbols: Iterable[str], listener: QuoteListener) -> None:
@@ -1102,11 +1149,19 @@ class SdkQuoteStream:
         self._session.unsubscribe(symbols)
 
     def _run(self) -> None:
-        try:
-            self._client.connect_and_loop_forever(logger_enable=False)
-            self._session.on_disconnected("stream loop exited")
-        except Exception as exc:  # noqa: BLE001 - the SDK raises bare Exceptions
-            self._session.on_disconnected(f"stream loop stopped ({type(exc).__name__})")
+        """Connect and loop until stop(). Whenever the SDK loop ends (our deliberate
+        disconnect after a failed resubscribe, or the SDK giving up), report the transport down
+        and connect again after the configured delay."""
+        while not self._stopping.is_set():
+            try:
+                self._client.connect_and_loop_forever(logger_enable=False)
+                detail = "stream loop exited"
+            except Exception as exc:  # noqa: BLE001 - the SDK raises bare Exceptions
+                detail = f"stream loop stopped ({type(exc).__name__})"
+            self._session.on_disconnected(detail)
+            # SDK 3.0.3 / paho 1.6.1: a disconnect sets this flag; clear it for the next loop.
+            self._client._thread_terminate = False
+            self._stopping.wait(self._delay)
 
     def start(self) -> None:
         if self._thread is not None:
@@ -1115,7 +1170,10 @@ class SdkQuoteStream:
         self._thread.start()
 
     def stop(self) -> None:
-        self._client._thread_terminate = True  # ends the SDK reconnect loop
+        self._stopping.set()
+        # SDK 3.0.3 (paho 1.6.1): connect_and_loop_forever checks this private flag between
+        # reconnect attempts; there is no public way to end its loop.
+        self._client._thread_terminate = True
         self._client.disconnect()
 
 
@@ -1317,6 +1375,7 @@ def stream_settings_from_config(config: Config) -> StreamSettings:
         app_key_env=env.app_key_variable,
         app_secret_env=env.app_secret_variable,
         category=config.market_data.screener_category,
+        reconnect_delay_seconds=float(config.market_data.stream_reconnect_delay_seconds),
     )
 
 
