@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -47,6 +48,7 @@ from aperture.broker.base import (
     OutcomeUnknown,
     RateLimited,
     Refused,
+    ReplaceAck,
 )
 from aperture.broker.budget import RequestBudget, RouteLimit
 from aperture.broker.status import map_status
@@ -109,6 +111,7 @@ class Route(Enum):
     ORDER_DETAIL = ("GET", "/trading/orders/get", False)
     PLACE = ("POST", "/trading/orders/place", True)
     CANCEL = ("POST", "/trading/orders/cancel", True)
+    REPLACE = ("POST", "/trading/orders/replace", True)
     GAINERS_LOSERS = ("GET", "/market-data/screeners/gainers-losers/list", False)
     TOP_ACTIVES = ("GET", "/market-data/screeners/top-actives/list", False)
     SNAPSHOT = ("GET", "/market-data/stocks/snapshots/list", False)
@@ -314,7 +317,8 @@ def read_order(item: Any, is_own: IsOwnAccount, where: str) -> OrderDetail:
     Field names are the recorded ones (tests/fixtures/webull). `filled_quantity` is required:
     an order whose fill we cannot read is one we cannot reason about. Status/quantity
     contradictions map to UNKNOWN (broker/status.py). `filled_price` has not been observed
-    on a fill yet (no fill recorded so far), so it stays optional."""
+    on a fill yet (no fill recorded so far), so it stays optional; so do `stop_price` (no
+    working stop recorded yet; named like the recorded `limit_price`) and `order_id`."""
     _check_account(item, is_own, where)
     raw_status = str(_require(item, "status", where)).strip()
     quantity = _decimal_field(item, "total_quantity", where)
@@ -329,6 +333,8 @@ def read_order(item: Any, is_own: IsOwnAccount, where: str) -> OrderDetail:
         average_fill_price=_optional_decimal(item, "filled_price", where),
         state=map_status(raw_status, quantity, filled),
         raw_status=raw_status,
+        stop_price=_optional_decimal(item, "stop_price", where),
+        broker_order_id=None if _optional(item, "order_id") is None else str(item["order_id"]),
     )
 
 
@@ -482,6 +488,34 @@ def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> 
     if request.stop_price is not None:
         body["stop_price"] = _wire_decimal(request.stop_price)
     return body
+
+
+def build_replace_stop_body(client_order_id: str, quantity: Decimal, stop_price: Decimal,
+                            client_order_id_max_length: int) -> dict[str, Any]:
+    """One `modify_orders[]` element (SDK v3 samples: the existing `client_order_id` names the
+    order, with `quantity` and the new price). Raises Refused for what must never be sent."""
+    if not client_order_id or len(client_order_id) > client_order_id_max_length:
+        raise Refused("LOCAL_CLIENT_ORDER_ID", "empty or longer than the broker limit")
+    if not quantity.is_finite() or quantity <= 0 or quantity != quantity.to_integral_value():
+        raise Refused("LOCAL_QUANTITY", "quantity must be a positive whole number")
+    if not stop_price.is_finite() or stop_price <= 0:
+        raise Refused("LOCAL_PRICE", "prices must be positive")
+    return {
+        "client_order_id": client_order_id,
+        "quantity": _wire_decimal(quantity.to_integral_value()),
+        "stop_price": _wire_decimal(stop_price),
+    }
+
+
+def read_replace_ack(body: Any) -> ReplaceAck:
+    """Replace success body -> whatever ids it echoes (shape unproven). An error envelope
+    under a success status is not an acknowledgement."""
+    if isinstance(body, Mapping) and "error_code" in body:
+        raise MalformedResponse("replace: success status with an error envelope")
+    if not isinstance(body, Mapping):
+        return ReplaceAck(None, None)
+    cid, oid = _optional(body, "client_order_id"), _optional(body, "order_id")
+    return ReplaceAck(None if cid is None else str(cid), None if oid is None else str(oid))
 
 
 # --------------------------------------------------------------------------------------------
@@ -644,6 +678,23 @@ class WebullBroker:
             raise OrderNotFound(client_order_id)
         # No cancel refusal code is proven yet: anything else is resolved by Detail.
         raise OutcomeUnknown(f"CANCEL: HTTP {response.status} {response.error_code or ''}".strip())
+
+    def replace_stop_price(self, client_order_id: str, quantity: Decimal,
+                           stop_price: Decimal) -> ReplaceAck:
+        self._require_gate()
+        body = build_replace_stop_body(client_order_id, quantity, stop_price,
+                                       self._client_order_id_max_length)
+        response = self._send(Route.REPLACE, {"modify_orders": [body]})
+        if response.ok:
+            try:
+                return read_replace_ack(response.body)
+            except MalformedResponse as exc:
+                raise OutcomeUnknown(f"REPLACE: unreadable answer ({exc})") from None
+        if self._order_not_present(response):
+            raise OrderNotFound(client_order_id)
+        # No replace refusal code is proven yet (probe F5): Detail decides what happened.
+        raise OutcomeUnknown(
+            f"REPLACE: HTTP {response.status} {response.error_code or ''}".strip())
 
 
 # --------------------------------------------------------------------------------------------
@@ -1355,10 +1406,52 @@ def _read_credential(name: str) -> str:
     return value
 
 
-class SdkTransport:
-    """`Transport` over webull-openapi-python-sdk 3.0.3."""
+# The SDK's token state that waits for the owner in the Webull app (docs/webull-facts.md).
+TOKEN_PENDING = "PENDING"
+# SDK 3.0.3 error codes of token initialisation and what they mean. The SDK's own message is
+# never passed on (it carries a masked token).
+_TOKEN_CAUSES = {
+    "ERROR_CHECK_TOKEN_ENABLE": "token config read failed",
+    "ERROR_CREATE_TOKEN": "token create failed",
+    "ERROR_CHECK_TOKEN": "token check failed or token INVALID/EXPIRED",
+    "ERROR_INIT_TOKEN": "token not confirmed in the Webull app in time",
+    "ERROR_LOAD_TOKEN": "token file unreadable",
+    "ERROR_SAVE_TOKEN": "token file not writable",
+}
 
-    def __init__(self, settings: WebullSettings) -> None:
+
+def _init_token(client: Any, on_token_pending: Callable[[], None]) -> None:
+    """`ClientInitializer.initializer` of SDK 3.0.3 with one addition: when the token the SDK
+    creates is PENDING, `on_token_pending()` runs before the SDK waits (up to
+    token_check_duration_seconds) for the owner to confirm it in the Webull app."""
+    from webull.core.http.initializer.client_initializer import ClientInitializer
+    from webull.core.http.initializer.token.token_manager import TokenManager
+
+    class _TokenManager(TokenManager):  # type: ignore[misc]
+        def create_token(self, token_operation: Any, local_token: Any) -> Any:
+            created = TokenManager.create_token(token_operation, local_token)
+            if created.get("status") == TOKEN_PENDING:
+                try:
+                    on_token_pending()
+                except Exception as exc:  # a failed alert never stops token creation
+                    print(f"token-pending alert failed ({type(exc).__name__})", file=sys.stderr)
+            return created
+
+    silence_sdk_loggers()
+    if ClientInitializer._check_token_enable(client):
+        _TokenManager(client.get_token_dir()).init_token(client)
+
+
+def _no_token_hook() -> None:
+    return None
+
+
+class SdkTransport:
+    """`Transport` over webull-openapi-python-sdk 3.0.3. `on_token_pending` runs at most once,
+    during construction, when the token waits for the owner's confirmation in the Webull app."""
+
+    def __init__(self, settings: WebullSettings,
+                 on_token_pending: Callable[[], None] = _no_token_hook) -> None:
         if settings.trading_host not in settings.allowed_hosts:
             raise AdapterConfigError("trading_host is not on the host allowlist")
         self._host = settings.trading_host
@@ -1370,7 +1463,7 @@ class SdkTransport:
         silence_sdk_loggers()  # SDK modules attach handlers at import time
         from webull.core.client import ApiClient
         from webull.core.common.api_type import DEFAULT as API_TYPE_HTTP
-        from webull.core.http.initializer.client_initializer import ClientInitializer
+        from webull.core.exception.exceptions import ClientException
 
         silence_sdk_loggers()
         client = ApiClient(
@@ -1395,8 +1488,13 @@ class SdkTransport:
         self._client = client
         self._check_resolved_host()
         try:
-            ClientInitializer.initializer(client)  # token: may wait for app confirmation
-        except Exception as exc:  # noqa: BLE001 - SDK raises bare Exceptions here
+            _init_token(client, on_token_pending)  # may wait for app confirmation
+        except ClientException as exc:
+            code = str(exc.get_error_code())
+            cause = _TOKEN_CAUSES.get(code, "SDK client error")
+            raise AdapterConfigError(f"token initialisation failed: {cause} ({code})") \
+                from None
+        except Exception as exc:  # noqa: BLE001 - anything else: no usable token
             raise AdapterConfigError(f"token initialisation failed ({type(exc).__name__})") \
                 from None
         silence_sdk_loggers()
@@ -1535,12 +1633,20 @@ def market_data_from_config(
     )
 
 
+def check_token(config: Config, on_token_pending: Callable[[], None]) -> None:
+    """Preflight: make the active environment's Webull token usable (may wait for the owner's
+    confirmation in the app). Raises AdapterConfigError with the cause when it is not."""
+    SdkTransport(settings_from_config(config), on_token_pending)
+
+
 def broker_from_config(config: Config, transport: Transport | None = None,
-                       budget: RequestBudget | None = None) -> WebullBroker:
+                       budget: RequestBudget | None = None,
+                       on_token_pending: Callable[[], None] = _no_token_hook) -> WebullBroker:
     """The adapter for the active environment. `transport` defaults to the SDK transport
     (which reads credentials); tests pass a recorded one."""
     return WebullBroker(
-        transport if transport is not None else SdkTransport(settings_from_config(config)),
+        transport if transport is not None
+        else SdkTransport(settings_from_config(config), on_token_pending),
         budget if budget is not None else budget_from_config(config),
         config.environment.open_orders_max_pages,
         config.orders.client_order_id_max_length,
@@ -1549,12 +1655,23 @@ def broker_from_config(config: Config, transport: Transport | None = None,
     )
 
 
+def probe_adapters(config: Config, on_token_pending: Callable[[], None] = _no_token_hook,
+                   ) -> tuple[WebullBroker, WebullMarketData]:
+    """Broker and snapshot market data for the manual probe commands: one SDK transport (one
+    token) and one request budget."""
+    transport = SdkTransport(settings_from_config(config), on_token_pending)
+    budget = budget_from_config(config)
+    return (broker_from_config(config, transport, budget),
+            market_data_from_config(config, transport, budget))
+
+
 def bot_adapters(
-    config: Config, on_stream_error: Callable[[str, Exception], None]
+    config: Config, on_stream_error: Callable[[str, Exception], None],
+    on_token_pending: Callable[[], None] = _no_token_hook,
 ) -> tuple[WebullBroker, WebullMarketData, SdkQuoteStream]:
     """Broker, market data and L1 stream for `aperture run`: one SDK transport (one token)
     and one request budget shared by all of them. The stream is not started."""
-    transport = SdkTransport(settings_from_config(config))
+    transport = SdkTransport(settings_from_config(config), on_token_pending)
     budget = budget_from_config(config)
     broker = broker_from_config(config, transport, budget)
     settings = stream_settings_from_config(config)

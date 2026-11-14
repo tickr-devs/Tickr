@@ -79,7 +79,13 @@ def _status(path: Path) -> int:
 
 def _webull_broker(cfg: config_module.Config) -> Broker:
     from aperture.broker.webull import broker_from_config  # optional dependency
-    return broker_from_config(cfg)
+    from aperture.runtime.alerts import token_pending_text
+
+    def token_pending() -> None:
+        wait = cfg.environment.token_check_duration_seconds
+        print(f"waiting: {token_pending_text(wait)}", file=sys.stderr, flush=True)
+
+    return broker_from_config(cfg, on_token_pending=token_pending)
 
 
 @dataclass(frozen=True)
@@ -93,15 +99,30 @@ class RunAdapters:
 
 
 def _webull_run_adapters(cfg: config_module.Config,
-                         on_stream_error: Callable[[str, Exception], None]) -> RunAdapters:
+                         on_stream_error: Callable[[str, Exception], None],
+                         on_token_pending: Callable[[], None]) -> RunAdapters:
     from aperture.broker.webull import bot_adapters  # optional dependency
-    broker, market, stream = bot_adapters(cfg, on_stream_error)
+    broker, market, stream = bot_adapters(cfg, on_stream_error, on_token_pending)
     return RunAdapters(broker, market, stream.start, stream.stop)
 
 
+def _webull_probe_adapters(cfg: config_module.Config) -> tuple[Broker, MarketData]:
+    from aperture.broker.webull import probe_adapters  # optional dependency
+    from aperture.runtime.alerts import token_pending_text
+
+    def token_pending() -> None:
+        wait = cfg.environment.token_check_duration_seconds
+        print(f"waiting: {token_pending_text(wait)}", file=sys.stderr, flush=True)
+
+    return probe_adapters(cfg, token_pending)
+
+
 # Replaced in tests with fakes.
-RUN_ADAPTERS: Callable[[config_module.Config, Callable[[str, Exception], None]],
-                       RunAdapters] = _webull_run_adapters
+PROBE_ADAPTERS: Callable[[config_module.Config], tuple[Broker, MarketData]] = \
+    _webull_probe_adapters
+# Replaced in tests with fakes. Arguments: config, stream error sink, token-pending hook.
+RUN_ADAPTERS: Callable[[config_module.Config, Callable[[str, Exception], None],
+                        Callable[[], None]], RunAdapters] = _webull_run_adapters
 
 
 def _default_notifier(alerts: config_module.AlertsConfig) -> Any:
@@ -134,7 +155,10 @@ class _Interrupt:
 
 
 @contextmanager
-def _engine(path: Path) -> Iterator[Engine]:
+def _engine(path: Path, broker: Broker | None = None,
+            precheck: Callable[[Engine], None] | None = None) -> Iterator[Engine]:
+    """Lock, open the store, recover. `precheck` runs on the records before recovery (which
+    may already send cancels or orders)."""
     cfg = config_module.load(path)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
@@ -143,15 +167,17 @@ def _engine(path: Path) -> Iterator[Engine]:
                                  strategy="manual", strategy_version="-", code_version="-")
         cause = "crashed"
         try:
-            engine = Engine(store, BROKER_FACTORY(cfg), cfg, run_id,
-                            lambda: config_module.trading_gate(cfg))
+            engine = Engine(store, broker if broker is not None else BROKER_FACTORY(cfg), cfg,
+                            run_id, lambda: config_module.trading_gate(cfg))
+            if precheck is not None:
+                precheck(engine)
             engine.recover()
             yield engine
             cause = "finished"
         except KeyboardInterrupt:
             cause = "interrupted"
             raise
-        except EntryRefused:
+        except (EntryRefused, ManualRefused):
             cause = "refused"
             raise
         finally:
@@ -226,6 +252,34 @@ def _resume(args: argparse.Namespace, *, exit_all: bool) -> int:
     return code
 
 
+def _probe_replace_stop(args: argparse.Namespace) -> int:
+    """Probe F5: move the open trade's stop once (tighten only) and print what Webull shows.
+    Exit 0 confirmed, 3 refused or nothing changed, 4 the operator must look."""
+    from aperture.engine import replace_probe
+
+    cfg = config_module.load(args.config)
+    gate = config_module.trading_gate(cfg)
+    if not gate.open:
+        raise ManualRefused(f"trading gate closed: {gate.cause}")
+    calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+    check_window(cfg, calendar, NOW())
+    broker, market = PROBE_ADAPTERS(cfg)
+    with _engine(args.config, broker, replace_probe.precheck) as engine:
+        plan = replace_probe.plan_replace(engine, market, args.to, NOW())
+        print(f"plan: stop {plan.stop.client_order_id} ({plan.stop.quantity} {plan.symbol}) "
+              f"from {plan.current} to {plan.new}; bid {plan.bid}")
+        verdict = replace_probe.Verdict.NOT_SENT
+        if replace_probe.send(engine, plan, print):
+            verdict = replace_probe.observe(engine, plan, sleep=SLEEP,
+                                            monotonic=time.monotonic, out=print)
+        print(f"F5 result: {verdict}")
+        engine.reconcile()
+        _report(engine)
+    if verdict is replace_probe.Verdict.CONFIRMED:
+        return 0
+    return 3 if verdict is replace_probe.Verdict.NOT_SENT else 4
+
+
 def _clear_fence(args: argparse.Namespace) -> int:
     with _engine(args.config) as engine:
         if not engine.clear_operator_fence(args.name):
@@ -286,10 +340,10 @@ def _run(path: Path) -> int:
     from aperture.data.health import StreamHealth
     from aperture.observers.errors import ObserverError
     from aperture.runtime import service
-    from aperture.runtime.alerts import Alerter, AlertKind
+    from aperture.runtime.alerts import Alerter, AlertKind, token_pending_text
     from aperture.runtime.market import MarketRuntime, StreamInbox
     from aperture.runtime.signals import StopRequest, install_stop_handler, restore_handlers
-    from aperture.runtime.watch import Watch
+    from aperture.runtime.watch import ALERT, Watch
 
     cfg = config_module.load(path)
     strategy = service.strategy_id(cfg)
@@ -308,12 +362,19 @@ def _run(path: Path) -> int:
         capture: CaptureWriter | None = None
         observers: ObserverSet | None = None
         try:
-            adapters = RUN_ADAPTERS(cfg, inbox.on_error)
+            alerter = Alerter(cfg.alerts, f"Aperture {cfg.environment_name}",
+                              NOTIFIER(cfg.alerts), clock=NOW)
+
+            def token_pending() -> None:  # before the SDK waits for the owner (no engine yet)
+                outcome = alerter.alert(AlertKind.TOKEN_NEEDS_CONFIRMATION, token_pending_text(
+                    cfg.environment.token_check_duration_seconds))
+                with store.transaction():
+                    store.append(ALERT, outcome.journal_body(), run_id=run_id)
+
+            adapters = RUN_ADAPTERS(cfg, inbox.on_error, token_pending)
             engine = Engine(store, adapters.broker, cfg, run_id,
                             lambda: config_module.trading_gate(cfg),
                             clock=lambda: NOW().timestamp())
-            alerter = Alerter(cfg.alerts, f"Aperture {cfg.environment_name}",
-                              NOTIFIER(cfg.alerts), clock=NOW)
             calendar = service.load_calendar(cfg)
             capture = CaptureWriter.from_config(cfg, adapters.market.provider)
             market = MarketRuntime(engine, cfg, adapters.market,
@@ -402,6 +463,9 @@ def main(argv: list[str] | None = None) -> int:
     trade.add_argument("--limit", type=_decimal, required=True, help="entry limit price, USD")
     trade.add_argument("--stop", type=_decimal, help="stop price, USD (default from [probe])")
     trade.add_argument("--quantity", type=_decimal, help="shares (default from [probe])")
+    replace = sub.add_parser("probe-replace-stop",
+                             help="probe F5: tighten the open trade's stop once by replace")
+    replace.add_argument("--to", type=_decimal, required=True, help="new stop price, USD")
     sub.add_parser("run", help="the bot service (launchd): protect, obey commands, drain on "
                    "SIGTERM")
     sub.add_parser("resume", help="recover after a crash and keep protecting open trades")
@@ -418,6 +482,8 @@ def main(argv: list[str] | None = None) -> int:
             return _resume(args, exit_all=False)
         if args.command == "exit":
             return _resume(args, exit_all=True)
+        if args.command == "probe-replace-stop":
+            return _probe_replace_stop(args)
         if args.command == "clear-fence":
             return _clear_fence(args)
         if args.command == "check-config":
