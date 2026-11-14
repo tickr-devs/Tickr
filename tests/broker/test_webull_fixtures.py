@@ -13,6 +13,7 @@ from aperture.broker.base import OrderNotFound, RateLimited, Refused
 from aperture.broker.webull import (
     DETAIL_NOT_VISIBLE,
     BrokerReadFailed,
+    ForeignOrdersUnreadable,
     MalformedResponse,
     Route,
     WireResponse,
@@ -58,7 +59,10 @@ def test_empty_open_orders_and_positions():
 
 
 def test_recorded_order_row():
-    (order,) = read_order_rows(load("historical_orders_cancelled_limit.json").body, own, "h")
+    body = load("historical_orders_cancelled_limit.json").body
+    rows, bad = read_order_rows(body, own, lambda c: c.startswith("probe-"), "h")
+    assert bad == []
+    (order,) = rows
     assert order.client_order_id == CID
     assert (order.symbol, order.side, order.order_type) == ("AAPL", Side.BUY, OrderType.LIMIT)
     assert order.quantity == D(1) and isinstance(order.quantity, D)
@@ -156,3 +160,48 @@ def test_recorded_errors_map_to_typed_errors():
         b.order_detail("ap-1")
     assert budget.usage(Route.ORDER_DETAIL.path).paused_for_seconds > 0
     assert len(t.sent) == 4
+
+
+def open_orders_page(*rows: dict) -> WireResponse:
+    combo = recorded_combo()
+    combo["orders"] = list(rows)
+    return WireResponse(200, {"data": [combo]})
+
+
+def row(**changes) -> dict:
+    return with_row(**changes)["orders"][0]
+
+
+def test_foreign_unsupported_order_does_not_hide_our_stop():
+    our_stop = row(client_order_id="ap-stop-1", side="SELL", order_type="STOP_LOSS",
+                   status="SUBMITTED", stop_price="95.00", limit_price=None)
+    manual_trailing = row(client_order_id="app-manual", order_type="TRAILING_STOP_LOSS",
+                          side="SELL", status="SUBMITTED")
+    manual_short = row(client_order_id="", side="SHORT", status="SUBMITTED")
+    b, _, _ = broker(open_orders_page(our_stop, manual_trailing, manual_short))
+    with pytest.raises(ForeignOrdersUnreadable) as exc:
+        b.open_orders()
+    (ours,) = exc.value.orders
+    assert ours.client_order_id == "ap-stop-1" and ours.state is OrderState.ACCEPTED
+    assert [u.client_order_id for u in exc.value.unreadable] == ["app-manual", ""]
+
+
+def test_readable_foreign_order_is_returned():
+    manual = row(client_order_id="app-manual", status="SUBMITTED")
+    b, _, _ = broker(open_orders_page(manual))
+    (only,) = b.open_orders()
+    assert only.client_order_id == "app-manual"
+
+
+def test_own_malformed_row_still_fails_the_read():
+    broken = row(client_order_id="ap-1", order_type="TRAILING_STOP_LOSS")
+    b, _, _ = broker(open_orders_page(broken))
+    with pytest.raises(MalformedResponse):
+        b.open_orders()
+
+
+def test_another_accounts_row_fails_the_read():
+    other = row(client_order_id="app-manual", account_id="SOMEONE-ELSE")
+    b, _, _ = broker(open_orders_page(other))
+    with pytest.raises(MalformedResponse):
+        b.open_orders()

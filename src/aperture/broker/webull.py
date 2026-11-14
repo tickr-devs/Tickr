@@ -47,6 +47,7 @@ from aperture.broker.base import (
 )
 from aperture.broker.budget import RequestBudget
 from aperture.broker.status import map_status
+from aperture.config import GateResult
 from aperture.types import (
     OrderDetail,
     OrderRequest,
@@ -67,6 +68,7 @@ HTTP_TOO_MANY_REQUESTS = 429
 
 CODE_NON_TRADING_HOURS = "OPENAPI_CAN_NOT_TRADING_FOR_NON_TRADING_HOURS"
 CODE_PARAM_ERROR = "OPENAPI_PARAM_ERR"
+GATE_CLOSED = "GATE_CLOSED"
 MESSAGE_ORDER_NOT_PRESENT = "order not present"
 
 # Error codes that prove a place request did NOT create an order (probe evidence only).
@@ -127,6 +129,27 @@ class BrokerReadFailed(BrokerError):
 
 class AdapterConfigError(BrokerError):
     """The adapter cannot be constructed safely (host not allowed, credential absent...)."""
+
+
+@dataclass(frozen=True)
+class UnreadableOrder:
+    """A foreign order row outside our vocabulary (e.g. SHORT, TRAILING_STOP_LOSS)."""
+
+    client_order_id: str
+    symbol: str
+    reason: str
+
+
+class ForeignOrdersUnreadable(BrokerError):
+    """Open orders were read completely, but some foreign rows could not be parsed.
+
+    `orders` holds every readable row (our own included, so protection stays visible);
+    `unreadable` lists the rest. The caller must treat them as foreign exposure."""
+
+    def __init__(self, orders: list[OrderDetail], unreadable: list[UnreadableOrder]) -> None:
+        super().__init__(f"{len(unreadable)} foreign open order(s) could not be read")
+        self.orders = orders
+        self.unreadable = unreadable
 
 
 # --------------------------------------------------------------------------------------------
@@ -307,17 +330,37 @@ def read_order_detail(body: Any, client_order_id: str, is_own: IsOwnAccount) -> 
     return read_order(matches[0], is_own, where)
 
 
-def read_order_rows(body: Any, is_own: IsOwnAccount, where: str) -> list[OrderDetail]:
-    """Open-orders (and history) page: `{"data": [combo{..., "orders": [row...]}]}`."""
+OwnOrder = Callable[[str], bool]
+
+
+def read_order_rows(
+    body: Any, is_own: IsOwnAccount, is_own_order: OwnOrder, where: str
+) -> tuple[list[OrderDetail], list[UnreadableOrder]]:
+    """Open-orders (and history) page: `{"data": [combo{..., "orders": [row...]}]}`.
+
+    Our own rows (by client_order_id prefix) are strict: one malformed row fails the read.
+    A foreign row we cannot parse is returned as `UnreadableOrder` so that one manual order
+    of an unsupported side or type never hides our own stop."""
     result: list[OrderDetail] = []
+    unreadable: list[UnreadableOrder] = []
     for index, combo in enumerate(_unwrap_list(body, where)):
         here = f"{where}[{index}]"
         _check_account(combo, is_own, here)
         nested = _require(combo, "orders", here)
         if not isinstance(nested, list):
             raise MalformedResponse(f"{here}: 'orders' is not a list")
-        result.extend(read_order(o, is_own, f"{here}.orders[{i}]") for i, o in enumerate(nested))
-    return result
+        for i, row in enumerate(nested):
+            row_where = f"{here}.orders[{i}]"
+            _check_account(row, is_own, row_where)  # another account's row is never "foreign"
+            cid = str(row.get("client_order_id") or "") if isinstance(row, Mapping) else ""
+            try:
+                result.append(read_order(row, is_own, row_where))
+            except MalformedResponse as exc:
+                if cid and is_own_order(cid):
+                    raise
+                symbol = str(row.get("symbol") or "") if isinstance(row, Mapping) else ""
+                unreadable.append(UnreadableOrder(cid, symbol, str(exc)))
+    return result, unreadable
 
 
 def read_positions(body: Any, is_own: IsOwnAccount) -> list[Position]:
@@ -428,10 +471,16 @@ class WebullBroker:
         budget: RequestBudget,
         open_orders_max_pages: int,
         client_order_id_max_length: int,
+        own_client_order_id_prefixes: tuple[str, ...],
+        gate: Callable[[], GateResult],
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if open_orders_max_pages < 1:
             raise AdapterConfigError("open_orders_max_pages must be at least 1")
+        if not own_client_order_id_prefixes or not all(own_client_order_id_prefixes):
+            raise AdapterConfigError("own client order id prefixes must be non-empty")
+        self._own_prefixes = own_client_order_id_prefixes
+        self._gate = gate
         self._transport = transport
         self._budget = budget
         self._open_orders_max_pages = open_orders_max_pages
@@ -471,6 +520,16 @@ class WebullBroker:
             and MESSAGE_ORDER_NOT_PRESENT in response.message.lower()
         )
 
+    def _is_own_order(self, client_order_id: str) -> bool:
+        return client_order_id.startswith(self._own_prefixes)
+
+    def _require_gate(self) -> None:
+        """Hard rule 5: no trading request leaves this adapter unless trading_gate() is open.
+        Checked on every place/cancel, before budget is taken or anything is sent."""
+        result = self._gate()
+        if not result.open:
+            raise Refused(GATE_CLOSED, result.cause)
+
     def _read(self, route: Route, params: Mapping[str, Any]) -> Any:
         response = self._send(route, params)
         if not response.ok:
@@ -487,13 +546,20 @@ class WebullBroker:
 
     def open_orders(self) -> list[OrderDetail]:
         orders: list[OrderDetail] = []
+        unreadable: list[UnreadableOrder] = []
         params: dict[str, Any] = {}
         seen_keys: set[str] = set()
         for _page in range(self._open_orders_max_pages):
             body = self._read(Route.OPEN_ORDERS, params)
-            orders.extend(read_order_rows(body, self._transport.is_own_account, "open_orders"))
+            rows, bad = read_order_rows(
+                body, self._transport.is_own_account, self._is_own_order, "open_orders"
+            )
+            orders.extend(rows)
+            unreadable.extend(bad)
             next_key = _optional(body, "pagination_key") if isinstance(body, Mapping) else None
             if next_key is None:
+                if unreadable:
+                    raise ForeignOrdersUnreadable(orders, unreadable)
                 return orders
             if str(next_key) in seen_keys:
                 raise BrokerReadFailed(Route.OPEN_ORDERS.name, None, "PAGINATION_REPEATED")
@@ -513,6 +579,7 @@ class WebullBroker:
         raise BrokerReadFailed(Route.ORDER_DETAIL.name, response.status, response.error_code)
 
     def place(self, request: OrderRequest) -> Acknowledgement:
+        self._require_gate()
         # Refused before any budget is taken or anything is sent.
         body = build_order_body(request, self._client_order_id_max_length)
         response = self._send(Route.PLACE, {"new_orders": [body]})
@@ -529,6 +596,7 @@ class WebullBroker:
         raise OutcomeUnknown(f"PLACE: HTTP {response.status} {response.error_code or ''}".strip())
 
     def cancel(self, client_order_id: str) -> None:
+        self._require_gate()
         response = self._send(Route.CANCEL, {"client_order_id": client_order_id})
         if response.ok:
             return
@@ -678,7 +746,7 @@ class SdkTransport:
                 },
             )
         except ClientException as exc:
-            raise TransportFailure(str(exc.get_error_code())) from None
+            raise TransportFailure(self._scrub(str(exc.get_error_code()))) from None
         except Exception as exc:  # noqa: BLE001 - anything else: no usable response
             raise TransportFailure(type(exc).__name__) from None
         try:

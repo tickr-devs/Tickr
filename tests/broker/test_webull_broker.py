@@ -18,6 +18,7 @@ from aperture.broker.base import (
 )
 from aperture.broker.budget import BudgetExhausted, RequestBudget, RouteLimit
 from aperture.broker.webull import (
+    GATE_CLOSED,
     BrokerReadFailed,
     MalformedResponse,
     Route,
@@ -27,6 +28,7 @@ from aperture.broker.webull import (
     build_order_body,
     to_decimal,
 )
+from aperture.config import GateResult
 from aperture.types import OrderRequest, OrderType, Side, TimeInForce, TradingSession
 
 MAX_CID = 32
@@ -52,10 +54,15 @@ class ScriptedTransport:
 DEFAULT_LIMIT = RouteLimit(30, 60, 60)
 
 
-def broker(*responses, limit=DEFAULT_LIMIT, max_pages=3):
+OPEN_GATE = GateResult(True, "test: open")
+PREFIXES = ("ap-", "probe-")
+
+
+def broker(*responses, limit=DEFAULT_LIMIT, max_pages=3, gate=OPEN_GATE):
     transport = ScriptedTransport(*responses)
     budget = RequestBudget(limit, clock=lambda: 0.0)
-    return WebullBroker(transport, budget, max_pages, MAX_CID), transport, budget
+    b = WebullBroker(transport, budget, max_pages, MAX_CID, PREFIXES, lambda: gate)
+    return b, transport, budget
 
 
 def err(status: int, code: str, message: str = "") -> WireResponse:
@@ -257,3 +264,29 @@ def test_to_decimal_accepts():
     assert to_decimal("10.0100", "x") == D("10.01")
     assert to_decimal(3, "x") == D(3)
     assert to_decimal(D("0.0001"), "x") == D("0.0001")
+
+
+# -- trading gate -----------------------------------------------------------------------------
+
+
+def test_closed_gate_refuses_trading_requests_and_sends_nothing():
+    closed = GateResult(False, "trading is disabled for this environment")
+    b, t, budget = broker(WireResponse(200, {"data": []}), gate=closed)
+    for call in (lambda: b.place(limit_buy()), lambda: b.cancel("ap-1")):
+        with pytest.raises(Refused) as exc:
+            call()
+        assert exc.value.code == GATE_CLOSED
+    assert t.sent == []
+    assert budget.usage(Route.PLACE.path).used == 0
+    assert b.open_orders() == []  # reads stay allowed
+
+
+def test_gate_is_asked_on_every_send():
+    answers = [OPEN_GATE, GateResult(False, "authorization removed")]
+    transport = ScriptedTransport(WireResponse(200, {"client_order_id": "ap-1", "order_id": "X"}))
+    b = WebullBroker(transport, RequestBudget(DEFAULT_LIMIT, clock=lambda: 0.0), 3, MAX_CID,
+                     PREFIXES, lambda: answers.pop(0))
+    b.place(limit_buy())
+    with pytest.raises(Refused):
+        b.place(limit_buy("ap-2"))
+    assert len(transport.sent) == 1
