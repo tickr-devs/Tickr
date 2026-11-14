@@ -169,6 +169,33 @@ launchctl bootout gui/$(id -u)/local.aperture.bot          # remove a job
 tail -f ~/Library/Logs/Aperture/bot.log
 ```
 
+## Disk upkeep: `aperture maintain`
+
+What grows under `data/`, per environment and New York date: `capture/<env>/<date>/`
+(`quotes.jsonl` is by far the largest: every stream quote; then `bars.jsonl`, `screener.jsonl`,
+`notices.jsonl`) and `decisions/<env>/<date>/decisions.jsonl`. The database (`aperture.sqlite3`)
+grows slowly and is never pruned: the journal is the audit trail. `history/` is a cache of
+prior-session bars, the backup folder keeps one file, `watchdog.jsonl` gets a few lines a day;
+launchd's logs in `~/Library/Logs/Aperture` are not ours to rotate.
+
+With the bot stopped (outside market hours):
+
+```sh
+.venv/bin/python -m aperture.cli maintain          # dry run: prints what it would archive and why it keeps the rest
+.venv/bin/python -m aperture.cli maintain --apply  # does it
+```
+
+- Each `*.jsonl` of a finished day folder is gzipped in place to `*.jsonl.gz` (written, read back
+  and compared, then renamed; the plain file goes last). Research, the API's `/bars` and `/days`,
+  and `export_replay_bars` read both forms; give research tools the plain name or the `.gz` name.
+- A day folder is kept (one printed cause) when it is within the last `[run]
+  maintain_keep_sessions` sessions before today (today included), on or after the day of a trade
+  still open in the database, or without its `day-end` journal row.
+- `--apply` also runs a SQLite WAL checkpoint; it deletes no row and never vacuums.
+- Refused (exit 3, nothing touched) while the bot holds its lock, when the calendar cannot count
+  the sessions, or when the database is missing or has another schema. Exit 1 means one file
+  failed to archive: the run stopped there and that file is left as it was.
+
 ## The Mac must be awake
 
 launchd runs a calendar job missed during sleep when the Mac wakes, which may be after the open.
