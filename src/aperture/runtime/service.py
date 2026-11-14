@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aperture.api import contract as api
 from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
@@ -23,6 +24,9 @@ from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
 from aperture.runtime.alerts import AlertKind
 from aperture.runtime.watch import Watch
+
+if TYPE_CHECKING:
+    from aperture.runtime.market import MarketRuntime
 
 STRATEGIES_DIR = "strategies"
 STRATEGY_FILE = "strategy.toml"
@@ -101,8 +105,10 @@ def trades_today(engine: Engine, now: datetime) -> tuple[api.Trade, ...]:
 class Service:
     def __init__(self, engine: Engine, *, now: Callable[[], datetime],
                  calendar: SessionCalendar | None, strategy: api.StrategyId,
-                 paths: ServicePaths, watch: Watch | None = None) -> None:
+                 paths: ServicePaths, market: MarketRuntime | None = None,
+                 watch: Watch | None = None) -> None:
         self.engine = engine
+        self.market = market
         self.watch = watch
         self.config = engine.config
         self.now = now
@@ -270,7 +276,9 @@ class Service:
             fences=tuple(api.Fence(name, _iso(set_at), cause) for name, cause, set_at in fences),
             position=self._position(), trades_today=trades,
             result_today_gross_usd=sum((t.result_gross_usd for t in trades), ZERO),
-            freshness=api.Freshness(self.last_broker_read_at, None, api.StreamHealth.OFF),
+            freshness=(self.market.freshness(self.last_broker_read_at)
+                       if self.market is not None
+                       else api.Freshness(self.last_broker_read_at, None, api.StreamHealth.OFF)),
             recent_commands=self._recent_commands())
 
     def write_status(self) -> None:
@@ -308,6 +316,8 @@ class Service:
             sleep(float(orders.detail_poll_seconds))
             due = monotonic() - last_reconcile >= float(orders.reconcile_interval_seconds)
             self._observe(reconcile=due)
+            if self.market is not None:
+                self.market.tick()  # after the engine's broker work of this pass
             if due:
                 last_reconcile = monotonic()
         self.state = api.BotState.STOPPING

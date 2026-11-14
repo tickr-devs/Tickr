@@ -913,15 +913,46 @@ class WebullMarketData:
         })
         return read_bars(body)
 
+    def bars_before(self, symbol: str, end: datetime, count: int) -> list[Bar]:
+        """One history page: `end_time` (epoch ms, SDK 3.0.3 BatchHistoricalBarsRequest) with
+        `count`. How Webull applies end_time is not probed yet, so the reply is checked instead
+        of trusted: another symbol is refused and bars starting at or after `end` are dropped."""
+        if end.tzinfo is None or end.utcoffset() is None:
+            raise ValueError(f"naive end time {end!r}")
+        body = self._read(Route.BARS, {
+            "symbols": [symbol],
+            "category": self._category,
+            "timespan": BARS_TIMESPAN_M1,
+            "count": str(count),
+            "end_time": int(end.timestamp() * MILLISECONDS_PER_SECOND),
+        })
+        bars = read_bars(body)
+        stray = sorted({b.symbol for b in bars} - {symbol})
+        if stray:
+            raise MalformedResponse(f"bars: symbols not requested: {', '.join(stray)}")
+        return [b for b in bars if b.start < end]
+
     def subscribe(self, symbols: Iterable[str], listener: QuoteListener) -> None:
+        """Any failure (budget, HTTP, SDK) is a MarketDataError naming only its type: the
+        caller is the trading loop, which must never be ended by a stream problem."""
         if self._stream is None:
             raise MarketDataError("no L1 stream configured for this adapter")
-        self._stream.subscribe(symbols, listener)
+        try:
+            self._stream.subscribe(symbols, listener)
+        except MarketDataError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - see docstring
+            raise MarketDataError(f"subscribe failed ({type(exc).__name__})") from None
 
     def unsubscribe(self, symbols: Iterable[str]) -> None:
         if self._stream is None:
             raise MarketDataError("no L1 stream configured for this adapter")
-        self._stream.unsubscribe(symbols)
+        try:
+            self._stream.unsubscribe(symbols)
+        except MarketDataError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - see subscribe
+            raise MarketDataError(f"unsubscribe failed ({type(exc).__name__})") from None
 
 
 # --------------------------------------------------------------------------------------------
@@ -1063,11 +1094,19 @@ class StreamSession:
         with self._lock:
             if self._listener is not None and listener is not self._listener:
                 raise MarketDataError("one stream listener per session; use FanOut")
+            first = self._listener is None
             self._listener = listener
             self._symbols.update(symbols)
             up = self._up
         if up:
             self._sync_or_reconnect(raise_error=True)
+        if first:
+            # A connect before any listener was bound was reported to nobody: tell the new
+            # listener now, so its health never stays "never connected" on a live stream.
+            with self._lock:
+                up = self._up
+            if up:
+                self._notify(True, "connected (listener bound after connect)")
 
     def unsubscribe(self, symbols: Iterable[str]) -> None:
         with self._lock:
@@ -1447,14 +1486,28 @@ def market_data_from_config(
     )
 
 
-def broker_from_config(config: Config, transport: Transport | None = None) -> WebullBroker:
+def broker_from_config(config: Config, transport: Transport | None = None,
+                       budget: RequestBudget | None = None) -> WebullBroker:
     """The adapter for the active environment. `transport` defaults to the SDK transport
     (which reads credentials); tests pass a recorded one."""
     return WebullBroker(
         transport if transport is not None else SdkTransport(settings_from_config(config)),
-        budget_from_config(config),
+        budget if budget is not None else budget_from_config(config),
         config.environment.open_orders_max_pages,
         config.orders.client_order_id_max_length,
         (config.orders.client_order_id_prefix, config.orders.probe_client_order_id_prefix),
         gate=lambda: trading_gate(config),
     )
+
+
+def bot_adapters(
+    config: Config, on_stream_error: Callable[[str, Exception], None]
+) -> tuple[WebullBroker, WebullMarketData, SdkQuoteStream]:
+    """Broker, market data and L1 stream for `aperture run`: one SDK transport (one token)
+    and one request budget shared by all of them. The stream is not started."""
+    transport = SdkTransport(settings_from_config(config))
+    budget = budget_from_config(config)
+    broker = broker_from_config(config, transport, budget)
+    session = StreamSession(budget, lambda: datetime.now(UTC), on_stream_error)
+    stream = SdkQuoteStream(stream_settings_from_config(config), session)
+    return broker, market_data_from_config(config, transport, budget, stream), stream

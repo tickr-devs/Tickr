@@ -103,6 +103,7 @@ class ApiConfig:
 @dataclass(frozen=True)
 class MarketDataConfig:
     discovery_interval_seconds: Decimal
+    stream_lost_exit_seconds: Decimal
     allowed_exchanges: tuple[str, ...]
     allowed_currencies: tuple[str, ...]
     screener_category: str
@@ -115,6 +116,10 @@ class MarketDataConfig:
     snapshot_symbols_per_request: int
     bars_symbols_per_request: int
     bars_per_symbol: int
+    history_bars_per_request: int
+    history_max_pages_per_symbol: int
+    history_max_lookback_days: int
+    history_dir: str
     stream_reconnect_delay_seconds: Decimal
     quiet_after_seconds: Decimal
     capture_dir: str
