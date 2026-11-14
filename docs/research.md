@@ -33,7 +33,9 @@ expected to use the same writer when it records decisions; until then `decide` p
   at or after its end.
 - Decimals are strings or null (floats are refused).
 - `admission`: `taken` / `refused` (active ENTER that reached admission; `refused` needs a
-  `refusal_cause`), `not_evaluated` (ENTER that never reached admission: observer, replay),
+  `refusal_cause`), `not_evaluated` (ENTER that never reached admission: observer, replay,
+  or the bot's own rest of a minute evaluated late for the record after protect-first, see
+  `docs/operations.md`),
   `not_applicable` (every other verdict). `taken` is only valid for role `active`.
 - Exactly these keys; anything else is refused with file, line and cause.
 

@@ -21,6 +21,7 @@ from aperture.runtime.entries import EntryDesk
 from aperture.runtime.evaluation import (
     EVALUATION_STOPPED,
     HISTORY_REFUSED,
+    REMAINDER,
     STRATEGY_ERROR,
     Evaluator,
 )
@@ -183,10 +184,110 @@ def test_an_entry_sent_drops_the_rest_of_the_minute_so_its_fill_is_seen_first(tm
     rig.symbol("XYZ")
     rig.strategy.verdicts["ABC"] = Verdict.ENTER
     rig.evaluator.tick(["ABC", "XYZ"])
-    assert [c.symbol for c in rig.strategy.seen] == ["ABC"]  # XYZ waits for the next minute
+    assert [c.symbol for c in rig.strategy.seen] == ["ABC"]  # XYZ waits: see below
     (stopped,) = rig.store.journal(EVALUATION_STOPPED)
     assert stopped.body["stage"] == "protect-first" and stopped.body["symbol"] == "ABC"
     assert stopped.body["cause"].endswith("entry working")
+    assert stopped.body["remaining"] == ["XYZ"]
+
+
+BREAKOUT = ("ABC", "DEF", "GHI")
+
+
+def breakout(tmp_path: Path) -> Rig:
+    """Three symbols say ENTER in the 09:34 minute; ABC is taken, DEF and GHI put aside."""
+    rig = Rig(tmp_path)
+    for symbol in BREAKOUT:
+        rig.symbol(symbol)
+        rig.strategy.verdicts[symbol] = Verdict.ENTER
+    rig.evaluator.tick(list(BREAKOUT))
+    assert [c.symbol for c in rig.strategy.seen] == ["ABC"]
+    return rig
+
+
+def protect(rig: Rig) -> None:
+    """ABC fills and its stop is verified: the service would run the strategy again."""
+    (trade,) = rig.engine.trades()
+    rig.broker.fill(rig.engine.orders(trade.trade_id)[0].client_order_id, D(10), D("10.05"))
+    for _ in range(2):
+        rig.engine.step()
+
+
+def records(rig: Rig) -> list[tuple[str, str, str]]:
+    rig.evaluator.desk.log.close()
+    return [(r.symbol, r.bar_start.astimezone(NEW_YORK).strftime("%H:%M"), r.admission) for r in
+            load_records([rig.dir / MONDAY.isoformat() / "decisions.jsonl"])]
+
+
+def restarted(rig: Rig) -> Evaluator:
+    """A new evaluator on the same database and decision folder (a bot restart)."""
+    rig.evaluator.desk.log.close()
+    desk = EntryDesk(rig.engine, CFG, calendar=CALENDAR, last_broker_read_at=lambda: rig.now,
+                     log=DecisionLog(rig.dir))
+    return Evaluator(rig.engine, CFG, rig.source, strategy=rig.strategy, desk=desk,
+                     history=rig.evaluator.history, inbox=rig.inbox, calendar=CALENDAR,
+                     now=lambda: rig.now)
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_the_rest_of_a_breakout_minute_is_recorded_once_protection_is_done(tmp_path):
+    rig = breakout(tmp_path)
+    protect(rig)
+    rig.now += timedelta(seconds=20)  # 09:35:40: still the 09:34 decision minute
+    rig.evaluator.tick(list(BREAKOUT))
+    late = rig.strategy.seen[1:]
+    assert [c.symbol for c in late] == ["DEF", "GHI"]
+    assert all(c.bars[-1].start.strftime("%H:%M") == "09:34" for c in late)
+    assert all(c.quote is not None and c.quote.provider_time == NOW for c in late)  # saved
+    assert len(rig.engine.trades()) == 1  # record only: nothing sent
+    rig.evaluator.tick(list(BREAKOUT))  # done: nothing twice
+    assert len(rig.strategy.seen) == 3
+    assert records(rig) == [("ABC", "09:34", "taken"), ("DEF", "09:34", "not_evaluated"),
+                            ("GHI", "09:34", "not_evaluated")]
+    (done,) = rig.store.journal(REMAINDER)
+    assert done.body == {"symbols": ["DEF", "GHI"]}
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_a_remainder_freed_after_the_next_bar_still_uses_its_own_bar(tmp_path):
+    rig = breakout(tmp_path)
+    protect(rig)
+    rig.now += timedelta(minutes=2)  # 09:37:20: the 09:35 bar has completed meanwhile
+    rig.evaluator.tick(list(BREAKOUT))
+    assert [c.bars[-1].start.strftime("%H:%M") for c in rig.strategy.seen[1:]] == [
+        "09:34", "09:34"]
+    rig.evaluator.tick(list(BREAKOUT))  # the next pass evaluates the current minute
+    assert records(rig) == [
+        ("ABC", "09:34", "taken"), ("DEF", "09:34", "not_evaluated"),
+        ("GHI", "09:34", "not_evaluated"), ("ABC", "09:35", "refused"),
+        ("DEF", "09:35", "refused"), ("GHI", "09:35", "refused")]
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_a_remainder_is_recorded_once_across_restarts(tmp_path):
+    rig = breakout(tmp_path)
+    protect(rig)
+    rig.evaluator = restarted(rig)  # restart before the remainder ran: it is not lost
+    rig.now += timedelta(seconds=20)
+    rig.evaluator.tick(list(BREAKOUT))
+    rig.evaluator = restarted(rig)  # restart after: it is not run again
+    rig.now += timedelta(minutes=1)
+    rig.evaluator.tick(list(BREAKOUT))
+    assert [r[:2] for r in records(rig)] == [
+        ("ABC", "09:34"), ("DEF", "09:34"), ("GHI", "09:34"),
+        ("ABC", "09:35"), ("DEF", "09:35"), ("GHI", "09:35")]
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_a_remainder_that_cannot_be_read_is_journaled_never_silent(tmp_path):
+    rig = breakout(tmp_path)
+    protect(rig)
+    rig.source.delay_bars(D(15))
+    rig.now += timedelta(seconds=20)
+    rig.evaluator.tick(list(BREAKOUT))
+    row = rig.store.journal(EVALUATION_STOPPED)[-1]
+    assert (row.body["stage"], row.body["symbols"]) == ("remainder-bars", ["DEF", "GHI"])
+    assert [r[0] for r in records(rig)] == ["ABC"]
 
 
 def test_a_strategy_exception_is_journaled_and_other_symbols_go_on(tmp_path):
