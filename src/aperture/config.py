@@ -62,6 +62,7 @@ class OrdersConfig:
     stop_retry_spacing_seconds: Decimal
     reconcile_interval_seconds: Decimal
     broker_read_max_age_seconds: Decimal
+    unknown_absent_reads: int
 
 
 @dataclass(frozen=True)

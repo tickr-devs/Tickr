@@ -57,6 +57,9 @@ stop_retry_spacing_seconds = 3
 reconcile_interval_seconds = 10
 # Maximum age in seconds of the last broker read before entries are blocked; read by safety.
 broker_read_max_age_seconds = 30
+# Consecutive "order not found" Detail reads before an order with an unknown send outcome is
+# treated as never created; read by the engine.
+unknown_absent_reads = 3
 
 [probe]
 # Shares per probe order (owner 2026-11-14); read by the probe command.
