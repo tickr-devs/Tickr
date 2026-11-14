@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from aperture import cli, config
+from aperture.broker.base import BrokerError
 from aperture.broker.fake import FakeBroker
 from aperture.calendar import NEW_YORK
 from aperture.config import GateResult
@@ -382,3 +383,99 @@ def test_cli_unknown_outcome_needs_the_operator(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "F5 result: unresolved" in out and "fence replace-unresolved:" in out
     assert len(broker.replaced) == 1
+
+
+def held(setup):
+    """The unresolved case above: Webull's new stop is untracked and our stop is gone."""
+    engine, broker, trade, stop = setup
+    hide_stop_price(broker)
+    broker.replace_outcomes.append("new-id")
+    reads = broker.open_orders
+
+    def fail_once():
+        from aperture.broker.base import OutcomeUnknown
+        broker.open_orders = reads
+        raise OutcomeUnknown("read lost")
+
+    broker.open_orders = fail_once
+    assert run(engine)[0] is Verdict.UNRESOLVED
+    engine.reconcile()
+    engine.request_exit(trade, "operator-exit")
+    return engine, broker, trade, f"{stop.client_order_id}-r"
+
+
+def holds(engine, trade) -> list[str]:
+    return [r.body["cause"] for r in engine.store.journal("fence-set",
+                                                          f"{Fence.STOP_HELD}:{trade}")]
+
+
+def test_hold_is_shown_once_per_episode(setup):
+    engine, broker, trade, foreign = held(setup)
+    for _ in range(10):
+        engine.step()
+        broker.tick()
+    engine.reconcile()
+    assert holds(engine, trade) == [
+        f"stop and close held: untracked SELL {foreign} rests in ABC after an unresolved "
+        "replace; resolve it in the Webull app"]
+    assert engine.fences()[f"{Fence.STOP_HELD}:{trade}"] == holds(engine, trade)[0]
+    broker.cancel(foreign)  # the operator resolves it; the requested exit then sells
+    for _ in range(4):
+        engine.reconcile()
+        broker.tick()
+    assert f"{Fence.STOP_HELD}:{trade}" not in engine.fences()
+    assert broker.positions() == [] and broker.open_orders() == []
+    assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS", "MARKET"]
+    assert len(holds(engine, trade)) == 1
+
+
+def test_hold_reads_no_open_orders_of_its_own(setup):
+    engine, broker, trade, foreign = held(setup)
+    reads = []
+    real = broker.open_orders
+    broker.open_orders = lambda: reads.append(1) or real()
+    for _ in range(20):
+        engine.step()
+    assert reads == []  # only reconcile reads open orders
+    engine.reconcile()
+    assert len(reads) == 1 and working_sells(broker) == [foreign]
+
+
+@pytest.mark.parametrize("how", ["failed", "old"])
+def test_without_a_fresh_read_the_hold_stays(setup, how):
+    engine, broker, trade, foreign = held(setup)
+    broker.cancel(foreign)  # gone at Webull, but no fresh read shows it yet
+    if how == "failed":
+        real = broker.open_orders
+        broker.open_orders = lambda: (_ for _ in ()).throw(BrokerError("read failed"))
+        assert not engine.reconcile()
+        broker.open_orders = real
+    else:
+        late = engine.clock() + float(CFG.orders.broker_read_max_age_seconds) + 1
+        engine.clock = lambda: late
+    for _ in range(5):
+        engine.step()
+        broker.tick()
+    assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
+    assert broker.positions()[0].quantity == D(1)
+    assert holds(engine, trade)[-1] == (
+        "stop and close held: no open-orders read newer than the unresolved replace yet")
+
+
+def test_exit_loop_shows_the_hold_once_then_sells_when_resolved(setup):
+    from aperture.engine.manual import run_until_closed
+    engine, broker, trade, foreign = held(setup)
+    clock, lines = [0.0], []
+
+    def sleep(seconds):
+        clock[0] += seconds
+        if clock[0] >= 60 and foreign in working_sells(broker):
+            broker.cancel(foreign)  # the operator, after reading the line
+        broker.tick()
+
+    assert run_until_closed(engine, sleep=sleep, monotonic=lambda: clock[0], now=lambda: NOW,
+                            flatten_at=None, interrupted=lambda: False, hold_seconds=None,
+                            notify=lines.append) == []
+    held_lines = [line for line in lines if Fence.STOP_HELD in line]
+    assert len(held_lines) == 1 and f"untracked SELL {foreign}" in held_lines[0]
+    assert broker.positions() == [] and broker.open_orders() == []

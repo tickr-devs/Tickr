@@ -79,7 +79,8 @@ max_unprotected_seconds = 30
 shutdown_deadline_seconds = 60
 # Seconds between reconciliation passes (positions + open orders); read by runtime.
 reconcile_interval_seconds = 10
-# Maximum age in seconds of the last broker read before entries are blocked; read by safety.
+# Maximum age in seconds of the last broker read before entries are blocked, and of the open-orders
+# read that may release a stop held after an unresolved replace; read by safety and the engine.
 broker_read_max_age_seconds = 30
 # Consecutive "order not found" Detail reads before an order with an unknown send outcome is
 # treated as never created; read by the engine.
