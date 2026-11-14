@@ -235,8 +235,10 @@ class Engine:
         self._positions: list[Position] | None = None  # this pass's positions read
         # The latest reconcile's reads; None after a failed read (or when a caller drops it).
         self.broker_view: BrokerView | None = None
-        # The latest reconcile's open-orders read and when (engine clock); None after a failure.
-        self._open_orders_read: tuple[float, tuple[OrderDetail, ...]] | None = None
+        # Per trade held after an unresolved replace (`_replace_blocks`): when the last
+        # open-orders read started (engine clock), the trade's live stops then, and how many
+        # reads in a row since then showed no untracked SELL. Memory only: a restart holds anew.
+        self._held_reads: dict[str, tuple[float, tuple[str, ...], int]] = {}
 
     # --- fences ----------------------------------------------------------------------------
 
@@ -813,39 +815,66 @@ class Engine:
 
     def _replace_blocks(self, trade: TradeRow, stops: list[OrderRow]) -> bool:
         """A replace of this trade's stop is unresolved, so Webull may hold a new stop we do
-        not track. While open orders show a working SELL in the symbol that is not ours, or no
-        open-orders read is known newer than the replace and at most
-        `broker_read_max_age_seconds` old, place no stop and sell nothing: either could sell
-        the same share twice. Reads come from reconcile only (no extra requests). The hold is
-        shown as the `stop-held:<trade>` fence, set (and journaled) once per cause."""
-        fenced = [self._fence_age(f"{Fence.REPLACE_UNRESOLVED}:{s.client_order_id}")
-                  for s in stops]
-        ages = [age for age in fenced if age is not None]
+        not track. Place no stop and sell nothing (either could sell the same share twice)
+        until two reads of open orders in a row, each started after the replace fence and
+        with the trade's live stops unchanged in between, show no working SELL in the symbol
+        that is not ours. Webull may list the new order a read late, so one clean read is not
+        enough. The read is made here, at the decision, at most once per
+        `reconcile_interval_seconds` per trade; between reads, and after a failed read, the
+        hold stays. It is shown as the `stop-held:<trade>` fence (one row per cause)."""
+        tid = trade.trade_id
+        fence_ages = [self._fence_age(f"{Fence.REPLACE_UNRESOLVED}:{s.client_order_id}")
+                      for s in stops]
+        ages = [age for age in fence_ages if age is not None]
         if not ages:
-            self._clear_fence(Fence.STOP_HELD, trade.trade_id)
+            self._held_reads.pop(tid, None)
+            self._clear_fence(Fence.STOP_HELD, tid)
             return False
-        read = self._open_orders_read
-        read_age = None if read is None else self.clock() - read[0]
-        if (read is None or read_age is None or read_age > min(ages)
-                or read_age > float(self.config.orders.broker_read_max_age_seconds)):
-            why = "no open-orders read newer than the unresolved replace yet"
-        else:
-            ours = {o.client_order_id for o in self.orders()}
-            foreign = sorted(o.client_order_id for o in read[1]
-                             if o.symbol == trade.symbol and o.side is Side.SELL
-                             and not o.state.terminal and o.client_order_id not in ours)
-            if not foreign:
-                self._clear_fence(Fence.STOP_HELD, trade.trade_id)
-                return False
-            why = (f"untracked SELL {', '.join(foreign)} rests in {trade.symbol} after an "
-                   f"unresolved replace; resolve it in the Webull app")
-        self._hold(trade.trade_id, f"stop and close held: {why}")
-        return True
+        started = self.clock()
+        fenced_at = started - min(ages)
+        live = tuple(sorted(s.client_order_id for s in stops if s.live))
+        last = self._held_reads.get(tid)
+        if last is not None and (last[0] < fenced_at or last[1] != live):
+            last = None  # a read from before the replace, or before our stops changed
+        if last is not None and started - last[0] < float(
+                self.config.orders.reconcile_interval_seconds):
+            self._hold(tid, None)
+            return True
+        try:
+            rows = self.broker.open_orders()
+        except BrokerError:
+            self._held_reads.pop(tid, None)
+            self._hold(tid, None)
+            return True
+        ours = {o.client_order_id for o in self.orders()}
+        foreign = sorted(o.client_order_id for o in rows
+                         if o.symbol == trade.symbol and o.side is Side.SELL
+                         and not o.state.terminal and o.client_order_id not in ours)
+        if foreign:
+            self._held_reads[tid] = (started, live, 0)
+            self._hold(tid, f"stop and close held: untracked SELL {', '.join(foreign)} rests "
+                            f"in {trade.symbol} after an unresolved replace; resolve it in "
+                            f"the Webull app")
+            return True
+        clean = 1 if last is None else last[2] + 1
+        if clean < 2:
+            self._held_reads[tid] = (started, live, clean)
+            self._hold(tid, None)
+            return True
+        self._held_reads.pop(tid, None)
+        self._clear_fence(Fence.STOP_HELD, tid)
+        return False
 
-    def _hold(self, trade_id: str, cause: str) -> None:
-        """Set `stop-held:<trade>` with `cause`; a changed cause replaces it (one row each)."""
+    def _hold(self, trade_id: str, cause: str | None) -> None:
+        """Set `stop-held:<trade>`. `cause` None keeps the cause already set, if any; a
+        changed cause replaces it (one journal row each)."""
         name = f"{Fence.STOP_HELD}:{trade_id}"
         current = self.fences().get(name)
+        if cause is None:
+            if current is not None:
+                return
+            cause = ("stop and close held after an unresolved replace: open orders not yet "
+                     "shown clean twice; check the Webull app")
         if current == cause:
             return
         if current is not None:
@@ -1086,13 +1115,11 @@ class Engine:
         """Compare broker open orders with our records, then step. Returns False if a read
         failed. The startup fence clears on the first success, whenever that is."""
         self.broker_view = None
-        self._open_orders_read = None
         try:
             open_orders = self.broker.open_orders()
         except BrokerError as exc:
             self._set_fence(Fence.BROKER_READ, "", f"open orders read failed: {type(exc).__name__}")
             return False
-        self._open_orders_read = (self.clock(), tuple(open_orders))
         rows = {o.client_order_id: o for o in self.orders()}
         broker_ids = set()
         for order in open_orders:

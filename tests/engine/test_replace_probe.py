@@ -25,10 +25,18 @@ CFG = config.load(ROOT / "config" / "bot.toml")
 NOW = datetime(2026, 11, 16, 11, 0, tzinfo=NEW_YORK)
 
 
+POLL = float(CFG.orders.detail_poll_seconds)
+INTERVAL = float(CFG.orders.reconcile_interval_seconds)
+
+
 class Market(FakeBroker):
-    """Entry and exit orders fill at 10 on `tick`; stops rest."""
+    """Entry and exit orders fill at 10 on `tick`; stops rest. `now` is the engine's clock and
+    moves one Detail poll per tick."""
+
+    now = 1_000_000.0
 
     def tick(self) -> None:
+        self.now += POLL
         for cid, order in list(self.orders.items()):
             if not order.state.terminal and order.order_type != "STOP_LOSS":
                 self.fill(cid, order.quantity - order.filled_quantity, D(10))
@@ -43,7 +51,8 @@ def quotes(bid="10.00", age=0) -> FakeMarketData:
 
 def protected(store: Store, broker: Market, run_id="run00001") -> tuple[Engine, str]:
     """One open trade, 1 ABC filled at 10, a verified stop at 9.80."""
-    engine = Engine(store, broker, CFG, run_id, lambda: GateResult(True, "t"))
+    engine = Engine(store, broker, CFG, run_id, lambda: GateResult(True, "t"),
+                    clock=lambda: broker.now)
     trade = engine.open_trade("ABC", D(1), D(10), D("9.80"), D("0.2"))
     broker.tick()
     for _ in range(3):
@@ -111,7 +120,7 @@ def test_new_id_is_adopted_and_exit_tears_it_down(setup):
     assert not any(n.startswith(Fence.FOREIGN_ORDER) for n in engine.fences())
     assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
     engine.request_exit(trade, "operator-exit")
-    for _ in range(6):
+    for _ in range(20):
         engine.step()
         broker.tick()
     assert engine.trade(trade).state is TradeState.CLOSED
@@ -142,7 +151,7 @@ def test_new_id_without_price_shown_is_adopted_not_doubled(setup):
     assert working_sells(broker) == [new.client_order_id]
     assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
     engine.request_exit(trade, "operator-exit")
-    for _ in range(6):
+    for _ in range(20):
         engine.step()
         broker.tick()
     assert broker.positions() == [] and broker.open_orders() == []
@@ -172,7 +181,7 @@ def test_unresolved_replace_never_adds_a_second_stop_or_sells(setup):
     assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
     assert broker.positions()[0].quantity == D(1) and fence(stop) in engine.fences()
     broker.cancel(foreign)  # the operator resolves it in the app
-    for _ in range(6):
+    for _ in range(20):
         engine.reconcile()
         broker.tick()
     assert broker.positions() == [] and broker.open_orders() == []
@@ -409,9 +418,15 @@ def holds(engine, trade) -> list[str]:
                                                           f"{Fence.STOP_HELD}:{trade}")]
 
 
+def counting(broker) -> list[int]:
+    reads, real = [], broker.open_orders
+    broker.open_orders = lambda: reads.append(1) or real()
+    return reads
+
+
 def test_hold_is_shown_once_per_episode(setup):
     engine, broker, trade, foreign = held(setup)
-    for _ in range(10):
+    for _ in range(20):
         engine.step()
         broker.tick()
     engine.reconcile()
@@ -420,8 +435,8 @@ def test_hold_is_shown_once_per_episode(setup):
         "replace; resolve it in the Webull app"]
     assert engine.fences()[f"{Fence.STOP_HELD}:{trade}"] == holds(engine, trade)[0]
     broker.cancel(foreign)  # the operator resolves it; the requested exit then sells
-    for _ in range(4):
-        engine.reconcile()
+    for _ in range(10):
+        engine.step()
         broker.tick()
     assert f"{Fence.STOP_HELD}:{trade}" not in engine.fences()
     assert broker.positions() == [] and broker.open_orders() == []
@@ -429,56 +444,102 @@ def test_hold_is_shown_once_per_episode(setup):
     assert len(holds(engine, trade)) == 1
 
 
-def test_hold_reads_no_open_orders_of_its_own(setup):
+def test_hold_reads_open_orders_at_most_once_per_interval(setup):
     engine, broker, trade, foreign = held(setup)
-    reads = []
-    real = broker.open_orders
-    broker.open_orders = lambda: reads.append(1) or real()
-    for _ in range(20):
+    reads = counting(broker)
+    passes = 40
+    for _ in range(passes):
         engine.step()
-    assert reads == []  # only reconcile reads open orders
-    engine.reconcile()
-    assert len(reads) == 1 and working_sells(broker) == [foreign]
+        broker.tick()
+    assert 0 < len(reads) <= passes * POLL / INTERVAL + 1
+    assert working_sells(broker) == [foreign]
 
 
-@pytest.mark.parametrize("how", ["failed", "old"])
-def test_without_a_fresh_read_the_hold_stays(setup, how):
+def test_a_failed_read_holds(setup):
     engine, broker, trade, foreign = held(setup)
-    broker.cancel(foreign)  # gone at Webull, but no fresh read shows it yet
-    if how == "failed":
-        real = broker.open_orders
-        broker.open_orders = lambda: (_ for _ in ()).throw(BrokerError("read failed"))
-        assert not engine.reconcile()
-        broker.open_orders = real
-    else:
-        late = engine.clock() + float(CFG.orders.broker_read_max_age_seconds) + 1
-        engine.clock = lambda: late
-    for _ in range(5):
+    broker.cancel(foreign)  # gone at Webull, but no read can show it
+    real = broker.open_orders
+    broker.open_orders = lambda: (_ for _ in ()).throw(BrokerError("read failed"))
+    for _ in range(10):
         engine.step()
         broker.tick()
     assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
     assert broker.positions()[0].quantity == D(1)
-    assert holds(engine, trade)[-1] == (
-        "stop and close held: no open-orders read newer than the unresolved replace yet")
+    assert f"{Fence.STOP_HELD}:{trade}" in engine.fences()
+    broker.open_orders = real
+    for _ in range(10):
+        engine.step()
+        broker.tick()
+    assert broker.positions() == [] and broker.open_orders() == []
+
+
+def test_a_read_from_before_the_replace_never_releases(setup):
+    """Review of #72: a reconcile read in flight during the replace returns the old state."""
+    engine, broker, trade, stop = setup
+    hide_stop_price(broker)
+    broker.replace_outcomes.append("new-id")
+    before = broker.open_orders()  # the old stop working, nothing foreign
+    plan = plan_replace(engine, quotes(), D("9.90"), NOW)
+    assert send(engine, plan, print)
+    real = broker.open_orders
+
+    def stale_once():
+        broker.open_orders = real
+        return before
+
+    broker.open_orders = stale_once
+    engine.reconcile()
+    for _ in range(3):
+        engine.step()
+    assert working_sells(broker) == [f"{stop.client_order_id}-r"]
+    assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
+    assert f"{Fence.STOP_HELD}:{trade}" in engine.fences()
+
+
+def test_new_order_listed_one_read_late(setup):
+    engine, broker, trade, stop = setup
+    hide_stop_price(broker)
+    broker.replace_outcomes.append("new-id")
+    plan = plan_replace(engine, quotes(), D("9.90"), NOW)
+    assert send(engine, plan, print)
+    new = f"{stop.client_order_id}-r"
+    real, late = broker.open_orders, [1]
+
+    def listed_late():
+        rows = real()
+        if late and engine.order(stop.client_order_id).live is False:
+            late.pop()  # the first read after we saw the old stop end lacks the new order
+            return [o for o in rows if o.client_order_id != new]
+        return rows
+
+    broker.open_orders = listed_late
+    for _ in range(10):
+        engine.step()
+        broker.tick()
+    assert not late  # the late read happened
+    assert working_sells(broker) == [new]
+    assert [o.order_type for o in broker.sent] == ["LIMIT", "STOP_LOSS"]
+    assert f"untracked SELL {new}" in engine.fences()[f"{Fence.STOP_HELD}:{trade}"]
 
 
 def test_exit_loop_shows_the_hold_once_then_sells_when_resolved(setup):
     from aperture.engine.manual import run_until_closed
     engine, broker, trade, foreign = held(setup)
-    clock, lines = [0.0], []
+    lines = []
 
     def sleep(seconds):
-        clock[0] += seconds
-        if clock[0] >= 60 and foreign in working_sells(broker):
-            broker.cancel(foreign)  # the operator, after reading the line
         broker.tick()
+        if broker.now >= engine.clock() and len(lines) and foreign in working_sells(broker):
+            broker.cancel(foreign)  # the operator, after reading the line
 
-    assert run_until_closed(engine, sleep=sleep, monotonic=lambda: clock[0], now=lambda: NOW,
-                            flatten_at=None, interrupted=lambda: False, hold_seconds=None,
-                            notify=lines.append) == []
+    started = broker.now
+    assert run_until_closed(engine, sleep=sleep, monotonic=lambda: broker.now - started,
+                            now=lambda: NOW, flatten_at=None, interrupted=lambda: False,
+                            hold_seconds=None, notify=lines.append) == []
     held_lines = [line for line in lines if Fence.STOP_HELD in line]
     assert len(held_lines) == 1 and f"untracked SELL {foreign}" in held_lines[0]
     assert broker.positions() == [] and broker.open_orders() == []
+
 
 # -- check-quote ---------------------------------------------------------------------------
 
