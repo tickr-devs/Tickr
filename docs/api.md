@@ -41,7 +41,8 @@ Rules on the remote port: `Host` must be one of `remote_hosts` (no port when 443
 `name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
 `401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
 An unreadable token hash file answers `503 unavailable`. The local port (the Mac app, the status
-page) needs no token. `remote_hosts = []` (the shipped value) turns remote access off.
+page) needs no token, as before: any process on this Mac can use it. Until the phone first connects,
+the pairing file holds the token in clear (0600); delete it if you abandon a pairing. `remote_hosts = []` (the shipped value) turns remote access off.
 
 The phone keeps the token in its Keychain (this device only) together with the address it was
 paired with, and sends it only over HTTPS to exactly that address; changing the address by hand
