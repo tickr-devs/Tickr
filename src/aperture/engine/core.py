@@ -852,11 +852,15 @@ class Engine:
         if age >= float(self.config.orders.max_unprotected_seconds) and not exiting:
             # Asked every pass: refused while an earlier close waits for the operator, taken
             # as soon as they clear that fence.
-            requested = self.request_exit(trade.trade_id, "unprotected-too-long")
+            self.request_exit(trade.trade_id, "unprotected-too-long")
             if not self._has_fence(Fence.UNPROTECTED_TIMEOUT, trade.trade_id):
-                text = (f"no verified stop for {int(age)} s; exiting" if requested else
-                        f"no verified stop for {int(age)} s and the closing order was refused "
-                        "before: close the position in the Webull app")
+                # From the exit-refused fence, not from request_exit's answer: that is also
+                # False when an exit was already requested earlier in this pass (stop-rejected),
+                # and telling the operator to sell by hand then would double the sale.
+                refused = self._has_fence(Fence.EXIT_REFUSED, trade.trade_id)
+                text = (f"no verified stop for {int(age)} s and the closing order was refused "
+                        "before: close the position in the Webull app" if refused else
+                        f"no verified stop for {int(age)} s; exiting")
                 self._set_fence(Fence.UNPROTECTED_TIMEOUT, trade.trade_id, text)
 
     def _exit_step(self, trade: TradeRow, entry: OrderRow, stops: list[OrderRow],
