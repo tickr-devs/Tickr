@@ -249,12 +249,24 @@ def _unwrap_list(body: Any, where: str) -> list[Any]:
     raise MalformedResponse(f"{where}: expected a list or an object with list 'data'")
 
 
-def read_order(item: Any, where: str) -> OrderDetail:
-    """One order object (Detail `orders[]` item or open-orders row) -> OrderDetail.
+IsOwnAccount = Callable[[str], bool]
 
-    `filled_quantity` is required: an order whose fill we cannot read is not one we can
-    reason about. Status/quantity contradictions map to UNKNOWN (broker/status.py)."""
-    raw_status = str(_require(item, "order_status", where)).strip()
+
+def _check_account(row: Any, is_own: IsOwnAccount, where: str) -> None:
+    """Reads are account-scoped; a row that names an account must name ours."""
+    if isinstance(row, Mapping) and "account_id" in row and not is_own(str(row["account_id"])):
+        raise MalformedResponse(f"{where}: row belongs to another account")
+
+
+def read_order(item: Any, is_own: IsOwnAccount, where: str) -> OrderDetail:
+    """One order row (Detail `orders[]` or open-orders `orders[]`) -> OrderDetail.
+
+    Field names are the recorded ones (tests/fixtures/webull). `filled_quantity` is required:
+    an order whose fill we cannot read is one we cannot reason about. Status/quantity
+    contradictions map to UNKNOWN (broker/status.py). `filled_price` has not been observed
+    on a fill yet (no fill recorded so far), so it stays optional."""
+    _check_account(item, is_own, where)
+    raw_status = str(_require(item, "status", where)).strip()
     quantity = _decimal_field(item, "total_quantity", where)
     filled = _decimal_field(item, "filled_quantity", where)
     return OrderDetail(
@@ -270,13 +282,21 @@ def read_order(item: Any, where: str) -> OrderDetail:
     )
 
 
-def read_order_detail(body: Any, client_order_id: str) -> OrderDetail:
-    """Detail body -> the single order with our client_order_id."""
+DETAIL_NOT_VISIBLE = "DETAIL_NOT_VISIBLE"
+
+
+def read_order_detail(body: Any, client_order_id: str, is_own: IsOwnAccount) -> OrderDetail:
+    """Detail body `{..., "orders": [row]}` -> the one row with our client_order_id.
+
+    An empty `orders` list is not proof that the order was never sent (Detail can lag the
+    acknowledgement): it raises BrokerReadFailed(DETAIL_NOT_VISIBLE) so the caller polls."""
     where = "order_detail"
-    orders = body.get("orders") if isinstance(body, Mapping) else None
-    if orders is None:
-        # Some responses carry the order fields at the top level.
-        return _check_id(read_order(body, where), client_order_id)
+    _check_account(body, is_own, where)
+    if not isinstance(body, Mapping) or "orders" not in body:
+        raise MalformedResponse(f"{where}: missing field 'orders'")
+    orders = body["orders"]
+    if orders == []:
+        raise BrokerReadFailed(Route.ORDER_DETAIL.name, HTTP_OK_MIN, DETAIL_NOT_VISIBLE)
     if not isinstance(orders, list):
         raise MalformedResponse(f"{where}: 'orders' is not a list")
     matches = [
@@ -284,32 +304,31 @@ def read_order_detail(body: Any, client_order_id: str) -> OrderDetail:
     ]
     if len(matches) != 1:
         raise MalformedResponse(f"{where}: expected one order with our id, found {len(matches)}")
-    return read_order(matches[0], where)
+    return read_order(matches[0], is_own, where)
 
 
-def _check_id(detail: OrderDetail, client_order_id: str) -> OrderDetail:
-    if detail.client_order_id != client_order_id:
-        raise MalformedResponse("order_detail: client_order_id does not match the request")
-    return detail
-
-
-def read_open_orders(body: Any) -> list[OrderDetail]:
-    where = "open_orders"
+def read_order_rows(body: Any, is_own: IsOwnAccount, where: str) -> list[OrderDetail]:
+    """Open-orders (and history) page: `{"data": [combo{..., "orders": [row...]}]}`."""
     result: list[OrderDetail] = []
-    for index, row in enumerate(_unwrap_list(body, where)):
-        nested = row.get("orders") if isinstance(row, Mapping) else None
-        if isinstance(nested, list):
-            result.extend(read_order(o, f"{where}[{index}].orders") for o in nested)
-        else:
-            result.append(read_order(row, f"{where}[{index}]"))
+    for index, combo in enumerate(_unwrap_list(body, where)):
+        here = f"{where}[{index}]"
+        _check_account(combo, is_own, here)
+        nested = _require(combo, "orders", here)
+        if not isinstance(nested, list):
+            raise MalformedResponse(f"{here}: 'orders' is not a list")
+        result.extend(read_order(o, is_own, f"{here}.orders[{i}]") for i, o in enumerate(nested))
     return result
 
 
-def read_positions(body: Any) -> list[Position]:
+def read_positions(body: Any, is_own: IsOwnAccount) -> list[Position]:
+    """Positions: a bare array (recorded empty). Non-empty rows are not recorded yet; the
+    old bot read `symbol` and `quantity`. The average-cost field name is unproven, so it is
+    optional and read as `cost_price`."""
     where = "positions"
     result: list[Position] = []
     for index, row in enumerate(_unwrap_list(body, where)):
         here = f"{where}[{index}]"
+        _check_account(row, is_own, here)
         result.append(
             Position(
                 symbol=str(_require(row, "symbol", here)),
@@ -320,15 +339,20 @@ def read_positions(body: Any) -> list[Position]:
     return result
 
 
-def read_acknowledgement(body: Any, client_order_id: str) -> Acknowledgement:
-    """Place response -> Acknowledgement. Must echo our client_order_id."""
+def read_acknowledgement(body: Any, client_order_id: str, is_own: IsOwnAccount) -> Acknowledgement:
+    """Place response -> Acknowledgement. Must echo our client_order_id and carry the broker
+    order id, with no error envelope. Anything else is not an acknowledgement."""
     where = "place"
+    if isinstance(body, Mapping) and "error_code" in body:
+        raise MalformedResponse(f"{where}: success status with an error envelope")
+    _check_account(body, is_own, where)
     echoed = str(_require(body, "client_order_id", where))
     if echoed != client_order_id:
         raise MalformedResponse(f"{where}: acknowledgement is for another client_order_id")
-    order_id = _optional(body, "order_id")
-    return Acknowledgement(client_order_id=echoed, broker_order_id=None if order_id is None
-                           else str(order_id))
+    order_id = str(_require(body, "order_id", where)).strip()
+    if not order_id:
+        raise MalformedResponse(f"{where}: empty order_id")
+    return Acknowledgement(client_order_id=echoed, broker_order_id=order_id)
 
 
 def read_accounts(body: Any, is_own: Callable[[str], bool]) -> AccountSnapshot:
@@ -459,14 +483,14 @@ class WebullBroker:
         return read_accounts(self._read(Route.ACCOUNTS, {}), self._transport.is_own_account)
 
     def positions(self) -> list[Position]:
-        return read_positions(self._read(Route.POSITIONS, {}))
+        return read_positions(self._read(Route.POSITIONS, {}), self._transport.is_own_account)
 
     def open_orders(self) -> list[OrderDetail]:
         orders: list[OrderDetail] = []
         params: dict[str, Any] = {}
         for _page in range(self._open_orders_max_pages):
             body = self._read(Route.OPEN_ORDERS, params)
-            orders.extend(read_open_orders(body))
+            orders.extend(read_order_rows(body, self._transport.is_own_account, "open_orders"))
             next_key = _optional(body, "pagination_key") if isinstance(body, Mapping) else None
             if next_key is None:
                 return orders
@@ -477,7 +501,9 @@ class WebullBroker:
     def order_detail(self, client_order_id: str) -> OrderDetail:
         response = self._send(Route.ORDER_DETAIL, {"client_order_id": client_order_id})
         if response.ok:
-            return read_order_detail(response.body, client_order_id)
+            return read_order_detail(
+                response.body, client_order_id, self._transport.is_own_account
+            )
         if self._order_not_present(response):
             raise OrderNotFound(client_order_id)
         raise BrokerReadFailed(Route.ORDER_DETAIL.name, response.status, response.error_code)
@@ -488,7 +514,9 @@ class WebullBroker:
         response = self._send(Route.PLACE, {"new_orders": [body]})
         if response.ok:
             try:
-                return read_acknowledgement(response.body, request.client_order_id)
+                return read_acknowledgement(
+                    response.body, request.client_order_id, self._transport.is_own_account
+                )
             except MalformedResponse as exc:
                 # The broker accepted something; we cannot tell what. Detail decides.
                 raise OutcomeUnknown(f"PLACE: unreadable acknowledgement ({exc})") from None
