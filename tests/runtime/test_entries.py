@@ -74,6 +74,7 @@ def test_admitted_enter_opens_a_trade_at_the_top_of_the_window(tmp_path):
     assert (entry.leg, entry.limit_price, trade.stop_price) == (Leg.ENTRY, D("10.10"),
                                                                 D("9.75"))
     assert trade.planned_loss_usd == D("3.50")  # 10 x (10.10 - 9.75)
+    assert trade.entry_low == D("10.00")  # kept for the working-entry cancel
 
 
 def test_every_decision_is_recorded_in_the_research_format(tmp_path):

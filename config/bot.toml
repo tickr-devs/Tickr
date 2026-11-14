@@ -27,7 +27,7 @@ position_notional_cap_usd = 2500
 max_daily_loss_usd = 300
 # Maximum simultaneous open positions (v1 supports 1); read by safety.
 max_open_positions = 1
-# Maximum quote age for any decision, seconds, end to end from provider time (owner 2026-10-15); read by safety and strategy input.
+# Maximum quote age for any decision, seconds, end to end from provider time (owner 2026-10-15); read by safety, strategy input and the working-entry cancel (runtime/entry_cancel.py).
 max_quote_age_seconds = 5
 # Allowed lead of the provider clock over ours, seconds: a quote time up to this far ahead counts as age 0, further ahead = refuse; read by safety.
 max_clock_skew_seconds = 1

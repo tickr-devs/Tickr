@@ -117,9 +117,16 @@ def _schema_v3(db: sqlite3.Connection) -> None:
     db.execute("ALTER TABLE trades ADD COLUMN stop_percent_below_fill TEXT")
 
 
+def _schema_v4(db: sqlite3.Connection) -> None:
+    # The bottom of the decision's price window (NULL: none recorded, for example a manual
+    # trade), and the one recorded cause of the decision to cancel the working entry.
+    db.execute("ALTER TABLE trades ADD COLUMN entry_low TEXT")
+    db.execute("ALTER TABLE trades ADD COLUMN entry_cancel TEXT")
+
+
 # Forward-only migrations. Never edit a released entry; append a new one.
 MIGRATIONS: tuple[Callable[[sqlite3.Connection], None], ...] = (
-    _schema_v1, _schema_v2, _schema_v3)
+    _schema_v1, _schema_v2, _schema_v3, _schema_v4)
 
 
 def _json_default(value: Any) -> Any:

@@ -113,6 +113,12 @@ class StubMarket:
     def tick(self) -> None:
         self.ticks += 1
 
+    def quote(self, symbol):
+        return None
+
+    def stream_state(self, symbol):
+        return None
+
     def freshness(self, last_broker_read_at):
         return api.Freshness(last_broker_read_at, None, api.StreamHealth.OFF)
 
@@ -435,3 +441,12 @@ def test_cli_run_with_a_misbehaving_strategy_protects_but_never_enters(tmp_path,
     (row,) = store.journal(service.STRATEGY_NOT_LOADED)
     assert row.body["cause"]
     store.close()
+
+
+def test_the_loop_cancels_a_working_entry_no_quote_can_justify(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())  # nothing fills
+    t = bot.engine.open_trade("ABC", D(1), D("10.10"), D("9.75"), D(1), entry_low=D("10.00"))
+    assert bot.run(1)  # no market data wired: no quote
+    decided = bot.store.journal("entry-cancel-decided")
+    assert [r.body["cause"] for r in decided] == ["quote-stale"]
+    assert bot.engine.trade(t).state is TradeState.CLOSED

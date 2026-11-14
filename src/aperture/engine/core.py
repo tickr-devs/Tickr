@@ -157,6 +157,8 @@ class TradeRow:
     exit_requested: str | None
     stop_failures: int
     last_stop_failure_at: float | None
+    entry_low: Decimal | None  # bottom of the decision's price window; None: not recorded
+    entry_cancel: str | None  # cause of the decision to cancel the working entry
 
 
 def _dec(value: Any) -> Decimal | None:
@@ -187,6 +189,7 @@ def _trade(row: Any) -> TradeRow:
         planned_loss_usd=Decimal(row["planned_loss_usd"]),
         exit_requested=row["exit_requested"], stop_failures=row["stop_failures"],
         last_stop_failure_at=row["last_stop_failure_at"],
+        entry_low=_dec(row["entry_low"]), entry_cancel=row["entry_cancel"],
     )
 
 
@@ -288,6 +291,26 @@ class Engine:
                     asked += 1
         return asked
 
+    def cancel_entry(self, trade_id: str, cause: str, detail: str) -> bool:
+        """Decide, once and durably, to cancel the trade's working entry (spec 9: the quote
+        left the window or went stale, or the last-entry time passed). Only the unfilled
+        remainder is cancelled: filled shares stay protected as before. The decision survives
+        restarts, and `_advance` asks again only after Detail showed a cancel did not take.
+        An entry whose send outcome is unknown is cancelled once Detail shows it exists.
+        Returns whether this call made the decision."""
+        with self.store.transaction():
+            decided = self.store.execute(
+                "UPDATE trades SET entry_cancel = ? WHERE trade_id = ? AND state != ? "
+                "AND entry_cancel IS NULL", (cause, trade_id, TradeState.CLOSED))
+            if decided:
+                self.store.append("entry-cancel-decided", {"cause": cause, "detail": detail},
+                                  key=trade_id, run_id=self.run_id)
+        if decided:
+            entry = next(o for o in self.orders(trade_id) if o.leg is Leg.ENTRY)
+            if entry.live and entry.send_state is SendState.ACKNOWLEDGED:
+                self._cancel(entry)
+        return bool(decided)
+
     def fence_rows(self) -> list[tuple[str, str, str]]:
         """(name, cause, set_at UTC ISO) of every fence, oldest first."""
         return [(r["name"], r["cause"], r["set_at"]) for r in
@@ -327,12 +350,15 @@ class Engine:
 
     def open_trade(self, symbol: str, quantity: Decimal, limit_price: Decimal,
                    stop_price: Decimal, planned_loss_usd: Decimal,
-                   stop_percent_below_fill: Decimal | None = None) -> str:
+                   stop_percent_below_fill: Decimal | None = None,
+                   entry_low: Decimal | None = None) -> str:
         """Record and send a LIMIT BUY entry. Refuses (EntryRefused) instead of guessing.
 
         With `stop_percent_below_fill`, the stop is re-derived from the first observed average
         fill price (rounded down to the cent) before the first stop is placed; `stop_price`
-        is the bound computed from the limit and is never loosened."""
+        is the bound computed from the limit and is never loosened. `entry_low` is the bottom
+        of the decision's price window, kept so the entry can be cancelled when the quote
+        leaves it."""
         gate = self.gate()
         if not gate.open:
             raise EntryRefused(f"trading gate closed: {gate.cause}")
@@ -345,20 +371,24 @@ class Engine:
             raise EntryRefused("quantity must be a positive whole number")
         if not ZERO < stop_price < limit_price:
             raise EntryRefused("stop must be above zero and below the entry limit")
+        if entry_low is not None and not stop_price < entry_low <= limit_price:
+            raise EntryRefused("window bottom must be above the stop and at most the limit")
 
         with self.store.transaction():
             trade_id = f"t{self.store.next_counter('trade')}"
             self.store.execute(
                 "INSERT INTO trades(trade_id, run_id, symbol, state, entry_quantity, "
                 "entry_limit_price, stop_price, stop_percent_below_fill, planned_loss_usd, "
-                "opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "opened_at, entry_low) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (trade_id, self.run_id, symbol, TradeState.OPENING, str(quantity),
                  str(limit_price), str(stop_price),
                  None if stop_percent_below_fill is None else str(stop_percent_below_fill),
-                 str(planned_loss_usd), self.store.stamp()))
+                 str(planned_loss_usd), self.store.stamp(),
+                 None if entry_low is None else str(entry_low)))
             self.store.append("trade-opened", {
                 "symbol": symbol, "quantity": quantity, "limit_price": limit_price,
-                "stop_price": stop_price, "planned_loss_usd": planned_loss_usd},
+                "stop_price": stop_price, "planned_loss_usd": planned_loss_usd,
+                "entry_low": entry_low},
                 key=trade_id, run_id=self.run_id)
             cid = self._write_intent(trade_id, Leg.ENTRY, symbol, Side.BUY, OrderType.LIMIT,
                                      quantity, limit_price=limit_price)
@@ -724,7 +754,9 @@ class Engine:
         else:
             # Not exiting, or shutting down mid-teardown with no close working: stop tearing
             # down and keep protection, so a drain deadline never leaves a position unstopped.
-            if trade.state is TradeState.EXITING and entry.live:
+            # A decided entry cancel keeps being asked for (each ask is its own decision).
+            if entry.live and (trade.state is TradeState.EXITING or (
+                    trade.entry_cancel and entry.send_state is SendState.ACKNOWLEDGED)):
                 self._cancel(entry)
             self._protect(trade, stops, expected)
         self._watch_protection(trade, exits, expected)

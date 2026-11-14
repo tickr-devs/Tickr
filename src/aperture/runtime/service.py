@@ -24,6 +24,7 @@ from aperture.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeR
 from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
 from aperture.runtime.alerts import AlertKind
+from aperture.runtime.entry_cancel import cancel_stale_entries
 
 if TYPE_CHECKING:
     from aperture.observers.runner import ObserverSet
@@ -219,6 +220,15 @@ class Service:
             if not trade.exit_requested:
                 self.engine.request_exit(trade.trade_id, "session-flatten")
 
+    def cancel_stale_entries(self) -> None:
+        """Working entries whose quote left the window or went stale, or past the last-entry
+        time, are cancelled (spec 9). Without market data no quote can justify one."""
+        market = self.market
+        cancel_stale_entries(
+            self.engine, self.config, self.calendar, self.now(),
+            quote=(lambda _: None) if market is None else market.quote,
+            stream=(lambda _: None) if market is None else market.stream_state)
+
     # --- strategy --------------------------------------------------------------------------
 
     def _evaluate(self) -> None:
@@ -404,6 +414,7 @@ class Service:
             self._observe(reconcile=due)
             if self.market is not None:
                 self.market.tick()  # after the engine's broker work of this pass
+            self.cancel_stale_entries()  # on this pass's reads and quotes, before new decisions
             self._evaluate()
             if due:
                 last_reconcile = monotonic()
