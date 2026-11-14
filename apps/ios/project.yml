@@ -11,6 +11,8 @@ options:
   # The Xcode release the owner uses. It becomes LastUpgradeCheck, so Xcode does not offer to
   # "update to recommended settings"; never accept such an offer in Xcode: put the setting here.
   xcodeVersion: "27.2"
+attributes:
+  LastSwiftUpdateCheck: "2720"
 packages:
   ApertureShared:
     path: ../shared
@@ -26,6 +28,8 @@ settings:
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     STRING_CATALOG_GENERATE_SYMBOLS: YES
     SWIFT_EMIT_LOC_STRINGS: YES
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY: YES
 targets:
   Aperture:
     type: application
