@@ -165,3 +165,11 @@ def test_drain_deadline_after_supervisor_alert_is_invalid_config(config_path):
     result = _run(config_path, {})
     assert result.cause is PreflightCause.CONFIG_INVALID
     assert "shutdown_deadline_seconds" in result.summary()
+
+
+@pytest.mark.parametrize("kind", ["missing", "text", "bool", "negative", "raises"])
+def test_misbehaving_strategy_is_refused_never_crashes(config_path, break_strategy, kind):
+    break_strategy(kind)
+    result = _run(config_path, _ready(config_path))
+    assert result.cause is PreflightCause.STRATEGY_REFUSED
+    assert not result.blocks_start

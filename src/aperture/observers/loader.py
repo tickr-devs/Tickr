@@ -72,7 +72,7 @@ def load_strategy(root: Path, folder: str, modules: Mapping[str, str]) -> Loaded
         raise ObserverError(f"{folder}: module {module_name} has no create(values)")
     try:
         strategy = create(values)
-    except ValueError as exc:
+    except Exception as exc:  # any failure to build is a refusal, never a crash of the caller
         raise ObserverError(f"{folder}: values refused by {module_name}: {exc}") from exc
     if strategy.name != name or strategy.version != table.get("version"):
         raise ObserverError(
@@ -85,7 +85,12 @@ def load_strategy(root: Path, folder: str, modules: Mapping[str, str]) -> Loaded
 def check_history(loaded: LoadedStrategy, history_sessions: int) -> None:
     """Refuse a strategy that needs more prior sessions than the platform fetches: it would
     refuse every evaluation for missing history all day."""
-    need = loaded.strategy.prior_sessions_needed
+    need = getattr(loaded.strategy, "prior_sessions_needed", None)
+    if isinstance(need, bool) or not isinstance(need, int) or need < 0:
+        raise ObserverError(
+            f"{loaded.folder}: {loaded.identity} declares no valid prior_sessions_needed "
+            f"(got {need!r})"
+        )
     if need > history_sessions:
         raise ObserverError(
             f"{loaded.folder}: {loaded.identity} needs {need} prior sessions, "
