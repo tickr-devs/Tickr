@@ -885,7 +885,8 @@ class Engine:
         """Detail and open orders showed the same order working at the new price."""
         with self.store.transaction():
             self.store.execute("UPDATE orders SET stop_price = ?, updated_at = ? "
-                               "WHERE client_order_id = ?", (str(stop_price), now_utc(), cid))
+                               "WHERE client_order_id = ?",
+                               (str(stop_price), self.store.stamp(), cid))
             self.store.append("replace-confirmed", {"stop_price": stop_price, **how}, key=cid,
                               run_id=self.run_id)
             self._drop_replace_fence(cid, "replace-confirmed")
@@ -913,7 +914,7 @@ class Engine:
                  None if detail.stop_price is None else str(detail.stop_price),
                  SendState.ACKNOWLEDGED, detail.state, str(detail.filled_quantity),
                  None if detail.average_fill_price is None else str(detail.average_fill_price),
-                 detail.broker_order_id, now_utc()))
+                 detail.broker_order_id, self.store.stamp()))
             self.store.append("order-adopted", {"replaces": old.client_order_id,
                                                 "stop_price": detail.stop_price,
                                                 "state": detail.state},
