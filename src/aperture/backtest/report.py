@@ -22,7 +22,7 @@ import random
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ from aperture.config import Config
 from aperture.replay.engine import LABEL, ReplayResult, SimulatedTrade
 from aperture.replay.report import summarize
 from aperture.replay.settings import ReplaySettings
+from aperture.risk.causes import AdmissionCause
 from aperture.risk.daily import check_daily
 from aperture.risk.sizing import check_size
 
@@ -134,10 +135,18 @@ def bot_view(trades: Sequence[SimulatedTrade], cfg: Config) -> dict[str, Any]:
     bot.toml [risk] `planned_loss_usd` and `position_notional_cap_usd` at the window top and
     the stop, and `check_daily` must pass with the day's net realized loss, the planned loss of
     positions still open, and this trade's own planned loss = quantity x (entry_high - stop).
-    At most `max_open_positions` at once. Refusals are counted by cause."""
+    At most `max_open_positions` at once. Refusals are counted by cause.
+
+    Near the ceiling the live strategy sizes down to the room left (loss_budget_usd, while the
+    room is at least `min_daily_room_usd`). Here the quantity becomes
+    min(quantity, floor(room / (entry_high - stop))) and the USD result scales with it; the
+    strategy's own sizing risk also counts spread and slippage reserve, so live it would size
+    a little smaller still."""
     risk = cfg.risk
     taken: list[SimulatedTrade] = []
     planned: dict[int, Decimal] = {}
+    pnl: dict[int, Decimal] = {}
+    sized_down = 0
     refused: dict[str, int] = defaultdict(int)
     for trade in sorted(trades, key=lambda t: (t.entry_time, t.signal_bar_start, t.symbol)):
         if trade.quantity is None or trade.entry_high is None:
@@ -152,19 +161,31 @@ def bot_view(trades: Sequence[SimulatedTrade], cfg: Config) -> dict[str, Any]:
         if not size.ok or size.planned_loss_usd is None:
             refused[str(size.cause)] += 1
             continue
-        net = sum((t.pnl_usd or ZERO for t in taken if t.session_date == trade.session_date
+        net = sum((pnl[id(t)] for t in taken if t.session_date == trade.session_date
                    and t.exit_time <= trade.entry_time), ZERO)
+        realized = max(-net, ZERO)
         reserved = sum((planned[id(t)] for t in open_now), ZERO)
-        daily = check_daily(max(-net, ZERO), reserved, size.planned_loss_usd,
-                            risk.max_daily_loss_usd)
+        quantity, planned_loss = trade.quantity, size.planned_loss_usd
+        room = risk.max_daily_loss_usd - realized - reserved
+        if room >= risk.min_daily_room_usd and planned_loss > room:
+            # Live (#70): the strategy gets loss_budget_usd = room and sizes down to it.
+            quantity = min(quantity, _floor(room / (trade.entry_high - trade.stop)))
+            if quantity < 1:
+                refused[str(AdmissionCause.QUANTITY_BELOW_ONE)] += 1
+                continue
+            planned_loss = quantity * (trade.entry_high - trade.stop)
+            sized_down += 1
+        daily = check_daily(realized, reserved, planned_loss, risk.max_daily_loss_usd,
+                            risk.min_daily_room_usd)
         if not daily.ok:
             refused[str(daily.cause)] += 1
             continue
         taken.append(trade)
-        planned[id(trade)] = size.planned_loss_usd
+        planned[id(trade)] = planned_loss
+        pnl[id(trade)] = (trade.exit_price - trade.entry_price) * quantity
     per_day: dict[date, Decimal] = defaultdict(lambda: ZERO)
     for trade in taken:
-        per_day[trade.session_date] += trade.pnl_usd or ZERO
+        per_day[trade.session_date] += pnl[id(trade)]
     equity = peak = drawdown = ZERO
     for day in sorted(per_day):
         equity += per_day[day]
@@ -174,6 +195,7 @@ def bot_view(trades: Sequence[SimulatedTrade], cfg: Config) -> dict[str, Any]:
     return {
         **stats([t.r_multiple for t in taken]),
         "refused": dict(sorted(refused.items())),
+        "sized_down_to_daily_room": sized_down,
         "total_usd": sum(days, ZERO),
         "days_with_trades": len(days),
         "average_day_usd": sum(days, ZERO) / len(days) if days else None,
@@ -182,6 +204,10 @@ def bot_view(trades: Sequence[SimulatedTrade], cfg: Config) -> dict[str, Any]:
         "positive_days": sum(1 for d in days if d > 0),
         "max_drawdown_usd": drawdown,
     }
+
+
+def _floor(value: Decimal) -> Decimal:
+    return value.to_integral_value(rounding=ROUND_FLOOR)
 
 
 def _plain(value: Any, places: int) -> Any:

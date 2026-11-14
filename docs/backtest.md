@@ -69,7 +69,9 @@ names. The first response of each kind and every failed one are kept in `<out>/r
   the live money checks: `risk.sizing.check_size` (planned loss and notional caps at the window
   top and the stop) and `risk.daily.check_daily` (net realized loss of the day + planned loss of
   open positions + this trade's planned loss within `max_daily_loss_usd`). Refusals are counted by
-  cause. USD = (exit - entry) x the strategy's quantity, gross (no commissions or fees).
+  cause. Near the ceiling the quantity is sized down to the room left, as the live strategy does
+  with `loss_budget_usd` (approximately: by entry_high - stop, without the strategy's spread and
+  slippage reserve). USD = (exit - entry) x quantity, gross (no commissions or fees).
 - Breakdowns by month, setup, exit reason, entry hour (New York) and entry price
   (`price_bucket_edges_usd`).
 
