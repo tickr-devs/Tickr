@@ -23,6 +23,13 @@ jobs:
       - run: xcodebuild -version
       - run: brew install xcodegen
       - run: xcodegen generate
+      - name: TEMPORARY print generated project files
+        run: |
+          for f in $(find Aperture.xcodeproj Support -type f | sort); do
+            echo "=====FILE $f"
+            cat "$f"
+            echo "=====END"
+          done
       - name: Build for the iOS Simulator (unsigned)
         run: |
           if ! xcodebuild build \

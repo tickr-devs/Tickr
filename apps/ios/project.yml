@@ -1,5 +1,7 @@
-# XcodeGen spec for the Aperture iOS app. Generate the Xcode project with `xcodegen` (the
-# generated Aperture.xcodeproj is not committed). See README.md.
+# XcodeGen spec for the Aperture iOS app. The generated Aperture.xcodeproj IS committed so the
+# app opens in Xcode as is; after editing this file run `xcodegen` and commit the result (CI fails
+# when the two differ). Sources are a synchronized folder, so adding a Swift file under Aperture/
+# needs no project change.
 name: Aperture
 options:
   bundleIdPrefix: local.aperture
@@ -19,14 +21,15 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Aperture
+      - path: Aperture
+        type: syncedFolder
     dependencies:
       - package: ApertureShared
         product: ApertureKit
       - package: ApertureShared
         product: ApertureDesign
     info:
-      path: Aperture/Info.plist
+      path: Support/Info.plist
       properties:
         CFBundleDisplayName: Aperture
         UILaunchScreen: {}
