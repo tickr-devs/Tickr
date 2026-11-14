@@ -714,16 +714,13 @@ def test_a_second_entry_waits_for_the_first_position_to_be_verified_protected(tm
     assert concurrent > len(SEEDS)  # second entries really happened next to open trades
 
 
-@pytest.mark.xfail(strict=True, reason="engine bug: a cancel-unknown fence on an order later "
-                   "decided absent is never cleared, so entries stay blocked for good")
 def test_a_lost_entry_that_is_cancelled_and_found_absent_does_not_block_entries_forever(
         tmp_path):
     """Place times out before reaching Webull (outcome unknown), the entry wait elapses and
     the engine cancels; Webull answers "order not present" (OrderNotFound), which sets
-    cancel-unknown. Detail then finds the order absent, the trade closes, but the
-    cancel-unknown fence stays: it is cleared only by a Detail read of a live order, it is
-    not an operator fence (clear-fence refuses it) and a restart keeps it. Fail-safe (no
-    exposure), but the bot can never enter again without editing the database."""
+    cancel-unknown. Detail then finds the order absent and the trade closes; proven absence
+    must also clear cancel-unknown, which is not an operator fence and survives restarts, or
+    the bot could never enter again."""
     broker = FakeBroker()
     broker.script("unknown-lost")
     store = Store.open(tmp_path / "db.sqlite3", busy_timeout_seconds=0)
