@@ -6,8 +6,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var draft = ""
-    @State private var showPairing = false
-    @State private var confirmForget = false
     @FocusState private var editing: Bool
 
     var body: some View {
@@ -29,16 +27,11 @@ struct SettingsView: View {
                 LabeledContent("Status") {
                     Text(connectionState.text).foregroundStyle(connectionState.color)
                 }
-                Button("Pair with Mac…") { showPairing = true }
-                if model.connection.token != nil {
-                    Button("Forget Pairing", role: .destructive) { confirmForget = true }
-                }
             } header: {
                 Text("Bot on your Mac")
             } footer: {
-                Text("In the Simulator the Mac's own address works. On the phone, pair with the link that "
-                    + "`python -m aperture.api pair` leaves on the Mac; it reaches the Mac through Tailscale "
-                    + "over HTTPS. The token stays in this phone's Keychain and goes only to the paired address.")
+                Text("The address of the bot's local API. In the Simulator the Mac's own address works. "
+                    + "On the phone, use the HTTPS address that Tailscale gives the Mac (see apps/ios/README.md).")
             }
 
             if let status = model.status {
@@ -74,85 +67,19 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .onAppear { draft = model.connection.address }
-        .onChange(of: model.connection.address) { _, address in draft = address }
-        .sheet(isPresented: $showPairing) { PairingSheet() }
-        .confirmationDialog("Forget the pairing?", isPresented: $confirmForget, titleVisibility: .visible) {
-            Button("Forget Pairing", role: .destructive) {
-                model.connection = Connection(address: model.connection.address, token: nil)
-            }
-        } message: {
-            Text("The phone deletes its token and can no longer reach the bot remotely until you pair again.")
-        }
     }
 
-    /// Keeps the paired token only while the address is still exactly the paired one; any other
-    /// address drops it, so the token is never sent to a host it was not paired with.
     private func save() {
-        let next = Connection(address: draft)
-        guard draft.isEmpty || next.url != nil else { return }
-        let current = model.connection
-        let samePairing = current.pairedAddress.flatMap(Connection.origin) == Connection.origin(draft)
-        model.connection = samePairing
-            ? Connection(address: draft, token: current.token, pairedAddress: current.pairedAddress)
-            : Connection(address: draft)
+        guard draft.isEmpty || Connection(address: draft).url != nil else { return }
+        model.connection = Connection(address: draft)
         editing = false
     }
 
     private var connectionState: (text: String, color: Color) {
         if !model.isConfigured { return ("No address", .secondary) }
-        if model.connection.isRemote && model.connection.bearer == nil { return ("Not paired", .orange) }
         if model.fetchError != nil { return ("Not reachable", .red) }
         if model.response == nil { return ("Connecting…", .secondary) }
         if model.status == nil || model.response?.stale == true { return ("Reached, status not current", .orange) }
         return ("Connected", .green)
-    }
-}
-
-/// Paste the pairing link the Mac left in its pairing file. Opening the link on the phone works too.
-private struct PairingSheet: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-
-    var body: some View {
-        let pairing = Pairing.parse(text)
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("aperture://pair?…", text: $text, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.footnote.monospaced())
-                        .lineLimit(3...6)
-                    PasteButton(payloadType: String.self) { strings in
-                        if let first = strings.first { text = first }
-                    }
-                } footer: {
-                    Text("On the Mac run `python -m aperture.api --config config/bot.toml pair`, then AirDrop "
-                        + "the pairing file it names to this phone and paste the link here.")
-                }
-                if let pairing {
-                    Section("Mac") {
-                        LabeledContent("Address", value: pairing.url.host ?? "")
-                    }
-                } else if !text.isEmpty {
-                    Section {
-                        Text("This is not a pairing link.").foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("Pair with Mac")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Pair") {
-                        if let pairing { model.pair(pairing) }
-                        dismiss()
-                    }
-                    .disabled(pairing == nil)
-                }
-            }
-        }
     }
 }
