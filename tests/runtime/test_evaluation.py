@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -17,6 +18,7 @@ from aperture.data.history import HistoryReader, HistorySettings, HistoryUnavail
 from aperture.engine.core import Engine
 from aperture.observers.log import DecisionLog
 from aperture.research.records import load_records
+from aperture.runtime import evaluation
 from aperture.runtime.entries import EntryDesk
 from aperture.runtime.evaluation import (
     EVALUATION_STOPPED,
@@ -248,6 +250,43 @@ def test_the_rest_of_a_breakout_minute_is_recorded_once_protection_is_done(tmp_p
     assert done.body == {"symbols": ["DEF", "GHI"]}
 
 
+class Sizing(Scripted):
+    """Sizes an ENTER from the daily loss budget it is given: one share per 5 USD of room."""
+
+    def evaluate(self, context: SymbolContext) -> Decision:
+        decision = super().evaluate(context)
+        if decision.verdict is not Verdict.ENTER or context.loss_budget_usd is None:
+            return decision
+        return replace(decision, quantity=context.loss_budget_usd // D(5))
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_a_remainder_is_sized_with_the_budget_of_its_own_minute(tmp_path, monkeypatch):
+    # 50 USD of room in the breakout minute; the entry's reservation leaves 20 afterwards.
+    monkeypatch.setattr(evaluation, "daily_loss_room",
+                        lambda engine, config, now: D(20) if engine.trades() else D(50))
+    rig = Rig(tmp_path)
+    rig.strategy = rig.evaluator.strategy = Sizing()
+    for symbol in BREAKOUT:
+        rig.symbol(symbol)
+        rig.strategy.verdicts[symbol] = Verdict.ENTER
+    rig.evaluator.tick(list(BREAKOUT))
+    (stopped,) = rig.store.journal(EVALUATION_STOPPED)
+    assert stopped.body["loss_budget_usd"] == "50"
+    protect(rig)
+    rig.evaluator = restarted(rig)  # the budget comes back from the journal row too
+    rig.evaluator.strategy = rig.strategy
+    rig.now += timedelta(seconds=20)
+    rig.evaluator.tick(list(BREAKOUT))
+    assert [c.loss_budget_usd for c in rig.strategy.seen] == [D(50), D(50), D(50)]
+    assert evaluation.daily_loss_room(rig.engine, CFG, rig.now) == D(20)  # not used late
+    rig.evaluator.desk.log.close()
+    late = load_records([rig.dir / MONDAY.isoformat() / "decisions.jsonl"])
+    assert [(r.symbol, r.decision.quantity, r.admission) for r in late] == [
+        ("ABC", D(10), "taken"), ("DEF", D(10), "not_evaluated"),
+        ("GHI", D(10), "not_evaluated")]
+
+
 @pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
 def test_a_remainder_freed_after_the_next_bar_still_uses_its_own_bar(tmp_path):
     rig = breakout(tmp_path)
@@ -355,3 +394,19 @@ def test_a_failed_history_read_stops_the_minute_and_is_retried(tmp_path, error):
     rig.now += timedelta(minutes=1)
     rig.evaluator.tick(["ABC"])
     assert [c.symbol for c in rig.strategy.seen] == ["ABC"]
+
+
+@pytest.mark.parametrize(("room", "budget"), [
+    (None, None),                                  # money unknown: admission refuses it
+    (CFG.risk.min_daily_room_usd - D("0.01"), None),  # below the minimum: admission refuses
+    (CFG.risk.min_daily_room_usd, CFG.risk.min_daily_room_usd),
+    (D(120), D(120)),
+])
+def test_the_strategy_sizes_into_the_daily_room_only_above_the_minimum(tmp_path, monkeypatch,
+                                                                       room, budget):
+    monkeypatch.setattr(evaluation, "daily_loss_room", lambda engine, config, now: room)
+    rig = Rig(tmp_path)
+    rig.symbol("ABC")
+    rig.evaluator.tick(["ABC"])
+    (context,) = rig.strategy.seen
+    assert context.loss_budget_usd == budget

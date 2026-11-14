@@ -11,7 +11,8 @@ strategy exception is journaled and that symbol skipped. As soon as a decision l
 needing the loop (an entry sent, an exit asked; runtime/protection.py), the rest of the minute
 waits (journaled with the symbols left and their quotes at that moment), so the fill and its
 stop are not kept waiting behind more reads. On the first pass the service runs the strategy
-again, that remainder is evaluated on the same bar (bars cut at it) and the saved quotes, for
+again, that remainder is evaluated on the same bar (bars cut at it), the saved quotes and the
+daily loss budget of that minute (never the room left at replay time), for
 the record only: an ENTER is recorded `not_evaluated`, nothing is sent or asked, the WATCH set
 is untouched. A `evaluation-remainder` row (keyed by the bar) is written before the records,
 so a restart never records the remainder twice; a remainder whose bars or history cannot be
@@ -30,18 +31,20 @@ from aperture.config import Config
 from aperture.data.base import MarketData, MarketDataError
 from aperture.data.history import HistoryReader, HistoryUnavailable, SessionHistory
 from aperture.engine.core import Engine, Leg
-from aperture.runtime.entries import EntryDesk
+from aperture.runtime.entries import EntryDesk, daily_loss_room
 from aperture.runtime.market import StreamInbox
 from aperture.runtime.protection import busy
 from aperture.strategy.base import PositionView, Strategy, SymbolContext, Verdict
 from aperture.types import Bar, Quote
 
 M1 = timedelta(minutes=1)
+ZERO = Decimal(0)
 EVALUATION_STOPPED = "evaluation-stopped"
 STRATEGY_ERROR = "strategy-error"
 HISTORY_REFUSED = "history-refused"
 PROTECT_FIRST = "protect-first"
 REMAINDER = "evaluation-remainder"
+Remainder = tuple[datetime, dict[str, Quote | None], Decimal | None]
 
 
 def _quote_body(quote: Quote | None) -> dict[str, str] | None:
@@ -83,6 +86,7 @@ class Evaluator:
         self.evaluated_at: datetime | None = None  # decision time of `contexts`
         self._last_bar: datetime | None = None
         self._history_refused: set[tuple[str, date]] = set()
+        self._budget: Decimal | None = None  # daily loss room of the current minute
         self._remainder = self._pending_remainder()
 
     def _journal(self, kind: str, body: dict[str, object]) -> None:
@@ -100,15 +104,27 @@ class Evaluator:
                                                    trade.stop_price)
         return views
 
-    def _pending_remainder(self) -> tuple[datetime, dict[str, Quote | None]] | None:
+    def _pending_remainder(self) -> Remainder | None:  # bar, saved quotes, loss budget
         """The latest protect-first remainder not yet evaluated (survives restarts)."""
         rows = [r for r in self.engine.store.journal(EVALUATION_STOPPED)
                 if r.body.get("stage") == PROTECT_FIRST and r.body.get("remaining")]
         if not rows or self.engine.store.journal(REMAINDER, rows[-1].key):
             return None
         body = rows[-1].body
+        budget = body.get("loss_budget_usd")
         return (datetime.fromisoformat(body["bar_start"]),
-                {s: _quote(s, body["quotes"].get(s)) for s in body["remaining"]})
+                {s: _quote(s, body["quotes"].get(s)) for s in body["remaining"]},
+                None if budget is None else Decimal(budget))
+
+    def _loss_budget(self, now: datetime) -> Decimal | None:
+        """The strategy sizes into this room (owner decision 2026-11-14). None when today's
+        money is unknown or the room is below `[risk] min_daily_room_usd`: the strategy then
+        sizes normally and admission refuses with its typed cause (DAILY_MONEY_UNKNOWN or
+        DAILY_CEILING), so the refusal is recorded once, by the platform."""
+        room = daily_loss_room(self.engine, self.config, now)
+        if room is None or room < self.config.risk.min_daily_room_usd:
+            return None
+        return room
 
     def tick(self, candidates: Sequence[str]) -> None:
         """Once per loop pass; does work only when a new minute has completed or a minute's
@@ -130,12 +146,13 @@ class Evaluator:
             return
         self._last_bar = bar_start
         positions = self._positions()
+        self._budget = self._loss_budget(now)
         ordered = list(dict.fromkeys([*sorted(positions), *sorted(self.watch), *candidates]))
         self._run(ordered, bar_start, day.regular_open, positions, now, late=None)
 
     def _finish_remainder(self, now: datetime) -> None:
         assert self._remainder is not None
-        bar_start, quotes = self._remainder
+        bar_start, quotes, self._budget = self._remainder  # that minute's room, not today's now
         self._remainder = None
         symbols = list(quotes)
         with self.engine.store.transaction():  # before the records: never twice
@@ -203,10 +220,11 @@ class Evaluator:
             self.engine.store.append(EVALUATION_STOPPED, {
                 "bar_start": bar_start.isoformat(), "stage": PROTECT_FIRST, "symbol": symbol,
                 "cause": cause, "remaining": remaining,
-                "quotes": {s: _quote_body(q) for s, q in quotes.items()}},
+                "quotes": {s: _quote_body(q) for s, q in quotes.items()},
+                "loss_budget_usd": None if self._budget is None else str(self._budget)},
                 key=bar_start.isoformat(), run_id=self.engine.run_id)
         if remaining:
-            self._remainder = (bar_start, quotes)
+            self._remainder = (bar_start, quotes, self._budget)
 
     def _history(self, symbol: str, today: date) -> tuple[str | None, SessionHistory | None]:
         """(error type, prior sessions). History None when refused (recorded once a day); an
@@ -230,7 +248,7 @@ class Evaluator:
         prior = () if history is None else tuple(history.bars_of(d) for d in history.sessions)
         bars = ([] if history is None else list(history.bars)) + today_bars
         quote = late_quote if late else self.inbox.latest(symbol)
-        context = SymbolContext(symbol, tuple(bars), prior, quote, position)
+        context = SymbolContext(symbol, tuple(bars), prior, quote, position, self._budget)
         try:
             decision = self.strategy.evaluate(context)
         except Exception as exc:  # noqa: BLE001 - a strategy bug never ends the loop
