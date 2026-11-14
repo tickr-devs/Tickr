@@ -38,7 +38,7 @@ private struct ActiveStrategyCard: View {
             .font(Tokens.Typography.title)
             .foregroundStyle(Palette.textPrimary)
           if let version = model.status?.strategy.version {
-            Badge(L10n.Common.strategyVersion(version), color: Palette.accentText)
+            Badge(verbatim: version, color: Palette.accentText)
           }
         }
         HStack(spacing: Tokens.Space.xl) {

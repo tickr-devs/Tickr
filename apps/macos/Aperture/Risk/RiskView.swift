@@ -74,9 +74,7 @@ private struct LossRoomCard: View {
         }
         .frame(width: Self.ringSize, height: Self.ringSize)
         .frame(maxWidth: .infinity)
-        .overlay(alignment: .topTrailing) {
-          if fraction < Self.alarm, room != nil { AlarmPulse(color: Palette.loss) }
-        }
+        .modifier(AlarmPulse(active: room != nil && fraction < Self.alarm))
         VStack(spacing: Tokens.Space.s) {
           StatLine(L10n.Risk.limit, value: limit.map(Money.signedUSD) ?? Format.missing)
           StatLine(L10n.Risk.resultToday, value: Money.signedUSD(result), color: Palette.result(result))
