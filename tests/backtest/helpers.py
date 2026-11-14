@@ -28,8 +28,9 @@ def calendar() -> SessionCalendar:
     return SessionCalendar.load((c.root / c.session.calendar_file).parent)
 
 
-def row(symbol: str, sub="COMMON_STOCK", exchange="NSQ", currency="USD", iid=None):
-    return InstrumentRow(iid or f"id-{symbol}", symbol, exchange, currency, sub, "OC")
+def row(symbol: str, sub="COMMON_STOCK", exchange="NSQ", currency="USD", iid=None,
+        status="OC"):
+    return InstrumentRow(iid or f"id-{symbol}", symbol, exchange, currency, sub, status)
 
 
 def minute(day: date, index: int) -> datetime:

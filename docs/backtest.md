@@ -24,7 +24,8 @@ names. The first response of each kind and every failed one are kept in `<out>/r
 1. **Universe** (`universe.jsonl`): the full instrument list (`/trading/instruments/stocks/
    profiles/list` without symbols, paged by `pagination_key`) for bot.toml
    `allowed_security_types`, filtered by `allowed_exchanges` and `allowed_currencies` exactly like
-   discovery. No symbol lists. A symbol under two instrument ids is refused
+   discovery, plus `instrument_statuses` (Webull status; NT instruments are refused by the bars
+   route). No symbol lists. A symbol under two instrument ids is refused
    (`universe_refused.jsonl` has every refused row and its cause).
 2. **Daily bars** (`daily/*.jsonl`): the window's sessions plus the one before, 20 symbols per
    request. A bar label whose New York date is not a session of the window stops the step.

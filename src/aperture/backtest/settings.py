@@ -28,6 +28,7 @@ KEYS = frozenset({
     "price_bucket_edges_usd",
     "split_tolerance_percent",
     "holdout_percent",
+    "instrument_statuses",
 })
 
 
@@ -45,6 +46,7 @@ class BacktestSettings:
     price_bucket_edges_usd: tuple[Decimal, ...]
     split_tolerance_percent: Decimal
     holdout_percent: Decimal
+    instrument_statuses: tuple[str, ...]
 
 
 def _count(key: str, raw: Any, minimum: int) -> int:
@@ -87,7 +89,14 @@ def settings_from_mapping(data: dict[str, Any]) -> BacktestSettings:
         split_tolerance_percent=_number("split_tolerance_percent",
                                         table["split_tolerance_percent"]),
         holdout_percent=_percent("holdout_percent", table["holdout_percent"]),
+        instrument_statuses=_texts("instrument_statuses", table["instrument_statuses"]),
     )
+
+
+def _texts(key: str, raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list) or not raw or not all(isinstance(x, str) and x for x in raw):
+        raise BacktestError(f"[backtest] {key} must be a non-empty list of strings")
+    return tuple(raw)
 
 
 def _percent(key: str, raw: Any) -> Decimal:

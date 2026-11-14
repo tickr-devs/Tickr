@@ -1114,6 +1114,8 @@ class WebullHistory:
         self._raw_dir = raw_dir
         self._requests = 0
         self._saved: set[str] = set()
+        # Raw file names carry the start of this process, so a rerun never overwrites them.
+        self._started = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
 
     @property
     def requests(self) -> int:
@@ -1126,7 +1128,7 @@ class WebullHistory:
         if self._raw_dir is not None and (tag not in self._saved or not response.ok):
             self._saved.add(tag)
             self._raw_dir.mkdir(parents=True, exist_ok=True)
-            name = f"{self._requests:06d}-{tag}.json"
+            name = f"{self._started}-{self._requests:06d}-{tag}.json"
             (self._raw_dir / name).write_text(
                 json.dumps({"status": response.status, "body": response.body}), "utf-8")
         if not response.ok:

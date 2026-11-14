@@ -39,3 +39,7 @@ split_tolerance_percent = 2
 # Share of the window's sessions, the most recent ones, reported separately as a hold-out (the earlier sessions are
 # reported on their own too), percent; read by backtest/report.py.
 holdout_percent = 33
+# Instrument `status` values (Webull instrument profile) kept in the universe. Measured 2026-11-14 on 1020 symbols:
+# every OC symbol had daily bars, 314 of 397 NT symbols were refused by the bars route as INVALID_SYMBOL and most of
+# the rest had no bars, CO was mixed; read by backtest/fetch.py.
+instrument_statuses = ["OC", "CO"]

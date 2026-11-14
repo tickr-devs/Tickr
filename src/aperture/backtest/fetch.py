@@ -116,7 +116,7 @@ def read_lines(path: Path) -> list[dict[str, Any]]:
 # ------------------------------------------------------------------------------- universe
 
 
-def universe_cause(row: InstrumentLike, cfg: Config) -> str | None:
+def universe_cause(row: InstrumentLike, cfg: Config, settings: BacktestSettings) -> str | None:
     md = cfg.market_data
     if row.security_type is None:
         return "SECURITY_TYPE_UNKNOWN"
@@ -126,6 +126,8 @@ def universe_cause(row: InstrumentLike, cfg: Config) -> str | None:
         return "EXCHANGE_NOT_ALLOWED"
     if row.currency not in md.allowed_currencies:
         return "CURRENCY_NOT_ALLOWED"
+    if row.status not in settings.instrument_statuses:
+        return "STATUS_NOT_ALLOWED"
     return None
 
 
@@ -159,7 +161,7 @@ def fetch_universe(source: HistorySource, cfg: Config, settings: BacktestSetting
     kept: dict[str, list[InstrumentLike]] = {}
     refused: list[dict[str, Any]] = []
     for row in rows:
-        cause = universe_cause(row, cfg)
+        cause = universe_cause(row, cfg, settings)
         if cause is None:
             kept.setdefault(row.symbol, []).append(row)
         else:

@@ -33,7 +33,8 @@ def test_universe_filters_like_discovery_and_refuses_duplicates(tmp_path):
     pages = {
         None: InstrumentPage((row("AAA"), row("ETF1", sub="ETF"), row("OTC1", exchange="OTC"),
                               row("EUR1", currency="EUR")), "k2"),
-        "k2": InstrumentPage((row("DUP", iid="1"), row("DUP", iid="2"), row("BBB")), None),
+        "k2": InstrumentPage((row("DUP", iid="1"), row("DUP", iid="2"), row("BBB"),
+                              row("GONE", status="NT")), None),
     }
     source = FakeHistory(pages, {}, {})
     kept = fetch.fetch_universe(source, cfg(), SETTINGS, tmp_path, no_sleep, quiet)
@@ -41,7 +42,8 @@ def test_universe_filters_like_discovery_and_refuses_duplicates(tmp_path):
     causes = {(r["symbol"], r["cause"])
               for r in fetch.read_lines(tmp_path / fetch.UNIVERSE_REFUSED_FILE)}
     assert causes == {("ETF1", "SECURITY_TYPE_NOT_ALLOWED"), ("OTC1", "EXCHANGE_NOT_ALLOWED"),
-                      ("EUR1", "CURRENCY_NOT_ALLOWED"), ("DUP", "DUPLICATE_SYMBOL")}
+                      ("EUR1", "CURRENCY_NOT_ALLOWED"), ("DUP", "DUPLICATE_SYMBOL"),
+                      ("GONE", "STATUS_NOT_ALLOWED")}
     # A rerun reads the file and sends nothing.
     again = FakeHistory({}, {}, {})
     assert fetch.fetch_universe(again, cfg(), SETTINGS, tmp_path, no_sleep, quiet) == kept
