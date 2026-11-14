@@ -21,6 +21,7 @@ A fact marked UNPROVEN must not be relied on by trading code until a probe prove
 - Token create/check: 10 per 10 s (docs).
 - Production (docs, unverified): market data 60/60 s (display) or 300/60 s (non-display); place/replace/cancel 600/60 s; preview 150/10 s; Detail, open orders, history, positions 2 per 2 s; accounts 10/30 s. Docs conflict with each other in places; never assume the looser value.
 - Streaming: at most 5 concurrent connections per App Key (docs). Symbols per connection: 100, cumulative (probe M3, below). Two connections giving 2 x 100: untested.
+- Our request budget (`broker/budget.py`, per process, per route) mirrors these from config: Sandbox `requests_per_route_per_minute = 30`; Production 20 per minute by default and `route_limits` 2 per 2 s for Detail, open orders and positions. Each process has its own budget, so two processes on one account can together exceed a limit. The probe-day read script (docs/manual-trade.md) uses its own budget built the same way; the runbook therefore keeps it to one open-orders read per 10 s and single Detail reads while a trade command runs.
 
 ## Trading endpoints (SDK, v3)
 | Purpose | Route | Notes |

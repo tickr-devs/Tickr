@@ -110,19 +110,32 @@ chat at the end; an agent then writes webull-facts.md and the fixtures from them
 ### Before the open
 
 1. The manual commands and the bot service share one lock and one database: `aperture trade`
-   refuses while `aperture run` holds the lock. If the launchd jobs are installed, the bot job
-   starts at `[runtime] bot_start_local` (Mac local time). For a probe day, stop it once it is
-   up: `launchctl kill TERM gui/$(id -u)/local.aperture.bot`, then wait for the
-   `"record": "bot-exit"` line in `~/Library/Logs/Aperture/bot.log`. Keep the watchdog job
-   running (read-only, it checks you are flat after the flatten time). While a manual trade is
-   open it alerts `bot-down-with-open-trade` ("no live pid in its lock file" or a stale status
-   file): expected on a probe day, because the manual command is not the bot.
+   refuses while `aperture run` holds the lock. If the launchd jobs are installed, keep the
+   bot job from starting today, before its `[runtime] bot_start_local` (09:00 Mac local time):
+
+   ```
+   launchctl disable gui/$(id -u)/local.aperture.bot
+   launchctl bootout gui/$(id -u)/local.aperture.bot
+   launchctl print-disabled gui/$(id -u) | grep aperture.bot   # shows it disabled
+   ```
+
+   `disable` keeps it from being loaded again; `bootout` unloads the copy already loaded, so
+   its calendar start does not fire. If the bot already started, `bootout` stops it with
+   SIGTERM: wait for the `"record": "bot-exit"` line in `~/Library/Logs/Aperture/bot.log`.
+   It is re-enabled in step 4. Keep the watchdog job running (read-only, it checks you are
+   flat after the flatten time). While a manual trade is open it alerts
+   `bot-down-with-open-trade` ("no live pid in its lock file" or a stale status file):
+   expected on a probe day, because the manual command is not the bot.
 2. Terminal A, as in one-time setup: `cd`, `source`, load the env file, `aperture check-config`.
    Then `aperture status`: it must show `bot: not running`. (`status` does not list fences;
    `trade`, `exit` and `resume` print every fence still set when they end.)
-3. Save the read script (once; it only reads, sends no orders, and prints raw bodies with the
-   account id replaced by `<account>`). Output goes to the screen and, through `tee -i`, to a
-   file (`-i`: a Ctrl-C reaches only the command, never the file writer):
+3. Save the read script (once). It only reads and sends no orders. It prints raw bodies with
+   the account id replaced by `<account>`, and takes its own request budget from the active
+   `[environments.*]` route limits (docs/webull-facts.md, Rate limits). That budget does not
+   see the trade command's reads, so the steps below keep the script to a few reads while a
+   trade runs. A refused or throttled read prints `not read (...)` and is never retried.
+   Output goes to the screen and, through `tee -i`, to a file (`-i`: a Ctrl-C reaches only
+   the command, never the file writer):
 
 ```
 mkdir -p data/probe-2026-11-16
@@ -131,46 +144,65 @@ import json, sys, time
 from collections import namedtuple
 from datetime import UTC, datetime
 from aperture import config
-from aperture.broker.webull import Route, SdkTransport, settings_from_config
+from aperture.broker.base import BrokerError
+from aperture.broker.webull import (Route, SdkTransport, budget_from_config, send_once,
+                                    settings_from_config)
 
 cfg = config.load("config/bot.toml")
 transport = SdkTransport(settings_from_config(cfg))
+budget = budget_from_config(cfg)  # this process's own [environments.*] route limits
 category = cfg.market_data.screener_category
-TRADE_INSTRUMENT = namedtuple("R", "method path mutating")("GET", "/trade/instrument", False)
+# Not an Aperture route, so the transport adds account_id to its query (output is scrubbed).
+TRADE_INSTRUMENT = namedtuple("R", "name method path mutating")(
+    "TRADE_INSTRUMENT", "GET", "/trade/instrument", False)
 
 def show(label, route, params):
-    response = transport.send(route, params)
+    try:
+        response = send_once(transport, budget, route, params, time.monotonic)
+    except BrokerError as exc:  # budget refusal, 429, no response: nothing is retried
+        print(f"--- {label}: not read ({type(exc).__name__}: {exc})", flush=True)
+        return None
     text = json.dumps(response.body, default=str, indent=1, sort_keys=True)
     print(f"--- {label}: HTTP {response.status}\n{transport._scrub(text)}", flush=True)
     return response.body
 
 mode, args = sys.argv[1], sys.argv[2:]
-if mode == "raw":    # raw SYMBOL... [order=CLIENT_ORDER_ID...]
-    symbols = ",".join(a for a in args if not a.startswith("order="))
+if mode == "raw":    # raw SYMBOL...: snapshot, profiles, trade instrument, positions, open orders
+    symbols = ",".join(args)
     show("snapshot", Route.SNAPSHOT, {"symbols": symbols, "category": category})
     body = show("profiles", Route.PROFILES, {"symbols": symbols, "category": category})
     for row in body if isinstance(body, list) else (body or {}).get("data", []):
-        show(f"trade instrument {row['symbol']} {row['instrument_id']}", TRADE_INSTRUMENT,
-             {"instrument_id": row["instrument_id"]})
+        iid = row.get("instrument_id") if isinstance(row, dict) else None
+        if iid is None:
+            print(f"--- unexpected profile row: {transport._scrub(str(row))}", flush=True)
+            continue
+        show(f"trade instrument {row.get('symbol')} {iid}", TRADE_INSTRUMENT,
+             {"instrument_id": iid})
     show("positions", Route.POSITIONS, {})
     show("open orders", Route.OPEN_ORDERS, {})
-    for a in args:
-        if a.startswith("order="):
-            show(f"detail {a[6:]}", Route.ORDER_DETAIL, {"client_order_id": a[6:]})
-elif mode == "watch":    # watch SYMBOL: open orders every 5 s for 5 minutes
+elif mode == "held":    # held CLIENT_ORDER_ID...: order Detail only
+    for cid in args:
+        show(f"detail {cid}", Route.ORDER_DETAIL, {"client_order_id": cid})
+elif mode == "watch":    # watch SYMBOL: open orders every 10 s for 10 minutes
+    shown_raw = False
     for _ in range(60):
         now = datetime.now(UTC).strftime("%H:%M:%S")
         try:
-            response = transport.send(Route.OPEN_ORDERS, {})
+            response = send_once(transport, budget, Route.OPEN_ORDERS, {}, time.monotonic)
             body = response.body if isinstance(response.body, dict) else {}
-            rows = [o for combo in body.get("data", []) for o in combo.get("orders", [])
-                    if o.get("symbol") == args[0]]
+            rows = [o for combo in body.get("data", []) if isinstance(combo, dict)
+                    for o in combo.get("orders", []) if isinstance(o, dict)
+                    and o.get("symbol") == args[0]]
             print(now, "UTC HTTP", response.status, len(rows), "open:", "; ".join(
                 f"{o.get('client_order_id')} {o.get('order_type')} {o.get('status')} "
                 f"stop={o.get('stop_price')}" for o in rows), flush=True)
+            if rows and not shown_raw:  # first non-empty list, raw, once
+                shown_raw = True
+                print(transport._scrub(json.dumps(body, default=str, indent=1,
+                                                  sort_keys=True)), flush=True)
         except Exception as exc:
-            print(now, "UTC read failed:", type(exc).__name__, flush=True)
-        time.sleep(5)
+            print(now, "UTC not read:", type(exc).__name__, flush=True)
+        time.sleep(10)
 EOF
 ```
 
@@ -212,33 +244,47 @@ Look up a currently halted US stock on the Nasdaq trade-halts page
   OPENW rows.
 - `trade instrument <symbol> <id>`: `GET /trade/instrument` per instrument id:
   `trade_policy` (ALL / CLOSE_ONLY / DENIED per the SDK) and `forbid_reason`, or the error
-  Sandbox gives for this route. Never read by Aperture before.
-- `positions`, `open orders`: should be empty now (`{"data": []}`) before any trade.
+  Sandbox gives for this route. Never read by Aperture before. This route is not one of the
+  adapter's account-free routes, so the transport adds `account_id` to its query; the
+  printed output is scrubbed like the rest.
+- `positions`, `open orders`: should be empty now before any trade.
 
 Answers backlog "Tradability check before entry" (how a halt or a non-tradable instrument shows)
 and the meaning of profile `status`.
 
-### Step 2, 10:00 or later: one protected trade (F1, F2, F4, F6, F9, new-stop listing delay)
+### Step 2, 10:00 or later: one protected trade (F1, F2, F4, F6, new-stop listing delay)
 
 Read the ask (from step 0, or the app); the limit is ask + 0.01 (owner decision 2026-11-14).
+While the trade runs, the script makes one open-orders read per 10 s (watcher) and one Detail
+read (item 3), nothing else, so its reads and the trade's stay inside the route limits.
 
 1. Terminal B (set up as in one-time setup), start the open-orders watcher first:
    `.venv/bin/python data/probe_reads.py watch SYM 2>&1 | tee -i data/probe-2026-11-16/2-watch.txt`
 2. Terminal A: `aperture trade SYM --limit LIMIT 2>&1 | tee -i data/probe-2026-11-16/2-trade.txt`
-3. While the terminal is in the hold (the app shows the working SELL stop; you have 60 s),
-   Terminal C: `.venv/bin/python data/probe_reads.py raw SYM order=<stop id> 2>&1 | tee -i data/probe-2026-11-16/2-held.txt`.
-   The stop id is the stop's client order id shown in the watcher lines (it starts with `ap-`).
-   This records a non-empty positions body, an open-orders body with a working STOP_LOSS
-   (is `stop_price` named so?) and the stop's raw Detail.
+3. Once the watcher lists the stop (a `STOP_LOSS` line with an id starting `ap-`, also seen
+   working in the app), Terminal C, Detail of that one order only:
+   `.venv/bin/python data/probe_reads.py held <stop id> 2>&1 | tee -i data/probe-2026-11-16/2-held.txt`
+   The first watcher line with the stop also prints the raw open-orders body once (is
+   `stop_price` named so?).
 4. After the trade prints `trade <id> SYM: closed (...)`, the journal (UTC times; the last
    column is the leg of each `order-intent`):
    `sqlite3 data/aperture.sqlite3 "SELECT at_utc, kind, key, json_extract(body, '$.leg') FROM journal WHERE at_utc >= '2026-11-16' ORDER BY seq" | tee data/probe-2026-11-16/2-journal.txt`
-5. Raw Detail of the three orders (ids are the `order-intent` keys: entry, stop, exit):
-   `.venv/bin/python data/probe_reads.py raw SYM order=<entry id> order=<stop id> order=<exit id> 2>&1 | tee -i data/probe-2026-11-16/2-after.txt`.
+5. Detail of the three orders (ids are the `order-intent` keys: entry, stop, exit):
+   `.venv/bin/python data/probe_reads.py held <entry id> <stop id> <exit id> 2>&1 | tee -i data/probe-2026-11-16/2-after.txt`.
    Fill shape, average price, fees field (if any), the cancelled stop, the filled MARKET SELL.
 
+If a read of the trade itself fails (for example Webull answers 429 because the script and the
+trade together read too fast): Terminal A prints nothing at that moment. The trade stops using
+that route for `rate_limit_cooldown_seconds` (60 s) and tries again. If it cannot see its stop
+working for `[orders] max_unprotected_seconds` (30 s), it closes the position and prints
+`needs the operator: unprotected-timeout:<trade>: ...`; a positions or open-orders read still
+failing at the end shows as `fence broker-read-failed: ...` in its final lines. A `not read`
+line in Terminal B or C is the script's own refusal or 429. On any of these: Ctrl-C the
+watcher, run no more script reads, watch the stop in the app until the trade ends, and keep
+the output for us.
+
 The new-stop listing delay is the first watcher line that lists the stop id minus the stop's
-`order-intent` time in the journal (5 s resolution). The cancel of the working stop (F4) is the
+`order-intent` time in the journal (10 s resolution). The cancel of the working stop (F4) is the
 watcher line where it disappears.
 
 ### Step 3: probe F5, replace the stop
@@ -247,18 +293,32 @@ Goal: learn how Webull replaces the price of a working STOP_LOSS (docs/webull-fa
 so the trailing stop can be built. One replace, tightening only, on the bot's own trade. Skip it
 if step 0 said STALE.
 
-1. Terminal A: `aperture trade SYM --limit LIMIT 2>&1 | tee -i data/probe-2026-11-16/3-trade.txt`.
-   Wait until the app shows the working SELL stop and the terminal is in the hold
-   (`hold_seconds`, 60 s, from the moment the stop is seen working: the kill in the next item
-   must happen inside it).
-2. Terminal B (the step 2 watcher has ended): `aperture status` (it prints
-   `bot: pid <pid> recorded ...`), then `kill -TERM <pid>`. The trade command stops; the position and its stop stay at the broker.
-   Do not use Ctrl-C (the first one asks for an exit).
-3. Terminal B: start the watcher:
+The trade command must be stopped while it holds the position with its stop working: after
+the stop is seen working it waits `hold_seconds` (60 s), then cancels the stop and sends the
+MARKET SELL. A kill between that cancel and the sell leaves the share without a stop. Terminal
+A prints no line when the hold starts or ends (only `plan: ...` at the start and its report at
+the end), so the marker is the watcher: the first line listing the `ap-` STOP_LOSS. Kill within
+30 s of that line.
+
+1. Terminal C: start the watcher (10 minutes):
    `.venv/bin/python data/probe_reads.py watch SYM 2>&1 | tee -i data/probe-2026-11-16/3-watch.txt`
-4. Look up the bid in the app. Pick a new stop above the current stop, below the bid, at most
+2. Terminal A: `aperture trade SYM --limit LIMIT 2>&1 | tee -i data/probe-2026-11-16/3-trade.txt`
+3. Terminal B, right away: `aperture status`. It prints `bot: pid <pid> recorded ...` (the
+   trade command's pid). Type `kill -TERM <pid>` with that number and do not press Enter yet.
+4. When the watcher prints the first line with the `ap-` STOP_LOSS (the app shows it working),
+   press Enter in Terminal B within 30 s. The trade command stops; the position and its stop
+   stay at the broker. Do not use Ctrl-C in Terminal A (the first one asks for an exit). If 30 s
+   have passed, or the watcher no longer lists the stop, do not kill: let the trade close,
+   then start step 3 again.
+5. Right after the kill, check the Webull app: one share of SYM and one working SELL stop.
+   - No working stop but the share is held: in Terminal A run `aperture exit` at once (no
+     arguments; it recovers and closes every open trade). Then go to step 4 of the day.
+   - No position: the trade had already closed; start step 3 again.
+6. Terminal B (no trade command runs now): positions and open orders while held (F9):
+   `.venv/bin/python data/probe_reads.py raw SYM 2>&1 | tee -i data/probe-2026-11-16/3-held.txt`
+7. Look up the bid in the app. Pick a new stop above the current stop, below the bid, at most
    `[probe] replace_max_move_usd` (0.50) above the current stop, whole cents.
-5. Terminal A: `aperture probe-replace-stop --to NEW_STOP 2>&1 | tee -i data/probe-2026-11-16/3-replace.txt`.
+8. Terminal A: `aperture probe-replace-stop --to NEW_STOP 2>&1 | tee -i data/probe-2026-11-16/3-replace.txt`.
    It refuses (exit 3, nothing sent) unless: gate open, inside the probe window, exactly one
    open trade with no exit requested, no fence, the broker position equals our records, one
    verified working unfilled stop, a quote no older than `max_quote_age_seconds`, and the
@@ -270,9 +330,10 @@ if step 0 said STALE.
    - every `open order:` line;
    - `F5 result: ...`. Screenshot the app's order list too (same order edited, or a new
      order; price; still working throughout?).
-6. Close: `aperture exit 2>&1 | tee -i data/probe-2026-11-16/3-exit.txt` (read the F5
-   results below first if the result is not `confirmed`). Check in the app: no position, no working orders.
-7. Journal again, as in step 2.4, into `3-journal.txt`.
+9. Close: `aperture exit 2>&1 | tee -i data/probe-2026-11-16/3-exit.txt` (read the F5
+   results below first if the result is not `confirmed`). Check in the app: no position, no
+   working orders.
+10. Journal again, as in step 2 item 4, into `3-journal.txt`.
 
 The replace listing delay is the watcher: the time from the `replace-intent` row in the journal
 until the watcher shows the new price (same id) or a new SELL stop id. The bot's stop hold after
@@ -310,7 +371,7 @@ F5 results:
   (about 10 to 20 s) with no stop of ours before the MARKET close. This is expected and does
   not mean the bot is stuck.
 
-### Step 4: record the open broker facts
+### Step 4: record the open broker facts, then hand over
 
 Each open fact in docs/webull-facts.md, the output that answers it, and its file:
 
@@ -319,20 +380,28 @@ Each open fact in docs/webull-facts.md, the output that answers it, and its file
 - Halt / non-tradable instrument: snapshot `trade_status`, `list_status`, missing bid/ask;
   profile `status` (OC/CO/NT and a halted stock); `/trade/instrument` `trade_policy`,
   `forbid_reason` (`1-tradability.txt`).
-- F1 fill and its Detail shape, fees: `order=<entry id>` Detail (`2-after.txt`).
-- F2 STOP_LOSS SELL accepted and listed in RTH, `stop_price` field name: `2-held.txt`,
-  `2-watch.txt`.
+- F1 fill and its Detail shape, fees: the entry's Detail (`2-after.txt`).
+- F2 STOP_LOSS SELL accepted and listed in RTH, `stop_price` field name: `2-held.txt` and the
+  raw body in `2-watch.txt`.
 - New-stop listing delay: first `2-watch.txt` line with the stop id minus its `order-intent`
   time (`2-journal.txt`).
 - F4 cancel of a working stop: the stop's last `2-watch.txt` line and its Detail in
   `2-after.txt`.
 - F6 MARKET SELL in RTH: the exit's Detail (`2-after.txt`).
-- F9 non-empty positions and open-orders shapes: `positions` / `open orders` in `2-held.txt`.
+- F9 non-empty positions and open-orders shapes: `3-held.txt`.
 - F5 replace, and the replaced-stop listing delay: `3-replace.txt`, `3-watch.txt` against the
   `replace-intent` time in `3-journal.txt`, and the app screenshots.
 
-Then hand over: the last `aperture exit` printed no `fence ...` line, `aperture status` shows
-`bot: not running`, and the app shows no position and no working order. Paste every file in
-`data/probe-2026-11-16/` and the screenshots into the project chat. Before pasting, check that
-nothing in them identifies the account (the script replaces only the account id). If you
-stopped the bot job in "Before the open", it starts again on its own the next weekday.
+Then:
+
+1. The last `aperture exit` printed no `fence ...` line, `aperture status` shows
+   `bot: not running`, and the app shows no position and no working order.
+2. Re-enable the bot job, so it starts on the next weekday:
+   ```
+   launchctl enable gui/$(id -u)/local.aperture.bot
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.aperture.bot.plist
+   launchctl print gui/$(id -u)/local.aperture.bot | head -5   # loaded again
+   ```
+3. Paste every file in `data/probe-2026-11-16/` and the screenshots into the project chat.
+   Before pasting, check that nothing in them identifies the account (the script replaces
+   only the account id).
