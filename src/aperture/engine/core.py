@@ -178,18 +178,19 @@ def _trade(row: Any) -> TradeRow:
     )
 
 
-def _detail_priority(row: OrderRow) -> tuple[int, float]:
-    """Unknown sends first, then unverified stops, then entries/exits, then verified stops;
-    within a class the order read longest ago first."""
+def _detail_priority(row: OrderRow, poll_seconds: float) -> float:
+    """Oldest read attempt first, so no order can starve the others; the class only gives a
+    bounded head start of up to three poll intervals: unknown sends, then unverified stops,
+    then entries and exits, then verified stops."""
     if row.send_state is SendState.UNKNOWN:
-        rank = 0
+        boost = 3
     elif row.leg is Leg.STOP and not row.verified:
-        rank = 1
+        boost = 2
     elif row.leg is not Leg.STOP:
-        rank = 2
+        boost = 1
     else:
-        rank = 3
-    return rank, row.last_detail_at or 0.0
+        boost = 0
+    return (row.last_detail_at or 0.0) - boost * poll_seconds
 
 
 class Engine:
@@ -479,8 +480,12 @@ class Engine:
             self.store.append("cancel-not-taken", {}, key=cid, run_id=self.run_id)
 
     def _refresh(self, row: OrderRow, held: dict[str, Decimal]) -> None:
-        """One Detail read; RateLimited propagates so the caller stops reading this step."""
+        """One Detail read; RateLimited propagates so the caller stops reading this step.
+        The attempt time is recorded whatever the outcome, so scheduling rotates."""
         cid = row.client_order_id
+        with self.store.transaction():
+            self.store.execute("UPDATE orders SET last_detail_at = ? WHERE client_order_id = ?",
+                               (self.clock(), cid))
         try:
             detail = self.broker.order_detail(cid)
         except OrderNotFound:
@@ -587,7 +592,8 @@ class Engine:
         due = [o for o in self.orders()
                if o.send_state in (SendState.ACKNOWLEDGED, SendState.UNKNOWN)
                and (o.broker_state is None or not o.broker_state.terminal)]
-        due.sort(key=_detail_priority)
+        poll = float(self.config.orders.detail_poll_seconds)
+        due.sort(key=lambda row: _detail_priority(row, poll))
         for row in due[:self.config.orders.detail_reads_per_step]:
             try:
                 self._refresh(row, held)
