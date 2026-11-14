@@ -46,4 +46,14 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
-    scheme: {}
+# The scheme is named for the platform so it stays distinct from "Aperture macOS" in the root
+# Aperture.xcworkspace.
+schemes:
+  Aperture iOS:
+    build:
+      targets:
+        Aperture: all
+    run:
+      config: Debug
+    archive:
+      config: Release
