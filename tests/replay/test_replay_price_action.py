@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from aperture.replay.__main__ import session_clock
 from aperture.replay.engine import ExitReason, SignalOutcome, replay
 from aperture.replay.settings import load_settings
 from aperture.types import Bar
@@ -62,8 +63,7 @@ def test_real_strategy_enters_and_trades():
         lambda: pa.create(values),
         {SYMBOL: bars},
         settings,
-        datetime.strptime("15:45", "%H:%M").time(),
-        datetime.strptime("15:55", "%H:%M").time(),
+        session_clock(ROOT / "config" / "bot.toml"),
     )
     assert (result.strategy, result.version) == ("price-action-v1", "1")
     assert result.verdict_counts.get("ENTER", 0) >= 1
