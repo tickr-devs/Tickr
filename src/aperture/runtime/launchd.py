@@ -59,6 +59,9 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
             f"[runtime] launch_weekdays: expected distinct days 0..7, got {list(days)!r}")
     if runtime.bot_exit_timeout_seconds <= 0:
         raise ConfigError("[runtime] bot_exit_timeout_seconds must be positive")
+    if not 0 < runtime.stop_alert_after_seconds < runtime.bot_exit_timeout_seconds:
+        raise ConfigError("[runtime] stop_alert_after_seconds must be positive and below "
+                          "bot_exit_timeout_seconds")
     if runtime.supervisor_poll_seconds <= 0:
         raise ConfigError("[runtime] supervisor_poll_seconds must be positive")
     if runtime.min_free_disk_mb <= 0:

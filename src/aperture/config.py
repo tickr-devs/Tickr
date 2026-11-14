@@ -80,6 +80,29 @@ class ProbeConfig:
 class ApiConfig:
     host: str
     port: int
+    allowed_hosts: tuple[str, ...]
+    status_file: str
+    commands_dir: str
+    status_stale_seconds: Decimal
+    poll_seconds: Decimal
+    max_request_body_bytes: int
+    max_pending_commands: int
+    command_max_age_seconds: Decimal
+
+
+@dataclass(frozen=True)
+class MarketDataConfig:
+    discovery_interval_seconds: Decimal
+    allowed_exchanges: tuple[str, ...]
+    allowed_currencies: tuple[str, ...]
+    allowed_security_types: tuple[str, ...]
+    max_spread_ratio: Decimal
+    min_session_dollar_volume_usd: Decimal
+    snapshot_symbols_per_request: int
+    bars_symbols_per_request: int
+    bars_per_symbol: int
+    quiet_after_seconds: Decimal
+    capture_dir: str
 
 
 @dataclass(frozen=True)
@@ -87,6 +110,7 @@ class RuntimeConfig:
     min_free_disk_mb: int
     supervisor_poll_seconds: Decimal
     bot_exit_timeout_seconds: int
+    stop_alert_after_seconds: int
     preflight_start_local: str
     bot_start_local: str
     launch_weekdays: tuple[int, ...]
@@ -140,6 +164,7 @@ class Config:
     api: ApiConfig
     runtime: RuntimeConfig
     alerts: AlertsConfig
+    market_data: MarketDataConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -163,6 +188,7 @@ _SECTIONS: dict[str, type] = {
     "api": ApiConfig,
     "runtime": RuntimeConfig,
     "alerts": AlertsConfig,
+    "market_data": MarketDataConfig,
 }
 
 

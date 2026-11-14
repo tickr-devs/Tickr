@@ -44,6 +44,8 @@ class AlertKind(StrEnum):
     DAILY_CEILING_REACHED = "daily-ceiling-reached"
     BOT_CRASHED = "bot-crashed"
     BOT_DID_NOT_START = "bot-did-not-start"
+    # Added to the spec list by review of #13: SIGTERM forwarded, bot still running.
+    BOT_DID_NOT_STOP = "bot-did-not-stop"
     PREFLIGHT_FAILED = "preflight-failed"
     TOKEN_NEEDS_CONFIRMATION = "token-needs-confirmation"
 

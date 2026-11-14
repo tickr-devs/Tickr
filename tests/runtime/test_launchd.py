@@ -81,6 +81,8 @@ def test_relative_path_refused(config_path):
     ("launch_weekdays", "[8]", "distinct"),
     ("launch_weekdays", "[]", "distinct"),
     ("bot_exit_timeout_seconds", "0", "positive"),
+    ("stop_alert_after_seconds", "120", "below bot_exit_timeout_seconds"),
+    ("stop_alert_after_seconds", "0", "below bot_exit_timeout_seconds"),
     ("supervisor_poll_seconds", "0", "positive"),
     ("min_free_disk_mb", "0", "positive"),
 ])

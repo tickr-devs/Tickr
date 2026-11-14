@@ -44,7 +44,8 @@ def test_kinds_cover_spec_section_11():
     assert {k.value for k in AlertKind} == {
         "unprotected-position", "stop-rejected", "unknown-order-status", "foreign-exposure",
         "broker-reads-failing", "stream-lost-with-position", "daily-ceiling-reached",
-        "bot-crashed", "bot-did-not-start", "preflight-failed", "token-needs-confirmation",
+        "bot-crashed", "bot-did-not-start", "bot-did-not-stop", "preflight-failed",
+        "token-needs-confirmation",
     }
 
 

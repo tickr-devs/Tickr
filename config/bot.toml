@@ -81,6 +81,48 @@ window_end = "15:30"
 host = "127.0.0.1"
 # Local API port; read by the api server and the status screen.
 port = 8766
+# Host names the API answers to; requests whose Host (name:port) or Origin (http://name:port) is not one of these are refused (DNS rebinding / cross-site guard); read by the api server.
+allowed_hosts = ["127.0.0.1", "localhost"]
+# Status file the bot writes and the API serves, relative to data_dir; read by the bot's status writer and the api server.
+status_file = "status.json"
+# Command folder, relative to data_dir; the API writes into <commands_dir>/inbox, the bot consumes from there; read by the api server and the bot.
+commands_dir = "commands"
+# Status older than this many seconds is shown as stale (bot may be down); read by the api server.
+status_stale_seconds = 15
+# Seconds between refreshes of the status page, also returned to clients as a polling hint; read by the api server and the status page.
+poll_seconds = 3
+# Largest accepted command request body in bytes; larger = refused; read by the api server.
+max_request_body_bytes = 1024
+# Maximum unconsumed commands waiting in the inbox; more = new commands refused; read by the api server.
+max_pending_commands = 20
+# A command older than this many seconds when the bot reads it is refused as expired, never executed late; read by the bot via read_commands.
+command_max_age_seconds = 60
+
+[market_data]
+# Seconds between discovery passes in the regular session; read by runtime (discovery scheduler).
+discovery_interval_seconds = 60
+# Exchange codes allowed in discovery (owner 2026-10-16; Webull screener `exchange_code`); read by data.discovery.
+allowed_exchanges = ["NMS", "NAS", "NSQ", "NYS", "ASE"]
+# Currencies allowed in discovery (screener `currency`); read by data.discovery.
+allowed_currencies = ["USD"]
+# Security types allowed (owner 2026-10-16: common stocks only); a row without a type is refused; read by data.discovery.
+allowed_security_types = ["COMMON_STOCK"]
+# Platform floor: maximum snapshot spread (ask - bid) / mid for a discovery candidate, ratio; read by data.discovery.
+# Independent of strategies/<name>/strategy.toml [liquidity]: a strategy may be stricter; edit each on its own.
+max_spread_ratio = 0.015
+# Platform floor: minimum current-session dollar volume (sum of close x volume of completed M1 bars), USD; read by data.discovery.
+# Independent of the strategy's min_dollar_volume_usd: a strategy may be stricter; edit each on its own.
+min_session_dollar_volume_usd = 5000000
+# Symbols per snapshot request (Webull docs: at most 100); read by data.discovery.
+snapshot_symbols_per_request = 100
+# Symbols per M1 bars request (Webull docs: 20); read by data.discovery.
+bars_symbols_per_request = 20
+# M1 bars requested per symbol in discovery (one regular session = 390 minutes); read by data.discovery.
+bars_per_symbol = 390
+# Seconds without a received quote, transport up, after which a subscribed symbol is quiet; read by data.health.
+quiet_after_seconds = 5
+# Capture folder relative to [run] data_dir; files go to <capture_dir>/<environment>/<NY date>/; read by data.capture.
+capture_dir = "capture"
 
 [runtime]
 # Minimum free disk space on the data_dir volume, megabytes; below it preflight fails; read by runtime.preflight.
@@ -89,6 +131,8 @@ min_free_disk_mb = 2048
 supervisor_poll_seconds = 0.5
 # Seconds launchd waits after SIGTERM before SIGKILL of the bot job (time to cancel entries and close); read by runtime.launchd.
 bot_exit_timeout_seconds = 120
+# Seconds after a forwarded SIGTERM before the supervisor alerts "bot did not stop" (must be below bot_exit_timeout_seconds); read by runtime.supervisor.
+stop_alert_after_seconds = 90
 # Preflight job start, Mac local time HH:MM, weekdays below; read by runtime.launchd when rendering plists.
 preflight_start_local = "08:30"
 # Bot job start, Mac local time HH:MM (must be before the 09:30 ET open), weekdays below; read by runtime.launchd.

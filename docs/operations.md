@@ -20,8 +20,20 @@ different dates); the bot must start before 09:30 ET.
 The bot job runs `python -m aperture.runtime run-bot`, which runs preflight again, then starts the
 bot as a child process. launchd stops the job with SIGTERM; the supervisor forwards one SIGTERM to
 the bot, whose handler only sets the stop-entries flag; the main loop then cancels working entries,
-leaves resting stops at the broker and exits. launchd waits `bot_exit_timeout_seconds` before
-SIGKILL.
+leaves resting stops at the broker and exits. If the bot is still running
+`stop_alert_after_seconds` after the SIGTERM, the supervisor alerts `bot-did-not-stop` and keeps
+waiting; launchd sends SIGKILL at `bot_exit_timeout_seconds`.
+
+## Stopping the bot safely
+
+1. `launchctl kill TERM gui/$(id -u)/local.aperture.bot`
+2. Wait for the `"record": "bot-exit"` line in `~/Library/Logs/Aperture/bot.log`
+   (`"clean": true`). A `bot-did-not-stop` alert means the bot is stuck: check orders and the
+   position in the Webull app before doing anything else.
+3. Do not log out, restart or shut down the Mac while the bot has a working order or an open
+   position. Logout and shutdown also stop the job with SIGTERM, but macOS may not wait the full
+   exit time. A resting stop stays at the broker either way; a working entry order may not be
+   cancelled.
 
 Not yet available (other workstreams): the bot's `aperture.cli run` command (engine, stage 6) and
 the `aperture.api` server module (local API). Until they land, load only the preflight job.
@@ -114,6 +126,6 @@ settings) or schedule a wake before the preflight time, for example
 `python -m aperture.runtime alert <kind> <text>` shows one alert. Kinds (spec section 11):
 `unprotected-position`, `stop-rejected`, `unknown-order-status`, `foreign-exposure`,
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
-`bot-did-not-start`, `preflight-failed`, `token-needs-confirmation`. The same kind and text inside
+`bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`. The same kind and text inside
 `[alerts] dedupe_window_seconds` is shown once; every occurrence is still recorded (in the bot's
 journal, or in the job log for these commands).

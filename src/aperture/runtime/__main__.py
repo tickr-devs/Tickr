@@ -19,6 +19,7 @@ import os
 import sys
 import tomllib
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from aperture import config as config_module
@@ -77,8 +78,17 @@ def _run_bot(config_path: Path, command: list[str]) -> int:
     stop = StopRequest()
     previous = install_stop_handler(stop)
     try:
-        ended = supervise(command, poll_seconds=result.config.runtime.supervisor_poll_seconds,
-                          stop=stop)
+        runtime = result.config.runtime
+
+        def overdue() -> None:
+            _alert(config_path, result.environment, AlertKind.BOT_DID_NOT_STOP,
+                   f"bot still running {runtime.stop_alert_after_seconds} s after SIGTERM; "
+                   f"launchd kills it at {runtime.bot_exit_timeout_seconds} s: check orders "
+                   "and position")
+
+        ended = supervise(command, poll_seconds=runtime.supervisor_poll_seconds, stop=stop,
+                          stop_alert_after_seconds=Decimal(runtime.stop_alert_after_seconds),
+                          on_stop_overdue=overdue)
     finally:
         restore_handlers(previous)
     _emit("bot-exit", {"return_code": ended.return_code, "stop_signal": stop.signal_name,
