@@ -38,7 +38,7 @@ final class AppModel {
     /// Used only until the first answer gives the server's poll_seconds.
     @ObservationIgnored private let initialPollSeconds: Double = 3
 
-    /// A pairing link opened from outside (AirDrop, Notes), waiting for the owner to confirm.
+    /// A pairing link opened from outside (AirDrop), waiting for the owner to confirm.
     var pendingPairing: Pairing?
 
     var status: StatusV1? { response?.status }
@@ -155,7 +155,8 @@ final class AppModel {
 
     /// Uses a pairing link: the Mac's HTTPS address and its token replace the current connection.
     func pair(_ pairing: Pairing) {
-        connection = Connection(address: pairing.url.absoluteString, token: pairing.token)
+        connection = Connection(address: pairing.url.absoluteString, token: pairing.token,
+                                pairedAddress: pairing.url.absoluteString)
         notice = Notice(text: "Paired with \(pairing.url.host ?? "the Mac").", tone: .success)
     }
 

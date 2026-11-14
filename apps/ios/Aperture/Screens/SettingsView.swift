@@ -37,8 +37,8 @@ struct SettingsView: View {
                 Text("Bot on your Mac")
             } footer: {
                 Text("In the Simulator the Mac's own address works. On the phone, pair with the link that "
-                    + "`python -m aperture.api pair` prints on the Mac; it reaches the Mac through Tailscale "
-                    + "over HTTPS. The token stays in this phone's Keychain.")
+                    + "`python -m aperture.api pair` leaves on the Mac; it reaches the Mac through Tailscale "
+                    + "over HTTPS. The token stays in this phone's Keychain and goes only to the paired address.")
             }
 
             if let status = model.status {
@@ -85,18 +85,22 @@ struct SettingsView: View {
         }
     }
 
-    /// Keeps the paired token only while the address still points at the same host.
+    /// Keeps the paired token only while the address is still exactly the paired one; any other
+    /// address drops it, so the token is never sent to a host it was not paired with.
     private func save() {
         let next = Connection(address: draft)
         guard draft.isEmpty || next.url != nil else { return }
-        let sameHost = next.url?.host == model.connection.url?.host
-        model.connection = Connection(address: draft, token: sameHost ? model.connection.token : nil)
+        let current = model.connection
+        let samePairing = current.pairedAddress.flatMap(Connection.origin) == Connection.origin(draft)
+        model.connection = samePairing
+            ? Connection(address: draft, token: current.token, pairedAddress: current.pairedAddress)
+            : Connection(address: draft)
         editing = false
     }
 
     private var connectionState: (text: String, color: Color) {
         if !model.isConfigured { return ("No address", .secondary) }
-        if model.connection.isRemote && model.connection.token == nil { return ("Not paired", .orange) }
+        if model.connection.isRemote && model.connection.bearer == nil { return ("Not paired", .orange) }
         if model.fetchError != nil { return ("Not reachable", .red) }
         if model.response == nil { return ("Connecting…", .secondary) }
         if model.status == nil || model.response?.stale == true { return ("Reached, status not current", .orange) }
@@ -104,7 +108,7 @@ struct SettingsView: View {
     }
 }
 
-/// Paste the pairing link the Mac printed. Opening the link on the phone (AirDrop, Notes) works too.
+/// Paste the pairing link the Mac left in its pairing file. Opening the link on the phone works too.
 private struct PairingSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -124,8 +128,8 @@ private struct PairingSheet: View {
                         if let first = strings.first { text = first }
                     }
                 } footer: {
-                    Text("On the Mac run `python -m aperture.api --config config/bot.toml pair` and send the "
-                        + "link to this phone, or paste it here.")
+                    Text("On the Mac run `python -m aperture.api --config config/bot.toml pair`, then AirDrop "
+                        + "the pairing file it names to this phone and paste the link here.")
                 }
                 if let pairing {
                     Section("Mac") {
