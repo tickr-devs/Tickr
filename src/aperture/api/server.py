@@ -2,7 +2,10 @@
 
 stdlib only. Binds a loopback address and refuses any request whose Host (or Origin, when sent)
 is not in the configured allowlist, which blocks DNS rebinding and cross-site requests from a
-browser. Commands additionally require `Content-Type: application/json`, which a cross-site form
+browser. Requests whose Host is one of `[api] remote_hosts` (an HTTPS proxy on this Mac, such as
+`tailscale serve`, that forwards the phone's requests to the loopback port) must also carry the
+paired bearer token; the server keeps only the token's SHA-256, written by `pair`.
+Commands additionally require `Content-Type: application/json`, which a cross-site form
 cannot send without a CORS preflight, and this server answers no preflight.
 
 The API never talks to the broker and never changes bot state itself: it reads the bot's status
@@ -11,7 +14,12 @@ file and drops command files into the inbox. The bot decides, acts and journals.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
+import os
+import re
+import secrets
 import sys
 import threading
 from collections.abc import Callable
@@ -50,11 +58,20 @@ COMMAND_ROUTES = {
 }
 
 
+# A remote Host header: a lowercase DNS name with at least one dot, optionally ":port".
+_LABEL = r"[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+REMOTE_HOST = re.compile(rf"^{_LABEL}(\.{_LABEL})+(:[0-9]+)?$")
+BEARER = "Bearer "
+
+
 @dataclass(frozen=True)
 class ApiSettings:
     host: str
     port: int
     allowed_hosts: tuple[str, ...]
+    remote_hosts: tuple[str, ...]
+    token_hash_path: Path
+    token_bytes: int
     status_path: Path
     inbox: Path
     status_stale_seconds: Decimal
@@ -75,11 +92,22 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         raise ConfigError(f"[api] host {api.host!r} is not a loopback IP address")
     if not api.allowed_hosts:
         raise ConfigError("[api] allowed_hosts is empty")
+    for name in api.remote_hosts:
+        if not REMOTE_HOST.match(name):
+            raise ConfigError(f"[api] remote_hosts entry {name!r} is not a lowercase DNS name "
+                              "(optionally with :port)")
+        if name.split(":", 1)[0] in api.allowed_hosts:
+            raise ConfigError(f"[api] remote_hosts entry {name!r} is also a local allowed host")
+    if api.remote_token_bytes <= 0:
+        raise ConfigError("[api] remote_token_bytes must be positive")
     data = cfg.root / cfg.run.data_dir
     return ApiSettings(
         host=api.host,
         port=api.port,
         allowed_hosts=api.allowed_hosts,
+        remote_hosts=api.remote_hosts,
+        token_hash_path=data / api.remote_token_hash_file,
+        token_bytes=api.remote_token_bytes,
         status_path=data / api.status_file,
         inbox=data / api.commands_dir / contract.INBOX,
         status_stale_seconds=api.status_stale_seconds,
@@ -183,7 +211,7 @@ _ERROR_CODES = {
     "forbidden_host": 403, "forbidden_origin": 403, "not_found": 404,
     "method_not_allowed": 405, "length_required": 411, "payload_too_large": 413,
     "unsupported_media_type": 415, "bad_request": 400, "too_many_pending": 429,
-    "internal": 500, "unavailable": 503,
+    "internal": 500, "unavailable": 503, "unauthorized": 401,
 }
 GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", "/settings")
 DAY_PREFIX = "/days/"
@@ -249,12 +277,36 @@ class Handler(BaseHTTPRequestHandler):
 
     def _guard(self) -> bool:
         host = self.headers.get("Host")
-        if host not in self.server.allowed_host_headers:
-            self._error("forbidden_host", f"Host {host!r} is not allowed")
-            return False
         origin = self.headers.get("Origin")
-        if origin is not None and origin not in self.server.allowed_origins:
-            self._error("forbidden_origin", f"Origin {origin!r} is not allowed")
+        if host in self.server.allowed_host_headers:
+            if origin is not None and origin not in self.server.allowed_origins:
+                self._error("forbidden_origin", f"Origin {origin!r} is not allowed")
+                return False
+            return True
+        if host is not None and host in self.server.settings.remote_hosts:
+            if origin is not None and origin != f"https://{host}":
+                self._error("forbidden_origin", f"Origin {origin!r} is not allowed")
+                return False
+            return self._authorized()
+        self._error("forbidden_host", f"Host {host!r} is not allowed")
+        return False
+
+    def _authorized(self) -> bool:
+        """A remote request must present the paired token. The token is never logged or echoed."""
+        challenge = {"WWW-Authenticate": "Bearer"}
+        try:
+            expected = self.server.settings.token_hash_path.read_text("ascii").strip()
+        except FileNotFoundError:
+            self._error("unauthorized", "no phone is paired; run `python -m aperture.api pair`",
+                        challenge)
+            return False
+        header = self.headers.get("Authorization") or ""
+        if not header.startswith(BEARER):
+            self._error("unauthorized", "a bearer token is required", challenge)
+            return False
+        presented = hashlib.sha256(header[len(BEARER):].encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(presented, expected):
+            self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
         return True
 
@@ -390,3 +442,23 @@ class Handler(BaseHTTPRequestHandler):
 
 def make_server(settings: ApiSettings, clock: Callable[[], datetime] = _now) -> ApiServer:
     return ApiServer(settings, clock)
+
+
+def pair(settings: ApiSettings) -> str:
+    """Make a new bearer token for the phone, store only its SHA-256 (replacing any earlier
+    pairing, so the old phone token stops working) and return the token for the owner to enter.
+    """
+    if not settings.remote_hosts:
+        raise ConfigError("[api] remote_hosts is empty: set the Tailscale name of this Mac first")
+    token = secrets.token_urlsafe(settings.token_bytes)
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    path = settings.token_hash_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="ascii") as handle:
+        handle.write(digest + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+    return token

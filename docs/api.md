@@ -14,6 +14,27 @@ Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `conf
 - Commands require `Content-Type: application/json` and a `Content-Length` within
   `[api] max_request_body_bytes`.
 
+## Remote access (the phone)
+
+The API still binds loopback only. The iPhone reaches it through an HTTPS proxy on the same Mac,
+[Tailscale](https://tailscale.com) `serve`, which is reachable only from devices signed in to the
+owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
+tailnet name. Requests arriving with that name as `Host` must also carry the paired token.
+
+1. Install Tailscale on the Mac and the iPhone, sign in to the same account, enable MagicDNS and
+   HTTPS certificates in the Tailscale admin console.
+2. On the Mac: `tailscale serve --bg --https=443 http://127.0.0.1:8766` (the `[api] port`).
+   `tailscale serve status` shows the address, e.g. `https://mac.tailnet-name.ts.net`.
+3. In `config/bot.toml` set `[api] remote_hosts = ["mac.tailnet-name.ts.net"]` and restart the API.
+4. `python -m aperture.api --config config/bot.toml pair` prints a pairing link once. In the iOS
+   app: Settings › Pair with Mac, paste it. The Mac keeps only the token's SHA-256
+   (`[api] remote_token_hash_file` under `data_dir`); pairing again revokes the previous token.
+
+Rules for a request whose `Host` is in `remote_hosts` (no port when 443, else `name:port`):
+`Authorization: Bearer <token>` is required, else `401 unauthorized` with `WWW-Authenticate: Bearer`;
+an `Origin`, if sent, must be `https://<host>`. Loopback requests (the Mac app, the status page)
+need no token. `remote_hosts = []` (the shipped value) turns remote access off.
+
 ## Wire rules
 
 - Money, prices and quantities are decimal strings (`"12.34"`), never JSON numbers.
@@ -49,6 +70,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 
 Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1}`:
 `forbidden_host` / `forbidden_origin` 403, `not_found` 404, `method_not_allowed` 405,
+`unauthorized` 401 (remote request without the paired token),
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
 `too_many_pending` 429, `internal` 500, `unavailable` 503 (history cannot be read now: database of
 another schema version, unreadable capture file).
