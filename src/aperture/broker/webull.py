@@ -488,12 +488,16 @@ class WebullBroker:
     def open_orders(self) -> list[OrderDetail]:
         orders: list[OrderDetail] = []
         params: dict[str, Any] = {}
+        seen_keys: set[str] = set()
         for _page in range(self._open_orders_max_pages):
             body = self._read(Route.OPEN_ORDERS, params)
             orders.extend(read_order_rows(body, self._transport.is_own_account, "open_orders"))
             next_key = _optional(body, "pagination_key") if isinstance(body, Mapping) else None
             if next_key is None:
                 return orders
+            if str(next_key) in seen_keys:
+                raise BrokerReadFailed(Route.OPEN_ORDERS.name, None, "PAGINATION_REPEATED")
+            seen_keys.add(str(next_key))
             params = {"pagination_key": str(next_key)}
         # A partial list of open orders is not the broker's truth: refuse.
         raise BrokerReadFailed(Route.OPEN_ORDERS.name, None, "PAGE_LIMIT_REACHED")
@@ -530,8 +534,7 @@ class WebullBroker:
             return
         if self._order_not_present(response):
             raise OrderNotFound(client_order_id)
-        if response.error_code == CODE_NON_TRADING_HOURS:
-            raise Refused(response.error_code, response.message)
+        # No cancel refusal code is proven yet: anything else is resolved by Detail.
         raise OutcomeUnknown(f"CANCEL: HTTP {response.status} {response.error_code or ''}".strip())
 
 

@@ -176,12 +176,9 @@ def test_cancel_ok_and_errors():
     b.cancel("ap-1")
     with pytest.raises(OrderNotFound):
         b.cancel("ap-1")
-    with pytest.raises(Refused):
-        b.cancel("ap-1")
-    with pytest.raises(OutcomeUnknown):
-        b.cancel("ap-1")
-    with pytest.raises(OutcomeUnknown):
-        b.cancel("ap-1")
+    for _ in range(3):  # no proven cancel refusal: every other answer is resolved by Detail
+        with pytest.raises(OutcomeUnknown):
+            b.cancel("ap-1")
     assert len(t.sent) == 5
 
 
@@ -218,8 +215,16 @@ def test_open_orders_pages_until_no_key():
     assert t.sent[1][1] == {"pagination_key": "k2"}
 
 
+def test_open_orders_refuses_repeated_cursor():
+    page = WireResponse(200, {"data": [], "pagination_key": "k"})
+    b, _, _ = broker(page, page, max_pages=3)
+    with pytest.raises(BrokerReadFailed) as exc:
+        b.open_orders()
+    assert exc.value.code == "PAGINATION_REPEATED"
+
+
 def test_open_orders_refuses_partial_list():
-    pages = [WireResponse(200, {"data": [], "pagination_key": "k"}) for _ in range(3)]
+    pages = [WireResponse(200, {"data": [], "pagination_key": f"k{i}"}) for i in range(3)]
     b, _, _ = broker(*pages, max_pages=3)
     with pytest.raises(BrokerReadFailed):
         b.open_orders()
