@@ -335,25 +335,27 @@ def test_subscribe_past_the_configured_limit_is_refused_before_sending():
     assert s.symbols == {"A", "B", "C"}
 
 
-def test_provider_limit_refusal_keeps_the_stream_up_and_does_not_reconnect():
+def test_provider_limit_under_our_cap_reconnects_and_raises():
     s, sent, errors, _ = session()
     rec = Recorder()
 
     def refuse_second(symbols):
         sent.append(("sub", symbols))
-        if len(sent) > 1:
+        if "B" in symbols:
             raise subscribe_error(ProviderLimit(), symbols, 100)
 
     s.bind(refuse_second, lambda symbols: None, lambda: sent.append(("reconnect", [])))
     s.subscribe(["A"], rec)
     s.on_connected()
     with pytest.raises(SubscriptionLimit) as caught:
-        s.subscribe(["B"], rec)
+        s.subscribe(["B"], rec)  # 2 symbols, far under the local cap of 100
     assert caught.value.by_provider and caught.value.symbols == ("B",)
-    assert s.up and s.symbols == {"A"}
-    assert ("reconnect", []) not in sent
-    assert rec.transport == [(True, "connected, 1 symbol(s) subscribed")]
+    assert not s.up and s.symbols == {"A"}  # B rolled back; a fresh connection resets the count
+    assert sent[-1] == ("reconnect", [])
+    assert rec.transport[-1][0] is False and "SubscriptionLimit" in rec.transport[-1][1]
     assert [where for where, _ in errors] == ["subscribe"]
+    s.on_connected()  # the reconnect resubscribes A only
+    assert s.up and sent[-1] == ("sub", ["A"])
 
 
 def test_subscribe_error_maps_only_the_limit_code():
@@ -386,4 +388,4 @@ def test_sdk_stream_maps_417_to_subscription_limit(tmp_path, monkeypatch):
     client.on_connect_success(client, None, "sid")
     with pytest.raises(SubscriptionLimit):
         stream.subscribe(["BBB"], listener)
-    assert s.up and s.symbols == {"AAA"}
+    assert not s.up and s.symbols == {"AAA"}

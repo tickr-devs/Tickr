@@ -185,7 +185,8 @@ stream_reconnect_delay_seconds = 10
 # subscribe past it is refused with HTTP 417 TOO_MANY_SYMBOLS_SUBSCRIPTION); never set above 100. A subscribe that would
 # pass it is refused before sending (SubscriptionLimit); read by broker.webull stream.
 stream_max_symbols = 100
-# Stream slots never used by discovery candidates, kept for open positions and the strategy's WATCH symbols, count;
+# Stream slots never used by discovery candidates, kept for open positions and the strategy's WATCH symbols, count
+# (position and WATCH symbols beyond stream_max_symbols get the same SubscriptionLimit refusal);
 # read by config (checks candidate_subscriptions <= stream_max_symbols - stream_reserved_symbols).
 stream_reserved_symbols = 20
 # Seconds without a received quote, transport up, after which a subscribed symbol is quiet; read by data.health.

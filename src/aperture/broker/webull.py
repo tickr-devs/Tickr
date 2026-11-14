@@ -1027,9 +1027,11 @@ class StreamSession:
       provider thread.
     - Disconnect, entitlement pre-emption (notice 1002) and a stopped loop report "down".
     - At most `max_symbols` symbols per connection (probe M3: 100, cumulative). A subscribe()
-      that would pass it raises SubscriptionLimit before anything is sent; a provider refusal of
-      the same kind (HTTP 417) takes its symbols back out, keeps the transport up (the earlier
-      subscriptions stay, M3) and raises SubscriptionLimit. Neither reconnects.
+      that would pass it raises SubscriptionLimit before anything is sent, without reconnecting.
+      A provider refusal of the same kind (HTTP 417) while under our cap means the provider
+      counts differently (for example an unsubscribe that does not free a slot, untested in M3):
+      its symbols are taken back out and it is handled like any failed subscribe (transport
+      down, reconnect, so a fresh connection resets the count), then SubscriptionLimit raises.
     """
 
     def __init__(self, budget: RequestBudget, utc_now: Callable[[], datetime],
@@ -1144,15 +1146,6 @@ class StreamSession:
         full set again. True when in sync."""
         try:
             return self._sync()
-        except SubscriptionLimit as refused:
-            # Provider limit (HTTP 417): nothing new was added and the earlier subscriptions
-            # stay (probe M3), so the connection is still good. Only a bot call can be undone.
-            if not raise_error:
-                return self._down_and_reconnect(refused, rollback)
-            with self._lock:
-                self._symbols.difference_update(rollback)
-            self._on_error("subscribe", refused)
-            raise
         except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK failure while (un)subscribing
             self._down_and_reconnect(exc, rollback)
             if raise_error:
