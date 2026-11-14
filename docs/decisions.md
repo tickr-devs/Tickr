@@ -30,3 +30,4 @@ Newest first. Only decisions that are in force. Each line: date, decision, where
 | 2026-10-13 | A bot with an open position is never restarted blindly; startup always reconciles first. | runtime |
 | 2026-10-12 | Production is built ready but disabled; enabling it is configuration plus an owner authorization record, never a code change. Only Production call allowed now: the read-only trading calendar. | config, gate |
 | 2026-10-11 | Secrets are never read, printed or stored. | everything |
+| 2026-11-14 | The ~15k-line product-code ceiling for v1 is lifted: work continues past it. Size stays a warning sign, reported in PRs, not a stop. | CLAUDE.md |
