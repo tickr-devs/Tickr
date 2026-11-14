@@ -39,10 +39,10 @@ struct ChartTab: View {
   @ViewBuilder
   private func content(_ url: URL) -> some View {
     switch chart.phase {
-    case .idle, .loading where chart.series == nil:
-      ProgressView { Text(ChartText.loading) }
-        .frame(maxWidth: .infinity)
-        .padding(.top, Tokens.Space.xxl)
+    case .idle:
+      loadingView
+    case .loading where chart.series == nil:
+      loadingView
     case .failed(let cause):
       ContentUnavailableView {
         Label { Text(ChartText.failedTitle) } icon: { Image(systemName: "exclamationmark.triangle") }
@@ -81,6 +81,12 @@ struct ChartTab: View {
         .rise()
       }
     }
+  }
+
+  private var loadingView: some View {
+    ProgressView { Text(ChartText.loading) }
+      .frame(maxWidth: .infinity)
+      .padding(.top, Tokens.Space.xxl)
   }
 
   /// Changes whenever a different chart is on screen, restarting the reload loop.
