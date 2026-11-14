@@ -31,6 +31,7 @@ from aperture.lock import AlreadyRunning, SingleInstanceLock, recorded_holder
 from aperture.store import MIGRATIONS, Store
 
 if TYPE_CHECKING:
+    from aperture.observers.runner import ObserverSet
     from aperture.runtime.evaluation import Evaluator
     from aperture.runtime.market import StreamInbox
 
@@ -234,12 +235,15 @@ def _clear_fence(args: argparse.Namespace) -> int:
 
 def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
                inbox: StreamInbox, calendar: SessionCalendar | None,
-               last_broker_read_at: Callable[[], datetime | None]) -> Evaluator | None:
-    """The active strategy wired to the entry desk; None (entries off, status says why) when
-    there is no trading calendar: entries are refused without one anyway."""
+               last_broker_read_at: Callable[[], datetime | None]
+               ) -> tuple[Evaluator, ObserverSet] | None:
+    """The active strategy wired to the entry desk, and the observers fed the same contexts
+    (both write one decision log). None (entries off, status says why) when there is no
+    trading calendar: entries are refused without one anyway."""
     from aperture.data.history import HistoryReader
-    from aperture.observers.loader import load_strategy, parse_modules
+    from aperture.observers.loader import load_observers, load_strategy, parse_modules
     from aperture.observers.log import DecisionLog
+    from aperture.observers.runner import ObserverSet
     from aperture.runtime.entries import EntryDesk
     from aperture.runtime.evaluation import Evaluator
 
@@ -247,11 +251,22 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
         return None
     loaded = load_strategy(cfg.root, cfg.strategy.active,
                            parse_modules(cfg.observers.strategy_modules))
+    log = DecisionLog.from_config(cfg)
     desk = EntryDesk(engine, cfg, calendar=calendar, last_broker_read_at=last_broker_read_at,
-                     log=DecisionLog.from_config(cfg))
-    return Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
-                     history=HistoryReader.from_config(cfg, source, calendar), inbox=inbox,
-                     calendar=calendar, now=NOW)
+                     log=log)
+    evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
+                          history=HistoryReader.from_config(cfg, source, calendar),
+                          inbox=inbox, calendar=calendar, now=NOW)
+    observers = ObserverSet(load_observers(cfg), log, cfg.observers.max_evaluation_seconds,
+                            cfg.observers.queue_size)
+    return evaluator, observers
+
+
+def _closer(observers: ObserverSet, cfg: config_module.Config) -> Callable[[], None]:
+    """Shutdown step: let queued observer evaluations finish (bounded), close the log."""
+    def close() -> None:
+        observers.close(float(cfg.observers.max_evaluation_seconds))
+    return close
 
 
 def _run(path: Path) -> int:
@@ -279,6 +294,7 @@ def _run(path: Path) -> int:
         inbox = StreamInbox()
         adapters: RunAdapters | None = None
         capture: CaptureWriter | None = None
+        observers: ObserverSet | None = None
         try:
             adapters = RUN_ADAPTERS(cfg, inbox.on_error)
             engine = Engine(store, adapters.broker, cfg, run_id,
@@ -291,11 +307,12 @@ def _run(path: Path) -> int:
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
                                    capture=capture, calendar=calendar, now=NOW,
                                    monotonic=time.monotonic)
-            evaluator = _evaluator(cfg, engine, adapters.market, inbox, calendar,
-                                   lambda: bot.last_broker_read_at)
+            wired = _evaluator(cfg, engine, adapters.market, inbox, calendar,
+                               lambda: bot.last_broker_read_at)
+            evaluator, observers = wired if wired is not None else (None, None)
             bot = service.Service(engine, now=NOW, calendar=calendar, strategy=strategy,
                                   paths=service.ServicePaths.from_config(cfg), market=market,
-                                  evaluator=evaluator,
+                                  evaluator=evaluator, observers=observers,
                                   watch=Watch(engine, cfg, alerter, NOW))
             market.bind()
             adapters.start_stream()
@@ -305,6 +322,7 @@ def _run(path: Path) -> int:
             # Each step guarded: a failing SDK disconnect must not skip recording the run end.
             for step in ((adapters.stop_stream if adapters is not None else None),
                          (capture.close if capture is not None else None),
+                         (_closer(observers, cfg) if observers is not None else None),
                          lambda: restore_handlers(previous),
                          lambda: store.end_run(run_id, cause),
                          store.close):
