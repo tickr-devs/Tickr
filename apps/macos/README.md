@@ -28,8 +28,8 @@ Needs Xcode 16 or newer and macOS 14+.
 open Aperture.xcworkspace        # at the repository root
 ```
 
-The workspace holds the macOS app (`apps/macos/ApertureMac.xcodeproj`), the iOS app
-(`apps/ios`) and the shared package (`apps/shared`). Pick the scheme `Aperture macOS` and
+The workspace holds the macOS app (`apps/macos/ApertureMac.xcodeproj`) and the shared package
+(`apps/shared`); the iOS app's project joins it when it is committed. Pick the scheme `Aperture macOS` and
 "My Mac", then Run (⌘R). Signing is automatic and signs to run locally; no Apple ID is needed
 for the Mac app. New Swift files dropped into `apps/macos/Aperture/` are picked up without
 editing the project. Start the API first (below), or the app shows "unavailable".

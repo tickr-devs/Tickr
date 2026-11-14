@@ -36,5 +36,5 @@ jobs:
         run: |
           xcodebuild -version
           xcodebuild -workspace Aperture.xcworkspace -scheme "Aperture macOS" \
-            -destination "platform=macOS" -derivedDataPath build/xcode \
+            -destination "platform=macOS" -derivedDataPath apps/macos/build/xcode \
             CODE_SIGNING_ALLOWED=NO build
