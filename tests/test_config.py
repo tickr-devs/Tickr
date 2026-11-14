@@ -37,6 +37,11 @@ def test_uncommented_key_is_detected():
     assert config.uncommented_keys(text) == [(4, "y")]
 
 
+def test_hash_inside_string_is_not_a_comment():
+    text = '# ok\na = "x"\nprefix = "ap-#"\nb = \'it#\' # real\nc = "q\\"#"\n'
+    assert config.uncommented_keys(text) == [(3, "prefix"), (5, "c")]
+
+
 def test_environments_have_identical_keys():
     import tomllib
     envs = tomllib.loads(BOT.read_text("utf-8"))["environments"]
@@ -176,3 +181,25 @@ def test_cli_check_config(capsys):
 def test_cli_reports_config_error(tmp_path, capsys):
     _copy(tmp_path, "[run]\n")
     assert main(["--config", str(tmp_path / "config" / "bot.toml"), "check-config"]) == 2
+
+
+def test_cli_status_without_database(tmp_path, capsys):
+    path = _copy(tmp_path)
+    assert main(["--config", str(path), "status"]) == 0
+    out = capsys.readouterr().out
+    assert "bot: not running" in out and "not created yet" in out
+
+
+def test_cli_status_with_run(tmp_path, capsys):
+    from aperture.cli import data_paths
+    from aperture.store import Store
+    path = _copy(tmp_path)
+    cfg = config.load(path)
+    database, _ = data_paths(cfg)
+    store = Store.open(database, busy_timeout_seconds=0)
+    store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
+                    strategy="s", strategy_version="1", code_version="x")
+    store.close()
+    assert main(["--config", str(path), "status"]) == 0
+    out = capsys.readouterr().out
+    assert "1 runs" in out and "still open" in out

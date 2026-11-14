@@ -11,7 +11,7 @@ import sqlite3
 import sys
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -84,11 +84,17 @@ class Store:
         self._in_transaction = False
 
     @classmethod
-    def open(cls, path: Path | str) -> Store:
+    def open(cls, path: Path | str, *, busy_timeout_seconds: Decimal | float) -> Store:
+        """Open (and if needed migrate) the database.
+
+        An existing database older than this code is first copied to
+        `<name>.pre-v<N>.sqlite3` (verified) and only then migrated.
+        """
         path = Path(path)
-        if str(path) != ":memory:":
-            path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(str(path), isolation_level=None)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existed = path.exists() and path.stat().st_size > 0
+        db = sqlite3.connect(str(path), isolation_level=None,
+                             timeout=float(busy_timeout_seconds))
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=FULL")
         db.execute("PRAGMA foreign_keys=ON")
@@ -97,6 +103,9 @@ class Store:
             db.execute("PRAGMA fullfsync=ON")
             db.execute("PRAGMA checkpoint_fullfsync=ON")
         store = cls(db)
+        current = store.schema_version
+        if existed and 0 < current < len(MIGRATIONS):
+            store.backup(path.with_name(f"{path.stem}.pre-v{current + 1}{path.suffix}"))
         store._migrate()
         return store
 
@@ -123,15 +132,19 @@ class Store:
         """One durable transaction. Nested use is refused to keep commit points explicit."""
         if self._in_transaction:
             raise RuntimeError("nested transaction")
-        self._in_transaction = True
+        # BEGIN first: if it fails (for example the write lock is busy) nothing is open
+        # and the flag stays clear, so the next transaction can still start.
         self._db.execute("BEGIN IMMEDIATE")
+        self._in_transaction = True
         try:
             yield
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
-        else:
             self._db.execute("COMMIT")
+        except BaseException:
+            # Covers a failed body and a failed COMMIT: never leave a transaction open.
+            if self._db.in_transaction:
+                with suppress(sqlite3.Error):
+                    self._db.execute("ROLLBACK")
+            raise
         finally:
             self._in_transaction = False
 
@@ -187,6 +200,16 @@ class Store:
         sql += " ORDER BY seq"
         return [JournalRow(r[0], r[1], r[2], r[3], r[4], json.loads(r[5]))
                 for r in self._db.execute(sql, params)]
+
+    def last_run(self) -> dict[str, Any] | None:
+        row = self._db.execute(
+            "SELECT run_id, started_at, environment, strategy, strategy_version, ended_at, "
+            "end_cause FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
+        if row is None:
+            return None
+        names = ("run_id", "started_at", "environment", "strategy", "strategy_version",
+                 "ended_at", "end_cause")
+        return dict(zip(names, row, strict=True))
 
     def run_count(self) -> int:
         return int(self._db.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
