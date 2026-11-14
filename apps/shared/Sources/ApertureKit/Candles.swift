@@ -1,9 +1,11 @@
 import Foundation
 
-/// Chart data built from the M1 bars of GET /bars: candles in a chosen timeframe and the indicator
-/// lines drawn over them. The API serves M1 only; clients aggregate and compute indicators
-/// themselves (docs/api.md, "History"). Values are `Double` because they are only drawn, never
-/// sent back or added up as money.
+// Chart data built from the M1 bars of GET /bars: candles in a chosen timeframe and the indicator
+// lines drawn over them. The API serves M1 only; clients aggregate and compute indicators
+// themselves (docs/api.md, "History"). Indicator lines follow the bot's own definitions in
+// src/aperture/strategy/indicators.py: they are computed on the M1 bars and each candle shows the
+// value at its last M1 bar, so a line reads the same in every timeframe and matches what the
+// strategy saw. Values are `Double` because they are only drawn, never sent or added up as money.
 
 /// Candle length. The raw value is the length in minutes.
 public enum Timeframe: Int, CaseIterable, Identifiable, Sendable {
@@ -33,11 +35,6 @@ public struct Candle: Hashable, Sendable, Identifiable {
   public var id: Date { start }
   /// Whether the candle closed at or above its open.
   public var isUp: Bool { close >= open }
-  /// High, low and close averaged: the price VWAP weights by volume.
-  public var typicalPrice: Double { (high + low + close) / Self.typicalPriceParts }
-
-  /// Number of prices averaged in the typical price.
-  static let typicalPriceParts = 3.0
 
   public init(start: Date, end: Date, open: Double, high: Double, low: Double, close: Double, volume: Double) {
     self.start = start
@@ -50,72 +47,104 @@ public struct Candle: Hashable, Sendable, Identifiable {
   }
 }
 
-public enum Candles {
-  /// Candles of `timeframe` from M1 bars (oldest first, as GET /bars serves them). A candle starts
-  /// on a whole multiple of the timeframe (09:35, 09:40 for M5) and holds the bars that start
-  /// inside it; a candle without bars is not made, so gaps stay gaps.
-  public static func make(_ bars: [BarV1], timeframe: Timeframe) -> [Candle] {
-    var candles: [Candle] = []
-    for bar in bars {
-      let length = timeframe.seconds
-      let start = Date(timeIntervalSince1970: (bar.start.date.timeIntervalSince1970 / length).rounded(.down) * length)
-      let open = Double(truncating: bar.open.value as NSNumber)
-      let high = Double(truncating: bar.high.value as NSNumber)
-      let low = Double(truncating: bar.low.value as NSNumber)
-      let close = Double(truncating: bar.close.value as NSNumber)
-      let volume = Double(truncating: bar.volume.value as NSNumber)
-      if let last = candles.last, last.start == start {
-        candles[candles.count - 1] = Candle(
-          start: start, end: last.end, open: last.open, high: max(last.high, high),
-          low: min(last.low, low), close: close, volume: last.volume + volume)
-      } else {
-        candles.append(Candle(
-          start: start, end: start.addingTimeInterval(length), open: open, high: high, low: low,
-          close: close, volume: volume))
-      }
-    }
-    return candles
+/// Candles of one timeframe with the indicator lines, one line value per candle (nil where the
+/// line is not defined yet).
+public struct ChartSeries: Hashable, Sendable {
+  public let timeframe: Timeframe
+  public let candles: [Candle]
+  public let vwap: [Double?]
+  public let fastEMA: [Double?]
+  public let slowEMA: [Double?]
+
+  /// Candles and lines from one day's M1 bars (oldest first, as GET /bars serves them).
+  public init(bars: [BarV1], timeframe: Timeframe) {
+    let groups = Candles.groups(bars, timeframe: timeframe)
+    let closes = bars.map { Candles.double($0.close) }
+    let vwap = Indicators.vwap(bars)
+    let fast = Indicators.ema(closes, period: Indicators.fastEMAPeriod)
+    let slow = Indicators.ema(closes, period: Indicators.slowEMAPeriod)
+    self.timeframe = timeframe
+    candles = groups.map(\.candle)
+    self.vwap = groups.map { vwap[$0.lastBar] }
+    fastEMA = groups.map { fast[$0.lastBar] }
+    slowEMA = groups.map { slow[$0.lastBar] }
   }
 }
 
-/// Indicator lines, one value per candle (nil where the line is not defined yet).
-public enum Indicators {
-  /// Period of the fast EMA line, in candles.
-  public static let fastEMAPeriod = 9
-  /// Period of the slow EMA line, in candles.
-  public static let slowEMAPeriod = 20
-  /// Smoothing factor of an EMA: each new close weighs smoothing / (period + 1).
-  static let emaSmoothing = 2.0
+public enum Candles {
+  /// Candles of `timeframe` from M1 bars (oldest first). A candle starts on a whole multiple of
+  /// the timeframe (09:35, 09:40 for M5) and holds the bars that start inside it; a candle without
+  /// bars is not made, so gaps stay gaps.
+  public static func make(_ bars: [BarV1], timeframe: Timeframe) -> [Candle] {
+    groups(bars, timeframe: timeframe).map(\.candle)
+  }
 
-  /// Volume-weighted average of the typical price from the first candle given (the day's first
-  /// captured bar) up to each candle. Nil until some volume has traded.
-  public static func vwap(_ candles: [Candle]) -> [Double?] {
+  /// Each candle with the index of its last M1 bar in `bars`.
+  static func groups(_ bars: [BarV1], timeframe: Timeframe) -> [(candle: Candle, lastBar: Int)] {
+    var groups: [(candle: Candle, lastBar: Int)] = []
+    let length = timeframe.seconds
+    for (index, bar) in bars.enumerated() {
+      let start = Date(timeIntervalSince1970: (bar.start.date.timeIntervalSince1970 / length).rounded(.down) * length)
+      let high = double(bar.high)
+      let low = double(bar.low)
+      let close = double(bar.close)
+      let volume = double(bar.volume)
+      if let last = groups.last?.candle, last.start == start {
+        let merged = Candle(
+          start: start, end: last.end, open: last.open, high: max(last.high, high),
+          low: min(last.low, low), close: close, volume: last.volume + volume)
+        groups[groups.count - 1] = (merged, index)
+      } else {
+        let candle = Candle(
+          start: start, end: start.addingTimeInterval(length), open: double(bar.open), high: high,
+          low: low, close: close, volume: volume)
+        groups.append((candle, index))
+      }
+    }
+    return groups
+  }
+
+  static func double(_ value: DecimalString) -> Double {
+    NSDecimalNumber(decimal: value.value).doubleValue
+  }
+}
+
+/// The bot's indicator definitions (src/aperture/strategy/indicators.py), one value per M1 bar.
+public enum Indicators {
+  /// Period of the fast EMA line, in M1 bars (price-action-v1's fast_ema_period).
+  public static let fastEMAPeriod = 9
+  /// Period of the slow EMA line, in M1 bars (price-action-v1's slow_ema_period).
+  public static let slowEMAPeriod = 20
+  /// Smoothing factor of an EMA: each new value weighs smoothing / (period + 1).
+  static let emaSmoothing = 2.0
+  /// Number of prices averaged in the typical price (high, low, close).
+  static let typicalPriceParts = 3.0
+
+  /// vwap_series: session VWAP of the typical price, cumulative from the first bar given (a day's
+  /// bars are one session). Nil while cumulative volume is zero.
+  public static func vwap(_ bars: [BarV1]) -> [Double?] {
     var priceVolume = 0.0
     var volume = 0.0
-    return candles.map { candle in
-      priceVolume += candle.typicalPrice * candle.volume
-      volume += candle.volume
+    return bars.map { bar in
+      let typical = (Candles.double(bar.high) + Candles.double(bar.low) + Candles.double(bar.close)) / typicalPriceParts
+      let barVolume = Candles.double(bar.volume)
+      priceVolume += typical * barVolume
+      volume += barVolume
       return volume > 0 ? priceVolume / volume : nil
     }
   }
 
-  /// Exponential moving average of the closes. The first value is the simple average of the first
-  /// `period` closes, at the `period`-th candle; earlier candles have none.
-  public static func ema(_ candles: [Candle], period: Int) -> [Double?] {
-    guard period > 0 else { return candles.map { _ in nil } }
+  /// ema_series: seeded with the first value, then `ema = prev + (value - prev) * 2 / (period + 1)`.
+  /// The bot also feeds prior sessions, so the chart's line, which starts at the day's first bar,
+  /// matches the bot's once the seed has decayed (a few periods in).
+  public static func ema(_ values: [Double], period: Int) -> [Double?] {
+    guard period > 0 else { return values.map { _ in nil } }
     let weight = emaSmoothing / Double(period + 1)
-    var values: [Double?] = []
-    var sum = 0.0
-    var last: Double?
-    for (index, candle) in candles.enumerated() {
-      if let previous = last {
-        last = previous + weight * (candle.close - previous)
-      } else {
-        sum += candle.close
-        if index + 1 == period { last = sum / Double(period) }
-      }
-      values.append(last)
+    var previous: Double?
+    return values.map { value in
+      let next = previous.map { $0 + (value - $0) * weight } ?? value
+      previous = next
+      return next
     }
-    return values
   }
 }

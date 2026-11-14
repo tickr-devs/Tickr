@@ -4,14 +4,14 @@ import Testing
 
 @Suite("Chart candles and indicator lines")
 struct CandlesTests {
-  /// An M1 bar starting `minute` minutes after 15:00 UTC, with the milliseconds the wire carries.
-  func bar(
-    _ minute: Int, _ open: String, _ high: String, _ low: String, _ close: String, _ volume: String
-  ) throws -> BarV1 {
+  /// An M1 bar starting `minute` minutes after 15:00 UTC (with the milliseconds the wire carries)
+  /// from its open, high, low, close and volume.
+  func bar(_ minute: Int, _ values: String...) throws -> BarV1 {
     BarV1(
       start: try WireTime(String(format: "2026-11-16T15:%02d:00.123Z", minute)),
-      open: try DecimalString(open), high: try DecimalString(high), low: try DecimalString(low),
-      close: try DecimalString(close), volume: try DecimalString(volume))
+      open: try DecimalString(values[0]), high: try DecimalString(values[1]),
+      low: try DecimalString(values[2]), close: try DecimalString(values[3]),
+      volume: try DecimalString(values[4]))
   }
 
   func near(_ value: Double?, _ expected: Double) -> Bool {
@@ -51,31 +51,44 @@ struct CandlesTests {
     #expect(candles[2].start == (try WireTime("2026-11-16T15:15:00.000Z").date))
   }
 
-  @Test("VWAP weights the typical price by volume and waits for volume")
+  @Test("VWAP is the bot's vwap_series over M1 bars and waits for volume")
   func vwap() throws {
-    let candles = Candles.make([
+    let bars = [
       try bar(0, "10", "10", "10", "10", "0"),
       try bar(1, "10", "12", "9", "12", "100"),
       try bar(2, "12", "14", "11", "14", "300"),
-    ], timeframe: .m1)
-    let vwap = Indicators.vwap(candles)
+    ]
+    let vwap = Indicators.vwap(bars)
     #expect(vwap[0] == nil)
     #expect(near(vwap[1], 11))
     #expect(near(vwap[2], (11.0 * 100 + 13 * 300) / 400))
   }
 
-  @Test("EMA starts from the simple average of the first period, then smooths")
-  func ema() throws {
-    let closes = ["1", "2", "3", "4", "5"]
-    let bars = try closes.enumerated().map { try bar($0.offset, $0.element, $0.element, $0.element, $0.element, "1") }
-    let candles = Candles.make(bars, timeframe: .m1)
-    let ema = Indicators.ema(candles, period: 3)
-    #expect(ema[0] == nil)
-    #expect(ema[1] == nil)
-    #expect(near(ema[2], 2))
-    #expect(near(ema[3], 3))
-    #expect(near(ema[4], 4))
-    #expect(Indicators.ema(candles, period: 0).allSatisfy { $0 == nil })
-    #expect(Indicators.ema(Array(candles.prefix(2)), period: 3).allSatisfy { $0 == nil })
+  @Test("EMA is the bot's ema_series: seeded with the first value, then smoothed")
+  func ema() {
+    let ema = Indicators.ema([1, 2, 3, 4], period: 3)
+    #expect(near(ema[0], 1))
+    #expect(near(ema[1], 1.5))
+    #expect(near(ema[2], 2.25))
+    #expect(near(ema[3], 3.125))
+    #expect(Indicators.ema([1, 2], period: 0).allSatisfy { $0 == nil })
+  }
+
+  @Test("A timeframe shows the M1 lines at each candle's last M1 bar, not lines of the candles")
+  func seriesSamplesTheM1Lines() throws {
+    let bars = [
+      try bar(0, "10", "10", "10", "10", "100"),
+      try bar(1, "10", "13", "10", "13", "100"),
+      try bar(2, "13", "13", "7", "7", "400"),
+      try bar(5, "7", "8", "7", "8", "100"),
+    ]
+    let series = ChartSeries(bars: bars, timeframe: .m5)
+    let m1VWAP = Indicators.vwap(bars)
+    let m1Fast = Indicators.ema(bars.map { Candles.double($0.close) }, period: Indicators.fastEMAPeriod)
+    #expect(series.candles.count == 2)
+    #expect(series.vwap == [m1VWAP[2], m1VWAP[3]])
+    #expect(series.fastEMA == [m1Fast[2], m1Fast[3]])
+    // A VWAP of the M5 candle itself (typical price (13 + 7 + 7) / 3 = 9) would differ.
+    #expect(!near(series.vwap[0], 9))
   }
 }
