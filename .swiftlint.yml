@@ -20,6 +20,16 @@ opt_in_rules:
   - sorted_imports
   - toggle_bool
 
+# Short names are normal for decoder containers (c), coordinates (x, y), comparisons (a, b) and
+# the spacing scale (s, m, l).
+identifier_name:
+  min_length: 1
+  max_length: 50
+
+# Force try only on compile-time-constant regexes and dates; reviewed by hand.
+force_try: warning
+force_cast: warning
+
 line_length:
   warning: 130
   error: 160
