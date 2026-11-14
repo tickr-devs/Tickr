@@ -54,6 +54,8 @@ class AlertKind(StrEnum):
     OBSERVERS_STOPPED = "observers-stopped"
     # Broker reads after the flatten time (plus grace) still show our position or order.
     NOT_FLAT_AFTER_FLATTEN = "not-flat-after-flatten"
+    # A closing order is still not filled [orders] max_exit_seconds after it was sent.
+    EXIT_NOT_FILLED = "exit-not-filled"
 
 
 class Delivery(StrEnum):

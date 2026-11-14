@@ -47,7 +47,7 @@ def test_kinds_cover_spec_section_11():
         "broker-reads-failing", "stream-lost-with-position", "daily-ceiling-reached",
         "bot-crashed", "bot-did-not-start", "bot-did-not-stop", "preflight-failed",
         "token-needs-confirmation", "exit-refused", "observers-stopped",
-        "not-flat-after-flatten",
+        "not-flat-after-flatten", "exit-not-filled",
     }
 
 

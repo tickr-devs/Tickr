@@ -144,7 +144,7 @@ settings) or schedule a wake before the preflight time, for example
 `unprotected-position`, `stop-rejected`, `unknown-order-status`, `foreign-exposure`,
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
-`exit-refused`, `observers-stopped`, `not-flat-after-flatten`. The same kind and text inside
+`exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`. The same kind and text inside
 `[alerts] dedupe_window_seconds` is shown once; every occurrence is still recorded (in the bot's
 journal, or in the job log for these commands).
 
@@ -187,3 +187,16 @@ liquidity). The alert repeats every `[alerts] dedupe_window_seconds` while it la
 3. If it cannot be closed today, it stays overnight without a broker-side stop: decide in the
    Webull app (sell in extended hours, or place your own stop for the next session). The bot
    does not resolve this on its own; review the journal before the next session.
+
+### `exit-not-filled`
+
+A closing order (MARKET SELL) is still not filled `[orders] max_exit_seconds` after it was
+sent. The bot sends nothing more: no second close, no cancel. The shares in that order have no
+broker stop while it works (the stop was cancelled before the close was sent).
+
+1. Open the Webull app: is the stock halted, is the order still working, how much filled?
+2. If the order is still working, let it work or cancel it in the app. If it ends (filled,
+   cancelled, expired), the bot sees it: filled closes the trade; otherwise the bot puts a stop
+   back on what is still held and sends no other close.
+3. When you have looked, `aperture clear-fence exit-not-filled:<trade>`. If the trade is still
+   open, the bot then sends one new closing order.
