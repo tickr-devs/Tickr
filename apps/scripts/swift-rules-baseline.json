@@ -1795,6 +1795,8 @@
    "API answer does not match contract v1: ",
    "API refused ( ): ",
    "Accept",
+   "Authorization",
+   "Bearer ",
    "Content-Type",
    "GET",
    "HTTP  without an error-v1 body",
@@ -1836,6 +1838,13 @@
    "America/New_York",
    "expected a date like 2026-01-02, got \\\"\\\"",
    "expected a date string"
+  ],
+  "apps/shared/Sources/ApertureKit/Pairing.swift": [
+   "aperture",
+   "https",
+   "pair",
+   "token",
+   "url"
   ],
   "apps/shared/Sources/ApertureKit/Summary.swift": [
    " USD",
