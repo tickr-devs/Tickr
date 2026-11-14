@@ -161,7 +161,12 @@ def test_breakout_enter():
 
 
 def quantity(decision):
-    return {c.rule: c for c in decision.checks}["quantity"].measured
+    measured = {c.rule: c for c in decision.checks}["quantity"].measured
+    if decision.verdict == Verdict.ENTER:
+        assert decision.quantity == measured
+    else:
+        assert decision.quantity is None
+    return measured
 
 
 def test_quantity_by_planned_loss_and_notional_cap():
@@ -176,6 +181,7 @@ def test_quantity_by_planned_loss_and_notional_cap():
     assert one.verdict == Verdict.ENTER and quantity(one) == d(1)
     decision = make(sizing__planned_loss_usd=0.7).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
     assert_refused(decision, Verdict.IGNORE, "quantity")
+    assert decision.quantity is None
     decision = make(sizing__max_position_notional_usd=23).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
     assert_refused(decision, Verdict.IGNORE, "quantity")
 

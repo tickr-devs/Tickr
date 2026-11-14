@@ -32,8 +32,7 @@ Rule order:
    against ATR and against per-share risk (top of window - stop), quantity at least 1
    share: min(floor(`planned_loss_usd` / sizing risk), floor(`max_position_notional_usd` /
    top of window)), where sizing risk = top of window - stop + spread + slippage reserve
-   on both legs. The quantity is the final check's measured value until `Decision` carries
-   a quantity field. Then ENTER with entry window
+   on both legs. ENTER carries it in `Decision.quantity`. Then ENTER with entry window
    [trigger, trigger + extension], stop = invalidation.
 
 Quote freshness is the platform's rule (the strategy never reads the clock). Prices are
@@ -438,6 +437,7 @@ class PriceActionV1:
             entry_low=setup.trigger,
             entry_high=entry_high,
             stop=stop,
+            quantity=quantity,
             **levels,
         )
 
