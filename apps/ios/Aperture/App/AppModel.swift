@@ -48,8 +48,11 @@ final class AppModel {
         return Headline.make(response: response, fetchError: fetchError)
     }
 
-    /// Commands are offered only while the status is fresh and readable.
-    var canCommand: Bool { status != nil && response?.stale == false && fetchError == nil && !sending }
+    /// The last read succeeded and the bot's status is current.
+    var isFresh: Bool { status != nil && response?.stale == false && fetchError == nil }
+
+    /// Commands are offered, and sent, only while the status is fresh and no command is in flight.
+    var canCommand: Bool { isFresh && !sending }
 
     func start() {
         guard pollTask == nil else { return }
@@ -92,13 +95,34 @@ final class AppModel {
         }
     }
 
-    /// Queues a command. The caller has already asked for confirmation (and Face ID where needed).
-    /// Success means queued; the outcome arrives later in recent_commands and is announced then.
-    func send(_ command: OperatorCommand) async {
-        guard let url = connection.url else { return }
+    /// Queues a command once. Refused unless the status is fresh at send time; `confirmOwner`
+    /// (Face ID or passcode) runs first when given, and freshness is checked again after it, so a
+    /// status that went stale or a second tap while Face ID is up never sends.
+    func send(_ command: OperatorCommand, confirmOwner: (() async -> Biometrics.Outcome)? = nil) async {
+        let title = Board.commandTitle(command.kind)
+        guard !sending else {
+            notice = Notice(text: "\(title) not sent: another command is being sent.", tone: .failure)
+            return
+        }
+        guard canCommand, let url = connection.url else {
+            notice = Notice(text: "\(title) not sent: the bot's status is not current.", tone: .failure)
+            return
+        }
         sending = true
         defer { sending = false }
-        let title = Board.commandTitle(command.kind)
+        if let confirmOwner {
+            switch await confirmOwner() {
+            case .confirmed: break
+            case .declined: return
+            case .unavailable(let cause):
+                notice = Notice(text: "\(title) not sent: owner not confirmed (\(cause)).", tone: .failure)
+                return
+            }
+            guard isFresh else {
+                notice = Notice(text: "\(title) not sent: the bot's status went out of date.", tone: .failure)
+                return
+            }
+        }
         do {
             let accepted = try await APIClient(baseURL: url).send(command)
             awaited[accepted.command.commandId] = command.kind

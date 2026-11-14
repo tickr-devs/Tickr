@@ -40,6 +40,8 @@ public enum Board {
 
     /// Everything the status document says happened today, newest first: entries and exits of
     /// closed trades, the open position and its stop, fences, and operator command results.
+    /// Status v1 has no time for the stop itself, so the position's stop event carries the
+    /// position's `openedAt`.
     public static func events(_ status: StatusV1) -> [Event] {
         var events: [Event] = []
         for (index, trade) in status.tradesToday.enumerated() {

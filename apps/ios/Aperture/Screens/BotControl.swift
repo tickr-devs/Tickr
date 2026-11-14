@@ -9,7 +9,7 @@ struct BotControl: ViewModifier {
 
     func body(content: Content) -> some View {
         content.confirmationDialog(title, isPresented: $isPresented, titleVisibility: .visible) {
-            if let status = model.status {
+            if let status = model.status, model.canCommand {
                 if status.entryStop {
                     Button("Resume Entries") { run(.entryStop(on: false)) }
                 } else {
@@ -36,18 +36,12 @@ struct BotControl: ViewModifier {
     }
 
     /// Face ID for anything that cancels or closes; pausing and resuming entries is safe without it.
+    /// The model checks freshness before and after Face ID.
     static func confirmAndSend(_ command: OperatorCommand, model: AppModel) async {
-        if command == .cancelOwnOrders || command == .flatten {
-            let outcome = await Biometrics.confirm("\(Board.commandTitle(command.kind)) on the trading bot")
-            switch outcome {
-            case .confirmed: break
-            case .declined: return
-            case .unavailable(let cause):
-                model.notice = Notice(text: "Not sent: owner not confirmed (\(cause)).", tone: .failure)
-                return
-            }
-        }
-        await model.send(command)
+        let reason = "\(Board.commandTitle(command.kind)) on the trading bot"
+        let needsOwner = command == .cancelOwnOrders || command == .flatten
+        let confirm: (() async -> Biometrics.Outcome)? = needsOwner ? { await Biometrics.confirm(reason) } : nil
+        await model.send(command, confirmOwner: confirm)
     }
 }
 

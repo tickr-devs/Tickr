@@ -16,8 +16,9 @@ struct ChartTab: View {
                     HStack(alignment: .bottom, spacing: 6) {
                         ForEach(0..<14, id: \.self) { index in
                             let height = 24 + CGFloat((index * 37) % 60)
+                            // A neutral skeleton, not price data.
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(index % 3 == 1 ? Palette.red.opacity(0.5) : Palette.green.opacity(0.5))
+                                .fill(Palette.line2)
                                 .frame(width: 10, height: phase ? height : height * 0.4)
                                 .animation(.easeInOut(duration: 1.1).repeatForever().delay(Double(index) * 0.08), value: phase)
                         }

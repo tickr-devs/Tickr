@@ -115,8 +115,10 @@ private struct PositionDetail: View {
             .opacity(model.canCommand ? 1 : 0.5)
             .rise(0.3)
             .confirmationDialog("Close \(position.symbol) now?", isPresented: $confirmFlatten, titleVisibility: .visible) {
-                Button("Flatten \(position.symbol)", role: .destructive) {
-                    Task { await BotControl.confirmAndSend(.flatten, model: model) }
+                if model.canCommand {
+                    Button("Flatten \(position.symbol)", role: .destructive) {
+                        Task { await BotControl.confirmAndSend(.flatten, model: model) }
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -232,7 +234,8 @@ private struct ProtectionChain: View {
         let state = position.stop.state
         return [
             ("Filled \(position.quantity) @ \(position.entryPrice)", Format.clock(position.openedAt.date), true),
-            ("Stop \(position.stop.price?.text ?? "") sent once", position.stop.clientOrderId ?? "—", state != .missing),
+            ("Stop \(position.stop.price?.text ?? "") sent once", position.stop.clientOrderId ?? "—",
+             state == .pending || state == .verified),
             ("Stop working at broker", state.rawValue, state.isProtected),
         ]
     }
