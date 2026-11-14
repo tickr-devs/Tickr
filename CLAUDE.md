@@ -23,7 +23,7 @@ Enforced by `apps/scripts/check_swift_rules.py` in the `swift-rules` CI job on e
 - **No words in code.** Every text a person reads is defined once in the target's `L10n.swift` as `LocalizedStringResource("key", defaultValue: "English")`, with a Russian translation in its String Catalog. Views use `L10n` entries: never `Text("…")`, `Button("…")`, `Text(verbatim: "…")` or a returned English string. Only SF Symbol names, documented `static let` identifiers and enum raw values may be other string literals.
 - **No magic numbers.** Sizes, durations, opacities and colours come from `Tokens` and `Palette`; anything else is a documented `static let`.
 - **2-space indentation.**
-- `apps/scripts/swift-rules-baseline.json` lists violations that predate these rules. It may only shrink: new code is always clean, and a PR that removes violations lowers it (`--write-baseline`). Never raise it.
+- `apps/scripts/swift-rules-baseline.json` lists violations that predate these rules. It lists each violation by content and may only shrink: new code is always clean, a PR that removes violations shortens it (`--write-baseline`), and CI fails a PR that adds to it.
 
 ## How we work
 

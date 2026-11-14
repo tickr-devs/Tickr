@@ -5,33 +5,40 @@ Rules, checked in every Swift file of apps/ (tests and Package.swift excepted):
 
 text     No words in code. A string literal holding a letter may appear only
          - in an `L10n.swift` file, the one place per target where user-facing text is defined,
-           each entry as `LocalizedStringResource("key", defaultValue: "English")`;
-         - as an SF Symbol name (after `systemName:` / `systemImage:`, or dotted like "chart.bar");
-         - in a documented `static let` constant (an identifier, a user-defaults key) or as an
-           enum case raw value (a protocol value);
+           as the key or `defaultValue:` of `LocalizedStringResource("key", defaultValue: "…")`
+           (the key on the same line as `LocalizedStringResource(`); nothing else there;
+         - as an SF Symbol name, passed to a `systemName:`, `systemImage:` or `symbol:` label;
+         - as an identifier (no whitespace, not a capitalised word such as "Overview") in a
+           documented `static let` constant or an enum case raw value (protocol values, keys);
          - in an `@available` attribute (messages for developers).
-         So `Text("Overview")`, `Button("Quit")`, `return "Flatten All"` and
-         `Text(verbatim: "Aperture")` all fail. Interpolations and punctuation (" · ") pass.
+         So `Text("Overview")`, `Button("Quit")`, `return "Flatten All"`,
+         `Text(verbatim: "Aperture")` and `case overview = "Overview of the day"` all fail.
+         Interpolations and punctuation (" · ") pass.
 numbers  No magic numbers: see check_swift_literals.py.
-indent   2-space indentation: no tabs, and a line indents at most 2 deeper than the line before.
+indent   2-space indentation: no tabs, every indent even, and a line indents at most 2 deeper
+         than the line before.
 catalog  Every key of an `L10n.swift` has a Russian translation in the target's String Catalog
-         (`*.xcstrings` next to it).
+         (`*.xcstrings` next to it), and every user-facing Info.plist text (`NS…UsageDescription`)
+         has one in an `InfoPlist.xcstrings` of the same app.
 
-Existing violations are listed per rule and file in swift-rules-baseline.json. A file may never
-have more violations than its baseline (new code is always clean), and the baseline must be
-lowered in the same pull request that removes violations (`--write-baseline`), so it only shrinks.
+Existing violations are listed in swift-rules-baseline.json by rule, file and content (the literal,
+the number, the badly indented line, the key), not by count, so removing an old violation never
+makes room for a new one. A file may hold only the violations listed for it, and the list must be
+shortened in the same pull request that removes violations (`--write-baseline`).
 
 Usage: check_swift_rules.py [--write-baseline] [--base-baseline FILE]
   --base-baseline FILE  the baseline of the branch a pull request targets; fails when this
-                        branch's baseline allows more than it in any rule and file, so a pull
-                        request cannot raise the baseline to let new violations in.
+                        branch's baseline lists a violation the target's does not, so a pull
+                        request cannot add to the baseline to let new violations in.
 """
 
 from __future__ import annotations
 
 import json
+import plistlib
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -45,8 +52,11 @@ SKIPPED_DIRS = {"Tests", ".build", "build", "DerivedData", "SourcePackages"}
 L10N_FILE = "L10n.swift"
 INDENT = 2
 
-SYMBOL_ARGUMENT = re.compile(r"(?:systemName|systemImage)\s*:\s*$")
-SYMBOL_NAME = re.compile(r"^[a-z0-9]+(?:\.[a-z0-9]+)+$")
+SYMBOL_ARGUMENT = re.compile(r"\b(?:systemName|systemImage|symbol)\s*:\s*$")
+L10N_ARGUMENT = re.compile(r"(?:\bLocalizedStringResource\(|\bdefaultValue\s*:)\s*$")
+IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:/%+\-]+$")
+TITLE_WORD = re.compile(r"^[A-Z][a-z]+$")
+USAGE_KEY = re.compile(r"^NS\w*UsageDescription$")
 ESCAPE = re.compile(r"\\(?:u\{[0-9A-Fa-f]+\}|.)")
 LETTER = re.compile(r"[A-Za-zЀ-ӿ]")
 L10N_KEY = re.compile(r'LocalizedStringResource\(\s*"([^"\\]+)"')
@@ -133,20 +143,21 @@ def string_literals(text: str) -> list[tuple[int, str, str]]:
 
 
 def text_violations(path: Path) -> list[tuple[int, str]]:
-    if path.name == L10N_FILE:
-        return []
     source = path.read_text(encoding="utf-8")
-    lines = source.splitlines()
-    documented = documented_constant_lines(lines)
+    documented = documented_constant_lines(source.splitlines())
     found = []
     for number, literal, prefix in string_literals(source):
         if not LETTER.search(ESCAPE.sub("", literal)):
             continue
-        if "@available(" in prefix:
+        if path.name == L10N_FILE:
+            if not L10N_ARGUMENT.search(prefix):
+                found.append((number, literal))
             continue
-        if SYMBOL_ARGUMENT.search(prefix) or SYMBOL_NAME.match(literal):
+        if "@available(" in prefix or SYMBOL_ARGUMENT.search(prefix):
             continue
-        if number in documented or check_swift_literals.ENUM_CASE.search(prefix):
+        is_identifier = bool(IDENTIFIER.match(literal)) and not TITLE_WORD.match(literal)
+        named = number in documented or check_swift_literals.ENUM_CASE.search(prefix)
+        if named and is_identifier:
             continue
         found.append((number, literal))
     return found
@@ -188,8 +199,8 @@ def indent_violations(path: Path) -> list[tuple[int, str]]:
             found.append((number, "tab"))
             continue
         width = len(leading)
-        if width > previous + INDENT:
-            found.append((number, f"+{width - previous}"))
+        if width % INDENT or width > previous + INDENT:
+            found.append((number, raw.strip()))
         previous = width
     return found
 
@@ -218,6 +229,24 @@ def catalog_violations(path: Path) -> list[tuple[int, str]]:
     return found
 
 
+def plist_violations(path: Path) -> list[tuple[int, str]]:
+    """Info.plist texts a person reads, without a Russian translation in InfoPlist.xcstrings."""
+    texts = [key for key, value in plistlib.loads(path.read_bytes()).items()
+             if USAGE_KEY.match(key) and isinstance(value, str)]
+    if not texts:
+        return []
+    app = path.parent.parent
+    strings: dict = {}
+    for catalog in sorted(app.rglob("InfoPlist.xcstrings")):
+        strings.update(json.loads(catalog.read_text(encoding="utf-8")).get("strings", {}))
+    found = []
+    for key in texts:
+        unit = strings.get(key, {}).get("localizations", {}).get("ru", {}).get("stringUnit", {})
+        if unit.get("state") != "translated" or not unit.get("value"):
+            found.append((1, key))
+    return found
+
+
 # MARK: - running
 
 
@@ -231,7 +260,7 @@ RULES = {
     "text": (text_violations, "words in code; define them in L10n.swift, translated to Russian"),
     "numbers": (number_violations, "magic number; use a token or a documented constant"),
     "indent": (indent_violations, "indent with 2 spaces"),
-    "catalog": (catalog_violations, "L10n key without a Russian translation in the catalog"),
+    "catalog": (catalog_violations, "text without a Russian translation in a String Catalog"),
 }
 
 
@@ -246,6 +275,11 @@ def swift_files() -> list[Path]:
     return files
 
 
+def plist_files() -> list[Path]:
+    return [path for root in ROOTS for path in sorted((REPO / root).rglob("Info.plist"))
+            if not SKIPPED_DIRS.intersection(path.relative_to(REPO).parts)]
+
+
 def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
     result: dict[str, dict[str, list[tuple[int, str]]]] = {rule: {} for rule in RULES}
     for path in swift_files():
@@ -254,30 +288,35 @@ def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
             found = check(path)
             if found:
                 result[rule][key] = found
+    for path in plist_files():
+        found = plist_violations(path)
+        if found:
+            result["catalog"][path.relative_to(REPO).as_posix()] = found
     return result
 
 
 def raised(baseline: dict, base: dict | None) -> int:
-    """Count (and print) baseline entries above the target branch's; None = no base yet."""
+    """Count (and print) baseline entries the target branch's baseline lacks; None = no base yet."""
     if base is None:
         return 0
     count = 0
     for rule, files in baseline.items():
-        for path, limit in files.items():
-            before = base.get(rule, {}).get(path, 0)
-            if limit > before:
+        for path, items in files.items():
+            added = Counter(items) - Counter(base.get(rule, {}).get(path, []))
+            for item in added.elements():
                 count += 1
-                print(f"{path}: {rule} baseline raised from {before} to {limit}; "
-                      "fix the new violations instead")
+                print(f"{path}: {rule} baseline gained {item!r}; fix the violation instead")
     return count
 
 
 def main(argv: list[str]) -> int:
     found = collect()
     if "--write-baseline" in argv:
-        counts = {rule: {path: len(items) for path, items in sorted(files.items())}
+        listed = {rule: {path: sorted(detail for _, detail in items)
+                         for path, items in sorted(files.items())}
                   for rule, files in found.items()}
-        BASELINE.write_text(json.dumps(counts, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        text = json.dumps(listed, indent=1, sort_keys=True, ensure_ascii=False)
+        BASELINE.write_text(text + "\n", encoding="utf-8")
         print(f"wrote {BASELINE.relative_to(REPO)}")
         return 0
     baseline = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
@@ -290,23 +329,29 @@ def main(argv: list[str]) -> int:
         allowed = baseline.get(rule, {})
         for path in sorted(set(found[rule]) | set(allowed)):
             items = found[rule].get(path, [])
-            limit = allowed.get(path, 0)
-            if len(items) > limit:
+            listed = Counter(allowed.get(path, []))
+            new = [(line, detail) for line, detail in items if not take(listed, detail)]
+            for line, detail in new:
                 failures += 1
-                print(f"{path}: {len(items)} {rule} violation(s), baseline allows {limit}: "
-                      f"{message}")
-                for line, detail in items:
-                    print(f"  {path}:{line}: {detail}")
-            elif len(items) < limit:
+                print(f"{path}:{line}: {rule}: {detail!r}: {message}")
+            for detail in listed.elements():
                 failures += 1
-                print(f"{path}: {rule} baseline is {limit} but only {len(items)} remain; "
-                      "lower it: python3 apps/scripts/check_swift_rules.py --write-baseline")
+                print(f"{path}: {rule} baseline lists {detail!r}, which is gone; shorten it: "
+                      "python3 apps/scripts/check_swift_rules.py --write-baseline")
     if failures:
         print("Swift code rules failed; see CLAUDE.md (Swift code rules) and docs/design-system.md")
         return 1
     total = sum(len(v) for files in found.values() for v in files.values())
     print(f"Swift code rules pass ({total} baselined violation(s) left to remove)")
     return 0
+
+
+def take(listed: Counter, detail: str) -> bool:
+    """Use up one baseline entry for `detail`; False when none is left."""
+    if listed[detail] > 0:
+        listed[detail] -= 1
+        return True
+    return False
 
 
 if __name__ == "__main__":
