@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aperture import config as config_module
 from aperture.broker.base import Broker
@@ -29,6 +29,10 @@ from aperture.engine.manual import (
 )
 from aperture.lock import AlreadyRunning, SingleInstanceLock, recorded_holder
 from aperture.store import MIGRATIONS, Store
+
+if TYPE_CHECKING:
+    from aperture.runtime.evaluation import Evaluator
+    from aperture.runtime.market import StreamInbox
 
 DATABASE_FILE = "aperture.sqlite3"
 LOCK_FILE = "aperture.lock"
@@ -219,6 +223,28 @@ def _clear_fence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
+               inbox: StreamInbox, calendar: SessionCalendar | None,
+               last_broker_read_at: Callable[[], datetime | None]) -> Evaluator | None:
+    """The active strategy wired to the entry desk; None (entries off, status says why) when
+    there is no trading calendar: entries are refused without one anyway."""
+    from aperture.data.history import HistoryReader
+    from aperture.observers.loader import load_strategy, parse_modules
+    from aperture.observers.log import DecisionLog
+    from aperture.runtime.entries import EntryDesk
+    from aperture.runtime.evaluation import Evaluator
+
+    if calendar is None:
+        return None
+    loaded = load_strategy(cfg.root, cfg.strategy.active,
+                           parse_modules(cfg.observers.strategy_modules))
+    desk = EntryDesk(engine, cfg, calendar=calendar, last_broker_read_at=last_broker_read_at,
+                     log=DecisionLog.from_config(cfg))
+    return Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
+                     history=HistoryReader.from_config(cfg, source, calendar), inbox=inbox,
+                     calendar=calendar, now=NOW)
+
+
 def _run(path: Path) -> int:
     """The launchd bot job (via `aperture.runtime run-bot`): run until SIGTERM, then drain.
     Exit 0 after a clean drain, 5 when the drain hit its deadline."""
@@ -252,8 +278,11 @@ def _run(path: Path) -> int:
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
                                    capture=capture, calendar=calendar, now=NOW,
                                    monotonic=time.monotonic)
+            evaluator = _evaluator(cfg, engine, adapters.market, inbox, calendar,
+                                   lambda: bot.last_broker_read_at)
             bot = service.Service(engine, now=NOW, calendar=calendar, strategy=strategy,
-                                  paths=service.ServicePaths.from_config(cfg), market=market)
+                                  paths=service.ServicePaths.from_config(cfg), market=market,
+                                  evaluator=evaluator)
             market.bind()
             adapters.start_stream()
             clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP)

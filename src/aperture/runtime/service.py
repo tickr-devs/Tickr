@@ -1,8 +1,9 @@
 """The bot service behind `aperture run`: keep what the engine owns protected, act on operator
 commands, flatten at the session's flatten time, write status.json, drain on SIGTERM.
 
-This build never opens a trade on its own: strategy entries are wired in a later change, and
-until then status says so as the entry-blocking reason.
+With an evaluator the active strategy runs once per completed minute and its ENTER decisions
+go through the entry desk; without one (tests, tools) the service never opens a trade and
+status says so as the entry-blocking reason.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
 
 if TYPE_CHECKING:
+    from aperture.runtime.evaluation import Evaluator
     from aperture.runtime.market import MarketRuntime
 
 STRATEGIES_DIR = "strategies"
@@ -103,9 +105,11 @@ def trades_today(engine: Engine, now: datetime) -> tuple[api.Trade, ...]:
 class Service:
     def __init__(self, engine: Engine, *, now: Callable[[], datetime],
                  calendar: SessionCalendar | None, strategy: api.StrategyId,
-                 paths: ServicePaths, market: MarketRuntime | None = None) -> None:
+                 paths: ServicePaths, market: MarketRuntime | None = None,
+                 evaluator: Evaluator | None = None) -> None:
         self.engine = engine
         self.market = market
+        self.evaluator = evaluator
         self.config = engine.config
         self.now = now
         self.calendar = calendar
@@ -202,10 +206,22 @@ class Service:
             if not trade.exit_requested:
                 self.engine.request_exit(trade.trade_id, "session-flatten")
 
+    # --- strategy --------------------------------------------------------------------------
+
+    def _evaluate(self) -> None:
+        """The active strategy on the latest completed minute; its WATCH set feeds the L1
+        subscriptions (spec 6)."""
+        if self.evaluator is None or self.market is None:
+            return
+        found = self.market.discovery
+        candidates = [] if found is None else [c.instrument.symbol for c in found.candidates]
+        self.evaluator.tick(candidates)
+        self.market.watch = set(self.evaluator.watch)
+
     # --- status ----------------------------------------------------------------------------
 
     def _entry_block(self, gate_open: bool, gate_cause: str,
-                     fences: list[tuple[str, str, str]]) -> api.EntryBlock:
+                     fences: list[tuple[str, str, str]]) -> api.EntryBlock | None:
         if self.state is not api.BotState.RUNNING:
             return api.EntryBlock(f"bot_{self.state}", f"The bot is {self.state}.")
         if not gate_open:
@@ -216,7 +232,7 @@ class Service:
         if fences:
             name, cause, _ = fences[0]
             return api.EntryBlock(name.split(":", 1)[0].replace("-", "_"), f"{name}: {cause}")
-        return NOT_WIRED
+        return NOT_WIRED if self.evaluator is None else None
 
     def _stop(self, trade: TradeRow, stops: list[OrderRow]) -> api.Stop:
         live = [s for s in stops if s.live]
@@ -311,6 +327,7 @@ class Service:
             self._observe(reconcile=due)
             if self.market is not None:
                 self.market.tick()  # after the engine's broker work of this pass
+            self._evaluate()
             if due:
                 last_reconcile = monotonic()
         self.state = api.BotState.STOPPING
