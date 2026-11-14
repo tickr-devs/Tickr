@@ -129,6 +129,19 @@ class ObserversConfig:
 
 
 @dataclass(frozen=True)
+class AdvisorConfig:
+    api_key_variable: str
+    model: str
+    effort: str
+    max_output_tokens: int
+    request_timeout_seconds: int
+    min_days: int
+    max_changes: int
+    max_evidence_bytes: int
+    proposals_dir: str
+
+
+@dataclass(frozen=True)
 class RuntimeConfig:
     min_free_disk_mb: int
     supervisor_poll_seconds: Decimal
@@ -189,6 +202,7 @@ class Config:
     alerts: AlertsConfig
     market_data: MarketDataConfig
     observers: ObserversConfig
+    advisor: AdvisorConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -214,6 +228,7 @@ _SECTIONS: dict[str, type] = {
     "alerts": AlertsConfig,
     "market_data": MarketDataConfig,
     "observers": ObserversConfig,
+    "advisor": AdvisorConfig,
 }
 
 
