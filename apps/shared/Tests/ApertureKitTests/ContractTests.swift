@@ -83,7 +83,7 @@ final class ContractTests: XCTestCase {
 
   // Refuse, never guess: documents that break the wire rules do not decode.
   func testRefusesBrokenDocuments() throws {
-    let base = try JSONSerialization.jsonObject(with: fixture("status-v1.example.json")) as! [String: Any]
+    let base = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("status-v1.example.json")) as? [String: Any])
     let mutations: [(String, (inout [String: Any]) -> Void)] = [
       ("future schema version", { $0["schema_version"] = 2 }),
       ("decimal as number", { $0["result_today_gross_usd"] = 1.5 }),

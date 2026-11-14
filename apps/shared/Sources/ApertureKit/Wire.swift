@@ -9,12 +9,12 @@ public enum Wire {
   public static let statusSchemaVersion = 1
   public static let commandSchemaVersion = 1
 
-  static let decimalPattern = try! NSRegularExpression(pattern: "^-?[0-9]+(\\.[0-9]+)?$")
-  static let timePattern = try! NSRegularExpression(
-    pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$")
+  static let decimalPattern = "^-?[0-9]+(\\.[0-9]+)?$"
+  static let timePattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
 
-  static func matches(_ regex: NSRegularExpression, _ text: String) -> Bool {
-    regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+  /// Whether all of `text` matches the anchored regular expression `pattern`.
+  static func matches(_ pattern: String, _ text: String) -> Bool {
+    text.range(of: pattern, options: .regularExpression) != nil
   }
 
   public static func decoder() -> JSONDecoder { JSONDecoder() }

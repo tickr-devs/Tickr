@@ -10,7 +10,7 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
   public let month: Int
   public let day: Int
 
-  static let pattern = try! NSRegularExpression(pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+  static let pattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
   /// Parts of "YYYY-MM-DD".
   static let partCount = 3
   /// Valid month and day numbers.
@@ -34,8 +34,10 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
   /// The New York date of `date`.
   public init(newYorkDateOf date: Date) {
     let parts = WireDate.newYork.dateComponents([.year, .month, .day], from: date)
-    let text = String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
-    try! self.init(text)
+    year = parts.year ?? 0
+    month = parts.month ?? 0
+    day = parts.day ?? 0
+    text = String(format: "%04d-%02d-%02d", year, month, day)
   }
 
   public static let newYork: Calendar = {
