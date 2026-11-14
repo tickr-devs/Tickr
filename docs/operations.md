@@ -27,12 +27,12 @@ waiting; launchd sends SIGKILL at `bot_exit_timeout_seconds`.
 ## Stopping the bot safely
 
 1. `launchctl kill TERM gui/$(id -u)/local.aperture.bot`
-2. Wait for the `"record": "bot-exit"` line in `~/Library/Logs/Aperture/bot.log`
+2. Before logging out, shutting down or `launchctl bootout`, wait for the `"record": "bot-exit"` line in `~/Library/Logs/Aperture/bot.log`
    (`"clean": true`). A `bot-did-not-stop` alert means the bot is stuck: check orders and the
    position in the Webull app before doing anything else.
 3. Do not log out, restart or shut down the Mac while the bot has a working order or an open
-   position. Logout and shutdown also stop the job with SIGTERM, but macOS may not wait the full
-   exit time. A resting stop stays at the broker either way; a working entry order may not be
+   position. Logout and shutdown also stop the job with SIGTERM, but macOS does not fully honor
+   `ExitTimeOut` then. A resting stop stays at the broker either way; a working entry order may not be
    cancelled.
 
 Not yet available (other workstreams): the bot's `aperture.cli run` command (engine, stage 6) and
