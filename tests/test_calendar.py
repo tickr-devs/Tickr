@@ -85,6 +85,26 @@ def test_repository_calendar_loads_and_knows_half_days():
     assert not repo.day(date(2026, 11, 16)).half_day
 
 
+@pytest.mark.parametrize(
+    "closed",
+    [
+        date(2026, 1, 1),
+        date(2026, 1, 19),
+        date(2026, 2, 16),
+        date(2026, 4, 3),
+        date(2026, 5, 25),
+        date(2026, 6, 19),
+        date(2026, 7, 3),
+        date(2026, 9, 7),
+        date(2026, 11, 26),
+        date(2026, 12, 25),
+    ],
+)
+def test_repository_calendar_knows_2026_nyse_closures(closed):
+    repo = SessionCalendar.load(REPO_CALENDARS)
+    assert refused(repo.day, closed) is CalendarCause.HOLIDAY
+
+
 # ----------------------------------------------------------------- ordinary days and DST
 
 
