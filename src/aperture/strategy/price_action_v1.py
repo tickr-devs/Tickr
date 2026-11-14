@@ -1,0 +1,444 @@
+"""Strategy price-action-v1: long breakout and impulse-continuation setups on M1 bars.
+
+Values come from `strategies/price-action-v1/strategy.toml`; `create(values)` refuses unknown,
+missing or mistyped keys. The strategy is pure: no clock, no I/O, no orders. Checks run in a
+fixed order and stop at the first failure, so the last check of a non-ENTER decision is its
+single cause.
+
+Rule order:
+1. Open position: HOLD (v1 has no strategy exit rule; the resting stop and the session
+   flatten exit the position).
+2. Data integrity: bars of this symbol, strictly increasing start times.
+3. History: enough bars for the slow EMA, ATR and both setup patterns.
+4. Filters: relative cumulative volume, session dollar volume, last close above session
+   VWAP, fast EMA above slow EMA, ATR positive.
+5. Setup (breakout first, then continuation; the first armed setup is used):
+   - breakout: the last completed close is above the highest high of the `lookback_bars`
+     bars before it; trigger = that high, invalidation = their lowest low.
+   - continuation: `impulse_bars` impulse bars then `base_bars` base bars (the last bars);
+     impulse (last impulse close - first impulse open) >= `minimum_impulse_atr` ATR, base
+     high-low range <= `maximum_base_range_atr` ATR, last close no further than
+     `maximum_pre_breakout_distance_atr` ATR below the base high; trigger = base high,
+     invalidation = base low.
+6. Without a quote: WATCH(trigger, invalidation).
+7. Quote: valid, spread ratio within the liquidity limit, bid above invalidation (else
+   IGNORE), ask above trigger (else WATCH), ask inside the price window
+   trigger + `entry_extension_max_atr` ATR (else IGNORE: missed, never chased), stop
+   distance (ask - invalidation) at least max(`minimum_stop_spreads` spreads,
+   `minimum_stop_percent` percent of ask), cost rule on the round trip (2 x spread)
+   against ATR and against per-share risk. Then ENTER with entry window
+   [trigger, trigger + extension], stop = invalidation.
+
+Quote freshness is the platform's rule (the strategy never reads the clock). Prices are
+not rounded to the tick here; the order layer does that.
+"""
+
+from __future__ import annotations
+
+import operator
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from decimal import Decimal
+from itertools import pairwise
+from typing import Any
+
+from aperture.strategy import indicators as ind
+from aperture.strategy.base import Check, Decision, SymbolContext, Verdict
+from aperture.types import Bar, Quote
+
+NAME = "price-action-v1"
+ZERO = Decimal(0)
+TWO = Decimal(2)
+PERCENT = Decimal(100)
+
+BREAKOUT = "breakout"
+CONTINUATION = "continuation"
+
+_OPERATORS: dict[str, Callable[[Decimal, Decimal], bool]] = {
+    ">=": operator.ge,
+    "<=": operator.le,
+    ">": operator.gt,
+    "<": operator.lt,
+}
+
+
+# ---------------------------------------------------------------- configuration
+
+
+def _positive_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("must be a positive integer")
+    return value
+
+
+def _number(value: Any) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("must be a number")
+    return Decimal(str(value))
+
+
+def _positive(value: Any) -> Decimal:
+    number = _number(value)
+    if number <= ZERO:
+        raise ValueError("must be positive")
+    return number
+
+
+def _non_negative(value: Any) -> Decimal:
+    number = _number(value)
+    if number < ZERO:
+        raise ValueError("must not be negative")
+    return number
+
+
+def _boolean(value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError("must be true or false")
+    return value
+
+
+def _text(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("must be a non-empty string")
+    return value
+
+
+_SCHEMA: dict[str, dict[str, Callable[[Any], Any]]] = {
+    "strategy": {"name": _text, "version": _text},
+    "indicators": {
+        "fast_ema_period": _positive_int,
+        "slow_ema_period": _positive_int,
+        "atr_period": _positive_int,
+        "relative_volume_sessions": _positive_int,
+        "minimum_relative_volume": _positive,
+        "refuse_when_relative_volume_unavailable": _boolean,
+    },
+    "breakout": {"lookback_bars": _positive_int},
+    "continuation": {
+        "impulse_bars": _positive_int,
+        "base_bars": _positive_int,
+        "minimum_impulse_atr": _positive,
+        "maximum_base_range_atr": _positive,
+        "maximum_pre_breakout_distance_atr": _non_negative,
+    },
+    "entry": {
+        "entry_extension_max_atr": _positive,
+        "max_round_trip_atr_ratio": _positive,
+        "max_round_trip_risk_ratio": _positive,
+        "minimum_stop_spreads": _non_negative,
+        "minimum_stop_percent": _non_negative,
+        "slippage_reserve_atr": _non_negative,
+    },
+    "liquidity": {"max_spread_ratio": _positive, "min_dollar_volume_usd": _positive},
+}
+
+
+@dataclass(frozen=True)
+class Settings:
+    name: str
+    version: str
+    fast_ema_period: int
+    slow_ema_period: int
+    atr_period: int
+    relative_volume_sessions: int
+    minimum_relative_volume: Decimal
+    refuse_when_relative_volume_unavailable: bool
+    lookback_bars: int
+    impulse_bars: int
+    base_bars: int
+    minimum_impulse_atr: Decimal
+    maximum_base_range_atr: Decimal
+    maximum_pre_breakout_distance_atr: Decimal
+    entry_extension_max_atr: Decimal
+    max_round_trip_atr_ratio: Decimal
+    max_round_trip_risk_ratio: Decimal
+    minimum_stop_spreads: Decimal
+    minimum_stop_percent: Decimal
+    slippage_reserve_atr: Decimal
+    max_spread_ratio: Decimal
+    min_dollar_volume_usd: Decimal
+
+    @property
+    def required_bars(self) -> int:
+        """Bars needed before any rule can be evaluated."""
+        return max(
+            self.slow_ema_period,
+            self.fast_ema_period,
+            self.atr_period,
+            self.lookback_bars + 1,
+            self.impulse_bars + self.base_bars,
+        )
+
+
+def parse_settings(values: Mapping[str, Any]) -> Settings:
+    """Validate the parsed strategy.toml. Unknown, missing or mistyped keys raise ValueError."""
+    if not isinstance(values, Mapping):
+        raise ValueError("strategy values must be a table")
+    unknown = sorted(set(values) - set(_SCHEMA))
+    missing = sorted(set(_SCHEMA) - set(values))
+    if unknown or missing:
+        raise ValueError(f"strategy sections: unknown {unknown}, missing {missing}")
+    flat: dict[str, Any] = {}
+    for section, keys in _SCHEMA.items():
+        table = values[section]
+        if not isinstance(table, Mapping):
+            raise ValueError(f"[{section}] must be a table")
+        unknown = sorted(set(table) - set(keys))
+        missing = sorted(set(keys) - set(table))
+        if unknown or missing:
+            raise ValueError(f"[{section}]: unknown keys {unknown}, missing keys {missing}")
+        for key, convert in keys.items():
+            try:
+                flat[key] = convert(table[key])
+            except ValueError as exc:
+                raise ValueError(f"[{section}] {key} {exc}") from None
+    settings = Settings(**flat)
+    if settings.name != NAME:
+        raise ValueError(f"[strategy] name must be {NAME!r}")
+    if settings.fast_ema_period >= settings.slow_ema_period:
+        raise ValueError("[indicators] fast_ema_period must be below slow_ema_period")
+    return settings
+
+
+# ---------------------------------------------------------------- evaluation
+
+
+@dataclass(frozen=True)
+class _Setup:
+    name: str
+    checks: tuple[Check, ...]
+    trigger: Decimal
+    invalidation: Decimal
+
+    @property
+    def armed(self) -> bool:
+        return all(c.passed for c in self.checks)
+
+
+def _check(rule: str, measured: Decimal, op: str, threshold: Decimal, note: str = "") -> Check:
+    return Check(rule, measured, op, threshold, _OPERATORS[op](measured, threshold), note)
+
+
+def _flag(rule: str, passed: bool, note: str) -> Check:
+    return Check(rule, None, "is", None, passed, note)
+
+
+class PriceActionV1:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.name = settings.name
+        self.version = settings.version
+
+    # A decision is built from the checks gathered so far.
+    def _decide(
+        self, context: SymbolContext, verdict: Verdict, checks: Sequence[Check], **fields: Any
+    ) -> Decision:
+        return Decision(
+            strategy=self.name,
+            version=self.version,
+            symbol=context.symbol,
+            verdict=verdict,
+            checks=tuple(checks),
+            **fields,
+        )
+
+    def evaluate(self, context: SymbolContext) -> Decision:
+        s = self.settings
+        checks: list[Check] = []
+
+        def ignore() -> Decision:
+            return self._decide(context, Verdict.IGNORE, checks)
+
+        if context.position is not None:
+            checks.append(
+                _flag("position_open", True, "v1 exits by resting stop or session flatten")
+            )
+            return self._decide(context, Verdict.HOLD, checks)
+
+        bars = context.bars
+        consistent = all(b.symbol == context.symbol for b in bars) and all(
+            a.start < b.start for a, b in pairwise(bars)
+        )
+        checks.append(_flag("bars_consistent", consistent, "own symbol, increasing start"))
+        if not consistent:
+            return ignore()
+
+        checks.append(_check("history_bars", Decimal(len(bars)), ">=", Decimal(s.required_bars)))
+        if not checks[-1].passed:
+            return ignore()
+
+        session = ind.current_session(bars)
+        closes = [b.close for b in bars]
+        last = bars[-1]
+
+        rvol = ind.relative_volume(session, context.prior_sessions, s.relative_volume_sessions)
+        if rvol is None:
+            checks.append(
+                _flag(
+                    "relative_volume_available",
+                    not s.refuse_when_relative_volume_unavailable,
+                    f"{len(context.prior_sessions)} prior sessions given, "
+                    f"{s.relative_volume_sessions} needed with non-zero volume",
+                )
+            )
+            if not checks[-1].passed:
+                return ignore()
+        else:
+            checks.append(_check("relative_volume", rvol, ">=", s.minimum_relative_volume))
+            if not checks[-1].passed:
+                return ignore()
+
+        checks.append(
+            _check("dollar_volume_usd", ind.dollar_volume(session), ">=", s.min_dollar_volume_usd)
+        )
+        if not checks[-1].passed:
+            return ignore()
+
+        vwap = ind.vwap_series(session)[-1]
+        if vwap is None:
+            checks.append(_flag("session_vwap_available", False, "session volume is zero"))
+            return ignore()
+        checks.append(_check("close_above_vwap", last.close, ">", vwap))
+        if not checks[-1].passed:
+            return ignore()
+
+        fast = ind.ema_series(closes, s.fast_ema_period)[-1]
+        slow = ind.ema_series(closes, s.slow_ema_period)[-1]
+        assert fast is not None and slow is not None  # guaranteed by history_bars
+        checks.append(_check("fast_ema_above_slow_ema", fast, ">", slow))
+        if not checks[-1].passed:
+            return ignore()
+
+        atr = ind.atr_series(bars, s.atr_period)[-1]
+        assert atr is not None  # guaranteed by history_bars
+        checks.append(_check("atr", atr, ">", ZERO))
+        if not checks[-1].passed:
+            return ignore()
+
+        breakout = self._breakout(bars)
+        continuation = self._continuation(bars, atr)
+        setup = next((x for x in (breakout, continuation) if x.armed), None)
+        if setup is None:
+            checks.extend(breakout.checks)
+            checks.extend(continuation.checks)
+            return ignore()
+        checks.extend(setup.checks)
+
+        levels = {"setup": setup.name, "trigger": setup.trigger, "invalidation": setup.invalidation}
+        if context.quote is None:
+            return self._decide(context, Verdict.WATCH, checks, **levels)
+        return self._with_quote(context, context.quote, setup, atr, checks, levels)
+
+    def _with_quote(
+        self,
+        context: SymbolContext,
+        quote: Quote,
+        setup: _Setup,
+        atr: Decimal,
+        checks: list[Check],
+        levels: dict[str, Any],
+    ) -> Decision:
+        s = self.settings
+
+        def ignore() -> Decision:
+            return self._decide(context, Verdict.IGNORE, checks, **levels)
+
+        valid = quote.symbol == context.symbol and ZERO < quote.bid <= quote.ask
+        checks.append(_flag("quote_valid", valid, "own symbol, 0 < bid <= ask"))
+        if not valid:
+            return ignore()
+
+        spread = quote.ask - quote.bid
+        mid = (quote.ask + quote.bid) / TWO
+        checks.append(_check("spread_ratio", spread / mid, "<=", s.max_spread_ratio))
+        if not checks[-1].passed:
+            return ignore()
+
+        checks.append(_check("bid_above_invalidation", quote.bid, ">", setup.invalidation))
+        if not checks[-1].passed:
+            return ignore()
+
+        checks.append(_check("ask_above_trigger", quote.ask, ">", setup.trigger))
+        if not checks[-1].passed:
+            return self._decide(context, Verdict.WATCH, checks, **levels)
+
+        entry_high = setup.trigger + s.entry_extension_max_atr * atr
+        checks.append(_check("ask_within_price_window", quote.ask, "<=", entry_high))
+        if not checks[-1].passed:
+            return ignore()
+
+        stop = setup.invalidation
+        risk = quote.ask - stop
+        minimum = max(s.minimum_stop_spreads * spread, s.minimum_stop_percent / PERCENT * quote.ask)
+        checks.append(_check("stop_distance", risk, ">=", minimum))
+        if not checks[-1].passed:
+            return ignore()
+
+        round_trip = TWO * spread
+        checks.append(
+            _check("round_trip_atr_ratio", round_trip / atr, "<=", s.max_round_trip_atr_ratio)
+        )
+        if not checks[-1].passed:
+            return ignore()
+        checks.append(
+            _check("round_trip_risk_ratio", round_trip / risk, "<=", s.max_round_trip_risk_ratio)
+        )
+        if not checks[-1].passed:
+            return ignore()
+
+        # Per-share risk for sizing: worst fill (top of window) to the stop, plus the
+        # slippage reserve on both legs. Recorded so the platform can size from it.
+        sizing_risk = entry_high - stop + TWO * s.slippage_reserve_atr * atr
+        checks.append(
+            _check("sizing_risk_per_share", sizing_risk, ">", ZERO, "entry_high - stop + reserve")
+        )
+        return self._decide(
+            context,
+            Verdict.ENTER,
+            checks,
+            entry_low=setup.trigger,
+            entry_high=entry_high,
+            stop=stop,
+            **levels,
+        )
+
+    def _breakout(self, bars: Sequence[Bar]) -> _Setup:
+        reference = bars[-self.settings.lookback_bars - 1 : -1]
+        trigger = max(b.high for b in reference)
+        invalidation = min(b.low for b in reference)
+        check = _check("breakout_close_above_trigger", bars[-1].close, ">", trigger)
+        return _Setup(BREAKOUT, (check,), trigger, invalidation)
+
+    def _continuation(self, bars: Sequence[Bar], atr: Decimal) -> _Setup:
+        s = self.settings
+        base = bars[-s.base_bars :]
+        impulse = bars[-s.base_bars - s.impulse_bars : -s.base_bars]
+        base_high = max(b.high for b in base)
+        base_low = min(b.low for b in base)
+        checks = (
+            _check(
+                "impulse_atr",
+                (impulse[-1].close - impulse[0].open) / atr,
+                ">=",
+                s.minimum_impulse_atr,
+            ),
+            _check("base_range_atr", (base_high - base_low) / atr, "<=", s.maximum_base_range_atr),
+            _check(
+                "pre_breakout_distance_atr",
+                (base_high - bars[-1].close) / atr,
+                "<=",
+                s.maximum_pre_breakout_distance_atr,
+            ),
+        )
+        # Only the checks up to the first failure are kept, like every other rule.
+        kept = []
+        for c in checks:
+            kept.append(c)
+            if not c.passed:
+                break
+        return _Setup(CONTINUATION, tuple(kept), base_high, base_low)
+
+
+def create(values: Mapping[str, Any]) -> PriceActionV1:
+    """Build the strategy from parsed strategy.toml values (ValueError on any key problem)."""
+    return PriceActionV1(parse_settings(values))
