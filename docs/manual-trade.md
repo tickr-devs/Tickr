@@ -156,4 +156,7 @@ Results:
   app"); the screen may otherwise only say "exiting". Once you cancel that order in the app,
   two clean reads (about 10-20 s) release the hold and, because the exit is already requested
   (by `aperture exit`, or by the unprotected-too-long rule), the bot sells the position at
-  MARKET. It does not place a new stop first.
+  MARKET. It does not place a new stop first. In the exit path a release is good for one pass
+  only: after it the bot cancels our stop and then holds again for two reads (about 10 to
+  20 s) with no stop of ours before the MARKET close. This is expected and does not mean the
+  bot is stuck.
