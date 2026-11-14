@@ -311,3 +311,28 @@ def test_settings_below_swift_6_or_os_26_fail(tmp_path):
     )
     found = load().settings_violations(write(tmp_path, project, "project.pbxproj"))
     assert [line for line, _ in found] == [1, 2, 3, 6]
+
+
+def test_strict_concurrency_escape_hatches_fail(tmp_path):
+    source = (
+        "nonisolated(unsafe) static var cache = [String: Int]()\n"
+        "final class Box: @unchecked Sendable {}\n"
+        "@preconcurrency import Network\n"
+        "extension Model: @preconcurrency Delegate {}\n"
+        "nonisolated func read() -> Int { 0 }\n"
+        "struct Value: Sendable {}\n"
+    )
+    found = load().legacy_violations(write(tmp_path, source))
+    assert [line for line, _ in found] == [1, 2, 3, 4]
+
+
+def test_settings_that_weaken_strict_concurrency_fail(tmp_path):
+    source = (
+        'swiftSettings: [.unsafeFlags(["-strict-concurrency=minimal"])]\n'
+        "SWIFT_STRICT_CONCURRENCY = minimal;\n"
+        '    SWIFT_STRICT_CONCURRENCY: "targeted"\n'
+        "SWIFT_STRICT_CONCURRENCY = complete;\n"
+        "// unsafeFlags are not allowed\n"
+    )
+    found = load().settings_violations(write(tmp_path, source, "project.pbxproj"))
+    assert [line for line, _ in found] == [1, 2, 3]

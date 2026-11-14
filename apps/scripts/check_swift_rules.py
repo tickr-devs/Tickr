@@ -288,6 +288,7 @@ ONE_ARGUMENT = r"\((?!\s*\w+:)(?:[^(),]|\([^()]*\))*\)"
 XCTEST = "XCTest: use Swift Testing (import Testing, @Test, #expect)"
 COMBINE = "Combine: use async/await, AsyncSequence and Observation"
 CONCURRENCY = "use async/await, Task and actors"
+UNSAFE = "strict-concurrency escape hatch: make the type Sendable or isolate it to an actor"
 LEGACY = [
     (re.compile(IMPORT + r"XCTest\b"), XCTEST),
     (re.compile(IMPORT + r"Combine\b"), COMBINE),
@@ -322,6 +323,7 @@ LEGACY = [
      "onChange(of:perform:) is deprecated: use onChange(of:) { old, new in }"),
     (re.compile(r"\.animation" + ONE_ARGUMENT),
      "animation(_:) without value: is deprecated: pass value:"),
+    (re.compile(r"\bnonisolated\(unsafe\)|@unchecked\s+Sendable\b|@preconcurrency\b"), UNSAFE),
     (re.compile(r"ignoringOtherApps"),
      "activate(ignoringOtherApps:) is deprecated: use NSApp.activate()"),
 ]
@@ -364,6 +366,10 @@ SETTINGS = [
     (re.compile(r"_DEPLOYMENT_TARGET[\s=:]+\"?(\d+)"), LATEST_OS),
     (re.compile(r"^\s*(?:iOS|macOS):\s*\"?(\d+)"), LATEST_OS),
 ]
+# Settings that weaken strict concurrency: unsafe compiler flags and any checking level below
+# complete.
+WEAKENED = re.compile(
+    r"unsafeFlags|-strict-concurrency=|SWIFT_STRICT_CONCURRENCY[\s=:\"]+(?!complete\b)\w")
 SETTINGS_FILES = ("Package.swift", "project.pbxproj", "project.yml")
 
 
@@ -371,6 +377,9 @@ def settings_violations(path: Path) -> list[tuple[int, str]]:
     """Package and Xcode project settings older than Swift 6 or the latest OS releases."""
     found = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if WEAKENED.search(line) and not line.lstrip().startswith(("//", "#")):
+            found.append((number, line.strip()))
+            continue
         for pattern, least in SETTINGS:
             if any(int(value) < least for value in pattern.findall(line)):
                 found.append((number, line.strip()))

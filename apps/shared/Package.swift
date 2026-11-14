@@ -17,8 +17,9 @@ let package = Package(
   ],
   dependencies: [
     // Dependency injection (hmlongco/Factory): services are registered on Container and resolved
-    // with @Injected; ApertureKit re-exports FactoryKit to the apps (Dependencies.swift).
-    .package(url: "https://github.com/hmlongco/Factory.git", from: "3.5.3"),
+    // with @Injected; ApertureKit re-exports FactoryKit to the apps (Dependencies.swift). Pinned
+    // to one release: an update is a reviewed change of this line.
+    .package(url: "https://github.com/hmlongco/Factory.git", exact: "3.5.3"),
   ],
   targets: [
     .target(
