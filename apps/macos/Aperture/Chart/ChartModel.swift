@@ -12,8 +12,10 @@ final class ChartModel {
   /// A read is in flight.
   private(set) var loading = false
 
-  /// Reads the M1 bars of `symbol` on `day`. A cancelled read changes nothing.
-  func load(client: APIClient, symbol: String, day: WireDate) async {
+  /// Reads the M1 bars of `symbol` on `day` from the API at `baseURL`. A cancelled read changes
+  /// nothing.
+  func load(baseURL: URL, symbol: String, day: WireDate) async {
+    let client = Container.shared.apiClient(APIClient.Endpoint(baseURL: baseURL))
     loading = true
     defer { loading = false }
     do {

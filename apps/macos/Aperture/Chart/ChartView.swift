@@ -77,11 +77,11 @@ struct ChartView: View {
     chart.clear()
     viewport = Viewport()
     guard let symbol else { return }
-    let client = APIClient(baseURL: model.baseURL)
+    let baseURL = model.baseURL
     let day = model.shownDay
     let live = model.isLive
     repeat {
-      await chart.load(client: client, symbol: symbol, day: day)
+      await chart.load(baseURL: baseURL, symbol: symbol, day: day)
       guard live else { return }
       try? await Task.sleep(for: .seconds(Pace.barsSeconds))
     } while !Task.isCancelled
