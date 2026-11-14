@@ -106,12 +106,21 @@ private struct TodayResult: View {
   }
 }
 
-/// The bot's open positions, each with where its price sits between the stop and the target.
+/// The bot's open positions, each with where its price sits on a scale from the stop up.
 private struct MenuPositions: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    let positions = model.status.map(Board.positions) ?? []
+    if let status = model.status {
+      list(Board.positions(status))
+    } else {
+      Text(L10n.Common.unavailable)
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textQuaternary)
+    }
+  }
+
+  @ViewBuilder private func list(_ positions: [Position]) -> some View {
     if positions.isEmpty {
       Text(L10n.Menu.noOpenPosition)
         .font(Tokens.Typography.callout)
@@ -128,19 +137,20 @@ private struct MenuPositions: View {
   }
 }
 
-/// One open position: result so far, a bar from the stop to the target, stop, entry and last.
+/// One open position: result so far, a bar from the stop up, stop, entry and last.
 private struct MenuPosition: View {
   let position: Position
   /// The position with its latest bar; nil until a fresh bar arrives.
   let row: PositionRow?
 
-  /// Right end of the bar, in R; its left end is the stop (−1 R).
-  static let targetR: Decimal = 2
+  /// Right end of the bar, in R: a display scale only, not a target the bot trades to. Its left
+  /// end is the stop (−1 R).
+  static let scaleEndR: Decimal = 2
 
-  /// Where the last price sits on the bar, 0 at the stop and 1 at the target.
+  /// Where the last price sits on the bar, 0 at the stop and 1 at `scaleEndR`.
   private var progress: Double? {
     guard let r = row?.resultR else { return nil }
-    let share = NSDecimalNumber(decimal: (r + 1) / (Self.targetR + 1)).doubleValue
+    let share = NSDecimalNumber(decimal: (r + 1) / (Self.scaleEndR + 1)).doubleValue
     return min(max(share, 0), 1)
   }
 
@@ -179,7 +189,7 @@ private struct MenuPosition: View {
   }
 }
 
-/// A track from the stop to the target with a knob at the last price that glides as it moves.
+/// A track from the stop up the R scale with a knob at the last price that glides as it moves.
 private struct StopTargetBar: View {
   let progress: Double?
 
@@ -228,7 +238,12 @@ private struct FlowDots: View {
 
   private var stages: [Stage] {
     let stops = model.status.map(Board.positions)?.map(\.stop.state) ?? []
-    let stopColor = stops.allSatisfy { $0 == .verified } ? Palette.profit : Palette.loss
+    let stopColor: Color
+    if stops.isEmpty {
+      stopColor = Palette.textQuaternary
+    } else {
+      stopColor = stops.allSatisfy { $0 == .verified } ? Palette.profit : Palette.loss
+    }
     let items: [(LocalizedStringResource, Color)] = [
       (L10n.Flow.screeners, Palette.accent),
       (L10n.Common.strategy, Palette.highlight),
