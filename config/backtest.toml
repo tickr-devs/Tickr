@@ -36,3 +36,6 @@ price_bucket_edges_usd = [5, 20, 50]
 # and the pool day, percent; more means a split or reverse split between them, and the day is skipped with a cause
 # (the gate's change against the previous M1 close would be meaningless); read by backtest/run.py.
 split_tolerance_percent = 2
+# Share of the window's sessions, the most recent ones, reported separately as a hold-out (the earlier sessions are
+# reported on their own too), percent; read by backtest/report.py.
+holdout_percent = 33

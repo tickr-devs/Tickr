@@ -59,9 +59,11 @@ names. The first response of each kind and every failed one are kept in `<out>/r
 ## Report
 
 - **Every signal**: trades, win rate, mean and median R, profit factor, max drawdown in R, and a
-  percentile bootstrap interval of the mean R (`bootstrap_samples`, `bootstrap_seed`,
+  percentile bootstrap interval of the mean R that resamples whole days, since trades of one day
+  are correlated (`bootstrap_samples`, `bootstrap_seed`,
   `confidence_percent`). An interval above 0 is evidence of an edge under these assumptions; an
-  interval containing 0 is not.
+  interval containing 0 is not. The same is reported for the last `holdout_percent` of sessions
+  (hold-out) and for the sessions before it.
 - **Bot limits**: trades in entry order, at most bot.toml `max_open_positions` open, each through
   the live money checks: `risk.sizing.check_size` (planned loss and notional caps at the window
   top and the stop) and `risk.daily.check_daily` (net realized loss of the day + planned loss of

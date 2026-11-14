@@ -27,6 +27,7 @@ KEYS = frozenset({
     "confidence_percent",
     "price_bucket_edges_usd",
     "split_tolerance_percent",
+    "holdout_percent",
 })
 
 
@@ -43,6 +44,7 @@ class BacktestSettings:
     confidence_percent: Decimal
     price_bucket_edges_usd: tuple[Decimal, ...]
     split_tolerance_percent: Decimal
+    holdout_percent: Decimal
 
 
 def _count(key: str, raw: Any, minimum: int) -> int:
@@ -84,7 +86,15 @@ def settings_from_mapping(data: dict[str, Any]) -> BacktestSettings:
         price_bucket_edges_usd=_edges(table["price_bucket_edges_usd"]),
         split_tolerance_percent=_number("split_tolerance_percent",
                                         table["split_tolerance_percent"]),
+        holdout_percent=_percent("holdout_percent", table["holdout_percent"]),
     )
+
+
+def _percent(key: str, raw: Any) -> Decimal:
+    value = _number(key, raw)
+    if value >= 100:
+        raise BacktestError(f"[backtest] {key} must be below 100")
+    return value
 
 
 def _edges(raw: Any) -> tuple[Decimal, ...]:

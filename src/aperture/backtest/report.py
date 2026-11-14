@@ -2,8 +2,10 @@
 
 Two views of the same simulated trades (all `simulated`):
 1. Every signal: each pool symbol replayed on its own (the replay engine's view). Mean R per
-   trade with a bootstrap confidence interval: an interval above 0 is evidence of an edge
-   under these fill assumptions, one that contains 0 is not.
+   trade with a bootstrap confidence interval that resamples whole days (trades of one day are
+   correlated): an interval above 0 is evidence of an edge under these fill assumptions, one
+   that contains 0 is not. The same for the window before the hold-out (the last
+   `holdout_percent` of sessions) and for the hold-out alone.
 2. The bot: trades taken in entry order through the live money checks (`risk.sizing.check_size`,
    `risk.daily.check_daily` with the day's net realized loss, decisions 2026-11-14) and
    `max_open_positions`. USD = (exit - entry) x the strategy's quantity, gross: commissions and
@@ -63,19 +65,50 @@ def stats(r_values: Sequence[Decimal]) -> dict[str, Any]:
     }
 
 
-def bootstrap_interval(r_values: Sequence[Decimal], samples: int, seed: int,
+def bootstrap_interval(trades_by_day: Sequence[Sequence[Decimal]], samples: int, seed: int,
                        confidence: Decimal) -> tuple[Decimal, Decimal] | None:
-    """Percentile bootstrap interval of the mean R (resampling trades with replacement)."""
-    n = len(r_values)
-    if n < 2:
+    """Percentile bootstrap interval of the mean R per trade, resampling whole DAYS with
+    replacement (trades of one day share the market and are correlated, so resampling single
+    trades would make the interval too narrow). Statistic: total R / trades of the resample."""
+    days = [[float(r) for r in day] for day in trades_by_day if day]
+    if len(days) < 2:
         return None
-    values = [float(r) for r in r_values]
     rng = random.Random(seed)
-    means = sorted(sum(rng.choices(values, k=n)) / n for _ in range(samples))
+    means: list[float] = []
+    for _ in range(samples):
+        picked = rng.choices(days, k=len(days))
+        means.append(sum(sum(d) for d in picked) / sum(len(d) for d in picked))
+    means.sort()
     tail = float((HUNDRED - confidence) / TWO / HUNDRED)
     low = means[int(tail * (samples - 1))]
     high = means[int((1 - tail) * (samples - 1))]
     return Decimal(str(round(low, 6))), Decimal(str(round(high, 6)))
+
+
+def by_day(trades: Sequence[SimulatedTrade]) -> list[list[Decimal]]:
+    days: dict[date, list[Decimal]] = defaultdict(list)
+    for trade in trades:
+        days[trade.session_date].append(trade.r_multiple)
+    return [days[d] for d in sorted(days)]
+
+
+def period(trades: Sequence[SimulatedTrade], settings: BacktestSettings) -> dict[str, Any]:
+    """Stats of a set of trades with the day-resampled interval of the mean R."""
+    return {
+        **stats([t.r_multiple for t in trades]),
+        "days_with_trades": len({t.session_date for t in trades}),
+        "mean_r_interval": bootstrap_interval(by_day(trades), settings.bootstrap_samples,
+                                              settings.bootstrap_seed,
+                                              settings.confidence_percent),
+    }
+
+
+def holdout_start(sessions: Sequence[date], percent: Decimal) -> date | None:
+    """First session of the hold-out: the last `percent` of the window's sessions."""
+    if len(sessions) < 2:
+        return None
+    count = max(1, int(len(sessions) * percent / HUNDRED))
+    return sessions[-count]
 
 
 def breakdown(trades: Sequence[SimulatedTrade],
@@ -165,7 +198,6 @@ def build(result: ReplayResult, pool: Sequence[PoolEntry], caps: Sequence[CapRec
           traded_days: int, skipped: Sequence[dict[str, str]], cfg: Config,
           settings: BacktestSettings) -> dict[str, Any]:
     trades = result.trades
-    r_values = [t.r_multiple for t in trades]
     summary = summarize(result)
     causes: dict[str, int] = defaultdict(int)
     for item in skipped:
@@ -185,15 +217,13 @@ def build(result: ReplayResult, pool: Sequence[PoolEntry], caps: Sequence[CapRec
                  "most_candidates_in_a_session": max((c.candidates for c in caps), default=0)},
         "signals_by_outcome": summary.signals_by_outcome,
         "all_signals": {
-            **stats(r_values),
-            "mean_r_interval": bootstrap_interval(r_values, settings.bootstrap_samples,
-                                                  settings.bootstrap_seed,
-                                                  settings.confidence_percent),
+            **period(trades, settings),
             "confidence_percent": settings.confidence_percent,
             "max_drawdown_r": summary.max_drawdown_r,
             "total_usd": sum((t.pnl_usd or ZERO for t in trades), ZERO),
         },
         "bot": bot_view(trades, cfg),
+        "holdout": _holdout(trades, sessions, settings),
         "by_month": breakdown(trades, lambda t: t.session_date.strftime("%Y-%m")),
         "by_setup": breakdown(trades, lambda t: t.setup or "none"),
         "by_exit": breakdown(trades, lambda t: t.exit_reason.value),
@@ -202,6 +232,26 @@ def build(result: ReplayResult, pool: Sequence[PoolEntry], caps: Sequence[CapRec
         "by_entry_price_usd": breakdown(
             trades, lambda t: price_bucket(t.entry_price, settings.price_bucket_edges_usd)),
     }
+
+
+def _holdout(trades: Sequence[SimulatedTrade], sessions: Sequence[date],
+             settings: BacktestSettings) -> dict[str, Any] | None:
+    start = holdout_start(sessions, settings.holdout_percent)
+    if start is None:
+        return None
+    return {"starts": start.isoformat(),
+            "before": period([t for t in trades if t.session_date < start], settings),
+            "holdout": period([t for t in trades if t.session_date >= start], settings)}
+
+
+def _interval_text(s: dict[str, Any]) -> str:
+    interval = s.get("mean_r_interval")
+    if not interval:
+        return "too few days for an interval"
+    verdict = ("includes 0: no evidence of an edge" if interval[0] <= 0 <= interval[1]
+               else "above 0: evidence of an edge" if interval[0] > 0
+               else "below 0: evidence of a negative edge")
+    return f"{interval[0]:.3f} to {interval[1]:.3f} ({verdict})"
 
 
 def _row(name: str, s: dict[str, Any]) -> str:
@@ -214,7 +264,6 @@ def _row(name: str, s: dict[str, Any]) -> str:
 
 def markdown(data: dict[str, Any]) -> str:
     a, b = data["all_signals"], data["bot"]
-    interval = a.get("mean_r_interval")
     lines = [
         f"# SIMULATED backtest: {data['strategy']} v{data['version']}",
         "",
@@ -233,9 +282,16 @@ def markdown(data: dict[str, Any]) -> str:
         _row("bot limits", b),
         "",
     ]
-    if interval:
-        lines.append(f"Mean R per trade, {a['confidence_percent']}% bootstrap interval: "
-                     f"{interval[0]:.3f} to {interval[1]:.3f}.")
+    lines.append(f"Mean R per trade, {a['confidence_percent']}% interval (days resampled): "
+                 f"{_interval_text(a)}.")
+    h = data.get("holdout")
+    if h:
+        lines += ["", f"Hold-out from {h['starts']}:", "",
+                  "| period | trades | win rate | mean R | total R | profit factor |",
+                  "|---|---|---|---|---|---|",
+                  _row("before", h["before"]), _row("hold-out", h["holdout"]), "",
+                  f"Before: {_interval_text(h['before'])}. "
+                  f"Hold-out: {_interval_text(h['holdout'])}."]
     if b.get("trades"):
         lines.append(f"Bot view: total {b['total_usd']:.2f} USD gross over "
                      f"{b['days_with_trades']} days, positive days {b['positive_days']}, worst "

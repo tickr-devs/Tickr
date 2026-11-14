@@ -75,8 +75,18 @@ def test_stats_interval_and_buckets():
     r = [Decimal(x) for x in ("1", "-1", "2", "-1")]
     s = stats(r)
     assert s["mean_r"] == Decimal("0.25") and s["profit_factor"] == Decimal("1.5")
-    low, high = bootstrap_interval(r, 500, 1, Decimal(95))
-    assert low < Decimal("0.25") < high
+    low, high = bootstrap_interval([r[:2], r[2:]], 500, 1, Decimal(95))
+    assert low <= Decimal("0.25") <= high
+    # One day per resample unit: two days give at most three distinct means.
+    assert bootstrap_interval([r], 500, 1, Decimal(95)) is None
+
+
+def test_holdout_start_is_the_last_share_of_sessions():
+    from aperture.backtest.report import holdout_start
+
+    days = [date(2026, 11, d) for d in (2, 3, 4, 5, 6, 9)]
+    assert holdout_start(days, Decimal(50)) == date(2026, 11, 5)
+    assert holdout_start(days, Decimal(33)) == date(2026, 11, 9)
     edges = (Decimal(5), Decimal(20))
     assert [price_bucket(Decimal(p), edges) for p in ("1", "5", "25")] == ["<5", "5-20", ">=20"]
 
