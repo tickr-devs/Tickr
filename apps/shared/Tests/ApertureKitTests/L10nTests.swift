@@ -11,7 +11,7 @@ final class L10nTests: XCTestCase {
 
   func testEnglishAndRussian() {
     XCTAssertEqual(text(L10n.commandFlatten, "en"), "Flatten")
-    XCTAssertEqual(text(L10n.commandFlatten, "ru"), "Закрыть все позиции")
+    XCTAssertEqual(text(L10n.commandFlatten, "ru"), "Закрыть всё")
     XCTAssertEqual(text(L10n.tagEnter, "ru"), "ВХОД")
   }
 
