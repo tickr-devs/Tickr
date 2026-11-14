@@ -80,7 +80,7 @@ private struct PositionDetail: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(position.symbol)
                     .font(.system(size: 30, weight: .bold, design: .monospaced))
-                Text("\(position.quantity) shares @ \(position.entryPrice) · \(Format.clock(position.openedAt.date))")
+                Text("\(position.quantity.text) shares @ \(position.entryPrice.text) · \(Format.clock(position.openedAt.date))")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Palette.muted)
             }

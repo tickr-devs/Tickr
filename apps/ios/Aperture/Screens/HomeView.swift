@@ -167,7 +167,7 @@ private struct PositionRow: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("\(position.quantity) @ \(position.entryPrice)")
+                    Text("\(position.quantity.text) @ \(position.entryPrice.text)")
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Palette.text)
                     Text("since \(Format.time(position.openedAt.date))")
