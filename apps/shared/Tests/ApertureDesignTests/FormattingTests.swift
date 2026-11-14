@@ -1,5 +1,5 @@
-import XCTest
 @testable import ApertureDesign
+import XCTest
 
 final class FormattingTests: XCTestCase {
   func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))! }

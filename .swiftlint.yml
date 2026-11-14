@@ -7,10 +7,15 @@ included:
   - apps/shared/Tests
 
 indentation_width:
+  severity: error
   indentation_width: 2
   include_comments: true
   include_compiler_directives: false
   include_multiline_strings: false
+
+# Trailing commas in multi-line literals are allowed (they keep diffs to one line), not required.
+disabled_rules:
+  - trailing_comma
 
 opt_in_rules:
   - indentation_width
@@ -25,6 +30,14 @@ opt_in_rules:
 identifier_name:
   min_length: 1
   max_length: 50
+
+# Nested types such as Board.Event.Tone read better than prefixed names.
+nesting:
+  type_level: 2
+
+# Test tables use (input, path, body) triples.
+large_tuple:
+  warning: 3
 
 # Force try only on compile-time-constant regexes and dates; reviewed by hand.
 force_try: warning

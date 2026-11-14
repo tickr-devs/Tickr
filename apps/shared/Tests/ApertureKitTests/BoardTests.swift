@@ -1,5 +1,5 @@
-import XCTest
 @testable import ApertureKit
+import XCTest
 
 final class BoardTests: XCTestCase {
   func status(_ name: String) throws -> StatusV1 {

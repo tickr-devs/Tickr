@@ -29,7 +29,10 @@ def test_flags_numbers_in_code(tmp_path):
 
 
 def test_allows_zero_one_halving_and_tuple_access(tmp_path):
-    source = "let a = [0, 1, 1.0, 0.0]\nlet b = width / 2\nlet c = pairs.map { $0.0 + $0.1 }\n"
+    source = (
+        "let a = [0, 1, 1.0, 0.0]\nlet b = width / 2\nlet c = pairs.map { $0.0 + $0.1 }\n"
+        "let d = parts[2] + rows[i][3]\n"
+    )
     assert check(tmp_path, source) == []
 
 

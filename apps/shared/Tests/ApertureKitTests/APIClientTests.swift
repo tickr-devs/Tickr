@@ -1,6 +1,6 @@
+@testable import ApertureKit
 import Foundation
 import XCTest
-@testable import ApertureKit
 
 /// Answers requests from a canned (status, body) and records what was asked.
 final class StubProtocol: URLProtocol {
@@ -8,8 +8,8 @@ final class StubProtocol: URLProtocol {
   static var seen: [URLRequest] = []
   static var seenBodies: [Data] = []
 
-  override class func canInit(with request: URLRequest) -> Bool { true }
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override static func canInit(with request: URLRequest) -> Bool { true }
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
     Self.seen.append(request)

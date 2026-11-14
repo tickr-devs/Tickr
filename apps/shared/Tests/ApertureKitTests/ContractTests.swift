@@ -1,6 +1,6 @@
+@testable import ApertureKit
 import Foundation
 import XCTest
-@testable import ApertureKit
 
 /// The repository's contract fixtures (tests/api/fixtures), generated from the Python contract.
 let repoRoot = URL(fileURLWithPath: #filePath)
@@ -55,8 +55,8 @@ final class ContractTests: XCTestCase {
       .filter { $0.hasSuffix(".schema.json") }
       .map { String($0.dropLast(".schema.json".count)) }
     XCTAssertEqual(Set(names), ["status-v1", "command-v1", "status-response-v1",
-                  "command-accepted-v1", "pending-commands-v1", "error-v1",
-                  "days-v1", "day-v1", "bars-v1", "settings-v1"])
+      "command-accepted-v1", "pending-commands-v1", "error-v1",
+      "days-v1", "day-v1", "bars-v1", "settings-v1"])
   }
 
   func testFullStatusValues() throws {

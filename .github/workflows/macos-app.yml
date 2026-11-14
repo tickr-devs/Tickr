@@ -38,7 +38,7 @@ jobs:
           python3 apps/scripts/check_swift_literals.py
           command -v swiftlint >/dev/null || brew install swiftlint
           swiftlint version
-          swiftlint lint --quiet --config .swiftlint.yml
+          swiftlint lint --strict --quiet --config .swiftlint.yml
       - run: swift --version
       - name: Shared package (contract models, design) tests
         working-directory: apps/shared

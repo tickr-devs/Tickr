@@ -188,7 +188,7 @@ public struct CardStyle: ViewModifier {
     content
       .background(shape.fill(Palette.surface))
       .overlay(shape.strokeBorder(tint.map { $0.opacity(Tokens.Opacity.border) } ?? Palette.separator,
-                    lineWidth: Tokens.Stroke.thin))
+        lineWidth: Tokens.Stroke.thin))
       .shadow(
         color: scheme == .light ? Palette.shadow.opacity(Tokens.Opacity.shadow) : .clear,
         radius: Tokens.Size.shadowRadius, x: 0, y: Tokens.Size.shadowOffset)

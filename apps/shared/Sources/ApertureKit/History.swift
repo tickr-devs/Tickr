@@ -22,13 +22,13 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
   public init(_ text: String) throws {
     let parts = text.split(separator: "-").compactMap { Int($0) }
     guard Wire.matches(Self.pattern, text), parts.count == Self.partCount,
-      Self.months.contains(parts[1]), Self.days.contains(parts[parts.count - 1]) else {
+      Self.months.contains(parts[1]), Self.days.contains(parts[2]) else {
       throw ContractError("expected a date like 2026-01-02, got \"\(text)\"")
     }
     self.text = text
     year = parts[0]
     month = parts[1]
-    day = parts[parts.count - 1]
+    day = parts[2]
   }
 
   /// The New York date of `date`.

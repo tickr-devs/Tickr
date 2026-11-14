@@ -10,8 +10,9 @@ the approved design canvas. Code follows it one to one:
 ## Rules
 
 1. **Screens use tokens and roles only.** They contain no number, colour or duration of their own.
-   - `apps/scripts/check_swift_literals.py` fails CI on a number other than 0 and 1 unless it is a documented `static let` constant, an enum raw value or a halving `/ 2`.
+   - `apps/scripts/check_swift_literals.py` fails CI on a number other than 0 and 1 unless it is a documented `static let` constant, an enum raw value, a subscript index or a halving `/ 2`.
    - SwiftLint (`.swiftlint.yml`) fails CI on a colour made outside `Palette.swift`, a hue name instead of a role, and a font size outside `Tokens.Typography`.
+   - A screen may define its own documented constant only for a value no other screen uses (a chart's padding ratio, say); anything shared belongs in `Tokens`.
    - Both run in the `macos-app` workflow. They cover `apps/shared` now; each app is added once its code has moved onto the system.
 2. **No user-facing text in code.** Every string a person reads is a key in a String Catalog (`Localizable.xcstrings`).
    - English is the development language, with a Russian translation, and the app follows the system language.
