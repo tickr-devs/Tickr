@@ -147,6 +147,7 @@ def test_breakout_enter():
         "round_trip_atr_ratio",
         "round_trip_risk_ratio",
         "sizing_risk_per_share",
+        "quantity",
     ]
     by_rule = {c.rule: c for c in decision.checks}
     assert by_rule["relative_volume"].measured == d(10_000) / d(3_000)
@@ -157,6 +158,26 @@ def test_breakout_enter():
     assert by_rule["sizing_risk_per_share"].measured == (
         TRIGGER + ATR - INVALIDATION + d("0.01") + d("0.1") * ATR
     )
+
+
+def quantity(decision):
+    return {c.rule: c for c in decision.checks}["quantity"].measured
+
+
+def test_quantity_by_planned_loss_and_notional_cap():
+    # sizing risk 0.704: 50 / 0.704 = 71.02 -> 71; 2500 / 23.06 = 108.4 -> 108
+    assert quantity(make().evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))) == d(71)
+    # planned loss 100 -> 142 by loss; the notional cap binds at 108
+    assert quantity(
+        make(sizing__planned_loss_usd=100).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
+    ) == (d(108))
+    # exactly 1 share passes; below 1 refuses
+    one = make(sizing__planned_loss_usd=0.704).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
+    assert one.verdict == Verdict.ENTER and quantity(one) == d(1)
+    decision = make(sizing__planned_loss_usd=0.7).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
+    assert_refused(decision, Verdict.IGNORE, "quantity")
+    decision = make(sizing__max_position_notional_usd=23).evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
+    assert_refused(decision, Verdict.IGNORE, "quantity")
 
 
 def test_watch_without_quote():

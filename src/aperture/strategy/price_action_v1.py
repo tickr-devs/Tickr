@@ -29,7 +29,11 @@ Rule order:
    trigger + `entry_extension_max_atr` ATR (else IGNORE: missed, never chased), stop
    distance (ask - invalidation) at least max(`minimum_stop_spreads` spreads,
    `minimum_stop_percent` percent of ask), cost rule on the round trip (2 x spread)
-   against ATR and against per-share risk (top of window - stop). Then ENTER with entry window
+   against ATR and against per-share risk (top of window - stop), quantity at least 1
+   share: min(floor(`planned_loss_usd` / sizing risk), floor(`max_position_notional_usd` /
+   top of window)), where sizing risk = top of window - stop + spread + slippage reserve
+   on both legs. The quantity is the final check's measured value until `Decision` carries
+   a quantity field. Then ENTER with entry window
    [trigger, trigger + extension], stop = invalidation.
 
 Quote freshness is the platform's rule (the strategy never reads the clock). Prices are
@@ -41,7 +45,7 @@ from __future__ import annotations
 import operator
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 from itertools import pairwise
 from typing import Any
 
@@ -51,6 +55,7 @@ from aperture.types import Bar, Quote
 
 NAME = "price-action-v1"
 ZERO = Decimal(0)
+ONE = Decimal(1)
 TWO = Decimal(2)
 PERCENT = Decimal(100)
 
@@ -134,6 +139,7 @@ _SCHEMA: dict[str, dict[str, Callable[[Any], Any]]] = {
         "slippage_reserve_atr": _non_negative,
     },
     "liquidity": {"max_spread_ratio": _positive, "min_dollar_volume_usd": _positive},
+    "sizing": {"planned_loss_usd": _positive, "max_position_notional_usd": _positive},
 }
 
 
@@ -162,6 +168,8 @@ class Settings:
     slippage_reserve_atr: Decimal
     max_spread_ratio: Decimal
     min_dollar_volume_usd: Decimal
+    planned_loss_usd: Decimal
+    max_position_notional_usd: Decimal
 
     @property
     def required_bars(self) -> int:
@@ -405,6 +413,24 @@ class PriceActionV1:
                 "entry_high - stop + spread + 2 legs x slippage reserve",
             )
         )
+        # Quantity: whole shares within the planned loss and the notional cap.
+        by_loss = (s.planned_loss_usd / sizing_risk).to_integral_value(rounding=ROUND_FLOOR)
+        by_notional = (s.max_position_notional_usd / entry_high).to_integral_value(
+            rounding=ROUND_FLOOR
+        )
+        quantity = min(by_loss, by_notional)
+        checks.append(
+            _check(
+                "quantity",
+                quantity,
+                ">=",
+                ONE,
+                f"min(floor(planned loss / risk) = {by_loss}, "
+                f"floor(notional cap / entry_high) = {by_notional})",
+            )
+        )
+        if not checks[-1].passed:
+            return ignore()
         return self._decide(
             context,
             Verdict.ENTER,
