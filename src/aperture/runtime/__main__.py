@@ -174,8 +174,14 @@ def _watchdog(config_path: Path) -> int:
     launchd.check_timings(cfg)
     database, lock_path = data_paths(cfg)
     journal = watchdog.Journal(cfg.root / cfg.run.data_dir / cfg.runtime.watchdog_journal_file)
-    alerter = Alerter(cfg.alerts, f"{TITLE} {cfg.environment_name}",
-                      default_notifier(cfg.alerts), clock=WATCHDOG_NOW)
+    notifier = default_notifier(cfg.alerts)
+    alerter = Alerter(cfg.alerts, f"{TITLE} {cfg.environment_name}", notifier,
+                      clock=WATCHDOG_NOW)
+    if notifier is None:
+        # No channel on this machine (not macOS): every alert is journaled "no-notifier" only.
+        # Recorded once at the start so the journal says why nobody was told.
+        journal.write(watchdog.CHANNEL_REFUSED, {"cause": PreflightCause.ALERT_CHANNEL_MISSING,
+                                                 "platform": sys.platform})
     missing = recipient_missing(cfg.alerts, os.environ)
     if missing is not None:
         # Recorded, and every iMessage attempt fails with the same cause; the watchdog still

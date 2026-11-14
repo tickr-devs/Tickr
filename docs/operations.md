@@ -73,10 +73,12 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 5. The iMessage recipient variable named by `[alerts] imessage_recipient_variable` is set
    (cause `alert-recipient-missing`; blocks the start, because the phone is the alert channel
    that reaches you away from the Mac). Presence only, never the value.
-6. Broker token folder `<data_dir>/<token_dir>` exists.
-7. The active strategy builds and `[market_data] history_sessions` covers its history need. A
+6. This machine has an alert channel (cause `alert-channel-missing`): today only macOS. On
+   Linux, including Docker, the start is refused; see `docs/deploy-server.md`.
+7. Broker token folder `<data_dir>/<token_dir>` exists.
+8. The active strategy builds and `[market_data] history_sessions` covers its history need. A
    failure is reported, but the bot still starts with entries off so it can protect positions.
-8. Broker token usable (only when no earlier check blocks the start and today has a session):
+9. Broker token usable (only when no earlier check blocks the start and today has a session):
    the Webull SDK creates or checks the token. If Webull says it is PENDING, preflight alerts `token-needs-confirmation`
    and waits up to `[environments.*] token_check_duration_seconds` for you to approve it in the
    Webull app. INVALID, EXPIRED, not approved in time, or any other token error fails the check
