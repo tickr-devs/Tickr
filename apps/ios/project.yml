@@ -67,14 +67,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
         ENABLE_PREVIEWS: YES
-# The scheme is named for the platform so it stays distinct from "Aperture macOS" in the root
-# Aperture.xcworkspace.
-schemes:
-  Aperture iOS:
-    build:
-      targets:
-        Aperture: all
-    run:
-      config: Debug
-    archive:
-      config: Release
+# No schemes here: the shared scheme "Aperture iOS" (named for the platform so it stays distinct
+# from "Aperture macOS" in the root Aperture.xcworkspace) is kept by hand in Xcode's own format in
+# Aperture.xcodeproj/xcshareddata/xcschemes, so building in Xcode leaves the tree clean.
