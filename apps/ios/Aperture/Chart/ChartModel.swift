@@ -29,6 +29,8 @@ final class ChartModel {
   var symbol: String?
   var timeframe = Timeframe.m1 { didSet { rebuild() } }
   private(set) var series: ChartSeries?
+  /// Number of the newest load of the days or a day (see `begin()`).
+  @ObservationIgnored private var latestRequest = 0
 
   /// Symbols with captured bars on the chosen day.
   var symbols: [String] { day?.barSymbols ?? [] }
@@ -42,32 +44,36 @@ final class ChartModel {
 
   /// Load the days list and the newest day, keeping the chosen day and symbol when still listed.
   func load(_ url: URL, preferring preferred: String?) async {
+    let request = begin()
     phase = .loading
     do {
-      days = try await APIClient(baseURL: url).days().days
+      let listed = try await APIClient(baseURL: url).days().days
+      guard request == latestRequest else { return }
+      days = listed
       if selectedDay == nil || !days.contains(where: { $0.day == selectedDay }) {
         selectedDay = days.first?.day
       }
-      try await loadDay(url, preferring: preferred)
-      phase = .loaded
+      try await loadDay(url, preferring: preferred, request: request)
+      if request == latestRequest { phase = .loaded }
     } catch is CancellationError {
       return
     } catch {
-      phase = .failed(error.localizedDescription)
+      if request == latestRequest { phase = .failed(error.localizedDescription) }
     }
   }
 
   /// Switch to another recorded day.
   func show(_ day: WireDate, from url: URL) async {
+    let request = begin()
     selectedDay = day
     phase = .loading
     do {
-      try await loadDay(url, preferring: symbol)
-      phase = .loaded
+      try await loadDay(url, preferring: symbol, request: request)
+      if request == latestRequest { phase = .loaded }
     } catch is CancellationError {
       return
     } catch {
-      phase = .failed(error.localizedDescription)
+      if request == latestRequest { phase = .failed(error.localizedDescription) }
     }
   }
 
@@ -89,7 +95,14 @@ final class ChartModel {
     try? await loadBars(url)
   }
 
-  private func loadDay(_ url: URL, preferring preferred: String?) async throws {
+  /// Starts a load of the days or a day; an answer to an older one is dropped, so a slow answer
+  /// for a day no longer chosen never replaces the chosen day's trades, symbols or bars.
+  private func begin() -> Int {
+    latestRequest += 1
+    return latestRequest
+  }
+
+  private func loadDay(_ url: URL, preferring preferred: String?, request: Int) async throws {
     guard let selectedDay else {
       day = nil
       bars = nil
@@ -97,6 +110,7 @@ final class ChartModel {
       return
     }
     let loaded = try await APIClient(baseURL: url).day(selectedDay)
+    guard request == latestRequest else { return }
     day = loaded
     let candidates = [preferred, symbol, loaded.trades.last?.symbol].compactMap { $0 }
     symbol = candidates.first(where: loaded.barSymbols.contains) ?? loaded.barSymbols.first
