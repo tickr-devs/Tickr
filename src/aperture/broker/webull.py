@@ -58,6 +58,7 @@ from aperture.data.base import (
     QuoteListener,
     ScreenerKind,
     ScreenerRow,
+    SubscriptionLimit,
 )
 from aperture.types import (
     Bar,
@@ -967,6 +968,16 @@ NOTICE_ENTITLEMENT_PREEMPTED = "1002"
 STREAM_SUB_TYPE_QUOTE = "QUOTE"
 STREAM_SUBSCRIBE_PATH = "/market-data/streaming/subscribe"
 STREAM_UNSUBSCRIBE_PATH = "/market-data/streaming/unsubscribe"
+# Subscribe refusal past the per-connection symbol limit (probe M3: HTTP 417, REST ServerException,
+# no stream notice; the symbols already subscribed stay).
+STREAM_TOO_MANY_SYMBOLS = "TOO_MANY_SYMBOLS_SUBSCRIPTION"
+
+
+def subscribe_error(exc: Exception, symbols: list[str], limit: int) -> Exception:
+    """The SDK's subscribe failure -> SubscriptionLimit for the proven limit code, else as is."""
+    if getattr(exc, "error_code", None) == STREAM_TOO_MANY_SYMBOLS:
+        return SubscriptionLimit(symbols, limit, by_provider=True)
+    return exc
 
 
 class QuoteStream(Protocol):
@@ -1015,10 +1026,15 @@ class StreamSession:
       for a deliberate reconnect; nothing is retried here and nothing raises into the
       provider thread.
     - Disconnect, entitlement pre-emption (notice 1002) and a stopped loop report "down".
+    - At most `max_symbols` symbols per connection (probe M3: 100, cumulative). A subscribe()
+      that would pass it raises SubscriptionLimit before anything is sent; a provider refusal of
+      the same kind (HTTP 417) takes its symbols back out, keeps the transport up (the earlier
+      subscriptions stay, M3) and raises SubscriptionLimit. Neither reconnects.
     """
 
     def __init__(self, budget: RequestBudget, utc_now: Callable[[], datetime],
-                 on_error: Callable[[str, Exception], None]) -> None:
+                 on_error: Callable[[str, Exception], None], *, max_symbols: int) -> None:
+        self._max_symbols = max_symbols
         self._budget = budget
         self._utc_now = utc_now
         self._on_error = on_error
@@ -1095,9 +1111,11 @@ class StreamSession:
         with self._lock:
             if self._listener is not None and listener is not self._listener:
                 raise MarketDataError("one stream listener per session; use FanOut")
+            added = set(symbols) - self._symbols
+            if len(self._symbols) + len(added) > self._max_symbols:
+                raise SubscriptionLimit(added, self._max_symbols, by_provider=False)
             first = self._listener is None
             self._listener = listener
-            added = set(symbols) - self._symbols
             self._symbols.update(added)
             up = self._up
         if up:
@@ -1126,17 +1144,32 @@ class StreamSession:
         full set again. True when in sync."""
         try:
             return self._sync()
-        except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK failure while (un)subscribing
+        except SubscriptionLimit as refused:
+            # Provider limit (HTTP 417): nothing new was added and the earlier subscriptions
+            # stay (probe M3), so the connection is still good. Only a bot call can be undone.
+            if not raise_error:
+                return self._down_and_reconnect(refused, rollback)
             with self._lock:
                 self._symbols.difference_update(rollback)
-                self._connected = self._up = False
-            self._notify(False, f"resubscribe failed ({type(exc).__name__}); reconnecting")
-            self._on_error("subscribe", exc)
-            if self._reconnect is not None:
-                self._reconnect()
+            self._on_error("subscribe", refused)
+            raise
+        except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK failure while (un)subscribing
+            self._down_and_reconnect(exc, rollback)
             if raise_error:
                 raise
             return False
+
+    def _down_and_reconnect(self, exc: Exception, rollback: Iterable[str]) -> bool:
+        """Mark the transport down (cause reported), call on_error, ask for a reconnect whose
+        resubscribe sends the full set again. Always False (not in sync)."""
+        with self._lock:
+            self._symbols.difference_update(rollback)
+            self._connected = self._up = False
+        self._notify(False, f"resubscribe failed ({type(exc).__name__}); reconnecting")
+        self._on_error("subscribe", exc)
+        if self._reconnect is not None:
+            self._reconnect()
+        return False
 
     # -- calls from the provider thread
     def on_connected(self) -> None:
@@ -1191,6 +1224,7 @@ class StreamSettings:
     app_secret_env: str
     category: str
     reconnect_delay_seconds: float
+    max_symbols: int
 
 
 class SdkQuoteStream:
@@ -1218,8 +1252,19 @@ class SdkQuoteStream:
         )
         client.set_token_dir(settings.token_dir)
         category = settings.category
+        limit = settings.max_symbols
+
+        def send_subscribe(symbols: list[str]) -> None:
+            try:
+                client.subscribe(symbols, category, [STREAM_SUB_TYPE_QUOTE])
+            except Exception as exc:  # noqa: BLE001 - the SDK raises ServerException; mapped
+                mapped = subscribe_error(exc, symbols, limit)
+                if mapped is exc:
+                    raise
+                raise mapped from exc
+
         session.bind(
-            lambda symbols: client.subscribe(symbols, category, [STREAM_SUB_TYPE_QUOTE]),
+            send_subscribe,
             lambda symbols: client.unsubscribe(symbols, category, [STREAM_SUB_TYPE_QUOTE]),
             client.disconnect,  # ends this loop; _run starts a new connection after the delay
         )
@@ -1468,6 +1513,7 @@ def stream_settings_from_config(config: Config) -> StreamSettings:
         app_secret_env=env.app_secret_variable,
         category=config.market_data.screener_category,
         reconnect_delay_seconds=float(config.market_data.stream_reconnect_delay_seconds),
+        max_symbols=config.market_data.stream_max_symbols,
     )
 
 
@@ -1515,6 +1561,8 @@ def bot_adapters(
     transport = SdkTransport(settings_from_config(config))
     budget = budget_from_config(config)
     broker = broker_from_config(config, transport, budget)
-    session = StreamSession(budget, lambda: datetime.now(UTC), on_stream_error)
-    stream = SdkQuoteStream(stream_settings_from_config(config), session)
+    settings = stream_settings_from_config(config)
+    session = StreamSession(budget, lambda: datetime.now(UTC), on_stream_error,
+                            max_symbols=settings.max_symbols)
+    stream = SdkQuoteStream(settings, session)
     return broker, market_data_from_config(config, transport, budget, stream), stream
