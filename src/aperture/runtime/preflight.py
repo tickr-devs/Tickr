@@ -8,7 +8,10 @@ Checks, all reported, the first failure is the single cause:
    "no session today", which is not a failure;
 4. credential environment variables present: only their NAMES are checked and reported, values
    are never read beyond "set and non-empty";
-5. broker token folder present.
+5. broker token folder present;
+6. broker token usable: only when checks 1-5 passed and today has a session, the caller's
+   `token_probe` creates or checks the Webull token, which may wait for the owner's
+   confirmation in the app (the probe alerts token-needs-confirmation before it waits).
 
 Exit codes: 0 ready, 1 failed, 2 config invalid, 3 no session today.
 """
@@ -47,6 +50,7 @@ class PreflightCause(StrEnum):
     CALENDAR_UNKNOWN = "calendar-unknown"
     CREDENTIALS_MISSING = "credentials-missing"
     TOKEN_DIR_MISSING = "token-dir-missing"
+    TOKEN_UNUSABLE = "token-unusable"
 
 
 class CheckName(StrEnum):
@@ -55,6 +59,7 @@ class CheckName(StrEnum):
     CALENDAR = "calendar"
     CREDENTIALS = "credentials"
     TOKEN_DIR = "token-dir"
+    TOKEN = "token"
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,8 @@ class PreflightResult:
 
 
 DiskFree = Callable[[Path], int]
+# Makes the broker token usable; returns None, or the cause it is not usable.
+TokenProbe = Callable[[config_module.Config], str | None]
 
 
 def _disk_free(path: Path) -> int:
@@ -186,8 +193,10 @@ def run_preflight(
     now: datetime,
     environ: Mapping[str, str],
     disk_free: DiskFree = _disk_free,
+    token_probe: TokenProbe | None = None,
 ) -> PreflightResult:
-    """Run every check. `now` must be timezone-aware; `environ` is usually os.environ."""
+    """Run every check. `now` must be timezone-aware; `environ` is usually os.environ.
+    Without `token_probe` the token check is not run."""
     cfg, config_check = _load_config(config_path)
     if cfg is None:
         return PreflightResult((config_check,), session_today=False, environment=None, config=None)
@@ -195,4 +204,8 @@ def run_preflight(
     calendar, session_today = _check_calendar(cfg, now)
     checks = (config_check, disk, calendar, _check_credentials(cfg, environ),
               _check_token_dir(cfg))
+    if token_probe is not None and session_today and all(c.passed for c in checks):
+        cause = token_probe(cfg)
+        checks += (Check(CheckName.TOKEN, True, "usable") if cause is None else
+                   Check(CheckName.TOKEN, False, cause, PreflightCause.TOKEN_UNUSABLE),)
     return PreflightResult(checks, session_today, cfg.environment_name, cfg)

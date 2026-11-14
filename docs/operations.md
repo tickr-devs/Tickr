@@ -69,6 +69,12 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 4. Credential variables named in the active `[environments.*]` table are set. Only the names are
    checked and reported, never the values.
 5. Broker token folder `<data_dir>/<token_dir>` exists.
+6. Broker token usable (only when 1-5 passed and today has a session): the Webull SDK creates or
+   checks the token. If Webull says it is PENDING, preflight alerts `token-needs-confirmation`
+   and waits up to `[environments.*] token_check_duration_seconds` for you to approve it in the
+   Webull app. INVALID, EXPIRED, not approved in time, or any other token error fails the check
+   with cause `token-unusable`. Where Webull has token checking off, this is one config read.
+   `aperture run` alerts the same way (journaled as an `alert` record) if its token waits.
 
 All checks are reported; the first failure is the recorded cause.
 
