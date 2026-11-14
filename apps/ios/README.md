@@ -1,0 +1,52 @@
+# Aperture operator app (iOS)
+
+A SwiftUI iPhone app over the bot's local API (`docs/api.md`). Like the macOS app, it never talks to
+the broker: it shows what the bot wrote and queues operator commands that the bot decides on.
+Design: the approved canvas (tabs Home, Positions, Chart, Activity, Lab; Settings behind the gear
+on Home; bot control behind the power button). It follows the system appearance (light and dark)
+and Apple's Human Interface Guidelines; every animation has a still fallback for Reduce Motion.
+
+| Tab | Now | Comes with |
+|---|---|---|
+| Home | Day result ring, headline, live event ticker, open positions, bot inputs, power button (pause/resume entries, cancel own orders, flatten) | Day picker (days API) |
+| Positions | Each open position: risk band, protection chain, max loss, Flatten | Live price line (bars API) |
+| Chart | Placeholder | Candles, indicators, levels, crosshair (bars API) |
+| Activity | Today's result curve, trades, journal | Past days (days API), signals not taken |
+| Lab | Active strategy | Observers, replays, refusal counts |
+
+Cancel and Flatten ask for Face ID (or the passcode) first; pausing entries does not. Every command
+is queued once; its result appears as a banner when the bot reports it in `recent_commands`.
+Commands are offered only while the status is fresh.
+
+Push notifications, lock-screen alerts and the Live Activity need an Apple Developer Program
+membership (APNs); they are added once that exists.
+
+## Run it
+
+Needs a Mac with Xcode 16 or newer. The Xcode project is committed, so nothing else is needed:
+
+```sh
+open apps/ios/Aperture.xcodeproj
+```
+
+(or open the root `Aperture.xcworkspace` to have the iOS and macOS apps side by side).
+
+Pick the `Aperture iOS` scheme and an iPhone Simulator, Run. With the API running on the same Mac
+(`python -m aperture.api --config config/bot.toml`) the Simulator reaches it at
+`http://127.0.0.1:8766`, the default address there. To try Face ID in the Simulator: Features ›
+Face ID › Enrolled, then Matching Face when asked.
+
+On your iPhone: copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` (git-ignored) and
+put your team id in it (a free Apple ID works; the app then runs for 7 days before Xcode has to
+install it again), connect the phone, Run. Do not pick the team in Signing & Capabilities: that
+writes it into the committed project. Likewise never accept Xcode's "Update to recommended
+settings": the project is generated, so such changes go into `project.yml`.
+The phone reaches the Mac through Tailscale; that setup is described when the API accepts remote
+requests.
+
+The project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Swift files under `Aperture/` are picked up automatically; only after changing `project.yml` run
+XcodeGen 2.46.0 (the version CI uses): `cd apps/ios && xcodegen` and commit the result. CI fails when the
+committed project differs from what `project.yml` generates.
+
+Shared code (contract models, API client, palette, animated pieces) lives in `apps/shared`.

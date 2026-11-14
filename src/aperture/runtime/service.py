@@ -18,12 +18,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aperture.api import contract as api
+from aperture.api.history import average_fill_price, closed_trades
 from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
 from aperture.config import Config, trading_gate
 from aperture.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeRow
 from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
 from aperture.runtime.alerts import AlertKind
+from aperture.runtime.dayend import DayEnd
+from aperture.runtime.protection import LatencyLog, busy
 
 if TYPE_CHECKING:
     from aperture.observers.runner import ObserverSet
@@ -40,6 +43,9 @@ OBSERVER_FAILURE = "observer-failure"
 OBSERVERS_STOPPED = "observers-stopped"
 OBSERVERS_NOT_LOADED = "observers-not-loaded"
 EVALUATION_FAILED = "evaluation-failed"
+EVALUATION_SKIPPED = "evaluation-skipped"  # one row per protect-first episode
+EVALUATION_SLOW = "evaluation-slow"
+LATENCY_FAILED = "protection-latency-failed"
 STRATEGY_NOT_LOADED = "strategy-not-loaded"
 NOT_WIRED = api.EntryBlock("entries_not_wired",
                            "This build does not open trades on its own yet.")
@@ -79,35 +85,12 @@ def _iso(text: str) -> datetime:
     return datetime.fromisoformat(text)
 
 
-def _average(orders: list[OrderRow]) -> Decimal | None:
-    filled = [o for o in orders if o.filled_quantity > 0 and o.average_fill_price is not None]
-    quantity = sum((o.filled_quantity for o in filled), ZERO)
-    if quantity == 0:
-        return None
-    return sum((o.filled_quantity * o.average_fill_price for o in filled), ZERO) / quantity
-
-
 def trades_today(engine: Engine, now: datetime) -> tuple[api.Trade, ...]:
     """Trades closed today (New York date) that had fills, with gross result."""
     today = now.astimezone(NEW_YORK).date()
-    result = []
-    for row in engine.store.query(
-            "SELECT trade_id, symbol, opened_at, closed_at, close_cause FROM trades "
-            "WHERE closed_at IS NOT NULL ORDER BY closed_at"):
-        closed = _iso(row["closed_at"])
-        if closed.astimezone(NEW_YORK).date() != today:
-            continue
-        orders = engine.orders(row["trade_id"])
-        entries = [o for o in orders if o.leg is Leg.ENTRY]
-        sells = [o for o in orders if o.leg is not Leg.ENTRY]
-        entry_price, exit_price = _average(entries), _average(sells)
-        quantity = sum((o.filled_quantity for o in sells), ZERO)
-        if entry_price is None or exit_price is None or quantity == 0:
-            continue  # never filled: not a trade
-        result.append(api.Trade(row["symbol"], quantity, entry_price, exit_price,
-                                _iso(row["opened_at"]), closed, row["close_cause"],
-                                (exit_price - entry_price) * quantity))
-    return tuple(result)
+    return tuple(api.Trade(t.symbol, t.quantity, t.entry_price, t.exit_price, t.opened_at,
+                           t.closed_at, t.exit_reason, t.result_gross_usd)
+                 for t in closed_trades(engine.store, closed_on=today))
 
 
 class Service:
@@ -132,6 +115,10 @@ class Service:
         self.last_broker_read_at: datetime | None = None
         self._flatten_day: date | None = None
         self._flatten_at: datetime | None = None
+        self._flatten_passed = False  # the flatten time of _flatten_day has been reached
+        self.day_end = DayEnd(engine, calendar, watch)
+        self.latency: LatencyLog | None = LatencyLog(engine)
+        self._skipping: str | None = None  # cause of the current protect-first episode
 
     # --- commands --------------------------------------------------------------------------
 
@@ -206,20 +193,82 @@ class Service:
 
     def flatten_due(self) -> None:
         """At the session's flatten time (or at once with no usable calendar or session)
-        ask every open trade to exit through the normal path."""
+        ask every open trade to exit through the normal path; from the flatten time plus
+        grace, check by broker reads that the day ended flat (runtime/dayend.py)."""
         now = self.now()
         day = now.astimezone(NEW_YORK).date()
         if self._flatten_day != day:
             self._flatten_day = day
+            self._flatten_passed = False
             self._flatten_at = (now if self.calendar is None
                                 else flatten_deadline(self.config, self.calendar, now))
         if self._flatten_at is None or now < self._flatten_at:
             return
+        if not self._flatten_passed:
+            self._flatten_passed = True
+            self.engine.broker_view = None  # only reads from now on can show the day's end
         for trade in self.engine.trades():
             if not trade.exit_requested:
                 self.engine.request_exit(trade.trade_id, "session-flatten")
+        self.day_end.check(self._flatten_at, now)
+
+    # --- working entries -------------------------------------------------------------------
+
+    def _guard_entries(self) -> None:
+        """A working entry is cancelled once its quote leaves the price window or goes stale,
+        and at the last-entry time (spec 9). Needs the market's quotes, so only with one."""
+        from aperture.runtime.entries import guard_entries  # entries imports this module
+
+        if self.market is None:
+            return
+        guard_entries(self.engine, self.config, self.calendar, self.market.inbox.latest,
+                      self.now())
 
     # --- strategy --------------------------------------------------------------------------
+
+    def _record_latency(self) -> None:
+        """Fill-to-stop timing rows. A measurement never ends the trading loop: on an error it
+        is journaled once and switched off for the run."""
+        if self.latency is None:
+            return
+        try:
+            self.latency.record()
+        except Exception as exc:  # noqa: BLE001 - see docstring
+            self.latency = None
+            with self.engine.store.transaction():
+                self.engine.store.append(LATENCY_FAILED, {"error": type(exc).__name__,
+                                                          "detail": str(exc)},
+                                         run_id=self.engine.run_id)
+
+    def _protect_first(self) -> bool:
+        """True when strategy work may run this pass: no entry working, every fill covered by
+        a verified stop, no exit in progress (runtime/protection.py). The first pass of each
+        episode that holds it back is journaled once with its cause."""
+        cause = busy(self.engine)
+        if cause is not None and self._skipping is None and self.evaluator is not None:
+            with self.engine.store.transaction():
+                self.engine.store.append(EVALUATION_SKIPPED, {"cause": cause},
+                                         run_id=self.engine.run_id)
+        self._skipping = cause
+        return cause is None
+
+    def _strategy_pass(self, monotonic: Callable[[], float]) -> None:
+        """Market upkeep and the entry guard every pass; discovery and the strategy only when
+        protection allows, timed against `[runtime] evaluation_budget_seconds`."""
+        allowed = self._protect_first()
+        started = monotonic()
+        if self.market is not None:
+            self.market.tick(discover=allowed)  # after the engine's broker work of this pass
+            self._guard_entries()  # every pass: it protects a working entry
+        if not allowed:
+            return
+        self._evaluate()
+        spent = monotonic() - started
+        budget = float(self.config.runtime.evaluation_budget_seconds)
+        if spent > budget:
+            with self.engine.store.transaction():
+                self.engine.store.append(EVALUATION_SLOW, {"seconds": spent, "budget": budget},
+                                         run_id=self.engine.run_id)
 
     def _evaluate(self) -> None:
         """The active strategy on the latest completed minute; its WATCH set feeds the L1
@@ -303,10 +352,30 @@ class Service:
         if fences:
             name, cause, _ = fences[0]
             return api.EntryBlock(name.split(":", 1)[0].replace("-", "_"), f"{name}: {cause}")
+        money = self._daily_money_block()
+        if money is not None:
+            return money
         if self.entries_off is not None:
             return api.EntryBlock("strategy_not_loaded",
                                   f"Active strategy not loaded: {self.entries_off}")
         return NOT_WIRED if self.evaluator is None else None
+
+    def _daily_money_block(self) -> api.EntryBlock | None:
+        """Entries the daily ceiling refuses anyway: the room left is below
+        `[risk] min_daily_room_usd` (spec 7, check 6), or today's money is unknown. Above it a
+        trade is sized down to the room. Admission still decides each entry."""
+        from aperture.runtime.entries import daily_loss_room  # entries imports this module
+
+        room = daily_loss_room(self.engine, self.config, self.now())
+        if room is None:
+            return api.EntryBlock("daily_money_unknown",
+                                  "A trade closed today has fills without a known price.")
+        risk = self.config.risk
+        if room < risk.min_daily_room_usd:
+            return api.EntryBlock("daily_ceiling",
+                                  f"Daily loss ceiling {risk.max_daily_loss_usd} USD: less than "
+                                  f"{risk.min_daily_room_usd} USD of room left today.")
+        return None
 
     def _stop(self, trade: TradeRow, stops: list[OrderRow]) -> api.Stop:
         live = [s for s in stops if s.live]
@@ -331,7 +400,7 @@ class Service:
         for trade in self.engine.trades():
             orders = self.engine.orders(trade.trade_id)
             quantity = self.engine.expected_quantity(orders)
-            entry_price = _average([o for o in orders if o.leg is Leg.ENTRY])
+            entry_price = average_fill_price([o for o in orders if o.leg is Leg.ENTRY])
             if quantity <= 0 or entry_price is None:
                 continue
             stops = [o for o in orders if o.leg is Leg.STOP]
@@ -402,13 +471,13 @@ class Service:
             sleep(float(orders.detail_poll_seconds))
             due = monotonic() - last_reconcile >= float(orders.reconcile_interval_seconds)
             self._observe(reconcile=due)
-            if self.market is not None:
-                self.market.tick()  # after the engine's broker work of this pass
-            self._evaluate()
+            self._record_latency()
+            self._strategy_pass(monotonic)
             if due:
                 last_reconcile = monotonic()
         self.state = api.BotState.STOPPING
         self.write_status()
+        self.day_end.finish()
         clean = drain(self.engine, sleep=sleep, monotonic=monotonic)
         self.state = api.BotState.STOPPED
         self.write_status()

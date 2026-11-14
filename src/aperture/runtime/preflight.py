@@ -8,10 +8,15 @@ Checks, all reported, the first failure is the single cause:
    "no session today", which is not a failure;
 4. credential environment variables present: only their NAMES are checked and reported, values
    are never read beyond "set and non-empty";
+4b. the iMessage recipient variable (`[alerts] imessage_recipient_variable`) present, the same
+   way: it is personal data;
 5. broker token folder present;
 6. active strategy builds from its file and `[market_data] history_sessions` covers the prior
    sessions it needs. A failure here is reported but does not stop the bot from starting: the
-   bot then protects positions with entries off (`blocks_start`).
+   bot then protects positions with entries off (`blocks_start`);
+7. broker token usable: only when no earlier check blocks the start and today has a session,
+   the caller's `token_probe` creates or checks the Webull token, which may wait for the
+   owner's confirmation in the app (the probe alerts token-needs-confirmation before it waits).
 
 Exit codes: 0 ready, 1 failed, 2 config invalid, 3 no session today.
 """
@@ -29,7 +34,8 @@ from aperture import config as config_module
 from aperture.calendar import CalendarCause, CalendarRefused, SessionCalendar, ny_date_of
 from aperture.observers.errors import ObserverError
 from aperture.observers.loader import load_active
-from aperture.runtime.launchd import check_shutdown_deadlines
+from aperture.runtime.alerts import recipient_missing
+from aperture.runtime.launchd import check_timings
 
 STRATEGY_FILE = "strategy.toml"
 STRATEGIES_DIR = "strategies"
@@ -51,7 +57,9 @@ class PreflightCause(StrEnum):
     DISK_LOW = "disk-low"
     CALENDAR_UNKNOWN = "calendar-unknown"
     CREDENTIALS_MISSING = "credentials-missing"
+    ALERT_RECIPIENT_MISSING = "alert-recipient-missing"
     TOKEN_DIR_MISSING = "token-dir-missing"
+    TOKEN_UNUSABLE = "token-unusable"
     STRATEGY_REFUSED = "strategy-refused"
 
 
@@ -60,7 +68,9 @@ class CheckName(StrEnum):
     DISK = "disk"
     CALENDAR = "calendar"
     CREDENTIALS = "credentials"
+    ALERT_RECIPIENT = "alert-recipient"
     TOKEN_DIR = "token-dir"
+    TOKEN = "token"
     STRATEGY = "strategy"
 
 
@@ -122,6 +132,8 @@ class PreflightResult:
 
 
 DiskFree = Callable[[Path], int]
+# Makes the broker token usable; returns None, or the cause it is not usable.
+TokenProbe = Callable[[config_module.Config], str | None]
 
 
 def _disk_free(path: Path) -> int:
@@ -141,7 +153,7 @@ def _load_config(path: Path) -> tuple[config_module.Config | None, Check]:
             raise config_module.ConfigError(f"active strategy file missing: {strategy}")
         if config_module.uncommented_keys(strategy.read_text("utf-8")):
             raise config_module.ConfigError(f"{strategy} has keys without a comment")
-        check_shutdown_deadlines(cfg)
+        check_timings(cfg)
     except (OSError, UnicodeDecodeError, config_module.ConfigError) as exc:
         return None, Check(CheckName.CONFIG, False, str(exc), PreflightCause.CONFIG_INVALID)
     return cfg, Check(CheckName.CONFIG, True, f"{path} digest {cfg.digest[:12]}")
@@ -177,15 +189,31 @@ def _check_calendar(cfg: config_module.Config, now: datetime) -> tuple[Check, bo
                  f"{today} regular {day.regular_open:%H:%M}-{day.regular_close:%H:%M} ET"), True
 
 
+ENV_FILE_HINT = ("add one NAME='value' line per missing name to the env file the launchd jobs load "
+                 "(the --env-file given to render-launchd, e.g. ~/.config/aperture/env; create it "
+                 "with chmod 600, see docs/operations.md, One-time setup, step 2)")
+
+
 def _check_credentials(cfg: config_module.Config, environ: Mapping[str, str]) -> Check:
     env = cfg.environment
     names = (env.app_key_variable, env.app_secret_variable, env.account_variable)
     # Presence only: the value is compared with "" and never stored, printed or returned.
     missing = [name for name in names if not environ.get(name)]
     if missing:
-        return Check(CheckName.CREDENTIALS, False, "not set: " + ", ".join(missing),
+        return Check(CheckName.CREDENTIALS, False,
+                     "not set: " + ", ".join(missing) + "; " + ENV_FILE_HINT,
                      PreflightCause.CREDENTIALS_MISSING)
     return Check(CheckName.CREDENTIALS, True, "set: " + ", ".join(names))
+
+
+def _check_alert_recipient(cfg: config_module.Config, environ: Mapping[str, str]) -> Check:
+    # Presence only, like the credentials: the iMessage address is personal data.
+    missing = recipient_missing(cfg.alerts, environ)
+    if missing is not None:
+        return Check(CheckName.ALERT_RECIPIENT, False,
+                     f"not set: {missing} (your iMessage phone number or Apple ID email); "
+                     + ENV_FILE_HINT, PreflightCause.ALERT_RECIPIENT_MISSING)
+    return Check(CheckName.ALERT_RECIPIENT, True, f"set: {cfg.alerts.imessage_recipient_variable}")
 
 
 def _check_token_dir(cfg: config_module.Config) -> Check:
@@ -212,13 +240,21 @@ def run_preflight(
     now: datetime,
     environ: Mapping[str, str],
     disk_free: DiskFree = _disk_free,
+    token_probe: TokenProbe | None = None,
 ) -> PreflightResult:
-    """Run every check. `now` must be timezone-aware; `environ` is usually os.environ."""
+    """Run every check. `now` must be timezone-aware; `environ` is usually os.environ.
+    Without `token_probe` the token check is not run."""
     cfg, config_check = _load_config(config_path)
     if cfg is None:
         return PreflightResult((config_check,), session_today=False, environment=None, config=None)
     disk = _check_disk(cfg, disk_free)
     calendar, session_today = _check_calendar(cfg, now)
     checks = (config_check, disk, calendar, _check_credentials(cfg, environ),
-              _check_token_dir(cfg), _check_strategy(cfg))
+              _check_alert_recipient(cfg, environ), _check_token_dir(cfg), _check_strategy(cfg))
+    blocking = any(not c.passed and c.cause is not PreflightCause.STRATEGY_REFUSED
+                   for c in checks)
+    if token_probe is not None and session_today and not blocking:
+        cause = token_probe(cfg)
+        checks += (Check(CheckName.TOKEN, True, "usable") if cause is None else
+                   Check(CheckName.TOKEN, False, cause, PreflightCause.TOKEN_UNUSABLE),)
     return PreflightResult(checks, session_today, cfg.environment_name, cfg)

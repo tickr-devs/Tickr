@@ -14,7 +14,12 @@ from aperture.config import GateResult
 from aperture.engine.core import Engine, Fence, Leg
 from aperture.observers.log import DecisionLog
 from aperture.research.records import load_records
-from aperture.runtime.entries import EntryDesk, realized_loss_today, round_to_tick
+from aperture.runtime.entries import (
+    EntryDesk,
+    guard_entries,
+    realized_loss_today,
+    round_to_tick,
+)
 from aperture.store import Store
 from aperture.strategy.base import Check, Decision, Verdict
 from aperture.types import Quote
@@ -185,3 +190,154 @@ def test_record_failure_after_send_is_journaled_and_never_raises(tmp_path):
     assert len(desk.engine.trades()) == 1  # the entry went out; the loop goes on
     (row,) = desk.store.journal("decision-record-failed")
     assert row.body["error"] == "OSError" and row.body["admission"] == "taken"
+
+
+# --- working entries leave with their window (spec 9) ------------------------------------
+
+
+def opened(desk: Desk) -> str:
+    desk.decide(decision())
+    (trade,) = desk.engine.trades()
+    assert trade.entry_low_price == D("10.00") and trade.entry_limit_price == D("10.10")
+    return trade.trade_id
+
+
+def guard(desk: Desk, q: Quote | None, now: datetime = NOW) -> list[str]:
+    guard_entries(desk.engine, CFG, CALENDAR, lambda symbol: q, now)
+    return [r.body["cause"] for r in desk.store.journal("entry-cancel")]
+
+
+@pytest.mark.parametrize(("q", "cause"), [
+    (quote(ask="10.05"), None),                         # inside 10.00..10.10: rests
+    (quote(ask="10.10"), None),                         # at the limit: rests
+    (quote(ask="10.11"), "ask 10.11 above the limit 10.10"),
+    (quote(ask="9.99"), "ask 9.99 below the window 10.00"),
+    (quote(age_seconds=float(CFG.risk.max_quote_age_seconds) + 1), "quote stale"),
+    (quote(age_seconds=-(float(CFG.risk.max_clock_skew_seconds) + 1)), "quote from the future"),
+    (None, "no quote"),
+])
+def test_a_working_entry_is_cancelled_when_its_quote_leaves_the_window(tmp_path, q, cause):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    causes = guard(desk, q)
+    (entry,) = desk.engine.orders(trade_id)
+    if cause is None:
+        assert causes == [] and entry.cancel_state is None
+        assert desk.broker.orders[entry.client_order_id].state.value == "ACCEPTED"
+    else:
+        assert len(causes) == 1 and causes[0].startswith(cause)
+        assert entry.cancel_state == "sent"
+        desk.engine.step()
+        assert desk.engine.trades() == []  # closed: entry-not-filled
+
+
+def test_working_entries_are_cancelled_at_the_last_entry_time(tmp_path):
+    desk = Desk(tmp_path)
+    opened(desk)
+    last_entry = datetime(2026, 11, 16, 15, 45, tzinfo=NEW_YORK)
+    fresh = Quote("ABC", D("10.04"), D("10.05"), D(100), D(100), last_entry, last_entry)
+    assert guard(desk, fresh, last_entry - timedelta(seconds=1)) == []
+    (cause,) = guard(desk, fresh, last_entry)
+    assert cause.startswith("last entry time")
+
+
+def test_the_cancel_cause_is_journaled_once_and_stops_are_never_touched(tmp_path):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    (entry,) = desk.engine.orders(trade_id)
+    desk.broker.fill(entry.client_order_id, D(4), D("10.08"))  # partial fill: protect it
+    desk.engine.step()
+    desk.engine.step()
+    away = quote(ask="10.20")
+    guard(desk, away)
+    guard(desk, away)
+    assert len(desk.store.journal("entry-cancel")) == 1
+    stops = [o for o in desk.engine.orders(trade_id) if o.leg is Leg.STOP]
+    assert stops and all(s.cancel_state is None for s in stops)
+    desk.engine.step()
+    (trade,) = desk.engine.trades()  # the 4 shares stay a protected position
+    assert desk.engine.expected_quantity(desk.engine.orders(trade_id)) == D(4)
+    assert trade.trade_id == trade_id
+
+
+def test_an_entry_already_exiting_is_left_to_the_teardown(tmp_path):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    desk.engine.request_exit(trade_id, "operator-flatten")
+    assert guard(desk, None) == []
+
+
+def test_the_window_bottom_must_sit_between_the_stop_and_the_limit(tmp_path):
+    from aperture.engine.core import EntryRefused
+
+    desk = Desk(tmp_path)
+    with pytest.raises(EntryRefused):
+        desk.engine.open_trade("ABC", D(1), D("10.10"), D("9.75"), D("0.35"),
+                               entry_low_price=D("10.11"))
+    with pytest.raises(EntryRefused):
+        desk.engine.open_trade("ABC", D(1), D("10.10"), D("9.75"), D("0.35"),
+                               entry_low_price=D("9.75"))
+
+
+class Clock:
+    def __init__(self, at: datetime) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+def _round_trip(engine: Engine, broker: FakeBroker, clock: Clock, symbol: str,
+                opened: datetime, closed: datetime, exit_price: str) -> str:
+    """Open, fill and close one trade (10 shares bought at 10.05) through the fake broker."""
+    clock.at = opened
+    trade_id = engine.open_trade(symbol, D(10), D("10.10"), D("9.75"), D("3.50"))
+    broker.fill(engine.orders(trade_id)[0].client_order_id, D(10), D("10.05"))
+    for _ in range(3):
+        engine.step()
+    (stop,) = [o for o in engine.orders(trade_id) if o.leg is Leg.STOP and o.live]
+    clock.at = closed
+    broker.fill(stop.client_order_id, D(10), D(exit_price))
+    for _ in range(3):
+        engine.step()
+    assert not engine.trades(), "the trade should be closed"
+    return trade_id
+
+
+def test_cooldown_is_built_from_the_store_across_a_restart(tmp_path):
+    def at(day: int, hh: int, mm: int) -> datetime:
+        return datetime(2026, 11, day, hh, mm, tzinfo=NEW_YORK)
+
+    clock = Clock(at(13, 11, 0))
+    broker = FakeBroker()
+    path = tmp_path / "db.sqlite3"
+    store = Store.open(path, busy_timeout_seconds=0, now=clock)
+    engine = Engine(store, broker, CFG, "run00001", lambda: GateResult(True, "t"))
+    engine.recover()
+    # Yesterday (Friday) ABC lost: another New York day, no pause today.
+    _round_trip(engine, broker, clock, "ABC", at(13, 11, 0), at(13, 11, 5), "9.75")
+    # Today: ABC won at 10:10 (no pause), ABC lost at 10:41, XYZ won.
+    _round_trip(engine, broker, clock, "ABC", at(16, 10, 0), at(16, 10, 10), "10.50")
+    _round_trip(engine, broker, clock, "ABC", at(16, 10, 30), at(16, 10, 41), "9.75")
+    _round_trip(engine, broker, clock, "XYZ", at(16, 10, 45), at(16, 10, 50), "10.50")
+    store.close()
+
+    # Restart: a new store connection, engine and desk read the same database.
+    clock.at = at(16, 11, 0)
+    store = Store.open(path, busy_timeout_seconds=0, now=clock)
+    engine = Engine(store, broker, CFG, "run00002", lambda: GateResult(True, "t"))
+    engine.recover()
+    desk = EntryDesk(engine, CFG, calendar=CALENDAR, last_broker_read_at=clock,
+                     log=DecisionLog(tmp_path / "decisions"))
+    assert desk._inputs(decision(), quote(), clock.at).symbol_last_loss_at == at(16, 10, 41)
+    assert desk._inputs(decision(symbol="XYZ"), quote(), clock.at).symbol_last_loss_at is None
+
+    def decide(now: datetime):
+        clock.at = now
+        q = Quote("ABC", D("10.04"), D("10.05"), D(100), D(100), now, now)
+        return desk.on_decision(decision(), bar_start=now - timedelta(minutes=1), quote=q,
+                                now=now)
+
+    # The 30-minute pause after the 10:41 loss ends at 11:11 exactly.
+    assert decide(at(16, 11, 10)).refusal_cause.startswith("SYMBOL_COOLDOWN")
+    assert decide(at(16, 11, 11)).admission == "taken"

@@ -3,26 +3,54 @@ on:
   pull_request:
     paths:
       - "apps/macos/**"
+      - "apps/shared/**"
       - "tests/api/fixtures/**"
       - "src/aperture/api/schema/**"
+      - "Aperture.xcworkspace/**"
       - ".github/workflows/macos-app.yml"
+      - ".swiftlint.yml"
+      - "apps/scripts/**"
   push:
     branches: [main]
     paths:
       - "apps/macos/**"
+      - "apps/shared/**"
       - "tests/api/fixtures/**"
       - "src/aperture/api/schema/**"
+      - "Aperture.xcworkspace/**"
       - ".github/workflows/macos-app.yml"
+      - ".swiftlint.yml"
+      - "apps/scripts/**"
 jobs:
   build-and-test:
     runs-on: macos-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: apps/macos
     steps:
       - uses: actions/checkout@v4
+      # The owner builds with the newest Xcode; use the newest release (not beta or RC) this runner has.
+      - name: Select the newest installed Xcode
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app | grep -viE "beta|rc" | sort -V | tail -1)
+          sudo xcode-select -s "$newest"
+          xcodebuild -version
+      - name: Design-system checks (docs/design-system.md)
+        run: |
+          python3 apps/scripts/check_swift_literals.py
+          command -v swiftlint >/dev/null || brew install swiftlint
+          swiftlint version
+          swiftlint lint --strict --quiet --config .swiftlint.yml
       - run: swift --version
-      - run: swift build
-      - run: swift test
-      - run: scripts/make-app.sh
+      - name: Shared package (contract models, design) tests
+        working-directory: apps/shared
+        run: swift test
+      - name: macOS app build
+        working-directory: apps/macos
+        run: |
+          swift build
+          scripts/make-app.sh
+      - name: Xcode workspace builds the macOS app (what the owner opens in Xcode)
+        run: |
+          xcodebuild -version
+          xcodebuild -workspace Aperture.xcworkspace -scheme "Aperture macOS" \
+            -destination "platform=macOS" -derivedDataPath apps/macos/build/xcode \
+            CODE_SIGNING_ALLOWED=NO build

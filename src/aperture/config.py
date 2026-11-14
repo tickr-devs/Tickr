@@ -40,9 +40,12 @@ class RiskConfig:
     planned_loss_usd: Decimal
     position_notional_cap_usd: Decimal
     max_daily_loss_usd: Decimal
+    min_daily_room_usd: Decimal
     max_open_positions: int
     max_quote_age_seconds: Decimal
     max_clock_skew_seconds: Decimal
+    symbol_cooldown_after_loss_enabled: bool
+    symbol_cooldown_minutes_after_loss: int
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,7 @@ class SessionConfig:
     calendar_file: str
     last_entry_minutes_before_close: int
     flatten_minutes_before_close: int
+    flatten_grace_seconds: Decimal
     half_days_enabled: bool
 
 
@@ -65,7 +69,9 @@ class OrdersConfig:
     detail_reads_per_step: int
     cancel_retry_attempts: int
     cancel_retry_spacing_seconds: Decimal
+    cancel_not_sent_alert_seconds: Decimal
     max_unprotected_seconds: Decimal
+    max_exit_seconds: Decimal
     shutdown_deadline_seconds: Decimal
     reconcile_interval_seconds: Decimal
     broker_read_max_age_seconds: Decimal
@@ -82,6 +88,8 @@ class ProbeConfig:
     window_end: str
     entry_wait_seconds: int
     hold_seconds: int
+    replace_max_move_usd: Decimal
+    replace_observe_seconds: int
 
 
 @dataclass(frozen=True)
@@ -160,6 +168,13 @@ class RuntimeConfig:
     preflight_start_local: str
     bot_start_local: str
     launch_weekdays: tuple[int, ...]
+    watchdog_start_local: str
+    watchdog_after_flatten_seconds: int
+    watchdog_before_close_seconds: int
+    watchdog_bot_check_seconds: int
+    watchdog_status_stale_seconds: int
+    watchdog_journal_file: str
+    evaluation_budget_seconds: Decimal
 
 
 @dataclass(frozen=True)
@@ -167,6 +182,7 @@ class AlertsConfig:
     dedupe_window_seconds: Decimal
     notification_timeout_seconds: Decimal
     fence_alert_after_seconds: Decimal
+    imessage_recipient_variable: str
 
 
 @dataclass(frozen=True)
@@ -338,6 +354,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             "[market_data] candidate_subscriptions must leave stream_reserved_symbols free "
             "within stream_max_symbols"
         )
+    risk: RiskConfig = built["risk"]
+    if risk.symbol_cooldown_minutes_after_loss < 1:
+        raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
+                          "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
+    if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
+        raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")

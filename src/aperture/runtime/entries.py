@@ -10,7 +10,7 @@ decision file as the observers (`observers.log.DecisionLog`), so skipped signals
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
 
 from aperture.calendar import (
@@ -21,7 +21,7 @@ from aperture.calendar import (
     SessionCalendar,
 )
 from aperture.config import Config, trading_gate
-from aperture.engine.core import Engine, EntryRefused, Fence, Leg
+from aperture.engine.core import Engine, EntryRefused, Fence, Leg, TradeRow
 from aperture.observers.log import DecisionLog
 from aperture.research.records import Admission as RecordAdmission
 from aperture.research.records import DecisionRecord
@@ -49,6 +49,53 @@ def round_to_tick(price: Decimal) -> Decimal:
     return price.quantize(tick, rounding=ROUND_DOWN)
 
 
+def entry_cancel_cause(trade: TradeRow, quote: Quote | None, now: datetime,
+                       last_entry: datetime | None, config: Config) -> str | None:
+    """Why a working entry must be cancelled now (spec 9), or None to let it rest. The window
+    is the one admission checked: entry_low <= ask <= limit, with the same freshness rules.
+    `last_entry` None means the calendar cannot say: cancel."""
+    if last_entry is None:
+        return "no trading session known"
+    if now >= last_entry:
+        return f"last entry time {last_entry.isoformat()}"
+    if quote is None:
+        return "no quote"
+    age = now - quote.provider_time
+    if age > timedelta(seconds=float(config.risk.max_quote_age_seconds)):
+        return f"quote stale ({age.total_seconds()} s)"
+    if -age > timedelta(seconds=float(config.risk.max_clock_skew_seconds)):
+        return f"quote from the future ({(-age).total_seconds()} s ahead)"
+    if quote.ask > trade.entry_limit_price:
+        return f"ask {quote.ask} above the limit {trade.entry_limit_price}"
+    if trade.entry_low_price is not None and quote.ask < trade.entry_low_price:
+        return f"ask {quote.ask} below the window {trade.entry_low_price}"
+    return None
+
+
+def guard_entries(engine: Engine, config: Config, calendar: SessionCalendar | None,
+                  latest: Callable[[str], Quote | None], now: datetime) -> None:
+    """Once per loop pass: cancel every working entry whose quote left the price window or
+    went stale, and all of them at the last-entry time. Never re-priced (spec 9)."""
+    last_entry: datetime | None = None
+    if calendar is not None:
+        try:
+            times = calendar.day_at(now).session_times(
+                config.session.last_entry_minutes_before_close,
+                config.session.flatten_minutes_before_close)
+            last_entry = times.last_entry
+        except CalendarRefused:
+            last_entry = None
+    for trade in engine.trades():
+        if trade.exit_requested is not None:
+            continue  # the exit teardown cancels the entry itself
+        orders = engine.orders(trade.trade_id)
+        if not any(o.leg is Leg.ENTRY and o.live for o in orders):
+            continue
+        cause = entry_cancel_cause(trade, latest(trade.symbol), now, last_entry, config)
+        if cause is not None:
+            engine.cancel_entry(trade.trade_id, cause)
+
+
 def realized_loss_today(engine: Engine, now: datetime) -> Decimal | None:
     """Today's net realized loss as a non-negative amount: wins offset losses (owner
     decision 2026-11-14); None if a trade closed today has fills whose prices are unknown."""
@@ -62,6 +109,33 @@ def realized_loss_today(engine: Engine, now: datetime) -> Decimal | None:
                 return None
     net = sum((t.result_gross_usd for t in trades_today(engine, now)), ZERO)
     return max(-net, ZERO)
+
+
+def daily_loss_room(engine: Engine, config: Config, now: datetime) -> Decimal | None:
+    """Room the daily loss ceiling leaves for one new trade's planned loss: ceiling minus
+    today's net realized loss minus open reservations (spec 7, check 6); may be negative.
+    None when today's money is unknown."""
+    loss = realized_loss_today(engine, now)
+    if loss is None:
+        return None
+    reserved = sum((t.planned_loss_usd for t in engine.trades()), ZERO)
+    return config.risk.max_daily_loss_usd - loss - reserved
+
+
+def last_loss_at(engine: Engine, symbol: str, now: datetime) -> datetime | None:
+    """Close time of the latest trade in `symbol` closed today (New York date) at a loss; a
+    closed trade with fills whose prices are unknown counts as a loss (the stricter answer)."""
+    closes = [t.closed_at for t in trades_today(engine, now)
+              if t.symbol == symbol and t.result_gross_usd < 0]
+    today = now.astimezone(NEW_YORK).date()
+    for row in engine.store.query("SELECT trade_id, closed_at FROM trades "
+                                  "WHERE closed_at IS NOT NULL AND symbol = ?", (symbol,)):
+        closed = datetime.fromisoformat(row["closed_at"])
+        if closed.astimezone(NEW_YORK).date() == today and any(
+                o.filled_quantity > 0 and o.average_fill_price is None
+                for o in engine.orders(row["trade_id"])):
+            closes.append(closed)
+    return max(closes, default=None)
 
 
 class EntryDesk:
@@ -118,6 +192,7 @@ class EntryDesk:
             own_open_positions=own_positions,
             own_working_orders=working,
             open_positions=own_positions + foreign_positions,
+            symbol_last_loss_at=last_loss_at(engine, decision.symbol, now),
             decision=decision,
             limit_price=limit,
             stop_price=stop,
@@ -147,7 +222,8 @@ class EntryDesk:
                 try:
                     self.engine.open_trade(decision.symbol, decision.quantity,
                                            inputs.limit_price, inputs.stop_price,
-                                           result.planned_loss_usd)
+                                           result.planned_loss_usd,
+                                           entry_low_price=decision.entry_low)
                     admission = RecordAdmission.TAKEN
                 except EntryRefused as exc:
                     admission, cause = RecordAdmission.REFUSED, f"ENGINE_REFUSED: {exc.cause}"
@@ -155,7 +231,19 @@ class EntryDesk:
             for trade in self.engine.trades():
                 if trade.symbol == decision.symbol and not trade.exit_requested:
                     self.engine.request_exit(trade.trade_id, "strategy-exit")
-        record = DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission, cause)
+        return self._write(DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission,
+                                          cause))
+
+    def record_late(self, decision: Decision, *, bar_start: datetime,
+                    now: datetime) -> DecisionRecord:
+        """Record a decision made late on a minute put aside for protection (runtime
+        evaluation): never admitted or acted on, so an ENTER is `not_evaluated`."""
+        admission = (RecordAdmission.NOT_EVALUATED if decision.verdict is Verdict.ENTER
+                     else RecordAdmission.NOT_APPLICABLE)
+        return self._write(DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission))
+
+    def _write(self, record: DecisionRecord) -> DecisionRecord:
+        decision, admission = record.decision, record.admission
         try:
             self.log.append(record)
         except (OSError, ValueError) as exc:

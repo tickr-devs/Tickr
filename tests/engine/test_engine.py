@@ -608,3 +608,118 @@ def test_lost_fill_rechecks_share_the_detail_budget(store):
     b.holdings["ABC"] = Position("ABC", D(2), D(10))
     run(e, 4)
     assert has(e, Fence.RESURRECTED)
+
+
+def _stop_refused_store(store, close: str, pass_seconds: float):
+    """Entry fills, every stop is refused, passes `pass_seconds` apart; the close is scripted."""
+    retries = CFG.orders.stop_retry_attempts
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e, "2")
+    b.fill(legs(e, t, Leg.ENTRY)[0].client_order_id, D(2), D(10))
+    b.script(*["refuse"] * (retries + 1), close)
+    for _ in range(int(float(CFG.orders.max_unprotected_seconds) / pass_seconds) + retries + 4):
+        e.clock.now += pass_seconds
+        e.step()
+    return b, e, t
+
+
+@pytest.mark.parametrize("pass_seconds", [POLL, 11.0])
+def test_unprotected_timeout_text_says_exiting_when_the_close_is_being_sent(store,
+                                                                            pass_seconds):
+    b, e, t = _stop_refused_store(store, "ack", pass_seconds)
+    text = e.fences().get(f"{Fence.UNPROTECTED_TIMEOUT}:{t}")
+    if pass_seconds > POLL:  # slow passes: the timeout comes in the pass that asks to exit
+        assert text is not None
+    if text is not None:
+        assert "exiting" in text and "Webull app" not in text
+    assert [o.order_type for o in b.sent].count(OrderType.MARKET) == 1
+
+
+def test_unprotected_timeout_text_sends_the_operator_to_the_app_when_the_close_was_refused(
+        store):
+    b, e, t = _stop_refused_store(store, "refuse", POLL)
+    assert "NO broker stop" in e.fences()[f"{Fence.EXIT_REFUSED}:{t}"]
+    text = e.fences()[f"{Fence.UNPROTECTED_TIMEOUT}:{t}"]
+    assert "closing order was refused" in text and "exiting" not in text
+
+
+def test_rate_limited_cancels_do_not_use_up_the_cancel_attempts(store):
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e)
+    limited = [0]
+
+    def budget(cid):
+        if limited[0] < CFG.orders.cancel_retry_attempts + 3:
+            limited[0] += 1
+            raise RateLimited("429")
+        FakeBroker.cancel(b, cid)
+
+    b.cancel = budget
+    for _ in range(CFG.orders.cancel_retry_attempts + 3):
+        e.cancel_entry(t, "test")
+        run(e)
+    assert not has(e, Fence.CANCEL_FAILED)
+    assert legs(e, t, Leg.ENTRY)[0].cancel_attempts == 0  # none reached the broker
+    e.cancel_entry(t, "test")  # the budget is back: the cancel goes out
+    run(e, 2)
+    assert e.trade(t).state is TradeState.CLOSED
+
+
+def test_a_cancel_that_never_leaves_alerts_the_operator_then_clears(store):
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e)
+    blocked = [True]
+
+    def budget(cid):
+        if blocked[0]:
+            raise RateLimited("429")
+        FakeBroker.cancel(b, cid)
+
+    b.cancel = budget
+    e.cancel_entry(t, "test")
+    wait, start = float(CFG.orders.cancel_not_sent_alert_seconds), e.clock.now
+    while e.clock.now - start < wait - POLL:  # the entry guard asks again every pass
+        run(e)
+        e.cancel_entry(t, "test")
+        assert not has(e, Fence.CANCEL_NOT_SENT)  # a short burst stays quiet
+    for _ in range(2):
+        run(e)
+        e.cancel_entry(t, "test")
+    assert has(e, Fence.CANCEL_NOT_SENT)  # entries stop, the operator is told
+    blocked[0] = False  # the budget is back: the cancel leaves and the fence clears
+    e.cancel_entry(t, "test")
+    assert not has(e, Fence.CANCEL_NOT_SENT)
+    run(e, 2)
+    assert not has(e, Fence.CANCEL_NOT_SENT)
+    assert e.trade(t).state is TradeState.CLOSED
+
+
+def test_an_entry_that_will_not_cancel_does_not_block_closing_its_filled_shares(store):
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e, "4")
+    entry = legs(e, t, Leg.ENTRY)[0].client_order_id
+    b.fill(entry, D(2), D(10))  # partial fill
+    run(e, 3)
+    # The broker takes the entry's cancels but the entry keeps working; stops cancel normally.
+    b.cancel = lambda cid: None if cid == entry else FakeBroker.cancel(b, cid)
+    e.request_exit(t, "session-flatten")
+    run(e, 60)
+    assert has(e, Fence.CANCEL_FAILED)
+    (close,) = legs(e, t, Leg.EXIT)
+    assert close.quantity == D(2) and close.order_type is OrderType.MARKET
+    b.fill(close.client_order_id, D(2), D(10))
+    run(e, 2)
+    assert e.expected_quantity(e.orders(t)) == 0
+    assert_single_sends(b)
+
+
+def test_trade_opened_journal_carries_the_window_bottom(store):
+    e = make(store, FakeBroker())
+    t = e.open_trade("ABC", D(1), D("10.00"), D("9.80"), D("0.2"),
+                     entry_low_price=D("9.95"))
+    (row,) = store.journal("trade-opened", t)
+    assert row.body["entry_low_price"] == "9.95"

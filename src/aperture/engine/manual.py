@@ -97,34 +97,41 @@ def flatten_deadline(config: Config, calendar: SessionCalendar, now: datetime) -
     return now if now >= times.flatten else times.flatten
 
 
+# A close the engine will not send again until the operator clears the fence.
+CLOSE_WAITS = (Fence.EXIT_REFUSED, Fence.EXIT_NOT_FILLED)
+
+
 def run_until_closed(engine: Engine, *, sleep: Callable[[float], None],
                      monotonic: Callable[[], float], now: Callable[[], datetime],
                      flatten_at: datetime | None, interrupted: Callable[[], bool],
                      hold_seconds: float | None,
                      notify: Callable[[str], None] = lambda _line: None) -> list[str]:
     """Step (and reconcile every reconcile_interval_seconds) until no trade is open, or every
-    open trade is waiting for the operator (its closing order was refused: the engine has put
-    the stop back). Returns the ids of trades left open for the operator.
+    open trade is waiting for the operator (its closing order was refused, or did not fill in
+    `max_exit_seconds` and ended: the engine has put the stop back). Returns the ids of
+    trades left open for the operator.
     `hold_seconds=None` never asks for an exit on its own (except entry timeout, flatten and
-    interrupt). Each newly set operator fence is passed to `notify` once, so a trade the
-    engine can neither protect nor close never waits silently."""
+    interrupt). Each newly set operator fence, and each new `stop-held` cause, is passed to
+    `notify` once, so a trade the engine can neither protect nor close never waits silently."""
     config = engine.config
     poll = float(config.orders.detail_poll_seconds)
     started = monotonic()
     last_reconcile = started
     protected_since: dict[str, float] = {}
-    notified: set[str] = set()
+    notified: set[tuple[str, str]] = set()
     while True:
         trades = engine.trades()
         if not trades:
             return []
         fences = engine.fences()
         for name, cause in sorted(fences.items()):
-            if name.partition(":")[0] in OPERATOR_FENCES and name not in notified:
-                notified.add(name)
+            shown = name.partition(":")[0] in OPERATOR_FENCES or name.startswith(
+                f"{Fence.STOP_HELD}:")
+            if shown and (name, cause) not in notified:
+                notified.add((name, cause))
                 notify(f"needs the operator: {name}: {cause}")
         waiting = [t.trade_id for t in trades
-                   if f"{Fence.EXIT_REFUSED}:{t.trade_id}" in fences
+                   if any(f"{f}:{t.trade_id}" in fences for f in CLOSE_WAITS)
                    and f"{Fence.UNPROTECTED}:{t.trade_id}" not in fences]
         if len(waiting) == len(trades):
             return waiting

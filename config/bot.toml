@@ -23,14 +23,25 @@ observers = []
 planned_loss_usd = 50
 # Maximum notional per position in USD (owner 2026-10-31); read by safety.
 position_notional_cap_usd = 2500
-# Daily loss ceiling in USD, gross: realized loss + open reservations + new planned loss (owner 2026-11-14); read by safety.
+# Daily loss ceiling in USD: today's NET realized loss (wins offset losses) + open reservations + new planned loss (owner 2026-11-14); read by safety.
 max_daily_loss_usd = 300
+# Smallest daily-loss room a new trade is sized into, USD: near the ceiling a trade is sized down to the room left
+# (owner 2026-11-14), but below this room entries stop and status says "daily ceiling" (a smaller trade is not worth
+# its costs; owner confirmed 2026-11-14); read by runtime.entries (strategy loss budget and status).
+min_daily_room_usd = 10
 # Maximum simultaneous open positions (v1 supports 1); read by safety.
 max_open_positions = 1
 # Maximum quote age for any decision, seconds, end to end from provider time (owner 2026-10-15); read by safety and strategy input.
 max_quote_age_seconds = 5
 # Allowed lead of the provider clock over ours, seconds: a quote time up to this far ahead counts as age 0, further ahead = refuse; read by safety.
+# Also the lead a bot status file's written_at may have over the watchdog's clock reading; read by runtime.watchdog.
 max_clock_skew_seconds = 1
+# Per-symbol pause after a loss (spec section 7, check 4; owner 2026-11-14): true = after a trade
+# in a symbol closes at a loss today (New York date), no new entry in that symbol for the minutes
+# below; false = off (the minutes are then not read but must still be at least 1); read by safety.
+symbol_cooldown_after_loss_enabled = true
+# Pause length in minutes from the losing trade's close; an entry exactly at the end is allowed (owner 2026-11-14); read by safety.
+symbol_cooldown_minutes_after_loss = 30
 
 [session]
 # Market time zone for all session times; read by the calendar and the scheduler.
@@ -41,6 +52,9 @@ calendar_file = "config/calendar/us-equity-2026.json"
 last_entry_minutes_before_close = 15
 # All positions closed this many minutes before the regular close (15:55 ET on a normal day); read by runtime.
 flatten_minutes_before_close = 5
+# Seconds after the flatten time before broker reads must show nothing of ours left (alert not-flat-after-flatten,
+# day-end record); keep it above [orders] reconcile_interval_seconds; read by runtime.dayend.
+flatten_grace_seconds = 120
 # Trade on half days: false = no trading on half days; read by safety.
 half_days_enabled = false
 
@@ -63,12 +77,19 @@ detail_reads_per_step = 1
 cancel_retry_attempts = 2
 # Seconds after a cancel before a Detail read showing the order still working counts as "cancel did not take"; read by the engine.
 cancel_retry_spacing_seconds = 6
+# Seconds a needed cancel may keep being refused by our request budget (nothing sent) before an operator alert and an entry fence; read by the engine.
+cancel_not_sent_alert_seconds = 30
 # Seconds a position may lack a verified broker stop before the engine closes it; read by the engine.
 max_unprotected_seconds = 30
+# Seconds after a closing order's send attempt before, still not filled, it sets the
+# exit-not-filled operator fence and alert (nothing is resent); read by the engine.
+max_exit_seconds = 30
 # Seconds a SIGTERM shutdown may spend cancelling entries and protecting fills before it gives
 # up with an alert (below the supervisor's 90 s alert and launchd's 120 s cap); read by the engine loop.
 shutdown_deadline_seconds = 60
-# Seconds between reconciliation passes (positions + open orders); read by runtime.
+# Seconds between reconciliation passes (positions + open orders); read by runtime. Also the
+# least spacing of the engine's own open-orders reads while a stop is held after an unresolved
+# replace (engine._replace_blocks).
 reconcile_interval_seconds = 10
 # Maximum age in seconds of the last broker read before entries are blocked; read by safety.
 broker_read_max_age_seconds = 30
@@ -93,6 +114,10 @@ window_end = "15:30"
 entry_wait_seconds = 60
 # Seconds to hold a protected probe position before closing it; read by the probe command.
 hold_seconds = 60
+# Largest stop tightening in one probe-replace-stop, USD per share (new stop minus current stop); read by the probe-replace-stop command.
+replace_max_move_usd = 0.50
+# Seconds Detail of the stop is polled after a probe-replace-stop request, one read per detail_poll_seconds; read by the probe-replace-stop command.
+replace_observe_seconds = 15
 
 [api]
 # Local API bind address; loopback only; read by the api server.
@@ -245,6 +270,26 @@ preflight_start_local = "08:30"
 bot_start_local = "09:00"
 # launchd weekdays for the preflight and bot jobs (1 = Monday ... 5 = Friday); the calendar still decides; read by runtime.launchd.
 launch_weekdays = [1, 2, 3, 4, 5]
+# Watchdog job start, Mac local time HH:MM, same weekdays; it then waits for its calendar-derived checks; read by runtime.launchd.
+watchdog_start_local = "09:05"
+# First watchdog broker check this many seconds after the flatten time (15:57:30 ET on a normal day); must be above
+# [session] flatten_grace_seconds so the bot's own day-end check comes first; read by runtime.watchdog.
+watchdog_after_flatten_seconds = 150
+# Last watchdog broker check this many seconds before the regular close (15:59 ET on a normal day); read by runtime.watchdog.
+watchdog_before_close_seconds = 60
+# Seconds between watchdog checks, during the regular session, that the bot runs whenever the database shows an open trade;
+# read by runtime.watchdog.
+watchdog_bot_check_seconds = 60
+# The bot counts as running only while its status file (written every loop pass, about every [orders] detail_poll_seconds)
+# is at most this many seconds old AND its lock records a live pid; must be above detail_poll_seconds and
+# reconcile_interval_seconds; read by runtime.watchdog.
+watchdog_status_stale_seconds = 60
+# Watchdog journal (JSON lines: checks and alerts), relative to data_dir; never the bot's database; read by runtime.watchdog.
+watchdog_journal_file = "watchdog.jsonl"
+# Seconds one loop pass may spend on market upkeep, discovery and the strategy before an
+# evaluation-slow journal row (the next Detail read waits for it; keep it near
+# [orders] detail_poll_seconds); read by runtime.service.
+evaluation_budget_seconds = 3
 
 [alerts]
 # Same alert (kind + text) repeated within this many seconds is not shown again (still returned for the journal); read by runtime.alerts.
@@ -254,6 +299,9 @@ notification_timeout_seconds = 5
 # Seconds a self-clearing fence (broker read failed, unknown order, foreign exposure, ...) must last before the bot alerts;
 # fences that need the operator alert at once; read by runtime.watch.
 fence_alert_after_seconds = 30
+# NAME of the environment variable holding the owner's iMessage address (phone number or Apple ID email); the value is
+# personal data, set only in the owner's env file, never here; presence checked by preflight; read by runtime.alerts.
+imessage_recipient_variable = "APERTURE_IMESSAGE_TO"
 
 [environments.sandbox]
 # May this process send trading requests in this environment; read by the trading gate.
@@ -341,4 +389,4 @@ token_check_interval_seconds = 5
 # Maximum pages read when listing open orders; more pages = refuse as incomplete; read by the broker adapter.
 open_orders_max_pages = 20
 # Route-specific limits "<route path>" = [requests, window seconds] (docs, unverified; never assume the looser value); read by the request budget.
-route_limits = { "/trading/accounts/list" = [10, 30], "/trading/orders/get" = [2, 2], "/trading/orders/open-orders/list" = [2, 2], "/trading/assets/positions/list" = [2, 2], "/trading/orders/place" = [600, 60], "/trading/orders/cancel" = [600, 60] }
+route_limits = { "/trading/accounts/list" = [10, 30], "/trading/orders/get" = [2, 2], "/trading/orders/open-orders/list" = [2, 2], "/trading/assets/positions/list" = [2, 2], "/trading/orders/place" = [600, 60], "/trading/orders/cancel" = [600, 60], "/trading/orders/replace" = [600, 60] }

@@ -1,20 +1,33 @@
 // swift-tools-version:5.9
-// Aperture operator app. ApertureKit (contract models + API client) and ApertureUI (SwiftUI views)
-// are platform-neutral so an iOS target can reuse them; ApertureMac is the macOS app shell.
+// Aperture operator app for macOS, buildable without Xcode (`swift build`, scripts/make-app.sh).
+// In Xcode open Aperture.xcworkspace at the repository root instead: ApertureMac.xcodeproj builds
+// the same sources (folder Aperture/) as a signed app. Contract models, API client and design
+// pieces come from the shared package in apps/shared (also used by the iOS app in apps/ios).
 import PackageDescription
 
 let package = Package(
     name: "ApertureApp",
-    platforms: [.macOS(.v13), .iOS(.v16)],
+    platforms: [.macOS(.v14)],
     products: [
-        .library(name: "ApertureKit", targets: ["ApertureKit"]),
-        .library(name: "ApertureUI", targets: ["ApertureUI"]),
         .executable(name: "ApertureMac", targets: ["ApertureMac"]),
     ],
+    dependencies: [
+        .package(name: "ApertureShared", path: "../shared"),
+    ],
     targets: [
-        .target(name: "ApertureKit"),
-        .target(name: "ApertureUI", dependencies: ["ApertureKit"]),
-        .executableTarget(name: "ApertureMac", dependencies: ["ApertureKit", "ApertureUI"]),
-        .testTarget(name: "ApertureKitTests", dependencies: ["ApertureKit"]),
+        .executableTarget(
+            name: "ApertureMac",
+            dependencies: [
+                .product(name: "ApertureKit", package: "ApertureShared"),
+                .product(name: "ApertureDesign", package: "ApertureShared"),
+            ],
+            path: "Aperture",
+            // The same language settings as the Xcode project (SWIFT_APPROACHABLE_CONCURRENCY and
+            // SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY), so both builds compile alike.
+            swiftSettings: [
+                .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+                .enableUpcomingFeature("InferIsolatedConformances"),
+                .enableUpcomingFeature("MemberImportVisibility"),
+            ]),
     ]
 )

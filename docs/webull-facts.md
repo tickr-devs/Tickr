@@ -27,7 +27,7 @@ A fact marked UNPROVEN must not be relied on by trading code until a probe prove
 |---|---|---|
 | Place | POST `/trading/orders/place` | `account_id`, `new_orders[]` |
 | Preview | POST `/trading/orders/preview` | same body as place |
-| Replace | POST `/trading/orders/replace` | behaviour UNPROVEN |
+| Replace | POST `/trading/orders/replace` | `account_id`, `modify_orders[]`; behaviour UNPROVEN (F5 below) |
 | Cancel | POST `/trading/orders/cancel` | by `client_order_id` |
 | Detail | GET `/trading/orders/get` | by `client_order_id` |
 | Open orders | GET `/trading/orders/open-orders/list` | empty account returns `{"data": []}` (probe) |
@@ -146,6 +146,22 @@ So the 100-symbol cap is on the current subscribed set per session, not on total
 Fixture: `tests/fixtures/webull/market_data/streaming_subscribe_slot_reuse.json`.
 - **How Aperture uses it:** `StreamSession` counts the current desired set against `stream_max_symbols` and sends unsubscribes before subscribes, so candidates rotate on one connection. The reconnect on a provider 417 under our cap stays only as a fallback.
 
+## F5 — replace (SDK reading 2026-11-14; NOT probed yet)
+
+What the SDK 3.0.3 source says (`trade/v3/order_operation_v3.py` `replace_order`, `trade/request/v3/replace_order_request.py`, `samples/trade/trade_client_v3.py`):
+- `POST /trading/orders/replace` (v3), body `{account_id, modify_orders: [...]}`, optional `client_combo_order_id`. No `category` header (unlike place).
+- Each `modify_orders[]` element names the order by its EXISTING `client_order_id`; the request has no field for a new id. Samples always send `quantity` with the new price (`limit_price`; by analogy `stop_price` for a stop). After a replace the samples cancel by the same `client_order_id`.
+- Docs (unverified): Production limit for place/replace/cancel 600 per 60 s; Sandbox 30 per 60 s per route.
+
+UNPROVEN, to be answered by the Monday probe (`aperture probe-replace-stop`, docs/manual-trade.md):
+- whether a replaced STOP_LOSS keeps its `client_order_id` and `order_id`, or Webull creates a new order (and which status the old one then shows: CANCELLED, a REPLACED-like status outside our vocabulary, or none);
+- the success body (does it echo `client_order_id` / `order_id`?) and the error codes of a refused replace; until a refusal code is proven, every non-success answer except "order not present" is treated as OutcomeUnknown;
+- whether `quantity` is required (we send the unchanged quantity) and whether Detail rows show `stop_price` under that name (read as optional; `limit_price` is the recorded analogue);
+- the status sequence during a replace (a pending-replace status would map to UNKNOWN and fence entries);
+- whether the stop stays working throughout (no unprotected gap).
+
+How Aperture uses it now: only the manual `probe-replace-stop` command. Trading code does not replace orders until this section records a probe.
+
 ## Known SDK defects (3.0.3)
 - KD-1: streaming `SnapshotResult.close` is filled from `open`. Never use it.
 - KD-2: tick request docstring/default disagree. Use measured limits only.
@@ -156,6 +172,10 @@ Fixture: `tests/fixtures/webull/market_data/streaming_subscribe_slot_reuse.json`
 
 ## Calendar
 - `/trade/calendar` works only on Production (read-only, the single allowed Production call). We keep `config/calendar/us-equity-<year>.json` with standard hours and exceptions (half days 2026-11-27 and 2026-12-24 close RTH at 13:00, POST at 17:00), cross-checked daily. Unknown or contradictory day = no trading. Next year's exceptions must be added before 1 December.
+
+## Two processes, one token (UNPROVEN)
+- UNPROVEN: the bot (`aperture run`) and the watchdog (`python -m aperture.runtime watchdog`) are two processes with the same App Key and the same token folder (`[environments.*] token_dir`), each with its own SDK client, running at the same time. In Production (token checking on) one process may create, refresh or replace the token and so invalidate or disturb the other's token, or put a new token into PENDING that waits for the owner in the Webull app. Sandbox reports token checking disabled (see above), so Sandbox cannot prove or disprove this.
+- Check before Production (owner, on the Mac, Production read-only, market closed is fine): with a NORMAL token, start a read-only process that holds the SDK client and reads positions every 30 s (`aperture status`-style reads, or the bot with the trading gate closed); while it runs, start `python -m aperture.runtime watchdog` (or a one-off read in a second process) twice; then confirm (1) neither process logs a token error or a PENDING wait, (2) the token file in `token_dir` is not rewritten (compare modification time and size before and after; never print its content), (3) the first process's reads keep succeeding for 10 minutes afterwards. If any fails, give the watchdog its own token folder or App Key before Production.
 
 ## Open broker questions (to prove by probe)
 F1 a Sandbox order fills, Detail shape of a fill and fees; F2 STOP_LOSS SELL accepted and visible in RTH; F3 stop triggers and fills; F4 cancel of a working stop, cancel-vs-fill race; F5 replace of a stop; F6 MARKET SELL in RTH; F7 stops in PRE/POST; F9 non-empty positions/open-orders/balance shapes; F10 DAY expiry status; OTO entry+stop combo; real-time vs delayed Sandbox quotes; a closing SELL while a stop reserves the shares; a raw bars body and a snapshot during the regular session (M1/M2 above were probed on a closed market); L1 stream: a 417 at the boundary after slot reuse (101st symbol after a rotation); during RTH (M3 second half): a recorded quote frame (is bids[0]/asks[0] the best level, how many levels arrive), do quotes flow for all 100 symbols, notice 1002, resubscribe after a forced reconnect.
