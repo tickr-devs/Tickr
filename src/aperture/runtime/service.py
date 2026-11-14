@@ -21,6 +21,8 @@ from aperture.config import Config, trading_gate
 from aperture.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeRow
 from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
+from aperture.runtime.alerts import AlertKind
+from aperture.runtime.watch import Watch
 
 STRATEGIES_DIR = "strategies"
 STRATEGY_FILE = "strategy.toml"
@@ -99,8 +101,9 @@ def trades_today(engine: Engine, now: datetime) -> tuple[api.Trade, ...]:
 class Service:
     def __init__(self, engine: Engine, *, now: Callable[[], datetime],
                  calendar: SessionCalendar | None, strategy: api.StrategyId,
-                 paths: ServicePaths) -> None:
+                 paths: ServicePaths, watch: Watch | None = None) -> None:
         self.engine = engine
+        self.watch = watch
         self.config = engine.config
         self.now = now
         self.calendar = calendar
@@ -299,6 +302,9 @@ class Service:
             self.process_commands()
             self.flatten_due()
             self.write_status()
+            if self.watch is not None:
+                self.watch.check()
+                self.watch.backup_daily()
             sleep(float(orders.detail_poll_seconds))
             due = monotonic() - last_reconcile >= float(orders.reconcile_interval_seconds)
             self._observe(reconcile=due)
@@ -309,4 +315,8 @@ class Service:
         clean = drain(self.engine, sleep=sleep, monotonic=monotonic)
         self.state = api.BotState.STOPPED
         self.write_status()
+        if not clean and self.watch is not None:
+            pending = self.engine.store.journal("shutdown-deadline")[-1].body["pending"]
+            self.watch.alert(AlertKind.BOT_DID_NOT_STOP,
+                             "shutdown deadline passed with work pending: " + "; ".join(pending))
         return clean

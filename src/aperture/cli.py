@@ -75,6 +75,13 @@ def _webull_broker(cfg: config_module.Config) -> Broker:
     return broker_from_config(cfg)
 
 
+def _default_notifier(alerts: config_module.AlertsConfig) -> Any:
+    from aperture.runtime.alerts import default_notifier
+    return default_notifier(alerts)
+
+
+# Replaced in tests: the notifier `aperture run` alerts through (None = journal only).
+NOTIFIER: Callable[[config_module.AlertsConfig], Any] = _default_notifier
 # Replaced in tests with a FakeBroker factory.
 BROKER_FACTORY: Callable[[config_module.Config], Broker] = _webull_broker
 NOW: Callable[[], datetime] = lambda: datetime.now(UTC)  # noqa: E731
@@ -201,7 +208,9 @@ def _run(path: Path) -> int:
     """The launchd bot job (via `aperture.runtime run-bot`): run until SIGTERM, then drain.
     Exit 0 after a clean drain, 5 when the drain hit its deadline."""
     from aperture.runtime import service
+    from aperture.runtime.alerts import Alerter
     from aperture.runtime.signals import StopRequest, install_stop_handler, restore_handlers
+    from aperture.runtime.watch import Watch
 
     cfg = config_module.load(path)
     strategy = service.strategy_id(cfg)
@@ -217,9 +226,12 @@ def _run(path: Path) -> int:
         try:
             engine = Engine(store, BROKER_FACTORY(cfg), cfg, run_id,
                             lambda: config_module.trading_gate(cfg))
+            alerter = Alerter(cfg.alerts, f"Aperture {cfg.environment_name}",
+                              NOTIFIER(cfg.alerts))
             bot = service.Service(engine, now=NOW, calendar=service.load_calendar(cfg),
                                   strategy=strategy,
-                                  paths=service.ServicePaths.from_config(cfg))
+                                  paths=service.ServicePaths.from_config(cfg),
+                                  watch=Watch(engine, cfg, alerter, NOW))
             clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP)
             cause = f"stopped ({stop.signal_name})" if clean else "shutdown-deadline"
         finally:
