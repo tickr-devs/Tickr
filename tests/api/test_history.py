@@ -105,6 +105,14 @@ def test_unfilled_and_open_trades_are_not_history(paths):
     assert closed_trades(store, "sandbox") == []
 
 
+def test_closed_on_keeps_one_new_york_date(paths):
+    store = _store(paths)
+    run = _run(store)
+    _trade(store, run, "today", OPEN + timedelta(minutes=5))
+    _trade(store, run, "before", OPEN - timedelta(days=3))
+    assert [t.trade_id for t in closed_trades(store, closed_on=DAY)] == ["today"]
+
+
 def test_trades_of_another_environment_are_left_out(paths):
     store = _store(paths)
     _trade(store, _run(store, "production"), "prod", OPEN + timedelta(minutes=5))

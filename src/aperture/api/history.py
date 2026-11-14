@@ -40,11 +40,14 @@ def average_fill_price(orders: list[OrderRow]) -> Decimal | None:
     return sum((o.filled_quantity * o.average_fill_price for o in filled), ZERO) / quantity
 
 
-def closed_trades(store: Store, environment: str | None = None) -> list[api.DayTrade]:
+def closed_trades(store: Store, environment: str | None = None,
+                  closed_on: date | None = None) -> list[api.DayTrade]:
     """Closed trades that had fills, oldest close first, with their gross result.
 
     `environment` limits them to runs of that environment; None takes every run (the bot's own
-    database view). Quantity is what was sold; prices are fill-weighted averages."""
+    database view). `closed_on` keeps only trades closed that New York date (checked before
+    their orders are read, so the bot's per-step call stays cheap). Quantity is what was
+    sold; prices are fill-weighted averages."""
     if environment is None:
         rows = store.query("SELECT * FROM trades WHERE closed_at IS NOT NULL "
                            "ORDER BY closed_at, trade_id")
@@ -54,6 +57,9 @@ def closed_trades(store: Store, environment: str | None = None) -> list[api.DayT
                            "ORDER BY t.closed_at, t.trade_id", (environment,))
     result = []
     for row in rows:
+        if closed_on is not None and ny_date_of(
+                datetime.fromisoformat(row["closed_at"])) != closed_on:
+            continue
         orders = [order_from_row(o) for o in store.query(
             "SELECT * FROM orders WHERE trade_id = ? ORDER BY rowid", (row["trade_id"],))]
         entries = [o for o in orders if o.leg is Leg.ENTRY]
