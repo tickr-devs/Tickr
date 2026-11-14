@@ -83,11 +83,11 @@ def test_skips_weekend_holiday_and_handles_a_half_day(tmp_path):
 
 def test_thin_minutes_are_kept_but_an_empty_session_is_refused(tmp_path):
     md = FakeMarketData()
-    for day in WEEK:
+    for day in [date(2026, 11, 6), *WEEK]:
         md.add_bars(session_bars("AAA", day, minutes=7))  # a thin symbol
     assert len(reader(md, None).prior_sessions("AAA", MONDAY, 5).bars) == 35
     gap = FakeMarketData()
-    for day in WEEK[1:]:
+    for day in [date(2026, 11, 6), *WEEK[1:]]:  # no trading on Nov 9 (halted all day)
         gap.add_bars(session_bars("AAA", day))
     with pytest.raises(HistoryUnavailable) as caught:
         reader(gap, tmp_path).prior_sessions("AAA", MONDAY, 5)
@@ -106,6 +106,42 @@ class IgnoresEnd(FakeMarketData):
 
     def bars_before(self, symbol: str, end: datetime, count: int) -> list[Bar]:
         return session_bars(symbol, MONDAY)[-count:]
+
+
+class IgnoresEndFiltered(FakeMarketData):
+    """What WebullMarketData does if Webull ignores end_time: the newest `count` bars, then the
+    adapter's own filter to bars before `end`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        for day in [*WEEK, MONDAY]:  # asked during Monday: today's bars are the newest
+            self.add_bars(session_bars("AAA", day))
+
+    def bars_before(self, symbol: str, end: datetime, count: int) -> list[Bar]:
+        newest = sorted(self._bars[symbol], key=lambda b: b.start)[-count:]
+        return [b for b in newest if b.start < end]
+
+
+def test_end_time_ignored_through_the_adapter_filter_is_incomplete():
+    source = IgnoresEndFiltered()
+    rd = reader(source, None)
+    with pytest.raises(HistoryUnavailable) as caught:
+        rd.prior_sessions("AAA", MONDAY, 3)  # first page 1200 bars reaches only 30 into Nov 11
+    assert caught.value.cause is HistoryCause.INCOMPLETE
+    assert "2026-11-11" in caught.value.detail
+    calls = len(source.calls)
+    with pytest.raises(HistoryUnavailable):
+        rd.prior_sessions("AAA", MONDAY, 3)  # the refusal is remembered: no new requests
+    assert len(source.calls) == calls
+
+
+def test_no_older_history_is_incomplete(tmp_path):
+    md = FakeMarketData()
+    for day in WEEK[2:]:  # listed on Nov 11
+        md.add_bars(session_bars("AAA", day))
+    with pytest.raises(HistoryUnavailable) as caught:
+        reader(md, tmp_path).prior_sessions("AAA", MONDAY, 5)
+    assert caught.value.cause is HistoryCause.INCOMPLETE
 
 
 def test_end_time_not_applied_is_refused():

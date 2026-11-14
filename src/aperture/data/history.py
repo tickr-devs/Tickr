@@ -13,7 +13,9 @@ nothing is cached.
 Refusals (`HistoryUnavailable`, one `HistoryCause`), never a silent partial answer:
 - CALENDAR: the calendar cannot say which days were sessions (out of coverage, invalid);
 - LOOKBACK: fewer than `sessions` open days within `max_lookback_days` before `before`;
-- NO_PROGRESS: a page did not reach older than the previous one (end time not applied);
+- NO_PROGRESS: a page returned a bar at or after its end (end time not applied);
+- INCOMPLETE: a page came back empty before a bar at or before the first wanted session's open
+  arrived (no older history, or an adapter that drops bars at or after the end it ignored);
 - PAGE_LIMIT: `max_pages` pages did not reach the first wanted session's open;
 - EMPTY_SESSION: a wanted session has no bar at all (not listed yet, halted all day);
 - OUTSIDE_SESSION: a bar inside the window starts outside every wanted regular session;
@@ -62,6 +64,7 @@ class HistoryCause(StrEnum):
     CALENDAR = "CALENDAR"
     LOOKBACK = "LOOKBACK"
     NO_PROGRESS = "NO_PROGRESS"
+    INCOMPLETE = "INCOMPLETE"
     PAGE_LIMIT = "PAGE_LIMIT"
     EMPTY_SESSION = "EMPTY_SESSION"
     OUTSIDE_SESSION = "OUTSIDE_SESSION"
@@ -108,7 +111,12 @@ class HistorySettings:
 
 
 class HistoryReader:
-    """Thread safe; a read for one symbol holds the lock for its pages."""
+    """Thread safe. One lock: a read holds it across its pages, so reads of different symbols
+    wait for each other (fine for a per-day lookup; not for a hot path).
+
+    A refusal is remembered in memory for the (symbol, day, sessions) and raised again without
+    requests; budget refusals (RateLimited) and DelayedData are not refusals and are not kept.
+    A failed disk write keeps the history in memory but is not remembered as a refusal."""
 
     def __init__(self, source: MarketData, calendar: SessionCalendar,
                  settings: HistorySettings, directory: Path | None) -> None:
@@ -117,7 +125,7 @@ class HistoryReader:
         self._settings = settings
         self._directory = directory
         self._lock = threading.Lock()
-        self._memory: dict[tuple[str, date, int], SessionHistory] = {}
+        self._memory: dict[tuple[str, date, int], SessionHistory | HistoryUnavailable] = {}
 
     @classmethod
     def from_config(cls, config: Config, source: MarketData,
@@ -139,14 +147,21 @@ class HistoryReader:
             for old in [k for k in self._memory if k[1] != before]:
                 del self._memory[old]
             cached = self._memory.get(key)
+            if isinstance(cached, HistoryUnavailable):
+                raise cached
             if cached is not None:
                 return cached
-            days = self._sessions_before(symbol, before, sessions)
-            history = self._load(symbol, before, sessions, days)
-            if history is None:
-                history = self._fetch(symbol, days)
-                self._memory[key] = history  # kept even if the disk write below fails
-                self._store(before, sessions, history)
+            try:
+                days = self._sessions_before(symbol, before, sessions)
+                history = self._load(symbol, before, sessions, days)
+                if history is None:
+                    history = self._fetch(symbol, days)
+                    self._memory[key] = history  # kept even if the disk write below fails
+                    self._store(before, sessions, history)
+            except HistoryUnavailable as refused:
+                if refused.cause is not HistoryCause.CACHE:
+                    self._memory[key] = refused  # same answer all day, no budget spent again
+                raise
             self._memory[key] = history
             return history
 
@@ -181,7 +196,14 @@ class HistoryReader:
             page = self._source.bars_before(symbol, end, self._settings.bars_per_request)
             pages += 1
             if not page:
-                break  # nothing older: EMPTY_SESSION below says which session is missing
+                # Nothing older before the first wanted open arrived: either the provider has no
+                # more history or it ignored the end time. Either way the window is incomplete.
+                oldest = min(received) if received else None
+                raise HistoryUnavailable(
+                    symbol, HistoryCause.INCOMPLETE,
+                    f"nothing before {end.isoformat()}; oldest bar received "
+                    f"{oldest.isoformat() if oldest else 'none'}, first wanted open "
+                    f"{first_open.isoformat()}")
             for bar in page:
                 if bar.symbol != symbol or bar.start >= end:
                     raise HistoryUnavailable(symbol, HistoryCause.NO_PROGRESS,
