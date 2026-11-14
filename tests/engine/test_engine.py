@@ -498,3 +498,28 @@ def test_exit_refused_restores_protection_and_blocks_repeat_requests(store):
     run(e, 4)
     assert working_stops(b) == D(1)
     assert len(legs(e, t, Leg.EXIT)) == 1
+
+
+def test_r1_a_stop_with_unreadable_detail_cannot_starve_the_entry(store):
+    from aperture.broker.base import BrokerError
+
+    class StuckStopDetail(FakeBroker):
+        stuck: set = set()
+
+        def order_detail(self, cid):
+            if cid in self.stuck:
+                raise BrokerError("DETAIL_NOT_VISIBLE")
+            return super().order_detail(cid)
+
+    b = StuckStopDetail()
+    b.stuck = set()
+    e = make(store, b)
+    t = enter(e, "4")
+    entry = legs(e, t, Leg.ENTRY)[0].client_order_id
+    b.fill(entry, D(1), D(10))
+    run(e)
+    b.stuck.add(legs(e, t, Leg.STOP)[0].client_order_id)
+    b.fill(entry, D(3), D(10))
+    run(e, 8)
+    assert legs(e, t, Leg.ENTRY)[0].filled_quantity == D(4)
+    assert working_stops(b) == D(4)
