@@ -1,7 +1,8 @@
 # Operations on the Mac
 
 How the owner runs Aperture under launchd. Nothing here is installed from the cloud: the owner
-renders the job files, reads them, and loads them.
+renders the job files, reads them, and loads them. Manual trades and the Sandbox probe day
+(stop the bot job first) are in docs/manual-trade.md.
 
 ## Jobs
 
@@ -70,13 +71,15 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 3. Calendar knows today (New York date).
 4. Credential variables named in the active `[environments.*]` table are set. Only the names are
    checked and reported, never the values.
-5. The iMessage recipient variable named by `[alerts] imessage_recipient_variable` is set
+5. This machine has an alert channel (cause `alert-channel-missing`): today only macOS. On
+   Linux, including Docker, the start is refused; see `docs/deploy-server.md`.
+6. The iMessage recipient variable named by `[alerts] imessage_recipient_variable` is set
    (cause `alert-recipient-missing`; blocks the start, because the phone is the alert channel
    that reaches you away from the Mac). Presence only, never the value.
-6. Broker token folder `<data_dir>/<token_dir>` exists.
-7. The active strategy builds and `[market_data] history_sessions` covers its history need. A
+7. Broker token folder `<data_dir>/<token_dir>` exists.
+8. The active strategy builds and `[market_data] history_sessions` covers its history need. A
    failure is reported, but the bot still starts with entries off so it can protect positions.
-8. Broker token usable (only when no earlier check blocks the start and today has a session):
+9. Broker token usable (only when no earlier check blocks the start and today has a session):
    the Webull SDK creates or checks the token. If Webull says it is PENDING, preflight alerts `token-needs-confirmation`
    and waits up to `[environments.*] token_check_duration_seconds` for you to approve it in the
    Webull app. INVALID, EXPIRED, not approved in time, or any other token error fails the check
@@ -107,7 +110,8 @@ All checks are reported; the first failure is the recorded cause.
    **Deadline:** `APERTURE_IMESSAGE_TO` must be in this file before the first preflight run
    (08:30 Mac time on Monday with the default `[runtime] preflight_start_local`). Without it
    preflight fails with `alert-recipient-missing` and the bot job does not start the bot.
-3. Data and token folders: `mkdir -p data/<token_dir>` (see `[environments.*] token_dir`).
+3. Data and token folders: `mkdir -p data/webull-token-sandbox` (`[environments.sandbox]
+   token_dir`; `data/webull-token-production` before Production).
 4. Alerts: sign in to iMessage in the Messages app on this Mac (Messages > Settings > iMessage)
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m aperture.runtime alert preflight-failed "test"` once. You should get a
@@ -131,13 +135,14 @@ mkdir -p ~/Library/Logs/Aperture
     --log-dir ~/Library/Logs/Aperture \
     --out data/launchd
 # Read the five files in data/launchd, then:
-cp data/launchd/local.aperture.preflight.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.aperture.preflight.plist
+for job in preflight bot watchdog api test-alert; do
+  cp data/launchd/local.aperture.$job.plist ~/Library/LaunchAgents/
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.aperture.$job.plist
+done
 ```
 
-Load `local.aperture.bot.plist`, `local.aperture.watchdog.plist`, `local.aperture.api.plist` and
-`local.aperture.test-alert.plist` the same way. After changing `[runtime]` values, render again, then `launchctl bootout` and `bootstrap`
-the changed jobs.
+After changing `[runtime]` values, render again, then
+`launchctl bootout gui/$(id -u)/local.aperture.<job>` and `bootstrap` the changed jobs.
 
 ### Alerts from launchd (do this once, at the Mac)
 
@@ -311,6 +316,9 @@ is a separate process that covers this:
 - Every check and alert is one JSON line in `data/watchdog.jsonl` (`[runtime]
   watchdog_journal_file`) and in `~/Library/Logs/Aperture/watchdog.log`.
 - Exit 0: all checks clear; 1: something alerted; 2: config invalid (alert sent); 3: no session.
+- On a machine with no alert channel (not macOS) it writes a `watchdog-alert-channel-refused`
+  line (`alert-channel-missing`), still runs and journals, and never exits 0, so the scheduler
+  shows a failed job.
 - If the iMessage recipient variable is not set, the watchdog writes a
   `watchdog-alert-channel-refused` line (`alert-recipient-missing`) and still runs, alerting on
   the Mac only; every iMessage attempt records the same cause.
