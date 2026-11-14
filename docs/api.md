@@ -110,8 +110,9 @@ tracks; `position` is its first element or `null`, kept for older clients.
 
 `account` is the bot's `account-v1` document, written (temp file + fsync + rename, like status)
 after every successful reconciliation: a broker read of open orders and positions, at startup
-and every `[orders] reconcile_interval_seconds`. A failed read writes nothing, so the age grows.
-`age_seconds` = `served_at - account.read_at`; `stale` is true when the age exceeds
+and every `[orders] reconcile_interval_seconds`. A failed read writes nothing, so the age grows; a failed write
+is journaled once (`account-write-failed`) and the bot carries on. `read_at` is the time the file
+was written, just after the reads. `age_seconds` = `served_at - account.read_at`; `stale` is true when the age exceeds
 `[api] account_stale_seconds`. A missing, invalid or future-dated file is `503 unavailable` with
 the cause.
 
@@ -119,12 +120,15 @@ the cause.
   does not show it).
 - `orders`: every open order the broker listed. `side`, `type` and `status` are the bot's names
   (`BUY`/`SELL`; `MARKET`/`LIMIT`/`STOP_LOSS`; `ACCEPTED`, `PARTIALLY_FILLED`, ...). `ours` is
-  true when the client order id is one of the bot's own. `limit_price` is null for now: the
-  adapter does not read it from the broker's order rows yet.
-- `matches_records` is false while reconciliation holds a fence that says the broker and the
-  bot's records disagree (foreign position or order, quantity mismatch, an order found working
-  after being given up, an order whose send outcome is unknown, an acknowledged order Detail
-  cannot find); `mismatch` then lists them, `name: cause; ...`.
+  true when the client order id is one of the bot's own. `limit_price` is not read yet and is
+  always null.
+- `matches_records` is true only when the broker's positions equal what the bot's open trades
+  expect and its open orders are exactly the bot's live orders (the same test as the day-end
+  record), AND no fence says otherwise: foreign position or order, quantity mismatch,
+  resurrected, unknown send outcome, order missing, unknown order status, over-protected.
+  `mismatch` lists those fences' causes (`name: cause; ...`), or one plain sentence when only
+  the comparison fails. `resurrected` is an operator fence that stays until it is cleared, so
+  `mismatch` may describe something the broker has already resolved.
 - `equity_usd` and `buying_power_usd` are always null in this version: the adapter does not read
   the account balance (the balance response shape is unproven, docs/webull-facts.md).
 - No account id or broker order id is ever in the document.

@@ -48,6 +48,7 @@ EVALUATION_SKIPPED = "evaluation-skipped"  # one row per protect-first episode
 EVALUATION_SLOW = "evaluation-slow"
 LATENCY_FAILED = "protection-latency-failed"
 STRATEGY_NOT_LOADED = "strategy-not-loaded"
+ACCOUNT_WRITE_FAILED = "account-write-failed"  # one row per stretch of failed writes
 NOT_WIRED = api.EntryBlock("entries_not_wired",
                            "This build does not open trades on its own yet.")
 ZERO = Decimal(0)
@@ -121,6 +122,7 @@ class Service:
         self.day_end = DayEnd(engine, calendar, watch)
         self.latency: LatencyLog | None = LatencyLog(engine)
         self._skipping: str | None = None  # cause of the current protect-first episode
+        self._account_failing = False  # the last account file write failed (journaled once)
 
     # --- commands --------------------------------------------------------------------------
 
@@ -414,12 +416,12 @@ class Service:
     def _daily_money(self) -> tuple[Decimal | None, Decimal, Decimal | None]:
         """(net realized loss today, open reservations, room) as admission computes them;
         loss and room are None when today's money is unknown."""
-        from aperture.runtime.entries import realized_loss_today  # entries imports this module
+        from aperture.runtime import entries  # entries imports this module
 
-        loss = realized_loss_today(self.engine, self.now())
+        now = self.now()
         reserved = sum((t.planned_loss_usd for t in self.engine.trades()), ZERO)
-        room = None if loss is None else self.config.risk.max_daily_loss_usd - loss - reserved
-        return loss, reserved, room
+        return (entries.realized_loss_today(self.engine, now), reserved,
+                entries.daily_loss_room(self.engine, self.config, now))
 
     def _trades_today(self) -> tuple[api.Trade, ...]:
         return trades_today(self.engine, self.now())
@@ -461,8 +463,20 @@ class Service:
         if self.paths.account is None:
             return
         document = account_document(self.engine, self.now())
-        if document is not None:
+        if document is None:
+            return
+        try:
             api.write_account(self.paths.account, document)
+        except OSError as exc:
+            # A display file: its failure never ends the loop. Journaled once per stretch.
+            if not self._account_failing:
+                with self.engine.store.transaction():
+                    self.engine.store.append(ACCOUNT_WRITE_FAILED,
+                                             {"error": type(exc).__name__, "detail": str(exc)},
+                                             run_id=self.engine.run_id)
+            self._account_failing = True
+            return
+        self._account_failing = False
 
     # --- loop ------------------------------------------------------------------------------
 

@@ -9,8 +9,10 @@ from decimal import Decimal as D
 from aperture.api import contract as api
 from aperture.broker.base import BrokerError
 from aperture.broker.fake import FakeBroker
-from aperture.runtime import entries
-from aperture.types import OrderDetail, OrderState, OrderType, Side
+from aperture.engine.core import BrokerView, Fence, TradeState
+from aperture.runtime import entries, service
+from aperture.runtime.account import NOT_AGREED
+from aperture.types import OrderDetail, OrderState, OrderType, Position, Side
 
 from .test_service import CFG, Bot, opened
 
@@ -55,6 +57,46 @@ def test_a_foreign_position_and_order_are_a_mismatch(tmp_path):
     (order,) = doc.orders
     assert (order.client_order_id, order.ours) == ("manual-1", False)
     assert doc.positions == (api.AccountPosition("XYZ", D(5), D(3)),)
+
+
+def test_status_unknown_or_over_protected_never_matches(tmp_path):
+    for fence in (Fence.STATUS_UNKNOWN, Fence.OVER_PROTECTED):
+        bot = with_account(Bot(tmp_path / fence, broker=FakeBroker()), tmp_path / fence)
+        opened(bot)
+        bot.engine.recover()
+        with bot.store.transaction():
+            bot.engine._fence_row(fence, "x1", "test cause")
+        bot.service.write_account()
+        doc = read(bot)
+        assert not doc.matches_records
+        assert doc.mismatch == f"{fence}:x1: test cause"
+
+
+def test_records_disagreeing_without_a_fence_is_a_mismatch_in_plain_words(tmp_path):
+    bot = with_account(Bot(tmp_path, broker=FakeBroker()), tmp_path)
+    bot.engine.recover()
+    bot.engine.broker_view = BrokerView((Position("ABC", D(1), D(5)),), ())
+    bot.service.write_account()
+    doc = read(bot)
+    assert (doc.matches_records, doc.mismatch) == (False, NOT_AGREED)
+
+
+def test_a_failing_account_write_is_journaled_once_and_the_loop_goes_on(tmp_path):
+    bot = with_account(Bot(tmp_path, broker=FakeBroker()), tmp_path)
+    bot.paths.account.mkdir()  # the rename onto a directory fails with an OSError
+    t = opened(bot)
+    assert bot.run(20)  # several reconciles, each write failing
+    (row,) = bot.store.journal(service.ACCOUNT_WRITE_FAILED)
+    assert row.body["error"]
+    assert bot.engine.trade(t).state is TradeState.OPEN
+    assert bot.status().bot_state is api.BotState.STOPPED
+    bot.paths.account.rmdir()
+    bot.service.write_account()
+    assert read(bot).matches_records
+    bot.paths.account.unlink()
+    bot.paths.account.mkdir()
+    bot.service.write_account()  # a new stretch of failures: journaled again
+    assert len(bot.store.journal(service.ACCOUNT_WRITE_FAILED)) == 2
 
 
 def test_a_failed_read_writes_nothing(tmp_path):

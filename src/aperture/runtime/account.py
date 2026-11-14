@@ -12,11 +12,15 @@ from datetime import datetime
 
 from aperture.api import contract as api
 from aperture.engine.core import Engine, Fence
+from aperture.runtime.dayend import records_agree
 
-# Fences that reconciliation sets when the broker and the bot's records disagree.
+# Fences that say the broker and the bot's records disagree, or that an order's state is not
+# known; any of them means "does not match".
 MISMATCH_FENCES = frozenset({Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER,
                              Fence.QUANTITY_MISMATCH, Fence.RESURRECTED, Fence.UNKNOWN_ORDER,
-                             Fence.ORDER_MISSING})
+                             Fence.ORDER_MISSING, Fence.STATUS_UNKNOWN, Fence.OVER_PROTECTED})
+NOT_AGREED = ("the broker's positions or open orders differ from what the bot's open trades "
+              "and live orders expect")
 
 
 def account_document(engine: Engine, read_at: datetime) -> api.AccountV1 | None:
@@ -25,8 +29,11 @@ def account_document(engine: Engine, read_at: datetime) -> api.AccountV1 | None:
     if view is None:
         return None
     ours = {o.client_order_id for o in engine.orders()}
-    disagree = [f"{name}: {cause}" for name, cause, _ in engine.fence_rows()
-                if name.split(":", 1)[0] in MISMATCH_FENCES]
+    causes = [f"{name}: {cause}" for name, cause, _ in engine.fence_rows()
+              if name.split(":", 1)[0] in MISMATCH_FENCES]
+    agree = records_agree(engine, view)
+    if not agree and not causes:
+        causes = [NOT_AGREED]
     return api.AccountV1(
         read_at=read_at,
         equity_usd=None,
@@ -38,6 +45,6 @@ def account_document(engine: Engine, read_at: datetime) -> api.AccountV1 | None:
             type=str(o.order_type), status=str(o.state), quantity=o.quantity,
             limit_price=None, stop_price=o.stop_price, ours=o.client_order_id in ours)
             for o in view.open_orders),
-        matches_records=not disagree,
-        mismatch="; ".join(disagree) or None,
+        matches_records=not causes,
+        mismatch="; ".join(causes) or None,
     )
