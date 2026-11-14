@@ -537,6 +537,7 @@ private struct MiniChart: View {
   let entry: Decimal
   let stop: Decimal?
   @State private var drawn: CGFloat = 0
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     let values = closes.map(Self.double)
@@ -573,7 +574,9 @@ private struct MiniChart: View {
     }
     .padding(Tokens.Space.s)
     .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous))
-    .onAppear { withAnimation(Tokens.Motion.draw) { drawn = 1 } }
+    .onAppear {
+      if reduceMotion { drawn = 1 } else { withAnimation(Tokens.Motion.draw) { drawn = 1 } }
+    }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(L10n.Position.chartLabel))
   }
