@@ -40,6 +40,7 @@ class RiskConfig:
     planned_loss_usd: Decimal
     position_notional_cap_usd: Decimal
     max_daily_loss_usd: Decimal
+    min_daily_room_usd: Decimal
     max_open_positions: int
     max_quote_age_seconds: Decimal
     max_clock_skew_seconds: Decimal

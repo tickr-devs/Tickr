@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from aperture.broker.base import BrokerError
 from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
@@ -24,13 +25,14 @@ from aperture.config import Config
 from aperture.data.base import MarketData, MarketDataError
 from aperture.data.history import HistoryReader, HistoryUnavailable, SessionHistory
 from aperture.engine.core import Engine, Leg
-from aperture.runtime.entries import EntryDesk
+from aperture.runtime.entries import EntryDesk, daily_loss_room
 from aperture.runtime.market import StreamInbox
 from aperture.runtime.protection import busy
 from aperture.strategy.base import PositionView, Strategy, SymbolContext, Verdict
 from aperture.types import Bar
 
 M1 = timedelta(minutes=1)
+ZERO = Decimal(0)
 EVALUATION_STOPPED = "evaluation-stopped"
 STRATEGY_ERROR = "strategy-error"
 HISTORY_REFUSED = "history-refused"
@@ -59,6 +61,7 @@ class Evaluator:
         self.evaluated_at: datetime | None = None  # decision time of `contexts`
         self._last_bar: datetime | None = None
         self._history_refused: set[tuple[str, date]] = set()
+        self._budget: Decimal | None = None  # daily loss room of the current minute
 
     def _journal(self, kind: str, body: dict[str, object]) -> None:
         with self.engine.store.transaction():
@@ -74,6 +77,12 @@ class Evaluator:
                 views[trade.symbol] = PositionView(entry.average_fill_price, quantity,
                                                    trade.stop_price)
         return views
+
+    def _loss_budget(self, now: datetime) -> Decimal:
+        """The strategy sizes into this room (owner decision 2026-11-14). Unknown money = no
+        room: admission refuses that case anyway, never guessed as zero loss."""
+        room = daily_loss_room(self.engine, self.config, now)
+        return ZERO if room is None else room
 
     def tick(self, candidates: Sequence[str]) -> None:
         """Once per loop pass; does work only when a new minute has completed."""
@@ -91,6 +100,7 @@ class Evaluator:
             return
         self._last_bar = bar_start
         positions = self._positions()
+        self._budget = self._loss_budget(now)
         ordered = list(dict.fromkeys([*sorted(positions), *sorted(self.watch), *candidates]))
         today = now.astimezone(NEW_YORK).date()
         md = self.config.market_data
@@ -142,7 +152,7 @@ class Evaluator:
         prior = () if history is None else tuple(history.bars_of(d) for d in history.sessions)
         bars = ([] if history is None else list(history.bars)) + today_bars
         quote = self.inbox.latest(symbol)
-        context = SymbolContext(symbol, tuple(bars), prior, quote, position)
+        context = SymbolContext(symbol, tuple(bars), prior, quote, position, self._budget)
         try:
             decision = self.strategy.evaluate(context)
         except Exception as exc:  # noqa: BLE001 - a strategy bug never ends the loop

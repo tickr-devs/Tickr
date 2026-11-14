@@ -111,6 +111,18 @@ def realized_loss_today(engine: Engine, now: datetime) -> Decimal | None:
     return max(-net, ZERO)
 
 
+def daily_loss_room(engine: Engine, config: Config, now: datetime) -> Decimal | None:
+    """Room the daily loss ceiling leaves for one new trade's planned loss: ceiling minus
+    today's net realized loss minus open reservations (spec 7, check 6), or ZERO when it is
+    below `[risk] min_daily_room_usd`. None when today's money is unknown."""
+    loss = realized_loss_today(engine, now)
+    if loss is None:
+        return None
+    reserved = sum((t.planned_loss_usd for t in engine.trades()), ZERO)
+    room = config.risk.max_daily_loss_usd - loss - reserved
+    return room if room >= config.risk.min_daily_room_usd else ZERO
+
+
 class EntryDesk:
     def __init__(self, engine: Engine, config: Config, *, calendar: SessionCalendar | None,
                  last_broker_read_at: Callable[[], datetime | None],
