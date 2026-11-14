@@ -183,7 +183,10 @@ grows slowly and is never pruned: the journal is the audit trail. `history/` is 
 prior-session bars, the backup folder keeps one file, `watchdog.jsonl` gets a few lines a day;
 launchd's logs in `~/Library/Logs/Aperture` are not ours to rotate.
 
-With the bot stopped (outside market hours):
+Never run it during the trading session, not even as a dry run: it takes the bot's
+single-instance lock and writes its own pid into the lock file, so a bot job starting meanwhile
+is refused and the watchdog and `status` see a pid that is not the bot. Run it with the bot
+stopped, after the close or on a non-trading day:
 
 ```sh
 .venv/bin/python -m aperture.cli maintain          # dry run: prints what it would archive and why it keeps the rest
