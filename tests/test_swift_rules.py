@@ -73,9 +73,12 @@ def test_l10n_file_is_the_one_place_for_words(tmp_path):
 
 
 def test_l10n_file_holds_only_localized_entries(tmp_path):
-    source = 'static let quit = "Quit"\nlet title = Text("Quit now")\n'
+    source = (
+        'static let quit = "Quit"\nlet title = Text("Quit now")\n'
+        'static let all = make(defaultValue: "Flatten every position")\n'
+    )
     found = load().text_violations(write(tmp_path, source, "L10n.swift"))
-    assert found == [(1, "Quit"), (2, "Quit now")]
+    assert found == [(1, "Quit"), (2, "Quit now"), (3, "Flatten every position")]
 
 
 def test_words_cannot_hide_in_constants_raw_values_or_symbol_shapes(tmp_path):

@@ -53,7 +53,9 @@ L10N_FILE = "L10n.swift"
 INDENT = 2
 
 SYMBOL_ARGUMENT = re.compile(r"\b(?:systemName|systemImage|symbol)\s*:\s*$")
-L10N_ARGUMENT = re.compile(r"(?:\bLocalizedStringResource\(|\bdefaultValue\s*:)\s*$")
+L10N_KEY_ARGUMENT = re.compile(r"\bLocalizedStringResource\(\s*$")
+L10N_VALUE_ARGUMENT = re.compile(r"\bdefaultValue\s*:\s*$")
+L10N_CALL = re.compile(r"\bLocalizedStringResource\(")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:/%+\-]+$")
 TITLE_WORD = re.compile(r"^[A-Z][a-z]+$")
 USAGE_KEY = re.compile(r"^NS\w*UsageDescription$")
@@ -146,11 +148,13 @@ def text_violations(path: Path) -> list[tuple[int, str]]:
     source = path.read_text(encoding="utf-8")
     documented = documented_constant_lines(source.splitlines())
     found = []
+    value_lines = l10n_value_lines(source) if path.name == L10N_FILE else set()
     for number, literal, prefix in string_literals(source):
         if not LETTER.search(ESCAPE.sub("", literal)):
             continue
         if path.name == L10N_FILE:
-            if not L10N_ARGUMENT.search(prefix):
+            if not (L10N_KEY_ARGUMENT.search(prefix) or (
+                    L10N_VALUE_ARGUMENT.search(prefix) and number in value_lines)):
                 found.append((number, literal))
             continue
         if "@available(" in prefix or SYMBOL_ARGUMENT.search(prefix):
@@ -161,6 +165,25 @@ def text_violations(path: Path) -> list[tuple[int, str]]:
             continue
         found.append((number, literal))
     return found
+
+
+def l10n_value_lines(source: str) -> set[int]:
+    """Lines inside a `LocalizedStringResource(…)` call, where its `defaultValue:` may stand.
+
+    String contents are masked first so parentheses in text do not count."""
+    def blank(match: re.Match) -> str:
+        return '"' + "x" * (len(match.group()) - 2) + '"'
+
+    masked = re.sub(r'"(?:[^"\\\n]|\\.)*"', blank, source)
+    lines: set[int] = set()
+    for call in L10N_CALL.finditer(masked):
+        depth, j = 1, call.end()
+        while j < len(masked) and depth:
+            depth += {"(": 1, ")": -1}.get(masked[j], 0)
+            j += 1
+        first = masked.count("\n", 0, call.start()) + 1
+        lines.update(range(first, masked.count("\n", 0, j) + 2))
+    return lines
 
 
 def documented_constant_lines(lines: list[str]) -> set[int]:
