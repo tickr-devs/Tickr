@@ -10,21 +10,19 @@ the approved design canvas. Code follows it one to one:
 ## Rules
 
 1. **Screens use tokens and roles only.** They contain no number, colour or duration of their own.
-   SwiftLint (`.swiftlint.yml`) fails CI on a number literal other than 0 and 1 outside a
-   documented `static let` constant, and on a colour created outside `Palette.swift`.
-2. **No user-facing text in code.** Every string a person reads is a key in a String Catalog
-   (`Localizable.xcstrings`). English is the development language and Russian is translated. The
-   app follows the system language. CI exports the localizations and fails when a Russian
-   translation is missing. Protocol values from the bot (`exit_reason`, fence `kind`) are shown
-   through a localized title and never translated in place.
-3. **System appearance only.** Light and dark follow macOS/iOS; there is no theme switch. Light is
-   designed on its own (soft glows and a tinted shadow), not as an inverted dark.
-4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared
-   components. A screen arranges components; it does not restyle them.
-5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve.
-   With Reduce Motion on, every piece shows its still final state.
-6. **Formatting:** Swift uses 2-space indentation (`.editorconfig`, the Xcode projects' text
-   settings and SwiftLint's indentation rule agree).
+   - `apps/scripts/check_swift_literals.py` fails CI on a number other than 0 and 1 unless it is a documented `static let` constant, an enum raw value or a halving `/ 2`.
+   - SwiftLint (`.swiftlint.yml`) fails CI on a colour made outside `Palette.swift`, a hue name instead of a role, and a font size outside `Tokens.Typography`.
+   - Both run in the `macos-app` workflow. They cover `apps/shared` now; each app is added once its code has moved onto the system.
+2. **No user-facing text in code.** Every string a person reads is a key in a String Catalog (`Localizable.xcstrings`).
+   - English is the development language, with a Russian translation, and the app follows the system language.
+   - Protocol values from the bot (`exit_reason`, fence `kind`) are shown through a localized title and never translated in place.
+   - Planned with the macOS move: CI exports the localizations (`xcodebuild -exportLocalizations`) and fails when a Russian translation is missing.
+3. **System appearance only.** Light and dark follow macOS/iOS; there is no theme switch. Light is designed on its own (soft glows and a tinted shadow), not as an inverted dark.
+4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
+5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state.
+6. **Formatting: Swift uses 2-space indentation.**
+   - `.editorconfig` and SwiftLint's `indentation_width` already enforce it.
+   - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
 
 ## Colour roles
 
@@ -51,8 +49,9 @@ contrast on `surface` in both appearances.
 | `seriesVWAP` | VWAP line | = `warning` | = `warning` |
 | `seriesFastEMA` | EMA 9 line | = `accent` | = `accent` |
 | `seriesSlowEMA` | EMA 20 line | = `highlight` | = `highlight` |
-| `seriesATR` / `seriesATRText` | ATR pane, universe stage | `#EC4899` / `#BE185D` | `#F472B6` / `#F9A8D4` |
-| `glowIndigo`, `glowTeal` | Light background corner glows (at `Opacity.glow`) | `#6366F1`, `#14B8A6` | not drawn |
+| `seriesATR` / `seriesATRText` | ATR pane | `#EC4899` / `#BE185D` | `#F472B6` / `#F9A8D4` |
+| `seriesUniverse` | Universe stage of the live flow | = `seriesATR` | = `seriesATR` |
+| `glowIndigo`, `glowTeal` | Light background corner glows (at `Opacity.glow`, reach 420 pt; teal centred on the right edge, a fifth down) | `#6366F1`, `#14B8A6` | not drawn |
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
 
 A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero.
@@ -133,6 +132,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `contentMaxWidth` | 1500 | Content stops growing and centres |
 | `shadowRadius` / `shadowOffset` | 14 / 8 | Light card shadow |
 | `riseOffset` | 12 | Rise-in distance |
+| `ringHalo` | 60 | Reach of the halo behind a ring |
 
 ## Motion (`Tokens.Motion`)
 
@@ -147,7 +147,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `pulseSeconds` / `pulseScale` | 2.4 s / ×2.2 | "Live" pulse ring |
 | `breatheSeconds` / `breatheScale` | 2.4 s / ×1.08 | Glows and alarms breathing |
 | `rotationSeconds` | 4 s per turn | Logo blades, radar sweep |
-| `tickerSpeed` | 22 pt/s | Event ticker |
+| `tickerSpeed` | 22 pt/s | Event ticker (edges fade over 6% of its width) |
 | `pipelineSeconds` | 4.2 s | Light travelling the live flow |
 
 ## Components

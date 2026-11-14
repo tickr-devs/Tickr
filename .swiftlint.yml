@@ -1,0 +1,47 @@
+# SwiftLint for the operator apps (docs/design-system.md, "Rules"). Runs in CI (macos-app).
+# Magic numbers are checked by apps/scripts/check_swift_literals.py, which understands documented
+# constants; colours, fonts and indentation are checked here.
+# Each app joins when its code has moved onto the design system (macOS next, then iOS).
+included:
+  - apps/shared/Sources
+  - apps/shared/Tests
+
+indentation_width:
+  indentation_width: 2
+  include_comments: true
+  include_compiler_directives: false
+  include_multiline_strings: false
+
+opt_in_rules:
+  - indentation_width
+  - closure_spacing
+  - empty_count
+  - first_where
+  - sorted_imports
+  - toggle_bool
+
+line_length:
+  warning: 130
+  error: 160
+  ignores_comments: true
+  ignores_urls: true
+
+custom_rules:
+  colour_outside_palette:
+    name: "Colour outside Palette"
+    message: "Colours are semantic roles defined once in Palette.swift (docs/design-system.md)."
+    regex: '(Color\s*\(\s*(red|light|hue|white|\.sRGB|nsColor|uiColor)|NSColor\s*\(|UIColor\s*\()'
+    excluded: ".*/Palette\\.swift"
+    severity: error
+  hue_name_instead_of_role:
+    name: "Hue name instead of a colour role"
+    message: "Use a semantic role (accent, profit, loss, warning, info, highlight, text…, surface…)."
+    regex: 'Palette\.(teal|tealStrong|green|greenStrong|pink|pinkStrong|violet|violetStrong|amber|amberStrong|blue|blueStrong|red|redStrong|card|deep|line|line2|text|text2|muted|dim)\b'
+    excluded: ".*/Palette\\.swift"
+    severity: error
+  font_size_outside_tokens:
+    name: "Font size outside Tokens"
+    message: "Pick a font from Tokens.Typography."
+    regex: '\.system\(\s*size:'
+    excluded: ".*/Tokens\\.swift"
+    severity: error
