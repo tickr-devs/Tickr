@@ -99,3 +99,68 @@ def test_crash_anywhere_then_restart(tmp_path, at, after):
         assert working >= held.get("ABC", D(0)) > 0
         assert restarted.fences()
     store.close()
+
+
+def drive_partial(engine: Engine, broker: FakeBroker, steps: int = 40) -> None:
+    """Like `drive`, but the entry fills one share at a time."""
+    for _ in range(steps):
+        for trade in engine.trades():
+            for order in engine.orders(trade.trade_id):
+                if order.client_order_id not in broker.orders:
+                    continue
+                detail = broker.order_detail(order.client_order_id)
+                if detail.state.terminal or order.leg is Leg.STOP:
+                    continue
+                broker.fill(order.client_order_id,
+                            D(1) if order.leg is Leg.ENTRY
+                            else detail.quantity - detail.filled_quantity, D(10))
+            stops = [o for o in engine.orders(trade.trade_id) if o.leg is Leg.STOP]
+            if trade.state is TradeState.OPEN and stops and all(
+                    s.broker_state is OrderState.ACCEPTED for s in stops if s.live):
+                entry = next(o for o in engine.orders(trade.trade_id) if o.leg is Leg.ENTRY)
+                if not entry.live:
+                    engine.request_exit(trade.trade_id, "test-exit")
+        engine.step()
+
+
+@pytest.mark.parametrize("partial", [False, True], ids=["full-fill", "partial-fills"])
+@pytest.mark.parametrize("at", range(1, 13))
+def test_crash_at_db_write_after_broker_call(tmp_path, monkeypatch, at, partial):
+    """Kill at the k-th send-state write (for example right after a successful place, so the
+    row stays ATTEMPTED), restart, and check the same invariants."""
+    store = Store.open(tmp_path / "db.sqlite3", busy_timeout_seconds=0)
+    broker = FakeBroker()
+    engine = Engine(store, broker, CFG, "run1aaaa", lambda: OPEN)
+    real = Engine._set_send_state
+    calls = [0]
+
+    def crashing(self, *args, **kwargs):
+        calls[0] += 1
+        if calls[0] == at:
+            raise Crash()
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Engine, "_set_send_state", crashing)
+    quantity = D(3) if partial else D(1)
+    try:
+        engine.open_trade("ABC", quantity, D(10), D("9.80"), D(1))
+        (drive_partial if partial else drive)(engine, broker)
+    except Crash:
+        pass
+    monkeypatch.setattr(Engine, "_set_send_state", real)
+
+    restarted = Engine(store, broker, CFG, "run2bbbb", lambda: OPEN)
+    restarted.recover()
+    (drive_partial if partial else drive)(restarted, broker)
+
+    counts = Counter(r.client_order_id for r in broker.sent)
+    assert all(n == 1 for n in counts.values()), counts
+    held = {p.symbol: p.quantity for p in broker.positions()}
+    if all(t.state is TradeState.CLOSED for t in restarted.trades(open_only=False)):
+        assert held == {}
+    else:
+        working = sum((o.quantity - o.filled_quantity for o in broker.open_orders()
+                       if o.order_type == "STOP_LOSS"), D(0))
+        assert working >= held.get("ABC", D(0)) > 0
+        assert restarted.fences()
+    store.close()
