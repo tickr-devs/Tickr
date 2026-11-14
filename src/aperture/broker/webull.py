@@ -6,7 +6,7 @@ Layers, outermost first:
   through a `Transport`, maps HTTP outcomes to typed `BrokerError`s and parses bodies with
   the tolerant readers below. It never sees credentials or the account id.
 - `Transport` is the wire boundary: `send(route, params) -> WireResponse`. Tests use a
-  recorded transport; production uses `SdkTransport`.
+  recorded transport; the running bot uses `SdkTransport`.
 - `SdkTransport` wraps `webull-openapi-python-sdk` (optional dependency group `webull`). It
   pins every request to the configured host, which must be on the allowlist; turns SDK
   retries off; removes the SDK's log handlers (KD-4); never constructs `TradeEventsClient`
@@ -72,7 +72,7 @@ MESSAGE_ORDER_NOT_PRESENT = "order not present"
 # Error codes that prove a place request did NOT create an order (probe evidence only).
 PLACE_REFUSAL_CODES = frozenset({CODE_NON_TRADING_HOURS})
 
-# Fixed parts of a US equity order body accepted by Sandbox (probe 2026-10-12, 2026-11-04).
+# Fixed parts of a US equity order body accepted by the broker (probe 2026-10-12, 2026-11-04).
 ORDER_COMBO_TYPE = "NORMAL"
 ORDER_ENTRUST_TYPE = "QTY"
 ORDER_INSTRUMENT_TYPE = "EQUITY"

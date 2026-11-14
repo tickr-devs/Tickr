@@ -1,6 +1,6 @@
 """Per-route request budget for broker HTTP calls.
 
-Webull limits requests per route over a rolling window (Sandbox: 30 per 60 s per route,
+Webull limits requests per route over a rolling window (for example 30 per 60 s per route,
 see docs/webull-facts.md). The budget keeps, per route, the times of the requests taken in
 the current window and refuses a request that would exceed the limit. It never sleeps and
 never queues: a refused call raises `RateLimited` and the caller decides what to do.
