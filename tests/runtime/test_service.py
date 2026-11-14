@@ -95,6 +95,50 @@ def test_entries_not_wired_is_the_block_reason_while_running(tmp_path):
                                          f"Trading gate closed: {gate.cause}."))
 
 
+class StubEvaluator:
+    def __init__(self) -> None:
+        self.watch = {"WAT"}
+        self.calls: list[list[str]] = []
+
+    def tick(self, candidates):
+        self.calls.append(list(candidates))
+
+
+class StubMarket:
+    def __init__(self) -> None:
+        self.watch: set[str] = set()
+        self.discovery = None
+        self.ticks = 0
+
+    def tick(self) -> None:
+        self.ticks += 1
+
+    def freshness(self, last_broker_read_at):
+        return api.Freshness(last_broker_read_at, None, api.StreamHealth.OFF)
+
+
+def test_with_an_evaluator_the_loop_runs_the_strategy_and_entries_are_open(tmp_path):
+    from aperture.runtime.market import DiscoveryState
+
+    bot = Bot(tmp_path)
+    market, evaluator = StubMarket(), StubEvaluator()
+    bot.service.market, bot.service.evaluator = market, evaluator  # type: ignore[assignment]
+    bot.engine.recover()
+    bot.service.state = api.BotState.RUNNING
+    if config.trading_gate(CFG).open:
+        assert bot.service.status().entry_block is None
+    bot.run(1)
+    assert evaluator.calls == [[]] and market.watch == {"WAT"}
+
+    class Candidate:
+        class instrument:
+            symbol = "CAN"
+
+    market.discovery = DiscoveryState(bot.now, "x", (Candidate(),))  # type: ignore[arg-type]
+    bot.run(1)
+    assert evaluator.calls[-1] == ["CAN"] and market.ticks == 2
+
+
 def test_later_entry_stop_command_wins_and_off_clears_only_that_fence(tmp_path):
     bot = Bot(tmp_path)
     bot.broker.add_foreign_position("XYZ", D(1), D(5))
