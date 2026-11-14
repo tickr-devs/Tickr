@@ -403,7 +403,7 @@ def explain(environment: str, day: date, record: DecisionRecord) -> ExplainV1:
         environment=environment, day=day, symbol=d.symbol, decided_at=record.time,
         bar_start=record.bar_start, strategy=d.strategy, version=d.version, verdict=d.verdict,
         setup=d.setup, admission=record.admission, refusal_cause=record.refusal_cause,
-        first_failed_check=next((c.rule for c in checks if not c.passed), None), checks=checks)
+        first_failed_check=d.decisive.rule if d.decisive else None, checks=checks)
 
 
 SCHEMA_TYPES: dict[str, type] = {

@@ -72,9 +72,27 @@ def test_latest_active_record_of_the_symbol(cfg):
 
 def test_malformed_line_is_refused(cfg):
     log = DecisionLog.from_config(cfg)
-    _write(log, _record(), tail="not json\n")
+    _write(log, _record(), tail='{"symbol": "ABCD", broken\n')
     with pytest.raises(RecordFileError, match=":2: "):
         log.latest_active(DAY, "ABCD")
+
+
+def test_large_file_filter_keeps_results(cfg):
+    """Many symbols in one day's file: only lines carrying the symbol's key are parsed, and the
+    answer is the same record a full parse finds. A malformed line of another symbol is not
+    read; prefix-sharing tickers (ABC vs ABCD) do not match each other."""
+    log = DecisionLog.from_config(cfg)
+    symbols = [f"S{i:03d}" for i in range(200)] + ["ABC"]
+    records = [_record(s, minute, checks=(PASS,)) for minute in range(20) for s in symbols]
+    wanted = _record("ABCD", 19, verdict=Verdict.ENTER, checks=(PASS,),
+                     admission=Admission.REFUSED, cause="RISK: limit")
+    _write(log, *records, _record("ABCD", 5), wanted, _record("ABCD", 19, role=Role.OBSERVER),
+           tail='{"symbol": "S001", broken\n')
+    assert log.latest_active(DAY, "ABCD") == wanted
+    assert log.latest_active(DAY, "ABC") == records[-1]
+    assert log.latest_active(DAY, "S007") == _record("S007", 19, checks=(PASS,))
+    with pytest.raises(RecordFileError):
+        log.latest_active(DAY, "S001")
 
 
 # ---------------------------------------------------------------- GET /explain
@@ -117,7 +135,7 @@ def test_explain_refusals(api, cfg, path, status, error):
 
 
 def test_explain_unreadable_file_and_post(api, cfg):
-    _write(DecisionLog.from_config(cfg), _record(), tail="not json\n")
+    _write(DecisionLog.from_config(cfg), _record(), tail='{"symbol": "ABCD", broken\n')
     resp, payload = request(api, "GET", "/explain?symbol=ABCD")
     assert (resp.status, doc(payload)["error"]) == (503, "unavailable")
     resp, _ = request(api, "POST", "/explain", {})
@@ -141,4 +159,4 @@ def test_cli_explain(cfg, monkeypatch, capsys):
     assert "admission: refused (QUOTE_STALE: quote 7 s old > 5 s)" in out
     assert "  pass bars_consistent [own symbol, increasing start]" in out
     assert "  pass relative_volume: 2.4 >= 1.5" in out
-    assert "first failed check: none" in out and "quote age: not recorded" in out
+    assert "first failed check: none" in out and "quote age" not in out

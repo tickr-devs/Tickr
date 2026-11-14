@@ -127,7 +127,8 @@ every other verdict. The quote age the admission measured is not recorded in the
 when it was the cause it appears in `refusal_cause`.
 
 No record for the symbol today is `404 not_found` (cause names the symbol and date); a malformed
-decision file is `503 unavailable`; a missing, repeated, extra or non-ticker parameter is
+line for the symbol in the decision file is `503 unavailable` (lines of other symbols are not
+parsed); a missing, repeated, extra or non-ticker parameter is
 `400 bad_request`. The command line has the same read: `aperture explain SYMBOL` (exit 0 found,
 1 none or unreadable).
 

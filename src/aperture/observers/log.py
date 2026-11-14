@@ -43,15 +43,18 @@ class DecisionLog:
 
     def latest_active(self, day: date, symbol: str) -> DecisionRecord | None:
         """The last active-strategy record for `symbol` in the file of `day` (read only), or
-        None when there is none. A last line still being written (no newline yet) is not read;
-        any other malformed line is a RecordFileError."""
+        None when there is none. A last line still being written (no newline yet) is not read.
+        Lines without the symbol's key exactly as `record_to_json` writes it (json.dumps default
+        separators) cannot be this symbol's and are skipped unparsed; any other malformed line
+        is a RecordFileError."""
         path = self.path(day)
         if not path.is_file():
             return None
         latest = None
+        key = '"symbol": ' + json.dumps(symbol)
         with open(path, encoding="utf-8") as handle:
             for number, text in enumerate(handle, start=1):
-                if not text.endswith("\n") or not text.strip():
+                if not text.endswith("\n") or key not in text:
                     continue
                 try:
                     record = record_from_mapping(json.loads(text))

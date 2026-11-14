@@ -331,7 +331,6 @@ def _explain(args: argparse.Namespace) -> int:
         note = f" [{c.note}]" if c.note else ""
         print(f"  {'pass' if c.passed else 'FAIL'} {c.rule}{value}{note}")
     print(f"first failed check: {e.first_failed_check or 'none'}")
-    print("quote age: not recorded in the decision file")
     return 0
 
 
