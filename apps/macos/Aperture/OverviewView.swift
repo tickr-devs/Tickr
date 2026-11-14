@@ -146,8 +146,11 @@ private struct DayResultCard: View {
 
     private var subtitle: String {
         var text = "\(model.shownTradeCount) closed · \(model.shownWins) W · \(model.shownLosses) L"
-        let open = model.positions.compactMap(\.unrealized).reduce(0, +)
-        if model.isLive && !model.positions.isEmpty { text += " · open " + Money.signed(open) }
+        let unrealized = model.positions.compactMap(\.unrealized)
+        // Only when every open position has a fresh price; a partial sum would mislead.
+        if model.isLive && !model.positions.isEmpty && unrealized.count == model.positions.count {
+            text += " · open " + Money.signed(unrealized.reduce(0, +))
+        }
         return text
     }
 
@@ -350,7 +353,8 @@ private struct PositionDetail: View {
                 VStack(spacing: 6) {
                     StatLine(label: "quantity", value: Format.quantity(row.quantity))
                     StatLine(label: "entry", value: Format.price(row.entry))
-                    StatLine(label: "last bar close", value: Format.price(row.lastBarClose))
+                    StatLine(label: "last bar close" + (row.lastBarAt.map { " · " + Format.marketMinute($0) } ?? ""),
+                             value: row.lastBarClose.map { Format.price($0) } ?? (row.lastBarAt == nil ? "—" : "old"))
                     StatLine(label: "stop", value: Format.price(row.stop),
                              color: row.position.stop.state == .verified ? Palette.greenStrong : Palette.redStrong)
                     StatLine(label: "max loss", value: Risk.plannedLoss(entry: row.entry, stop: row.stop, quantity: row.quantity)

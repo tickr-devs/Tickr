@@ -121,6 +121,10 @@ struct BotControls: View {
         } message: { action in
             Text(action.explanation)
         }
+        // Close an open confirmation as soon as commands are no longer safe to send.
+        .onChange(of: model.commandsEnabled) { _, enabled in
+            if !enabled { confirming = nil }
+        }
     }
 
     private var actions: [BotAction] {

@@ -104,9 +104,22 @@ public final class AppModel {
         guard isLive, let position = status?.position else { return [] }
         let bars = barsBySymbol[position.symbol]?.bars.filter { $0.start.date >= position.openedAt.date.addingTimeInterval(-60) } ?? []
         let last = barsBySymbol[position.symbol]?.bars.last
-        return [PositionRow(position: position, lastBarClose: last?.close.value, lastBarAt: last?.start.date,
+        let fresh = last.map { barIsFresh(start: $0.start.date) } ?? false
+        return [PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
                             closes: bars.map(\.close.value))]
     }
+
+    /// A captured M1 bar is fresh while its close (start + one minute) is no older than the
+    /// server's `status_stale_seconds`. Without settings nothing counts as fresh.
+    func barIsFresh(start: Date, now: Date = Date()) -> Bool {
+        guard let settings else { return false }
+        let staleSeconds = NSDecimalNumber(decimal: settings.statusStaleSeconds.value).doubleValue
+        let barClose = start.addingTimeInterval(Self.barSeconds)
+        return now.timeIntervalSince(barClose) <= staleSeconds
+    }
+
+    /// Length of one captured bar (M1).
+    static let barSeconds: TimeInterval = 60
 
     /// Trades of the shown day: live from status for today, else from the day document.
     public var shownTrades: [DayTrade] {
@@ -209,6 +222,11 @@ public final class AppModel {
             response = try await client.status()
             fetchError = nil
             resolveSentCommands()
+            // Counts come from status, the trade list from /days/<today>: when status shows a
+            // trade the list lacks, read the list now instead of waiting for the history poll.
+            if let count = status?.tradesToday.count, let document = todayDocument, count != document.trades.count {
+                await refreshHistory()
+            }
         } catch {
             fetchError = Self.describe(error)
         }
@@ -240,9 +258,12 @@ public final class AppModel {
             return
         }
         do {
-            dayDocument = try await client.day(day)
+            let document = try await client.day(day)
+            guard day == selectedDay else { return }
+            dayDocument = document
             historyError = nil
         } catch {
+            guard day == selectedDay else { return }
             dayDocument = nil
             historyError = Self.describe(error)
         }
@@ -267,6 +288,13 @@ public final class AppModel {
     // MARK: commands
 
     public func send(_ command: OperatorCommand, title: String) async {
+        // A confirmation alert can stay open while the status goes stale or the day changes:
+        // check again at the moment of sending, never trust the state the alert was opened in.
+        guard commandsEnabled else {
+            show(SentCommand(id: UUID().uuidString, kind: command.kind, title: title, outcome: .refused,
+                             cause: "not sent: the app cannot trust the bot's status right now", warning: nil))
+            return
+        }
         sending = true
         defer { sending = false }
         do {
