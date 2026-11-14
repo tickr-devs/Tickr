@@ -276,3 +276,43 @@ def test_best_candidates_are_subscribed_up_to_the_configured_count(tmp_path):
     rig.market.discovery = DiscoveryState(rig.now, "x", ())
     rig.market.tick()
     assert rig.source.subscribed == {"WAT"}
+
+
+def test_refused_candidates_never_take_the_position_off_the_stream(tmp_path):
+    """Real StreamSession whose broker refuses more than K symbols per connection."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from aperture.broker.webull import StreamSession
+    from aperture.runtime.market import DiscoveryState
+
+    limit = 2
+    sent: set[str] = set()
+
+    def send_subscribe(symbols):
+        if len(sent | set(symbols)) > limit:
+            raise RuntimeError("symbol limit")
+        sent.update(symbols)
+
+    session = StreamSession(Budget(), lambda: MONDAY_11, lambda where, exc: None)
+    session.bind(send_subscribe, lambda symbols: sent.difference_update(symbols),
+                 lambda: (sent.clear(), session.on_connected()))
+    rig = Rig(tmp_path, source=SessionSource(session))
+    rig.market.config = replace(CFG, market_data=replace(CFG.market_data,
+                                                         candidate_subscriptions=3))
+    rig.market.bind()
+    session.on_connected()
+    t = rig.position()
+    rig.market.discovery = DiscoveryState(rig.now, "x", tuple(
+        SimpleNamespace(instrument=SimpleNamespace(symbol=s)) for s in ("AAA", "BBB", "CCC")))
+    rig.market.tick()
+    assert rig.market.subscribed == {"ABC"}  # candidates refused as one request
+    assert session.symbols == {"ABC"} and session.up  # reconnected without them
+    assert rig.market.health.transport.up
+    rig.advance(LOST_AFTER.total_seconds() * 2)
+    rig.market.tick()  # candidates are off until candidate_retry_seconds
+    assert rig.engine.trade(t).exit_requested is None
+    assert rig.market.subscribed == {"ABC"}
+    rig.advance(float(CFG.market_data.candidate_retry_seconds))
+    rig.market.tick()
+    assert rig.market.subscribed == {"ABC"} and session.up  # refused again, still up
