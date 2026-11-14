@@ -12,6 +12,7 @@ struct CandleChart: View {
     var fastEMA = true
     var slowEMA = false
     var volume = true
+    var atr = false
   }
 
   /// Line series, kept apart so Charts does not join them.
@@ -23,7 +24,7 @@ struct CandleChart: View {
 
   /// Height of the price pane, in points.
   static let priceHeight: CGFloat = 300
-  /// Height of the volume pane, in points.
+  /// Height of the volume and ATR panes, in points.
   static let volumeHeight: CGFloat = 64
   /// Share of a candle's time slot its body fills; the rest is the gap between candles.
   static let bodyShare = 0.64
@@ -35,10 +36,14 @@ struct CandleChart: View {
   static let zoomStep = 1.5
   /// Space above and below the visible prices, as a share of their range.
   static let pricePadding = 0.08
+  /// Value labels on the ATR pane's scale.
+  static let atrAxisMarks = 2
   /// Smallest scale the readout line may shrink to before it truncates.
   static let readoutMinimumScale = 0.7
 
   let series: ChartSeries
+  /// The ATR line, one value per candle of `series`.
+  let atr: [Double?]
   let trades: [DayTrade]
   let lines: Lines
 
@@ -61,6 +66,11 @@ struct CandleChart: View {
         .frame(height: Self.priceHeight)
       if lines.volume {
         volumeChart
+          .frame(height: Self.volumeHeight)
+          .transition(.opacity)
+      }
+      if lines.atr {
+        atrChart
           .frame(height: Self.volumeHeight)
           .transition(.opacity)
       }
@@ -126,6 +136,36 @@ struct CandleChart: View {
     .chartYAxis(.hidden)
     .modifier(Scrolling(window: window, scroll: $scroll))
     .accessibilityHidden(true)
+  }
+
+  /// Average true range under the volume, with its scale on the right.
+  private var atrChart: some View {
+    Chart {
+      ForEach(Array(zip(series.candles, atr)), id: \.0.id) { candle, value in
+        if let value {
+          LineMark(
+            x: .value(String(localized: ChartText.axisTime), middle(candle)),
+            y: .value(String(localized: ChartText.atr(Indicators.atrPeriod)), value))
+            .foregroundStyle(Palette.seriesATR)
+            .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.regular))
+        }
+      }
+    }
+    .chartXAxis(.hidden)
+    .chartYAxis {
+      AxisMarks(position: .trailing, values: .automatic(desiredCount: Self.atrAxisMarks)) { _ in
+        AxisValueLabel()
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(Palette.seriesATRText)
+      }
+    }
+    .chartYScale(domain: .automatic(includesZero: false))
+    .modifier(Scrolling(window: window, scroll: $scroll))
+    .overlay(alignment: .topLeading) {
+      Text(ChartText.atr(Indicators.atrPeriod))
+        .font(Tokens.Typography.badge)
+        .foregroundStyle(Palette.seriesATRText)
+    }
   }
 
   // MARK: marks
