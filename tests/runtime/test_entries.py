@@ -157,13 +157,16 @@ def test_unresolved_fence_blocks_entries(tmp_path):
     assert desk.decide(decision()).refusal_cause.startswith("UNRESOLVED_EXPOSURE")
 
 
-def test_realized_loss_counts_losing_trades_only(tmp_path, monkeypatch):
+def test_realized_loss_is_the_net_loss_of_the_day(tmp_path, monkeypatch):
     from aperture.api import contract as api
 
     def trade(result):
         return api.Trade("ABC", D(1), D(10), D(10) + result, NOW, NOW, "x", result)
 
     monkeypatch.setattr("aperture.runtime.entries.trades_today",
-                        lambda engine, now: (trade(D(-20)), trade(D(50)), trade(D(-5))))
+                        lambda engine, now: (trade(D(-20)), trade(D(5)), trade(D(-5))))
     desk = Desk(tmp_path)
-    assert desk.desk._realized_loss(NOW) == D(25)
+    assert desk.desk._realized_loss(NOW) == D(20)  # wins offset losses (owner 2026-11-14)
+    monkeypatch.setattr("aperture.runtime.entries.trades_today",
+                        lambda engine, now: (trade(D(-20)), trade(D(50))))
+    assert desk.desk._realized_loss(NOW) == D(0)
