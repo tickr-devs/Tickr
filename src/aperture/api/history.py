@@ -175,7 +175,7 @@ class History:
                 wins=sum(1 for t in of_day if t.result_gross_usd > 0),
                 losses=sum(1 for t in of_day if t.result_gross_usd < 0),
                 result_gross_usd=sum((t.result_gross_usd for t in of_day), ZERO),
-                has_bars=self._bars_file(day).is_file()))
+                has_bars=existing(self._bars_file(day)) is not None))
         return api.DaysV1(environment=self.paths.environment, days=tuple(summaries))
 
     def day(self, day: date, today: date) -> api.DayV1:

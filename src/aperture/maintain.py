@@ -9,6 +9,7 @@ when all of these hold, otherwise it is kept with one printed cause:
 - it is older than the last `[run] maintain_keep_sessions` closed sessions before today;
 - it is older than the oldest trade still open in the database (any environment);
 - the journal has its `day-end` row for this environment (the day was finished by the bot).
+- no plain file has a `.gz` twin that is unreadable or holds other bytes.
 
 Refusals (exit 3, nothing touched): the lock is held, the calendar cannot count the sessions,
 the database is missing or has another schema version. The journal is never edited or vacuumed;
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from aperture.archive import compress
+from aperture.archive import GZ_SUFFIX, compress, same_content
 from aperture.calendar import CalendarRefused, SessionCalendar, ny_date_of
 from aperture.config import Config
 from aperture.data.history import NOT_A_SESSION
@@ -81,6 +82,21 @@ def _journal_facts(database: Path, environment: str) -> tuple[date | None, set[d
     return (min(opened) if opened else None), ended
 
 
+def _conflict(files: tuple[Path, ...]) -> str | None:
+    """Why the folder must be looked at: a plain file whose .gz twin holds other bytes."""
+    for file in files:
+        archived = file.with_name(file.name + GZ_SUFFIX)
+        if not archived.is_file():
+            continue
+        try:
+            same = same_content(file, archived)
+        except OSError as exc:  # not a readable gzip file
+            return f"{archived.name} unreadable ({exc}); look at it, then remove it"
+        if not same:
+            return f"{file.name} and {archived.name} differ; look at both, then remove one"
+    return None
+
+
 def plan(cfg: Config, calendar: SessionCalendar, database: Path, today: date) -> list[DayPlan]:
     keep_day = keep_from(calendar, today, cfg.run.maintain_keep_sessions)
     oldest_open, ended = _journal_facts(database, cfg.environment_name)
@@ -104,6 +120,8 @@ def plan(cfg: Config, calendar: SessionCalendar, database: Path, today: date) ->
                 keep = f"a trade opened {oldest_open.isoformat()} is still open"
             elif day not in ended:
                 keep = "no day-end record for this day"
+            else:
+                keep = _conflict(files)
             plans.append(DayPlan(folder, files, keep))
     return plans
 

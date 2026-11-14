@@ -190,7 +190,8 @@ With the bot stopped (outside market hours):
   and `export_replay_bars` read both forms; give research tools the plain name or the `.gz` name.
 - A day folder is kept (one printed cause) when it is within the last `[run]
   maintain_keep_sessions` sessions before today (today included), on or after the day of a trade
-  still open in the database, or without its `day-end` journal row.
+  still open in the database, without its `day-end` journal row, or when a plain file sits beside
+  a `.gz` that is unreadable or holds other bytes (look at both, remove the wrong one).
 - `--apply` also runs a SQLite WAL checkpoint; it deletes no row and never vacuums.
 - Refused (exit 3, nothing touched) while the bot holds its lock, when the calendar cannot count
   the sessions, or when the database is missing or has another schema. Exit 1 means one file

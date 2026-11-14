@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import shutil
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
@@ -149,6 +150,26 @@ def test_readers_read_archived_days(setup):
     assert load_records([decisions_day / FILE_NAME]) == (_record(OLD),)
     history = History(HistoryPaths.from_config(cfg))
     assert [b.start for b in history.bars("ABCD", OLD, TODAY).bars] == [_at(OLD)]
+    assert {d.day: d.has_bars for d in history.days().days}[OLD] is True
+    assert DecisionLog.from_config(cfg).latest_active(OLD, "ABCD") == _record(OLD)
+
+
+def test_plain_file_beside_a_different_archive_keeps_the_folder(setup, capsys):
+    path, cfg, _, _ = setup
+    capture_day, _ = _folders(cfg, OLD)
+    (capture_day / (BARS_FILE + ".gz")).write_bytes(b"not gzip")
+    assert main(["--config", str(path), "maintain", "--apply"]) == 0
+    assert "bars.jsonl.gz unreadable" in capsys.readouterr().out
+    assert (capture_day / BARS_FILE).is_file()
+    assert (capture_day / (BARS_FILE + ".gz")).read_bytes() == b"not gzip"
+    other = capture_day / "quotes.jsonl"
+    other.write_text("a\n")
+    with gzip.open(capture_day / "quotes.jsonl.gz", "wt") as handle:
+        handle.write("b\n")
+    (capture_day / (BARS_FILE + ".gz")).unlink()
+    assert main(["--config", str(path), "maintain", "--apply"]) == 0
+    assert "quotes.jsonl and quotes.jsonl.gz differ" in capsys.readouterr().out
+    assert other.is_file() and (capture_day / BARS_FILE).is_file()
 
 
 def test_compress_round_trip_and_missing_file(tmp_path):

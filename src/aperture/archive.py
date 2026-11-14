@@ -46,6 +46,12 @@ def _digest(handle: IO[bytes]) -> str:
     return sha.hexdigest()
 
 
+def same_content(plain: Path, archived: Path) -> bool:
+    """True when the gzip file `archived` holds exactly the bytes of `plain`."""
+    with open(plain, "rb") as source, gzip.open(archived, "rb") as packed:
+        return _digest(source) == _digest(packed)
+
+
 def compress(path: Path) -> Path:
     """Replace `path` by `path.gz`: written to a temporary file, fsynced, read back and
     compared byte for byte (SHA-256) before it is renamed into place; only then is the plain
@@ -57,10 +63,9 @@ def compress(path: Path) -> Path:
             shutil.copyfileobj(source, packed, CHUNK_BYTES)
         raw.flush()
         os.fsync(raw.fileno())
-    with open(path, "rb") as source, gzip.open(temporary, "rb") as packed:
-        if _digest(source) != _digest(packed):
-            temporary.unlink()
-            raise OSError(f"archive of {path} does not read back identical; left as is")
+    if not same_content(path, temporary):
+        temporary.unlink()
+        raise OSError(f"archive of {path} does not read back identical; left as is")
     os.replace(temporary, target)
     folder = os.open(path.parent, os.O_RDONLY)
     try:
