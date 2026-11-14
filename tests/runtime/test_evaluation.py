@@ -9,9 +9,10 @@ import pytest
 from aperture import config
 from aperture.broker.base import RateLimited
 from aperture.broker.fake import FakeBroker
+from aperture.broker.webull import BrokerReadFailed, MalformedResponse
 from aperture.calendar import NEW_YORK, SessionCalendar
 from aperture.config import GateResult
-from aperture.data.base import FakeMarketData
+from aperture.data.base import FakeMarketData, MarketDataError
 from aperture.data.history import HistoryReader, HistorySettings, HistoryUnavailable
 from aperture.engine.core import Engine
 from aperture.observers.log import DecisionLog
@@ -219,3 +220,24 @@ def test_budget_or_delayed_data_stops_the_minute(tmp_path):
     rig.evaluator.tick(["ABC"])
     assert rig.store.journal(EVALUATION_STOPPED)[-1].body == {
         "bar_start": "2026-11-16T09:35:00-05:00", "stage": "bars", "error": "DelayedData"}
+
+
+@pytest.mark.parametrize("error", [MalformedResponse("bars page"),
+                                   BrokerReadFailed("bars", None, None),
+                                   MarketDataError("http 500")])
+def test_a_failed_history_read_stops_the_minute_and_is_retried(tmp_path, error):
+    rig = Rig(tmp_path)
+    rig.symbol("ABC")
+    healthy = rig.source.bars_before
+
+    def broken(symbol, end, count):
+        raise error
+
+    rig.source.bars_before = broken  # type: ignore[method-assign]
+    rig.evaluator.tick(["ABC"])  # never raises into the service loop
+    (row,) = rig.store.journal(EVALUATION_STOPPED)
+    assert row.body["stage"] == "history" and row.body["error"] == type(error).__name__
+    rig.source.bars_before = healthy  # type: ignore[method-assign]
+    rig.now += timedelta(minutes=1)
+    rig.evaluator.tick(["ABC"])
+    assert [c.symbol for c in rig.strategy.seen] == ["ABC"]

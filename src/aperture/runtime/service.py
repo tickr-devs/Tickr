@@ -35,6 +35,8 @@ STRATEGY_FILE = "strategy.toml"
 COMMAND = "command"
 COMMAND_FILE_REFUSED = "command-file-refused"
 COMMAND_EFFECT = "command-effect"
+EVALUATION_FAILED = "evaluation-failed"
+STRATEGY_NOT_LOADED = "strategy-not-loaded"
 NOT_WIRED = api.EntryBlock("entries_not_wired",
                            "This build does not open trades on its own yet.")
 ZERO = Decimal(0)
@@ -108,11 +110,12 @@ class Service:
     def __init__(self, engine: Engine, *, now: Callable[[], datetime],
                  calendar: SessionCalendar | None, strategy: api.StrategyId,
                  paths: ServicePaths, market: MarketRuntime | None = None,
-                 evaluator: Evaluator | None = None,
+                 evaluator: Evaluator | None = None, entries_off: str | None = None,
                  watch: Watch | None = None) -> None:
         self.engine = engine
         self.market = market
         self.evaluator = evaluator
+        self.entries_off = entries_off  # why there is no evaluator (status says so)
         self.watch = watch
         self.config = engine.config
         self.now = now
@@ -219,7 +222,13 @@ class Service:
             return
         found = self.market.discovery
         candidates = [] if found is None else [c.instrument.symbol for c in found.candidates]
-        self.evaluator.tick(candidates)
+        try:
+            self.evaluator.tick(candidates)
+        except Exception as exc:  # noqa: BLE001 - evaluation never ends the trading loop
+            with self.engine.store.transaction():
+                self.engine.store.append(EVALUATION_FAILED, {"error": type(exc).__name__,
+                                                             "detail": str(exc)},
+                                         run_id=self.engine.run_id)
         self.market.watch = set(self.evaluator.watch)
 
     # --- status ----------------------------------------------------------------------------
@@ -236,6 +245,9 @@ class Service:
         if fences:
             name, cause, _ = fences[0]
             return api.EntryBlock(name.split(":", 1)[0].replace("-", "_"), f"{name}: {cause}")
+        if self.entries_off is not None:
+            return api.EntryBlock("strategy_not_loaded",
+                                  f"Active strategy not loaded: {self.entries_off}")
         return NOT_WIRED if self.evaluator is None else None
 
     def _stop(self, trade: TradeRow, stops: list[OrderRow]) -> api.Stop:

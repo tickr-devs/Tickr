@@ -245,7 +245,7 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
 
     if calendar is None:
         return None
-    loaded = load_strategy(cfg.root, cfg.strategy.active,
+    loaded = load_strategy(cfg.root, cfg.strategy.active,  # ObserverError: caller refuses
                            parse_modules(cfg.observers.strategy_modules))
     desk = EntryDesk(engine, cfg, calendar=calendar, last_broker_read_at=last_broker_read_at,
                      log=DecisionLog.from_config(cfg))
@@ -259,6 +259,7 @@ def _run(path: Path) -> int:
     Exit 0 after a clean drain, 5 when the drain hit its deadline."""
     from aperture.data.capture import CaptureWriter
     from aperture.data.health import StreamHealth
+    from aperture.observers.errors import ObserverError
     from aperture.runtime import service
     from aperture.runtime.alerts import Alerter
     from aperture.runtime.market import MarketRuntime, StreamInbox
@@ -291,11 +292,18 @@ def _run(path: Path) -> int:
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
                                    capture=capture, calendar=calendar, now=NOW,
                                    monotonic=time.monotonic)
-            evaluator = _evaluator(cfg, engine, adapters.market, inbox, calendar,
-                                   lambda: bot.last_broker_read_at)
+            entries_off = None
+            try:
+                evaluator = _evaluator(cfg, engine, adapters.market, inbox, calendar,
+                                       lambda: bot.last_broker_read_at)
+            except ObserverError as exc:  # the bot still protects and exits; no entries
+                evaluator, entries_off = None, str(exc)
+                with store.transaction():
+                    store.append(service.STRATEGY_NOT_LOADED, {"cause": entries_off},
+                                 run_id=run_id)
             bot = service.Service(engine, now=NOW, calendar=calendar, strategy=strategy,
                                   paths=service.ServicePaths.from_config(cfg), market=market,
-                                  evaluator=evaluator,
+                                  evaluator=evaluator, entries_off=entries_off,
                                   watch=Watch(engine, cfg, alerter, NOW))
             market.bind()
             adapters.start_stream()
