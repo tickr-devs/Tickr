@@ -17,6 +17,7 @@ from typing import Any
 from aperture.research import latency as lat
 from aperture.research import observer_report as orep
 from aperture.research import outcomes as oc
+from aperture.research import refusals as rf
 from aperture.research import whatif as wi
 from aperture.research.compare import DiffResult
 from aperture.research.records import DecisionRecord
@@ -202,3 +203,18 @@ def write_latency(result: lat.LatencyReport, source: str, out_dir: Path,
             "notices": sum(int(n["notices"]) for n in result.notices_by_hour.values()),
             "partial_last_lines": result.partial_last_lines}
     return _json(out_dir / "latency_summary.json", body, places)
+
+
+REFUSAL_COLUMNS = ("day", "strategy", "version", "role", "setup", "kind", "name", "count")
+
+
+def write_refusals(rows: Sequence[rf.RefusalRow], out_dir: Path, places: int) -> dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_csv(out_dir / "refusals.csv", REFUSAL_COLUMNS,
+               ([getattr(r, c) for c in REFUSAL_COLUMNS] for r in rows), places)
+    by_kind: dict[str, int] = {}
+    for r in rows:
+        by_kind[r.kind] = by_kind.get(r.kind, 0) + r.count
+    body = {"days": sorted({r.day.isoformat() for r in rows}), "rows": len(rows),
+            "by_kind": by_kind}
+    return _json(out_dir / "refusals_summary.json", body, places)
