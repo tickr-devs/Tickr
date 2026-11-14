@@ -5,12 +5,14 @@ on:
       - "apps/ios/**"
       - "apps/shared/**"
       - ".github/workflows/ios-app.yml"
+      - "Aperture.xcworkspace/**"
   push:
     branches: [main]
     paths:
       - "apps/ios/**"
       - "apps/shared/**"
       - ".github/workflows/ios-app.yml"
+      - "Aperture.xcworkspace/**"
 jobs:
   build:
     runs-on: macos-latest
@@ -37,10 +39,11 @@ jobs:
             echo "::error::Aperture.xcodeproj differs from project.yml: run xcodegen in apps/ios and commit"
             exit 1
           fi
+      # Built through the root workspace, which is what the owner opens in Xcode.
       - name: Build for the iOS Simulator (unsigned)
         run: |
           if ! xcodebuild build \
-              -project Aperture.xcodeproj \
+              -workspace ../../Aperture.xcworkspace \
               -scheme 'Aperture iOS' \
               -destination 'generic/platform=iOS Simulator' \
               -configuration Debug \
