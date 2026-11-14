@@ -58,7 +58,7 @@ To try a proposal: copy the folder into `strategies/` and add it to
 ## Hold-out rule
 
 A proposal is fitted to the days it was given, so those days cannot judge it. The rule
-(owner decision 2026-11-14) applies to every new strategy version, from the advisor or by hand:
+(from the independent review, 2026-11-14; to be confirmed by the owner) applies to every new strategy version, from the advisor or by hand:
 
 - Write down the days the change was chosen on. The advisor does it for you: the new
   `strategy.toml` header and `report.md` list them.

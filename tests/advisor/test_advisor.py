@@ -121,7 +121,7 @@ def test_proposal_becomes_a_new_version_folder_and_report(tmp_path):
     report = (result.folder / "report.md").read_text()
     assert "Proposed new version" in report and "| `[breakout] lookback_bars` | 5 | 8 |" in report
     assert "Not applied" in report
-    assert "Hold-out rule" in report and "days after 2026-11-17" in report
+    assert "tuned on 2026-11-16, 2026-11-17. Judge it only on days after 2026-11-17" in report
     assert "# Tuned on (hold-out rule: judge it only on other days): " \
            "2026-11-16, 2026-11-17." in text
     assert not (tmp_path / "strategies" / "price-action-v1-v2").exists()  # never applied
