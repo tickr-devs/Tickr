@@ -16,9 +16,15 @@ from typing import Any
 
 from aperture import config as config_module
 from aperture.broker.base import Broker
-from aperture.calendar import SessionCalendar
+from aperture.calendar import CalendarRefused, SessionCalendar
 from aperture.engine.core import Engine, EntryRefused
-from aperture.engine.manual import ManualRefused, check_window, plan_probe, run_until_closed
+from aperture.engine.manual import (
+    ManualRefused,
+    check_window,
+    flatten_deadline,
+    plan_probe,
+    run_until_closed,
+)
 from aperture.lock import AlreadyRunning, SingleInstanceLock, recorded_holder
 from aperture.store import MIGRATIONS, Store
 
@@ -107,20 +113,28 @@ def _engine(path: Path) -> Iterator[Engine]:
         except KeyboardInterrupt:
             cause = "interrupted"
             raise
+        except EntryRefused:
+            cause = "refused"
+            raise
         finally:
             store.end_run(run_id, cause)
             store.close()
 
 
-def _drive(engine: Engine, flatten_at: datetime | None, hold: float | None) -> None:
+def _drive(engine: Engine, flatten_at: datetime | None, hold: float | None) -> int:
     interrupt = _Interrupt()
     previous = signal.signal(signal.SIGINT, interrupt)
     try:
-        run_until_closed(engine, sleep=SLEEP, monotonic=time.monotonic, now=NOW,
-                         flatten_at=flatten_at, interrupted=lambda: interrupt.requested,
-                         hold_seconds=hold)
+        waiting = run_until_closed(engine, sleep=SLEEP, monotonic=time.monotonic, now=NOW,
+                                   flatten_at=flatten_at,
+                                   interrupted=lambda: interrupt.requested, hold_seconds=hold)
     finally:
         signal.signal(signal.SIGINT, previous)
+    for trade_id in waiting:
+        print(f"trade {trade_id}: closing order refused; the stop is back in place. Look in "
+              f"the Webull app, then `aperture clear-fence exit-refused:{trade_id}` and "
+              "`aperture exit`.", file=sys.stderr)
+    return 4 if waiting else 0
 
 
 def _report(engine: Engine) -> None:
@@ -149,20 +163,28 @@ def _trade(args: argparse.Namespace) -> int:
           f"stop {plan.stop_price}, planned loss {plan.planned_loss_usd} USD")
     with _engine(args.config) as engine:
         engine.open_trade(plan.symbol, plan.quantity, plan.limit_price, plan.stop_price,
-                          plan.planned_loss_usd)
-        _drive(engine, flatten_at, float(cfg.probe.hold_seconds))
+                          plan.planned_loss_usd,
+                          None if args.stop is not None else cfg.probe.stop_percent_below_fill)
+        code = _drive(engine, flatten_at, float(cfg.probe.hold_seconds))
         _report(engine)
-    return 0
+    return code
 
 
 def _resume(args: argparse.Namespace, *, exit_all: bool) -> int:
+    cfg = config_module.load(args.config)
+    try:
+        calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+        flatten_at = flatten_deadline(cfg, calendar, NOW())
+    except CalendarRefused as exc:
+        print(f"calendar unreadable ({exc}): closing open trades now", file=sys.stderr)
+        flatten_at = NOW()
     with _engine(args.config) as engine:
         if exit_all:
             for trade in engine.trades():
                 engine.request_exit(trade.trade_id, "operator-exit")
-        _drive(engine, None, None)
+        code = _drive(engine, flatten_at, None)
         _report(engine)
-    return 0
+    return code
 
 
 def _clear_fence(args: argparse.Namespace) -> int:

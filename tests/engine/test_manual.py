@@ -111,7 +111,7 @@ def test_flatten_deadline(tmp_path):
     assert engine.trade(t).exit_requested == "session-flatten"
 
 
-def test_cli_trade_end_to_end(tmp_path, monkeypatch, capsys):
+def copy_config(tmp_path) -> Path:
     (tmp_path / "config").mkdir()
     bot = tmp_path / "config" / "bot.toml"
     bot.write_text((ROOT / "config" / "bot.toml").read_text("utf-8"), "utf-8")
@@ -119,6 +119,11 @@ def test_cli_trade_end_to_end(tmp_path, monkeypatch, capsys):
     calendar_dir.mkdir(parents=True, exist_ok=True)
     for f in (ROOT / Path(CFG.session.calendar_file).parent).iterdir():
         (calendar_dir / f.name).write_bytes(f.read_bytes())
+    return bot
+
+
+def test_cli_trade_end_to_end(tmp_path, monkeypatch, capsys):
+    bot = copy_config(tmp_path)
     market = Market()
     monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: market)
     monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
@@ -136,9 +141,7 @@ def test_cli_trade_end_to_end(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_exit_closes_open_trade_after_restart(tmp_path, monkeypatch, capsys):
-    (tmp_path / "config").mkdir()
-    bot = tmp_path / "config" / "bot.toml"
-    bot.write_text((ROOT / "config" / "bot.toml").read_text("utf-8"), "utf-8")
+    bot = copy_config(tmp_path)
     cfg = config.load(bot)
     database, _ = cli.data_paths(cfg)
     market = Market()
@@ -151,7 +154,81 @@ def test_cli_exit_closes_open_trade_after_restart(tmp_path, monkeypatch, capsys)
 
     monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: market)
     monkeypatch.setattr(cli, "SLEEP", lambda s: market.tick())
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
     assert cli.main(["--config", str(bot), "exit"]) == 0
     assert f"trade {t} ABC: closed (operator-exit)" in capsys.readouterr().out
     assert market.positions() == []
     assert cli.main(["--config", str(bot), "clear-fence", "unprotected:t1"]) == 1
+
+
+def test_resume_after_close_flattens_at_once(tmp_path, monkeypatch, capsys):
+    bot = copy_config(tmp_path)
+    cfg = config.load(bot)
+    database, _ = cli.data_paths(cfg)
+    market = Market()
+    store = Store.open(database, busy_timeout_seconds=0)
+    engine = Engine(store, market, cfg, "crashed2", lambda: GateResult(True, "t"))
+    t = engine.open_trade("ABC", D(1), D(10), D("9.80"), D("0.2"))
+    market.tick()
+    for _ in range(3):
+        engine.step()
+    store.close()
+    monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: market)
+    monkeypatch.setattr(cli, "SLEEP", lambda s: market.tick())
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11.replace(hour=17))  # after the close
+    assert cli.main(["--config", str(bot), "resume"]) == 0
+    assert f"trade {t} ABC: closed (session-flatten)" in capsys.readouterr().out
+    assert market.positions() == []
+
+
+def test_flatten_deadline_from_calendar():
+    from aperture.engine.manual import flatten_deadline
+    assert flatten_deadline(CFG, CAL, MONDAY_11) > MONDAY_11
+    late = MONDAY_11.replace(hour=15, minute=59)
+    assert flatten_deadline(CFG, CAL, late) == late
+    saturday = datetime(2026, 11, 14, 11, 0, tzinfo=NEW_YORK)
+    assert flatten_deadline(CFG, CAL, saturday) == saturday
+
+
+def test_refused_close_never_loops(tmp_path):
+    market = Market()
+    engine = make(tmp_path, market)
+    t = engine.open_trade("ABC", D(1), D(10), D("9.80"), D("0.2"))
+    clock = [0.0]
+    sends = []
+    real_place = market.place
+
+    def place(request):
+        sends.append(request.order_type)
+        if request.order_type == "MARKET":
+            from aperture.broker.base import Refused
+            raise Refused("CLOSED", "refused at the session edge")
+        return real_place(request)
+
+    market.place = place
+
+    def sleep(seconds):
+        clock[0] += seconds
+        market.tick()
+
+    waiting = run_until_closed(engine, sleep=sleep, monotonic=lambda: clock[0],
+                               now=lambda: MONDAY_11, interrupted=lambda: True,
+                               flatten_at=None, hold_seconds=None)
+    assert waiting == [t]
+    assert sends.count("MARKET") == 1
+    stops = [o for o in market.open_orders() if o.order_type == "STOP_LOSS"]
+    assert sum(o.quantity for o in stops) == D(1)
+
+
+def test_default_stop_is_derived_from_the_fill(tmp_path):
+    market = Market()
+    engine = make(tmp_path, market)
+    plan = plan_probe(CFG, "ABC", D("10.50"))
+    t = engine.open_trade(plan.symbol, plan.quantity, plan.limit_price, plan.stop_price,
+                          plan.planned_loss_usd, CFG.probe.stop_percent_below_fill)
+    market.fill(engine.orders(t)[0].client_order_id, D(1), D("10.00"))  # filled below limit
+    for _ in range(2):
+        engine.step()
+    (stop,) = [o for o in engine.orders(t) if o.leg is Leg.STOP]
+    assert stop.stop_price == D("9.80")  # 2 % below the 10.00 fill, not below the 10.50 limit
+    assert plan.stop_price == D("10.29")

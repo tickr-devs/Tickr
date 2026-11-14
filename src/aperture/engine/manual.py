@@ -36,9 +36,10 @@ class ManualPlan:
 
 def plan_probe(config: Config, symbol: str, limit_price: Decimal,
                stop_price: Decimal | None = None, quantity: Decimal | None = None) -> ManualPlan:
-    """Check a manual entry against [probe]. The default stop is `stop_percent_below_fill`
-    below the LIMIT price (the fill is not known yet; a fill below the limit only makes the
-    real distance smaller, never the planned loss larger)."""
+    """Check a manual entry against [probe]. Without --stop the planned stop is
+    `stop_percent_below_fill` below the LIMIT (the worst case, used for the planned-loss
+    check); the engine then places the stop that percentage below the actual FILL (owner
+    decision 2026-11-14), which is never lower than this bound."""
     probe = config.probe
     qty = Decimal(probe.quantity) if quantity is None else quantity
     if qty <= 0 or qty != qty.to_integral_value() or qty > probe.quantity:
@@ -84,21 +85,42 @@ def check_window(config: Config, calendar: SessionCalendar, now: datetime) -> da
     return times.flatten
 
 
+def flatten_deadline(config: Config, calendar: SessionCalendar, now: datetime) -> datetime:
+    """Today's flatten time; `now` (exit at once) when today has no session or the regular
+    session is already over. Used by resume/exit so a recovered trade never stays overnight."""
+    try:
+        day = calendar.day_at(now)
+        times = day.session_times(config.session.last_entry_minutes_before_close,
+                                  config.session.flatten_minutes_before_close)
+    except CalendarRefused:
+        return now
+    return now if now >= times.flatten else times.flatten
+
+
 def run_until_closed(engine: Engine, *, sleep: Callable[[float], None],
                      monotonic: Callable[[], float], now: Callable[[], datetime],
                      flatten_at: datetime | None, interrupted: Callable[[], bool],
-                     hold_seconds: float | None) -> None:
-    """Step until no trade is open. `hold_seconds=None` never asks for an exit on its own
-    (except entry timeout, flatten and interrupt)."""
+                     hold_seconds: float | None) -> list[str]:
+    """Step (and reconcile every reconcile_interval_seconds) until no trade is open, or every
+    open trade is waiting for the operator (its closing order was refused: the engine has put
+    the stop back). Returns the ids of trades left open for the operator.
+    `hold_seconds=None` never asks for an exit on its own (except entry timeout, flatten and
+    interrupt)."""
     config = engine.config
     poll = float(config.orders.detail_poll_seconds)
     started = monotonic()
+    last_reconcile = started
     protected_since: dict[str, float] = {}
     while True:
         trades = engine.trades()
         if not trades:
-            return
+            return []
         fences = engine.fences()
+        waiting = [t.trade_id for t in trades
+                   if f"{Fence.EXIT_REFUSED}:{t.trade_id}" in fences
+                   and f"{Fence.UNPROTECTED}:{t.trade_id}" not in fences]
+        if len(waiting) == len(trades):
+            return waiting
         for trade in trades:
             if trade.exit_requested:
                 continue
@@ -117,4 +139,8 @@ def run_until_closed(engine: Engine, *, sleep: Callable[[float], None],
                 if hold_seconds is not None and monotonic() - since >= hold_seconds:
                     engine.request_exit(trade.trade_id, "hold-elapsed")
         sleep(poll)
-        engine.step()
+        if monotonic() - last_reconcile >= float(config.orders.reconcile_interval_seconds):
+            engine.reconcile()  # includes a step
+            last_reconcile = monotonic()
+        else:
+            engine.step()

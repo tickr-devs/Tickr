@@ -62,6 +62,7 @@ _SCHEMA_V2 = (
         entry_quantity TEXT NOT NULL,
         entry_limit_price TEXT NOT NULL,
         stop_price TEXT NOT NULL,
+        stop_percent_below_fill TEXT,
         planned_loss_usd TEXT NOT NULL,
         exit_requested TEXT,
         stop_failures INTEGER NOT NULL DEFAULT 0,
