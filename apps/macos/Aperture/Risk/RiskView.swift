@@ -44,9 +44,12 @@ private struct LossRoomCard: View {
   static let alarm = 0.2
 
   private var limit: Decimal? { model.settings?.risk.maxDailyLossUsd.value }
-  /// Today's net result; the limit counts only the live day.
-  private var result: Decimal { model.status?.resultTodayGrossUsd.value ?? 0 }
-  private var room: Decimal? { limit.map { $0 + result } }
+  /// Today's net result; nil while the bot's status is unknown. The limit counts the live day only.
+  private var result: Decimal? { model.status?.resultTodayGrossUsd.value }
+  private var room: Decimal? {
+    guard let limit, let result else { return nil }
+    return DailyRoom.left(limit: limit, netResult: result)
+  }
 
   private var fraction: Double {
     guard let limit, let room, limit > 0 else { return 0 }
@@ -54,6 +57,7 @@ private struct LossRoomCard: View {
   }
 
   private var color: Color {
+    if room == nil { return Palette.textQuaternary }
     if fraction < Self.alarm { return Palette.loss }
     if fraction < Self.calm { return Palette.warning }
     return Palette.profit
@@ -77,7 +81,16 @@ private struct LossRoomCard: View {
         .modifier(AlarmPulse(active: room != nil && fraction < Self.alarm))
         VStack(spacing: Tokens.Space.s) {
           StatLine(L10n.Risk.limit, value: limit.map(Money.signedUSD) ?? Format.missing)
-          StatLine(L10n.Risk.resultToday, value: Money.signedUSD(result), color: Palette.result(result))
+          StatLine(
+            L10n.Risk.resultToday, value: result.map(Money.signedUSD) ?? Format.missing,
+            color: result.map(Palette.result) ?? Palette.textQuaternary)
+          HStack {
+            Text(L10n.Risk.reservationsExcluded)
+              .font(Tokens.Typography.callout)
+              .foregroundStyle(Palette.textTertiary)
+            Spacer()
+            PlannedTag(.needsAPI)
+          }
         }
         Footnote(L10n.Risk.lossRoomNote)
       }
@@ -118,7 +131,23 @@ private struct EntryGateCard: View {
         }
         .animation(Tokens.Motion.standard, value: status.entryBlock)
       } else {
-        Footnote(L10n.Common.unavailable)
+        StatusUnknown()
+      }
+    }
+  }
+}
+
+/// Why the bot's status is unknown: the read failed, or the bot has not written one.
+private struct StatusUnknown: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+      Text(L10n.Risk.statusUnknown)
+        .font(Tokens.Typography.body)
+        .foregroundStyle(Palette.warningText)
+      if let cause = model.fetchError ?? model.response?.unavailableCause {
+        Footnote(verbatim: cause)
       }
     }
   }
@@ -128,31 +157,42 @@ private struct EntryGateCard: View {
 private struct FencesCard: View {
   @Environment(AppModel.self) private var model
 
-  private var fences: [Fence] { model.status?.fences ?? [] }
+  /// The bot's fences; nil while its status is unknown (never shown as "no fences").
+  private var fences: [Fence]? { model.status?.fences }
 
   var body: some View {
     Card(L10n.Risk.fences, trailing: {
-      Badge(L10n.Common.fences(fences.count), color: fences.isEmpty ? Palette.textQuaternary : Palette.warningText)
-    }) {
-      if fences.isEmpty {
-        Footnote(L10n.Risk.noFences)
-      } else {
-        VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          ForEach(fences, id: \.self) { fence in
-            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
-              VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-                Text(verbatim: fence.text).foregroundStyle(Palette.textPrimary)
-                Text(L10n.Risk.fenceSince(fence.kind, Format.marketTime(fence.since.date)))
-                  .font(Tokens.Typography.captionMono)
-                  .foregroundStyle(Palette.textQuaternary)
-              }
-            }
-            .transition(.move(edge: .top).combined(with: .opacity))
-          }
-        }
-        .animation(Tokens.Motion.standard, value: fences)
+      if let fences {
+        Badge(L10n.Common.fences(fences.count), color: fences.isEmpty ? Palette.textQuaternary : Palette.warningText)
       }
+    }) {
+      if let fences {
+        list(fences)
+      } else {
+        Footnote(L10n.Common.unavailable)
+      }
+    }
+  }
+
+  @ViewBuilder private func list(_ fences: [Fence]) -> some View {
+    if fences.isEmpty {
+      Footnote(L10n.Risk.noFences)
+    } else {
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        ForEach(fences, id: \.self) { fence in
+          HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
+            VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+              Text(verbatim: fence.text).foregroundStyle(Palette.textPrimary)
+              Text(L10n.Risk.fenceSince(fence.kind, Format.marketTime(fence.since.date)))
+                .font(Tokens.Typography.captionMono)
+                .foregroundStyle(Palette.textQuaternary)
+            }
+          }
+          .transition(.move(edge: .top).combined(with: .opacity))
+        }
+      }
+      .animation(Tokens.Motion.standard, value: fences)
     }
   }
 }

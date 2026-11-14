@@ -3101,13 +3101,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Profits offset losses. Near the limit the bot sizes trades down to the room left; with almost no room it stops entering."
+            "value": "Profits offset losses but never raise the room above the limit. Near the limit the bot sizes trades down to the room left; with almost no room it stops entering."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Прибыль компенсирует убытки. У лимита бот уменьшает размер сделки до оставшегося запаса, а когда запаса почти нет, перестаёт входить."
+            "value": "Прибыль компенсирует убытки, но не поднимает запас выше лимита. У лимита бот уменьшает размер сделки до оставшегося запаса, а когда запаса почти нет, перестаёт входить."
           }
         }
       }
@@ -3231,6 +3231,23 @@
         }
       }
     },
+    "risk.reservationsExcluded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open reservations not counted yet"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открытые резервы пока не учтены"
+          }
+        }
+      }
+    },
     "risk.resultToday": {
       "extractionState": "manual",
       "localizations": {
@@ -3312,6 +3329,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Настройки недоступны: API бота не ответил."
+          }
+        }
+      }
+    },
+    "risk.statusUnknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The bot's status is unknown, so it is not known whether entries are allowed."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус бота неизвестен, поэтому неясно, разрешены ли входы."
           }
         }
       }

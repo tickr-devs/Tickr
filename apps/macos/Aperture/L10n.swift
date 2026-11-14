@@ -1109,7 +1109,15 @@ enum L10n {
     }
     /// How the daily limit works.
     static var lossRoomNote: LocalizedStringResource {
-      LocalizedStringResource("risk.lossRoomNote", defaultValue: "Profits offset losses. Near the limit the bot sizes trades down to the room left; with almost no room it stops entering.", bundle: L10n.bundle)
+      LocalizedStringResource("risk.lossRoomNote", defaultValue: "Profits offset losses but never raise the room above the limit. Near the limit the bot sizes trades down to the room left; with almost no room it stops entering.", bundle: L10n.bundle)
+    }
+    /// The room shown is before open reservations.
+    static var reservationsExcluded: LocalizedStringResource {
+      LocalizedStringResource("risk.reservationsExcluded", defaultValue: "Open reservations not counted yet", bundle: L10n.bundle)
+    }
+    /// Entry gate when the status is unknown.
+    static var statusUnknown: LocalizedStringResource {
+      LocalizedStringResource("risk.statusUnknown", defaultValue: "The bot's status is unknown, so it is not known whether entries are allowed.", bundle: L10n.bundle)
     }
     /// Card title: may the bot enter now.
     static var entryGate: LocalizedStringResource {
