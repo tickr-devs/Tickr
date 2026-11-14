@@ -20,7 +20,13 @@ jobs:
         working-directory: apps/ios
     steps:
       - uses: actions/checkout@v4
-      - run: xcodebuild -version
+      # Build with the newest stable Xcode on the runner (the owner uses the current release).
+      - name: Select the newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_*.app | grep -viE "beta|rc" | sort -V | tail -n 1)
+          sudo xcode-select -s "$newest"
+          xcodebuild -version
       - run: brew install xcodegen
       # The committed Aperture.xcodeproj must be exactly what project.yml generates.
       - name: Check the committed Xcode project matches project.yml
