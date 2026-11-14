@@ -135,20 +135,20 @@ def test_any_violation_fails(tmp_path, monkeypatch):
     assert module.main([]) == 1
 
 
-def test_http_header_and_scheme_constants_may_be_capitalised(tmp_path):
+def test_only_the_bearer_scheme_may_be_a_capitalised_constant(tmp_path):
     source = (
         'static let undocumentedScheme = "Bearer"\n'
         "/// The authentication scheme.\n"
         'static let bearerScheme = "Bearer"\n'
         "/// The header that carries it.\n"
         'static let authorizationHeader = "Authorization"\n'
-        "/// A title.\n"
-        'static let titleHeader = "Open positions"\n'
+        "/// A section header.\n"
+        'static let tradesHeader = "Trades"\n'
         "/// A capitalised word that is not a protocol token.\n"
         'static let title = "Overview"\n'
     )
     found = load().text_violations(write(tmp_path, source))
-    assert [line for line, _ in found] == [1, 7, 9]
+    assert [line for line, _ in found] == [1, 5, 7, 9]
 
 
 def test_info_plist_texts_need_a_russian_translation(tmp_path):

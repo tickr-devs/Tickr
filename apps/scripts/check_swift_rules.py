@@ -10,8 +10,8 @@ text     No words in code. A string literal holding a letter may appear only
          - as an SF Symbol name, passed to a `systemName:`, `systemImage:` or `symbol:` label;
          - as an identifier (no whitespace, not a capitalised word such as "Overview") in a
            documented `static let` constant or an enum case raw value (protocol values, keys);
-           a documented constant named `…Header` or `…Scheme` is an HTTP protocol token and may
-           be a capitalised word ("Bearer");
+           the one capitalised protocol token allowed is "Bearer" (the HTTP authentication scheme),
+           in a documented constant;
          - in an `@available` attribute (messages for developers).
          So `Text("Overview")`, `Button("Quit")`, `return "Flatten All"`,
          `Text(verbatim: "Aperture")` and `case overview = "Overview of the day"` all fail.
@@ -55,9 +55,8 @@ L10N_VALUE_ARGUMENT = re.compile(r"\bdefaultValue\s*:\s*$")
 L10N_CALL = re.compile(r"\bLocalizedStringResource\(")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:/%+\-]+$")
 TITLE_WORD = re.compile(r"^[A-Z][a-z]+$")
-# A documented constant holding an HTTP header name or authentication scheme, such as
-# `static let bearerScheme = "Bearer"`.
-PROTOCOL_CONSTANT = re.compile(r"\bstatic\s+let\s+\w*(?:Header|Scheme)\s*(?::\s*\w+\s*)?=\s*$")
+# Capitalised protocol tokens a documented constant may hold: lower-case header names already pass.
+PROTOCOL_TOKENS = {"Bearer"}
 USAGE_KEY = re.compile(r"^NS\w*UsageDescription$")
 ESCAPE = re.compile(r"\\(?:u\{[0-9A-Fa-f]+\}|.)")
 LETTER = re.compile(r"[A-Za-zЀ-ӿ]")
@@ -163,7 +162,7 @@ def text_violations(path: Path) -> list[tuple[int, str]]:
         named = number in documented or check_swift_literals.ENUM_CASE.search(prefix)
         if named and is_identifier:
             continue
-        if number in documented and IDENTIFIER.match(literal) and PROTOCOL_CONSTANT.search(prefix):
+        if number in documented and literal in PROTOCOL_TOKENS:
             continue
         found.append((number, literal))
     return found
