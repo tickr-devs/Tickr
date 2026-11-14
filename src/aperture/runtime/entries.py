@@ -3,8 +3,8 @@
 ENTER: build the admission inputs from what the bot knows (engine fences and trades, calendar,
 last broker read, the quote the strategy saw, today's money, request budget), run
 `risk.admit`, and only on success call `Engine.open_trade`. EXIT: ask the symbol's open trade to
-exit through the normal path. Every decision is recorded, admitted or not, as one line in the
-research decision-record format, so skipped signals can be studied later.
+exit through the normal path. Every decision is recorded, admitted or not, in the same per-day
+decision file as the observers (`observers.log.DecisionLog`), so skipped signals can be studied.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
-from pathlib import Path
 
 from aperture.calendar import (
     NEW_YORK,
@@ -23,8 +22,9 @@ from aperture.calendar import (
 )
 from aperture.config import Config, trading_gate
 from aperture.engine.core import Engine, EntryRefused, Fence, Leg
+from aperture.observers.log import DecisionLog
 from aperture.research.records import Admission as RecordAdmission
-from aperture.research.records import DecisionRecord, record_to_json
+from aperture.research.records import DecisionRecord
 from aperture.risk.admission import AdmissionInputs, AdmissionLimits, Reconciliation, admit
 from aperture.runtime.service import trades_today
 from aperture.strategy.base import Decision, Role, Verdict
@@ -52,18 +52,13 @@ def round_to_tick(price: Decimal) -> Decimal:
 class EntryDesk:
     def __init__(self, engine: Engine, config: Config, *, calendar: SessionCalendar | None,
                  last_broker_read_at: Callable[[], datetime | None],
-                 records_dir: Path) -> None:
+                 log: DecisionLog) -> None:
         self.engine = engine
         self.config = config
         self.calendar = calendar
         self.last_broker_read_at = last_broker_read_at
-        self.records_dir = records_dir
+        self.log = log
         self.limits = AdmissionLimits.from_config(config)
-
-    @classmethod
-    def records_dir_for(cls, config: Config) -> Path:
-        return (config.root / config.run.data_dir / config.run.decisions_dir
-                / config.environment_name)
 
     # --- money -----------------------------------------------------------------------------
 
@@ -161,13 +156,6 @@ class EntryDesk:
                 if trade.symbol == decision.symbol and not trade.exit_requested:
                     self.engine.request_exit(trade.trade_id, "strategy-exit")
         record = DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission, cause)
-        self._write(record, now)
+        self.log.append(record)
         return record
-
-    def _write(self, record: DecisionRecord, now: datetime) -> None:
-        line = record_to_json(record) + "\n"
-        path = self.records_dir / f"{now.astimezone(NEW_YORK).date().isoformat()}.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(line)
 
