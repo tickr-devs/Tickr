@@ -16,6 +16,7 @@ from aperture.engine.core import Engine
 from aperture.runtime import service
 from aperture.runtime.protection import PROTECTION_LATENCY, LatencyLog, busy
 from aperture.store import Store
+from aperture.types import Quote
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
@@ -43,7 +44,7 @@ class Rig:
                                 now=lambda: self.now)
         self.engine = Engine(self.store, self.broker, CFG, "prot0001",
                              lambda: GateResult(True, "t"), clock=lambda: self.clock)
-        self.market = StubMarket()
+        self.market = StubMarket(self)
         self.evaluator = StubEvaluator(self)
         self.service = service.Service(
             self.engine, now=lambda: self.now, calendar=CALENDAR,
@@ -79,11 +80,18 @@ class Rig:
 
 
 class StubMarket:
+    """A fresh quote inside the entry's window every pass, so the entry guard lets it rest."""
+
     watch: set[str] = set()
     discovery = None
 
-    def __init__(self) -> None:
+    def __init__(self, rig: Rig) -> None:
+        self.rig = rig
+        self.inbox = self
         self.discovers: list[bool] = []
+
+    def latest(self, symbol: str) -> Quote:
+        return Quote(symbol, D("9.99"), D(10), D(1), D(1), self.rig.now, self.rig.now)
 
     def tick(self, *, discover: bool = True) -> None:
         self.discovers.append(discover)

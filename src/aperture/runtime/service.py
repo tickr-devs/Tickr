@@ -234,6 +234,18 @@ class Service:
                 self.engine.request_exit(trade.trade_id, "session-flatten")
         self.day_end.check(self._flatten_at, now)
 
+    # --- working entries -------------------------------------------------------------------
+
+    def _guard_entries(self) -> None:
+        """A working entry is cancelled once its quote leaves the price window or goes stale,
+        and at the last-entry time (spec 9). Needs the market's quotes, so only with one."""
+        from aperture.runtime.entries import guard_entries  # entries imports this module
+
+        if self.market is None:
+            return
+        guard_entries(self.engine, self.config, self.calendar, self.market.inbox.latest,
+                      self.now())
+
     # --- strategy --------------------------------------------------------------------------
 
     def _record_latency(self) -> None:
@@ -263,12 +275,13 @@ class Service:
         return cause is None
 
     def _strategy_pass(self, monotonic: Callable[[], float]) -> None:
-        """Market upkeep every pass; discovery and the strategy only when protection allows,
-        timed against `[runtime] evaluation_budget_seconds`."""
+        """Market upkeep and the entry guard every pass; discovery and the strategy only when
+        protection allows, timed against `[runtime] evaluation_budget_seconds`."""
         allowed = self._protect_first()
         started = monotonic()
         if self.market is not None:
             self.market.tick(discover=allowed)  # after the engine's broker work of this pass
+            self._guard_entries()  # every pass: it protects a working entry
         if not allowed:
             return
         self._evaluate()
