@@ -5,7 +5,7 @@ Rule (docs/design-system.md): a number other than 0 and 1 may appear only
 - in a named constant: a `static let` whose line is directly preceded by a `///` doc comment, or
   that sits in a block of `static let` lines under one doc comment;
 - as an enum case raw value (`case m5 = 5`);
-- as halving or doubling (`/ 2`, `* 2`), or a subscript index (`parts[2]`);
+- as the halving divisor `/ 2`, or a subscript index (`parts[2]`);
 - in Palette.swift (colour definitions) and in tests.
 Comments and string literals are ignored. Usage: check_swift_literals.py [root ...]
 (default: the roots in DEFAULT_ROOTS; each app joins when its code has moved onto the
@@ -78,8 +78,7 @@ def violations(path: Path) -> list[tuple[int, str]]:
             documented = False
         if ENUM_CASE.search(code):
             continue
-        code = re.sub(r"[/*]\s*2(?![\w.])", "/", code)
-        code = re.sub(r"(?<![\w.$])2\s*\*", "*", code)
+        code = re.sub(r"/\s*2(?![\w.])", "/", code)
         code = re.sub(r"(?<=[\w)\]])\[\s*\d+\s*\]", "[]", code)
         for match in NUMBER.finditer(code):
             if match.group(1) not in ALLOWED:

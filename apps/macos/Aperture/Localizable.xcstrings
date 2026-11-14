@@ -608,7 +608,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "блоков: %lld"
+            "value": "блокировок: %lld"
           }
         }
       }
@@ -710,7 +710,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Записанный день · %@"
+            "value": "День из истории · %@"
           }
         }
       }
@@ -1322,7 +1322,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Наблюдатели · тень"
+            "value": "Наблюдатели · теневой режим"
           }
         }
       }
@@ -1373,7 +1373,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шлюз закрыт"
+            "value": "Торговля запрещена"
           }
         }
       }
@@ -1390,7 +1390,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шлюз открыт"
+            "value": "Торговля разрешена"
           }
         }
       }
@@ -1798,7 +1798,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Записанный день"
+            "value": "День из истории"
           }
         }
       }
@@ -1883,7 +1883,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "нереализованный"
+            "value": "нереализованный результат"
           }
         }
       }
@@ -2240,7 +2240,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "нет блоков"
+            "value": "нет блокировок"
           }
         }
       }
@@ -2257,7 +2257,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Команды недоступны, пока показан записанный день."
+            "value": "Команды недоступны, пока показан день из истории."
           }
         }
       }
@@ -2342,7 +2342,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "записанный день"
+            "value": "день из истории"
           }
         }
       }
@@ -2971,7 +2971,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "закрыт"
+            "value": "запрещена"
           }
         }
       }
@@ -2988,7 +2988,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "открыт"
+            "value": "разрешена"
           }
         }
       }
@@ -3549,7 +3549,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Торговый шлюз"
+            "value": "Допуск к торговле"
           }
         }
       }
@@ -3855,7 +3855,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Выбрать записанный торговый день"
+            "value": "Выбрать торговый день из истории"
           }
         }
       }

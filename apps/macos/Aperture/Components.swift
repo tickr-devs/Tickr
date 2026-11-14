@@ -222,7 +222,7 @@ struct ApertureLogo: View {
     let center = CGPoint(x: canvas.width / 2, y: canvas.height / 2)
     let ring = CGRect(origin: .zero, size: canvas).insetBy(dx: Tokens.Stroke.thin, dy: Tokens.Stroke.thin)
     graphics.stroke(Path(ellipseIn: ring), with: .color(Palette.highlight), lineWidth: Tokens.Stroke.bold)
-    let full = Double.pi * 2
+    let full = Geometry.fullTurn
     for blade in 0..<Self.blades {
       let angle = (turn + Double(blade) / Double(Self.blades)) * full
       var path = Path()
@@ -231,7 +231,7 @@ struct ApertureLogo: View {
       graphics.stroke(path, with: .color(Palette.accent), style: StrokeStyle(lineWidth: Tokens.Stroke.bold, lineCap: .round))
     }
     let coreRadius = radius * Self.core
-    let core = CGRect(x: center.x - coreRadius, y: center.y - coreRadius, width: coreRadius * 2, height: coreRadius * 2)
+    let core = CGRect(origin: center, size: .zero).insetBy(dx: -coreRadius, dy: -coreRadius)
     graphics.fill(Path(ellipseIn: core), with: .color(Palette.highlight.opacity(Tokens.Opacity.overlay)))
   }
 
@@ -362,4 +362,10 @@ extension BotState {
     case .stopped: return String(localized: L10n.BotState.stopped)
     }
   }
+}
+
+/// Plane geometry the drawings share.
+enum Geometry {
+  /// One full turn, in radians.
+  static let fullTurn = Double.pi * 2
 }

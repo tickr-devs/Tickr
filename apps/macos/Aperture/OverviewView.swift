@@ -323,7 +323,8 @@ private struct Pipeline: View {
     ZStack(alignment: .top) {
       GeometryReader { proxy in
         let inset = proxy.size.width / CGFloat(stages.count) / 2
-        let width = proxy.size.width - 2 * inset
+        // The track runs from the centre of the first stage to the centre of the last.
+        let width = proxy.size.width - proxy.size.width / CGFloat(stages.count)
         Capsule().fill(Palette.separator)
           .frame(width: width, height: Tokens.Stroke.bold)
           .offset(x: inset, y: (Tokens.Size.iconWell - Tokens.Stroke.bold) / 2)
@@ -672,7 +673,7 @@ private struct Radar: View {
         AngularGradient(colors: [Palette.accent.opacity(Tokens.Opacity.border), .clear], center: .center,
           startAngle: .zero, endAngle: Self.sweep)
           .clipShape(Circle())
-          .rotationEffect(.radians(turn * Double.pi * 2))
+          .rotationEffect(.radians(turn * Geometry.fullTurn))
       }
     }
     .accessibilityHidden(true)
