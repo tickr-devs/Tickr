@@ -4,8 +4,7 @@ from datetime import date
 
 import pytest
 from research_helpers import (
-    FLATTEN,
-    LAST_ENTRY,
+    CLOCK,
     NY,
     Breakout,
     flat,
@@ -29,8 +28,7 @@ BARS = series("10:00", [
 
 
 def run(version="1", edge="0"):
-    return decide(lambda: Breakout(version, edge), {"ABC": BARS}, replay_settings(),
-                  LAST_ENTRY, FLATTEN)
+    return decide(lambda: Breakout(version, edge), {"ABC": BARS}, replay_settings(), CLOCK)
 
 
 def test_decide_records_every_decision_as_observer():

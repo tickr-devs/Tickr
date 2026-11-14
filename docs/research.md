@@ -65,17 +65,18 @@ measured, up, down, mean and median move in percent and ATR).
 
 ```
 python -m aperture.research whatif --bars ... --decisions decisions.jsonl \
-  --replay-settings config/replay.toml --last-entry 15:45 --flatten 15:55 \
+  [--replay-settings config/replay.toml] [--config config/bot.toml] \
   [--quantity 20] --out out/whatif
 ```
 
 Every ENTER whose admission is not `taken` is replayed alone through the replay engine with a
 scripted strategy that returns exactly that decision on its bar. So the rules are the replay's
-(`docs/replay.md`, settings in `config/replay.toml`): entry at the top of the window plus
+(`docs/replay.md`, settings in `config/replay.toml`, each day's clock from bot.toml `[session]`
+and the calendar, as live): entry at the top of the window plus
 slippage if a following bar trades in the window within `entry_wait_bars` (else `missed`, never
 chased); exit at the stop, at the flatten bar's open, or at the last bar's close, always with
 slippage; when the fill bar also reaches the stop, the stop is taken in that bar. An ENTER
-completing at or after the last entry time is `rejected`.
+completing at or after the last entry time (or on a disabled half day) is `rejected`.
 
 Result: R per share, and USD = (exit - entry) x quantity, where quantity is `--quantity` or the
 recorded `quantity`; without either the row is `not_simulated`. Outputs: `whatif.csv` and
@@ -87,7 +88,7 @@ USD, exits by reason).
 ```
 python -m aperture.research decide --bars <history days + the day> \
   --strategy aperture.strategy.price_action_v1 --values strategies/<v2>/strategy.toml \
-  --replay-settings config/replay.toml --last-entry 15:45 --flatten 15:55 --out out/v2
+  [--replay-settings config/replay.toml] [--config config/bot.toml] --out out/v2
 python -m aperture.research diff --baseline decisions.jsonl --candidate out/v2/decisions.jsonl \
   [--baseline-strategy price-action-v1:1] --settings config/research.toml --out out/diff
 ```

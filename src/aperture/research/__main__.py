@@ -10,10 +10,12 @@ from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from aperture.replay.__main__ import strategy_factory
+from aperture.calendar import CalendarRefused
+from aperture.config import ConfigError
+from aperture.replay.__main__ import session_clock, strategy_factory
 from aperture.replay.bars import load_bars
 from aperture.replay.errors import ReplayError
-from aperture.replay.settings import load_settings, parse_clock
+from aperture.replay.settings import load_settings
 from aperture.research import compare, report
 from aperture.research.errors import ResearchError
 from aperture.research.outcomes import outcomes
@@ -34,9 +36,10 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--out", type=Path, required=True, help="output directory")
 
     def clock(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--replay-settings", type=Path, required=True, help="replay TOML")
-        p.add_argument("--last-entry", required=True, help="last entry time, HH:MM exchange")
-        p.add_argument("--flatten", required=True, help="flatten time, HH:MM exchange")
+        p.add_argument("--replay-settings", type=Path, default=Path("config/replay.toml"),
+                       help="replay settings TOML (fill model)")
+        p.add_argument("--config", type=Path, default=Path("config/bot.toml"),
+                       help="bot config: [session] offsets and the calendar give each day's clock")
 
     p = sub.add_parser("outcomes", help="price moves after WATCH/ENTER decisions")
     bars_and_out(p)
@@ -86,8 +89,7 @@ def _run(args: argparse.Namespace) -> dict:
         )
         return report.write_diff(result, args.out, settings.output_decimal_places)
     replay_settings = load_settings(args.replay_settings)
-    last_entry = parse_clock("--last-entry", args.last_entry)
-    flatten = parse_clock("--flatten", args.flatten)
+    clock_for = session_clock(args.config)
     places = replay_settings.output_decimal_places
     if args.command == "whatif":
         quantity = None
@@ -97,10 +99,10 @@ def _run(args: argparse.Namespace) -> dict:
             except InvalidOperation as exc:
                 raise ResearchError(f"--quantity is not a number: {args.quantity!r}") from exc
         rows = what_if(load_records(args.decisions), load_bars(args.bars), replay_settings,
-                       last_entry, flatten, quantity)
+                       clock_for, quantity)
         return report.write_whatif(rows, args.out, places)
     factory = strategy_factory(args.strategy, args.values)
-    records = compare.decide(factory, load_bars(args.bars), replay_settings, last_entry, flatten)
+    records = compare.decide(factory, load_bars(args.bars), replay_settings, clock_for)
     args.out.mkdir(parents=True, exist_ok=True)
     write_records(args.out / "decisions.jsonl", records)
     verdicts: dict[str, int] = {}
@@ -113,7 +115,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         summary = _run(args)
-    except (ResearchError, ReplayError, OSError, tomllib.TOMLDecodeError) as exc:
+    except (
+        ResearchError,
+        ReplayError,
+        ConfigError,
+        CalendarRefused,
+        OSError,
+        tomllib.TOMLDecodeError,
+    ) as exc:
         print(f"research refused: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(summary, indent=2))

@@ -12,7 +12,7 @@ BARS = series("10:00", [flat("10.00"), ("10.00", "10.20", "10.00", "10.03"),
                         ("10.03", "10.30", "10.03", "10.30"), flat("10.30"), flat("10.40"),
                         flat("10.40")])
 CLOCK = ["--replay-settings", str(HERE / "replay_settings.toml"),
-         "--last-entry", "15:45", "--flatten", "15:55"]
+         "--config", str(ROOT / "config" / "bot.toml")]
 
 
 def _values(tmp_path, version, edge):

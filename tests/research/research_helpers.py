@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from aperture.replay.clock import fixed_clock
 from aperture.replay.settings import ReplaySettings, load_settings
 from aperture.research.records import Admission, DecisionRecord
 from aperture.research.settings import ResearchSettings, load_research_settings
@@ -21,6 +22,7 @@ NY = ZoneInfo("America/New_York")
 DAY = date(2026, 11, 10)
 LAST_ENTRY = time(15, 45)
 FLATTEN = time(15, 55)
+CLOCK = fixed_clock(NY, time(9, 30), LAST_ENTRY, FLATTEN)
 M1 = timedelta(minutes=1)
 
 

@@ -22,9 +22,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime
 from enum import StrEnum
 
+from aperture.replay.clock import ClockFor
 from aperture.replay.engine import M1, replay
 from aperture.replay.settings import ReplaySettings
 from aperture.research.errors import ResearchError
@@ -64,13 +65,11 @@ def decide(
     create_strategy: Callable[[], Strategy],
     bars_by_symbol: Mapping[str, Sequence[Bar]],
     settings: ReplaySettings,
-    last_entry: time,
-    flatten: time,
+    clock_for: ClockFor,
 ) -> tuple[DecisionRecord, ...]:
     """Every decision of the strategy over the bars, in replay order (symbol, then time)."""
     sink: list[DecisionRecord] = []
-    replay(lambda: _Recorder(create_strategy(), sink), bars_by_symbol, settings, last_entry,
-           flatten)
+    replay(lambda: _Recorder(create_strategy(), sink), bars_by_symbol, settings, clock_for)
     return tuple(sink)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from research_helpers import FLATTEN, LAST_ENTRY, flat, record, replay_settings, series
+from research_helpers import CLOCK, flat, record, replay_settings, series
 
 from aperture.replay.engine import ExitReason
 from aperture.research.errors import ResearchError
@@ -20,7 +20,7 @@ def enter(clock="10:00", quantity="10", **kw):
 
 
 def run(records, bars, quantity=None):
-    return what_if(records, {"ABC": bars}, replay_settings(), LAST_ENTRY, FLATTEN, quantity)
+    return what_if(records, {"ABC": bars}, replay_settings(), CLOCK, quantity)
 
 
 def test_refused_enter_filled_then_stopped():

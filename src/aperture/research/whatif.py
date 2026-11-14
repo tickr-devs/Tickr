@@ -4,7 +4,8 @@ Each ENTER record whose admission is not `taken` (refused by the platform, or ne
 observer and replay decisions) is replayed alone through the replay engine of
 `aperture.replay` with a scripted strategy that returns exactly that decision on its bar and
 IGNORE everywhere else. The fill and exit rules are therefore the replay's rules
-(docs/replay.md), with `config/replay.toml`:
+(docs/replay.md), with `config/replay.toml` and each day's session clock (bot.toml
+`[session]` plus the calendar, as live):
 
 - entry at the TOP of the price window plus slippage, only if a following bar trades inside the
   window within `entry_wait_bars` (otherwise `missed`, never chased);
@@ -12,7 +13,7 @@ IGNORE everywhere else. The fill and exit rules are therefore the replay's rules
   at or after the flatten time, or at the last bar's close; every exit pays slippage;
 - conservative: if the fill bar also reaches the stop, the stop is taken in that bar;
 - an ENTER that live admission would refuse on time alone (before the open, completing at or
-  after the last entry time) is `rejected` with the replay's cause.
+  after the last entry time, a disabled half day) is `rejected` with the replay's cause.
 
 The result is in R (per share) and in USD for a quantity: the `quantity` argument when given,
 otherwise the quantity the strategy recorded. Without either the record is `not_simulated`.
@@ -22,10 +23,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import time
 from decimal import Decimal
 from enum import StrEnum
 
+from aperture.replay.clock import ClockFor
 from aperture.replay.engine import SignalOutcome, SimulatedTrade, replay, split_sessions
 from aperture.replay.settings import ReplaySettings
 from aperture.research.errors import ResearchError
@@ -105,8 +106,7 @@ def simulate_one(
     record: DecisionRecord,
     bars: Sequence[Bar],
     settings: ReplaySettings,
-    last_entry: time,
-    flatten: time,
+    clock_for: ClockFor,
     quantity: Decimal | None = None,
 ) -> WhatIf:
     def skip(cause: str, qty: Decimal | None = None) -> WhatIf:
@@ -116,14 +116,14 @@ def simulate_one(
     if qty is None:
         return skip(cause)
     session = next(
-        (day_bars for _, day_bars in split_sessions(bars, settings)
+        (day_bars for _, day_bars in split_sessions(bars)
          if any(b.start == record.bar_start for b in day_bars)),
         None,
     )
     if session is None:
         return skip("decision bar not in bars", qty)
     result = replay(
-        lambda: _OneDecision(record), {record.symbol: session}, settings, last_entry, flatten
+        lambda: _OneDecision(record), {record.symbol: session}, settings, clock_for
     )
     if len(result.signals) != 1 or len(result.trades) > 1:
         raise ResearchError(
@@ -148,8 +148,7 @@ def what_if(
     records: Sequence[DecisionRecord],
     bars_by_symbol: Mapping[str, Sequence[Bar]],
     settings: ReplaySettings,
-    last_entry: time,
-    flatten: time,
+    clock_for: ClockFor,
     quantity: Decimal | None = None,
 ) -> tuple[WhatIf, ...]:
     """Simulate every ENTER that was not taken, independently of the others."""
@@ -162,7 +161,7 @@ def what_if(
             out.append(WhatIf(record, None, WhatIfOutcome.NOT_SIMULATED, "no bars for the symbol",
                               None))
             continue
-        out.append(simulate_one(record, bars, settings, last_entry, flatten, quantity))
+        out.append(simulate_one(record, bars, settings, clock_for, quantity))
     return tuple(out)
 
 
