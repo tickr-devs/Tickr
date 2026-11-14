@@ -127,7 +127,8 @@ def _drive(engine: Engine, flatten_at: datetime | None, hold: float | None) -> i
     try:
         waiting = run_until_closed(engine, sleep=SLEEP, monotonic=time.monotonic, now=NOW,
                                    flatten_at=flatten_at,
-                                   interrupted=lambda: interrupt.requested, hold_seconds=hold)
+                                   interrupted=lambda: interrupt.requested, hold_seconds=hold,
+                                   notify=lambda line: print(line, file=sys.stderr))
     finally:
         signal.signal(signal.SIGINT, previous)
     for trade_id in waiting:

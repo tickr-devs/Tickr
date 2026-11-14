@@ -232,3 +232,41 @@ def test_default_stop_is_derived_from_the_fill(tmp_path):
     (stop,) = [o for o in engine.orders(t) if o.leg is Leg.STOP]
     assert stop.stop_price == D("9.80")  # 2 % below the 10.00 fill, not below the 10.50 limit
     assert plan.stop_price == D("10.29")
+
+
+def test_operator_fences_are_reported_once(tmp_path):
+    from aperture.broker.base import Refused
+
+    market = Market()
+    clock = [0.0]
+    store = Store.open(tmp_path / "db.sqlite3", busy_timeout_seconds=0)
+    engine = Engine(store, market, CFG, "manual01", lambda: GateResult(True, "t"),
+                    clock=lambda: clock[0])
+    engine.open_trade("ABC", D(1), D(10), D("9.80"), D("0.2"))
+    real_place = market.place
+
+    def place(request):
+        if request.order_type in ("MARKET", "STOP_LOSS"):
+            raise Refused("CLOSED", "refused")
+        return real_place(request)
+
+    market.place = place
+    lines = []
+
+    class Done(Exception):
+        pass
+
+    def sleep(seconds):
+        clock[0] += seconds
+        market.tick()
+        if clock[0] > 600:
+            raise Done
+
+    with pytest.raises(Done):  # unprotected and unclosable: never "waiting", never closed
+        run_until_closed(engine, sleep=sleep, monotonic=lambda: clock[0],
+                         now=lambda: MONDAY_11, interrupted=lambda: False, flatten_at=None,
+                         hold_seconds=None, notify=lines.append)
+    names = [line.split(": ")[1] for line in lines]
+    assert any(n.startswith("stop-rejected:") for n in names)
+    assert any(n.startswith("exit-refused:") for n in names)
+    assert len(names) == len(set(names))

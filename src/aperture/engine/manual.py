@@ -15,7 +15,7 @@ from decimal import ROUND_DOWN, Decimal
 
 from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
 from aperture.config import Config
-from aperture.engine.core import Engine, Fence, Leg, TradeState
+from aperture.engine.core import OPERATOR_FENCES, Engine, Fence, Leg, TradeState
 
 CENT = Decimal("0.01")
 PERCENT = Decimal(100)
@@ -100,22 +100,29 @@ def flatten_deadline(config: Config, calendar: SessionCalendar, now: datetime) -
 def run_until_closed(engine: Engine, *, sleep: Callable[[float], None],
                      monotonic: Callable[[], float], now: Callable[[], datetime],
                      flatten_at: datetime | None, interrupted: Callable[[], bool],
-                     hold_seconds: float | None) -> list[str]:
+                     hold_seconds: float | None,
+                     notify: Callable[[str], None] = lambda _line: None) -> list[str]:
     """Step (and reconcile every reconcile_interval_seconds) until no trade is open, or every
     open trade is waiting for the operator (its closing order was refused: the engine has put
     the stop back). Returns the ids of trades left open for the operator.
     `hold_seconds=None` never asks for an exit on its own (except entry timeout, flatten and
-    interrupt)."""
+    interrupt). Each newly set operator fence is passed to `notify` once, so a trade the
+    engine can neither protect nor close never waits silently."""
     config = engine.config
     poll = float(config.orders.detail_poll_seconds)
     started = monotonic()
     last_reconcile = started
     protected_since: dict[str, float] = {}
+    notified: set[str] = set()
     while True:
         trades = engine.trades()
         if not trades:
             return []
         fences = engine.fences()
+        for name, cause in sorted(fences.items()):
+            if name.partition(":")[0] in OPERATOR_FENCES and name not in notified:
+                notified.add(name)
+                notify(f"needs the operator: {name}: {cause}")
         waiting = [t.trade_id for t in trades
                    if f"{Fence.EXIT_REFUSED}:{t.trade_id}" in fences
                    and f"{Fence.UNPROTECTED}:{t.trade_id}" not in fences]
