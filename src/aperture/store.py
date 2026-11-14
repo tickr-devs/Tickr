@@ -65,6 +65,7 @@ _SCHEMA_V2 = (
         planned_loss_usd TEXT NOT NULL,
         exit_requested TEXT,
         stop_failures INTEGER NOT NULL DEFAULT 0,
+        last_stop_failure_at REAL,
         opened_at TEXT NOT NULL,
         closed_at TEXT,
         close_cause TEXT
@@ -87,13 +88,17 @@ _SCHEMA_V2 = (
         refusal TEXT,
         absent_reads INTEGER NOT NULL DEFAULT 0,
         cancel_state TEXT,
+        cancel_attempts INTEGER NOT NULL DEFAULT 0,
+        cancel_at REAL,
+        last_detail_at REAL,
         updated_at TEXT NOT NULL
     )""",
     "CREATE INDEX orders_trade ON orders(trade_id)",
     """CREATE TABLE fences (
         name TEXT PRIMARY KEY,
         cause TEXT NOT NULL,
-        set_at TEXT NOT NULL
+        set_at TEXT NOT NULL,
+        set_at_epoch REAL NOT NULL
     )""",
     """CREATE TABLE counters (
         name TEXT PRIMARY KEY,
