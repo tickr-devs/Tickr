@@ -144,6 +144,7 @@ clients show the text.
 - `fences[].code` / `params`, by kind: `startup_reconcile_pending`; `positions_read_failed` /
   `open_orders_read_failed` `{error}` (an exception type name); `detail_budget`;
   `send_outcome_unknown`, `crashed_during_send`; `order_missing`; `status_unmapped` `{status}`;
+  `detail_unreadable` / `stop_cancel_unconfirmed` `{seconds}`;
   `stop_covers_part` `{verified, expected}`; `stops_over_position` `{covered, held}`;
   `unprotected_exiting` / `unprotected_close_by_hand` `{seconds}`; `stop_rejected_exiting`;
   `exit_refused_no_stop`, `exit_refused_stop_again`; `cancel_outcome_unknown` `{outcome}`,

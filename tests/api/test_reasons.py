@@ -57,6 +57,11 @@ def test_every_fixed_fence_text_the_engine_writes_is_recognized():
     ("cancel-unknown:c1", "cancel unknown; waiting for Detail", "cancel_outcome_unknown",
      {"outcome": "unknown"}),
     ("cancel-unknown:c1", "crashed during cancel", "cancel_crashed", {}),
+    ("detail-unreadable:c1", "Detail unreadable for 31 s: order state unknown; check it in "
+     "the Webull app", "detail_unreadable", {"seconds": "31"}),
+    ("detail-unreadable:c1", "stop cancel sent and its Detail unreadable for 30 s: the stop "
+     "may be gone and nothing is sold; check the position in the Webull app",
+     "stop_cancel_unconfirmed", {"seconds": "30"}),
     ("cancel-not-sent:c1", "no cancel could be sent for 62 s (request budget)",
      "cancel_not_sent", {"seconds": "62"}),
     ("foreign-position:EFGH", "position not opened by this bot", "foreign_position", {}),

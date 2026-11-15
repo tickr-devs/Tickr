@@ -78,6 +78,12 @@ _FENCE = {
     "detail-budget": _shapes(("detail_budget", r"Detail reads refused by the budget")),
     "unknown-order": _shapes(("send_outcome_unknown", r"send outcome unknown"),
                              ("crashed_during_send", r"crashed during send")),
+    "detail-unreadable": _shapes(
+        ("detail_unreadable", r"Detail unreadable for (?P<seconds>[0-9]+) s: order state "
+         r"unknown; check it in the Webull app"),
+        ("stop_cancel_unconfirmed", r"stop cancel sent and its Detail unreadable for "
+         r"(?P<seconds>[0-9]+) s: the stop may be gone and nothing is sold; check the position "
+         r"in the Webull app")),
     "order-missing": _shapes(("order_missing", r"acknowledged order not found by Detail")),
     "status-unknown": _shapes(("status_unmapped", r"unmapped status '(?P<status>[^']*)'")),
     "unprotected": _shapes(

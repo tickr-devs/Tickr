@@ -107,6 +107,8 @@ public enum FenceReason: String, CaseIterable, Sendable {
   case sendOutcomeUnknown = "send_outcome_unknown"
   case crashedDuringSend = "crashed_during_send"
   case orderMissing = "order_missing"
+  case detailUnreadable = "detail_unreadable"
+  case stopCancelUnconfirmed = "stop_cancel_unconfirmed"
   case statusUnmapped = "status_unmapped"
   case stopCoversPart = "stop_covers_part"
   case stopsOverPosition = "stops_over_position"
@@ -144,6 +146,8 @@ public enum FenceReason: String, CaseIterable, Sendable {
     case .sendOutcomeUnknown: [ReasonSentence(L10n.fenceReasonSendOutcomeUnknown, [])]
     case .crashedDuringSend: [ReasonSentence(L10n.fenceReasonCrashedDuringSend, [])]
     case .orderMissing: [ReasonSentence(L10n.fenceReasonOrderMissing, [])]
+    case .detailUnreadable: [ReasonSentence(L10n.fenceReasonDetailUnreadable, [.seconds])]
+    case .stopCancelUnconfirmed: [ReasonSentence(L10n.fenceReasonStopCancelUnconfirmed, [.seconds])]
     case .statusUnmapped: [ReasonSentence(L10n.fenceReasonStatusUnmapped, [])]
     case .stopCoversPart: [ReasonSentence(L10n.fenceReasonStopCoversPart, [.verified, .expected])]
     case .stopsOverPosition: [ReasonSentence(L10n.fenceReasonStopsOverPosition, [.covered, .held])]

@@ -73,8 +73,6 @@ class StopDetailUnreadable(FakeBroker):
                                                raw_status="CANCELLED")
 
 
-@pytest.mark.xfail(strict=True, reason="bug A: after max_unprotected_seconds the exit cancels "
-                   "the working (unreadable) stop and never sends the close: bare position")
 def test_bug_a_unreadable_stop_is_not_cancelled_into_a_bare_position(store):
     broker = StopDetailUnreadable()
     engine = make(store, broker)
@@ -134,8 +132,6 @@ class FillDetailUnreadable(FakeBroker):
         return order
 
 
-@pytest.mark.xfail(strict=True, reason="bug C: shares held at the broker that Detail cannot "
-                   "explain, with the entry still live in records: no stop and no fence")
 def test_bug_c_unexplained_shares_with_unreadable_entry_detail_are_fenced(store):
     broker = FillDetailUnreadable()
     engine = make(store, broker)
