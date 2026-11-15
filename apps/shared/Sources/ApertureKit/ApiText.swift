@@ -45,8 +45,8 @@ public enum ApiText {
   /// line. Without a symbol, `fenceWithDetail`.
   public static func fenceWithDetail(_ fence: Fence, symbol: String?) -> String {
     guard let symbol else { return fenceWithDetail(fence) }
-    let name = fence.kind.prefix { $0 != Fence.keySeparator }
-    let title = FenceKind(rawValue: name.replacing("-", with: "_")).map { String(localized: $0.title) } ?? String(name)
+    let name = String(fence.kind.prefix { $0 != Fence.keySeparator })
+    let title = FenceKind(rawValue: name.replacing("-", with: "_")).map { String(localized: $0.title) } ?? name
     let detail = fenceDetail(fence)
     return symbol + keySeparator + (detail.isEmpty ? title : title + detailSeparator + detail)
   }
