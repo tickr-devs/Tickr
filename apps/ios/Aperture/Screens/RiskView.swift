@@ -152,13 +152,18 @@ private struct GateCard: View {
           .contentTransition(.opacity)
       }
       if let block = status.entryBlock {
-        Text(verbatim: ApiText.entryBlock(block))
+        let title = ApiText.entryBlock(block)
+        Text(verbatim: title)
           .font(Tokens.Typography.callout)
           .foregroundStyle(Palette.textPrimary)
           .fixedSize(horizontal: false, vertical: true)
-        Text(verbatim: block.cause)
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.textQuaternary)
+        // The bot's own detail under the translated cause; nothing when the title already is it.
+        if title != block.text, !block.text.isEmpty {
+          Text(verbatim: block.text)
+            .font(Tokens.Typography.annotation)
+            .foregroundStyle(Palette.textQuaternary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
       RiskLine(label: L10n.Risk.pausedByYou,
         value: String(localized: status.entryStop ? L10n.Risk.yes : L10n.Risk.no),
