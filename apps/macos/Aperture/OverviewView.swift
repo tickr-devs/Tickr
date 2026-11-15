@@ -717,7 +717,7 @@ private struct SafetyCard: View {
     Card(L10n.Safety.title) {
       TimelineView(.periodic(from: .now, by: Self.tick)) { context in
         VStack(spacing: Tokens.Space.s) {
-          ForEach(rows(now: context.date)) { row in
+          ForEach(rows(now: model.botTime(context.date))) { row in
             HStack(spacing: Tokens.Space.s) {
               Circle().fill(row.color).frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
               Text(row.label).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary)
