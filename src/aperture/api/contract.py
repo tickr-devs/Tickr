@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
 from aperture.data.base import ScreenerKind
+from aperture.replay.engine import ExitReason
 from aperture.research.records import Admission, DecisionRecord
 from aperture.risk.causes import ENGINE_REFUSED, AdmissionCause
 from aperture.risk.ticks import round_to_tick
@@ -349,6 +350,32 @@ class ErrorV1:
 
 
 @dataclass(frozen=True)
+class PriceAfterV1:
+    """The price `minutes` after a closed trade's exit or a skipped signal (docs/api.md, "Prices
+    after"): the close of the captured M1 bar covering `at`. `change_usd` is per share, `price`
+    minus the reference (a trade's `exit_price`; a signal's decision bar close). `cause` says
+    why `price` or `change_usd` is null, else null. Display only."""
+
+    minutes: int
+    at: datetime
+    price: Decimal | None
+    change_usd: Decimal | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
+class WhatIfV1:
+    """A skipped signal entered alone in the replay simulation (docs/api.md, "What if"):
+    gross USD for the recorded quantity, R per share, and why the simulated trade ended.
+    SIMULATED, display only. Every number null with `cause` when it was not simulated."""
+
+    result_gross_usd: Decimal | None
+    result_r: Decimal | None
+    exit_reason: ExitReason | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
 class DayTrade:
     """A closed trade with fills. `stop_price` is the first protective stop sent (null if none
     was); 1 R = `planned_loss_usd`. `stop_confirmed_after_seconds` as in `Trade`. `mae_usd` /
@@ -356,7 +383,10 @@ class DayTrade:
     strictly between the minute of the first entry fill read and the minute up to which the
     journal proves no share was sold yet (a close's send intent, a stop's last unfilled read),
     times the quantity the first fill read showed (docs/api.md); null without capture of the
-    trade's edge minutes."""
+    trade's edge minutes. `prices_after`: one point per `[api] price_after_minutes` after
+    `closed_at` (empty with `prices_after_cause` when not computed). `overshoot_usd` (per
+    share) / `overshoot_r`: highest high after the exit minute within the longest offset,
+    minus `exit_price`; null with `overshoot_cause`. Display only, never on the risk path."""
 
     trade_id: str
     symbol: str
@@ -374,6 +404,11 @@ class DayTrade:
     mfe_usd: Decimal | None
     entry: EntrySend  # as in `Position`
     entry_cause: str | None
+    prices_after: tuple[PriceAfterV1, ...]
+    prices_after_cause: str | None
+    overshoot_usd: Decimal | None
+    overshoot_r: Decimal | None
+    overshoot_cause: str | None
 
 
 @dataclass(frozen=True)
@@ -802,7 +837,8 @@ class SkippedSignalV1:
     """One ENTER of the active strategy that did not become a position: admission `refused`
     (`refusal` says why; `refusal_cause` is the recorded `CAUSE: detail`, kept for older
     clients) or `not_evaluated` (made too late to act on). `entry_price` / `stop_price` and
-    `checks` as in decisions-v1."""
+    `checks` as in decisions-v1. `prices_after` as in day-v1 from the decision bar (`at`),
+    the change from its close; `what_if`: the signal entered alone, simulated."""
 
     at: datetime
     symbol: str
@@ -813,6 +849,9 @@ class SkippedSignalV1:
     entry_price: Decimal | None
     stop_price: Decimal | None
     checks: tuple[CheckV1, ...]
+    prices_after: tuple[PriceAfterV1, ...]
+    prices_after_cause: str | None
+    what_if: WhatIfV1
 
 
 @dataclass(frozen=True)
@@ -825,8 +864,19 @@ class SkippedV1:
     api_version: int = _const(API_VERSION)
 
 
+NOT_COMPUTED = "not computed on this path"
+NO_WHAT_IF = WhatIfV1(None, None, None, NOT_COMPUTED)
+
+
+def skipped_records(records: tuple[DecisionRecord, ...]) -> list[DecisionRecord]:
+    """The ENTERs admission did not take, oldest first: the rows of `skipped_document`."""
+    return [r for r in _oldest_first(records)
+            if r.decision.verdict is Verdict.ENTER and r.admission in _SKIPPED]
+
+
 def skipped_document(day: date, records: tuple[DecisionRecord, ...]) -> SkippedV1:
-    """`records`: active-strategy records of `day`; keeps the ENTERs admission did not take."""
+    """`records`: active-strategy records of `day`; keeps the ENTERs admission did not take,
+    without prices after or what-if (api/after.py adds them)."""
     return SkippedV1(day=day, signals=tuple(
         SkippedSignalV1(
             at=r.bar_start, symbol=r.symbol,
@@ -834,9 +884,9 @@ def skipped_document(day: date, records: tuple[DecisionRecord, ...]) -> SkippedV
             admission=r.admission, refusal_cause=r.refusal_cause,
             refusal=refusal_of(r.refusal_cause), entry_price=_what_if(r.decision.entry_high),
             stop_price=_what_if(r.decision.stop),
-            checks=checks_of(r.decision))
-        for r in _oldest_first(records)
-        if r.decision.verdict is Verdict.ENTER and r.admission in _SKIPPED))
+            checks=checks_of(r.decision), prices_after=(), prices_after_cause=NOT_COMPUTED,
+            what_if=NO_WHAT_IF)
+        for r in skipped_records(records)))
 
 
 # ---------------------------------------------------------------- overview flow (read-only)

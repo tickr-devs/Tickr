@@ -50,7 +50,7 @@ Identity = tuple[str, str]  # (strategy name, version)
 _Stamp = tuple[str, int, int] | None
 
 
-class _NoInputs(Exception):
+class NoInputs(Exception):
     """A simulation input is missing or refused; the message is the single cause. `transient`:
     the failure may pass without any file changing (an OSError, a calendar refusal), so its
     answer is not remembered."""
@@ -75,7 +75,7 @@ class SimulationPaths:
                    (config.root / config.session.calendar_file).parent, config.session)
 
 
-def _stamp(path: Path) -> _Stamp:
+def stamp(path: Path) -> _Stamp:
     found = existing(path)
     if found is None:
         return None
@@ -83,10 +83,10 @@ def _stamp(path: Path) -> _Stamp:
     return (str(found), stat.st_mtime_ns, stat.st_size)
 
 
-def _folder_stamp(folder: Path) -> tuple[_Stamp, ...] | None:
+def folder_stamp(folder: Path) -> tuple[_Stamp, ...] | None:
     """Stamps of every file in `folder` (the calendar), or None when it cannot be listed."""
     try:
-        return tuple(_stamp(p) for p in sorted(folder.iterdir()) if p.is_file())
+        return tuple(stamp(p) for p in sorted(folder.iterdir()) if p.is_file())
     except OSError:
         return None
 
@@ -120,8 +120,7 @@ class ObserverResults:
         """The result of every identity in `records` (observer records of `day`, read from
         `decision_file`). Remembered until any input file changes; an answer with a transient
         failure is never remembered."""
-        key = (day, day == today, _stamp(decision_file), _stamp(self._bars_file(day)),
-               _stamp(self.paths.replay_settings), _folder_stamp(self.paths.calendar))
+        key = inputs_key(self.paths, day, today, decision_file)
         with self._lock:
             if key == self._key:
                 return self._value
@@ -130,9 +129,6 @@ class ObserverResults:
             with self._lock:
                 self._key, self._value = key, value
         return value
-
-    def _bars_file(self, day: date) -> Path:
-        return self.paths.capture / day.isoformat() / BARS_FILE
 
     def _compute(self, day: date, today: date, records: Sequence[DecisionRecord],
                  ) -> tuple[dict[Identity, ObserverResult], bool]:
@@ -150,11 +146,11 @@ class ObserverResults:
         if not trading:
             return out, False
         try:
-            bars = self._bars(day, today)
-            settings, clock_for = self._settings()
+            bars = day_bars(self.paths, day, today)
+            settings, clock_for = replay_inputs(self.paths)
             report = observer_report.report(
                 [r for i in trading for r in groups[i]], bars, settings, clock_for)
-        except _NoInputs as exc:
+        except NoInputs as exc:
             return out | {i: (None, str(exc)) for i in trading}, exc.transient
         except (ReplayError, ResearchError) as exc:
             # A calendar refusal (date outside the calendar) may be fixed by a new file.
@@ -163,31 +159,47 @@ class ObserverResults:
             out[(row.strategy, row.version)] = _result(row, settings.output_decimal_places)
         return out, False
 
-    def _settings(self) -> tuple[ReplaySettings, ClockFor]:
-        try:
-            settings = load_settings(self.paths.replay_settings)
-        except ReplayError as exc:
-            raise _NoInputs(f"replay settings unreadable: {exc}") from exc
-        except OSError as exc:
-            raise _NoInputs(f"replay settings unreadable: {exc}", transient=True) from exc
-        try:
-            calendar = SessionCalendar.load(self.paths.calendar)
-        except (CalendarRefused, OSError) as exc:
-            raise _NoInputs(f"session calendar unreadable: {exc}", transient=True) from exc
-        return settings, calendar_clock(calendar, self.paths.session)
 
-    def _bars(self, day: date, today: date) -> dict[str, tuple[Bar, ...]]:
-        path = self._bars_file(day)
-        if existing(path) is None:
-            raise _NoInputs(f"no captured bars for {day.isoformat()}")
-        try:
-            # Today's file may be half way through a line the bot is writing.
-            read = read_captured_bars(path, open_tail=day == today)
-        except CaptureError as exc:
-            raise _NoInputs(f"capture file refused: {exc}") from exc
-        except OSError as exc:
-            raise _NoInputs(f"capture file refused: {exc}", transient=True) from exc
-        by_symbol: dict[str, list[Bar]] = defaultdict(list)
-        for (symbol, _), bar in sorted(read.bars.items()):
-            by_symbol[symbol].append(bar)
-        return {symbol: tuple(bars) for symbol, bars in by_symbol.items()}
+def bars_file(paths: SimulationPaths, day: date) -> Path:
+    return paths.capture / day.isoformat() / BARS_FILE
+
+
+def inputs_key(paths: SimulationPaths, day: date, today: date,
+               decision_file: Path) -> tuple[object, ...]:
+    """What a simulated answer of `day` depends on: it differs once any input file changed."""
+    return (day, day == today, stamp(decision_file), stamp(bars_file(paths, day)),
+            stamp(paths.replay_settings), folder_stamp(paths.calendar))
+
+
+def load_calendar(paths: SimulationPaths) -> SessionCalendar:
+    try:
+        return SessionCalendar.load(paths.calendar)
+    except (CalendarRefused, OSError) as exc:
+        raise NoInputs(f"session calendar unreadable: {exc}", transient=True) from exc
+
+
+def replay_inputs(paths: SimulationPaths) -> tuple[ReplaySettings, ClockFor]:
+    try:
+        settings = load_settings(paths.replay_settings)
+    except ReplayError as exc:
+        raise NoInputs(f"replay settings unreadable: {exc}") from exc
+    except OSError as exc:
+        raise NoInputs(f"replay settings unreadable: {exc}", transient=True) from exc
+    return settings, calendar_clock(load_calendar(paths), paths.session)
+
+
+def day_bars(paths: SimulationPaths, day: date, today: date) -> dict[str, tuple[Bar, ...]]:
+    path = bars_file(paths, day)
+    if existing(path) is None:
+        raise NoInputs(f"no captured bars for {day.isoformat()}")
+    try:
+        # Today's file may be half way through a line the bot is writing.
+        read = read_captured_bars(path, open_tail=day == today)
+    except CaptureError as exc:
+        raise NoInputs(f"capture file refused: {exc}") from exc
+    except OSError as exc:
+        raise NoInputs(f"capture file refused: {exc}", transient=True) from exc
+    by_symbol: dict[str, list[Bar]] = defaultdict(list)
+    for (symbol, _), bar in sorted(read.bars.items()):
+        by_symbol[symbol].append(bar)
+    return {symbol: tuple(bars) for symbol, bars in by_symbol.items()}
