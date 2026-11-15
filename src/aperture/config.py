@@ -16,6 +16,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, get_type_hints
 
+# The Webull bars route (protocol constant, also `broker.webull.Route.BARS`): the chart's
+# request slice is carved from this route's limit, which must be counted per 60 s.
+BARS_ROUTE = "/market-data/stocks/bars/list"
+SECONDS_PER_MINUTE = 60
+# One folder name: no separator, no "..", never absolute (keeps a cache inside [run] data_dir).
+PLAIN_FOLDER = re.compile(r"^[A-Za-z0-9_-]+$")
+
 
 class ConfigError(ValueError):
     """The configuration is invalid; the bot must not start."""
@@ -79,6 +86,8 @@ class OrdersConfig:
     broker_read_max_age_seconds: Decimal
     unknown_absent_reads: int
     stop_held_proof_seconds: Decimal
+    reconcile_proof_seconds: Decimal
+    reconcile_max_gap_seconds: Decimal
 
 
 @dataclass(frozen=True)
@@ -146,6 +155,9 @@ class MarketDataConfig:
     history_max_lookback_days: int
     history_sessions: int
     candidate_subscriptions: int
+    observer_subscriptions: int
+    observer_resync_seconds: Decimal
+    stream_reserved_subscribe_requests: int
     candidate_retry_seconds: Decimal
     history_dir: str
     stream_reconnect_delay_seconds: Decimal
@@ -163,6 +175,7 @@ class ChartConfig:
     live_ttl_seconds: Decimal
     closed_day_settle_seconds: Decimal
     cache_dir: str
+    cache_max_age_days: int
     session_lookback_days: int
 
 
@@ -401,10 +414,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if run.maintain_keep_sessions < 1:
         raise ConfigError("[run] maintain_keep_sessions must be at least 1 (today is always kept)")
     md: MarketDataConfig = built["market_data"]
-    if md.candidate_subscriptions > md.stream_max_symbols - md.stream_reserved_symbols:
+    if (md.candidate_subscriptions + md.observer_subscriptions
+            > md.stream_max_symbols - md.stream_reserved_symbols):
         raise ConfigError(
-            "[market_data] candidate_subscriptions must leave stream_reserved_symbols free "
-            "within stream_max_symbols"
+            "[market_data] candidate_subscriptions plus observer_subscriptions must leave "
+            "stream_reserved_symbols free within stream_max_symbols"
         )
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
@@ -414,6 +428,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     if built["orders"].stop_held_proof_seconds <= 0:
         raise ConfigError("[orders] stop_held_proof_seconds must be above 0")
+    if built["orders"].reconcile_proof_seconds <= 0:
+        raise ConfigError("[orders] reconcile_proof_seconds must be above 0")
+    if not built["orders"].reconcile_max_gap_seconds > built["orders"].reconcile_proof_seconds:
+        raise ConfigError("[orders] reconcile_max_gap_seconds must be above "
+                          "reconcile_proof_seconds")
     if built["api"].account_stale_seconds <= built["orders"].reconcile_interval_seconds:
         raise ConfigError("[api] account_stale_seconds must be above [orders] "
                           "reconcile_interval_seconds (the account file is written per reconcile)")
@@ -425,6 +444,15 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.live_ttl_seconds <= 0 or chart.session_lookback_days < 1:
         raise ConfigError("[chart] live_ttl_seconds must be above 0 and session_lookback_days "
                           "at least 1")
+    if not PLAIN_FOLDER.match(chart.cache_dir):
+        raise ConfigError("[chart] cache_dir must be one plain folder name under [run] data_dir "
+                          f"(letters, digits, '_' and '-'), not {chart.cache_dir!r}")
+    if chart.cache_max_age_days < chart.session_lookback_days:
+        raise ConfigError("[chart] cache_max_age_days must be at least session_lookback_days (a "
+                          "pruned day a 1d or 5d range still reads is read again from Webull)")
+    if chart.webull_enabled:
+        for name, env in environments.items():
+            check_chart_slice(chart, name, env)
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
@@ -435,6 +463,19 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         root=Path(root) if root is not None else path.resolve().parent.parent,
         digest=hashlib.sha256(raw_bytes).hexdigest(),
     )
+
+
+def check_chart_slice(chart: ChartConfig, name: str, env: EnvironmentConfig) -> None:
+    """With the chart on, the bot's bars limit in `env` loses `[chart] requests_per_minute` per
+    60 s to the API: refuse a bars limit over another window or one the slice would empty."""
+    count, window = env.route_limits.get(BARS_ROUTE,
+                                         (env.requests_per_route_per_minute, SECONDS_PER_MINUTE))
+    if window != SECONDS_PER_MINUTE:
+        raise ConfigError(f"[chart] needs the bars route limit of [environments.{name}] per "
+                          f"{SECONDS_PER_MINUTE} s to carve its slice from, not per {window} s")
+    if chart.requests_per_minute >= count:
+        raise ConfigError(f"[chart] requests_per_minute must be below the bars route limit of "
+                          f"[environments.{name}] ({count} per {SECONDS_PER_MINUTE} s)")
 
 
 _KEY_LINE = re.compile(r"^\s*([A-Za-z0-9_\-\"\.]+)\s*=")

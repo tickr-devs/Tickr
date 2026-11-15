@@ -63,6 +63,16 @@ def _const(value: int) -> Any:
     return field(default=value, metadata={"const": value})
 
 
+ADDED_AFTER_V1 = "added_after_v1"
+
+
+def _added_later(default: Any) -> Any:
+    """A key added to version 1 after it shipped: a reader takes a document without it as
+    `default`; writers always write it. Every other key stays required on read, whatever
+    default its dataclass field has."""
+    return field(default=default, metadata={ADDED_AFTER_V1: True})
+
+
 # ---------------------------------------------------------------- enums
 
 
@@ -131,10 +141,13 @@ class StrategyId:
 
 @dataclass(frozen=True)
 class EntryBlock:
-    """The single reason entries are blocked: a stable cause code plus plain words for people."""
+    """The single reason entries are blocked: a stable cause code plus plain words for people.
+    `attention` is false for an ordinary state that passes on its own (a position is already
+    open, the time is outside the entry window): clients show it calmly, not as a warning."""
 
     cause: str
     text: str
+    attention: bool = _added_later(True)
 
 
 @dataclass(frozen=True)
@@ -376,6 +389,43 @@ class DayTrade:
     entry_cause: str | None
 
 
+class CleanVerdict(StrEnum):
+    """Did the broker and the bot's records agree all that New York day (docs/api.md)."""
+
+    CLEAN = "clean"
+    NOT_CLEAN = "not_clean"  # `causes` says why, each with its journal rows
+    UNKNOWN = "unknown"  # `cause` says why: not recorded, day not over, no day-end record...
+
+
+class CleanCauseKind(StrEnum):
+    RECONCILE_MISMATCH = "reconcile_mismatch"  # a reconcile pass or a fence: records differ
+    UNKNOWN_ORDER_OUTCOME = "unknown_order_outcome"  # still unresolved at the day's end
+    UNPROTECTED_POSITION = "unprotected_position"  # stop rejected, or no verified stop too long
+    SAFETY_EXIT = "safety_exit"  # an exit forced by a safety fault, or an emergency command
+    DAY_END_NOT_CLEAN = "day_end_not_clean"  # the day-end check: not flat, or not agreeing
+
+
+@dataclass(frozen=True)
+class CleanCause:
+    kind: CleanCauseKind
+    text: str  # plain words, from the rows
+    journal_seqs: tuple[int, ...]  # the journal rows (seq) that prove it, oldest first
+
+
+@dataclass(frozen=True)
+class CleanDay:
+    """The clean-day verdict of one New York date, from the journal only (docs/api.md,
+    "Clean day"). Never a guess: what the journal does not prove is `unknown`."""
+
+    verdict: CleanVerdict
+    cause: str | None  # why `unknown`; null otherwise
+    causes: tuple[CleanCause, ...]  # `not_clean`: one per kind of fault; empty otherwise
+    reconcile_rows: int  # `reconcile-checked` rows that date
+    first_reconcile_at: datetime | None  # the first and last of them
+    last_reconcile_at: datetime | None
+    day_end_seq: int | None  # the date's `day-end` row, if any
+
+
 @dataclass(frozen=True)
 class DaySummary:
     """One New York date with records: closed trades, a bot run, or captured market data."""
@@ -386,6 +436,7 @@ class DaySummary:
     losses: int
     result_gross_usd: Decimal
     has_bars: bool
+    clean: CleanDay
 
 
 @dataclass(frozen=True)
@@ -1237,19 +1288,24 @@ def _decode(where: str, raw: Any, hint: Any, meta: Any = None) -> Any:
 
 
 def from_jsonable(cls: type, raw: Any, where: str = "$") -> Any:
-    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys."""
+    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys. Only a key
+    marked `_added_later` may be absent, so a document written by an older bot (a status file
+    left on disk across an update) still reads; a field's plain default never makes its key
+    optional (a flatten command without `symbol` is refused, not read as "everything")."""
     if not isinstance(raw, dict):
         raise ContractError(f"{where}: expected an object, got {type(raw).__name__}")
     hints = get_type_hints(cls)
     expected = [f.name for f in fields(cls)]
     unknown = sorted(set(raw) - set(expected))
-    missing = [name for name in expected if name not in raw]
+    optional = {f.name for f in fields(cls) if f.metadata.get(ADDED_AFTER_V1)}
+    missing = [name for name in expected if name not in raw and name not in optional]
     if unknown:
         raise ContractError(f"{where}: unknown keys: {', '.join(unknown)}")
     if missing:
         raise ContractError(f"{where}: missing keys: {', '.join(missing)}")
     meta = {f.name: f.metadata or None for f in fields(cls)}
-    return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n]) for n in expected})
+    return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n])
+                  for n in expected if n in raw})
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

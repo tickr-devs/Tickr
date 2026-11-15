@@ -269,8 +269,8 @@ def test_flow_stages_on_a_fake_broker_day(api, cfg):
     assert body["reconcile"] == {
         "agreement": "match", "agreement_cause": None, "read_at": "2026-11-16T15:00:00.000Z",
         "mismatch": None, "fences_cause": None,
-        "fences": [{"kind": "foreign_exposure", "since": "2026-11-16T15:00:00.123Z",
-                    "text": "A position not opened by the bot exists."}]}
+        "fences": [{"kind": "foreign-position:EFGH", "since": "2026-11-16T15:00:00.123Z",
+                    "text": "position not opened by this bot"}]}
 
 
 def test_flow_reconcile_mismatch_and_missing_or_old_files(api, cfg):
@@ -338,7 +338,8 @@ def test_read_only(api, cfg, path):
 def _entries_day(tmp_path):
     """Entries filled (read at 10:00:30 New York); only `seen` has its stop read working.
     `before` opened 23:59:59 New York the evening before, `after` the next morning."""
-    paths = HistoryPaths("sandbox", tmp_path / "db.sqlite3", tmp_path / "capture")
+    paths = HistoryPaths("sandbox", tmp_path / "db.sqlite3", tmp_path / "capture",
+                         tmp_path / "calendar", Decimal(900))
     store, clock = _timed_store(paths)
     run = _run(store)
     for trade_id, closed in (("seen", None), ("open", None),

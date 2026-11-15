@@ -39,6 +39,8 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   public let lastBarAt: Date?
   /// Closes since the entry, for the small chart.
   public let closes: [Decimal]
+  /// Close of the newest captured bar however old it is; shown as history when it is not fresh.
+  public var latestClose: Decimal? = nil
 
   public var id: String { position.symbol }
   public var entry: Decimal { position.entryPrice.value }
@@ -48,6 +50,11 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   public var unrealized: Decimal? { lastBarClose.map { ($0 - entry) * quantity } }
   public var resultR: Decimal? {
     guard let last = lastBarClose else { return nil }
+    return Risk.multiple(entry: entry, stop: stop, price: last)
+  }
+  /// R at the newest captured bar, fresh or not.
+  public var latestResultR: Decimal? {
+    guard let last = latestClose else { return nil }
     return Risk.multiple(entry: entry, stop: stop, price: last)
   }
 }
@@ -141,10 +148,11 @@ public final class AppModel {
   public var isLive: Bool { selectedDay == nil || selectedDay == today }
   public var shownDay: WireDate { selectedDay ?? today }
 
+  /// The live day, with a status the app can trust (read without error and not stale).
+  public var isCurrent: Bool { isLive && status != nil && response?.stale == false && fetchError == nil }
+
   /// Commands make sense only for the live day with a status the app can trust.
-  public var commandsEnabled: Bool {
-    isLive && !sending && status != nil && response?.stale == false && fetchError == nil
-  }
+  public var commandsEnabled: Bool { isCurrent && !sending }
 
   public var positions: [PositionRow] {
     guard isLive, let status else { return [] }
@@ -154,7 +162,7 @@ public final class AppModel {
       let last = barsBySymbol[position.symbol]?.bars.last
       let fresh = last.map { barIsFresh(start: $0.start.date, now: botNow) } ?? false
       return PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
-        closes: bars.map(\.close.value))
+        closes: bars.map(\.close.value), latestClose: last?.close.value)
     }
   }
 
