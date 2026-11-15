@@ -1,8 +1,8 @@
 import Foundation
 import Testing
+@testable import Tickr
 import TickrDesign
 import TickrKit
-@testable import Tickr
 
 /// The Home entries glyph follows the bot's entry block and its precedence (#317), and the
 /// connection dot follows the answer's freshness.

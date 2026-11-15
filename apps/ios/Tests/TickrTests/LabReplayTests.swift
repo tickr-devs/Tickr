@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-import TickrKit
 @testable import Tickr
+import TickrKit
 
 /// A refused replay start stays as a calm reason until the replay moves on or `replaySeconds` pass
 /// (#333).

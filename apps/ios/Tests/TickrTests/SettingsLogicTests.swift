@@ -1,8 +1,8 @@
 import Foundation
 import Testing
+@testable import Tickr
 import TickrDesign
 import TickrKit
-@testable import Tickr
 
 /// The backup row of Settings → Jobs is green only when a good backup exists and no failure is
 /// newer.
