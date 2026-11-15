@@ -73,7 +73,7 @@ struct OverviewView: View {
       }
       .padding(Tokens.Space.xl)
     }
-    .onGeometryChange(for: Bool.self) { $0.size.width >= Self.headerBesideResultMinWidth } action: {
+    .onGeometryChange(for: Bool.self) { [threshold = Self.headerBesideResultMinWidth] in $0.size.width >= threshold } action: {
       headerBesideResult = $0
     }
   }

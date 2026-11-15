@@ -29,7 +29,9 @@ struct TradesView: View {
     ScrollView {
       content
     }
-    .onGeometryChange(for: Bool.self) { $0.size.width >= Self.sideBySideMinWidth } action: { sideBySide = $0 }
+    .onGeometryChange(for: Bool.self) { [threshold = Self.sideBySideMinWidth] in $0.size.width >= threshold } action: {
+      sideBySide = $0
+    }
     .onChange(of: model.shownDay) { selection = nil }
   }
 
@@ -286,26 +288,37 @@ private struct TradesTable: View {
   /// Least and preferred widths of the table's columns, in points: the least keeps a time, a
   /// symbol, a price or a figure whole in a narrow window; the preferred share out a wide one.
   private enum Column {
-    /// Least and preferred width of each column, in points.
-    static let timeMin: CGFloat = 64
-    static let time: CGFloat = 80
-    static let symbolMin: CGFloat = 56
-    static let symbol: CGFloat = 72
-    static let quantityMin: CGFloat = 40
-    static let quantity: CGFloat = 56
-    static let priceMin: CGFloat = 60
-    static let price: CGFloat = 76
-    static let reasonMin: CGFloat = 120
-    static let reason: CGFloat = 170
-    static let figureMin: CGFloat = 52
-    static let figure: CGFloat = 64
-    static let moneyMin: CGFloat = 84
-    static let money: CGFloat = 100
+    /// Least and preferred width of each column, in points: the preferred widths add up to
+    /// what a 1000-point window leaves the table, so every column shows without scrolling.
+    static let timeMin: CGFloat = 56
+    static let time: CGFloat = 64
+    static let symbolMin: CGFloat = 52
+    static let symbol: CGFloat = 60
+    static let quantityMin: CGFloat = 36
+    static let quantity: CGFloat = 44
+    static let priceMin: CGFloat = 56
+    static let price: CGFloat = 64
+    static let reasonMin: CGFloat = 96
+    static let reason: CGFloat = 130
+    static let figureMin: CGFloat = 48
+    static let figure: CGFloat = 56
+    static let moneyMin: CGFloat = 76
+    static let money: CGFloat = 88
   }
 
-  /// The table's height, in points: about eight rows; a busier day scrolls inside the table.
-  /// Fixed, because the screen scrolls and a table has no height of its own.
+  /// The table's height, in points: at most about eight rows; a busier day scrolls inside the
+  /// table. Set from the trade count, because the screen scrolls and a table has no height of its
+  /// own; a fixed height left empty striped rows under a day of two trades.
   static let height: CGFloat = 280
+  /// Height of the header and of one row, and the fewest rows the table is tall for, in points.
+  static let headerHeight: CGFloat = 32
+  static let rowHeight: CGFloat = 28
+  static let fewestRows = 2
+
+  private var tableHeight: CGFloat {
+    let rows = CGFloat(max(model.shownTrades.count, Self.fewestRows))
+    return min(Self.height, Self.headerHeight + rows * Self.rowHeight)
+  }
 
   var body: some View {
     Card(L10n.Trades.tradesOfDay) {
@@ -316,7 +329,7 @@ private struct TradesTable: View {
         .frame(height: Self.height)
       } else {
         table
-          .frame(height: Self.height)
+          .frame(height: tableHeight)
       }
     }
   }

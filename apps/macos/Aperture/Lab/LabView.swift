@@ -233,15 +233,22 @@ extension Verdict {
 
 /// Replays of a recorded day: skipped signals as if entered, or another strategy.
 private struct ReplayCard: View {
+  @ViewBuilder private var buttons: some View {
+    Button {} label: { Label { Text(L10n.Lab.replayDay) } icon: { Image(systemName: "play.circle") } }
+    Button {} label: { Label { Text(L10n.Lab.skippedSignals) } icon: { Image(systemName: "arrow.uturn.right") } }
+    Button {} label: { Label { Text(L10n.Lab.compare) } icon: { Image(systemName: "square.split.2x1") } }
+  }
+
   var body: some View {
     Card(L10n.Lab.replay, trailing: { PlannedTag(.backlog) }) {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         Footnote(L10n.Lab.replayNote)
-        HStack(spacing: Tokens.Space.s) {
-          Button {} label: { Label { Text(L10n.Lab.replayDay) } icon: { Image(systemName: "play.circle") } }
-          Button {} label: { Label { Text(L10n.Lab.skippedSignals) } icon: { Image(systemName: "arrow.uturn.right") } }
-          Button {} label: { Label { Text(L10n.Lab.compare) } icon: { Image(systemName: "square.split.2x1") } }
+        // In a row while they fit whole; one under another rather than cut mid-word.
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: Tokens.Space.s) { buttons }
+          VStack(alignment: .leading, spacing: Tokens.Space.s) { buttons }
         }
+        .lineLimit(1)
         .disabled(true)
       }
     }
