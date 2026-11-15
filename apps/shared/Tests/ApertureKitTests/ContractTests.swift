@@ -43,6 +43,10 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "explain-v1": { try roundTrip(ExplainV1.self, $0) },
       "observers-v1": { try roundTrip(ObserversV1.self, $0) },
       "decisions-v1": { try roundTrip(DecisionsV1.self, $0) },
+      "skipped-v1": { try roundTrip(SkippedV1.self, $0) },
+      "performance-v1": { try roundTrip(PerformanceV1.self, $0) },
+      "flow-v1": { try roundTrip(FlowV1.self, $0) },
+      "watching-v1": { try roundTrip(WatchingV1.self, $0) },
       "account-v1": { try roundTrip(AccountV1.self, $0) },
       "account-response-v1": { try roundTrip(AccountResponseV1.self, $0) },
     ]
@@ -62,7 +66,79 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(Set(names) == ["status-v1", "command-v1", "status-response-v1",
       "command-accepted-v1", "pending-commands-v1", "error-v1",
       "days-v1", "day-v1", "bars-v1", "settings-v1", "explain-v1",
-      "observers-v1", "decisions-v1", "account-v1", "account-response-v1"])
+      "observers-v1", "decisions-v1", "skipped-v1", "performance-v1",
+      "flow-v1", "watching-v1", "account-v1", "account-response-v1"])
+  }
+
+  @Test func flowStagesChipsAndCauses() throws {
+    let flow = try Wire.decoder().decode(FlowV1.self, from: fixture("flow-v1.json"))
+    #expect(flow.stages.map(\.stage) == FlowStage.allCases)
+    #expect(flow.chips.first?.sources == [.gainers, .topActives])
+    #expect(flow.chips.first { $0.symbol == "SPY" }?.excludedCause?.hasPrefix("SECURITY_TYPE_NOT_ALLOWED") == true)
+    #expect(flow.reconcile.agreement == .match)
+    #expect(flow.stops.map(\.state) == [.verified, .neverVerified, .pending])
+    let empty = try Wire.decoder().decode(FlowV1.self, from: fixture("flow-v1.empty.json"))
+    #expect(empty.reconcile.agreement == nil)
+    #expect(empty.reconcile.agreementCause != nil)
+  }
+
+  @Test func watchingRowsAndDecisiveChecks() throws {
+    let watching = try Wire.decoder().decode(WatchingV1.self, from: fixture("watching-v1.json"))
+    #expect(watching.rows.map(\.symbol) == ["ABCD", "WXYZ", "EFGH"])
+    #expect(watching.rows.first?.decisiveCheck?.rule == "ask_above_trigger")
+    #expect(watching.rows.last?.closeness == nil)
+    #expect(watching.rows.last?.closenessCause != nil)
+  }
+
+  @Test func wireDateArithmetic() throws {
+    #expect(try WireDate("2026-11-16").adding(days: -29) == WireDate("2026-10-18"))
+    #expect(try WireDate("2026-03-08").adding(days: 1) == WireDate("2026-03-09"))
+  }
+
+  @Test func performanceFiguresAndCauses() throws {
+    let performance = try Wire.decoder().decode(PerformanceV1.self, from: fixture("performance-v1.json"))
+    #expect(performance.winRate.value?.value == Decimal(string: "0.4"))
+    #expect(performance.winRate.cause == nil)
+    #expect(performance.days.last?.cumulativeGrossR.value == 2)
+    let empty = try Wire.decoder().decode(PerformanceV1.self, from: fixture("performance-v1.empty.json"))
+    #expect(empty.profitFactorGross.value == nil)
+    #expect(empty.profitFactorGross.cause == "no counted trades in the range")
+  }
+
+  @Test func entrySendRecords() throws {
+    let status = try Wire.decoder().decode(StatusV1.self, from: fixture("status-v1.example.json"))
+    #expect(status.position?.entry.sendOutcome == .acknowledged)
+    #expect(status.position?.entry.sentOtherThanOnce == false)
+    #expect(status.tradesToday.first?.entry.sendOutcome == .unknown)
+    #expect(status.tradesToday.first?.entry.latestOutcome == .acknowledged)
+    let day = try Wire.decoder().decode(DayV1.self, from: fixture("day-v1.json"))
+    #expect(day.trades.first?.entry.sends == 1)
+    #expect(day.trades.last?.entry.sends == nil)
+    #expect(day.trades.last?.entryCause != nil)
+  }
+
+  @Test func skippedSignalsAndAdmissions() throws {
+    let skipped = try Wire.decoder().decode(SkippedV1.self, from: fixture("skipped-v1.json"))
+    #expect(skipped.signals.map(\.admission) == [.refused, .notEvaluated])
+    #expect(skipped.signals.first?.refusalCause?.hasPrefix("POSITION_LIMIT_REACHED") == true)
+    #expect(skipped.signals.last?.entryPrice == nil)
+    let decisions = try Wire.decoder().decode(DecisionsV1.self, from: fixture("decisions-v1.json"))
+    #expect(decisions.decisions.map(\.admission) == [.notApplicable, .notEvaluated, .refused])
+    let observers = try Wire.decoder().decode(ObserversV1.self, from: fixture("observers-v1.json"))
+    #expect(observers.observers.first?.resultGrossUSD?.text == "-12.4000")
+    #expect(observers.observers.last?.resultCause == "no captured bars for 2026-11-16")
+  }
+
+  @Test func tradeMetrics() throws {
+    let response = try Wire.decoder().decode(StatusResponseV1.self, from: fixture("status-response-v1.json"))
+    let trade = try #require(response.status?.tradesToday.first)
+    #expect(trade.plannedLossUsd.text == "50")
+    #expect(trade.stopConfirmedAfterSeconds?.text == "1.250")
+    let day = try Wire.decoder().decode(DayV1.self, from: fixture("day-v1.json"))
+    #expect(day.trades.first?.maeUsd?.text == "-2.20")
+    #expect(day.trades.first?.mfeUsd?.text == "0.80")
+    #expect(day.trades.last?.stopConfirmedAfterSeconds == nil)
+    #expect(day.trades.last?.maeUsd == nil)
   }
 
   @Test func fullStatusValues() throws {

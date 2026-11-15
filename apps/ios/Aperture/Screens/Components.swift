@@ -87,13 +87,20 @@ enum Format {
   static let arrow = " → "
   /// Between two facts on one line.
   static let separator = " · "
+  /// Between two figures of one tile, such as MAE and MFE.
+  static let slash = " / "
 
+  /// "14:06": 24-hour, as the design shows every time, whatever the phone's clock setting.
   static func time(_ date: Date) -> String {
-    date.formatted(date: .omitted, time: .shortened)
+    date.formatted(Date.VerbatimFormatStyle(
+      format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)",
+      timeZone: .current, calendar: .current))
   }
 
   static func clock(_ date: Date) -> String {
-    date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+    date.formatted(Date.VerbatimFormatStyle(
+      format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
+      timeZone: .current, calendar: .current))
   }
 
   static func day(_ date: Date) -> String {
@@ -198,8 +205,8 @@ struct EnvironmentBadge: View {
       .padding(.horizontal, Tokens.Space.s)
       .padding(.vertical, Tokens.Space.xs)
       .foregroundStyle(Palette.warningText)
-      .background(Palette.warning.opacity(Tokens.Opacity.wash), in: Capsule())
-      .overlay(Capsule().strokeBorder(Palette.warning.opacity(Tokens.Opacity.border)))
+      .background(Palette.warning.opacity(Tokens.Opacity.wash), in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
+      .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.small).strokeBorder(Palette.warning.opacity(Tokens.Opacity.border)))
       .accessibilityLabel(Text(L10n.Connect.environment(environment)))
   }
 }

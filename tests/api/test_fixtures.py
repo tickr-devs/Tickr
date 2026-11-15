@@ -19,6 +19,7 @@ from aperture.api.contract import (
     AccountOrder,
     AccountPosition,
     AccountResponseV1,
+    Agreement,
     BarsV1,
     BarV1,
     CheckV1,
@@ -31,8 +32,17 @@ from aperture.api.contract import (
     DayV1,
     DecisionsV1,
     DecisionV1,
+    EntrySend,
     ErrorV1,
     ExplainV1,
+    Fence,
+    FlowChipV1,
+    FlowReconcileV1,
+    FlowStage,
+    FlowStageV1,
+    FlowStopState,
+    FlowStopV1,
+    FlowV1,
     ObserverDecisionV1,
     ObserversV1,
     ObserverV1,
@@ -40,13 +50,20 @@ from aperture.api.contract import (
     RiskSettings,
     SessionSettings,
     SettingsV1,
+    SkippedSignalV1,
+    SkippedV1,
     StatusResponseV1,
     StrategyId,
+    WatchingRowV1,
+    WatchingV1,
 )
+from aperture.api.history import NO_ENTRY, NOT_READ
+from aperture.api.performance import performance
+from aperture.data.base import ScreenerKind
 from aperture.research.records import Admission
 from aperture.strategy.base import Verdict
 
-from .samples import T0, account, status
+from .samples import T0, account, entry, status
 from .schema_check import errors
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -101,10 +118,14 @@ def documents() -> dict[str, object]:
         "day-v1": DayV1("sandbox", DAY, (
             DayTrade("t-0001", "WXYZ", Decimal("20"), Decimal("5.10"), Decimal("5.02"), T0,
                      T0 + timedelta(minutes=7), "stop", Decimal("5.02"), Decimal("50"),
-                     Decimal("-1.60")),
+                     Decimal("-1.60"), Decimal("1.250"), Decimal("-2.20"), Decimal("0.80"),
+                     entry("ap-0002-e", T0), None),
             DayTrade("t-0002", "ABCD", Decimal("10"), Decimal("12.34"), Decimal("12.75"),
                      T0 + timedelta(minutes=20), T0 + timedelta(minutes=48), "strategy_exit",
-                     None, Decimal("50"), Decimal("4.10"))),
+                     None, Decimal("50"), Decimal("4.10"), None, None, None,
+                     EntrySend(None, None, None, None, None, None, None),
+                     "journal unreadable: journal row 812 (order-observed ap-0003-e): "
+                     "KeyError: 'filled_quantity'")),
             Decimal("2.50"), ("ABCD", "WXYZ")),
         "settings-v1": SettingsV1(
             "sandbox", "price-action-v1", ("price-action-v1-lookback8",),
@@ -139,20 +160,105 @@ def documents() -> dict[str, object]:
                 ObserverDecisionV1(T0.replace(microsecond=0), "ABCD", Verdict.WATCH,
                                    ("ask_above_trigger",)),
                 ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), "ABCD",
-                                   Verdict.ENTER, ())), None),
-            ObserverV1("price-action-v2", "1", (), None))),
+                                   Verdict.ENTER, ())), Decimal("-12.4000"), None),
+            ObserverV1("price-action-v2", "1", (), None, "no decisions recorded that day"),
+            ObserverV1("price-action-v2", "2", (
+                ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=2), "WXYZ",
+                                   Verdict.ENTER, ()),), None,
+                "no captured bars for 2026-11-16"))),
         "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
         "decisions-v1": DecisionsV1("ABCD", DAY, (
             DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,
                        StrategyId("price-action-v1", "1"), False, (
                            CheckV1("ask_above_trigger", Decimal("12.33"), ">",
-                                   Decimal("12.35"), False, ""),), None, None),
+                                   Decimal("12.35"), False, ""),), None, None,
+                       Admission.NOT_APPLICABLE, None),
             DecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), Verdict.ENTER,
                        StrategyId("price-action-v1", "2"), True, (
                            CheckV1("ask_above_trigger", Decimal("12.37"), ">",
                                    Decimal("12.35"), True, ""),),
-                       Decimal("12.40"), Decimal("12.10")))),
+                       Decimal("12.40"), Decimal("12.10"), Admission.NOT_EVALUATED, None),
+            DecisionV1(T0.replace(microsecond=0) + timedelta(minutes=2), Verdict.ENTER,
+                       StrategyId("price-action-v1", "1"), False, (
+                           CheckV1("ask_above_trigger", Decimal("12.41"), ">",
+                                   Decimal("12.35"), True, ""),),
+                       Decimal("12.45"), Decimal("12.15"), Admission.REFUSED,
+                       "POSITION_LIMIT_REACHED: 1 open position, limit 1"))),
+        "skipped-v1": SkippedV1(DAY, (
+            SkippedSignalV1(T0.replace(microsecond=0) + timedelta(minutes=2), "ABCD",
+                            StrategyId("price-action-v1", "1"), Admission.REFUSED,
+                            "POSITION_LIMIT_REACHED: 1 open position, limit 1", Decimal("12.45"),
+                            Decimal("12.15"), (
+                                CheckV1("relative_volume", Decimal("2.4"), ">=",
+                                        Decimal("1.5"), True, ""),
+                                CheckV1("ask_above_trigger", Decimal("12.41"), ">",
+                                        Decimal("12.35"), True, ""))),
+            SkippedSignalV1(T0.replace(microsecond=0) + timedelta(minutes=47), "WXYZ",
+                            StrategyId("price-action-v1", "1"), Admission.NOT_EVALUATED, None,
+                            None, None, (
+                                CheckV1("ask_above_trigger", Decimal("5.31"), ">",
+                                        Decimal("5.25"), True, ""),)))),
+        "skipped-v1.empty": SkippedV1(DAY - timedelta(days=3), ()),
+        "flow-v1": FlowV1("sandbox", DAY, (
+            FlowChipV1("ABCD", (ScreenerKind.GAINERS, ScreenerKind.TOP_ACTIVES),
+                       Decimal("12.40"), None, None),
+            FlowChipV1("SPY", (ScreenerKind.TOP_ACTIVES,), Decimal("0.31"), None,
+                       "SECURITY_TYPE_NOT_ALLOWED: ETF"),
+            FlowChipV1("WXYZ", (ScreenerKind.GAINERS,), None, "the captured row has no "
+                       "pre_close", None),
+            FlowChipV1("EFGH", (ScreenerKind.LOSERS,), Decimal("-8.05"), None, None)), (
+            FlowStageV1(FlowStage.SCREENERS, 4, ("ABCD", "EFGH", "SPY", "WXYZ")),
+            FlowStageV1(FlowStage.UNIVERSE, 3, ("ABCD", "EFGH", "WXYZ")),
+            FlowStageV1(FlowStage.STRATEGY, 3, ("ABCD", "EFGH", "WXYZ")),
+            FlowStageV1(FlowStage.RISK, 3, ("ABCD", "EFGH", "WXYZ")),
+            FlowStageV1(FlowStage.ORDER, 3, ("ABCD", "EFGH", "WXYZ")),
+            FlowStageV1(FlowStage.STOP, 1, ("WXYZ",))), (
+            FlowStopV1("t-0001", "WXYZ", FlowStopState.VERIFIED),
+            FlowStopV1("t-0002", "EFGH", FlowStopState.NEVER_VERIFIED),
+            FlowStopV1("t-0003", "ABCD", FlowStopState.PENDING)),
+            FlowReconcileV1(Agreement.MATCH, None, T0, None, (
+                Fence("foreign_exposure", T0, "A position not opened by the bot exists."),),
+                None)),
+        "flow-v1.empty": FlowV1("sandbox", DAY - timedelta(days=3), (), tuple(
+            FlowStageV1(stage, 0, ()) for stage in FlowStage), (), FlowReconcileV1(
+            None, "only the latest reconciliation is kept; it is not recorded per day", None,
+            None, None, "only the latest status is kept; it is not recorded per day")),
+        "watching-v1": WatchingV1(DAY, 3, (
+            WatchingRowV1("ABCD", T0.replace(microsecond=0), StrategyId("price-action-v1", "1"),
+                          Verdict.WATCH, CheckV1("ask_above_trigger", Decimal("12.33"), ">",
+                                                 Decimal("12.35"), False, ""),
+                          Decimal("0.9983"), None, None,
+                          "not recorded: decision records hold no quote time"),
+            WatchingRowV1("WXYZ", T0.replace(microsecond=0), StrategyId("price-action-v1", "1"),
+                          Verdict.IGNORE, CheckV1("spread_ratio", Decimal("0.0031"), "<=",
+                                                  Decimal("0.002"), False, ""),
+                          Decimal("0.6451"), None, None,
+                          "not recorded: decision records hold no quote time"),
+            WatchingRowV1("EFGH", T0.replace(microsecond=0), StrategyId("price-action-v1", "1"),
+                          Verdict.IGNORE, CheckV1("quote_valid", None, "is", None, False,
+                                                  "own symbol, 0 < bid <= ask"),
+                          None, "quote_valid: a yes/no check has no measured value", None,
+                          "not recorded: decision records hold no quote time"))),
+        "watching-v1.empty": WatchingV1(DAY - timedelta(days=3), 0, ()),
+        "performance-v1": performance("sandbox", DAY - timedelta(days=6), DAY, (
+            _closed("t-0001", -3, "100", "50"), _closed("t-0002", -3, "-50", "50"),
+            _closed("t-0003", 0, "0", "50"), _closed("t-0004", 0, "-25", "50"),
+            _closed("t-0005", 0, "37.50", "25"), _closed("t-0006", 0, "4.10", "0")), PLACES),
+        "performance-v1.empty": performance("sandbox", DAY - timedelta(days=6), DAY, (), PLACES),
     }
+
+
+PLACES = 4
+
+
+def _closed(trade_id: str, day_offset: int, result: str, planned_loss: str) -> DayTrade:
+    """A closed trade of 10 shares at 10.00 with the given gross result and 1 R."""
+    closed_at = T0 + timedelta(days=day_offset, minutes=int(trade_id[-1]))
+    exit_price = Decimal("10") + Decimal(result) / 10
+    return DayTrade(trade_id, "ABCD", Decimal("10"), Decimal("10.00"), exit_price,
+                    closed_at - timedelta(minutes=1), closed_at, "strategy_exit", None,
+                    Decimal(planned_loss), Decimal(result), None, None, None, NO_ENTRY,
+                    NOT_READ)
 
 
 def _text(document: object) -> str:

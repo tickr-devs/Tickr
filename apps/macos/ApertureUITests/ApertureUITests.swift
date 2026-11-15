@@ -26,6 +26,21 @@ final class ApertureUITests: XCTestCase {
   static let observer = "price-action-v1"
   /// The Overview badge for fixture data (overview.fixtures, upper-cased as every badge is).
   static let fixturesBadge = "FIXTURES"
+  /// The toolbar's connection status (ConnectionStatus.id).
+  static let connectionItem = "toolbar-connection"
+  /// The start of the refusal cause in skipped-v1.json.
+  static let refusalCause = "POSITION_LIMIT_REACHED"
+  /// The selected trade's detail card and a label it shows only for a selected trade.
+  static let tradeDetail = "trades-detail"
+  static let stopConfirmedAfter = "Stop confirmed after"
+  /// The first trade in day-v1.json.
+  static let tradeSymbol = "WXYZ"
+  /// The performance card (PerformanceCard.id) and the start of its exclusion line.
+  static let performanceCard = "trades-performance"
+  static let excludedPrefix = "Left out: 1"
+  /// The Overview's screener chips (ScreenerChips.id) and watching card (WatchingCard.id).
+  static let screenerChips = "overview-screener-chips"
+  static let watchingCard = "overview-watching"
   /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "ask_above_trigger"
@@ -109,6 +124,9 @@ final class ApertureUITests: XCTestCase {
     let app = launch()
     open(Self.sections[0], in: app)
     XCTAssertTrue(app.staticTexts[Self.fixturesBadge].firstMatch.waitForExistence(timeout: Self.timeout))
+    // The title bar names the bot's address (the fixture API answers as 127.0.0.1).
+    let connection = app.descendants(matching: .any)[Self.connectionItem].firstMatch
+    XCTAssertTrue(connection.waitForExistence(timeout: Self.timeout), "connection\n\(app.debugDescription)")
   }
 
   @MainActor
@@ -124,6 +142,49 @@ final class ApertureUITests: XCTestCase {
     // The open inspector fits beside the chart: nothing is pushed off screen.
     XCTAssertTrue(app.descendants(matching: .any)[Self.rowPrefix + Self.sections[0]].firstMatch.isHittable,
       "sidebar pushed off screen\n\(app.debugDescription)")
+  }
+
+  @MainActor
+  func testTradesShowTheSkippedSignals() {
+    let app = launch()
+    open(Self.sections[2], in: app)
+    // A skipped row is one button, so the cause is part of its longer label.
+    let cause = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Self.refusalCause))
+    XCTAssertTrue(cause.firstMatch.waitForExistence(timeout: Self.timeout), "refusal cause\n\(app.debugDescription)")
+  }
+
+  @MainActor
+  func testTradesShowTheSelectedTradeDetail() {
+    let app = launch()
+    open(Self.sections[2], in: app)
+    // SwiftUI's Table reads as an outline; clicking the symbol's cell selects its row.
+    let symbol = app.outlineRows.staticTexts.matching(NSPredicate(format: "value == %@", Self.tradeSymbol)).firstMatch
+    XCTAssertTrue(symbol.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
+    symbol.click()
+    let detail = app.descendants(matching: .any)[Self.tradeDetail].firstMatch
+    XCTAssertTrue(detail.staticTexts[Self.stopConfirmedAfter].waitForExistence(timeout: Self.timeout),
+      "trade detail\n\(app.debugDescription)")
+  }
+
+  @MainActor
+  func testTradesShowThePerformance() {
+    let app = launch()
+    open(Self.sections[2], in: app)
+    let card = app.descendants(matching: .any)[Self.performanceCard].firstMatch
+    XCTAssertTrue(card.waitForExistence(timeout: Self.timeout), "performance card\n\(app.debugDescription)")
+    // The fixture leaves one trade out; the card says so next to the totals.
+    let excluded = card.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", Self.excludedPrefix))
+    XCTAssertTrue(excluded.firstMatch.waitForExistence(timeout: Self.timeout), "exclusion\n\(app.debugDescription)")
+  }
+
+  @MainActor
+  func testOverviewShowsTheFlowAndWatchedSymbols() {
+    let app = launch()
+    let chips = app.descendants(matching: .any)[Self.screenerChips].firstMatch
+    XCTAssertTrue(chips.waitForExistence(timeout: Self.timeout), "screener chips\n\(app.debugDescription)")
+    let watching = app.descendants(matching: .any)[Self.watchingCard].firstMatch
+    let check = watching.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", Self.decisionRule))
+    XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "watched symbol\n\(app.debugDescription)")
   }
 
   @MainActor

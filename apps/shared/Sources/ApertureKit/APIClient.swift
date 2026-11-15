@@ -94,9 +94,15 @@ public struct APIClient: Sendable {
   static let accountPath = "/account"
   static let observersPath = "/observers"
   static let decisionsPath = "/decisions"
+  static let skippedPath = "/skipped"
+  static let performancePath = "/performance"
+  static let flowPath = "/flow"
+  static let watchingPath = "/watching"
   /// Query item names of the bars read.
   static let symbolQuery = "symbol"
   static let dateQuery = "date"
+  static let fromQuery = "from"
+  static let toQuery = "to"
   /// HTTP methods, header names and the media type the API speaks.
   static let get = "GET"
   static let post = "POST"
@@ -142,6 +148,28 @@ public struct APIClient: Sendable {
     try await perform(request(path: Self.decisionsPath, query: [(Self.symbolQuery, symbol), (Self.dateQuery, day.text)],
       body: nil),
       expect: Self.ok)
+  }
+
+  /// The active strategy's ENTERs on `day` that did not become a position, oldest first.
+  public func skipped(day: WireDate) async throws -> SkippedV1 {
+    try await perform(request(path: Self.skippedPath, query: [(Self.dateQuery, day.text)], body: nil),
+      expect: Self.ok)
+  }
+
+  /// Gross performance in R of the trades closed from `from` to `to`, both inclusive.
+  public func performance(from: WireDate, to: WireDate) async throws -> PerformanceV1 {
+    try await perform(request(path: Self.performancePath, query: [(Self.fromQuery, from.text), (Self.toQuery, to.text)],
+      body: nil), expect: Self.ok)
+  }
+
+  /// The day's live flow: screener chips, stage counts, stops and the latest reconciliation.
+  public func flow(day: WireDate) async throws -> FlowV1 {
+    try await perform(request(path: Self.flowPath, query: [(Self.dateQuery, day.text)], body: nil), expect: Self.ok)
+  }
+
+  /// The symbols the strategy is watching closely on `day`, closest to an entry first.
+  public func watching(day: WireDate) async throws -> WatchingV1 {
+    try await perform(request(path: Self.watchingPath, query: [(Self.dateQuery, day.text)], body: nil), expect: Self.ok)
   }
 
   public func pendingCommands() async throws -> PendingCommandsV1 {

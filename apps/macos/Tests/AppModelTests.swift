@@ -123,6 +123,64 @@ struct AppModelTests {
     #expect(model.accountError != nil)
   }
 
+  @Test("Today and ages follow the bot's clock (served_at), not this Mac's")
+  func botClock() async throws {
+    // The Mac says Sunday Nov 15; the bot (the fixture) serves Monday Nov 16, 10:00:02 New York.
+    let mac = try WireTime("2026-11-15T17:00:00.000Z").date
+    Container.shared.now.register { { mac } }
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    #expect(model.today == (try WireDate("2026-11-15")))
+    await model.refreshStatus()
+    #expect(model.today == (try WireDate("2026-11-16")))
+    let served = try WireTime("2026-11-16T15:00:02.123Z").date
+    #expect(abs(model.botNow.timeIntervalSince(served)) < 1)
+    #expect(model.isLive)
+  }
+
+  @Test("The shown day's flow and watched symbols are read; a failed read clears each")
+  func flowAndWatching() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    RouteProtocol.routes.withLock {
+      $0.bodies["/flow"] = try? Data(contentsOf: fixturesDir.appendingPathComponent("flow-v1.json"))
+      $0.bodies["/watching"] = try? Data(contentsOf: fixturesDir.appendingPathComponent("watching-v1.json"))
+    }
+    await model.refreshFlow()
+    #expect(model.flow?.stages.count == FlowStage.allCases.count)
+    #expect(model.watching?.rows.first?.symbol == "ABCD")
+    RouteProtocol.routes.withLock { $0.bodies["/flow"] = nil }
+    await model.refreshFlow()
+    #expect(model.flow == nil)
+    #expect(model.flowError != nil)
+    #expect(model.watching != nil)
+  }
+
+  @Test("Performance over the days ending on the shown day is read; a failed read clears it")
+  func performance() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    RouteProtocol.routes.withLock { $0.bodies["/performance"] = try? Data(contentsOf:
+      fixturesDir.appendingPathComponent("performance-v1.json")) }
+    await model.refreshPerformance()
+    #expect(model.performance?.trades == 5)
+    #expect(model.performance?.exclusions.count == 1)
+    RouteProtocol.routes.withLock { $0.bodies["/performance"] = nil }
+    await model.refreshPerformance()
+    #expect(model.performance == nil)
+    #expect(model.performanceError != nil)
+  }
+
+  @Test("The shown day's skipped signals are read; a failed read clears them")
+  func skippedSignals() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    RouteProtocol.routes.withLock { $0.bodies["/skipped"] = try? Data(contentsOf:
+      fixturesDir.appendingPathComponent("skipped-v1.json")) }
+    await model.refreshSkipped()
+    #expect(model.skipped?.signals.map(\.admission) == [.refused, .notEvaluated])
+    RouteProtocol.routes.withLock { $0.bodies["/skipped"] = nil }
+    await model.refreshSkipped()
+    #expect(model.skipped == nil)
+    #expect(model.skippedError != nil)
+  }
+
   @Test("The chart reads a symbol's decisions; a failed read clears them")
   func chartDecisions() async throws {
     let chart = ChartModel()
@@ -130,8 +188,9 @@ struct AppModelTests {
     RouteProtocol.routes.withLock { $0.bodies["/decisions"] = try? Data(contentsOf:
       fixturesDir.appendingPathComponent("decisions-v1.json")) }
     await chart.loadDecisions(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
-    #expect(chart.decisions?.decisions.map(\.action) == [.watch, .enter])
-    #expect(chart.decisions?.decisions.last?.observer == true)
+    #expect(chart.decisions?.decisions.map(\.action) == [.watch, .enter, .enter])
+    #expect(chart.decisions?.decisions[1].observer == true)
+    #expect(chart.decisions?.decisions.last?.admission == .refused)
     RouteProtocol.routes.withLock { $0.bodies["/decisions"] = nil }
     await chart.loadDecisions(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
     #expect(chart.decisions == nil)

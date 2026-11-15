@@ -76,11 +76,15 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/days` | `200` `days-v1`: every New York date with records (closed trades, a bot run, captured data), newest first. |
 | GET | `/days/<YYYY-MM-DD>` | `200` `day-v1`: trades closed that New York date and the symbols with captured M1 bars. A date without records answers with empty lists. |
 | GET | `/bars?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `bars-v1`: captured M1 bars of one symbol on one date, oldest first. |
+| GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
 | GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first. |
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
+| GET | `/skipped?date=<YYYY-MM-DD>` | `200` `skipped-v1`: every ENTER of the active strategy that date (default today) that did not become a position (admission `refused` or `not_evaluated`), oldest first, with checks. |
+| GET | `/flow?date=<YYYY-MM-DD>` | `200` `flow-v1`: the Overview's live flow that date (default today): screener chips and the pipeline stages from screeners to verified broker stops, with reconciliation. |
+| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: the symbols the active strategy is closest to entering on that date (default today), closest first, capped by `[api] watching_max_rows`. |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
 | POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
@@ -110,6 +114,13 @@ unknown (a trade closed today has fills without a known price), never zero:
 `[risk] max_daily_loss_usd` - realized - reserved (may be negative). Entries are refused while the
 room is below `settings.risk.min_daily_room_usd`. `positions` lists every open position the bot
 tracks; `position` is its first element or `null`, kept for older clients.
+
+Each `trades_today` entry also has `planned_loss_usd` (1 R as recorded when the trade was opened)
+and `stop_confirmed_after_seconds` (see "Per-trade metrics" below). MAE and MFE are only in
+`day-v1`: the bot does not read capture files to write its status.
+
+Every `positions` element (so also `position`) and every `trades_today` entry has `entry` and
+`entry_cause`, the first link of the protection chain (see "Entry send" below).
 
 ### GET /account
 
@@ -151,6 +162,158 @@ received when the provider revised one. On today's file a last line still being 
 read yet. Only M1 is served; clients aggregate M5/M15 and compute indicators themselves.
 Query strings take exactly the documented parameters, each once; anything else is `bad_request`.
 
+#### Per-trade metrics
+
+Computed by the reader from what the bot already records; `null` means unknown, never zero.
+
+- `planned_loss_usd` (status `Trade` and `day-v1`): 1 R, the planned loss recorded when the
+  trade was opened (`trades.planned_loss_usd`). R multiples are left to the client
+  (`result_gross_usd / planned_loss_usd`, `mae_usd / planned_loss_usd`, ...).
+- `stop_confirmed_after_seconds` (status `Trade` and `day-v1`): seconds, millisecond precision,
+  from the first entry fill to the broker confirming the protective stop. Both ends are journal
+  times (`journal.at_utc`) of `order-observed` rows (one per Detail read that changed an
+  order): the start is the first read of the entry showing filled quantity > 0 (Webull Detail
+  has no fill time, so this is when the fill was seen, not when it happened); the end is the
+  first later read of one of the trade's stop orders showing it working at the broker (state
+  `ACCEPTED` or `PARTIALLY_FILLED`; the engine's "verified" stop). The same two rows are
+  `fill_observed_at` and `stop_verified_at` of the trade's `protection-latency` journal row.
+  `null` when the stop was never confirmed (rejected, or filled or gone before a read showed it
+  working) or no fill read is journaled.
+- `mae_usd` / `mfe_usd` (`day-v1` only): maximum adverse and favourable excursion while shares
+  were held, as a **lower bound** (never overstated): `(lowest price - entry_price) x held` and
+  `(highest price - entry_price) x held`. Journal times lag the events they record
+  (`order-observed` is written only when a read shows a change), so only what the journal
+  proves counts:
+  - Window start: the minute of the first entry read showing a fill. Its bar is left out (it
+    may hold prices from before the fill).
+  - Window end ("held until"): for each stop or exit order that sold shares, the latest moment
+    the journal proves it had not sold yet. For a close (MARKET exit) that is its send intent
+    (`order-intent` row, written before the send); for a stop, its last read still showing
+    nothing filled: an `order-observed` row (in practice its working read) or an `order-held`
+    row. The bot writes `order-held` from the Detail reads it already makes (no extra broker
+    request): when a read shows the stop working (`ACCEPTED` or `PARTIALLY_FILLED`) with
+    filled quantity 0 and no change, and the order's last `order-observed` or `order-held` row
+    is at least `[orders] stop_held_proof_seconds` (60) old, it journals
+    `{state, raw_status, filled_quantity}` keyed by the client order id, at the read's
+    journal time like `order-observed`. A held row with filled quantity above 0, or after a
+    read of the order that showed a fill, proves nothing. The earliest of these over all
+    orders that sold is the end. Its minute's bar is left out too.
+  - Prices: the entry fill price (fill-weighted average), the fill price of each order that
+    sold shares, and the low and high of the captured M1 bars that start after the start
+    minute and before the end minute. If an order that sold has no proving row, no bar
+    counts, only the fill prices.
+  - `held`: the filled quantity the first entry fill read showed (later fills are not
+    counted), never more than the quantity sold. Nothing is sold inside the window, so that
+    many shares were held throughout.
+  - Capture: the bars of the first entry fill read's minute and of the last read showing
+    shares sold must be in the capture file, as proof it covered the trade; their prices are
+    not used.
+
+  So a stop-out at -1 R shows about -1 R (its fill), never the fall after it. A stop-out's
+  window ends at most about `stop_held_proof_seconds` (plus a Detail poll) before the read of
+  its fill, so up to two minutes before the stop-out are not counted; a stop-out within
+  that time of the entry shows its fill prices alone. A restart between the last proving read and the read
+  of the fill changes nothing (the proven window is used). As the entry price is always
+  included, MAE is at most 0 and MFE at least 0; no value is defaulted. `null` when either
+  edge minute's bar is not captured, no entry fill read or no read of the sale is journaled.
+- A journal row these metrics cannot read gives `null` for the trade's stop timing and
+  excursions, never an error. In the bot it is journaled once per trade
+  (`stop-timing-failed`) and the step goes on. The daily-loss check never reads them: the
+  bot computes them only for the status file.
+
+#### Entry send
+
+The protection chain per position is: entry sent once -> filled -> broker stop verified
+(`stop`). `entry` (status `Position` and `Trade`, `day-v1` trades) is its first link, read from
+the journal rows the engine writes for the trade's entry order (`journal.key` = its client
+order id; the engine records every send durably before the HTTP call, sends it once and never
+retries it):
+
+```json
+"entry": {
+  "client_order_id": "ap-1a2b3c4d-t1-e1",
+  "intent_at": "2026-11-16T15:00:00.123Z",
+  "sent_at": "2026-11-16T15:00:00.125Z",
+  "send_outcome": "unknown",
+  "latest_outcome": "acknowledged",
+  "sends": 1,
+  "filled_at": "2026-11-16T15:00:01.625Z"
+},
+"entry_cause": null
+```
+
+- `client_order_id`: the bot's own id for the entry order (`[orders] client_order_id_prefix`,
+  the first 8 hex characters of the random run id, trade id, leg and number). No account or
+  broker id.
+- `intent_at`: the `order-intent` row, written before the send.
+- `sent_at`: the first `order-attempted` row, written just before the HTTP call (see `sends`).
+- `send_outcome`: the engine's send state (`SendState`) that the send itself recorded:
+  `acknowledged`, `refused` (no order exists) or `unknown` (may exist; never resent, resolved
+  by broker reads), the row after the attempt. It is not changed by a later resolution: an
+  `unknown` send that a read then found at the broker stays `unknown`, with `filled_at` once
+  filled. With no attempt row it is the row after the intent (`absent`: never attempted, as
+  recovery found it), and while nothing follows it is the last state (`intent` or
+  `attempted`).
+- `latest_outcome`: the latest send state of the entry order (same values; its last
+  `order-<state>` row). With `send_outcome` it says, for example, "unknown at send, confirmed
+  by a broker read" (`unknown` then `acknowledged`, as in the example above), or `absent`
+  when reads found no such order. Usually the same as `send_outcome`.
+- `sends`: the number of send attempts of the entry order (its `order-attempted` rows): 1.
+  Shown as counted, never clamped; anything else than 1 is something to look at. An attempt
+  is journaled before the request goes out, so an attempt that our own request budget refused
+  (`send_outcome` `refused`) counts as one although no HTTP call was made.
+- `filled_at`: the first `order-observed` row of the entry showing filled quantity > 0 (when
+  the fill was seen, as in "Per-trade metrics").
+- `entry_cause`: `null` when every field is known; otherwise why each null one is, joined by
+  `; ` (for example `never attempted: no order-attempted row`, `no order-observed row shows
+  the entry filled`, or `trade t3 has 2 entry orders, expected 1`, which leaves every field
+  null). No field is ever defaulted.
+
+Display only, like the stop timing: the trading loop and the daily-loss check never read it.
+A journal row it cannot read makes every field `null` with `entry_cause` = `journal
+unreadable: <error>`; in the bot it is journaled once per trade (`entry-send-failed`) and the
+step goes on. The bot reads it again on every status write while the trade is open, and keeps
+it once the trade is closed (or a row is unreadable). `/days/<date>` computes it the same way.
+
+### GET /performance (read-only)
+
+`/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` (both required) summarizes the trades closed
+from `from` to `to`, New York dates, both included: the same closed trades as `day-v1` (bot
+database, this environment, a trade belongs to the date it closed), in close-time order.
+Everything is **gross**: fill prices only, no commissions or fees, as `result_gross_usd` in
+`day-v1`. It never reads the broker and is never used by the daily-loss check.
+
+- A trade's R is `result_gross_usd / planned_loss_usd`. A trade whose `planned_loss_usd` is not
+  positive has no 1 R: it is left out of **every** number below (USD ones too, so R and USD
+  describe the same trades) and counted in `exclusions` (`{cause, trades}`; empty when none).
+- `trades` counts the rest. `wins` have a result above 0, `losses` below 0, `scratches` exactly
+  0 (the same split as `days-v1`, which counts wins and losses by the same sign; no threshold).
+- `win_rate` = wins / trades, a ratio from 0 to 1. `expectancy_gross_r` and
+  `expectancy_gross_usd` are the mean R and mean USD per trade. `average_win_gross_r` is the
+  mean R of wins, `average_loss_gross_r` the mean R of losses (negative).
+  `profit_factor_gross` = USD won / USD lost (in USD, not R; `0` when there are losses and no
+  wins).
+- `max_drawdown_gross_r` / `max_drawdown_gross_usd`: the largest fall of the running total
+  (trade by trade, in close-time order) below its highest point so far, as a number >= 0. The
+  running total starts at 0 before the first trade, so a first trade at -1 R is a 1 R drawdown.
+- `result_gross_r` / `result_gross_usd`: the totals.
+- `days`: one entry per New York date with counted trades, oldest first: `day`, `trades`,
+  `result_gross_r`, `result_gross_usd` and `cumulative_gross_r` (the running R total at the
+  end of that day, from the first trade of the range). Dates without counted trades are left
+  out.
+
+Numbers that come from a division (every R value, `win_rate`, the expectancies, the averages,
+`profit_factor_gross`) are computed exactly and rounded half-even to
+`[api] performance_decimal_places` only in the answer; USD sums are exact. Each nullable number
+`x` has `x_cause`, `null` exactly when `x` is not: `no counted trades in the range` (every
+nullable number), `no winning trades in the range` (`average_win_gross_r`),
+`no losing trades in the range` (`average_loss_gross_r`, `profit_factor_gross`). Counts, totals
+and drawdowns are `0` for a range without trades, never `null`.
+
+`from` after `to`, a range longer than `[api] performance_max_range_days` days (both ends
+counted), a missing, repeated, extra or malformed parameter is `400 bad_request`. An
+unreadable database is `503 unavailable`, as for `/days`.
+
 ### GET /explain (read-only)
 
 Answers "why did the bot do (or not do) this?" for one symbol, from the decision file the bot
@@ -173,11 +336,11 @@ parsed); a missing, repeated, extra or non-ticker parameter is
 `400 bad_request`. The command line has the same read: `aperture explain SYMBOL` (exit 0 found,
 1 none or unreadable).
 
-### GET /observers and GET /decisions (read-only)
+### GET /observers, GET /decisions and GET /skipped (read-only)
 
-Both serve decisions already in the decision file of one New York date (the same file as
+All three serve decisions already in the decision file of one New York date (the same file as
 `/explain`; an archived day's `decisions.jsonl.gz` is read the same way). They never read the
-broker, simulate nothing and record nothing. `at` is the start (UTC) of the decision's M1 bar;
+broker and record nothing; only `/observers` simulates (each observer's day result, below). `at` is the start (UTC) of the decision's M1 bar;
 decisions are oldest first (bar start, then decision time). `action` is the recorded verdict,
 the same enum as explain-v1 `verdict`: `IGNORE` `WATCH` `ENTER` `HOLD` `EXIT`. A
 date without a decision file answers with empty lists; a last line still being written is not
@@ -191,9 +354,26 @@ old version. A configured observer with no records that day gets one entry with 
 its current `strategy.toml` and an empty list. Entries are in configuration order, then by
 version (numeric versions numerically). `reasons` are the rules of the checks that failed,
 in the order evaluated (empty when every check passed); the full checks are in `/decisions`.
-`result_gross_usd` is the observer's simulated day result once one is recorded; the bot records
-none yet, so it is always `null` (the offline report `python -m aperture.research observers`
-computes one). An observer folder whose `strategy.toml` cannot be read is `503 unavailable`.
+`result_gross_usd` is the observer's simulated gross day result in USD: exactly the simulation
+of the offline report `python -m aperture.research observers` (every ENTER replayed alone like
+`whatif`, an ENTER inside an earlier simulated trade of the same symbol skipped, slippage in,
+commissions out, for the recorded quantity), run on that day's captured bars
+(`bars.jsonl`, or its archived `.gz`) with `[api] replay_settings_file` and the session
+calendar, rounded to its `output_decimal_places`. An observer that recorded no ENTER that day
+simulates no trade: `"0"`. When it cannot be computed it is `null` and `result_cause` says why
+(otherwise `result_cause` is `null`); it is never guessed or set to 0:
+`no decisions recorded that day`, `no captured bars for <date>`, `capture file refused: ...`,
+`replay settings unreadable: ...`, `session calendar unreadable: ...`,
+`simulation refused: ...`, `N ENTER(s) could not be simulated: ...` (the decision bar is not in
+the captured bars), `N simulated trade(s) have no recorded whole quantity`. Today's result is
+provisional: it uses the bars captured so far, and a simulated trade still open ends at the last
+bar's close. The API simulates on request and keeps the last answer in memory, keyed by the
+date, whether it is today, and the size and modification time of the decision file, the capture
+file, the replay settings file and the calendar files, so polling the same day re-simulates only
+after one of them changed (a demo day of about 40 ENTERs takes well under a second). An answer
+decided by a failure that can pass without a file changing (an OSError, a calendar or
+simulation refusal) is never kept. Nothing is written to disk. An observer folder whose `strategy.toml` cannot be read
+is `503 unavailable`.
 
 `/decisions?symbol=&date=` (both required) lists the active strategy's and the observers'
 decisions for the symbol, `observer` true for an observer record, `strategy` its `{name,
@@ -202,10 +382,99 @@ version}`. `checks` have the explain-v1 shape (`rule` `measured` `operator` `thr
 (admission `refused`, or `not_evaluated` as for every observer ENTER): the top of the recorded
 entry window (`entry_high`, the price sizing and the what-if simulation use) and the recorded
 stop, each `null` when the record does not hold it, and both `null` for any other decision.
+`admission` and `refusal_cause` are the recorded admission, as in explain-v1 (`not_evaluated`
+for every observer ENTER, `not_applicable` for every other verdict).
+
+`/skipped?date=` (date optional, default today in New York) lists, for the apps' "Not taken"
+list, every record of the active strategy (role `active`, as `/explain`) with verdict `ENTER`
+and admission `refused` or `not_evaluated`, oldest first: `at` (bar start), `symbol`,
+`strategy {name, version}`, `admission`, `refusal_cause` (the single `CAUSE: detail` of a
+refusal, else `null`), the what-if `entry_price` and `stop_price` (the same rule as
+`/decisions`) and `checks` (explain-v1 shape). Taken ENTERs, other verdicts and observer
+records are left out. A date without a decision file answers with an empty list.
 
 A missing, repeated, extra, malformed or non-ticker parameter is `400 bad_request`; a malformed
-line for the symbol (`/decisions`) or an observer line (`/observers`) of that day is
-`503 unavailable` with the file, line and cause.
+line for the symbol (`/decisions`), an observer line (`/observers`) or an active line
+(`/skipped`, `/watching`, `/flow`) of that day is `503 unavailable` with the file, line and cause.
+
+### GET /flow (read-only)
+
+`/flow?date=` (date optional, default today in New York) is the Overview's live flow. Every
+value is derived from what the bot already records; nothing is written, the broker is never
+read. Archived (`.gz`) files are read the same way; a last line still being written today is
+not read yet.
+
+`chips`: one per symbol a screener listed that day, from the captured `screener.jsonl`, most
+recently listed first (within a discovery pass: gainers, losers, top actives, each by rank).
+- `sources`: every screener that listed it that day: `GAINERS` `LOSERS` `TOP_ACTIVES`.
+- `change_pct`: `(price - pre_close) / pre_close x 100` of its latest captured provider row,
+  rounded half-even to `[api] flow_change_pct_decimal_places`. `null` when the row lacks a
+  number for either key or `pre_close` is not positive; `change_cause` then says which
+  (otherwise `null`). The provider's own `change_ratio` is not used: its unit is unproven.
+- `excluded_cause`: why the universe filter refused it in the latest pass that listed it, as
+  `CAUSE: measured` (`SECURITY_TYPE_NOT_ALLOWED: ETF`,
+  `SECURITY_TYPE_UNKNOWN: missing`, `CONFLICTING_ROWS: ...`); `null` when it passed. The bot
+  journals only each pass's totals, so the API applies the discovery code's own `merge` and
+  `universe_cause` again to every captured pass (the rows of one screener read share a receipt
+  time; a pass reads gainers, losers, top actives in that order), with the allowed lists of
+  `[market_data]` as the API loaded them. Liquidity refusals (spread, dollar volume) and
+  halts are not recorded per symbol and are not shown.
+
+`stages`: always six, in this order, each `{stage, count, symbols}` (distinct symbols, sorted):
+- `screeners`: every chip; `universe`: the chips with `excluded_cause` `null`;
+- `strategy`: symbols with a decision of the active strategy (role `active`) that day;
+- `risk`: symbols with an active `ENTER` whose admission is `taken`;
+- `order`: symbols of trades of this environment opened that day whose entry order filled
+  (the bot database);
+- `stop`: those whose stop is `verified` (below).
+
+`stops`: one per trade in `order`, oldest first (then by trade id), `{trade_id, symbol,
+state}`. `state` is its own enum, not status-v1's stop state:
+- `verified`: a broker Detail read journaled one of the trade's stop orders working after the
+  first entry fill read (the same rows as `stop_confirmed_after_seconds`);
+- `pending`: no such read yet, and the trade is still open and the date is today;
+- `never_verified`: no such read, and the trade is closed (a rejected stop on a flattened
+  trade, a stop that filled before any read saw it working) or the date is past;
+- `unknown`: its journal rows cannot be read.
+The live state of an open position's stop (`missing` included) is in `/status`.
+
+`reconcile`: the bot keeps only its latest reconciliation and status, so only today has them.
+`agreement` (`match` / `mismatch`), `read_at` and `mismatch` come from the account file when
+its `read_at` is that day; `fences` (status-v1 shape) from the status file when it was written
+that day. Otherwise each is `null` and `agreement_cause` / `fences_cause` says why (no file,
+invalid file, written on another day, or a past day).
+
+A capture file with a malformed line is `503 unavailable` (`capture file unreadable: ...`), as
+is an unreadable database.
+
+### GET /watching (read-only)
+
+`/watching?date=` (date optional, default today in New York) is "Watching closely": from the
+decision file, the latest record per symbol of the active strategy (role `active`) that day,
+left out when its verdict is `ENTER`, `HOLD` or `EXIT` (entering, or in a position), so a past
+day shows the state at the close. Each row: `symbol`, `at` (bar start), `strategy`, `verdict`
+(explain-v1 enum), `decisive_check` (explain-v1 check shape: the first failed check in the
+order evaluated, the same as explain-v1 `first_failed_check`; `null` when every recorded check
+passed, as for a `WATCH` made without a quote), `closeness`, `closeness_cause`,
+`quote_age_seconds` and `quote_age_cause`.
+
+`closeness` (0..1, rounded down to `[api] watching_closeness_decimal_places`) says how near the
+decisive check is to passing:
+- operator `>` or `>=` (passes once measured rises to the threshold): `measured / threshold`,
+  defined for `threshold > 0` and `measured >= 0`;
+- operator `<` or `<=` (passes once measured falls to the threshold):
+  `threshold / measured`, defined for `measured > 0` and `threshold >= 0`.
+1 is at the threshold. It is `null` and `closeness_cause` says why for a yes/no check
+(operator `is`, nothing measured), an operator without a direction, values outside the domain
+above, a record whose failed check already meets its threshold, or no failed check
+(`every recorded check passed`).
+
+`quote_age_seconds` is always `null` with `quote_age_cause`
+`not recorded: decision records hold no quote time`: the decision file does not keep the quote
+the strategy saw.
+
+Rows are closest first (`null` closeness last), then by symbol, at most
+`[api] watching_max_rows`; `total` counts every row before the cap.
 
 ### Commands
 

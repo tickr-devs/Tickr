@@ -12,6 +12,9 @@ enum Pace {
   static let historySeconds: Double = 30
   /// Bars of the open positions (one new M1 bar a minute).
   static let barsSeconds: Double = 15
+  /// The day's flow (screener chips, stage counts, stops, reconciliation) and the symbols the
+  /// strategy is watching closely; both change with every decision.
+  static let flowSeconds: Double = 5
   /// The broker account read the bot keeps (GET /account); the API serves the bot's last read.
   static let accountSeconds: Double = 15
   /// How long a command toast stays on screen.
@@ -71,6 +74,10 @@ public final class AppModel {
   @ObservationIgnored private var client: APIClient
   /// The current moment (Container.now; tests pin it).
   @ObservationIgnored @Injected(\.now) private var now
+  /// How far the bot's clock is ahead of this Mac's, from the last status's `served_at`. The
+  /// bot's clock decides what "today" is and how old its reads are: the Mac's clock can drift,
+  /// and `aperture demo` plays a past day on a clock of its own.
+  public private(set) var botClockOffset: TimeInterval = 0
 
   // Live state.
   public private(set) var response: StatusResponseV1?
@@ -94,6 +101,17 @@ public final class AppModel {
   /// Observers with their decisions on the shown day; nil until read.
   public private(set) var observers: ObserversV1?
   public private(set) var observersError: String?
+  /// The active strategy's ENTERs on the shown day that did not become a position; nil until read.
+  public private(set) var skipped: SkippedV1?
+  public private(set) var skippedError: String?
+  /// Gross performance in R over the `performanceDays` days that end on the shown day.
+  public private(set) var performance: PerformanceV1?
+  public private(set) var performanceError: String?
+  /// The shown day's flow and watched symbols (GET /flow, GET /watching).
+  public private(set) var flow: FlowV1?
+  public private(set) var flowError: String?
+  public private(set) var watching: WatchingV1?
+  public private(set) var watchingError: String?
 
   // Positions with their latest bars.
   private var barsBySymbol: [String: BarsV1] = [:]
@@ -114,7 +132,12 @@ public final class AppModel {
 
   public var status: StatusV1? { response?.status }
   public var headline: Headline { Headline.make(response: response, fetchError: fetchError) }
-  public var today: WireDate { WireDate(newYorkDateOf: now()) }
+  /// This moment on the bot's clock.
+  public var botNow: Date { botTime(now()) }
+  /// A moment of this Mac's clock (a TimelineView's tick) on the bot's clock.
+  public func botTime(_ local: Date) -> Date { local.addingTimeInterval(botClockOffset) }
+  /// The bot's trading day: today in New York on the bot's clock.
+  public var today: WireDate { WireDate(newYorkDateOf: botNow) }
   public var isLive: Bool { selectedDay == nil || selectedDay == today }
   public var shownDay: WireDate { selectedDay ?? today }
 
@@ -129,7 +152,7 @@ public final class AppModel {
       let since = position.openedAt.date.addingTimeInterval(-Self.barSeconds)
       let bars = barsBySymbol[position.symbol]?.bars.filter { $0.start.date >= since } ?? []
       let last = barsBySymbol[position.symbol]?.bars.last
-      let fresh = last.map { barIsFresh(start: $0.start.date, now: now()) } ?? false
+      let fresh = last.map { barIsFresh(start: $0.start.date, now: botNow) } ?? false
       return PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
         closes: bars.map(\.close.value))
     }
@@ -161,6 +184,10 @@ public final class AppModel {
 
   /// Length of one captured bar (M1).
   static let barSeconds: TimeInterval = 60
+  /// A change of the bot's clock offset smaller than this (network delay) is ignored, in seconds.
+  static let clockToleranceSeconds: TimeInterval = 2
+  /// Calendar days of the performance card, counting the shown day (the design's "30 days").
+  static let performanceDays = 30
 
   /// Trades of the shown day: live from status for today, else from the day document.
   public var shownTrades: [DayTrade] {
@@ -235,6 +262,13 @@ public final class AppModel {
     tasks.append(Task { [weak self] in
       while !Task.isCancelled {
         guard let self else { return }
+        await self.refreshFlow()
+        try? await Task.sleep(for: .seconds(Pace.flowSeconds))
+      }
+    })
+    tasks.append(Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
         await self.refreshAccount()
         try? await Task.sleep(for: .seconds(Pace.accountSeconds))
       }
@@ -259,6 +293,10 @@ public final class AppModel {
     barsBySymbol = [:]
     account = nil
     observers = nil
+    skipped = nil
+    performance = nil
+    flow = nil
+    watching = nil
     Task {
       await refreshStatus()
       await refreshHistory()
@@ -270,8 +308,18 @@ public final class AppModel {
 
   public func refreshStatus() async {
     do {
-      response = try await client.status()
+      let fresh = try await client.status()
+      let dayBefore = today
+      response = fresh
       fetchError = nil
+      followBotClock(servedAt: fresh.servedAt.date)
+      if today != dayBefore {
+        // The bot's day is not the one assumed so far (the first status, a demo day, a new
+        // session): today's trades and bars belong to the new day.
+        todayDocument = nil
+        barsBySymbol = [:]
+        await refreshHistory()
+      }
       resolveSentCommands()
       // Counts come from status, the trade list from /days/<today>: when status shows a
       // trade the list lacks, read the list now instead of waiting for the history poll.
@@ -282,6 +330,13 @@ public final class AppModel {
       fetchError = Self.describe(error)
     }
     if settings == nil { await refreshSettings() }
+  }
+
+  /// Takes the bot's clock from a status served at `servedAt`. Network delay moves the offset by
+  /// milliseconds on every poll; only a larger change is taken, so views don't redraw for it.
+  private func followBotClock(servedAt: Date) {
+    let offset = servedAt.timeIntervalSince(now())
+    if abs(offset - botClockOffset) > Self.clockToleranceSeconds { botClockOffset = offset }
   }
 
   public func refreshSettings() async {
@@ -302,6 +357,8 @@ public final class AppModel {
       historyError = Self.describe(error)
     }
     await refreshObservers()
+    await refreshSkipped()
+    await refreshPerformance()
   }
 
   public func refreshAccount() async {
@@ -330,9 +387,78 @@ public final class AppModel {
     }
   }
 
+  /// Reads the shown day's skipped ENTERs. An answer for a day no longer shown is dropped; a
+  /// failed read clears the list, so an old one never reads as current.
+  public func refreshSkipped() async {
+    let day = shownDay
+    do {
+      let document = try await client.skipped(day: day)
+      guard day == shownDay else { return }
+      skipped = document
+      skippedError = nil
+    } catch {
+      guard day == shownDay else { return }
+      skipped = nil
+      skippedError = Self.describe(error)
+    }
+  }
+
+  /// Reads performance over the days that end on the shown day. An answer for a day no longer
+  /// shown is dropped; a failed read clears it, so old figures never read as current.
+  public func refreshPerformance() async {
+    let day = shownDay
+    do {
+      let document = try await client.performance(from: day.adding(days: 1 - Self.performanceDays), to: day)
+      guard day == shownDay else { return }
+      performance = document
+      performanceError = nil
+    } catch {
+      guard day == shownDay else { return }
+      performance = nil
+      performanceError = Self.describe(error)
+    }
+  }
+
+  /// Reads the shown day's flow and watched symbols. An answer for a day no longer shown is
+  /// dropped; a failed read clears its part, so an old one never reads as current.
+  public func refreshFlow() async {
+    let day = shownDay
+    do {
+      let document = try await client.flow(day: day)
+      guard day == shownDay else { return }
+      flow = document
+      flowError = nil
+    } catch {
+      guard day == shownDay else { return }
+      flow = nil
+      flowError = Self.describe(error)
+    }
+    do {
+      let document = try await client.watching(day: day)
+      guard day == shownDay else { return }
+      watching = document
+      watchingError = nil
+    } catch {
+      guard day == shownDay else { return }
+      watching = nil
+      watchingError = Self.describe(error)
+    }
+  }
+
   private func loadSelectedDay() async {
     observers = nil
+    skipped = nil
+    skippedError = nil
+    performance = nil
+    performanceError = nil
+    flow = nil
+    flowError = nil
+    watching = nil
+    watchingError = nil
+    await refreshFlow()
     await refreshObservers()
+    await refreshSkipped()
+    await refreshPerformance()
     guard let day = selectedDay, day != today else {
       dayDocument = nil
       return

@@ -58,6 +58,15 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
     WireDate.newYork.date(from: DateComponents(year: year, month: month, day: day, hour: Self.anchorHour))!
   }
 
+  /// The New York date `days` calendar days later (earlier when negative).
+  public func adding(days: Int) -> WireDate {
+    // A Gregorian calendar always adds whole days to a noon anchor; no fallback date.
+    guard let date = WireDate.newYork.date(byAdding: .day, value: days, to: noonInNewYork) else {
+      preconditionFailure()
+    }
+    return WireDate(newYorkDateOf: date)
+  }
+
   public var description: String { text }
   public static func < (a: WireDate, b: WireDate) -> Bool { a.text < b.text }
 
@@ -90,6 +99,16 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
   public let stopPrice: DecimalString?
   public let plannedLossUsd: DecimalString
   public let resultGrossUsd: DecimalString
+  /// Seconds from the entry fill to the broker confirming the stop; nil when not recorded.
+  public let stopConfirmedAfterSeconds: DecimalString?
+  /// Worst and best open result while the trade was open (maximum adverse and favourable
+  /// excursion), in USD; nil when the bars to compute them were not captured.
+  public let maeUsd: DecimalString?
+  public let mfeUsd: DecimalString?
+  /// How the entry order was sent; see `EntrySend`.
+  public let entry: EntrySend
+  /// Why the bot has no entry send record for the trade; nil when it has one.
+  public let entryCause: String?
 
   public var id: String { tradeId }
 
@@ -104,6 +123,11 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
     case stopPrice = "stop_price"
     case plannedLossUsd = "planned_loss_usd"
     case resultGrossUsd = "result_gross_usd"
+    case stopConfirmedAfterSeconds = "stop_confirmed_after_seconds"
+    case maeUsd = "mae_usd"
+    case mfeUsd = "mfe_usd"
+    case entry
+    case entryCause = "entry_cause"
   }
 
   public init(from decoder: Decoder) throws {
@@ -119,6 +143,11 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
     stopPrice = try c.decodeNullable(DecimalString.self, forKey: .stopPrice)
     plannedLossUsd = try c.decode(DecimalString.self, forKey: .plannedLossUsd)
     resultGrossUsd = try c.decode(DecimalString.self, forKey: .resultGrossUsd)
+    stopConfirmedAfterSeconds = try c.decodeNullable(DecimalString.self, forKey: .stopConfirmedAfterSeconds)
+    maeUsd = try c.decodeNullable(DecimalString.self, forKey: .maeUsd)
+    mfeUsd = try c.decodeNullable(DecimalString.self, forKey: .mfeUsd)
+    entry = try c.decode(EntrySend.self, forKey: .entry)
+    entryCause = try c.decodeNullable(String.self, forKey: .entryCause)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -134,6 +163,11 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
     try c.encodeNullable(stopPrice, forKey: .stopPrice)
     try c.encode(plannedLossUsd, forKey: .plannedLossUsd)
     try c.encode(resultGrossUsd, forKey: .resultGrossUsd)
+    try c.encodeNullable(stopConfirmedAfterSeconds, forKey: .stopConfirmedAfterSeconds)
+    try c.encodeNullable(maeUsd, forKey: .maeUsd)
+    try c.encodeNullable(mfeUsd, forKey: .mfeUsd)
+    try c.encode(entry, forKey: .entry)
+    try c.encodeNullable(entryCause, forKey: .entryCause)
   }
 
   /// Result in R (result / planned loss), nil when the planned loss is zero.

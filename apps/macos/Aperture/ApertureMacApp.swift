@@ -1,4 +1,5 @@
 import AppKit
+import ApertureDesign
 import ApertureKit
 import SwiftUI
 
@@ -8,10 +9,15 @@ enum Defaults {
   static let apiBaseURL = "apiBaseURL"
   /// Whether the menu-bar extra is shown.
   static let showMenuBarExtra = "showMenuBarExtra"
+  /// Appearance forced for every window, `light` or `dark`; unset follows the system. Not in
+  /// Settings: the screen tour sets it as a launch argument (`-appearance light`).
+  static let appearance = "appearance"
+  static let light = "light"
+  static let dark = "dark"
 }
 
 /// macOS shell: the main window with a sidebar, the standard Settings window (⌘,) and a
-/// menu-bar extra. Appearance follows the system; there is no theme switch in the app.
+/// menu-bar extra. Appearance follows the system (Defaults.appearance can force one for the tour).
 @main
 @MainActor
 struct ApertureMacApp: App {
@@ -34,6 +40,11 @@ struct ApertureMacApp: App {
     _model = State(initialValue: model)
     // Started with `swift run` there is no bundle: still show a Dock icon and the window.
     NSApplication.shared.setActivationPolicy(.regular)
+    switch UserDefaults.standard.string(forKey: Defaults.appearance) {
+    case Defaults.light: NSApplication.shared.appearance = NSAppearance(named: .aqua)
+    case Defaults.dark: NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+    default: break
+    }
   }
 
   static func baseURL() -> URL {
@@ -47,6 +58,8 @@ struct ApertureMacApp: App {
     Window(String(localized: L10n.App.name), id: WindowID.main) {
       RootView()
         .environment(model)
+        // The design's accent for links, selection and controls (as on iOS), not the system blue.
+        .tint(Palette.info)
         .frame(minWidth: Self.minWidth, minHeight: Self.minHeight)
     }
     .defaultSize(width: Self.defaultWidth, height: Self.defaultHeight)
@@ -59,11 +72,13 @@ struct ApertureMacApp: App {
     Settings {
       SettingsView()
         .environment(model)
+        .tint(Palette.info)
     }
 
     MenuBarExtra(isInserted: $showMenuBarExtra) {
       MenuBarPanel()
         .environment(model)
+        .tint(Palette.info)
     } label: {
       Image(systemName: model.headline.severity.menuBarSymbol)
     }

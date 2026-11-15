@@ -27,17 +27,25 @@ final class ActivityModel {
   private(set) var day: DayV1?
   /// The record of the status's session (GET /days/<date>), for what the status leaves out.
   private(set) var session: DayV1?
+  /// The active strategy's skipped entries of the shown day (GET /skipped), newest first once
+  /// read; `skippedDay` is the day they are of.
+  private(set) var skipped: [SkippedSignalV1]?
+  private(set) var skippedDay: WireDate?
+  /// Why the skipped entries could not be read, if they could not.
+  private(set) var skippedFailure: String?
   /// The month the calendar shows.
-  var month = DayCalendar.Month(WireDate(newYorkDateOf: .now))
+  var month = DayCalendar.Month(Container.shared.appModel().today)
   /// Number of the newest load of a day; an answer to an older one is dropped.
   @ObservationIgnored private var latestRequest = 0
   /// Number of the newest load of the days list, likewise.
   @ObservationIgnored private var latestDaysRequest = 0
+  /// The bot's address `session` was read from.
+  @ObservationIgnored private var sessionSource: URL?
   /// The bot's address the days were listed from; another address starts again from today.
   @ObservationIgnored private var source: URL?
 
-  /// Today in New York.
-  var today: WireDate { WireDate(newYorkDateOf: .now) }
+  /// Today in New York, on the bot's clock.
+  var today: WireDate { Container.shared.appModel().today }
   /// The months the calendar can show, newest first.
   var months: [DayCalendar.Month] { DayCalendar.months(days, including: today) }
   /// The shown month as weeks of Monday to Friday.
@@ -80,13 +88,34 @@ final class ActivityModel {
     WireDate(newYorkDateOf: status.writtenAt.date)
   }
 
-  /// Read the record of `status`'s session. A failed read leaves the rows without R; nothing
+  /// Read the record of `status`'s session. A failed read leaves the rows without MAE and MFE; nothing
   /// else depends on it.
   func loadSession(_ url: URL, of status: StatusV1) async {
     let day = sessionDay(of: status)
-    if session?.day != day { session = nil }
+    // Another bot's or another day's record never lends its MAE and MFE to these rows.
+    if url != sessionSource || session?.day != day { session = nil }
+    sessionSource = url
     guard let loaded = try? await client(url).day(day), loaded.day == day else { return }
     session = loaded
+  }
+
+  /// Read the skipped entries of `day`. Another day's list is never shown under this one.
+  func loadSkipped(_ url: URL, day: WireDate) async {
+    if skippedDay != day {
+      skipped = nil
+      skippedFailure = nil
+      skippedDay = day
+    }
+    do {
+      let read = try await client(url).skipped(day: day)
+      guard read.day == day, day == skippedDay else { return }
+      skipped = read.signals.reversed()
+      skippedFailure = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      if day == skippedDay { skippedFailure = error.localizedDescription }
+    }
   }
 
   /// Show `day`: today goes back to the live view, any other recorded day loads its trades.

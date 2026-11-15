@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
-from aperture.api import contract
+from aperture.api import contract, flow
 from aperture.api.contract import (
     AccountResponseV1,
     CommandAcceptedV1,
@@ -48,12 +48,16 @@ from aperture.api.contract import (
     StatusResponseV1,
 )
 from aperture.api.history import SYMBOL_PATTERN, History, HistoryPaths, HistoryUnavailable
+from aperture.api.observer_results import ObserverResults, SimulationPaths
 from aperture.calendar import ny_date_of
 from aperture.config import Config, ConfigError
+from aperture.data.capture import CaptureError
+from aperture.data.discovery import DiscoverySettings
 from aperture.observers.errors import ObserverError
 from aperture.observers.loader import read_identity
 from aperture.observers.log import DecisionLog
 from aperture.research.errors import RecordFileError
+from aperture.research.records import DecisionRecord
 from aperture.strategy.base import Role
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -103,6 +107,13 @@ class ApiSettings:
     strategies_root: Path  # holds strategies/<folder>/strategy.toml, read by GET /observers
     account_path: Path  # the bot's account-v1 file, served at GET /account
     account_stale_seconds: Decimal
+    simulation: SimulationPaths  # inputs of the observers' simulated day results
+    universe: DiscoverySettings  # the universe filter GET /flow applies to captured passes
+    watching_max_rows: int
+    closeness_places: int  # decimal places of GET /watching closeness
+    change_pct_places: int  # decimal places of GET /flow change_pct
+    performance_max_range_days: int  # longest GET /performance range, both ends counted
+    performance_decimal_places: int  # rounding of GET /performance quotients
 
 
 def settings_from_config(cfg: Config) -> ApiSettings:
@@ -128,6 +139,14 @@ def settings_from_config(cfg: Config) -> ApiSettings:
     if api.idempotency_key_ttl_seconds <= api.command_max_age_seconds:
         raise ConfigError("[api] idempotency_key_ttl_seconds must be above "
                           "command_max_age_seconds, so a repeat can never queue a command twice")
+    if api.watching_max_rows <= 0:
+        raise ConfigError("[api] watching_max_rows must be positive")
+    if api.watching_closeness_decimal_places < 0 or api.flow_change_pct_decimal_places < 0:
+        raise ConfigError("[api] decimal places must not be negative")
+    if api.performance_max_range_days <= 0:
+        raise ConfigError("[api] performance_max_range_days must be positive")
+    if api.performance_decimal_places < 0:
+        raise ConfigError("[api] performance_decimal_places must not be negative")
     data = cfg.root / cfg.run.data_dir
     return ApiSettings(
         host=api.host,
@@ -152,6 +171,13 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         strategies_root=cfg.root,
         account_path=data / api.account_file,
         account_stale_seconds=api.account_stale_seconds,
+        simulation=SimulationPaths.from_config(cfg),
+        universe=DiscoverySettings.from_config(cfg),
+        watching_max_rows=api.watching_max_rows,
+        closeness_places=api.watching_closeness_decimal_places,
+        change_pct_places=api.flow_change_pct_decimal_places,
+        performance_max_range_days=api.performance_max_range_days,
+        performance_decimal_places=api.performance_decimal_places,
     )
 
 
@@ -195,6 +221,7 @@ class ApiServer(ThreadingHTTPServer):
         self.inbox_lock = inbox_lock or threading.Lock()
         self.page = (STATIC_DIR / "status.html").read_bytes()
         self.history = History(settings.history)
+        self.observer_results = ObserverResults(settings.simulation)
         port = settings.remote_port if remote else settings.port
         super().__init__((settings.host, port), Handler)
 
@@ -324,7 +351,8 @@ _ERROR_CODES = {
     "internal": 500, "unavailable": 503, "unauthorized": 401, "conflict": 409,
 }
 GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", "/settings",
-              "/explain", "/observers", "/decisions", "/account")
+              "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
+              "/watching", "/performance")
 DAY_PREFIX = "/days/"
 
 
@@ -468,13 +496,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, self.server.settings.shown)
             elif path == "/explain":
                 self._explain()
-            elif path in ("/observers", "/decisions"):
+            elif path in ("/observers", "/decisions", "/skipped", "/flow", "/watching"):
                 self._recorded_decisions(path)
             elif path == "/account":
                 self._account()
             elif path in COMMAND_ROUTES:
                 self._error("method_not_allowed", "use POST", {"Allow": "POST"})
-            elif path == "/days" or path.startswith(DAY_PREFIX) or path == "/bars":
+            elif path in ("/days", "/bars", "/performance") or path.startswith(DAY_PREFIX):
                 self._history(path)
             else:
                 self._error("not_found", f"no resource {path!r}")
@@ -530,7 +558,8 @@ class Handler(BaseHTTPRequestHandler):
             self._error("internal", type(exc).__name__)
 
     def _history(self, path: str) -> None:
-        """GET /days, /days/<YYYY-MM-DD>, /bars?symbol=&date=: read-only history."""
+        """GET /days, /days/<YYYY-MM-DD>, /bars?symbol=&date=, /performance?from=&to=:
+        read-only history."""
         history = self.server.history
         today = ny_date_of(self.server.clock())
         query = urlsplit(self.path).query
@@ -543,6 +572,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not SYMBOL_PATTERN.match(params["symbol"]):
                     raise BadQuery(f"symbol {params['symbol']!r} is not a ticker")
                 document = history.bars(params["symbol"], _day(params["date"]), today)
+            elif path == "/performance":
+                params = _query(query, frozenset({"from", "to"}))
+                first, last = _day(params["from"]), _day(params["to"])
+                if first > last:
+                    raise BadQuery(f"from {first.isoformat()} is after to {last.isoformat()}")
+                limit = self.server.settings.performance_max_range_days
+                if (last - first).days + 1 > limit:
+                    raise BadQuery(f"range of {(last - first).days + 1} days is longer than "
+                                   f"[api] performance_max_range_days ({limit})")
+                document = history.performance(
+                    first, last, self.server.settings.performance_decimal_places)
             else:
                 _query(query, frozenset())
                 document = history.day(_day(path[len(DAY_PREFIX):]), today)
@@ -588,18 +628,21 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, contract.explain(self.server.settings.history.environment, day, record))
 
     def _recorded_decisions(self, path: str) -> None:
-        """GET /observers?date= and /decisions?symbol=&date=: decisions already recorded in the
-        decision file of one New York date (plain or archived). Never reads the broker."""
+        """GET /observers?date=, /skipped?date=, /watching?date=, /flow?date= and
+        /decisions?symbol=&date=: decisions already recorded in the decision file of one New
+        York date (plain or archived). Never reads the broker; /observers adds each observer's
+        simulated day result, /flow the captured screeners and the database."""
         settings = self.server.settings
         query = urlsplit(self.path).query
+        today = ny_date_of(self.server.clock())
         try:
-            if path == "/observers":
+            if path != "/decisions":
                 params = _query(query, frozenset({"date"}), optional=frozenset({"date"}))
             else:
                 params = _query(query, frozenset({"symbol", "date"}))
                 if not SYMBOL_PATTERN.match(params["symbol"]):
                     raise BadQuery(f"symbol {params['symbol']!r} is not a ticker")
-            day = _day(params["date"]) if "date" in params else ny_date_of(self.server.clock())
+            day = _day(params["date"]) if "date" in params else today
         except BadQuery as exc:
             self._error("bad_request", str(exc))
             return
@@ -608,8 +651,20 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/observers":
                 identities = tuple(read_identity(settings.strategies_root, folder)
                                    for folder in settings.shown.observers)
-                document: Any = contract.observers_document(
-                    day, identities, log.records(day, role=Role.OBSERVER))
+                records = log.records(day, role=Role.OBSERVER)
+                configured = {name for name, _ in identities}
+                results = self.server.observer_results.results(
+                    day, today, [r for r in records if r.decision.strategy in configured],
+                    log.path(day))
+                document: Any = contract.observers_document(day, identities, records, results)
+            elif path == "/skipped":
+                document = contract.skipped_document(day, log.records(day, role=Role.ACTIVE))
+            elif path == "/watching":
+                document = contract.watching_document(
+                    day, log.records(day, role=Role.ACTIVE), settings.watching_max_rows,
+                    settings.closeness_places)
+            elif path == "/flow":
+                document = self._flow(day, today, log.records(day, role=Role.ACTIVE))
             else:
                 symbol = params["symbol"]
                 document = contract.decisions_document(symbol, day,
@@ -617,10 +672,30 @@ class Handler(BaseHTTPRequestHandler):
         except ObserverError as exc:
             self._error("unavailable", f"observer strategy unreadable: {exc}")
             return
+        except CaptureError as exc:
+            self._error("unavailable", f"capture file unreadable: {exc}")
+            return
+        except HistoryUnavailable as exc:
+            self._error("unavailable", str(exc))
+            return
         except (RecordFileError, OSError) as exc:
             self._error("unavailable", f"decision file unreadable: {exc}")
             return
         self._json(200, document)
+
+    def _flow(self, day: date, today: date,
+              records: tuple[DecisionRecord, ...]) -> contract.FlowV1:
+        settings = self.server.settings
+        path = flow.screener_path(settings.history.capture, day)
+        try:
+            passes = [] if path is None else flow.read_passes(path, open_tail=day == today)
+        except OSError as exc:
+            raise CaptureError(str(exc)) from exc
+        return flow.flow_document(
+            settings.history.environment, day,
+            flow.chips(passes, settings.universe, settings.change_pct_places), records,
+            self.server.history.entries(day, today),
+            flow.reconcile(day, today, settings.status_path, settings.account_path))
 
     def _read_json_body(self) -> dict[str, Any] | None:
         media = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()

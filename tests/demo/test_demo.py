@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import shutil
 import sys
+import threading
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal as D
@@ -40,9 +42,22 @@ def small(scenario_path: Path):
         ("09:30", "09:45", D("24.50"), HOT), ("10:30", "10:32", D(21), HOT)))
     held = SymbolPlan("BBB", D(30), D(3000), ScreenerKind.GAINERS, (
         ("10:40", "10:55", D("34.50"), HOT),))
-    return replace(full, past=((breakout,),), today=(breakout, held), clock="11:30",
+    # Breaks out while BBB is held: admission refuses it (one position at a time).
+    late = SymbolPlan("CCC", D(40), D(3000), ScreenerKind.GAINERS, (
+        ("11:05", "11:20", D("46.00"), HOT),))
+    return replace(full, past=((breakout,),), today=(breakout, held, late), clock="11:30",
                    commands=(DemoCommand("10:35", api.CommandKind.ENTRY_STOP_ON, None),
                              DemoCommand("10:38", api.CommandKind.ENTRY_STOP_OFF, None)))
+
+
+def _get(server, path):
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+    conn.request("GET", path, headers={"Host": f"127.0.0.1:{server.server_port}"})
+    resp = conn.getresponse()
+    body = json.loads(resp.read())
+    conn.close()
+    assert resp.status == 200, body
+    return body
 
 
 def test_real_demo_file_loads_and_is_commented():
@@ -92,6 +107,7 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
 
     cfg = config.load(root / scenario.root_dir / "config" / "bot.toml")
     server = make_server(replace(settings_from_config(cfg), port=0))
+    serving = None
     try:
         status = server.status_response().status
         assert status is not None and status.environment == scenario.environment
@@ -99,6 +115,23 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         assert status.positions[0].stop.state is api.StopState.VERIFIED
         assert [(t.symbol, t.exit_reason) for t in status.trades_today] == [
             ("AAA", "stopped-out")]
+        (closed,) = status.trades_today
+        assert closed.planned_loss_usd > 0
+        assert closed.stop_confirmed_after_seconds is not None
+        for shown in (closed, status.positions[0]):  # entry sent once, then seen filled
+            assert shown.entry_cause is None and shown.entry.sends == 1
+            assert shown.entry.send_outcome is api.SendOutcome.ACKNOWLEDGED
+            assert shown.entry.intent_at <= shown.entry.sent_at <= shown.entry.filled_at
+        (day_trade,) = server.history.day(FRIDAY, FRIDAY).trades
+        assert day_trade.stop_confirmed_after_seconds == closed.stop_confirmed_after_seconds
+        assert day_trade.planned_loss_usd == closed.planned_loss_usd
+        assert (day_trade.entry, day_trade.entry_cause) == (closed.entry, None)
+        assert day_trade.mae_usd is not None and day_trade.mfe_usd is not None
+        # Lower bound: the stop-out shows its 1 R loss, not the fall after the stop filled.
+        assert day_trade.mae_usd == day_trade.result_gross_usd == -day_trade.planned_loss_usd
+        # The bot's periodic `order-held` rows prove the shares held until shortly before
+        # the stop-out, so the bars after the fill count: the rise is shown.
+        assert day_trade.mfe_usd > 0
         room = status.daily_room_usd
         assert room is not None and room < cfg.risk.max_daily_loss_usd
         assert [c.kind for c in status.recent_commands] == [
@@ -110,7 +143,43 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         account = server.account_response()
         assert isinstance(account, api.AccountResponseV1)
         assert [p.symbol for p in account.account.positions] == ["BBB"]
+        # The apps' "Not taken" list and the observers' simulated results are not empty.
+        server.clock = lambda: status.written_at
+        serving = threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True)
+        serving.start()
+        skipped = _get(server, "/skipped")
+        assert skipped["day"] == FRIDAY.isoformat()
+        assert skipped["signals"] and {(s["symbol"], s["admission"])
+                                       for s in skipped["signals"]} == {("CCC", "refused")}
+        assert all(s["refusal_cause"] and s["entry_price"] for s in skipped["signals"])
+        # The Overview's live flow and "Watching closely".
+        flow = _get(server, "/flow")
+        assert {c["symbol"] for c in flow["chips"]} == {"AAA", "BBB", "CCC"}
+        assert all(c["change_pct"] is not None and c["excluded_cause"] is None
+                   for c in flow["chips"])
+        stages = {s["stage"]: s["symbols"] for s in flow["stages"]}
+        assert stages["universe"] == stages["screeners"] == ["AAA", "BBB", "CCC"]
+        assert stages["risk"] == stages["order"] == stages["stop"] == ["AAA", "BBB"]
+        assert {s["state"] for s in flow["stops"]} == {"verified"}
+        assert flow["reconcile"]["agreement"] == "match"
+        watching = _get(server, "/watching")
+        assert 0 < len(watching["rows"]) <= cfg.api.watching_max_rows
+        assert all(r["verdict"] in ("WATCH", "IGNORE") for r in watching["rows"])
+        observers = _get(server, "/observers")["observers"]
+        assert [(o["name"], o["result_cause"]) for o in observers] == [
+            ("price-action-v2", None)]
+        assert any(d["action"] == "ENTER" for d in observers[0]["decisions"])
+        assert D(observers[0]["result_gross_usd"]) != 0
+        # Performance over both demo sessions: one stop-out on each.
+        perf = _get(server, f"/performance?from=2026-11-12&to={FRIDAY.isoformat()}")
+        assert (perf["trades"], perf["losses"], perf["exclusions"]) == (2, 2, [])
+        assert [(d["day"], d["trades"]) for d in perf["days"]] == [
+            ("2026-11-12", 1), (FRIDAY.isoformat(), 1)]
+        assert D(perf["result_gross_r"]) == D(perf["days"][-1]["cumulative_gross_r"])
+        assert D(perf["max_drawdown_gross_usd"]) == -D(perf["result_gross_usd"]) > 0
     finally:
+        if serving is not None:
+            server.shutdown()
         server.server_close()
     decisions = (cfg.root / cfg.run.data_dir / cfg.observers.decisions_dir
                  / scenario.environment / FRIDAY.isoformat() / "decisions.jsonl")
