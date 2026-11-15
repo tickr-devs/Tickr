@@ -116,7 +116,6 @@ struct SettingsView: View {
     }
   }
 
-  /// While Settings is on screen, read the bot's last broker read as often as its status.
   /// Saves the typed address; the paired token stays only while the address keeps the paired origin.
   private func save() {
     guard draft.isEmpty || Connection(address: draft).url != nil else { return }
