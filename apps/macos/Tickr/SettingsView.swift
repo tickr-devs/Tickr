@@ -12,18 +12,17 @@ struct SettingsView: View {
   @State private var tab: SettingsTab = .general
   @State private var contentHeight: CGFloat = 0
 
-  /// Width of the Settings window, in points (the design's 820).
-  static let width: CGFloat = 820
+  /// Width of the Settings window, in points (the design's compact 680).
+  static let width: CGFloat = 680
   /// Tallest the pane area grows to its content before it scrolls, in points.
-  static let maxPaneHeight: CGFloat = 760
+  static let maxPaneHeight: CGFloat = 620
 
   var body: some View {
     VStack(spacing: 0) {
       SettingsTabBar(selection: $tab)
       ScrollView {
         pane
-          .padding(.horizontal, Tokens.Space.xl)
-          .padding(.vertical, Tokens.Space.l)
+          .padding(Tokens.Space.l)
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
       }
       .scrollBounceBehavior(.basedOnSize)
@@ -50,7 +49,7 @@ struct SettingsView: View {
   }
 
   @ViewBuilder private var pane: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.m) {
+    VStack(alignment: .leading, spacing: Tokens.Space.s) {
       switch tab {
       case .general: GeneralSettings()
       case .trading: TradingSettings()
@@ -82,7 +81,7 @@ private struct GeneralSettings: View {
   var body: some View {
     Group {
       connection
-      HStack(alignment: .top, spacing: Tokens.Space.m) {
+      HStack(alignment: .top, spacing: Tokens.Space.s) {
         SettingsCard(L10n.Settings.menuBar, footnote: Text(L10n.Settings.menuBarNote)) {
           SwitchRow(L10n.Settings.showInMenuBar, isOn: $showMenuBarExtra)
         }
@@ -247,7 +246,8 @@ private struct TradingSettings: View {
 
   var body: some View {
     if let settings = model.settings {
-      HStack(alignment: .top, spacing: Tokens.Space.m) {
+      // One column: three cards across are too cramped at the window's width.
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
         SettingsCard(L10n.Common.strategy) {
           SettingsRow(L10n.Settings.activeStrategy) {
             Text(verbatim: settings.activeStrategy).foregroundStyle(Palette.accentText)
@@ -541,8 +541,8 @@ struct JobsSection: View {
 
   /// Widths of the name and "when" columns, in points (the design's 86 and 130, the name widened
   /// for the Russian names).
-  static let nameWidth: CGFloat = 120
-  static let whenWidth: CGFloat = 130
+  static let nameWidth: CGFloat = 104
+  static let whenWidth: CGFloat = 112
   /// Days in a week; launchd numbers them 0 (or 7) Sunday, 1 Monday … 6 Saturday.
   static let week = 7
   /// Shortest run of days written as a range ("Mon–Fri") rather than a list.
