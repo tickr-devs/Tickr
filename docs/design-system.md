@@ -148,7 +148,7 @@ a step; it does not define its own factor.
 |---|---|---|
 | `slight` | 0.8 | Button titles, tile text |
 | `standard` | 0.7 | Figures, values and day labels in cards, chips and charts |
-| `tight` | 0.6 | Results in tight cells: calendar days, the day ring, activity rows |
+| `tight` | 0.6 | Results in tight cells: calendar day cells, the day ring, the day's figures (Trades) |
 | `most` | 0.5 | A large amount inside a ring |
 
 ## Sizes (`Tokens.Size`)

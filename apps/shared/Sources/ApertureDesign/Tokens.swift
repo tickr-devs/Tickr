@@ -160,7 +160,7 @@ public enum Tokens {
     public static let slight = 0.8
     /// Figures, values and day labels in cards, chips and charts.
     public static let standard = 0.7
-    /// Results in tight cells: calendar days, the day ring, activity rows, the day's figures.
+    /// Results in tight cells: calendar day cells, the day ring, the day's figures (Trades).
     public static let tight = 0.6
     /// A large amount inside a ring.
     public static let most = 0.5
