@@ -54,9 +54,6 @@ final class TickrUITests: XCTestCase {
   /// (ask_above_trigger), as the English app shows it (ApiText.rule).
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "Ask above trigger"
-  /// The rail starts shown (ChartView.Keys.decisions); this launch argument starts it hidden, so
-  /// the test shows it with the toggle.
-  static let railHidden = ["-chart.decisions", "NO"]
   /// English titles of the standard Window menu and its Zoom item.
   static let windowMenu = "Window"
   static let zoomItem = "Zoom"
@@ -188,17 +185,22 @@ final class TickrUITests: XCTestCase {
 
   @MainActor
   func testChartShowsTheDecisions() {
-    let app = launch(settings: Self.railHidden)
+    let app = launch()
     open(Self.sections[1], in: app)
+    // The rail is shown by default: its explain card lists the latest decision's checks. A check
+    // row reads as one accessibility element, so its rule is part of a longer value.
+    let check = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", Self.decisionRule)).firstMatch
+    XCTAssertTrue(check.waitForExistence(timeout: Self.timeout), "decision check\n\(app.debugDescription)")
+    // The open rail fits beside the chart: nothing is pushed off screen.
+    XCTAssertTrue(app.descendants(matching: .any)[Self.rowPrefix + Self.sections[0]].firstMatch.isHittable,
+      "sidebar pushed off screen\n\(app.debugDescription)")
+    // The toggle hides the rail and shows it again.
     let toggle = app.descendants(matching: .any)[Self.decisionsToggle].firstMatch
     XCTAssertTrue(toggle.waitForExistence(timeout: Self.timeout))
     toggle.click()
-    // A check row reads as one accessibility element, so its rule is part of a longer value.
-    let check = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", Self.decisionRule))
-    XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "decision check\n\(app.debugDescription)")
-    // The open inspector fits beside the chart: nothing is pushed off screen.
-    XCTAssertTrue(app.descendants(matching: .any)[Self.rowPrefix + Self.sections[0]].firstMatch.isHittable,
-      "sidebar pushed off screen\n\(app.debugDescription)")
+    XCTAssertTrue(check.waitForNonExistence(timeout: Self.timeout), "rail still shown\n\(app.debugDescription)")
+    toggle.click()
+    XCTAssertTrue(check.waitForExistence(timeout: Self.timeout), "rail not shown again\n\(app.debugDescription)")
   }
 
   @MainActor
