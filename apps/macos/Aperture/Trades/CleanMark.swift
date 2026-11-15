@@ -7,7 +7,6 @@ import SwiftUI
 struct CleanMark: View {
   let clean: CleanDay
 
-
   var body: some View {
     Group {
       switch clean.verdict {
