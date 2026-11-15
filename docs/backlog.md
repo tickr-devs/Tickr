@@ -90,11 +90,19 @@ Owner requirement (2026-11-15): every setting has exactly one source of truth. N
 25. **Risk budget per strategy** (share of the daily ceiling, position limit), needed before two strategies are active at once.
 26. **Fewer parameters**: new strategies aim for one hypothesis and at most about 10 parameters (price-action-v1 has 23).
 
-### E. Selling it (only if the owner still wants to after A to D)
-27. Check the "Tickr" trademark, buy the domain, add a license file (the repository is public without one).
-28. Written answer from Webull on third-party use: the Trading API is for a person's own account; a product for others needs the Connect API (OAuth, by application). Nothing else in this section starts before the answer.
-29. Landing page and waitlist; continue only with real demand (about 200 emails in 2 to 3 months; under 50 means stop).
-30. First-run setup without a terminal: installer, credentials entry, pairing, preflight in the app.
-31. Strategy templates with parameters and the advisor instead of a visual strategy builder; strategies stay code.
-32. Company, securities lawyer (tool, not advice), direct sale of the notarized Mac app by subscription (App Store rule 3.2.1(viii) blocks trading apps from individuals), closed beta.
-33. Strategy marketplace: postponed until demand is proven (owner decision 2026-11-15).
+### E. Standalone product, ready to distribute (still for the owner's own use)
+Done when a person with a Mac and a Webull account installs and runs Tickr without a terminal, a code checkout or any developer tool. No legal or business step is needed for this group.
+27. **One installable Mac app** that contains the bot, the local API and the scheduled jobs: signed and notarized, with its own bundled runtime; no Python install, no repository, no hand-written launchd files.
+28. **First-run setup in the app**: broker credentials typed once and kept in the Keychain (never in a file or a log), account check, alert channel, phone pairing, preflight result shown as a checklist.
+29. **Running it from the app**: start, stop, status and the reason the bot is not trading; settings only through the screens of group C; no config file to edit for an owner setting.
+30. **Updates and data**: in-app update that never runs with a position open, database migration with backup, export of logs and a diagnostics bundle without secrets.
+31. **Strategies without code for the user**: strategy templates with parameters and the advisor; no visual strategy builder; adding new logic stays a developer task.
+32. **User documentation in the app** (English and Russian): setup, every setting, every refusal cause, what to do on each alert.
+33. **Clean-machine test**: install and a full Sandbox day on a Mac that never had the developer setup.
+
+### F. Selling it: legal and business (only if the owner still wants to after E)
+34. Check the "Tickr" trademark, buy the domain, add a license file (the repository is public without one).
+35. Written answer from Webull on third-party use: the Trading API is for a person's own account; a product for others needs the Connect API (OAuth, by application). Nothing else in this group starts before the answer.
+36. Landing page and waitlist; continue only with real demand (about 200 emails in 2 to 3 months; under 50 means stop).
+37. Company, securities lawyer (tool, not advice), direct sale of the notarized Mac app by subscription (App Store rule 3.2.1(viii) blocks trading apps from individuals), closed beta.
+38. Strategy marketplace: postponed until demand is proven (owner decision 2026-11-15).
