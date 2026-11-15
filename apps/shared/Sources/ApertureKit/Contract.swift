@@ -33,6 +33,9 @@ public struct StrategyId: Codable, Hashable, Sendable {
 public struct EntryBlock: Codable, Hashable, Sendable {
   public let cause: String
   public let text: String
+  /// False for an ordinary state that passes on its own (a position is already open, the time
+  /// is outside the entry window): show it calmly, not as a warning.
+  public let attention: Bool
 }
 
 public struct Fence: Codable, Hashable, Sendable {

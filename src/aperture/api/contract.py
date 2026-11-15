@@ -23,7 +23,7 @@ import re
 import types
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from enum import StrEnum
@@ -131,10 +131,13 @@ class StrategyId:
 
 @dataclass(frozen=True)
 class EntryBlock:
-    """The single reason entries are blocked: a stable cause code plus plain words for people."""
+    """The single reason entries are blocked: a stable cause code plus plain words for people.
+    `attention` is false for an ordinary state that passes on its own (a position is already
+    open, the time is outside the entry window): clients show it calmly, not as a warning."""
 
     cause: str
     text: str
+    attention: bool = True
 
 
 @dataclass(frozen=True)
@@ -1159,19 +1162,23 @@ def _decode(where: str, raw: Any, hint: Any, meta: Any = None) -> Any:
 
 
 def from_jsonable(cls: type, raw: Any, where: str = "$") -> Any:
-    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys."""
+    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys. A key added
+    to version 1 later has a default and may be absent, so a document written by an older bot
+    (a status file left on disk across an update) still reads; writers always write it."""
     if not isinstance(raw, dict):
         raise ContractError(f"{where}: expected an object, got {type(raw).__name__}")
     hints = get_type_hints(cls)
     expected = [f.name for f in fields(cls)]
     unknown = sorted(set(raw) - set(expected))
-    missing = [name for name in expected if name not in raw]
+    optional = {f.name for f in fields(cls) if f.default is not MISSING and not f.metadata}
+    missing = [name for name in expected if name not in raw and name not in optional]
     if unknown:
         raise ContractError(f"{where}: unknown keys: {', '.join(unknown)}")
     if missing:
         raise ContractError(f"{where}: missing keys: {', '.join(missing)}")
     meta = {f.name: f.metadata or None for f in fields(cls)}
-    return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n]) for n in expected})
+    return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n])
+                  for n in expected if n in raw})
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
