@@ -3,8 +3,9 @@ import ApertureKit
 import Charts
 import SwiftUI
 
-/// Trades & days: recorded days on the left; the shown day's figures, its trades and what-if
-/// replays on the right. Picking a day here is the same as picking it in the toolbar.
+/// Trades & days: recorded days and the 30-day performance on the left; the shown day's figures,
+/// its trades, the selected trade beside the signals not taken, and what-if replays on the right.
+/// Picking a day here is the same as picking it in the toolbar.
 struct TradesView: View {
   @Environment(AppModel.self) private var model
   @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
@@ -12,7 +13,7 @@ struct TradesView: View {
 
   /// Entrance order of the screen's parts.
   private enum Order: Int {
-    case days = 0, stats, performance, trades, detail, notTaken, whatIf
+    case days = 0, performance, dayList, stats, trades, detail, notTaken, whatIf
   }
 
   var body: some View {
@@ -26,20 +27,28 @@ struct TradesView: View {
 
   private var content: some View {
     HStack(alignment: .top, spacing: Tokens.Space.l) {
-      DaysColumn()
-        .frame(width: Tokens.Size.sideColumn)
-        .rise(step: Order.days.rawValue)
+      VStack(spacing: Tokens.Space.l) {
+        DaysColumn()
+          .rise(step: Order.days.rawValue)
+        PerformanceCard()
+          .rise(step: Order.performance.rawValue)
+        DayListCard()
+          .rise(step: Order.dayList.rawValue)
+      }
+      .frame(width: Tokens.Size.sideColumn)
       VStack(alignment: .leading, spacing: Tokens.Space.l) {
         DayStatsRow()
           .rise(step: Order.stats.rawValue)
-        PerformanceCard()
-          .rise(step: Order.performance.rawValue)
         TradesTable(selection: $selection, showOnChart: showOnChart)
           .rise(step: Order.trades.rawValue)
-        TradeDetailCard(trade: model.shownTrades.first { $0.id == selection })
-          .rise(step: Order.detail.rawValue)
-        NotTakenCard(showOnChart: showOnChart)
-          .rise(step: Order.notTaken.rawValue)
+        // As on the board: the selected trade beside the signals that did not become one.
+        HStack(alignment: .top, spacing: Tokens.Space.l) {
+          TradeDetailCard(trade: model.shownTrades.first { $0.id == selection })
+            .frame(width: Tokens.Size.sideColumn)
+            .rise(step: Order.detail.rawValue)
+          NotTakenCard(showOnChart: showOnChart)
+            .rise(step: Order.notTaken.rawValue)
+        }
         WhatIfCard()
           .rise(step: Order.whatIf.rawValue)
       }
@@ -81,6 +90,19 @@ private struct DaysColumn: View {
         MonthCalendar()
         DayBars(days: Array(model.days.prefix(Self.shownDays).reversed()), shown: model.shownDay)
           .frame(height: Self.barsHeight)
+      }
+    }
+  }
+}
+
+/// Every recorded day as a list, newest first, under the performance card: the calendar above
+/// already picks days, so the long list no longer pushes the performance out of sight.
+private struct DayListCard: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    if !model.days.isEmpty {
+      Card(L10n.Trades.allDays) {
         // The screen's scroll view scrolls the list too; a nested one would collapse to nothing.
         LazyVStack(spacing: Tokens.Space.xxs) {
           ForEach(model.days) { day in
@@ -474,15 +496,28 @@ private struct CauseText: View {
 private struct WhatIfCard: View {
   var body: some View {
     Card(L10n.Trades.whatIf, trailing: { PlannedTag(.backlog) }) {
-      VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        Footnote(L10n.Trades.whatIfDetail)
-        HStack(spacing: Tokens.Space.s) {
-          Button {} label: { Text(L10n.Trades.whatIfEntered) }
-          Button {} label: { Text(L10n.Trades.whatIfStrategy) }
+      // One strip as on the board; the buttons drop below the note when the window is narrow.
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: Tokens.Space.m) {
+          Footnote(L10n.Trades.whatIfDetail)
+          Spacer(minLength: Tokens.Space.s)
+          buttons
         }
-        .disabled(true)
+        VStack(alignment: .leading, spacing: Tokens.Space.s) {
+          Footnote(L10n.Trades.whatIfDetail)
+          buttons
+        }
       }
     }
+  }
+
+  private var buttons: some View {
+    HStack(spacing: Tokens.Space.s) {
+      Button {} label: { Text(L10n.Trades.whatIfEntered) }
+      Button {} label: { Text(L10n.Trades.whatIfStrategy) }
+    }
+    .fixedSize()
+    .disabled(true)
   }
 }
 
