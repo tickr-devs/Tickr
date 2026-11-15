@@ -143,6 +143,15 @@ def test_refused_while_a_bot_from_before_the_rename_holds_its_old_lock(api, sett
         assert resp.status == 409 and runner.calls == []
 
 
+def test_an_unreadable_lock_file_is_a_typed_refusal(api, settings):
+    server, _ = api
+    settings.start.lock_file.mkdir(parents=True)  # reading a folder fails with an OSError
+    runner = Runner()
+    resp, body = _start(server, runner)
+    assert resp.status == 503 and body["cause"].startswith("the bot's lock file could not be read")
+    assert runner.calls == []
+
+
 def test_a_marker_that_cannot_be_removed_is_a_typed_refusal(api, settings, monkeypatch):
     server, _ = api
     marker = settings.start.stop_marker

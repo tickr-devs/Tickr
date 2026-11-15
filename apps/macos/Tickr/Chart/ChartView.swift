@@ -364,6 +364,9 @@ struct ChartView: View {
         // Only the shown live day and intraday ranges reaching today still change.
         live: model.isLive && (showsDay || interval.isIntraday),
         viewport: $viewport)
+        // The bot's status arrives every few seconds and redraws this screen; the chart itself
+        // only when what it draws changed.
+        .equatable()
         .id(ChartID(symbol: symbol, day: model.shownDay, timeframe: interval, range: range))
         .transition(.opacity)
     } else if symbol == nil {
@@ -428,8 +431,6 @@ struct Viewport: Equatable {
   /// Opening time of the first candle on screen; nil follows the newest candle.
   var position: Date?
 
-  /// Each zoom step shows this many times fewer (or more) candles.
-  static let zoomStep = 1.5
   /// The closest zoom still shows this many candles.
   static let minimumVisible = 12
   /// Key equivalents of the zoom buttons (with ⌘), as in Apple's apps.
@@ -439,14 +440,14 @@ struct Viewport: Equatable {
 
   /// Shows fewer candles, down to `minimumVisible`.
   mutating func zoomIn(total: Int) {
-    let next = max(Self.minimumVisible, Int((Double(visible ?? total) / Self.zoomStep).rounded()))
+    let next = max(Self.minimumVisible, Int((Double(visible ?? total) / Tokens.Chart.zoomStep).rounded()))
     visible = next >= total ? nil : next
   }
 
   /// Shows more candles, up to the whole day.
   mutating func zoomOut(total: Int) {
     guard let visible else { return }
-    let next = Int((Double(visible) * Self.zoomStep).rounded())
+    let next = Int((Double(visible) * Tokens.Chart.zoomStep).rounded())
     self.visible = next >= total ? nil : next
   }
 

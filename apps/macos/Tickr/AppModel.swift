@@ -54,7 +54,7 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   /// Closes since the entry, for the small chart.
   public let closes: [Decimal]
   /// Close of the newest captured bar however old it is; shown as history when it is not fresh.
-  public var latestClose: Decimal? = nil
+  public var latestClose: Decimal?
 
   public var id: String { position.symbol }
   public var entry: Decimal { position.entryPrice.value }
@@ -512,9 +512,10 @@ public final class AppModel {
       config = read
       configError = nil
     } catch {
-      guard !Task.isCancelled, url == baseURL else { return }
+      // A cancelled read keeps what was shown.
+      guard url == baseURL, let described = Self.describe(error) else { return }
       config = nil
-      configError = Self.describe(error)
+      configError = described
     }
   }
 
@@ -684,7 +685,7 @@ public final class AppModel {
       let answer = try await client.startBot()
       botStart = .accepted(stopCleared: answer.stopMarkerCleared)
     } catch {
-      botStart = .refused(Self.describe(error))
+      botStart = .refused(ErrorText.text(error))
     }
     await refreshStatus()
   }
