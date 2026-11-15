@@ -1,5 +1,5 @@
-import AppKit
 import Foundation
+import SwiftUI
 import UserNotifications
 
 /// The app's entry point. Started as `<executable> --notify-alert TITLE TEXT` (by the bot and the
