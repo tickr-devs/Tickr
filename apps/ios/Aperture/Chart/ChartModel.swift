@@ -29,6 +29,8 @@ final class ChartModel {
   var symbol: String?
   var timeframe = Timeframe.m1 { didSet { rebuild() } }
   private(set) var series: ChartSeries?
+  /// The ATR line for `series`, one value per candle.
+  private(set) var atr: [Double?] = []
   /// Number of the newest load of the days or a day (see `begin()`).
   @ObservationIgnored private var latestRequest = 0
 
@@ -42,9 +44,9 @@ final class ChartModel {
   var previousDay: WireDate? { neighbour(1) }
   var nextDay: WireDate? { neighbour(-1) }
 
-  /// The bot's API at `url`, from the container.
+  /// The bot's API at `url`, from the container, with the paired token only where it may go.
   private func client(_ url: URL) -> APIClient {
-    Container.shared.apiClient(APIClient.Endpoint(baseURL: url))
+    Container.shared.apiClient(Container.shared.appModel().connection.endpoint(for: url))
   }
 
   /// Load the days list and the newest day, keeping the chosen day and symbol when still listed.
@@ -137,6 +139,7 @@ final class ChartModel {
 
   private func rebuild() {
     series = bars.map { ChartSeries(bars: $0.bars, timeframe: timeframe) }
+    atr = bars.map { ChartSeries.atr(bars: $0.bars, timeframe: timeframe) } ?? []
   }
 
   private func neighbour(_ step: Int) -> WireDate? {
