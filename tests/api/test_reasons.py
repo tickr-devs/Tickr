@@ -132,3 +132,74 @@ def test_size_and_daily_refusals_carry_their_values():
 ])
 def test_refusal_params(code, detail, params):
     assert _refusal(code, detail) == params
+
+
+# ---------------------------------------------------------------- the API's own prose
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def _codes(node: object) -> list[tuple[str, str]]:
+    """(source field, code) of every `<field>_codes` entry in a decoded document."""
+    found = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key.endswith("_codes") and isinstance(value, list):
+                found += [(key, reason["code"]) for reason in value]
+            found += _codes(value)
+    elif isinstance(node, list):
+        for item in node:
+            found += _codes(item)
+    return found
+
+
+def test_every_cause_in_the_fixtures_has_a_code():
+    import json
+    seen = [(path.name, key, code) for path in sorted(FIXTURES.glob("*.json"))
+            for key, code in _codes(json.loads(path.read_text("utf-8")))]
+    assert seen and [s for s in seen if s[2] == reasons.UNRECOGNIZED] == []
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    (None, ()),
+    ("no captured bars for 2026-11-16", (("no_captured_bars", {"day": "2026-11-16"}),)),
+    ("the bars end at 2026-11-16T15:49:00.000Z", (("bars_end", {"time": "10:49"}),)),
+    ("the bars end at 2026-11-16T15:49:00.000Z, before 2026-11-16T16:48:00.000Z",
+     (("bars_end_before", {"time": "10:49", "until": "11:48"}),)),
+    ("no order-intent row; never attempted: no order-attempted row",
+     (("no_intent_row", {}), ("never_attempted", {}))),
+    ("journal unreadable: KeyError: 'a'; 'b'",
+     (("journal_unreadable", {"detail": "KeyError: 'a'; 'b'"}),)),
+    ("unprotected-timeout:t1: no verified stop for 30 s; exiting; alert: t1",
+     (("fence", {"fence": "unprotected-timeout:t1", "fence_code": "unprotected_exiting",
+                 "seconds": "30"}), ("unprotected_alert", {"detail": "t1"}))),
+    ("no reconcile-checked row from 2026-11-16T14:30:00.000Z to 2026-11-16T15:00:00.000Z "
+     "(1800 s, more than [orders] reconcile_max_gap_seconds 900)",
+     (("reconcile_gap", {"since": "09:30", "until": "10:00", "seconds": "1800",
+                         "max_gap": "900"}),)),
+    ("relative_volume: needs threshold > 0 and measured >= 0",
+     (("needs_positive_threshold", {"rule": "relative_volume"}),)),
+    ("skipped_overlap: an earlier simulated trade of ABCD was still open",
+     (("skipped_overlap", {"symbol": "ABCD"}),)),
+    ("something new; no order-intent row", (("unrecognized", {}), ("no_intent_row", {}))),
+])
+def test_prose_reasons(text, expected):
+    assert tuple((r.code, r.params) for r in reasons.prose_reasons(text)) == expected
+
+
+def test_codes_follow_their_cause_and_are_never_read_from_a_document():
+    trade = contract.WhatIfV1(None, None, None, "simulation refused: no bars")
+    assert [r.code for r in trade.cause_codes] == ["simulation_refused"]
+    raw = contract.to_jsonable(trade)
+    raw["cause_codes"] = [{"code": "forged", "params": {}}]
+    assert contract.from_jsonable(contract.WhatIfV1, raw).cause_codes == trade.cause_codes
+    del raw["cause_codes"]  # a document from before the codes: rebuilt from the cause
+    assert contract.from_jsonable(contract.WhatIfV1, raw).cause_codes == trade.cause_codes
+
+
+def test_planned_loss_texts_of_after_and_performance_read():
+    from aperture.api.performance import NOT_POSITIVE_PLANNED_LOSS
+    assert reasons.prose_reasons(NOT_POSITIVE_PLANNED_LOSS)[0].code == (
+        "planned_loss_not_positive_r")
+    assert reasons.prose_reasons("planned loss 0 is not positive: no R")[0].params == {
+        "planned_loss": "0"}
