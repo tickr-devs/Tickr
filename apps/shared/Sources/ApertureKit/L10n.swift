@@ -286,6 +286,13 @@ enum L10n {
     LocalizedStringResource("kit.environment.unknown", defaultValue: "Unknown environment", bundle: bundle)
   }
 
+  // MARK: Fences (ApiText.fenceTitle)
+
+  /// A fence of a kind this app does not know; the bot's detail follows it.
+  static var fenceOther: LocalizedStringResource {
+    LocalizedStringResource("kit.fenceKind.other", defaultValue: "Other block", bundle: bundle)
+  }
+
   // MARK: Codes this app does not know (ApiText)
 
   /// A broker order's side this app does not know.
