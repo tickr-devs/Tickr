@@ -2,69 +2,86 @@ import SwiftUI
 import TickrDesign
 import TickrKit
 
-/// Risk & account, as the design's board: the daily loss limit as a half gauge, the position
-/// slots and limits, the broker account, the session clock, whether new entries are allowed, and
-/// reconciliation with every kind of fence. Three equal columns in two rows that share the
-/// window's height.
+/// Risk & account, as the design's board: three columns of cards. The daily loss limit as a half
+/// gauge with whether entries are open, the session, and the planned request budget; the position
+/// slots with the configured limits, and reconciliation with every kind of fence; the broker
+/// account and the planned quote-stream health. Each column's last card fills it to the bottom.
 struct RiskView: View {
   /// Entrance order of the cards.
   private enum Order: Int {
-    case lossRoom = 0, limits, account, session, gate, fences
+    case lossRoom = 0, limits, account, session, fences, budget, stream
   }
 
-  /// Height of the scroll view, so the grid's two rows share the window as the design does.
+  /// Height of the scroll view, so the columns reach the window's bottom as the design does.
   @State private var viewport: CGFloat = 0
 
   var body: some View {
     ScrollView {
-      // The design's grid: three equal columns in two rows of one height each. A window too
-      // narrow for three columns gets two.
+      // The design's three columns; a window too narrow for three gets two.
       ViewThatFits(in: .horizontal) {
-        Grid(horizontalSpacing: Tokens.Space.l, verticalSpacing: Tokens.Space.l) {
-          GridRow {
-            lossRoom
-            limits
-            account
-          }
-          GridRow {
-            session
-            gate
-            fences
-          }
+        HStack(alignment: .top, spacing: Tokens.Space.l) {
+          column { lossRoom.hugging(); session.hugging(); budget.filling() }
+          column { limits.hugging(); fences.filling() }
+          column { account.hugging(); stream.filling() }
         }
-        Grid(horizontalSpacing: Tokens.Space.l, verticalSpacing: Tokens.Space.l) {
-          GridRow {
-            lossRoom
-            account
-          }
-          GridRow {
-            limits
-            fences
-          }
-          GridRow {
-            session
-            gate
-          }
+        HStack(alignment: .top, spacing: Tokens.Space.l) {
+          column { lossRoom.hugging(); session.hugging(); limits.hugging(); budget.filling() }
+          column { account.hugging(); fences.hugging(); stream.filling() }
         }
       }
-      .filling()
       .padding(Tokens.Space.l)
       .frame(minHeight: viewport, alignment: .top)
     }
     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewport = $0 }
   }
 
-  private var lossRoom: some View { LossRoomCard().gridColumn().rise(step: Order.lossRoom.rawValue) }
-  private var limits: some View { LimitsCard().gridColumn().rise(step: Order.limits.rawValue) }
-  private var account: some View { AccountCard().gridColumn().rise(step: Order.account.rawValue) }
-  private var session: some View { SessionCard().gridColumn().rise(step: Order.session.rawValue) }
-  private var gate: some View { EntryGateCard().gridColumn().rise(step: Order.gate.rawValue) }
-  private var fences: some View { ReconciliationCard().gridColumn().rise(step: Order.fences.rawValue) }
+  /// A column of cards as wide as its share of the window and as tall as the tallest column.
+  private func column(@ViewBuilder _ cards: () -> some View) -> some View {
+    VStack(spacing: Tokens.Space.l) { cards() }
+      .frame(minWidth: Tokens.Size.gridColumnMin, idealWidth: Tokens.Size.gridColumnMin, maxWidth: .infinity,
+        maxHeight: .infinity, alignment: .top)
+  }
+
+  private var lossRoom: some View { LossRoomCard().rise(step: Order.lossRoom.rawValue) }
+  private var limits: some View { LimitsCard().rise(step: Order.limits.rawValue) }
+  private var account: some View { AccountCard().rise(step: Order.account.rawValue) }
+  private var session: some View { SessionCard().rise(step: Order.session.rawValue) }
+  private var fences: some View { ReconciliationCard().rise(step: Order.fences.rawValue) }
+  private var budget: some View {
+    PlannedCard(title: L10n.Risk.budget, note: L10n.Risk.budgetNote).rise(step: Order.budget.rawValue)
+  }
+  private var stream: some View {
+    PlannedCard(title: L10n.Risk.stream, note: L10n.Risk.streamNote).rise(step: Order.stream.rawValue)
+  }
+}
+
+extension View {
+  /// A card at its own height in a column: its texts never shrink to make room for the card that
+  /// fills the column.
+  fileprivate func hugging() -> some View { fixedSize(horizontal: false, vertical: true) }
+}
+
+/// A card the design draws for data the bot does not serve yet: its title, the BACKLOG tag and
+/// what it will show. No sample figures.
+private struct PlannedCard: View {
+  let title: LocalizedStringResource
+  let note: LocalizedStringResource
+
+  var body: some View {
+    Card(title, tone: .highlight, trailing: {
+      PlannedTag(.backlog)
+    }, content: {
+      (Text(L10n.Risk.notServed) + Text(verbatim: Format.itemSeparator) + Text(note))
+        .font(Tokens.Typography.caption)
+        .foregroundStyle(Palette.textTertiary)
+        .fixedSize(horizontal: false, vertical: true)
+    })
+  }
 }
 
 /// Whether the bot may open a position now: allowed; waiting for an ordinary reason that passes
 /// on its own (calm); or blocked for a reason the operator should look at. Read by the loss
-/// card's pill, the free slot tiles and the New entries card.
+/// card's pill and the free slot tiles.
 private enum EntryGate: Hashable {
   case allowed, waiting, blocked
 
@@ -90,15 +107,6 @@ private enum EntryGate: Hashable {
     }
   }
 
-  /// The pill on the New entries card.
-  var title: LocalizedStringResource {
-    switch self {
-    case .allowed: L10n.Risk.allowed
-    case .waiting: L10n.Risk.waiting
-    case .blocked: L10n.Risk.blocked
-    }
-  }
-
   /// The pill on the loss card ("ENTRIES OPEN").
   var entriesTitle: LocalizedStringResource {
     switch self {
@@ -117,11 +125,14 @@ private struct FigureRow: View {
   var symbol: String?
   var symbolColor: Color = Palette.textQuaternary
   var color: Color = Palette.textSecondary
+  /// Lines the label may wrap to in a narrow column, the value keeping its one line.
+  var labelLines = 1
 
   init(
     _ label: LocalizedStringResource, value: String, symbol: String? = nil,
-    symbolColor: Color = Palette.textQuaternary, color: Color = Palette.textSecondary
+    symbolColor: Color = Palette.textQuaternary, color: Color = Palette.textSecondary, labelLines: Int = 1
   ) {
+    self.labelLines = labelLines
     self.label = Text(label)
     self.value = value
     self.symbol = symbol
@@ -138,14 +149,18 @@ private struct FigureRow: View {
           .frame(width: Tokens.Size.rowSymbol)
           .accessibilityHidden(true)
       }
-      label.foregroundStyle(Palette.textTertiary)
+      label
+        .foregroundStyle(Palette.textTertiary)
+        .lineLimit(labelLines)
+        .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Tokens.Space.s)
       Text(verbatim: value)
         .foregroundStyle(color)
         .monospacedDigit()
+        .lineLimit(1)
+        .layoutPriority(1)
     }
     .font(Tokens.Typography.calloutMono)
-    .lineLimit(1)
     .minimumScaleFactor(Tokens.Shrink.slight)
     .accessibilityElement(children: .combine)
   }
@@ -208,8 +223,13 @@ private struct LossRoomCard: View {
   var body: some View {
     let gate = EntryGate(model.status)
     Card(L10n.Risk.lossRoom, trailing: {
-      if model.status != nil {
+      if let status = model.status {
+        // Why entries wait or are blocked, in the bot's words, on hover.
         StatusPill(gate.entriesTitle, tone: gate.tone, live: gate == .allowed, event: gate)
+          .help(Text(verbatim: Self.gateCause(status)))
+      } else {
+        StatusPill(L10n.Risk.entriesUnknown, tone: .warning)
+          .help(Text(verbatim: model.fetchError ?? model.response?.unavailableCause ?? String()))
       }
     }, content: {
       VStack(spacing: Tokens.Space.m) {
@@ -228,33 +248,43 @@ private struct LossRoomCard: View {
             .foregroundStyle(Palette.textQuaternary)
         }
         .frame(maxWidth: .infinity)
-        // The rule behind the number, on hover rather than as a paragraph under it.
-        .help(Text(L10n.Risk.lossRoomNote))
         .modifier(AlarmPulse(active: room != nil && fraction < Tokens.Room.alarm))
         VStack(spacing: Tokens.Space.xs) {
+          FigureRow(L10n.Risk.limit, value: amount(model.settings?.risk.maxDailyLossUsd), symbol: Self.limitSymbol)
           FigureRow(L10n.Risk.resultToday, value: result.map { Money.signed($0) } ?? Format.missing,
             symbol: Self.resultSymbol, symbolColor: result.map(Palette.result) ?? Palette.textQuaternary,
             color: result.map(Self.resultText) ?? Palette.textQuaternary)
-          FigureRow(L10n.Risk.realizedLoss, value: amount(model.status?.realizedLossTodayUsd),
-            symbol: Self.realizedSymbol, symbolColor: Palette.loss)
+          FigureRow(L10n.Risk.realizedLoss, value: loss(model.status?.realizedLossTodayUsd),
+            symbol: Self.realizedSymbol, symbolColor: Palette.loss, color: Palette.lossText)
           FigureRow(L10n.Risk.reservations, value: amount(model.status?.openReservationsUsd),
             symbol: Self.reservationsSymbol, symbolColor: Palette.warning, color: Palette.warningText)
           FigureRow(L10n.Risk.nextPlannedLoss, value: amount(model.settings?.risk.plannedLossUsd),
             symbol: Self.plannedSymbol)
-          FigureRow(L10n.Risk.limit, value: amount(model.settings?.risk.maxDailyLossUsd), symbol: Self.limitSymbol)
         }
         if model.status != nil && room == nil {
           Footnote(L10n.Risk.roomNotReported, color: Palette.warningText)
         }
-        Spacer(minLength: 0)
+        Footnote(L10n.Risk.lossRoomNote, color: Palette.textTertiary)
         PlannedLine(text: L10n.Risk.lossBacklog)
       }
     })
   }
 
+  /// What keeps entries from opening: the operator stop, a closed gate, or the bot's block.
+  private static func gateCause(_ status: StatusV1) -> String {
+    if status.entryStop { return String(localized: L10n.Risk.fenceOperator) }
+    if !status.tradingGate.open { return ApiText.gate(status.tradingGate) }
+    return status.entryBlock.map(ApiText.entryBlock) ?? String(localized: L10n.Risk.entriesOpen)
+  }
+
   /// A result's text colour: green for a gain, red for a loss.
   private static func resultText(_ value: Decimal) -> Color {
     value < 0 ? Palette.lossText : Palette.profitText
+  }
+
+  /// A loss the bot reported, with its minus ("−1.60"), or the missing mark.
+  private func loss(_ value: DecimalString?) -> String {
+    value.map { Money.signed(-$0.value) } ?? Format.missing
   }
 
   /// An amount the bot reported, or the missing mark when it did not.
@@ -272,8 +302,8 @@ private struct LossGauge: View {
   let color: Color
 
   /// Size of the gauge, in points: the arc's diameter plus its stroke, and half that high.
-  static let width: CGFloat = 220
-  static let height: CGFloat = 118
+  static let width: CGFloat = 200
+  static let height: CGFloat = 108
   /// Width of the arc, in points.
   static let arcWidth: CGFloat = 14
   /// Width of the needle and size of its hub, in points.
@@ -360,62 +390,10 @@ private struct NeedleShape: Shape {
   }
 }
 
-/// Whether the bot may open a position now, and the one recorded cause when it may not.
-private struct EntryGateCard: View {
-  @Environment(AppModel.self) private var model
-
-  var body: some View {
-    let gate = EntryGate(model.status)
-    Card(L10n.Risk.entryGate, tint: gate == .blocked ? Palette.warning : nil, tone: gate.tone, trailing: {
-      StatusPill(gate.title, tone: gate.tone, live: gate == .allowed, event: gate)
-    }, content: {
-      if let status = model.status {
-        VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          if let block = status.entryBlock {
-            Text(verbatim: ApiText.entryBlock(block))
-              .font(Tokens.Typography.callout)
-              .foregroundStyle(block.attention ? Palette.textPrimary : Palette.textSecondary)
-              .fixedSize(horizontal: false, vertical: true)
-              // The bot's own words keep the detail (times, amounts) until it sends them as values.
-              .help(Text(verbatim: block.text))
-          }
-          FigureRow(L10n.Risk.operatorPause, value: String(localized: status.entryStop ? L10n.Common.on : L10n.Common.off),
-            color: status.entryStop ? Palette.warningText : Palette.textSecondary)
-          FigureRow(L10n.Risk.tradingGate,
-            value: String(localized: status.tradingGate.open ? L10n.Risk.gateOpen : L10n.Risk.gateClosed),
-            color: status.tradingGate.open ? Palette.profitText : Palette.warningText)
-          if !status.tradingGate.open {
-            Footnote(verbatim: ApiText.gate(status.tradingGate), color: Palette.textQuaternary)
-          }
-        }
-        .animation(Tokens.Motion.standard, value: status.entryBlock)
-      } else {
-        StatusUnknown()
-      }
-    })
-  }
-}
-
-/// Why the bot's status is unknown: the read failed, or the bot has not written one.
-private struct StatusUnknown: View {
-  @Environment(AppModel.self) private var model
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      Text(L10n.Risk.statusUnknown)
-        .font(Tokens.Typography.callout)
-        .foregroundStyle(Palette.warningText)
-      if let cause = model.fetchError ?? model.response?.unavailableCause {
-        Footnote(verbatim: cause)
-      }
-    }
-  }
-}
-
 /// The design's fence groups: every kind of fence the bot can raise, under the name the operator
 /// knows it by, so the card always lists each one with its state, not only the active ones.
 private enum FenceGroup: CaseIterable, Identifiable {
-  case foreign, quantity, orderStatus, protection, exits, brokerReads, session
+  case foreign, quantity, orderStatus, protection, exits, brokerReads, session, operatorStop
 
   var id: Self { self }
 
@@ -427,7 +405,8 @@ private enum FenceGroup: CaseIterable, Identifiable {
     case .protection: [.unprotected, .unprotectedTimeout, .stopRejected, .stopHeld]
     case .exits: [.exitRefused, .exitNotFilled, .cancelFailed, .cancelNotSent]
     case .brokerReads: [.startupReconcile, .brokerReadFailed, .detailBudget]
-    case .session: [.shuttingDown, .marketClosed, .entryStop]
+    case .session: [.shuttingDown, .marketClosed]
+    case .operatorStop: [.entryStop]
     }
   }
 
@@ -440,6 +419,7 @@ private enum FenceGroup: CaseIterable, Identifiable {
     case .exits: L10n.Risk.fenceExits
     case .brokerReads: L10n.Risk.fenceBrokerReads
     case .session: L10n.Risk.fenceSession
+    case .operatorStop: L10n.Risk.fenceOperator
     }
   }
 
@@ -604,9 +584,9 @@ private struct ReconciliationCard: View {
   private func groups(_ fences: [Fence]) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       ForEach(FenceGroup.allCases) { group in
-        // The operator's own entry stop blocks entries too, though the bot reports it apart.
+        // The operator's own entry stop is a fence too, though the bot reports it apart.
         fenceRow(Text(group.title), active: fences.filter { FenceGroup.of($0) == group },
-          extra: group == .session && model.status?.entryStop == true)
+          extra: group == .operatorStop && model.status?.entryStop == true, switched: group == .operatorStop)
       }
       ForEach(fences.filter { FenceGroup.of($0) == nil }, id: \.self) { fence in
         fenceRow(Text(verbatim: ApiText.fence(fence)), active: [fence], extra: false)
@@ -615,17 +595,21 @@ private struct ReconciliationCard: View {
     .animation(Tokens.Motion.standard, value: fences)
   }
 
-  private func fenceRow(_ title: Text, active: [Fence], extra: Bool) -> some View {
+  /// A fence group's row; a `switched` one (the operator's stop) reads on or off, grey when off.
+  private func fenceRow(_ title: Text, active: [Fence], extra: Bool, switched: Bool = false) -> some View {
     let on = !active.isEmpty || extra
+    let calm = switched ? Palette.textQuaternary : Palette.profit
     return HStack(spacing: Tokens.Space.s) {
-      PulseDot(on ? Palette.warning : Palette.profit, size: Tokens.Size.dotSmall, pulsing: on, event: active)
+      PulseDot(on ? Palette.warning : calm, size: Tokens.Size.dotSmall, pulsing: on, event: active)
       title
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
         .lineLimit(1)
       Spacer(minLength: Tokens.Space.s)
       Group {
-        if active.count > 1 {
+        if switched {
+          Text(on ? L10n.Common.on : L10n.Common.off)
+        } else if active.count > 1 {
           Text(L10n.Common.fences(active.count))
         } else if on {
           Text(L10n.Risk.fenceActive)
@@ -634,7 +618,7 @@ private struct ReconciliationCard: View {
         }
       }
       .font(Tokens.Typography.annotation)
-      .foregroundStyle(on ? Palette.warningText : Palette.profitText)
+      .foregroundStyle(on ? Palette.warningText : switched ? Palette.textQuaternary : Palette.profitText)
     }
     // What each active fence says, and since when, on hover: it often says what to do.
     .help(Text(verbatim: active.map(detail).joined(separator: Format.lineSeparator)))
@@ -649,9 +633,17 @@ private struct ReconciliationCard: View {
 }
 
 /// Position slots as the design's tiles, then the configured risk limits (config/bot.toml, read
-/// through GET /settings).
+/// through GET /settings), then the planned next-entry sizing.
 private struct LimitsCard: View {
   @Environment(AppModel.self) private var model
+
+  /// Symbols of the limits, as the design draws them.
+  static let plannedSymbol = "shield"
+  static let capSymbol = "rectangle.on.rectangle"
+  static let dailySymbol = "chart.line.downtrend.xyaxis"
+  static let minRoomSymbol = "plus"
+  static let positionsSymbol = "square.grid.3x1.below.line.grid.1x2"
+  static let quoteSymbol = "clock"
 
   var body: some View {
     Card(L10n.Risk.slots, trailing: {
@@ -663,17 +655,22 @@ private struct LimitsCard: View {
     }, content: {
       if let risk = model.settings?.risk {
         PositionSlots(limit: risk.maxOpenPositions, positions: model.positions, gate: EntryGate(model.status))
-        CardLabel(L10n.Risk.limits)
-          .padding(.top, Tokens.Space.xs)
-        VStack(spacing: Tokens.Space.xs) {
-          FigureRow(L10n.Risk.plannedLoss, value: Format.usd(risk.plannedLossUsd.value))
-          FigureRow(L10n.Risk.notionalCap, value: Format.usd(risk.positionNotionalCapUsd.value))
-          FigureRow(L10n.Risk.minRoom, value: Format.usd(risk.minDailyRoomUsd.value))
-          FigureRow(L10n.Risk.quoteAge,
-            value: String(localized: L10n.Risk.seconds(Format.secondsNumber(risk.maxQuoteAgeSeconds.value))))
+        SectionHeader(Text(L10n.Risk.limits)) {
+          Text(L10n.Risk.limitsSource)
+            .font(Tokens.Typography.annotation)
+            .foregroundStyle(Palette.textQuaternary)
         }
-        Spacer(minLength: 0)
-        PlannedLine(text: L10n.Risk.sizingBacklog)
+        VStack(spacing: Tokens.Space.xs) {
+          FigureRow(L10n.Risk.plannedLoss, value: Format.usd(risk.plannedLossUsd.value), symbol: Self.plannedSymbol)
+          FigureRow(L10n.Risk.notionalCap, value: Format.usd(risk.positionNotionalCapUsd.value), symbol: Self.capSymbol)
+          FigureRow(L10n.Risk.dailyLoss, value: Format.usd(risk.maxDailyLossUsd.value), symbol: Self.dailySymbol)
+          FigureRow(L10n.Risk.minRoom, value: Format.usd(risk.minDailyRoomUsd.value), symbol: Self.minRoomSymbol)
+          FigureRow(L10n.Risk.openPositions, value: String(risk.maxOpenPositions), symbol: Self.positionsSymbol)
+          FigureRow(L10n.Risk.quoteAge,
+            value: String(localized: L10n.Risk.seconds(Format.secondsNumber(risk.maxQuoteAgeSeconds.value))),
+            symbol: Self.quoteSymbol)
+        }
+        SectionHeader(Text(L10n.Risk.sizingTitle)) { PlannedTag(.backlog) }
       } else {
         Footnote(model.settingsError == nil ? L10n.Common.unavailable : L10n.Risk.settingsUnavailable)
       }
@@ -780,31 +777,82 @@ private struct PositionSlots: View {
   }
 }
 
-/// The trading session in New York time: the clock, the last entry and the flatten time.
+/// The trading session in New York time, as the design's compact card: the clock with whether
+/// the regular session is open and its hours (GET /jobs), then the last entry and flatten times.
 private struct SessionCard: View {
   @Environment(AppModel.self) private var model
 
+  /// Width of the clock's side, in points.
+  static let clockWidth: CGFloat = 132
+  /// Lines a time's label may take beside the clock ("Last / entry", as the design wraps it).
+  static let labelLines = 2
+
+  /// Today's regular session, when the bot reported it for today.
+  private var session: SessionTimesV1? {
+    model.jobs?.session.flatMap { $0.day == model.today ? $0 : nil }
+  }
+
   var body: some View {
     Card(L10n.Risk.session) {
-      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+      HStack(alignment: .top, spacing: Tokens.Space.m) {
         TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
-          Text(L10n.Risk.clock(Format.marketTime(model.botTime(context.date))))
-            .font(Tokens.Typography.metric)
-            .monospacedDigit()
-            .foregroundStyle(Palette.textPrimary)
+          let now = model.botTime(context.date)
+          VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
+              Text(verbatim: Format.marketTime(now))
+                .font(Tokens.Typography.metric)
+                .monospacedDigit()
+                .foregroundStyle(Palette.textPrimary)
+              Text(L10n.Risk.timeZone)
+                .font(Tokens.Typography.annotation)
+                .foregroundStyle(Palette.textQuaternary)
+            }
+            .fixedSize()
+            hours(now)
+          }
         }
-        if let session = model.settings?.session {
+        .frame(width: Self.clockWidth, alignment: .leading)
+        if let settings = model.settings?.session {
           VStack(spacing: Tokens.Space.xs) {
             FigureRow(L10n.Risk.lastEntry,
-              value: String(localized: L10n.Risk.minutesBeforeClose(session.lastEntryMinutesBeforeClose)))
+              value: String(localized: L10n.Risk.minutesBeforeClose(settings.lastEntryMinutesBeforeClose)),
+              labelLines: Self.labelLines)
             FigureRow(L10n.Risk.flatten,
-              value: String(localized: L10n.Risk.minutesBeforeClose(session.flattenMinutesBeforeClose)))
-            FigureRow(L10n.Risk.halfDays, value: String(localized: session.halfDaysEnabled ? L10n.Common.on : L10n.Common.off))
+              value: String(localized: L10n.Risk.minutesBeforeClose(settings.flattenMinutesBeforeClose)),
+              labelLines: Self.labelLines)
+            FigureRow(L10n.Risk.halfDays, value: String(localized: settings.halfDaysEnabled ? L10n.Common.on : L10n.Common.off))
+          }
+          .padding(.leading, Tokens.Space.m)
+          .overlay(alignment: .leading) {
+            Rectangle().fill(Palette.separator).frame(width: Tokens.Stroke.thin)
           }
         }
       }
     }
+    .task(id: model.baseURL) { await model.followJobs() }
   }
+
+  /// "● open · 09:30–16:00", "● closed · …", or nothing while the session times are unread.
+  @ViewBuilder private func hours(_ now: Date) -> some View {
+    if let session {
+      let open = now >= session.regularOpen.date && now < session.regularClose.date
+      let span = Format.marketMinute(session.regularOpen.date) + Self.dash + Format.marketMinute(session.regularClose.date)
+      HStack(spacing: Tokens.Space.xs) {
+        PulseDot(open ? Palette.accent : Palette.textQuaternary, size: Tokens.Size.dotSmall, pulsing: false)
+        Text(open ? L10n.Risk.sessionOpen(span) : L10n.Risk.sessionClosed(span))
+      }
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(open ? Palette.accentText : Palette.textQuaternary)
+      .fixedSize()
+    } else if let cause = model.jobs?.sessionCause {
+      Text(verbatim: cause)
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+    }
+  }
+
+  /// Between the session's opening and closing times.
+  static let dash = "\u{2013}"
 }
 
 /// The broker account at the bot's last read, as the design's list: balances (once the bot reads
@@ -847,7 +895,8 @@ private struct AccountCard: View {
       if account.equityUsd == nil || account.buyingPowerUsd == nil {
         Footnote(L10n.Risk.balanceNote)
       }
-      CardLabel(L10n.Risk.brokerPositions).padding(.top, Tokens.Space.xs)
+      SectionHeader(Text(L10n.Risk.brokerPositions)) { note(L10n.Risk.positionsColumns) }
+        .padding(.top, Tokens.Space.xs)
       if account.positions.isEmpty {
         empty
       }
@@ -861,7 +910,8 @@ private struct AccountCard: View {
         }
         .font(Tokens.Typography.calloutMono)
       }
-      CardLabel(L10n.Risk.brokerOrders).padding(.top, Tokens.Space.xs)
+      SectionHeader(Text(L10n.Risk.brokerOrders)) { note(L10n.Risk.ordersOpen) }
+        .padding(.top, Tokens.Space.xs)
       if account.orders.isEmpty {
         empty
       }
@@ -875,8 +925,7 @@ private struct AccountCard: View {
           if let price = order.stopPrice ?? order.limitPrice {
             Text(verbatim: price.text)
           }
-          Text(verbatim: ApiText.orderStatus(order.status))
-            .foregroundStyle(Palette.textTertiary)
+          Badge(verbatim: ApiText.orderStatus(order.status), color: Palette.profitText)
           if !order.ours {
             Badge(L10n.Risk.notOurs, color: Palette.warningText)
           }
@@ -890,6 +939,12 @@ private struct AccountCard: View {
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
     }
+  }
+
+  private func note(_ text: LocalizedStringResource) -> some View {
+    Text(text)
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(Palette.textQuaternary)
   }
 
   private var empty: some View {

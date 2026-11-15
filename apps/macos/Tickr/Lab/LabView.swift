@@ -106,12 +106,12 @@ private struct VersionsCard: View {
   var body: some View {
     Card(L10n.Lab.versions) {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        row(name: activeName, version: model.status?.strategy.version, tag: L10n.Lab.tagActive,
-          color: Palette.accentText) {
-          HStack(spacing: Tokens.Space.xs) {
-            Text(L10n.Lab.activeNote(model.shownTradeCount, model.shownWins, model.shownLosses))
-            MoneyText(value: model.shownResult, usd: true, font: Tokens.Typography.caption)
+        VStack(spacing: 0) {
+          row(name: activeName, version: model.status?.strategy.version, tag: L10n.Lab.tagActive,
+            color: Palette.accentText) {
+            Text(L10n.Lab.activeRole)
           }
+          activePanel
         }
         if let observers = model.observers?.observers {
           ForEach(observers) { observer in
@@ -135,11 +135,42 @@ private struct VersionsCard: View {
         }
         Spacer(minLength: 0)
         Text(L10n.Lab.swapNote)
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.textQuaternary)
+          .font(Tokens.Typography.caption)
+          .foregroundStyle(Palette.textTertiary)
           .fixedSize(horizontal: false, vertical: true)
       }
       .animation(Tokens.Motion.standard, value: model.observers)
+    }
+  }
+
+  /// Height of the active version's curve, in points.
+  static let sparkHeight: CGFloat = 24
+
+  /// The active version's shown day under its row: trades, gross result and the day's curve.
+  private var activePanel: some View {
+    HStack(alignment: .bottom, spacing: Tokens.Space.l) {
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        CardLabel(L10n.Lab.shownDayTrades)
+        Text(L10n.Lab.closedWinsLosses(model.shownTradeCount, model.shownWins, model.shownLosses))
+          .font(Tokens.Typography.calloutMono.bold())
+          .foregroundStyle(Palette.textPrimary)
+      }
+      .fixedSize()
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        CardLabel(L10n.Lab.shownDayResult)
+        MoneyText(value: model.shownResult, usd: true, font: Tokens.Typography.calloutMono.bold())
+      }
+      .fixedSize()
+      DrawnSparkline(values: model.cumulativeResults, color: Palette.result(model.shownResult))
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.sparkHeight)
+    }
+    .padding(.horizontal, Tokens.Space.m)
+    .padding(.vertical, Tokens.Space.s)
+    .background(Palette.accent.opacity(Tokens.Opacity.wash), in: .rect(cornerRadius: Tokens.Radius.medium))
+    .overlay {
+      RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+        .strokeBorder(Palette.accent.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.thin)
     }
   }
 
@@ -946,9 +977,7 @@ private struct ReplayCard: View {
 private struct ExplainCard: View {
   @Environment(AppModel.self) private var model
   @State private var symbol = ""
-  @State private var decisions: DecisionsV1?
-  @State private var error: String?
-  @State private var loading = false
+  @State private var explain = ExplainModel()
 
   /// Width of the symbol field, in points.
   static let fieldWidth: CGFloat = 110
@@ -958,6 +987,18 @@ private struct ExplainCard: View {
   static let passedSymbol = "checkmark"
   static let failedSymbol = "xmark"
   static let unreachedSymbol = "minus"
+
+  /// The answer for the typed symbol on the shown day; nil for any other.
+  private var decisions: DecisionsV1? { current ? explain.decisions : nil }
+
+  /// Why the read for the typed symbol on the shown day failed; nil for any other.
+  private var error: String? { current ? explain.error : nil }
+
+  /// True when the model's last read is for the typed symbol on the shown day.
+  private var current: Bool { explain.request == ExplainModel.Request(symbol: wanted, day: model.shownDay) }
+
+  /// The typed symbol as the bot names it.
+  private var wanted: String { symbol.trimmingCharacters(in: .whitespaces).uppercased() }
 
   /// The decision to explain: the active strategy's latest, else an observer's.
   private var decision: DecisionV1? {
@@ -975,15 +1016,15 @@ private struct ExplainCard: View {
           .textFieldStyle(.roundedBorder)
           .font(Tokens.Typography.calloutMono.bold())
           .frame(width: Self.fieldWidth)
-          .onSubmit { Task { await load() } }
+          .onSubmit { load() }
           Button {
-            Task { await load() }
+            load()
           } label: {
             Text(L10n.Lab.explainRun)
           }
           .buttonStyle(.action(.secondary, size: .compact))
-          .disabled(symbol.isEmpty || loading)
-          if loading {
+          .disabled(wanted.isEmpty || explain.loading)
+          if explain.loading {
             ProgressView().controlSize(.small)
           }
         }
@@ -992,12 +1033,16 @@ private struct ExplainCard: View {
         PlannedLine(text: L10n.Lab.explainBacklog)
       }
     }
+    // A new day reads the typed symbol again; the read for the old day is cancelled.
     .task(id: model.shownDay) {
       if symbol.isEmpty, let latest = model.shownTrades.last?.symbol {
         symbol = latest
       }
-      decisions = nil
-      if !symbol.isEmpty { await load() }
+      if wanted.isEmpty { explain.cancel() } else { load() }
+    }
+    // Typing another symbol stops the read for the old one; Explain starts the new read.
+    .onChange(of: wanted) { _, now in
+      if explain.request?.symbol != now { explain.cancel() }
     }
   }
 
@@ -1082,23 +1127,11 @@ private struct ExplainCard: View {
       .accessibilityHidden(true)
   }
 
-  /// Reads the decisions on the typed symbol on the shown day. A failed read clears the earlier
-  /// answer, so an old explanation never shows as current.
-  private func load() async {
-    let wanted = symbol.trimmingCharacters(in: .whitespaces).uppercased()
+  /// Reads the decisions on the typed symbol on the shown day.
+  private func load() {
     guard !wanted.isEmpty else { return }
     symbol = wanted
-    loading = true
-    defer { loading = false }
-    let client = Container.shared.apiClient(APIClient.Endpoint(baseURL: model.baseURL))
-    do {
-      decisions = try await client.decisions(symbol: wanted, day: model.shownDay)
-      error = nil
-    } catch {
-      guard let text = ErrorText.describe(error) else { return }
-      decisions = nil
-      self.error = text
-    }
+    explain.load(symbol: wanted, day: model.shownDay, baseURL: model.baseURL)
   }
 }
 
