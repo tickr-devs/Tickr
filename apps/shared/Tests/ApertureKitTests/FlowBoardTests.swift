@@ -15,7 +15,26 @@ struct FlowBoardTests {
     #expect(marks.map(\.tone) == [.pending, .alarm, .normal, .normal])
     // SPY was left out by the universe; ABCD's later refusal does not undo its fill.
     #expect(marks.map(\.refused) == [false, false, true, false])
-    #expect(marks[2].note == "SECURITY_TYPE_NOT_ALLOWED: ETF")
+    #expect(marks[2].note == String(localized: L10n.universeType("ETF")))
+  }
+
+  @Test("A universe exclusion reads in words, never as its code")
+  func exclusions() {
+    #expect(FlowBoard.exclusion("EXCHANGE_NOT_ALLOWED: OTC") == String(localized: L10n.universeExchange("OTC")))
+    #expect(FlowBoard.exclusion("CONFLICTING_ROWS: AAA/X/USD/CS; BBB/X/USD/CS")
+      == String(localized: L10n.universeConflictingRows))
+    #expect(FlowBoard.exclusion("NEW_FILTER: 3") == String(localized: L10n.universeOther))
+    #expect(FlowBoard.exclusion("left out by hand") == "left out by hand")
+  }
+
+  @Test("A refusal recorded as text reads without its code, its times in New York")
+  func recordedRefusals() {
+    let cooldown = "SYMBOL_COOLDOWN: MVLD closed at a loss at 2026-11-13T16:26:30+00:00"
+    let time = try? Date("2026-11-13T16:26:30Z", strategy: .iso8601)
+    let expected = "MVLD closed at a loss at " + (time.map(FlowBoard.newYorkMinute) ?? "")
+    #expect(FlowBoard.recordedRefusal(cooldown) == String(localized: L10n.refusedByRiskDetail(expected)))
+    #expect(FlowBoard.recordedRefusal("NEW_RULE") == String(localized: L10n.refusedByRisk))
+    #expect(FlowBoard.recordedRefusal("setup no longer valid") == "setup no longer valid")
   }
 
   @Test("A symbol risk refused that never passed risk sits in the risk tray")

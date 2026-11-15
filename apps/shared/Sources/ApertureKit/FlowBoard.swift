@@ -58,7 +58,7 @@ public enum FlowBoard {
     return furthest.keys.sorted().map { symbol in
       let stage = furthest[symbol] ?? .screeners
       if stage == .screeners, let cause = excluded[symbol] {
-        return FlowMark(id: symbol, stage: .universe, refused: true, note: cause)
+        return FlowMark(id: symbol, stage: .universe, refused: true, note: exclusion(cause))
       }
       if stage == .strategy, let cause = refusedByRisk[symbol] {
         return FlowMark(id: symbol, stage: .risk, refused: true, note: cause)
@@ -69,9 +69,34 @@ public enum FlowBoard {
   }
 
   /// Why the platform refused `signal`, as the apps word it: the refusal in the reader's
-  /// language (`ApiText.refusal`), else the recorded "CAUSE: detail"; nil when neither was recorded.
+  /// language (`ApiText.refusal`), else the recorded "CAUSE: detail" read by `recordedRefusal`;
+  /// nil when neither was recorded.
   public static func note(_ signal: SkippedSignalV1) -> String? {
-    signal.refusal.map(ApiText.refusal) ?? signal.refusalCause
+    signal.refusal.map(ApiText.refusal) ?? signal.refusalCause.map(recordedRefusal)
+  }
+
+  /// A recorded "CODE: detail" refusal without its structured form, never showing the code:
+  /// "Refused by risk" with the bot's detail, its times in New York; prose without a code as
+  /// written.
+  static func recordedRefusal(_ text: String) -> String {
+    let cause = RefusalCause(text)
+    guard cause.hasCode else { return text }
+    guard !cause.detail.isEmpty else { return String(localized: L10n.refusedByRisk) }
+    return String(localized: L10n.refusedByRiskDetail(cause.readable(time: newYorkMinute)))
+  }
+
+  /// Why the universe filter left a symbol out (`FlowChipV1.excludedCause`, "CODE: measured"),
+  /// in words; a code this app does not know reads as "Left out by the universe filter"; prose
+  /// without a code as written.
+  static func exclusion(_ text: String) -> String {
+    let cause = RefusalCause(text)
+    guard cause.hasCode else { return text }
+    return String(localized: UniverseCause(rawValue: cause.code)?.text(cause.detail) ?? L10n.universeOther)
+  }
+
+  /// A time inside a recorded cause, as hours and minutes in New York.
+  static func newYorkMinute(_ date: Date) -> String {
+    date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: WireDate.newYork.timeZone))
   }
 
   /// How an open position's stop colours its mark: verified, waiting, or missing or unknown.
@@ -89,6 +114,29 @@ public enum FlowBoard {
     case .pending?: .pending
     case .neverVerified?, .unknown?: .alarm
     case .verified?, nil: .normal
+    }
+  }
+}
+
+/// Why the universe filter left a symbol out: the code that starts `FlowChipV1.excludedCause`
+/// (src/aperture/data/discovery.py `Cause`, `merge` and `universe_cause`). An unknown code has
+/// no case.
+public enum UniverseCause: String, CaseIterable, Sendable {
+  case conflictingRows = "CONFLICTING_ROWS"
+  case exchangeNotAllowed = "EXCHANGE_NOT_ALLOWED"
+  case currencyNotAllowed = "CURRENCY_NOT_ALLOWED"
+  case securityTypeUnknown = "SECURITY_TYPE_UNKNOWN"
+  case securityTypeNotAllowed = "SECURITY_TYPE_NOT_ALLOWED"
+
+  /// The cause in words; `measured` is what the bot found (an exchange, a currency, a type).
+  /// Conflicting rows leave out the bot's measured identities, which mean nothing to a person.
+  public func text(_ measured: String) -> LocalizedStringResource {
+    switch self {
+    case .conflictingRows: L10n.universeConflictingRows
+    case .exchangeNotAllowed: L10n.universeExchange(measured)
+    case .currencyNotAllowed: L10n.universeCurrency(measured)
+    case .securityTypeUnknown: L10n.universeTypeUnknown
+    case .securityTypeNotAllowed: L10n.universeType(measured)
     }
   }
 }
