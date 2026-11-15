@@ -108,6 +108,16 @@ unknown_absent_reads = 3
 # the order's last such proof (never an extra broker read); read by the engine, and the rows by
 # api.history (the MAE/MFE window).
 stop_held_proof_seconds = 60
+# Least seconds between two `reconcile-checked` journal rows that say the same thing: after a
+# successful reconciliation the bot journals whether the broker agreed with its records when the
+# answer changed or the last such row is at least this old (no extra broker read); read by the
+# runtime, and the rows by api.cleanday (the clean-day verdict of GET /days).
+reconcile_proof_seconds = 300
+# Largest gap in seconds between two `reconcile-checked` rows (the last one before the regular open
+# and the first one after the regular close count as its edges) that a date can have and still be
+# clean: a longer stretch without a recorded reconciliation (bot down, hours of failed reads) makes
+# the date unknown. Must be above reconcile_proof_seconds; read by api.cleanday (GET /days).
+reconcile_max_gap_seconds = 900
 
 [probe]
 # Shares per probe order (owner 2026-11-14); read by the probe command.
@@ -130,6 +140,18 @@ hold_seconds = 60
 replace_max_move_usd = 0.50
 # Seconds Detail of the stop is polled after a probe-replace-stop request, one read per detail_poll_seconds; read by the probe-replace-stop command.
 replace_observe_seconds = 15
+# Folder for the evidence of `python -m aperture.probes` (one sub-folder per New York date and run), relative to [run] data_dir; read by the probes.
+evidence_dir = "probes"
+# Processes `probes chart-limit` starts at once, count; each has its own Webull client and its own request budget; read by the probes.
+chart_limit_processes = 2
+# Bars requests each chart-limit process sends inside one bars route window, count; must be within the route limit, and all processes together must pass it (docs/webull-facts.md C2: 20 each against a limit of 30); read by the probes.
+chart_limit_requests = 20
+# Seconds between starting the chart-limit processes and their first request, so every process has built its Webull client by then; read by the probes.
+chart_limit_start_delay_seconds = 20
+# Bars reads `probes chart-client` makes next to the running bot, count; with chart_client_interval_seconds this is how long the bot is watched (20 x 30 s = 10 minutes, docs/webull-facts.md C1); read by the probes.
+chart_client_reads = 20
+# Seconds between two chart-client reads; keep 60 / this at or below half of [chart] requests_per_minute, so the API's own charts still fit in the chart's slice; read by the probes.
+chart_client_interval_seconds = 30
 
 [api]
 # Local API bind address; loopback only; read by the api server.
@@ -288,6 +310,9 @@ max_evaluation_seconds = 0.5
 # Evaluations waiting for the observer worker thread; when full, a new one is dropped and recorded (never blocks trading);
 # read by observers.runner.
 queue_size = 256
+# Seconds an observer's WATCH or ENTER keeps its symbol on the L1 stream, counted from the start of the bar it was decided
+# on (180 = that bar, the next one while the worker is mid-bar, and one minute of pass timing); read by runtime.service.
+watching_seconds = 180
 # Decision records folder relative to [run] data_dir; files go to <decisions_dir>/<environment>/<NY date>/decisions.jsonl;
 # written by observers.log for observer and active-strategy decisions (runtime.entries).
 decisions_dir = "decisions"
