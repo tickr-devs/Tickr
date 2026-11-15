@@ -5,7 +5,7 @@ Every function here reads a text the bot itself wrote (the trading gate, an engi
 recorded admission refusal) against the exact shapes that code writes. A text that matches no
 shape gets the code UNRECOGNIZED and no parameters, and clients show the text: a new shape is
 added here on purpose, never guessed. Parameter values are plain text: numbers as written,
-times as HH:MM New York, days as YYYY-MM-DD."""
+times as HH:MM New York (a close cutoff as HH:MM:SS), days as YYYY-MM-DD."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def gate_reason(cause: str) -> Reason:
 
 _CLOSE_REFUSAL = (r"(?:no regular session now \((?P<session>.+)\)"
                   r"|before the regular open (?P<open>[0-9]{2}:[0-9]{2}) ET"
-                  r"|at or after (?P<cutoff>[0-9]{2}:[0-9]{2}):[0-9]{2} ET, (?P<cutoff_seconds>"
+                  r"|at or after (?P<cutoff>[0-9]{2}:[0-9]{2}:[0-9]{2}) ET, (?P<cutoff_seconds>"
                   + _NUM + r") s before the regular close (?P<close>[0-9]{2}:[0-9]{2}) ET of "
                   r"(?P<day>" + _DAY + r"))")
 
@@ -98,7 +98,8 @@ _FENCE = {
         ("exit_refused_stop_again",
          r"closing order refused; the stop is placed again, operator must look")),
     "cancel-unknown": _shapes(
-        ("cancel_outcome_unknown", r"cancel (?P<outcome>\w+); waiting for Detail")),
+        ("cancel_outcome_unknown", r"cancel (?P<outcome>\w+); waiting for Detail"),
+        ("cancel_crashed", r"crashed during cancel")),
     "cancel-failed": _shapes(("cancel_failed", r"order still working after every cancel")),
     "cancel-not-sent": _shapes(
         ("cancel_not_sent", r"no cancel could be sent for (?P<seconds>[0-9]+) s "

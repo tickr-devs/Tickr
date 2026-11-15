@@ -141,7 +141,8 @@ clients show the text.
   `send_outcome_unknown`, `crashed_during_send`; `order_missing`; `status_unmapped` `{status}`;
   `stop_covers_part` `{verified, expected}`; `stops_over_position` `{covered, held}`;
   `unprotected_exiting` / `unprotected_close_by_hand` `{seconds}`; `stop_rejected_exiting`;
-  `exit_refused_no_stop`, `exit_refused_stop_again`; `cancel_outcome_unknown` `{outcome}`;
+  `exit_refused_no_stop`, `exit_refused_stop_again`; `cancel_outcome_unknown` `{outcome}`,
+  `cancel_crashed`;
   `cancel_failed`; `cancel_not_sent` `{seconds}`; `given_up_order_filled`,
   `working_not_in_records`; `foreign_position`; `foreign_order`; `quantity_mismatch`
   `{held, expected}`; `shutting_down`; `operator_command`, `operator_emergency`;
@@ -149,7 +150,7 @@ clients show the text.
   `{orders, symbol}`; `exit_not_filled` `{order, quantity, symbol, seconds, filled, state}`;
   `close_not_sent` `{quantity, expected, symbol}` plus why the close was not due: `{session}`
   (no session, the calendar's text), `{open}` (before the open) or `{cutoff, cutoff_seconds,
-  close, day}` (at or after the last close time).
+  close, day}` (at or after the last close time; `cutoff` is `HH:MM:SS`).
 - `code` and `params` were added after version 1 shipped: a reader takes a document without
   them as `unrecorded` and `{}`.
 

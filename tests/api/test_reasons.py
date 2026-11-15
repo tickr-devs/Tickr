@@ -25,6 +25,17 @@ def test_every_fence_the_engine_sets_has_shapes():
     assert used and {str(Fence[name]) for name in used} <= set(reasons._FENCE)
 
 
+def test_every_fixed_fence_text_the_engine_writes_is_recognized():
+    """Each fence the engine sets with a plain literal cause reads into a code (f-string
+    causes are covered by the shape rows below)."""
+    calls = re.findall(r'_(?:set_fence|fence_row)\(\s*Fence\.([A-Z_]+),[^,]+,\s*"([^"{}]*)"\)',
+                       CORE.read_text("utf-8"))
+    assert len(calls) >= 10
+    unread = [(kind, text) for kind, text in calls
+              if reasons.fence_reason(str(Fence[kind]), text).code == reasons.UNRECOGNIZED]
+    assert unread == []
+
+
 @pytest.mark.parametrize(("name", "text", "code", "params"), [
     ("startup-reconcile", "startup reconciliation pending", "startup_reconcile_pending", {}),
     ("broker-read-failed", "positions read failed: TimeoutError", "positions_read_failed",
@@ -44,6 +55,7 @@ def test_every_fence_the_engine_sets_has_shapes():
      {"seconds": "31"}),
     ("cancel-unknown:c1", "cancel unknown; waiting for Detail", "cancel_outcome_unknown",
      {"outcome": "unknown"}),
+    ("cancel-unknown:c1", "crashed during cancel", "cancel_crashed", {}),
     ("cancel-not-sent:c1", "no cancel could be sent for 62 s (request budget)",
      "cancel_not_sent", {"seconds": "62"}),
     ("foreign-position:EFGH", "position not opened by this bot", "foreign_position", {}),
@@ -67,7 +79,7 @@ def test_every_fence_the_engine_sets_has_shapes():
      "regular close 16:00 ET of 2026-11-16; the stop stays. Close the position in the Webull "
      "app, or clear this fence in the next regular session and the bot sends the close",
      "close_not_sent", {"quantity": "100", "expected": "100", "symbol": "ABCD",
-                        "cutoff": "15:59", "cutoff_seconds": "30", "close": "16:00",
+                        "cutoff": "15:59:30", "cutoff_seconds": "30", "close": "16:00",
                         "day": "2026-11-16"}),
 ])
 def test_fence_shapes(name, text, code, params):
