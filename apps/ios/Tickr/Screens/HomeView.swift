@@ -137,6 +137,9 @@ private struct DayLine: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   let days: HomeDayModel
 
+  /// Accessibility id of the DEMO chip, for the UI tests.
+  static let demoChipID = "home-demo"
+
   var body: some View {
     // At large text sizes the age (or the way back to today) moves under the day, so the arrows
     // stay on screen.
@@ -150,6 +153,10 @@ private struct DayLine: View {
         day
           .lineLimit(stacked ? Self.stackedDayLines : 1)
           .minimumScaleFactor(Tokens.Shrink.standard)
+        if days.locked {
+          Badge(L10n.Home.demoChip, tone: .warning)
+            .accessibilityIdentifier(Self.demoChipID)
+        }
         Spacer(minLength: 0)
         if !stacked { trailing }
         Button { days.forward() } label: { Image(systemName: "chevron.right") }

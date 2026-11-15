@@ -4391,6 +4391,23 @@
         }
       }
     },
+    "home.demoChip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DEMO"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ДЕМО"
+          }
+        }
+      }
+    },
     "home.entriesAllowed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7881,6 +7898,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "v%lld"
+          }
+        }
+      }
+    },
+    "settings.demoDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo day"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Демо-день"
+          }
+        }
+      }
+    },
+    "settings.demoDayFooter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows the made-up demo day from the Mac, and only that day, through the same connection; the address and pairing stay as they are."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показывает придуманный демо-день с Mac, и только его, через то же подключение; адрес и связка остаются прежними."
           }
         }
       }

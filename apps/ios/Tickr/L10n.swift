@@ -251,6 +251,10 @@ enum L10n {
     static var backToToday: LocalizedStringResource {
       LocalizedStringResource("home.backToToday", defaultValue: "Today", bundle: L10n.bundle)
     }
+    /// The chip next to the day while the demo day is on.
+    static var demoChip: LocalizedStringResource {
+      LocalizedStringResource("home.demoChip", defaultValue: "DEMO", bundle: L10n.bundle)
+    }
     static var recordedDay: LocalizedStringResource {
       LocalizedStringResource("home.recordedDay", defaultValue: "Recorded day", bundle: L10n.bundle)
     }
@@ -1266,6 +1270,15 @@ enum L10n {
   }
 
   enum Settings {
+    static var demoDay: LocalizedStringResource {
+      LocalizedStringResource("settings.demoDay", defaultValue: "Demo day", bundle: L10n.bundle)
+    }
+    static var demoDayFooter: LocalizedStringResource {
+      LocalizedStringResource("settings.demoDayFooter",
+        // swiftlint:disable:next line_length
+        defaultValue: "Shows the made-up demo day from the Mac, and only that day, through the same connection; the address and pairing stay as they are.",
+        bundle: L10n.bundle)
+    }
     static var jobs: LocalizedStringResource {
       LocalizedStringResource("settings.jobs", defaultValue: "Jobs on the Mac", bundle: L10n.bundle)
     }

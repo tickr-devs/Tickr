@@ -7883,6 +7883,40 @@
         }
       }
     },
+    "settings.demoDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo day"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Демо-день"
+          }
+        }
+      }
+    },
+    "settings.demoDayExplanation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows the made-up demo day from this Mac, and only that day; the bot's address stays as it is."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показывает придуманный демо-день с этого Mac, и только его; адрес бота остаётся прежним."
+          }
+        }
+      }
+    },
     "settings.editConfig" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9069,6 +9103,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · сегодня"
+          }
+        }
+      }
+    },
+    "toolbar.demoChip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DEMO"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ДЕМО"
+          }
+        }
+      }
+    },
+    "toolbar.demoHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo day: the made-up day only. Turn it off in Settings › General to pick another day."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Демо-день: только придуманный день. Чтобы выбрать другой день, выключите его в Настройках › Основные."
           }
         }
       }

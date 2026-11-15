@@ -394,6 +394,15 @@ enum L10n {
     static var pickDayHelp: LocalizedStringResource {
       LocalizedStringResource("toolbar.pickDayHelp", defaultValue: "Pick a recorded trading day", bundle: L10n.bundle)
     }
+    /// The chip next to the day while the demo day is on.
+    static var demoChip: LocalizedStringResource {
+      LocalizedStringResource("toolbar.demoChip", defaultValue: "DEMO", bundle: L10n.bundle)
+    }
+    static var demoHelp: LocalizedStringResource {
+      LocalizedStringResource("toolbar.demoHelp",
+        defaultValue: "Demo day: the made-up day only. Turn it off in Settings › General to pick another day.",
+        bundle: L10n.bundle)
+    }
     static var todayHelp: LocalizedStringResource {
       LocalizedStringResource("toolbar.todayHelp", defaultValue: "Back to the live day (⌘T)", bundle: L10n.bundle)
     }
@@ -786,6 +795,14 @@ enum L10n {
     }
     static var menuBar: LocalizedStringResource {
       LocalizedStringResource("settings.menuBar", defaultValue: "Menu bar", bundle: L10n.bundle)
+    }
+    static var demoDay: LocalizedStringResource {
+      LocalizedStringResource("settings.demoDay", defaultValue: "Demo day", bundle: L10n.bundle)
+    }
+    static var demoDayExplanation: LocalizedStringResource {
+      LocalizedStringResource("settings.demoDayExplanation",
+        defaultValue: "Shows the made-up demo day from this Mac, and only that day; the bot's address stays as it is.",
+        bundle: L10n.bundle)
     }
     static var showInMenuBar: LocalizedStringResource {
       LocalizedStringResource("settings.showInMenuBar",
