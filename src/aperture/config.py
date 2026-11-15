@@ -125,6 +125,7 @@ class ApiConfig:
     account_stale_seconds: Decimal
     commands_dir: str
     status_stale_seconds: Decimal
+    broker_read_warn_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
     max_pending_commands: int
@@ -132,12 +133,15 @@ class ApiConfig:
     status_recent_commands: int
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
+    observer_trades_max_rows: int
     watching_max_rows: int
     watching_closeness_decimal_places: int
     watching_check_decimal_places: int
     flow_change_pct_decimal_places: int
     performance_max_range_days: int
     performance_decimal_places: int
+    price_after_minutes: tuple[int, ...]
+    after_r_decimal_places: int
 
 
 @dataclass(frozen=True)
@@ -427,6 +431,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             "[market_data] candidate_subscriptions plus observer_subscriptions must leave "
             "stream_reserved_symbols free within stream_max_symbols"
         )
+    if built["observers"].watching_seconds <= 0:
+        raise ConfigError("[observers] watching_seconds must be above 0")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
@@ -460,6 +466,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.webull_enabled:
         for name, env in environments.items():
             check_chart_slice(chart, name, env)
+    orders, api = built["orders"], built["api"]
+    if not orders.reconcile_interval_seconds < api.broker_read_warn_seconds \
+            < orders.broker_read_max_age_seconds:
+        raise ConfigError("[api] broker_read_warn_seconds must be above [orders] "
+                          "reconcile_interval_seconds and below [orders] "
+                          "broker_read_max_age_seconds")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")

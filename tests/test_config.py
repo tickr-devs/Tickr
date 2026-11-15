@@ -127,6 +127,15 @@ def test_account_stale_must_exceed_the_reconcile_interval(tmp_path):
         config.load(_copy(tmp_path, text))
 
 
+@pytest.mark.parametrize("value", ["10", "5", "30", "45"])
+def test_broker_read_warning_sits_between_reconcile_and_block(tmp_path, value):
+    """Above the reconcile interval (else every read warns) and below the entry block age."""
+    text = re.sub(r"(?m)^broker_read_warn_seconds = \S+", f"broker_read_warn_seconds = {value}",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="broker_read_warn_seconds"):
+        config.load(_copy(tmp_path, text))
+
+
 def test_unknown_environment_refused(tmp_path):
     text = re.sub(r'(?m)^environment = ".*"', 'environment = "staging"', BOT.read_text("utf-8"))
     with pytest.raises(config.ConfigError, match="not one of"):
@@ -342,6 +351,13 @@ def test_candidates_must_leave_the_reserved_stream_slots(tmp_path):
                                           "candidate_subscriptions = 81")
     path = _copy(tmp_path, text)
     with pytest.raises(config.ConfigError, match="stream_reserved_symbols"):
+        config.load(path)
+
+
+def test_observer_watching_seconds_must_be_positive(tmp_path):
+    text = BOT.read_text("utf-8").replace("watching_seconds = 180", "watching_seconds = 0")
+    path = _copy(tmp_path, text)
+    with pytest.raises(config.ConfigError, match="watching_seconds"):
         config.load(path)
 
 
