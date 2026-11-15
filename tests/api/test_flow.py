@@ -154,8 +154,8 @@ def test_watching_decisive_check_rounds_away_from_passing(measured, operator, th
     assert row.closeness == unrounded.closeness  # computed from the recorded values
 
 
-def test_watching_check_decimal_places_is_configured(cfg):
-    assert cfg.api.watching_check_decimal_places >= 0
+def test_check_decimal_places_is_configured(cfg):
+    assert cfg.api.check_decimal_places >= 0
 
 
 def test_watching_past_day_is_the_state_at_the_close_and_empty_day(api, cfg):
@@ -270,7 +270,8 @@ def test_flow_stages_on_a_fake_broker_day(api, cfg):
         "agreement": "match", "agreement_cause": None, "read_at": "2026-11-16T15:00:00.000Z",
         "mismatch": None, "fences_cause": None,
         "fences": [{"kind": "foreign-position:EFGH", "since": "2026-11-16T15:00:00.123Z",
-                    "text": "position not opened by this bot"}]}
+                    "text": "position not opened by this bot", "code": "foreign_position",
+                    "params": {}}]}
 
 
 def test_flow_reconcile_mismatch_and_missing_or_old_files(api, cfg):

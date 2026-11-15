@@ -21,7 +21,7 @@ the approved design canvas. Code follows it one to one:
    - Protocol values from the bot (`exit_reason`, fence `kind`) are shown through a localized title and never translated in place.
 3. **System appearance only.** Light and dark follow macOS/iOS; there is no theme switch. Light is designed on its own (soft glows and a tinted shadow), not as an inverted dark.
 4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
-5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state.
+5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop (the brand mark's spark, the empty-positions radar, the ticker's scroll), marked `// decorative: <why>` in code; the `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
 6. **Formatting: Swift uses 2-space indentation.**
    - `.editorconfig`, SwiftLint's `indentation_width` (shared package) and the rules check (rule `indent`, every app) enforce it.
    - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
@@ -153,6 +153,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `bar` | 8 | Progress bar height |
 | `barThin` | 4 | Thin progress bar inside a row (Watching closely) |
 | `ticker` | 22 | Ticker strip height |
+| `flowMark` / `flowPool` | 10 / 44 | A symbol's dot on the live flow board / least height of a stage's pool |
 | `flowChip` | 96 | Least width of a live-flow symbol chip |
 | `sideColumn` | 320 | Side column of cards |
 | `contentMaxWidth` | 1500 | Content stops growing and centres |
@@ -181,7 +182,6 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `breatheSeconds` / `breatheScale` | 2.4 s / ×1.08 | One swell of a glow when its value changes (never a loop) |
 | `rotationSeconds` | 4 s per turn | Radar sweep |
 | `tickerSpeed` | 22 pt/s | Event ticker (edges fade over 6% of its width) |
-| `pipelineSeconds` | 4.2 s | Light travelling the live flow |
 | `pressScale` | ×0.97 | Buttons and chips while pressed |
 | `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event |
 | `hintDelay` | 0.45 s | Hover before a hint appears (Mac) |
@@ -198,6 +198,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | Command button | bot controls | `ActionButtonStyle` below |
 | Live-flow chips (Mac) | `Marquee` | The screeners' symbols scroll across the top of the live flow: symbol in `chip`, below it the screener and change % in `annotation`, coloured by screener (gainers `profitText`, top actives `infoText`, losers `seriesATRText`; left out of the universe `textQuaternary`, struck through); `surfaceSunken` fill, `separator` hairline, `Radius.medium`. The event ticker runs under the chips, alone while there are none |
 | Watching row (Mac) | `WatchingRow` | `surfaceSunken` box with `separator` hairline, `Radius.medium`: symbol in `chip`, verdict `Badge`, time in `annotation`; the deciding check in `captionMono`; closeness as a `barThin` capsule in the verdict colour, a dashed `dashFine` outline when unknown |
+| Live-flow board (Mac) | `Pipeline` pools | Under each stage, today's symbols whose furthest stage it is (`FlowBoard`), as `flowMark` dots in the stage colour on a `surfaceSunken` pool (at most 24, then "+N"); amber while the broker stop waits, red if never confirmed. Universe and risk have a dashed tray of refused symbols as red outlines. A dot flies to its new stage (`matchedGeometryEffect`, `Motion.standard`) only when a new read moves it; hover names the symbol and the reason |
 | Live-flow stage | pipeline | `Size.stage` circle, `Stroke.bold` ring and a soft glow in the stage colour; name in the stage's text colour |
 | Accent | `.tint` | `info` for links, selection and system controls on both apps, never the system blue |
 | Planned tag | BACKLOG / NEEDS API | `highlightText`, dashed `dashFine` outline, `Radius.small` |
@@ -250,7 +251,13 @@ breaks upward, with a spark at its end.
   current (macOS Overview header, iOS Home bar); still otherwise and with Reduce Motion.
 - iOS opening (`LaunchHandoff`): the app starts exactly as the launch screen, flashes the spark
   once, then flies the mark into Home's bar mark while the background fades (`launchHoldSeconds`,
-  `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`). macOS has no launch screen.
+  `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`).
+- macOS opening (`BrandOpening`, macOS has no launch screen): the first window of a launch opens
+  on the background with the mark (`openingMark`) in its centre, the line draws itself
+  (`openingDrawSeconds`, once the window is on screen and key), then the mark flies into
+  Overview's header mark (`openingFly`) over the still plain background, and only then does the
+  background fade. Once per launch (`AppModel.openingPlayed`), not on reopening the window.
+  Reduce Motion: the same cross-fade.
 - Empty screens (nothing yet, no trades, bot unreachable) use `BrandMark.empty()` as the
   `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors
   keep a warning SF Symbol, so they never look like a calm empty state.

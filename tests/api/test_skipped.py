@@ -22,7 +22,7 @@ from aperture.replay.clock import calendar_clock
 from aperture.replay.settings import load_settings
 from aperture.research import observer_report
 from aperture.research.records import Admission, DecisionRecord
-from aperture.strategy.base import Decision, Role, Verdict
+from aperture.strategy.base import Check, Decision, Role, Verdict
 
 from .schema_check import errors
 from .test_decisions import (
@@ -120,9 +120,12 @@ def _research_total(cfg, records, path):
 # ---------------------------------------------------------------- GET /skipped
 
 
+NO_BARS = "no captured bars for 2026-11-16"
+
+
 def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
     refused = _enter(ACTIVE, Role.ACTIVE, minute=7, admission=Admission.REFUSED,
-                     cause="POSITION_LIMIT_REACHED: 1 open position, limit 1")
+                     cause="POSITION_LIMIT_REACHED: 1 open position(s), limit 1")
     late = _enter(ACTIVE, Role.ACTIVE, minute=2, admission=Admission.NOT_EVALUATED,
                   symbol="WXYZ")
     taken = _enter(ACTIVE, Role.ACTIVE, minute=1, admission=Admission.TAKEN)
@@ -137,16 +140,22 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
          "admission": "not_evaluated", "refusal_cause": None, "refusal": None,
          "entry_price": "12.10", "stop_price": "11.80",
          "checks": [{"rule": "relative_volume", "measured": "2.4", "operator": ">=",
-                     "threshold": "1.5", "passed": True, "note": ""}]},
+                     "threshold": "1.5", "passed": True, "note": ""}],
+         "prices_after": [], "prices_after_cause": NO_BARS,
+         "what_if": {"result_gross_usd": None, "result_r": None, "exit_reason": None,
+                     "cause": NO_BARS}},
         {"at": "2026-11-16T15:07:00.000Z", "symbol": "ABCD",
          "strategy": {"name": "price-action-v1", "version": "1"},
          "admission": "refused",
-         "refusal_cause": "POSITION_LIMIT_REACHED: 1 open position, limit 1",
-         "refusal": {"code": "POSITION_LIMIT_REACHED", "message": "1 open position, limit 1",
-                     "since": None, "until": None},
+         "refusal_cause": "POSITION_LIMIT_REACHED: 1 open position(s), limit 1",
+         "refusal": {"code": "POSITION_LIMIT_REACHED", "message": "1 open position(s), limit 1",
+                     "since": None, "until": None, "params": {"open": "1", "limit": "1"}},
          "entry_price": "12.10", "stop_price": "11.80",
          "checks": [{"rule": "relative_volume", "measured": "2.4", "operator": ">=",
-                     "threshold": "1.5", "passed": True, "note": ""}]},
+                     "threshold": "1.5", "passed": True, "note": ""}],
+         "prices_after": [], "prices_after_cause": NO_BARS,
+         "what_if": {"result_gross_usd": None, "result_r": None, "exit_reason": None,
+                     "cause": NO_BARS}},
     ]
     # /decisions carries the same admission and cause
     decisions = _get(api, "/decisions?symbol=ABCD&date=2026-11-16", "decisions-v1")
@@ -154,7 +163,7 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
             for d in decisions["decisions"]] == [
         ("15:01", "taken", None), ("15:03", "not_applicable", None),
         ("15:04", "not_evaluated", None),
-        ("15:07", "refused", "POSITION_LIMIT_REACHED: 1 open position, limit 1")]
+        ("15:07", "refused", "POSITION_LIMIT_REACHED: 1 open position(s), limit 1")]
     assert [d["refusal"] for d in decisions["decisions"]][:3] == [None, None, None]
     assert decisions["decisions"][3]["refusal"] == body["signals"][1]["refusal"]
 
@@ -170,7 +179,7 @@ def test_skipped_archived_day_and_empty_day(api, cfg):
         ("ABCD", "SYMBOL_COOLDOWN: ABCD")]
     # not the shape admission writes for a cooldown: read as UNKNOWN, never guessed
     assert body["signals"][0]["refusal"] == {"code": "UNKNOWN", "message": "SYMBOL_COOLDOWN: ABCD",
-                                             "since": None, "until": None}
+                                             "since": None, "until": None, "params": {}}
     assert _get(api, "/skipped?date=2026-11-10", "skipped-v1")["signals"] == []
 
 
@@ -184,7 +193,8 @@ def test_cooldown_refusal_is_served_with_its_times(api, cfg):
     assert signal["refusal"] == {
         "code": "SYMBOL_COOLDOWN",
         "message": "ABCD closed at a loss; no new entry in it during the cooldown",
-        "since": "2026-11-16T14:51:30.123Z", "until": "2026-11-16T15:21:30.123Z"}
+        "since": "2026-11-16T14:51:30.123Z", "until": "2026-11-16T15:21:30.123Z",
+        "params": {"symbol": "ABCD", "until": "10:21"}}
 
 
 ENGINE_CAUSES = ["trading gate closed: disabled", "entries fenced: entry-stop",
@@ -194,7 +204,8 @@ ENGINE_CAUSES = ["trading gate closed: disabled", "entries fenced: entry-stop",
 @pytest.mark.parametrize("detail", ENGINE_CAUSES)
 def test_engine_refusal_after_admission_is_read(detail):
     refusal = contract.refusal_of(f"ENGINE_REFUSED: {detail}")
-    assert refusal == contract.RefusalV1(contract.RefusalCode.ENGINE_REFUSED, detail, None, None)
+    assert refusal == contract.RefusalV1(contract.RefusalCode.ENGINE_REFUSED, detail, None, None,
+                                         {})
 
 
 @pytest.mark.parametrize("cause", [
@@ -221,7 +232,7 @@ def test_engine_refusal_after_admission_is_read(detail):
 ])
 def test_unreadable_cause_is_unknown_with_the_recorded_text(cause):
     assert contract.refusal_of(cause) == contract.RefusalV1(
-        contract.RefusalCode.UNKNOWN, cause, None, None)
+        contract.RefusalCode.UNKNOWN, cause, None, None, {})
 
 
 def test_no_cause_is_no_refusal():
@@ -353,21 +364,21 @@ def test_observer_result_null_with_cause(api, cfg, case, cause):
 def test_observer_result_is_recomputed_only_when_its_files_change(cfg):
     log = DecisionLog.from_config(cfg)
     _write(log, _enter())
-    results = ObserverResults(SimulationPaths.from_config(cfg))
+    results = ObserverResults(SimulationPaths.from_config(cfg), cfg.api.observer_trades_max_rows)
     records = log.records(DAY, role=Role.OBSERVER)
     first = results.results(DAY, DAY, records, log.path(DAY))
-    assert first[OBSERVER][0] is None  # no capture file yet
+    assert first[OBSERVER].gross_usd is None  # no capture file yet
     assert results.results(DAY, DAY, records, log.path(DAY)) is first  # same files: memo
     _capture(cfg)
     second = results.results(DAY, DAY, records, log.path(DAY))
-    assert second[OBSERVER][0] is not None and second[OBSERVER][1] is None
+    assert second[OBSERVER].gross_usd is not None and second[OBSERVER].cause is None
 
 
 def test_changed_replay_settings_trigger_a_recompute(cfg):
     log = DecisionLog.from_config(cfg)
     _write(log, _enter())
     _capture(cfg)
-    results = ObserverResults(SimulationPaths.from_config(cfg))
+    results = ObserverResults(SimulationPaths.from_config(cfg), cfg.api.observer_trades_max_rows)
     records = log.records(DAY, role=Role.OBSERVER)
     first = results.results(DAY, DAY, records, log.path(DAY))
     assert results.results(DAY, DAY, records, log.path(DAY)) is first
@@ -378,7 +389,7 @@ def test_changed_replay_settings_trigger_a_recompute(cfg):
                         "utf-8")
     second = results.results(DAY, DAY, records, log.path(DAY))
     assert second is not first
-    assert second[OBSERVER][0] < first[OBSERVER][0]  # more slippage, a worse result
+    assert second[OBSERVER].gross_usd < first[OBSERVER].gross_usd  # more slippage, a worse result
     # the same day seen as a past day is a different key too
     assert results.results(DAY, DAY + timedelta(days=1), records, log.path(DAY)) is not second
 
@@ -388,18 +399,100 @@ def test_transient_failure_is_not_remembered(cfg):
     _write(log, _enter())
     _capture(cfg)
     paths = SimulationPaths.from_config(cfg)
-    results = ObserverResults(replace(paths, calendar=paths.calendar.parent / "missing"))
+    results = ObserverResults(replace(paths, calendar=paths.calendar.parent / "missing"), 10)
     records = log.records(DAY, role=Role.OBSERVER)
     failed = results.results(DAY, DAY, records, log.path(DAY))
-    assert failed[OBSERVER][1].startswith("session calendar unreadable: ")
+    assert failed[OBSERVER].cause.startswith("session calendar unreadable: ")
     results.paths = paths  # the calendar is back, no data file changed
-    assert results.results(DAY, DAY, records, log.path(DAY))[OBSERVER][1] is None
+    assert results.results(DAY, DAY, records, log.path(DAY))[OBSERVER].cause is None
 
 
 def test_a_recorded_observer_without_result_is_refused():
     record = _enter()
     with pytest.raises(contract.ContractError, match="no simulated result"):
         contract.observers_document(DAY, (OBSERVER,), (record,), {})
+
+
+def _trades(api):
+    (entry,) = _get(api, "/observers", "observers-v1")["observers"]
+    return entry["trades"], entry["trades_cause"], entry["trades_truncated"]
+
+
+def test_observer_trades_are_the_simulated_enters(api, cfg):
+    """The filled ENTER at 10:05 is stopped out at 10:10; the ENTER at 10:07 falls inside it."""
+    records = (_enter(), _enter(minute=7))
+    _write(DecisionLog.from_config(cfg), *records)
+    bars = _capture(cfg)
+    read = read_captured_bars(bars)
+    calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+    settings = load_settings(cfg.root / cfg.api.replay_settings_file)
+    report = observer_report.report(
+        records, {"ABCD": [b for _, b in sorted(read.bars.items())]}, settings,
+        calendar_clock(calendar, cfg.session))
+    (filled, overlap) = report.enters[(*OBSERVER, Role.OBSERVER.value)]
+    trade = filled.trade
+    q = Decimal(1).scaleb(-settings.output_decimal_places)
+    trades, cause, truncated = _trades(api)
+    assert (cause, truncated) == (None, False)
+    assert trades == [
+        {"symbol": "ABCD", "at": "2026-11-16T15:05:00.000Z",
+         "opened_at": contract.format_time(trade.entry_time),
+         "entry_price": str(trade.entry_price.quantize(q)),
+         "closed_at": contract.format_time(trade.exit_time),
+         "exit_price": str(trade.exit_price.quantize(q)), "quantity": "10",
+         "exit_reason": "stop", "result_gross_usd": str(filled.result_usd.quantize(q)),
+         "result_r": str(trade.r_multiple.quantize(q)), "cause": None},
+        {"symbol": "ABCD", "at": "2026-11-16T15:07:00.000Z", "opened_at": None,
+         "entry_price": None, "closed_at": None, "exit_price": None, "quantity": None,
+         "exit_reason": None, "result_gross_usd": None, "result_r": None,
+         "cause": "skipped_overlap: an earlier simulated trade of ABCD was still open"}]
+    assert overlap.trade is None and Decimal(trades[0]["result_r"]) < 0
+
+
+def test_observer_trade_without_quantity_has_r_only(api, cfg):
+    _write(DecisionLog.from_config(cfg), _enter(quantity=None))
+    _capture(cfg)
+    (trade,), cause, _ = _trades(api)
+    assert cause is None and trade["result_r"] is not None
+    assert trade["quantity"] is None and trade["result_gross_usd"] is None
+    assert trade["cause"] == "no recorded whole quantity: result in R only"
+
+
+def test_observer_trade_repeating_a_traded_signal_is_listed_with_its_cause(api, cfg):
+    """After the 10:05 trade is stopped out, the same signal at 10:20 is deduplicated."""
+    def signal(record):
+        return replace(record, decision=replace(record.decision, setup="x",
+                                                trigger=Decimal("12.05")))
+    _write(DecisionLog.from_config(cfg), signal(_enter()), signal(_enter(minute=20)))
+    _capture(cfg)
+    trades, cause, _ = _trades(api)
+    assert cause is None and trades[0]["cause"] is None
+    assert [t["at"] for t in trades] == ["2026-11-16T15:05:00.000Z", "2026-11-16T15:20:00.000Z"]
+    assert trades[1]["result_r"] is None and trades[1]["cause"] == (
+        "skipped_same_signal: the same signal (setup x, trigger 12.05) already made a "
+        "simulated trade of ABCD that day")
+
+
+def test_observer_trades_are_capped_oldest_first(cfg):
+    log = DecisionLog.from_config(cfg)
+    _write(log, _enter(minute=7, symbol="WXYZ"), _enter(), _enter(minute=6, symbol="EFGH"))
+    _capture(cfg)
+    results = ObserverResults(SimulationPaths.from_config(cfg), 2)
+    got = results.results(DAY, DAY, log.records(DAY, role=Role.OBSERVER), log.path(DAY))
+    result = got[OBSERVER]
+    assert result.trades_truncated and result.trades_cause is None
+    assert [(t.symbol, t.cause) for t in result.trades] == [
+        ("ABCD", None), ("EFGH", "not_simulated: no captured bars for the symbol")]
+
+
+def test_observer_trades_null_with_cause_when_nothing_is_simulated(api, cfg):
+    _write(DecisionLog.from_config(cfg), _enter())
+    assert _trades(api) == (None, NO_BARS, False)
+
+
+def test_observer_without_enter_has_no_trades(api, cfg):
+    _write(DecisionLog.from_config(cfg), _observer(checks=(PASS, FAIL)))
+    assert _trades(api) == ([], None, False)
 
 
 def test_observer_result_never_writes(api, cfg):
@@ -415,3 +508,20 @@ def test_settings_carry_the_simulation_inputs(cfg):
     paths = replace(settings_from_config(cfg), port=0).simulation
     assert paths.replay_settings == cfg.root / "config" / "replay.toml"
     assert paths.replay_settings.is_file() and paths.calendar.is_dir()
+
+
+def test_skipped_rounds_every_check_keeping_its_verdict(api, cfg):
+    """/skipped rounds check values like /decisions ([api] check_decimal_places)."""
+    assert cfg.api.check_decimal_places == 4  # the expectation below assumes it
+    checks = (Check("relative_volume", Decimal("3.33780269384"), ">=", Decimal("1.5"), True),
+              Check("spread_ratio", Decimal("0.0020001"), "<=", Decimal("0.002"), False))
+    decision = Decision(*ACTIVE, "ABCD", Verdict.ENTER, checks, entry_low=Decimal("12.00"),
+                        entry_high=Decimal("12.10"), stop=Decimal("11.80"), quantity=Decimal(10))
+    record = DecisionRecord(BAR + M1, BAR, Role.ACTIVE, decision, Admission.REFUSED,
+                            "QUOTE_MISSING: no quote")
+    DecisionLog.from_config(cfg).append(record)
+    resp, payload = request(api, "GET", f"/skipped?date={DAY.isoformat()}")
+    assert resp.status == 200, payload
+    body = doc(payload)
+    assert [(c["measured"], c["threshold"]) for c in body["signals"][0]["checks"]] == [
+        ("3.3379", "1.5"), ("0.0021", "0.002")]

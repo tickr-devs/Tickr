@@ -30,7 +30,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
+from aperture.api.reasons import refusal_params
 from aperture.data.base import ScreenerKind
+from aperture.replay.engine import ExitReason
 from aperture.research.records import Admission, DecisionRecord
 from aperture.risk.causes import ENGINE_REFUSED, AdmissionCause
 from aperture.risk.ticks import round_to_tick
@@ -71,6 +73,18 @@ def _added_later(default: Any) -> Any:
     `default`; writers always write it. Every other key stays required on read, whatever
     default its dataclass field has."""
     return field(default=default, metadata={ADDED_AFTER_V1: True})
+
+
+def _params_added_later() -> Any:
+    """`params` (docs/api.md, "Reason codes") added after version 1 shipped: empty when absent."""
+    return field(default_factory=dict, metadata={ADDED_AFTER_V1: True})
+
+
+# A reason's parameters: name -> plain text value (docs/api.md, "Reason codes").
+Params = dict[str, str]
+
+# The code of a reason the bot wrote before it recorded codes; clients show the text.
+UNRECORDED = "unrecorded"
 
 
 # ---------------------------------------------------------------- enums
@@ -129,14 +143,22 @@ class CommandOutcome(StrEnum):
 
 @dataclass(frozen=True)
 class Gate:
+    """The trading gate. `code` and `params` name `cause` for translation (api/reasons.py)."""
+
     open: bool
     cause: str
+    code: str = _added_later(UNRECORDED)
+    params: Params = _params_added_later()
 
 
 @dataclass(frozen=True)
 class StrategyId:
     name: str
     version: str
+
+
+# EntryBlock cause while a position or a working order of the bot's own exists.
+OWN_TRADE_OPEN = "own_trade_open"
 
 
 @dataclass(frozen=True)
@@ -148,13 +170,19 @@ class EntryBlock:
     cause: str
     text: str
     attention: bool = _added_later(True)
+    params: Params = _params_added_later()  # the values in `text`, for a translated sentence
 
 
 @dataclass(frozen=True)
 class Fence:
+    """An engine fence. `kind` is the fence name; `code` and `params` name `text` for
+    translation (api/reasons.py)."""
+
     kind: str
     since: datetime
     text: str
+    code: str = _added_later(UNRECORDED)
+    params: Params = _params_added_later()
 
 
 @dataclass(frozen=True)
@@ -362,6 +390,32 @@ class ErrorV1:
 
 
 @dataclass(frozen=True)
+class PriceAfterV1:
+    """The price `minutes` after a closed trade's exit or a skipped signal (docs/api.md, "Prices
+    after"): the close of the captured M1 bar covering `at`. `change_usd` is per share, `price`
+    minus the reference (a trade's `exit_price`; a signal's decision bar close). `cause` says
+    why `price` or `change_usd` is null, else null. Display only."""
+
+    minutes: int
+    at: datetime
+    price: Decimal | None
+    change_usd: Decimal | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
+class WhatIfV1:
+    """A skipped signal entered alone in the replay simulation (docs/api.md, "What if"):
+    gross USD for the recorded quantity, R per share, and why the simulated trade ended.
+    SIMULATED, display only. Every number null with `cause` when it was not simulated."""
+
+    result_gross_usd: Decimal | None
+    result_r: Decimal | None
+    exit_reason: ExitReason | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
 class DayTrade:
     """A closed trade with fills. `stop_price` is the first protective stop sent (null if none
     was); 1 R = `planned_loss_usd`. `stop_confirmed_after_seconds` as in `Trade`. `mae_usd` /
@@ -369,7 +423,10 @@ class DayTrade:
     strictly between the minute of the first entry fill read and the minute up to which the
     journal proves no share was sold yet (a close's send intent, a stop's last unfilled read),
     times the quantity the first fill read showed (docs/api.md); null without capture of the
-    trade's edge minutes."""
+    trade's edge minutes. `prices_after`: one point per `[api] price_after_minutes` after
+    `closed_at` (empty with `prices_after_cause` when not computed). `overshoot_usd` (per
+    share) / `overshoot_r`: highest high after the exit minute within the longest offset,
+    minus `exit_price`; null with `overshoot_cause`. Display only, never on the risk path."""
 
     trade_id: str
     symbol: str
@@ -387,6 +444,11 @@ class DayTrade:
     mfe_usd: Decimal | None
     entry: EntrySend  # as in `Position`
     entry_cause: str | None
+    prices_after: tuple[PriceAfterV1, ...]
+    prices_after_cause: str | None
+    overshoot_usd: Decimal | None
+    overshoot_r: Decimal | None
+    overshoot_cause: str | None
 
 
 class CleanVerdict(StrEnum):
@@ -570,6 +632,11 @@ class SettingsV1:
     session: SessionSettings
     status_stale_seconds: Decimal
     poll_seconds: Decimal
+    # Age of the last broker read past which entries are blocked ([orders]
+    # broker_read_max_age_seconds) and past which clients show a warning ([api]
+    # broker_read_warn_seconds, always below the block age).
+    broker_read_max_age_seconds: Decimal
+    broker_read_warn_seconds: Decimal
     api_version: int = _const(API_VERSION)
 
 
@@ -615,13 +682,18 @@ def check_v1(c: Check) -> CheckV1:
     return CheckV1(c.rule, c.measured, c.operator, c.threshold, c.passed, c.note)
 
 
-def checks_of(decision: Decision) -> tuple[CheckV1, ...]:
-    return tuple(check_v1(c) for c in decision.checks)
+def checks_of(decision: Decision, places: int | None = None) -> tuple[CheckV1, ...]:
+    """Every check of `decision`; with `places`, each rounded by `shown_check` (the API);
+    without, as recorded (the CLI's explain)."""
+    if places is None:
+        return tuple(check_v1(c) for c in decision.checks)
+    return tuple(shown_check(c, places) for c in decision.checks)
 
 
-def explain(environment: str, day: date, record: DecisionRecord) -> ExplainV1:
+def explain(environment: str, day: date, record: DecisionRecord,
+            places: int | None = None) -> ExplainV1:
     d = record.decision
-    checks = checks_of(d)
+    checks = checks_of(d, places)
     return ExplainV1(
         environment=environment, day=day, symbol=d.symbol, decided_at=record.time,
         bar_start=record.bar_start, strategy=d.strategy, version=d.version, verdict=d.verdict,
@@ -647,16 +719,44 @@ class ObserverDecisionV1:
 
 
 @dataclass(frozen=True)
+class ObserverTradeV1:
+    """One ENTER of an observer as its day simulation replayed it, SIMULATED, display only.
+    `at` is the decision bar's start. A filled trade has its entry, exit, `exit_reason` and
+    `result_r` (per share); `quantity` and `result_gross_usd` only with a recorded whole
+    quantity. Every null has `cause` (missed, rejected, not simulated, skipped because an
+    earlier simulated trade of the symbol was open or the same signal already traded, no
+    recorded whole quantity); else null."""
+
+    symbol: str
+    at: datetime
+    opened_at: datetime | None
+    entry_price: Decimal | None
+    closed_at: datetime | None
+    exit_price: Decimal | None
+    quantity: Decimal | None
+    exit_reason: ExitReason | None
+    result_gross_usd: Decimal | None
+    result_r: Decimal | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
 class ObserverV1:
     """One configured observer. `result_gross_usd` is its simulated gross day result (the
     research observers report's what-if simulation of its ENTERs on that day's captured bars);
-    null when it cannot be computed, and then `result_cause` says why (else null)."""
+    null when it cannot be computed, and then `result_cause` says why (else null). `trades`:
+    every ENTER of that simulation, oldest first, at most `[api] observer_trades_max_rows`
+    (`trades_truncated` true when the cap left some out); null with `trades_cause` when the
+    simulation could not run (else `trades_cause` is null)."""
 
     name: str
     version: str
     decisions: tuple[ObserverDecisionV1, ...]
     result_gross_usd: Decimal | None
     result_cause: str | None
+    trades: tuple[ObserverTradeV1, ...] | None
+    trades_cause: str | None
+    trades_truncated: bool
 
 
 @dataclass(frozen=True)
@@ -686,6 +786,7 @@ class RefusalV1:
     message: str
     since: datetime | None
     until: datetime | None
+    params: Params  # the values in the recorded detail (api/reasons.py); {} when none
 
 
 @dataclass(frozen=True)
@@ -723,8 +824,18 @@ def _oldest_first(records: tuple[DecisionRecord, ...]) -> list[DecisionRecord]:
     return sorted(records, key=lambda r: (r.bar_start, r.time))
 
 
-# (gross USD or None, cause when None) of one observer identity's simulated day.
-ObserverResult = tuple[Decimal | None, str | None]
+@dataclass(frozen=True)
+class ObserverResult:
+    """One observer identity's simulated day (not a document): gross USD or None with its
+    cause, and its trades or None with their cause."""
+
+    gross_usd: Decimal | None
+    cause: str | None
+    trades: tuple[ObserverTradeV1, ...] | None = ()
+    trades_cause: str | None = None
+    trades_truncated: bool = False
+
+
 NO_DECISIONS = "no decisions recorded that day"
 
 
@@ -736,7 +847,7 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
     version recorded that day (config order, then version), or, when a name has no records,
     one empty entry per current version, so a version bump never hides earlier records.
     `results`: the simulated result of every (name, version) recorded that day; an entry
-    without records gets null with the cause NO_DECISIONS."""
+    without records gets null result and trades with the cause NO_DECISIONS."""
     ordered = _oldest_first(records)
     names = list(dict.fromkeys(name for name, _ in identities))
     entries: list[ObserverV1] = []
@@ -745,13 +856,16 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
         current = [v for n, v in identities if n == name]
         for version in sorted(recorded or set(current), key=_version_order):
             if (name, version) in results:
-                gross, cause = results[(name, version)]
+                result = results[(name, version)]
             elif version in recorded:  # a caller bug: refuse rather than mislabel it
                 raise ContractError(f"no simulated result for observer {name} v{version}")
             else:
-                gross, cause = None, NO_DECISIONS
-            entries.append(ObserverV1(name=name, version=version, result_gross_usd=gross,
-                                      result_cause=cause, decisions=tuple(
+                result = ObserverResult(None, NO_DECISIONS, None, NO_DECISIONS)
+            entries.append(ObserverV1(
+                name=name, version=version, result_gross_usd=result.gross_usd,
+                result_cause=result.cause, trades=result.trades,
+                trades_cause=result.trades_cause, trades_truncated=result.trades_truncated,
+                decisions=tuple(
                 ObserverDecisionV1(r.bar_start, r.symbol, r.decision.verdict,
                                    tuple(c.rule for c in r.decision.checks if not c.passed))
                 for r in ordered
@@ -793,7 +907,7 @@ def refusal_of(cause: str | None) -> RefusalV1 | None:
     its message, never a guess."""
     if cause is None:
         return None
-    unknown = RefusalV1(RefusalCode(UNKNOWN_CAUSE), cause, None, None)
+    unknown = RefusalV1(RefusalCode(UNKNOWN_CAUSE), cause, None, None, {})
     code_text, separator, detail = cause.partition(": ")
     if (not separator or not detail.strip() or code_text == UNKNOWN_CAUSE
             or code_text not in RefusalCode.__members__):
@@ -825,7 +939,7 @@ def refusal_of(cause: str | None) -> RefusalV1 | None:
         return unknown
     else:
         message = detail
-    return RefusalV1(code, message, since, until)
+    return RefusalV1(code, message, since, until, refusal_params(code_text, detail, since, until))
 
 
 def _what_if(price: Decimal | None) -> Decimal | None:
@@ -833,8 +947,8 @@ def _what_if(price: Decimal | None) -> Decimal | None:
     return None if price is None else round_to_tick(price)
 
 
-def decisions_document(symbol: str, day: date,
-                       records: tuple[DecisionRecord, ...]) -> DecisionsV1:
+def decisions_document(symbol: str, day: date, records: tuple[DecisionRecord, ...],
+                       places: int | None = None) -> DecisionsV1:
     out = []
     for r in _oldest_first(records):
         d = r.decision
@@ -842,7 +956,7 @@ def decisions_document(symbol: str, day: date,
         out.append(DecisionV1(
             at=r.bar_start, action=d.verdict,
             strategy=StrategyId(d.strategy, d.version), observer=r.role is Role.OBSERVER,
-            checks=checks_of(d), entry_price=_what_if(d.entry_high) if skipped else None,
+            checks=checks_of(d, places), entry_price=_what_if(d.entry_high) if skipped else None,
             stop_price=_what_if(d.stop) if skipped else None, admission=r.admission,
             refusal_cause=r.refusal_cause, refusal=refusal_of(r.refusal_cause)))
     return DecisionsV1(symbol=symbol, day=day, decisions=tuple(out))
@@ -853,7 +967,8 @@ class SkippedSignalV1:
     """One ENTER of the active strategy that did not become a position: admission `refused`
     (`refusal` says why; `refusal_cause` is the recorded `CAUSE: detail`, kept for older
     clients) or `not_evaluated` (made too late to act on). `entry_price` / `stop_price` and
-    `checks` as in decisions-v1."""
+    `checks` as in decisions-v1. `prices_after` as in day-v1 from the decision bar (`at`),
+    the change from its close; `what_if`: the signal entered alone, simulated."""
 
     at: datetime
     symbol: str
@@ -864,6 +979,9 @@ class SkippedSignalV1:
     entry_price: Decimal | None
     stop_price: Decimal | None
     checks: tuple[CheckV1, ...]
+    prices_after: tuple[PriceAfterV1, ...]
+    prices_after_cause: str | None
+    what_if: WhatIfV1
 
 
 @dataclass(frozen=True)
@@ -876,8 +994,20 @@ class SkippedV1:
     api_version: int = _const(API_VERSION)
 
 
-def skipped_document(day: date, records: tuple[DecisionRecord, ...]) -> SkippedV1:
-    """`records`: active-strategy records of `day`; keeps the ENTERs admission did not take."""
+NOT_COMPUTED = "not computed on this path"
+NO_WHAT_IF = WhatIfV1(None, None, None, NOT_COMPUTED)
+
+
+def skipped_records(records: tuple[DecisionRecord, ...]) -> list[DecisionRecord]:
+    """The ENTERs admission did not take, oldest first: the rows of `skipped_document`."""
+    return [r for r in _oldest_first(records)
+            if r.decision.verdict is Verdict.ENTER and r.admission in _SKIPPED]
+
+
+def skipped_document(day: date, records: tuple[DecisionRecord, ...],
+                     places: int | None = None) -> SkippedV1:
+    """`records`: active-strategy records of `day`; keeps the ENTERs admission did not take,
+    without prices after or what-if (api/after.py adds them)."""
     return SkippedV1(day=day, signals=tuple(
         SkippedSignalV1(
             at=r.bar_start, symbol=r.symbol,
@@ -885,9 +1015,9 @@ def skipped_document(day: date, records: tuple[DecisionRecord, ...]) -> SkippedV
             admission=r.admission, refusal_cause=r.refusal_cause,
             refusal=refusal_of(r.refusal_cause), entry_price=_what_if(r.decision.entry_high),
             stop_price=_what_if(r.decision.stop),
-            checks=checks_of(r.decision))
-        for r in _oldest_first(records)
-        if r.decision.verdict is Verdict.ENTER and r.admission in _SKIPPED))
+            checks=checks_of(r.decision, places), prices_after=(), prices_after_cause=NOT_COMPUTED,
+            what_if=NO_WHAT_IF)
+        for r in skipped_records(records)))
 
 
 # ---------------------------------------------------------------- overview flow (read-only)
@@ -1037,17 +1167,19 @@ def closeness(check: Check | None, places: int) -> tuple[Decimal | None, str | N
 
 
 def shown_check(check: Check, places: int) -> CheckV1:
-    """The decisive (failed) check with measured and threshold rounded to `places`, each away
-    from passing: for `>` `>=` measured down and threshold up, for `<` `<=` the reverse. The
-    shown pair therefore still fails, and closeness is computed from the recorded values. A
-    value with no more than `places` decimals is shown as recorded.
-    Other operators keep the recorded values."""
+    """`check` with measured and threshold rounded to `places` so the shown pair keeps the
+    recorded verdict: a failed check rounds each away from passing (for `>` `>=` measured down
+    and threshold up, for `<` `<=` the reverse), a passed one toward passing (the opposite).
+    Closeness is computed from the recorded values. A value with no more than `places`
+    decimals is shown as recorded. Other operators keep the recorded values."""
     if check.operator in _RISE:
         measured_way, threshold_way = ROUND_FLOOR, ROUND_CEILING
     elif check.operator in _FALL:
         measured_way, threshold_way = ROUND_CEILING, ROUND_FLOOR
     else:
         return check_v1(check)
+    if check.passed:
+        measured_way, threshold_way = threshold_way, measured_way
     step = Decimal(1).scaleb(-places)
 
     def shown(value: Decimal | None, way: str) -> Decimal | None:
@@ -1277,6 +1409,10 @@ def _decode(where: str, raw: Any, hint: Any, meta: Any = None) -> Any:
         except ValueError as exc:
             allowed = ", ".join(m.value for m in hint)
             raise ContractError(f"{where}: {raw!r} is not one of: {allowed}") from exc
+    if hint == Params:
+        if not isinstance(raw, dict) or not all(isinstance(v, str) for v in raw.values()):
+            raise ContractError(f"{where}: expected an object of strings, got {raw!r}")
+        return dict(raw)
     if get_origin(hint) is tuple:
         (item,) = [a for a in get_args(hint) if a is not Ellipsis]
         if not isinstance(raw, list):
@@ -1356,6 +1492,8 @@ def _schema(hint: Any, meta: Any = None) -> dict[str, Any]:
         return {"type": "string", "pattern": DATE_PATTERN}
     if isinstance(hint, type) and issubclass(hint, StrEnum):
         return {"type": "string", "enum": [m.value for m in hint]}
+    if hint == Params:
+        return {"type": "object", "additionalProperties": {"type": "string"}}
     if get_origin(hint) is tuple:
         (item,) = [a for a in get_args(hint) if a is not Ellipsis]
         return {"type": "array", "items": _schema(item)}

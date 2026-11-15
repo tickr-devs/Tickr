@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from aperture import config
+from aperture.api.reasons import gate_reason
 from aperture.cli import main
 from aperture.risk.admission import AdmissionLimits
 
@@ -127,6 +128,15 @@ def test_account_stale_must_exceed_the_reconcile_interval(tmp_path):
         config.load(_copy(tmp_path, text))
 
 
+@pytest.mark.parametrize("value", ["10", "5", "30", "45"])
+def test_broker_read_warning_sits_between_reconcile_and_block(tmp_path, value):
+    """Above the reconcile interval (else every read warns) and below the entry block age."""
+    text = re.sub(r"(?m)^broker_read_warn_seconds = \S+", f"broker_read_warn_seconds = {value}",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="broker_read_warn_seconds"):
+        config.load(_copy(tmp_path, text))
+
+
 def test_unknown_environment_refused(tmp_path):
     text = re.sub(r'(?m)^environment = ".*"', 'environment = "staging"', BOT.read_text("utf-8"))
     with pytest.raises(config.ConfigError, match="not one of"):
@@ -152,6 +162,7 @@ def test_gate_open_for_environment_without_authorization(tmp_path):
     cfg = config.load(BOT)
     loaded = config.load(_with_environment(tmp_path, _open_name(cfg)))
     assert config.trading_gate(loaded).open
+    assert gate_reason(config.trading_gate(loaded).cause).code == "trading_enabled"
 
 
 def test_gate_closed_when_trading_disabled(tmp_path):
@@ -160,6 +171,7 @@ def test_gate_closed_when_trading_disabled(tmp_path):
     gate = config.trading_gate(loaded)
     assert not gate.open
     assert "disabled" in gate.cause
+    assert gate_reason(gate.cause).params == {"environment": loaded.environment_name}
 
 
 def _enabled_gated(tmp_path: Path) -> config.Config:
@@ -187,12 +199,14 @@ def test_gate_requires_authorization_file(tmp_path):
     cfg = _enabled_gated(tmp_path)
     gate = config.trading_gate(cfg)
     assert not gate.open and "not found" in gate.cause
+    assert gate_reason(gate.cause).params == {"file": cfg.environment.authorization_file}
 
 
 def test_gate_opens_with_matching_authorization(tmp_path):
     cfg = _enabled_gated(tmp_path)
     _authorize(cfg)
     assert config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).code == "authorization_valid"
 
 
 def test_gate_refuses_stale_digest(tmp_path):
@@ -200,12 +214,14 @@ def test_gate_refuses_stale_digest(tmp_path):
     _authorize(cfg, config_digest="0" * 64)
     gate = config.trading_gate(cfg)
     assert not gate.open and "digest" in gate.cause
+    assert gate_reason(gate.cause).code == "authorization_digest_mismatch"
 
 
 def test_gate_refuses_other_environment(tmp_path):
     cfg = _enabled_gated(tmp_path)
     _authorize(cfg, environment="elsewhere")
     assert not config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).code == "authorization_other_environment"
 
 
 def test_gate_refuses_extra_fields(tmp_path):
@@ -214,6 +230,8 @@ def test_gate_refuses_extra_fields(tmp_path):
     _authorize(cfg)
     path.write_text(path.read_text("utf-8") + 'extra = "x"\n', "utf-8")
     assert not config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).params == {
+        "keys": "approved_on, config_digest, environment, statement"}
 
 
 def test_source_never_names_environments():
@@ -345,6 +363,34 @@ def test_candidates_must_leave_the_reserved_stream_slots(tmp_path):
         config.load(path)
 
 
+def test_observer_watching_seconds_must_be_positive(tmp_path):
+    text = BOT.read_text("utf-8").replace("watching_seconds = 180", "watching_seconds = 0")
+    path = _copy(tmp_path, text)
+    with pytest.raises(config.ConfigError, match="watching_seconds"):
+        config.load(path)
+
+
+def _observers(tmp_path: Path, names: str) -> Path:
+    text = re.sub(r"(?m)^observers = \[.*\]", f"observers = [{names}]", BOT.read_text("utf-8"))
+    return _copy(tmp_path, text)
+
+
+def test_an_observer_listed_twice_is_refused(tmp_path):
+    with pytest.raises(config.ConfigError, match="observers lists price-action-v2 more than once"):
+        config.load(_observers(tmp_path, '"price-action-v2", "noise-band-v1", "price-action-v2"'))
+
+
+def test_the_active_strategy_as_an_observer_is_refused(tmp_path):
+    active = config.load(BOT).strategy.active
+    with pytest.raises(config.ConfigError, match="cannot also be an observer"):
+        config.load(_observers(tmp_path, f'"{active}"'))
+
+
+def test_distinct_observers_load(tmp_path):
+    cfg = config.load(_observers(tmp_path, '"price-action-v2", "noise-band-v1"'))
+    assert cfg.strategy.observers == ("price-action-v2", "noise-band-v1")
+
+
 def _copy_in(tmp_path: Path, name: str, text: str) -> Path:
     (tmp_path / name).mkdir()
     return _copy(tmp_path / name, text)
@@ -389,3 +435,27 @@ def test_chart_cache_must_outlive_the_session_lookback(tmp_path):
     text = BOT.read_text("utf-8").replace("cache_max_age_days = 30", "cache_max_age_days = 13", 1)
     with pytest.raises(config.ConfigError, match="cache_max_age_days"):
         config.load(_copy(tmp_path, text))
+
+
+def test_old_check_places_key_loads_with_a_warning(tmp_path):
+    """An old local bot.toml with the pre-#248 key name keeps loading, warns, keeps its value."""
+    text = re.sub(r"(?m)^check_decimal_places = \d+", "watching_check_decimal_places = 3",
+                  BOT.read_text("utf-8"))
+    with pytest.warns(config.RenamedKeyWarning, match="watching_check_decimal_places"):
+        cfg = config.load(_copy(tmp_path, text))
+    assert cfg.api.check_decimal_places == 3
+    assert cfg.renamed_keys == ("[api] watching_check_decimal_places -> check_decimal_places",)
+
+
+def test_old_and_new_check_places_keys_together_are_refused(tmp_path):
+    text = re.sub(r"(?m)^(check_decimal_places = \d+)", r"\1\nwatching_check_decimal_places = 3",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="both watching_check_decimal_places"):
+        config.load(_copy(tmp_path, text))
+
+
+def test_current_bot_toml_uses_no_old_key_names():
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", config.RenamedKeyWarning)
+        assert config.load(BOT).renamed_keys == ()

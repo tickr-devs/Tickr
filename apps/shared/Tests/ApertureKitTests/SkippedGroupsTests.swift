@@ -14,7 +14,9 @@ struct SkippedGroupsTests {
        "strategy": {"name": "price-action", "version": "2"}, "admission": "\(admission)",
        "refusal_cause": \(cause.map { "\"\($0)\"" } ?? "null"),
        "refusal": null,
-       "entry_price": "12.345678901234567890123456789", "stop_price": null, "checks": []}
+       "entry_price": "12.345678901234567890123456789", "stop_price": null, "checks": [],
+       "prices_after": [], "prices_after_cause": "none",
+       "what_if": {"result_gross_usd": null, "result_r": null, "exit_reason": null, "cause": "none"}}
       """
     return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
   }
@@ -24,7 +26,9 @@ struct SkippedGroupsTests {
     let json = """
       {"at": "2026-11-13T16:\(String(format: "%02d", minute)):00.000Z", "symbol": "\(symbol)",
        "strategy": {"name": "price-action", "version": "2"}, "admission": "refused", "refusal_cause": null, "refusal": null,
-       "entry_price": null, "stop_price": null, "checks": []}
+       "entry_price": null, "stop_price": null, "checks": [],
+       "prices_after": [], "prices_after_cause": "none",
+       "what_if": {"result_gross_usd": null, "result_r": null, "exit_reason": null, "cause": "none"}}
       """
     return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
   }
@@ -73,8 +77,10 @@ struct SkippedGroupsTests {
       {"at": "2026-11-13T16:\(String(format: "%02d", minute)):00.000Z", "symbol": "\(symbol)",
        "strategy": {"name": "price-action", "version": "2"}, "admission": "refused",
        "refusal_cause": null,
-       "refusal": {"code": "\(code)", "message": "m\(minute)", "since": null, "until": null},
-       "entry_price": null, "stop_price": null, "checks": []}
+       "refusal": {"code": "\(code)", "message": "m\(minute)", "since": null, "until": null, "params": {}},
+       "entry_price": null, "stop_price": null, "checks": [],
+       "prices_after": [], "prices_after_cause": "none",
+       "what_if": {"result_gross_usd": null, "result_r": null, "exit_reason": null, "cause": "none"}}
       """
     return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
   }
@@ -110,5 +116,25 @@ struct SkippedGroupsTests {
     ])
     #expect(counts.map(\.cause?.code) == ["SYMBOL_COOLDOWN", nil, "QUOTE_STALE"])
     #expect(counts.map(\.count) == [2, 1, 1])
+  }
+
+  @Test("A structured refusal lends its window: the cooldown and its end come from since and until")
+  func window() throws {
+    let json = """
+      {"at": "2026-11-13T16:30:00.000Z", "symbol": "MVLD", "strategy": {"name": "price-action", "version": "2"},
+       "admission": "refused", "refusal_cause": "SYMBOL_COOLDOWN: MVLD closed at a loss",
+       "refusal": {"code": "SYMBOL_COOLDOWN", "message": "MVLD closed at a loss",
+                   "since": "2026-11-13T16:26:30.000Z", "until": "2026-11-13T16:56:30.000Z",
+                   "params": {"symbol": "MVLD", "until": "11:56"}},
+       "entry_price": null, "stop_price": null, "checks": [],
+       "prices_after": [], "prices_after_cause": "none",
+       "what_if": {"result_gross_usd": null, "result_r": null, "exit_reason": null, "cause": "none"}}
+      """
+    let signal = try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
+    let cause = try #require(SkippedGroup.make([signal]).first?.cause)
+    let pause = try #require(cause.cooldown)
+    #expect(pause.until.timeIntervalSince(pause.loss) == 1_800)
+    #expect(cause.until == pause.until)
+    #expect(RefusalCount.make([signal]).first?.cause?.until == pause.until)
   }
 }

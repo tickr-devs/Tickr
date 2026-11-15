@@ -180,6 +180,10 @@ account_stale_seconds = 30
 commands_dir = "commands"
 # Status older than this many seconds is shown as stale (bot may be down); read by the api server.
 status_stale_seconds = 15
+# Last broker read older than this many seconds is shown as a warning (entries are blocked only past [orders]
+# broker_read_max_age_seconds); keep it above [orders] reconcile_interval_seconds and below broker_read_max_age_seconds;
+# read by the api server and returned to clients at GET /settings.
+broker_read_warn_seconds = 15
 # Seconds between refreshes of the status page, also returned to clients as a polling hint; read by the api server and the status page.
 poll_seconds = 3
 # Largest accepted command request body in bytes; larger = refused; read by the api server.
@@ -195,19 +199,25 @@ status_recent_commands = 10
 idempotency_key_ttl_seconds = 86400
 # Replay settings file (fill model) the API uses to simulate each observer's day result at GET /observers, the same simulation as `python -m aperture.research observers`, relative to the repo root; read by the api server.
 replay_settings_file = "config/replay.toml"
+# Most simulated trades (ENTERs, oldest first) GET /observers lists per observer; more = cut, with `trades_truncated` true; read by the api server (api/observer_results.py).
+observer_trades_max_rows = 100
 # Most rows GET /watching returns (the closest first; the answer's `total` counts them all); read by the api server.
 watching_max_rows = 8
 # Decimal places of GET /watching `closeness` (0..1, rounded down); read by the api server.
 watching_closeness_decimal_places = 4
-# Decimal places of the decisive check's measured and threshold values in GET /watching, each rounded
-# away from passing so a failed check never reads as met; read by the api server.
-watching_check_decimal_places = 4
+# Decimal places of check measured and threshold values in /watching, /explain, /decisions and
+# /skipped, each rounded so the shown pair keeps the recorded verdict; read by the api server.
+check_decimal_places = 4
 # Decimal places of GET /flow screener chips' `change_pct` (percent, rounded half-even); read by the api server.
 flow_change_pct_decimal_places = 2
 # Longest date range GET /performance accepts, in New York calendar days counting both ends; longer = 400 bad_request; read by the api server.
 performance_max_range_days = 366
 # Decimal places of GET /performance numbers that come from a division (R values, win rate, averages, profit factor), rounded half-even; read by the api server.
 performance_decimal_places = 4
+# Minutes after a closed trade's exit (day-v1) and after a skipped signal (skipped-v1) at which the API shows the price, the close of the M1 bar covering that moment; strictly increasing, each > 0; the last one also bounds the window of a trade's overshoot; read by the api server (api/after.py).
+price_after_minutes = [1, 5, 15, 60]
+# Decimal places of the R quotients the API computes for display, overshoot_r in day-v1, rounded half-even; read by the api server (api/after.py).
+after_r_decimal_places = 4
 
 [market_data]
 # Seconds between discovery passes in the regular session; read by runtime (discovery scheduler).
@@ -276,9 +286,9 @@ observer_subscriptions = 20
 # candidates need its slots), so observers cost at most one subscribe and one unsubscribe request per period on routes
 # shared with the active strategy's subscribes; read by runtime.market.
 observer_resync_seconds = 60
-# Subscribe (and unsubscribe) requests per budget window an observer-tier request must leave free for the position,
-# WATCH symbols and candidates, count; below the route limit (requests_per_route_per_minute, route_limits) the observer
-# tier waits. Read by runtime.market for broker.webull StreamSession.subscribe_optional.
+# Subscribe (and unsubscribe) requests per budget window a candidate or observer request must leave free for the
+# position, entry and WATCH symbols, count; below the route limit (requests_per_route_per_minute, route_limits) those
+# tiers wait. Read by runtime.market for broker.webull StreamSession.subscribe_optional.
 stream_reserved_subscribe_requests = 10
 # Seconds candidates, or observer symbols, stay off the stream after their subscribe was refused (the position and
 # WATCH symbols are never affected); read by runtime.market.
@@ -422,7 +432,8 @@ mac_app_timeout_seconds = 2
 [chart]
 # Serve GET /chart (the apps' chart: any US stock, M1 to monthly candles) from Webull market data. true makes the API
 # process build its own Webull client in the background (it then needs the app key and secret, never the account id,
-# and uses the environment's token folder next to the bot; until it is built GET /chart answers 503). Gate, per
+# and uses the environment's token folder next to the bot; until it is built GET /chart answers 503), and only once the
+# newest `python -m aperture.probes chart-client` run recorded for the environment has passed (C1). Gate, per
 # docs/webull-facts.md section C: C1 and C2 must pass first, and C1 in the environment being enabled (a Sandbox pass
 # does not prove Production); C3 must pass before daily ranges (1m/3m/1y) are trusted, C4 before the newest minute and
 # half days are; C5 is optional. false = GET /chart answers 503 unavailable (the demo serves its simulated world

@@ -174,6 +174,8 @@ public enum Tokens {
     public static let logoSmall: CGFloat = 26
     /// The brand mark as the illustration of an empty screen.
     public static let emptyMark: CGFloat = 88
+    /// The brand mark in the centre of the macOS opening (BrandOpening).
+    public static let openingMark: CGFloat = 120
     /// The brand mark on the iOS launch screen (LAUNCH_MARK in apps/scripts/make_brand_assets.py).
     public static let launchMark: CGFloat = 160
     /// Height of a sparkline and of a progress bar.
@@ -183,6 +185,9 @@ public enum Tokens {
     public static let barThin: CGFloat = 4
     /// Height of the ticker strip.
     public static let ticker: CGFloat = 22
+    /// A symbol's dot on the live flow board, and the least height of a stage's pool of dots.
+    public static let flowMark: CGFloat = 10
+    public static let flowPool: CGFloat = 44
     /// Least width of a symbol chip in the live flow (symbol over screener and change).
     public static let flowChip: CGFloat = 96
     /// Width of a side column of cards on wide screens.
@@ -249,13 +254,21 @@ public enum Tokens {
     public static let launchHoldSeconds = 0.45
     public static let launchFlySeconds = 0.75
     public static let launchFly = Animation.smooth(duration: launchFlySeconds)
+    /// Seconds the window shows the plain background before the mark starts drawing.
+    public static let openingDelaySeconds = 0.15
+    /// Seconds the opening waits for its window to come to the front; then it plays anyway, so a
+    /// window opened in the background is never left covered.
+    public static let openingWaitSeconds = 1.0
+    /// macOS opening (BrandOpening): seconds for the centred mark to draw itself, then its flight
+    /// into the Overview header.
+    public static let openingDrawSeconds = 0.6
+    public static let openingFlySeconds = 0.45
+    public static let openingFly = Animation.smooth(duration: openingFlySeconds)
     /// The cross-fade that replaces the opening animation under Reduce Motion.
     public static let launchFadeSeconds = 0.35
     /// Seconds for one turn of the radar sweep.
     public static let rotationSeconds = 4.0
     /// Points per second of the event ticker.
     public static let tickerSpeed = 22.0
-    /// Seconds a light takes to travel the whole pipeline.
-    public static let pipelineSeconds = 4.2
   }
 }

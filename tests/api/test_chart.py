@@ -489,7 +489,7 @@ def test_status_and_commands_answer_while_the_chart_client_builds(served, tmp_pa
         assert release.wait(5)
         return fake
 
-    builder = attach_chart_source(served, chart_on(tmp_path), slow_build)
+    builder = attach_chart_source(served, chart_on(tmp_path), slow_build, gate=lambda cfg: None)
     assert builder is not None and entered.wait(5)
     resp, payload = request(served, "GET", "/chart?symbol=ABCD&interval=5m&range=1d")
     assert resp.status == 503 and doc(payload)["cause"] == CHART_STARTING
@@ -516,7 +516,8 @@ def test_a_failed_chart_client_build_is_503_with_its_cause(served, tmp_path, cap
     def failing_build(cfg: config.Config) -> FakeMarketData:
         raise error
 
-    builder = attach_chart_source(served, chart_on(tmp_path), failing_build)
+    builder = attach_chart_source(served, chart_on(tmp_path), failing_build,
+                                  gate=lambda cfg: None)
     assert builder is not None
     builder.join(5)
     resp, payload = request(served, "GET", "/chart?symbol=ABCD&interval=5m&range=1d")
@@ -525,6 +526,42 @@ def test_a_failed_chart_client_build_is_503_with_its_cause(served, tmp_path, cap
     if hidden is not None:
         assert hidden not in payload.decode() and hidden not in capsys.readouterr().err
     resp, _ = request(served, "POST", "/commands/stop-bot", {})
+    assert resp.status == 202
+
+
+def test_no_chart_client_is_built_until_probe_c1_is_recorded_as_passed(served, tmp_path,
+                                                                        capsys):
+    """With the chart on, the API would be a second Webull client next to the bot. It builds
+    none until `probes chart-client` has passed in this environment (the real gate, on an
+    empty data folder), and says so at GET /chart."""
+    def never(cfg: config.Config) -> FakeMarketData:
+        raise AssertionError("built before the chart probe C1 passed")
+
+    assert attach_chart_source(served, chart_on(tmp_path), never) is None
+    resp, payload = request(served, "GET", "/chart?symbol=ABCD&interval=5m&range=1d")
+    assert resp.status == 503 and doc(payload)["error"] == "unavailable"
+    assert "chart probe C1 is not recorded for sandbox" in doc(payload)["cause"]
+    assert "aperture.probes chart-client" in doc(payload)["cause"]
+    assert "GET /chart is off" in capsys.readouterr().err
+    resp, _ = request(served, "POST", "/commands/stop-bot", {})
+    assert resp.status == 202
+
+
+def test_a_chart_gate_that_raises_refuses_the_chart_and_the_api_still_serves(served, tmp_path):
+    """The gate runs before the API serves: an error nobody listed must become a refusal, or
+    launchd would restart an API that never answers stop or emergency."""
+    def broken_gate(cfg: config.Config) -> str | None:
+        raise RecursionError("secret-ish")
+
+    def never(cfg: config.Config) -> FakeMarketData:
+        raise AssertionError("built although the gate failed")
+
+    assert attach_chart_source(served, chart_on(tmp_path), never, gate=broken_gate) is None
+    resp, payload = request(served, "GET", "/chart?symbol=ABCD&interval=5m&range=1d")
+    assert resp.status == 503
+    assert "the chart probe C1 gate failed (RecursionError)" in doc(payload)["cause"]
+    assert "secret-ish" not in payload.decode()
+    resp, _ = request(served, "POST", "/commands/emergency", {})
     assert resp.status == 202
 
 

@@ -172,6 +172,8 @@ private struct Summary: View {
   static let ringSide: CGFloat = 136
   /// Smallest scale the result may shrink to inside the ring.
   static let minimumScale = 0.6
+  /// Symbol of a closed trading gate.
+  static let gateClosedSymbol = "lock.fill"
 
   @Environment(AppModel.self) private var model
   /// A recorded past day to summarize instead of today's status.
@@ -212,22 +214,34 @@ private struct Summary: View {
 
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-          PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false))
+          PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false),
+            event: model.status?.writtenAt.date)
           Text(verbatim: text)
             .font(.subheadline.bold())
             .foregroundStyle(tint)
             .fixedSize(horizontal: false, vertical: true)
         }
-        if past != nil {
+        if let past {
           Text(L10n.Home.recordedNote)
             .font(.footnote)
             .foregroundStyle(Palette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
+          CleanLine(clean: past.clean)
         } else if let status = model.status {
-          Text(verbatim: subline(status))
-            .font(.footnote)
-            .foregroundStyle(Palette.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
+          // Each position's protection and the gate as glyphs; the words are in their hints.
+          HStack(spacing: Tokens.Space.xs) {
+            ForEach(status.positions, id: \.symbol) { position in
+              StopGlyph(state: position.stop.state, symbol: position.symbol,
+                read: status.freshness.lastBrokerReadAt?.date)
+            }
+            if !status.tradingGate.open {
+              StateGlyph(Self.gateClosedSymbol, tone: .warning,
+                label: L10n.Home.gateClosed(status.tradingGate.cause), style: .compact)
+            }
+            Badge(verbatim: status.strategy.version, tone: .highlight)
+          }
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel(Text(verbatim: subline(status)))
         }
       }
       .animation(.default, value: text)
@@ -265,12 +279,22 @@ private struct PositionRow: View {
     } label: {
       HStack(spacing: Tokens.Space.m) {
         VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-          Text(verbatim: position.symbol)
-            .font(.headline.monospaced())
-            .foregroundStyle(Palette.textPrimary)
-          Text(stopLine)
-            .font(Tokens.Typography.annotation)
-            .foregroundStyle(position.stop.state.isProtected ? Palette.profitText : Palette.lossText)
+          HStack(spacing: Tokens.Space.s) {
+            StopGlyph(state: position.stop.state, symbol: position.symbol,
+              read: model.status?.freshness.lastBrokerReadAt?.date)
+            Text(verbatim: position.symbol)
+              .font(.headline.monospaced())
+              .foregroundStyle(Palette.textPrimary)
+          }
+          Label {
+            Text(verbatim: position.stop.price?.text ?? Format.missing)
+          } icon: {
+            Image(systemName: StopGlyph.levelSymbol)
+          }
+          .labelStyle(ControlLabelStyle())
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(position.stop.state.isProtected ? Palette.profitText : Palette.lossText)
+          .accessibilityLabel(Text(stopLine))
         }
         Spacer()
         // An old last bar (capture stopped, a quiet minute past the limit) shows muted with its
@@ -284,10 +308,14 @@ private struct PositionRow: View {
         }
         VStack(alignment: .trailing, spacing: Tokens.Space.xs) {
           if let marks {
-            Text(verbatim: Money.signedUSD(marks.unrealized))
-              .font(Tokens.Typography.calloutMono.weight(.semibold))
-              .foregroundStyle(current ? Palette.result(marks.unrealized) : Palette.textQuaternary)
-              .contentTransition(.numericText())
+            if current {
+              DeltaTag(marks.unrealized, text: Money.signedUSD(marks.unrealized))
+            } else {
+              Text(verbatim: Money.signedUSD(marks.unrealized))
+                .font(Tokens.Typography.calloutMono.weight(.semibold))
+                .foregroundStyle(Palette.textQuaternary)
+                .contentTransition(.numericText())
+            }
             if !current {
               Text(L10n.Positions.asOf(Format.clock(marks.lastAt.addingTimeInterval(PositionMarks.barSeconds))))
                 .font(Tokens.Typography.annotationBold)
@@ -411,10 +439,17 @@ private struct LiveFlowCard: View {
           }
         }
         HStack(spacing: Tokens.Space.s) {
-          Text(L10n.Flow.quotes(String(localized: status.freshness.stream.title)))
-            .foregroundStyle(streamColor)
-          Text(L10n.Flow.brokerRead(Format.timeOrDash(status.freshness.lastBrokerReadAt)))
-            .foregroundStyle(current && status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
+          StateGlyph(Self.streamSymbol, tone: streamTone,
+            label: L10n.Flow.quotes(String(localized: status.freshness.stream.title)),
+            live: current && status.freshness.stream == .fresh, event: status.writtenAt.date, style: .compact)
+          Label {
+            Text(verbatim: Format.timeOrDash(status.freshness.lastBrokerReadAt))
+          } icon: {
+            Image(systemName: Self.brokerSymbol)
+          }
+          .labelStyle(ControlLabelStyle())
+          .foregroundStyle(current && status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
+          .accessibilityLabel(Text(L10n.Flow.brokerRead(Format.timeOrDash(status.freshness.lastBrokerReadAt))))
         }
         .font(Tokens.Typography.annotation)
         ForEach(status.fences, id: \.kind) { fence in
@@ -434,21 +469,25 @@ private struct LiveFlowCard: View {
   private static let names = [L10n.Flow.screen, L10n.Flow.stocks, L10n.Flow.strategy, L10n.Flow.risk, L10n.Flow.order,
     L10n.Flow.stop]
 
-  /// The quote stream's state in its colour: a lost stream is an alarm.
-  private var streamColor: Color {
+  /// Symbols of the quote stream and the last broker read.
+  static let streamSymbol = "waveform.path.ecg"
+  static let brokerSymbol = "building.columns"
+
+  /// The quote stream's state as a tone: a lost stream is an alarm.
+  private var streamTone: Tone {
     // An old status says nothing about the stream now.
-    guard current else { return Palette.textQuaternary }
+    guard current else { return .neutral }
     switch status.freshness.stream {
-    case .fresh: return Palette.profitText
-    case .quiet: return Palette.warningText
-    case .lost: return Palette.lossText
-    case .off: return Palette.textQuaternary
+    case .fresh: return .profit
+    case .quiet: return .warning
+    case .lost: return .loss
+    case .off: return .neutral
     }
   }
 
   private func column(_ stage: Stage) -> some View {
     VStack(spacing: Tokens.Space.xs) {
-      FlowDot(color: stage.color, delay: Double(stage.id.rawValue) * FlowDot.stagger, lit: stage.value != nil)
+      FlowDot(color: stage.color, lit: stage.value != nil, event: stage.value)
       Text(stage.name).font(Tokens.Typography.annotation).foregroundStyle(Palette.textTertiary)
       Text(verbatim: stage.value ?? Format.missing)
         .font(Tokens.Typography.annotationBold)
@@ -461,38 +500,48 @@ private struct LiveFlowCard: View {
   }
 }
 
-/// A live-flow stage: a glowing dot that breathes, each stage a little after the one before, so
-/// light seems to run along the flow. Still with Reduce Motion, faint for an unreported stage.
+/// A live-flow stage: a glowing dot, faint for an unreported stage. It moves only on a real
+/// event: one pulse each time the stage's value changes (a new count, a verified stop).
 private struct FlowDot: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var bright = false
   let color: Color
-  let delay: Double
   let lit: Bool
+  /// The stage's value; a change plays one pulse.
+  let event: String?
 
-  /// Seconds between neighbouring stages' breaths.
-  static let stagger = 0.25
   /// Diameter of the dot and blur of its glow, in points.
   static let size: CGFloat = 11
   static let glow: CGFloat = 6
   /// Smallest scale a stage's value shrinks to.
   static let minimumScale = 0.7
-  /// Size of the dot at its dimmest, as a share of its full size.
-  static let restScale = 0.8
 
   var body: some View {
-    Circle()
-      .fill(color)
-      .frame(width: Self.size, height: Self.size)
+    PulseDot(color, size: Self.size, pulsing: lit, event: event)
       .shadow(color: lit ? color : .clear, radius: Self.glow)
-      .opacity(lit ? (bright || reduceMotion ? 1 : Tokens.Opacity.faint) : Tokens.Opacity.faint)
-      .scaleEffect(bright || reduceMotion || !lit ? 1 : Self.restScale)
-      .onAppear {
-        guard lit, !reduceMotion else { return }
-        withAnimation(.easeInOut(duration: Tokens.Motion.breatheSeconds / 2).repeatForever(autoreverses: true).delay(delay)) {
-          bright = true
-        }
-      }
+      .opacity(lit ? 1 : Tokens.Opacity.faint)
       .accessibilityHidden(true)
+  }
+}
+
+/// A recorded day's clean-day verdict from the bot's journal and reconciliation: clean, not clean
+/// with its first reason, or unknown with why.
+private struct CleanLine: View {
+  let clean: CleanDay
+
+  var body: some View {
+    Group {
+      switch clean.verdict {
+      case .clean:
+        Text(L10n.Home.cleanDay)
+          .foregroundStyle(Palette.profitText)
+      case .notClean:
+        Text(L10n.Home.notClean(clean.causes.first?.text ?? Format.missing, clean.causes.count))
+          .foregroundStyle(Palette.warningText)
+      case .unknown:
+        Text(L10n.Home.cleanUnknown(clean.cause ?? Format.missing))
+          .foregroundStyle(Palette.textQuaternary)
+      }
+    }
+    .font(Tokens.Typography.annotation)
+    .fixedSize(horizontal: false, vertical: true)
   }
 }

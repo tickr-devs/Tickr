@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,7 @@ from aperture.data.base import FakeMarketData
 
 ROOT = Path(__file__).resolve().parents[1]
 CFG = config.load(ROOT / "config" / "bot.toml")
+ACCOUNT = ROOT / "tests" / "api" / "fixtures" / "account-v1.json"
 EXAMPLE = ROOT / "tests" / "api" / "fixtures" / "status-v1.example.json"
 T0 = datetime(2026, 11, 16, 13, 0, tzinfo=UTC)  # 08:00 New York
 
@@ -40,6 +42,9 @@ class Clock:
 
 
 def cfg_in(tmp_path: Path, *, chart_on: bool = False) -> config.Config:
+    calendar = Path(CFG.session.calendar_file).parent
+    if not (tmp_path / calendar).exists():
+        shutil.copytree(ROOT / calendar, tmp_path / calendar)
     return replace(CFG, root=tmp_path, chart=replace(CFG.chart, webull_enabled=chart_on))
 
 
@@ -134,6 +139,30 @@ def test_chart_limit_refuses_next_to_a_bot(tmp_path):
     assert launched == [] and not (tmp_path / CFG.run.data_dir / CFG.probe.evidence_dir).exists()
 
 
+@pytest.mark.parametrize("at, refused", [
+    (datetime(2026, 11, 16, 14, 29, 59, tzinfo=UTC), None),          # 09:29:59 New York
+    (datetime(2026, 11, 16, 14, 30, tzinfo=UTC), "regular session is on"),
+    (datetime(2026, 11, 16, 20, 59, 59, tzinfo=UTC), "regular session is on"),
+    (datetime(2026, 11, 16, 21, 0, tzinfo=UTC), None),                # the close
+    (datetime(2026, 11, 15, 17, 0, tzinfo=UTC), None),                # a Sunday at noon
+    (datetime(2031, 1, 6, 17, 0, tzinfo=UTC), "calendar cannot say"),  # no calendar file
+])
+def test_chart_limit_runs_only_outside_the_regular_session(tmp_path, at, refused):
+    cfg, launched = cfg_in(tmp_path), []
+
+    def run() -> None:
+        probes.chart_limit(cfg, config_file(tmp_path), "ABC", now=lambda: at,
+                           launch=lambda commands: launched.append(commands) or [0, 0])
+
+    if refused is None:
+        run()
+        assert len(launched) == 1
+    else:
+        with pytest.raises(probes.ProbeRefused, match=refused):
+            run()
+        assert launched == []
+
+
 @pytest.mark.parametrize("processes, requests, cause", [
     (2, 31, "above the bars route limit"),       # a process would pass its own limit
     (1, 20, "would prove nothing"),              # together they would not pass the limit
@@ -191,18 +220,33 @@ class Bot:
     """Writes the status file the way a running bot does: a fresh one before every probe read."""
 
     def __init__(self, cfg: config.Config, clock: Clock, *, reads_broker: bool = True,
-                 fence: str | None = None) -> None:
+                 fence: str | None = None, exposed: str | None = None) -> None:
         self.cfg, self.clock, self.reads_broker, self.fence = cfg, clock, reads_broker, fence
+        self.exposed = exposed
         self.path = cfg.root / cfg.run.data_dir / cfg.api.status_file
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.example = api.loads(api.StatusV1, EXAMPLE.read_bytes())
+        self.account = api.loads(api.AccountV1, ACCOUNT.read_bytes())
 
     def write(self) -> None:
         at = self.clock.now()
         read_at = at if self.reads_broker else T0 - timedelta(minutes=5)
         fences = () if self.fence is None else (api.Fence(self.fence, at, "x"),)
+        flat = replace(self.example, position=None, positions=(), entry_block=None)
+        seen = replace(self.account, read_at=at, positions=(), orders=())
+        order = self.account.orders[0]
+        if self.exposed == "broker-position":
+            seen = replace(seen, positions=self.account.positions[:1])
+        elif self.exposed == "broker-order":
+            seen = replace(seen, orders=(replace(order, ours=True),))
+        elif self.exposed == "foreign-order":
+            seen = replace(seen, orders=(replace(order, ours=False),))
+        api.write_account(self.path.parent / self.cfg.api.account_file, seen)
+        shown = {None: flat, "position": replace(flat, positions=self.example.positions),
+                 "first-position": replace(flat, position=self.example.position),
+                 "working-order": replace(flat, entry_block=self.example.entry_block)}
         api.write_status(self.path, replace(
-            self.example, written_at=at, fences=fences,
+            shown.get(self.exposed, flat), written_at=at, fences=fences,
             freshness=replace(self.example.freshness, last_broker_read_at=read_at)))
 
 
@@ -221,6 +265,7 @@ def client_run(tmp_path: Path, **bot_options) -> tuple[str, dict, list[dict], Wa
     path = config_file(tmp_path)
     live_bot(cfg)
     market = Watched(Bot(cfg, clock, **bot_options))
+    market.bot.write()
     verdict, folder = probes.chart_client(cfg, path, "ABC", now=clock.now, sleep=clock.sleep,
                                           market=lambda _: market)
     summary = json.loads((folder / probes.SUMMARY_FILE).read_text())
@@ -237,6 +282,76 @@ def test_chart_client_passes_when_the_bot_keeps_reading(tmp_path):
     assert reads[0]["bot"] == {"readable": True, "status_age_seconds": 0,
                                "last_broker_read_at": T0.isoformat(),
                                "broker_read_failed": False}
+
+
+def summary_file(cfg: config.Config, day: str, run: str, **fields) -> Path:
+    folder = cfg.root / cfg.run.data_dir / cfg.probe.evidence_dir / day / run
+    folder.mkdir(parents=True)
+    path = folder / probes.SUMMARY_FILE
+    path.write_text(json.dumps({"environment": cfg.environment_name, **fields}))
+    return path
+
+
+def test_the_chart_gate_opens_only_on_a_newest_run_that_passed(tmp_path):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    assert "is not recorded for sandbox" in probes.chart_client_gate(cfg)
+    summary_file(cfg, "2026-11-16", "chart-client-150000", verdict=probes.PASSED,
+                 started_at="2026-11-16T15:00:00+00:00")
+    assert probes.chart_client_gate(cfg) is None
+    # Another probe's summary and another environment's run say nothing about this one.
+    summary_file(cfg, "2026-11-16", "chart-limit-160000", verdict=probes.SHARED,
+                 started_at="2026-11-16T16:00:00+00:00")
+    other = summary_file(cfg, "2026-11-17", "chart-client-150000", verdict=probes.FAILED,
+                         started_at="2026-11-17T15:00:00+00:00")
+    other.write_text(other.read_text().replace(cfg.environment_name, "production"))
+    assert probes.chart_client_gate(cfg) is None
+    assert "last ended 'failed' for production" in probes.chart_client_gate(
+        replace(cfg, run=replace(cfg.run, environment="production")))
+    # A later run that failed closes it again, wherever its folder sorts.
+    summary_file(cfg, "2026-11-16", "chart-client-140000", verdict=probes.FAILED,
+                 started_at="2026-11-16T19:00:00+00:00")
+    assert "last ended 'failed' for sandbox" in probes.chart_client_gate(cfg)
+
+
+def test_the_chart_gate_shuts_on_a_newer_run_that_left_no_summary(tmp_path):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    passed_at = datetime(2026, 11, 16, 15, 0, tzinfo=UTC)
+    summary_file(cfg, "2026-11-16", "chart-client-150000", verdict=probes.PASSED,
+                 started_at=passed_at.isoformat())
+    crashed = summary_file(cfg, "2026-11-16", "chart-client-140000").parent
+    (crashed / probes.SUMMARY_FILE).unlink()
+    reads = crashed / "reads.jsonl"
+    reads.write_text("{}\n")
+
+    def touch(at: datetime) -> None:
+        for path in (reads, crashed):
+            os.utime(path, (at.timestamp(), at.timestamp()))
+
+    touch(passed_at - timedelta(hours=1))  # it crashed before the run that passed
+    assert probes.chart_client_gate(cfg) is None
+    touch(passed_at + timedelta(hours=1))  # it crashed after it, or is still running
+    assert "last ended 'unfinished' for sandbox" in probes.chart_client_gate(cfg)
+    summary_file(cfg, "2026-11-16", "chart-client-170000", verdict=probes.PASSED,
+                 started_at=(passed_at + timedelta(hours=2)).isoformat())
+    assert probes.chart_client_gate(cfg) is None
+
+
+@pytest.mark.parametrize("text", ["{", "[]", '{"environment": "sandbox"}',
+                                  '{"environment": "sandbox", "verdict": "passed", '
+                                  '"started_at": "2026-11-16T15:00:00"}'])
+def test_the_chart_gate_stays_shut_on_a_summary_it_cannot_read(tmp_path, text):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    summary_file(cfg, "2026-11-16", "chart-client-150000", verdict=probes.PASSED,
+                 started_at="2026-11-16T15:00:00+00:00")
+    summary_file(cfg, "2026-11-17", "chart-client-150000").write_text(text)
+    cause = probes.chart_client_gate(cfg)
+    assert "summary.json cannot be read" in cause and "remove that run's folder" in cause
+
+
+def test_a_passed_chart_client_run_opens_the_chart_gate(tmp_path):
+    verdict, _, _, _ = client_run(tmp_path)
+    assert verdict == probes.PASSED
+    assert probes.chart_client_gate(cfg_in(tmp_path, chart_on=True)) is None
 
 
 def test_chart_client_fails_when_the_bot_stops_reading_the_broker(tmp_path):
@@ -304,6 +419,46 @@ def test_chart_client_refuses_a_config_changed_after_the_bot_started(tmp_path):
     lock = live_bot(cfg)
     path = config_file(tmp_path, after=lock)
     assert "changed after the bot started" in refused_client(tmp_path, cfg, path)
+
+
+@pytest.mark.parametrize("exposed", ["position", "first-position", "working-order",
+                                     "broker-position", "broker-order"])
+def test_chart_client_refuses_while_the_bot_has_a_trade_open(tmp_path, exposed):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    path = config_file(tmp_path)
+    live_bot(cfg)
+    Bot(cfg, Clock(), exposed=exposed).write()
+    assert "run this probe while it is flat" in refused_client(tmp_path, cfg, path)
+
+
+def test_chart_client_runs_next_to_an_order_that_is_not_the_bots(tmp_path):
+    verdict, _, _, _ = client_run(tmp_path, exposed="foreign-order")
+    assert verdict == probes.PASSED
+
+
+def test_chart_client_refuses_when_the_bots_last_broker_read_cannot_say(tmp_path):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    path = config_file(tmp_path)
+    live_bot(cfg)
+    bot = Bot(cfg, Clock())
+    bot.write()
+    account = bot.path.parent / cfg.api.account_file
+    api.write_account(account, replace(bot.account, positions=(), orders=(), read_at=T0 - timedelta(
+        seconds=float(CFG.api.account_stale_seconds) + 1)))
+    assert "last broker read is 31 s old" in refused_client(tmp_path, cfg, path)
+    account.unlink()
+    assert "account file cannot be read" in refused_client(tmp_path, cfg, path)
+
+
+def test_chart_client_refuses_when_the_bots_status_cannot_say(tmp_path):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    path = config_file(tmp_path)
+    live_bot(cfg)
+    assert "cannot be read" in refused_client(tmp_path, cfg, path)
+    earlier = Clock()
+    earlier.at = T0 - timedelta(seconds=float(CFG.api.status_stale_seconds) + 1)
+    Bot(cfg, earlier).write()
+    assert "it is unknown whether a trade is open" in refused_client(tmp_path, cfg, path)
 
 
 # --- command line ------------------------------------------------------------------------------

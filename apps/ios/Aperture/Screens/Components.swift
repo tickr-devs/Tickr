@@ -163,7 +163,7 @@ struct ConnectionPrompt: View {
         Text(L10n.Connect.body)
       } actions: {
         NavigationLink { SettingsView() } label: { Text(L10n.Connect.openSettings) }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.action(.primary))
       }
       .rise()
     } else if model.status == nil, let cause = model.fetchError ?? model.response?.unavailableCause {
@@ -179,7 +179,7 @@ struct ConnectionPrompt: View {
 
 /// A label and a value in a small card, used in rows of three.
 struct StatTile: View {
-  /// Smallest scale the value may shrink to before it truncates.
+  /// Smallest scale a value may shrink to before it truncates (also used by the watching card).
   static let minimumScale = 0.7
 
   let label: LocalizedStringResource
@@ -187,20 +187,17 @@ struct StatTile: View {
   var color: Color = Palette.textPrimary
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      CardLabel(label)
-      Text(verbatim: value)
-        .font(Tokens.Typography.bodyMono.bold())
-        .foregroundStyle(color)
-        .contentTransition(.numericText())
-        .lineLimit(1)
-        .minimumScaleFactor(Self.minimumScale)
+    MetricChip(label, value: value, tone: tone, color: color)
+  }
+
+  /// The chip's rail: the value's colour when it carries a meaning, else none.
+  private var tone: Tone? {
+    switch color {
+    case Palette.profitText: return .profit
+    case Palette.lossText: return .loss
+    case Palette.warningText: return .warning
+    default: return nil
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, Tokens.Space.m)
-    .padding(.vertical, Tokens.Space.s)
-    .apertureCard(radius: Tokens.Radius.large)
-    .accessibilityElement(children: .combine)
   }
 }
 
@@ -268,6 +265,89 @@ struct NoticeOverlay: ViewModifier {
     case .info: return Palette.infoText
     case .success: return Palette.profitText
     case .failure: return Palette.lossText
+    }
+  }
+}
+
+/// A position's protection as a compact shield glyph: green when the broker stop is verified, red
+/// otherwise, pulsing once per broker read that still finds it unprotected. Its hint names the
+/// symbol and the state.
+struct StopGlyph: View {
+  let state: StopState
+  let symbol: String
+  /// The bot's last broker read, the event the pulse follows.
+  var read: Date?
+
+  /// Symbols of the stop states, and of a stop level next to a price.
+  static let verifiedSymbol = "checkmark.shield.fill"
+  static let pendingSymbol = "hourglass"
+  static let missingSymbol = "xmark.shield.fill"
+  static let unknownSymbol = "exclamationmark.shield.fill"
+  static let levelSymbol = "shield.lefthalf.filled"
+
+  var body: some View {
+    StateGlyph(glyph, tone: tone, label: Text(verbatim: symbol + Format.separator + Board.stopStateTitle(state)),
+      live: !state.isProtected, event: read, style: .compact)
+  }
+
+  private var glyph: String {
+    switch state {
+    case .verified: return Self.verifiedSymbol
+    case .pending: return Self.pendingSymbol
+    case .missing: return Self.missingSymbol
+    case .unknown: return Self.unknownSymbol
+    }
+  }
+
+  private var tone: Tone {
+    switch state {
+    case .verified: return .profit
+    case .pending: return .warning
+    case .missing, .unknown: return .loss
+    }
+  }
+}
+
+/// A settings row's leading icon, as iOS settings draw them: a white symbol on a small solid tile
+/// in the row's tone. Decorative: the row's own label carries the meaning.
+struct SettingsIcon: View {
+  let systemImage: String
+  let tone: Tone
+
+  init(_ systemImage: String, tone: Tone) {
+    self.systemImage = systemImage
+    self.tone = tone
+  }
+
+  var body: some View {
+    Image(systemName: systemImage)
+      .font(Tokens.Typography.caption.weight(.semibold))
+      .foregroundStyle(Palette.sheen)
+      .frame(width: Tokens.Size.iconButtonCompact, height: Tokens.Size.iconButtonCompact)
+      .background(tone.fill, in: RoundedRectangle(cornerRadius: Tokens.Radius.small, style: .continuous))
+      .accessibilityHidden(true)
+  }
+}
+
+/// A form row with a `SettingsIcon` in front of its label and any value view after it.
+struct SettingsRow<Value: View>: View {
+  let label: LocalizedStringResource
+  let systemImage: String
+  let tone: Tone
+  let value: Value
+
+  init(_ label: LocalizedStringResource, systemImage: String, tone: Tone, @ViewBuilder value: () -> Value) {
+    self.label = label
+    self.systemImage = systemImage
+    self.tone = tone
+    self.value = value()
+  }
+
+  var body: some View {
+    LabeledContent {
+      value
+    } label: {
+      Label { Text(label) } icon: { SettingsIcon(systemImage, tone: tone) }
     }
   }
 }

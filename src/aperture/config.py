@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import tomllib
+import warnings
 from dataclasses import dataclass, fields
 from decimal import Decimal
 from pathlib import Path
@@ -26,6 +27,38 @@ PLAIN_FOLDER = re.compile(r"^[A-Za-z0-9_-]+$")
 
 class ConfigError(ValueError):
     """The configuration is invalid; the bot must not start."""
+
+
+class RenamedKeyWarning(UserWarning):
+    """A config key was read under its old name; rename it in `config/bot.toml`."""
+
+
+# Keys renamed after release: (section, old name) -> new name. An old local
+# `config/bot.toml` keeps loading with a warning; giving both names is refused. Display keys
+# only: a renamed risk or order number stays a loud refusal. Drop an entry once the owner's
+# file uses the new name.
+RENAMED_KEYS: dict[tuple[str, str], str] = {
+    ("api", "watching_check_decimal_places"): "check_decimal_places",
+}
+
+
+def apply_renamed_keys(name: str, table: Any, found: list[str]) -> Any:
+    """Return `table` with old key names moved to their new names. Each rename is appended to
+    `found` as `[section] old -> new` and warned about; giving both names is refused."""
+    if not isinstance(table, dict):
+        return table
+    table = dict(table)
+    for (section, old), new in RENAMED_KEYS.items():
+        if section != name or old not in table:
+            continue
+        if new in table:
+            raise ConfigError(f"[{name}] has both {old} (old name) and {new}; keep only {new}")
+        rename = f"[{name}] {old} -> {new}"
+        warnings.warn(f"old config key name {rename}: rename it in config/bot.toml",
+                      RenamedKeyWarning, stacklevel=2)
+        found.append(rename)
+        table[new] = table.pop(old)
+    return table
 
 
 @dataclass(frozen=True)
@@ -125,6 +158,7 @@ class ApiConfig:
     account_stale_seconds: Decimal
     commands_dir: str
     status_stale_seconds: Decimal
+    broker_read_warn_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
     max_pending_commands: int
@@ -132,12 +166,15 @@ class ApiConfig:
     status_recent_commands: int
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
+    observer_trades_max_rows: int
     watching_max_rows: int
     watching_closeness_decimal_places: int
-    watching_check_decimal_places: int
+    check_decimal_places: int
     flow_change_pct_decimal_places: int
     performance_max_range_days: int
     performance_decimal_places: int
+    price_after_minutes: tuple[int, ...]
+    after_r_decimal_places: int
 
 
 @dataclass(frozen=True)
@@ -293,6 +330,8 @@ class Config:
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
+    # Old key names read under their new names (`[section] old -> new`); preflight reports them.
+    renamed_keys: tuple[str, ...] = ()
 
     @property
     def environment_name(self) -> str:
@@ -403,7 +442,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if missing:
         raise ConfigError(f"missing sections: {', '.join(missing)}")
 
-    built = {name: build_section(name, data[name], cls) for name, cls in _SECTIONS.items()}
+    renamed: list[str] = []
+    built = {name: build_section(name, apply_renamed_keys(name, data[name], renamed), cls)
+             for name, cls in _SECTIONS.items()}
 
     envs_raw = data["environments"]
     if not isinstance(envs_raw, dict) or not envs_raw:
@@ -427,6 +468,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             "[market_data] candidate_subscriptions plus observer_subscriptions must leave "
             "stream_reserved_symbols free within stream_max_symbols"
         )
+    if built["observers"].watching_seconds <= 0:
+        raise ConfigError("[observers] watching_seconds must be above 0")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
@@ -460,15 +503,25 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.webull_enabled:
         for name, env in environments.items():
             check_chart_slice(chart, name, env)
+    orders, api = built["orders"], built["api"]
+    if not orders.reconcile_interval_seconds < api.broker_read_warn_seconds \
+            < orders.broker_read_max_age_seconds:
+        raise ConfigError("[api] broker_read_warn_seconds must be above [orders] "
+                          "reconcile_interval_seconds and below [orders] "
+                          "broker_read_max_age_seconds")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
+    repeated = sorted({name for name in strategy.observers if strategy.observers.count(name) > 1})
+    if repeated:
+        raise ConfigError(f"[strategy] observers lists {', '.join(repeated)} more than once")
 
     return Config(
         **built,
         environments=environments,
         root=Path(root) if root is not None else path.resolve().parent.parent,
         digest=hashlib.sha256(raw_bytes).hexdigest(),
+        renamed_keys=tuple(renamed),
     )
 
 

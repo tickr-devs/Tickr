@@ -97,6 +97,12 @@ public final class AppModel {
 
   // Navigation (the sidebar selection lives here so any card can jump to a section).
   var section: AppSection = .overview
+  /// Whether this launch's opening animation (BrandOpening) has played: once per launch, not on
+  /// reopening the window.
+  var openingPlayed = false
+  /// Centre of Overview's header mark on screen (global coordinates), where the opening lands.
+  /// Observed, so the opening follows the mark while the header settles; only the opening reads it.
+  var overviewMarkCentre: CGPoint?
 
   // History.
   public private(set) var days: [DaySummary] = []
