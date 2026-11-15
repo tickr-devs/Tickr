@@ -13,7 +13,7 @@ struct EnvironmentSection: View {
   var body: some View {
     Section {
       SettingsRow(L10n.Settings.environment, systemImage: Self.symbol, tone: .warning) {
-        StatusPill(verbatim: status.environment.capitalized, tone: .warning)
+        StatusPill(verbatim: ApiText.environment(status.environment), tone: .warning)
       }
     } header: {
       Text(L10n.Settings.environment)
@@ -66,11 +66,9 @@ private struct SessionBar: View {
   static let secondsPerMinute = 60.0
   /// Height of the bar, in points.
   static let height: CGFloat = 18
-  /// Seconds between moves of the cursor.
-  static let tick: TimeInterval = 1
 
   var body: some View {
-    TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+    TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         HStack {
           Text(verbatim: Format.clock(context.date))

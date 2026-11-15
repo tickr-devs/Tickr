@@ -14,6 +14,7 @@ renders the job files, reads them, and loads them. Manual trades and the Sandbox
 
 The bot job has one starter besides its schedule: near the flatten time the watchdog may start it once a day (see "Watchdog", `watchdog-restarted-bot`).
 | test-alert | `local.tickr.test-alert` | only on `launchctl kickstart` (grants the Messages permission, see below) | never |
+| nightly-fetch | `local.tickr.nightly-fetch` | `[runtime] nightly_fetch_start_local` on `launch_weekdays` (after the close); stops itself before the next open | never |
 | api | `local.tickr.api` | at login, always on, loopback only | launchd keeps it alive |
 
 Times in `[runtime]` are the **Mac's local time**. The calendar decides whether there is a
@@ -89,7 +90,10 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 6. The iMessage recipient variable named by `[alerts] imessage_recipient_variable` is set
    (cause `alert-recipient-missing`; blocks the start, because the phone is the alert channel
    that reaches you away from the Mac). Presence only, never the value.
-7. Broker token folder `<data_dir>/<token_dir>` exists.
+7. Broker token folder `<data_dir>/<token_dir>` exists (cause `token-dir-missing`) and is closed to
+   other accounts on the machine, no group or other permission bits (cause `token-dir-open`;
+   `chmod 700` it). The SDK writes its token file there with default permissions. Only POSIX mode
+   bits are checked, not macOS ACLs, which is enough on a single-owner Mac.
 7b. No operator stop marker (cause `stopped-by-operator`): a stop-bot command from the apps
    left `<data_dir>/<[runtime] stop_marker_file>`; `tickr clear-stop` removes it.
 7c. The database, when it exists, holds runs of this environment only (cause
@@ -129,8 +133,9 @@ All checks are reported; the first failure is the recorded cause.
    **Deadline:** `TICKR_IMESSAGE_TO` must be in this file before the first preflight run
    (08:30 Mac time on Monday with the default `[runtime] preflight_start_local`). Without it
    preflight fails with `alert-recipient-missing` and the bot job does not start the bot.
-3. Data and token folders: `mkdir -p data/webull-token-sandbox` (`[environments.sandbox]
-   token_dir`; `data/webull-token-production` before Production).
+3. Data and token folders: `mkdir -p data && mkdir -m 700 data/webull-token-sandbox`
+   (`[environments.sandbox] token_dir`; `data/webull-token-production` before Production). A folder
+   that already exists keeps its mode: `chmod 700 data/webull-token-sandbox` instead.
 4. Alerts: sign in to iMessage in the Messages app on this Mac (Messages > Settings > iMessage)
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m tickr.runtime alert preflight-failed "test"` once. You should get a
@@ -140,11 +145,11 @@ All checks are reported; the first failure is the recorded cause.
    put it there under that name). Open it once and allow notifications when it asks. When the
    app is missing, notifications for it are off, or it fails, the same notification comes from
    `osascript` instead, under "Script Editor" (allow those in System Settings > Notifications
-   too), so an alert is never lost; a slow app can at worst show it twice. The bot waits at most `[alerts] mac_app_timeout_seconds` for the app. The first iMessage send asks to let Terminal control Messages: allow it. This only
+   too), so an alert is never lost; a slow app can at worst show it twice. Both channels are sent in the background, so the bot's loop does not wait for the app (which gets at most `[alerts] mac_app_timeout_seconds`), `osascript` or Messages. The first iMessage send asks to let Terminal control Messages: allow it. This only
    covers Terminal; the launchd jobs need their own permission (see "Alerts from launchd"
-   below). The first JSON line is the Mac notification (`"delivery": "shown"`,
-   `"pending": ["imessage"]`); a second line with `"channel": "imessage"` follows with the
-   iMessage result. A failed send is never retried; the next alert tries again.
+   below). The first JSON line says the alert is on its way (`"delivery": "sending"`,
+   `"pending": ["macos", "imessage"]`); one line per channel follows (`"channel": "macos"`,
+   `"channel": "imessage"`) with its result (`"delivery": "shown"` or `"failed"`). A failed send is never retried; the next alert tries again.
 5. Run preflight by hand: `.venv/bin/python -m tickr.runtime preflight; echo $?`.
 
 ## Install the jobs
@@ -157,11 +162,27 @@ mkdir -p ~/Library/Logs/Tickr
     --env-file ~/.config/tickr/env \
     --log-dir ~/Library/Logs/Tickr \
     --out data/launchd
-# Read the five files in data/launchd, then:
+# Read the six files in data/launchd, then:
 for job in preflight bot watchdog api test-alert; do
   cp data/launchd/local.tickr.$job.plist ~/Library/LaunchAgents/
   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.$job.plist
 done
+```
+
+`render-launchd` refuses (exit 2) when the env file is missing or has any group or other
+permission bit: `chmod 600` it first.
+
+The nightly fetch is loaded on its own, and only when no other history fetch is running on the
+Mac: both draw on the same Webull request budget. Its first run seeds `nightly/current/` from a
+finished `data/backtest` folder; until then the Lab replay refuses (its folder does not exist).
+Run the seed once by hand, outside market hours, then load the job:
+
+```sh
+set -a; . ~/.config/tickr/env; set +a
+.venv/bin/python -m tickr.backtest --config config/bot.toml nightly \
+    --out data/nightly --seed data/backtest
+cp data/launchd/local.tickr.nightly-fetch.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.nightly-fetch.plist
 ```
 
 After changing `[runtime]` values, render again, then
@@ -237,10 +258,20 @@ stopped, after the close or on a non-trading day:
   a `.gz` that is unreadable or holds other bytes (look at both, remove the wrong one).
 - Chart cache (`chart/<env>/<SYMBOL>/<date>.json`, written by the API): day files older than
   `[chart] cache_max_age_days` are deleted (the dry run counts them); symbol folders stay.
+- History cache (`history/<env>/<date>/`, the bot's prior-session bars): day folders older than
+  `[market_data] history_cache_max_age_days` are deleted whole; the bot only reads today's
+  folder. A folder holding anything but cache files (`<SYMBOL>-<n>.jsonl`, `.partial`), a
+  symlink or a subfolder is kept with a printed cause.
+- Old archives: only when `[run] maintain_archive_max_age_days` is above 0 (shipped 0: never).
+  A capture or decision day folder older than that many days and outside the last
+  `maintain_keep_sessions` sessions, whose files are all `*.jsonl.gz`, is deleted, under the same guards as archiving (open trade, missing `day-end`). Captured days
+  feed replay, research and the advisor: deleting them loses that evidence for good.
+- Both delete steps are planned before anything is archived, so the dry run lists exactly what
+  `--apply` deletes, and today is never touched.
 - `--apply` also runs a SQLite WAL checkpoint; it deletes no row and never vacuums.
 - Refused (exit 3, nothing touched) while the bot holds its lock, when the calendar cannot count
   the sessions, or when the database is missing or has another schema. Exit 1 means one file
-  failed to archive: the run stopped there and that file is left as it was.
+  failed to archive or delete: the run stopped there and what is left stays for the next run.
 
 ## The Mac must be awake
 
@@ -290,6 +321,13 @@ A sell whose send outcome is unknown is not given up on while the account holds 
 than the bot's orders explain: it may have filled. If the alert stays, look in the Webull app.
 If the shares were sold there by hand and the bot's order never arrived, the bot keeps waiting
 for it and the rest of the position may have no stop: close it in the Webull app.
+
+### `quantity-mismatch`
+
+When the account holds more of the bot's symbol than its orders explain (shares bought by hand),
+an exit or the flatten sells only the bot's own shares; the trade then stays `exiting` until the
+foreign shares are gone, so entries stay blocked, `stop-bot` is refused and the protection busy
+cause says "exit in progress": sell or explain the extra shares in the Webull app.
 
 ### `refused: the database holds runs of environment ...`
 

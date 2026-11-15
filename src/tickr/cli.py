@@ -360,9 +360,10 @@ def _explain(args: argparse.Namespace) -> int:
 
 
 def _maintain(args: argparse.Namespace) -> int:
-    """Archive finished days' capture and decision files, checkpoint the database (see
+    """Archive finished days' capture and decision files, prune caches and old archives,
+    checkpoint the database (see
     `tickr.maintain`). Holds the bot's lock: refused while the bot runs. Dry run unless
-    --apply. Exit 0 done, 1 an archive failed, 3 refused."""
+    --apply. Exit 0 done, 1 an archive or delete failed, 3 refused."""
     from tickr import maintain
 
     cfg = config_module.load(args.config)
@@ -560,6 +561,12 @@ def _check_config(path: Path) -> int:
     print(f"environment: {cfg.environment_name}")
     print(f"config digest: {cfg.digest}")
     print(f"active strategy: {cfg.strategy.active}")
+    from tickr.runtime.launchd import check_lab_folder
+    try:
+        check_lab_folder(cfg)
+    except config_module.ConfigError as exc:
+        print(f"lab refused: {exc}")
+        return 1
     print(f"trading gate: {'open' if gate.open else 'closed'} ({gate.cause})")
     from tickr.observers.errors import ObserverError
     from tickr.observers.loader import load_active
@@ -599,7 +606,8 @@ def main(argv: list[str] | None = None) -> int:
                                     "today for a symbol, with every check")
     explain_parser.add_argument("symbol")
     maint = sub.add_parser("maintain", help="with the bot stopped: gzip finished days' capture "
-                           "and decision files, checkpoint the database (dry run by default)")
+                           "and decision files, prune caches and old archives, checkpoint the "
+                           "database (dry run by default)")
     maint.add_argument("--apply", action="store_true", help="act; without it only print")
     fence = sub.add_parser("clear-fence", help="clear an operator fence after looking at it")
     fence.add_argument("name")

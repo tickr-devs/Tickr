@@ -107,12 +107,17 @@ public struct APIClient: Sendable {
   static let statusPath = "/status"
   static let pendingPath = "/commands/pending"
   static let settingsPath = "/settings"
+  static let configPath = "/config"
   static let daysPath = "/days"
   static let barsPath = "/bars"
   static let accountPath = "/account"
   static let jobsPath = "/jobs"
   static let journalPath = "/journal"
   static let labReplayPath = "/lab/replay"
+  /// Remote port only: redeem a pairing link's one-time code for the bearer token.
+  static let pairPath = "/pair"
+  /// Body key of the pairing code.
+  static let codeKey = "code"
   static let observersPath = "/observers"
   static let decisionsPath = "/decisions"
   static let skippedPath = "/skipped"
@@ -230,9 +235,22 @@ public struct APIClient: Sendable {
     return try await perform(request(path: Self.labReplayPath, body: body), expect: Self.accepted)
   }
 
+  /// Redeem a pairing link's one-time code at the Mac's HTTPS address for the bearer token the
+  /// phone keeps from then on. Sent without a token; the code works once, before it expires, and
+  /// a refused code is thrown as `APIError.refused` (401 `unauthorized`).
+  public func redeemPairing(code: String) async throws -> PairedV1 {
+    let body = try JSONSerialization.data(withJSONObject: [Self.codeKey: code], options: [.sortedKeys])
+    return try await perform(request(path: Self.pairPath, body: body), expect: Self.ok)
+  }
+
   /// Risk limits and session times from the bot's config, as the API loaded them.
   public func settings() async throws -> SettingsV1 {
     try await perform(request(path: Self.settingsPath, body: nil), expect: Self.ok)
+  }
+
+  /// The bot's configuration file as it is on disk now, read-only, and whether it loads.
+  public func config() async throws -> ConfigV1 {
+    try await perform(request(path: Self.configPath, body: nil), expect: Self.ok)
   }
 
   /// Every New York date with records, newest first.
