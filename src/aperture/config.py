@@ -78,6 +78,7 @@ class OrdersConfig:
     reconcile_interval_seconds: Decimal
     broker_read_max_age_seconds: Decimal
     unknown_absent_reads: int
+    stop_held_proof_seconds: Decimal
 
 
 @dataclass(frozen=True)
