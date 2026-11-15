@@ -67,6 +67,7 @@ half_days_enabled = false
 
 [orders]
 # Prefix of bot client order ids; read by orders and reconciliation to recognise own orders.
+# Kept "ap-" after the rename to Tickr on purpose: changing it would orphan orders placed under the old prefix.
 client_order_id_prefix = "ap-"
 # Prefix of probe client order ids; leftovers with it block the bot start; read by runtime.
 probe_client_order_id_prefix = "probe-"
