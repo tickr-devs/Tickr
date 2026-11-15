@@ -1395,6 +1395,7 @@ class StreamSession:
         self._send_unsubscribe: Callable[[list[str]], None] | None = None
         self._reconnect: Callable[[], None] | None = None
         self._generation = 0  # counts connects and disconnects: an optional send checks it
+        self._optional_failed = False  # an optional send failed on this connection
         self._connected = False
         self._up = False
 
@@ -1491,25 +1492,28 @@ class StreamSession:
     def subscribe_optional(self, symbols: Iterable[str], listener: QuoteListener,
                            budget_reserve: int) -> None:
         """Subscribe symbols nobody trades on (observers) without ever disturbing the
-        connection: only while up and in sync, only within `max_symbols`, and only while at
-        least `budget_reserve` subscribe requests stay free for the required symbols. A
-        failed send is reported to `on_error` and raised as MarketDataError; the symbols are
-        not added and there is no reconnect. The provider may still have taken them (its
-        answer was lost); they then hold slots we do not count until the next connection,
-        and a provider 417 for the required symbols falls back to the reconnect."""
+        connection: only while up and in sync, only within `max_symbols` counting every
+        symbol the provider may hold, only while at least `budget_reserve` subscribe requests
+        stay free for the required symbols, and never again on a connection where an optional
+        send failed. A failed send is reported to `on_error` and raised as MarketDataError,
+        without a reconnect; its symbols may be held by the provider (the answer was lost), so
+        they stay counted as sent and the next required sync unsubscribes them as stale."""
         with self._sync_lock:  # no _sync runs between the checks and the send
             with self._lock:
                 if self._listener is not listener:
                     raise MarketDataError("optional subscribe needs the bound stream listener")
                 if not self._up:
                     raise MarketDataError("optional subscribe needs a live stream in sync")
+                if self._optional_failed:
+                    raise MarketDataError("an optional send failed on this connection")
                 added = set(symbols) - self._symbols
                 if not added:
                     return
-                if len(self._symbols) + len(added) > self._max_symbols:
+                held = self._symbols | self._sent
+                if len(held | added) > self._max_symbols:
                     raise SubscriptionLimit(added, self._max_symbols, by_provider=False)
                 generation = self._generation
-            self._send_optional(True, sorted(added), budget_reserve)
+            self._send_optional(True, sorted(added), budget_reserve, generation)
             with self._lock:
                 if self._generation != generation:  # reconnected meanwhile: not on this one
                     raise MarketDataError("optional subscribe raced a reconnect: dropped")
@@ -1518,25 +1522,33 @@ class StreamSession:
 
     def unsubscribe_optional(self, symbols: Iterable[str], budget_reserve: int) -> None:
         """Drop symbols added by `subscribe_optional`, with the same guarantees. They leave
-        the desired set whatever happens; on a failed send the provider may keep streaming
-        them until the next connection (their quotes are ignored)."""
+        the desired set whatever happens; when the request is refused or fails they stay
+        counted as sent, so the next required sync unsubscribes them as stale."""
         with self._sync_lock:
             with self._lock:
-                gone = sorted(set(symbols) & self._symbols)
+                gone = set(symbols) & self._symbols
                 self._symbols.difference_update(gone)
-                sent = sorted(set(gone) & self._sent)
-                self._sent.difference_update(sent)
-                up = self._up
+                sent = sorted(gone & self._sent)
+                up, generation = self._up, self._generation
             if sent and up:
-                self._send_optional(False, sent, budget_reserve)
+                self._send_optional(False, sent, budget_reserve, generation)
+                with self._lock:
+                    if self._generation == generation:
+                        self._sent.difference_update(sent)
 
-    def _send_optional(self, subscribe: bool, symbols: list[str], budget_reserve: int) -> None:
+    def _send_optional(self, subscribe: bool, symbols: list[str], budget_reserve: int,
+                       generation: int) -> None:
         route = STREAM_SUBSCRIBE_PATH if subscribe else STREAM_UNSUBSCRIBE_PATH
         if not self._budget.can_take(route, budget_reserve + 1):
             raise MarketDataError(f"optional {route}: request budget kept for required symbols")
         try:
             self._send(subscribe, symbols)
         except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK: never a reconnect here
+            with self._lock:
+                if self._generation == generation:
+                    self._optional_failed = True
+                    if subscribe:  # the provider may hold them: count them, clean up later
+                        self._sent.update(symbols)
             self._on_error("subscribe-optional" if subscribe else "unsubscribe-optional", exc)
             raise MarketDataError(f"optional {route} failed ({type(exc).__name__})") from None
 
@@ -1570,6 +1582,7 @@ class StreamSession:
         with self._lock:
             self._connected, self._up, self._sent = True, False, set()
             self._generation += 1
+            self._optional_failed = False
         if not self._sync_or_reconnect(raise_error=False):
             return
         with self._lock:
@@ -1582,6 +1595,7 @@ class StreamSession:
             self._connected = self._up = False
             self._sent = set()
             self._generation += 1
+            self._optional_failed = False
         if was or detail:
             self._notify(False, detail)
 

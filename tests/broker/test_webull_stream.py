@@ -545,3 +545,40 @@ def test_a_failed_optional_unsubscribe_drops_the_symbols_without_reconnecting():
     s.on_disconnected("blip")
     s.on_connected()
     assert sent[-1] == ("sub", ["AAA"])
+
+
+def test_after_a_failed_optional_send_its_symbols_are_cleaned_up_by_the_next_sync():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    good = s._send_subscribe
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    s._send_subscribe = lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    with pytest.raises(MarketDataError):  # no more optional sends on this connection
+        s.subscribe_optional(["OB2"], rec, 0)
+    s.subscribe(["BBB"], rec)  # the next required sync unsubscribes the maybe-held symbol
+    assert ("unsub", ["OBS"]) in sent and sent[-1] == ("sub", ["BBB"]) and s.up
+    s.on_disconnected("blip")
+    s.on_connected()
+    s.subscribe_optional(["OB2"], rec, 0)  # a fresh connection allows them again
+    assert sent[-1] == ("sub", ["OB2"])
+
+
+def test_a_refused_optional_unsubscribe_stays_counted_until_a_sync_removes_it():
+    s, sent, _, _ = session(limit=3, max_symbols=2)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    s.subscribe_optional(["OBS"], rec, 0)
+    with pytest.raises(MarketDataError):
+        s.unsubscribe_optional(["OBS"], 5)  # refused for the reserve: nothing sent
+    with pytest.raises(SubscriptionLimit):  # OBS still holds the provider's second slot
+        s.subscribe_optional(["OB2"], rec, 0)
+    assert ("unsub", ["OBS"]) not in sent and s.symbols == {"AAA"}

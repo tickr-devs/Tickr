@@ -183,6 +183,7 @@ class ObserversConfig:
     max_observers: int
     max_evaluation_seconds: Decimal
     queue_size: int
+    watching_seconds: Decimal
     decisions_dir: str
 
 
