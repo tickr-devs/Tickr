@@ -20,6 +20,7 @@ struct PositionRowTests {
 }
 
 @Suite("When the newest captured bar is still the current price")
+@MainActor
 struct BarCurrentTests {
   /// The server's `status_stale_seconds` in these tests.
   static let stale: TimeInterval = 15
