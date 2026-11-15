@@ -14,7 +14,7 @@ struct DecisionsCard: View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       CardLabel(ChartText.decisions)
       if let decisions {
-        let all = decisions.decisions.reversed().map { $0 }
+        let all = Array(decisions.decisions.reversed())
         let key = all.filter { $0.action == .enter || $0.action == .exit }
         let shown = showsAll ? all : key
         if all.isEmpty {
@@ -23,7 +23,7 @@ struct DecisionsCard: View {
           note(ChartText.noEntries)
         }
         LazyVStack(alignment: .leading, spacing: Tokens.Space.s) {
-          ForEach(Array(shown.enumerated()), id: \.offset) { _, decision in
+          ForEach(shown, id: \.self) { decision in
             DecisionRow(decision: decision)
               .transition(.opacity.combined(with: .move(edge: .top)))
           }
