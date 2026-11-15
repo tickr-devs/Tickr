@@ -120,7 +120,7 @@ final class ApertureUITests: XCTestCase {
     toggle.click()
     // A check row reads as one accessibility element, so its rule is part of a longer label.
     let check = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", Self.decisionRule))
-    XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout))
+    XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "decision check\n\(app.debugDescription)")
   }
 
   @MainActor
