@@ -92,6 +92,7 @@ public struct APIClient: Sendable {
   static let daysPath = "/days"
   static let barsPath = "/bars"
   static let accountPath = "/account"
+  static let jobsPath = "/jobs"
   static let observersPath = "/observers"
   static let decisionsPath = "/decisions"
   static let skippedPath = "/skipped"
@@ -187,6 +188,11 @@ public struct APIClient: Sendable {
   }
 
   /// Risk limits and session times from the bot's config, as the API loaded them.
+  /// What runs on its own on the Mac (reconcile, backup, launchd jobs) and today's session times.
+  public func jobs() async throws -> JobsV1 {
+    try await perform(request(path: Self.jobsPath, body: nil), expect: Self.ok)
+  }
+
   public func settings() async throws -> SettingsV1 {
     try await perform(request(path: Self.settingsPath, body: nil), expect: Self.ok)
   }
