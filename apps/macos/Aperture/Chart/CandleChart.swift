@@ -386,6 +386,11 @@ struct CandleChart: View {
   }
 
   var xDomain: ClosedRange<Date> { firstStart...lastEnd }
+  /// The stretch on screen: the whole day, or the zoomed window.
+  var windowDomain: ClosedRange<Date> {
+    guard zoomed else { return xDomain }
+    return windowStart...windowStart.addingTimeInterval(visibleLength)
+  }
   var zoomed: Bool { viewport.visible != nil }
 
   var scrollPosition: Binding<Date> {
@@ -515,11 +520,7 @@ private struct SharedAxis: ViewModifier {
 
   func body(content: Content) -> some View {
     let pointer = chart.pointerModel
-    content
-      .chartXScale(domain: chart.xDomain)
-      .chartScrollableAxes(chart.zoomed ? .horizontal : [])
-      .chartXVisibleDomain(length: chart.visibleLength)
-      .chartScrollPosition(x: chart.scrollPosition)
+    scrolling(content)
       .chartXSelection(value: chart.selection)
       .onContinuousHover { phase in
         switch phase {
@@ -533,6 +534,26 @@ private struct SharedAxis: ViewModifier {
           Crosshair(pointer: pointer, candles: chart.plot.candles, pane: pane, showsTime: showsTime, proxy: proxy)
         }
       }
+  }
+}
+
+extension SharedAxis {
+  /// Only the price pane scrolls; the panes below draw the window it shows. A scrolling chart
+  /// is an AppKit scroll view, and three or four of them bound to one scroll position set each
+  /// other's position inside a layout pass until AppKit threw ("needs another Update
+  /// Constraints in Window pass"), on opening the chart with several panes.
+  @ViewBuilder func scrolling(_ content: Content) -> some View {
+    if pane == .price {
+      content
+        .chartXScale(domain: chart.xDomain)
+        .chartScrollableAxes(chart.zoomed ? .horizontal : [])
+        .chartXVisibleDomain(length: chart.visibleLength)
+        .chartScrollPosition(x: chart.scrollPosition)
+    } else {
+      content
+        .chartXScale(domain: chart.windowDomain)
+        .chartPlotStyle { $0.clipped() }
+    }
   }
 }
 
