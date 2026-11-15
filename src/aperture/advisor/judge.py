@@ -2,10 +2,11 @@
 run folder> --results <backtest results of the proposal>`.
 
 The advisor run (backtest mode) recorded in `tuning.json` the window and the hold-out start of
-the base backtest it learned from, and the base's hold-out numbers. The candidate is any other
-strategy version backtested on the same window with the same hold-out split: the proposed
+the base backtest it learned from, its pool (the data: symbol-days, sessions, symbols, replayed
+and skipped counts) and the base's hold-out numbers. The candidate is any other strategy
+version backtested on the same data, window and hold-out split: the proposed
 values, or a module written from the advisor's idea. Only the hold-out decides; the fitting
-period is shown for contrast and marked as no evidence. Mismatched windows, splits or a
+period is shown for contrast and marked as no evidence. Mismatched data, windows, splits or a
 candidate equal to the base are refused. Writes `judge-<name>-v<version>.md` into the run
 folder. Every number is SIMULATED.
 """
@@ -70,6 +71,10 @@ def judge(run_folder: Path, results: Path) -> str:
         raise AdvisorError(f"{results} splits its hold-out at {candidate.holdout_starts}, the "
                            f"advisor's at {tuning['holdout_starts']}: set the same "
                            "holdout_percent")
+    pool = candidate.report.get("pool")
+    if not pool or pool != tuning.get("pool"):
+        raise AdvisorError(f"{results} ran on other data (pool {pool}) than the advisor's base "
+                           f"(pool {tuning.get('pool')}): rerun both on the same fetch")
     if identity == tuning["base"]:
         raise AdvisorError(f"{results} is the base {identity} itself")
     split = candidate.report["holdout"]

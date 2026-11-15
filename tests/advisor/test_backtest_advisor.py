@@ -6,6 +6,7 @@ import csv
 import json
 import shutil
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -43,10 +44,12 @@ def holdout(trades, low, high):
 
 
 def write_results(folder: Path, strategy="price-action-v1", version="1", hold_low="-0.30",
-                  hold_high="0.10", starts=HOLD_DAY) -> Path:
+                  hold_high="0.10", starts=HOLD_DAY, symbols=2) -> Path:
     folder.mkdir(parents=True)
     report = {"label": "simulated", "strategy": strategy, "version": version,
               "window": [FIT_DAYS[0].isoformat(), HOLD_DAY.isoformat()],
+              "pool": {"symbol_days": 4, "sessions": 4, "symbols": symbols,
+                       "replayed_symbol_days": 4, "skipped": {}},
               "holdout": {"starts": starts.isoformat(),
                           "before": holdout(6, "-0.5", "0.4"),
                           "holdout": holdout(2, hold_low, hold_high)}}
@@ -194,6 +197,9 @@ def test_judge_compares_only_the_holdout(tmp_path):
     shifted = write_results(tmp_path / "shifted", version="3", starts=date(2026, 9, 3))
     with pytest.raises(AdvisorError, match="splits its hold-out at 2026-09-03"):
         judge(result.folder, shifted)
+    other_data = write_results(tmp_path / "other-data", version="4", symbols=3)
+    with pytest.raises(AdvisorError, match="ran on other data"):
+        judge(result.folder, other_data)
     assert judge_main(["--run", str(tmp_path / "nowhere"), "--results", str(candidate)]) == 2
 
 
@@ -203,3 +209,39 @@ def test_bucket_edges_must_increase(tmp_path):
         "backtest_excursion_edges_r = [0, 0.5, 1, 2, 3]", "backtest_excursion_edges_r = [1, 0]"))
     with pytest.raises(config_module.ConfigError, match="strictly increasing"):
         config_module.load(cfg_path)
+
+
+def test_reads_what_the_real_backtest_writes(tmp_path):
+    """Contract with aperture.backtest: its own writers produce the files the advisor reads."""
+    from aperture.backtest.report import write_report
+    from aperture.backtest.settings import load_settings as load_backtest
+    from aperture.backtest.universe import PoolEntry
+    from aperture.replay.engine import ExitReason, ReplayResult, SimulatedTrade
+    from aperture.replay.report import write_all
+
+    days = [*FIT_DAYS, date(2026, 9, 4), HOLD_DAY, date(2026, 10, 2)]
+    trades = []
+    for day in days:
+        entry = datetime(day.year, day.month, day.day, 14, 0, tzinfo=UTC)
+        for minutes, price, reason in ((5, "9.5", ExitReason.STOP),
+                                       (60, "11", ExitReason.FLATTEN)):
+            trades.append(SimulatedTrade(
+                "price-action-v1", "1", "ABC", day, "breakout", entry - M1, entry,
+                Decimal(10), Decimal("9.5"), entry + minutes * M1, Decimal(price), reason,
+                minutes, Decimal(10), Decimal("10.1")))
+    result = ReplayResult("price-action-v1", "1", tuple(trades), (), {}, len(days), 0)
+    pool = [PoolEntry(d, 1, "ABC", Decimal(9), Decimal(10), Decimal(20), Decimal(10**8))
+            for d in days]
+    cfg = make_root(tmp_path)
+    replay = load_settings(ROOT / "config" / "replay.toml")
+    results = tmp_path / "results"
+    write_all(result, results, replay.output_decimal_places)
+    write_report(result, pool, [], len(days), [], cfg,
+                 load_backtest(ROOT / "config" / "backtest.toml"), replay, results)
+    starts = json.loads((results / "report.json").read_text())["holdout"]["starts"]
+    advised = run_backtest_advisor(cfg, results, write_minutes(tmp_path / "data"),
+                                   FakeClient(answer(no_change="thin")), replay, NOW,
+                                   out_dir=tmp_path / "out")
+    evidence = json.loads((advised.folder / "evidence.json").read_text())
+    fitting = sum(2 for d in days if d.isoformat() < starts)
+    assert evidence["trades"]["trades"] == fitting < len(trades)

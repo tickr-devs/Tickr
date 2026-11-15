@@ -45,7 +45,8 @@ python -m aperture.backtest run ... --results out/backtest-v2 --values <run>/str
 python -m aperture.advisor.judge --run <run folder> --results out/backtest-v2
 ```
 
-`judge` refuses a candidate on another window or hold-out split, or equal to the base. It
+`judge` refuses a candidate on other data (the report's pool counts differ), another window
+or hold-out split, or equal to the base. Run base and candidate on the same fetch. It
 writes `judge-<name>-v<N>.md`: the base and candidate hold-out rows with their bootstrap
 intervals, and the candidate's fitting period marked as no evidence. A module written from
 an idea (below) is judged the same way.
@@ -56,7 +57,11 @@ When the evidence says the entry idea itself fails, Claude may describe a new st
 `new_strategy_idea` (name like `pullback-v1`, hypothesis, entry and exit rules, filters,
 evidence, test plan), in either mode. It is text, never code: `idea.md` tells a developer
 to write the module and its commented `strategy.toml` in a reviewed pull request (rule 8),
-backtest it, and judge it on the hold-out. A partial idea (no hypothesis, entry rule or
+backtest it, and judge it on the hold-out. A person or agent writing that module has usually
+seen the hold-out numbers already (docs/backtest-results.md publishes them), so for a
+hand-written module this window's hold-out is not clean: judge it on sessions after the
+window (a fresh fetch) or on observer days. Only an advisor value proposal, which nobody
+tuned by hand, is judged cleanly by `judge` on this window. A partial idea (no hypothesis, entry rule or
 evidence) or a malformed name refuses the answer. To see the logic its values steer, the
 request carries the strategy module's source code as well.
 

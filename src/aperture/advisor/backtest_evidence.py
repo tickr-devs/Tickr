@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from aperture.advisor.errors import AdvisorError
+from aperture.backtest.report import stats
 from aperture.calendar import NEW_YORK, ny_date_of
 from aperture.config import AdvisorConfig
 from aperture.replay.bars import load_bars
@@ -52,7 +53,6 @@ SIGNAL_COLUMNS = frozenset({"label", "strategy", "version", "session_date", "out
 FILLED = "filled"
 ZERO = Decimal(0)
 HUNDRED = Decimal(100)
-TWO = Decimal(2)
 
 
 @dataclass(frozen=True)
@@ -170,28 +170,6 @@ def fitting_signals(run: BacktestRun) -> list[dict[str, str]]:
         return [r for r in rows if date.fromisoformat(r["session_date"]) < run.holdout_starts]
     except ValueError as exc:
         raise AdvisorError(f"{path}: {exc!r}") from exc
-
-
-def stats(r_values: Sequence[Decimal]) -> dict[str, Any]:
-    n = len(r_values)
-    if n == 0:
-        return {"trades": 0}
-    wins = [r for r in r_values if r > 0]
-    losses = [r for r in r_values if r < 0]
-    gross_win, gross_loss = sum(wins, ZERO), -sum(losses, ZERO)
-    ordered = sorted(r_values)
-    middle = n // 2
-    median = ordered[middle] if n % 2 else (ordered[middle - 1] + ordered[middle]) / TWO
-    return {
-        "trades": n,
-        "win_rate_percent": Decimal(len(wins)) / n * HUNDRED,
-        "mean_r": sum(r_values, ZERO) / n,
-        "median_r": median,
-        "total_r": sum(r_values, ZERO),
-        "average_win_r": gross_win / len(wins) if wins else None,
-        "average_loss_r": -gross_loss / len(losses) if losses else None,
-        "profit_factor": gross_win / gross_loss if gross_loss > 0 else None,
-    }
 
 
 def bucket(value: Decimal, edges: Sequence[Decimal]) -> str:

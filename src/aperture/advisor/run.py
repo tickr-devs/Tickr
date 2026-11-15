@@ -230,6 +230,7 @@ def run_backtest_advisor(
             "window": [d.isoformat() for d in run.window],
             "holdout_starts": starts,
             "base_holdout": run.report["holdout"].get("holdout"),
+            "pool": run.report.get("pool"),
         },
     )
     return ask(config, client, base, evidence, tuning, now, out_dir)

@@ -50,8 +50,9 @@ def render_idea(idea: Idea, tuning: Tuning) -> str:
         "request with its own review.",
         "2. Backtest it on the same data: `python -m aperture.backtest run ... --strategy "
         f"aperture.strategy.{module} --values strategies/{idea.name}/strategy.toml`.",
-        f"3. Judge it only on {tuning.judge_on}. The idea came from {tuning.tuned_on}; results "
-        "there prove nothing.",
+        f"3. The idea came from {tuning.tuned_on}; results there prove nothing. Whoever writes "
+        "the module has usually seen this window's hold-out numbers, so judge it on sessions "
+        "after the window (a fresh fetch) or on observer days, not on this hold-out.",
         "",
     ])
 
