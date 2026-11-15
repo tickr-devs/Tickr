@@ -262,10 +262,11 @@ private struct Summary: View {
   }
 
   /// Whether new entries can open, as on the board: allowed, paused by the owner, a calm
-  /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph.
+  /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph. The
+  /// bot's own entry block decides, in its precedence: a stopped bot outranks the owner's pause.
   static func entries(_ status: StatusV1) -> (symbol: String, tone: Tone, label: LocalizedStringResource) {
-    if status.entryStop { return (entriesPausedSymbol, .warning, L10n.Home.entriesPaused) }
     guard let block = status.entryBlock else { return (entriesAllowedSymbol, .profit, L10n.Home.entriesAllowed) }
+    if BlockCode(rawValue: block.cause) == .entryStop { return (entriesPausedSymbol, .warning, L10n.Home.entriesPaused) }
     if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(ApiText.entryBlock(block))) }
     return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(ApiText.entryBlock(block)))
   }
