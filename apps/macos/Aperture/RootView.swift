@@ -51,6 +51,10 @@ struct RootView: View {
   static let sidebarMin: CGFloat = 200
   static let sidebarIdeal: CGFloat = 220
   static let sidebarMax: CGFloat = 260
+  /// Least size of a screen, in points: with the sidebar (200) and the inspector (240) it stays
+  /// under the window's least size (ApertureMacApp.minWidth, minHeight).
+  static let screenMinWidth: CGFloat = 420
+  static let screenMinHeight: CGFloat = 400
 
   private var section: AppSection { model.section }
 
@@ -74,7 +78,14 @@ struct RootView: View {
             // screen's own cards then rise in. Sliding whole screens in and out kept two of them
             // (one maybe the chart) laid out and animating together, and stuttered.
             .id(section)
-            .frame(maxHeight: .infinity)
+            // A fixed least size for every screen, its content cut at it: a screen whose least
+            // size followed its content (a row of controls wider than the column, a layout
+            // that switches with the width) asked for more than the window beside the sidebar
+            // and the inspector, the split view shifted it inside its layout pass, and on
+            // macOS 27 AppKit threw ("needs another Update Constraints in Window pass").
+            .frame(minWidth: Self.screenMinWidth, maxWidth: .infinity, minHeight: Self.screenMinHeight,
+              maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
         }
         if let unattended = model.unattendedPositions {
           UnattendedBanner(unattended: unattended)
