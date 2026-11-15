@@ -220,17 +220,25 @@ class Service:
                       reason: str) -> tuple[api.CommandOutcome, str | None]:
         """FLATTEN inside the caller's transaction: exit requests through the normal exit path
         for every open trade, or only those of `symbol`. Refused when `symbol` has no open
-        trade, and while a close of a chosen trade waits for the operator."""
+        trade, while a close of a chosen trade waits for the operator, and outside the
+        regular session (no closing MARKET order is sent then; the stops stay)."""
         engine = self.engine
         trades = [t for t in engine.trades() if symbol is None or t.symbol == symbol]
         if symbol is not None and not trades:
             return api.CommandOutcome.REFUSED, f"no open position in {symbol}"
         fences = engine.fences()
-        refused = [t.trade_id for t in trades if f"{Fence.EXIT_REFUSED}:{t.trade_id}" in fences]
+        refused = [t.trade_id for t in trades
+                   if any(f"{f}:{t.trade_id}" in fences
+                          for f in (Fence.EXIT_REFUSED, Fence.MARKET_CLOSED))]
         if refused:
             return api.CommandOutcome.REFUSED, (
                 f"closing order refused before for {', '.join(refused)}: look in the Webull "
                 "app, then clear the fence")
+        closed = engine.close_refusal() if trades else None
+        if closed is not None:
+            return api.CommandOutcome.REFUSED, (
+                f"no closing order is sent now: {closed}; the stops stay. Close the position "
+                "in the Webull app")
         for trade in trades:
             engine.exit_request_row(trade.trade_id, reason)
         return api.CommandOutcome.DONE, None if trades else "nothing open"
