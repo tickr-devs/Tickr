@@ -231,6 +231,10 @@ enum L10n {
   }
 
   enum Home {
+    /// The latest event's New York time on Home: "14:06:09 ET".
+    static func clockET(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("home.clockET", defaultValue: "\(time) ET", bundle: L10n.bundle)
+    }
     static var previousDay: LocalizedStringResource {
       LocalizedStringResource("home.previousDay", defaultValue: "Previous trading day", bundle: L10n.bundle)
     }
@@ -306,6 +310,14 @@ enum L10n {
   }
 
   enum Flow {
+    /// The event line's tag for a signal risk refused: "REFUSED".
+    static var refusedTag: LocalizedStringResource {
+      LocalizedStringResource("flow.refusedTag", defaultValue: "refused", bundle: L10n.bundle)
+    }
+    /// VoiceOver label of a stage's refused tray: "2 refused".
+    static func refusedCount(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.refusedCount", defaultValue: "\(count) refused", bundle: L10n.bundle)
+    }
     /// Card title on Home: the stages a setup passes through.
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title", defaultValue: "Live flow", bundle: L10n.bundle)

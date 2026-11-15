@@ -134,7 +134,7 @@ private struct Header: View {
             let open = status.tradingGate.open
             StateGlyph(open ? Self.gateOpenSymbol : Self.gateClosedSymbol, tone: open ? .profit : .warning,
               label: Text(verbatim: String(localized: open ? L10n.Overview.gateOpen : L10n.Overview.gateClosed)
-                + Format.lineSeparator + status.tradingGate.cause))
+                + Format.lineSeparator + ApiText.gate(status.tradingGate)))
           }
         }
         banner
@@ -779,7 +779,7 @@ private struct PositionDetail: View {
   }
 
   /// The newest bar is too old to be the current price: shown greyed, as of its time.
-  private var isStale: Bool { row.lastBarClose == nil && row.latestClose != nil }
+  private var isStale: Bool { row.isStale }
 
   private var staleHelp: Text {
     guard isStale, let time = row.lastBarAt else { return Text(L10n.Position.lastBarClose) }
