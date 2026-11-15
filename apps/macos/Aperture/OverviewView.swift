@@ -592,11 +592,20 @@ private struct PositionDetail: View {
 
   private var figures: some View {
     VStack(spacing: Tokens.Space.s) {
-      StatLine(label: lastBarLabel, value: lastBarValue, symbol: Self.lastBarSymbol)
+      StatLine(label: lastBarLabel, value: lastBarValue, color: isStale ? Palette.textQuaternary : Palette.textPrimary,
+        symbol: Self.lastBarSymbol)
+        .help(staleHelp)
       StatLine(L10n.Position.maxLoss,
         value: Risk.plannedLoss(entry: row.entry, stop: row.stop, quantity: row.quantity).map { Money.plain($0) }
           ?? Format.missing, symbol: Self.maxLossSymbol)
-      StatLine(L10n.Position.rNow, value: row.resultR.map(Risk.text) ?? Format.missing, symbol: Self.rSymbol)
+        .help(Text(L10n.Position.maxLossHelp))
+      if isStale, let time = row.lastBarAt {
+        StatLine(label: Text(L10n.Position.rAt(Format.marketMinute(time))),
+          value: row.latestResultR.map(Risk.text) ?? Format.missing, color: Palette.textQuaternary, symbol: Self.rSymbol)
+          .help(staleHelp)
+      } else {
+        StatLine(L10n.Position.rNow, value: row.resultR.map(Risk.text) ?? Format.missing, symbol: Self.rSymbol)
+      }
       let sent = EntrySent.line(row.position.entry, cause: row.position.entryCause)
       StatLine(L10n.EntrySent.title, value: sent.text, color: sent.color, symbol: Self.sentSymbol)
         .hint(sent.help.map { Text(verbatim: $0) } ?? Text(L10n.EntrySent.title))
@@ -620,13 +629,20 @@ private struct PositionDetail: View {
   }
 
   private var lastBarValue: String {
-    if let close = row.lastBarClose { return Format.price(close) }
-    return row.lastBarAt == nil ? Format.missing : String(localized: L10n.Position.old)
+    (row.lastBarClose ?? row.latestClose).map { Format.price($0) } ?? Format.missing
+  }
+
+  /// The newest bar is too old to be the current price: shown greyed, as of its time.
+  private var isStale: Bool { row.lastBarClose == nil && row.latestClose != nil }
+
+  private var staleHelp: Text {
+    guard isStale, let time = row.lastBarAt else { return Text(L10n.Position.lastBarClose) }
+    return Text(L10n.Position.staleHelp(Format.marketMinute(time)))
   }
 }
 
-/// A position's protection as a shield glyph: green and still when the broker stop is verified,
-/// red and pulsing otherwise; the state's words are its hint.
+/// A position's protection as a shield glyph: green when the broker stop is verified, red otherwise,
+/// pulsing once per broker read that still finds it unprotected; the state's words are its hint.
 struct StopBadge: View {
   let state: StopState
   var compact = false
@@ -642,7 +658,6 @@ struct StopBadge: View {
   var body: some View {
     StateGlyph(symbol, tone: state == .verified ? .profit : state == .pending ? .warning : .loss,
       label: Text(verbatim: state.title), live: state != .verified, event: read, style: compact ? .compact : .tile)
-      .modifier(AlarmPulse(active: state == .missing || state == .unknown))
   }
 
   private var symbol: String {
@@ -941,8 +956,10 @@ private struct BotCard: View {
     Card(L10n.Common.bot) {
       if let status = model.status {
         let running = status.botState == .running
+        let isCurrent = model.isLive && model.fetchError == nil && model.response?.stale == false
         StatusPill(verbatim: status.entryStop ? String(localized: L10n.Common.entriesPaused) : status.botState.title,
-          tone: status.entryStop ? .warning : running ? .accent : .neutral, live: running && model.isLive)
+          tone: status.entryStop ? .warning : running ? .accent : .neutral,
+          live: running && isCurrent, event: status.writtenAt.date)
       }
     } content: {
       BotControls()
