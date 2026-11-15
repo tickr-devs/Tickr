@@ -353,7 +353,7 @@ private struct JobsSection: View {
     let title = jobs.statusStale ? String(localized: L10n.Settings.notReported)
       : jobs.botState?.title ?? String(localized: L10n.Settings.notRunning)
     return LabeledContent {
-      StatusPill(verbatim: title, tone: tone, live: running, event: jobs.servedAt)
+      StatusPill(verbatim: title, tone: tone, live: running, event: running)
     } label: {
       Label {
         Text(L10n.Settings.botService)
@@ -444,7 +444,8 @@ private struct BackupSection: View {
           Label {
             Text(L10n.Settings.backup)
           } icon: {
-            StateGlyph(Self.backupSymbol, tone: failed ? .loss : .profit, label: L10n.Settings.backup, style: .compact)
+            StateGlyph(Self.backupSymbol, tone: failed ? .loss : job.lastAt == nil ? .neutral : .profit,
+              label: L10n.Settings.backup, style: .compact)
           }
         }
         if failed, let error = job.lastFailedError {
