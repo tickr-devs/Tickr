@@ -268,6 +268,14 @@ enum L10n {
         defaultValue: "Open positions: \(count). Each stays under its broker stop, a DAY order: nothing closes it at the session's end. Flatten from Webull, or run aperture clear-stop on this Mac and start the bot to trade again.",
         bundle: L10n.bundle)
     }
+    static var silentTitle: LocalizedStringResource {
+      LocalizedStringResource("bot.silentTitle", defaultValue: "Bot Not Responding with Open Positions", bundle: L10n.bundle)
+    }
+    static func silentOpen(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("bot.silentOpen",
+        defaultValue: "Open positions: \(count). The bot's status is stale: it may have stopped. Each position stays under its broker stop, a DAY order: nothing closes it at the session's end. Check the bot on this Mac or flatten from Webull.",
+        bundle: L10n.bundle)
+    }
     static var notSentUntrusted: LocalizedStringResource {
       LocalizedStringResource("bot.notSentUntrusted",
         defaultValue: "not sent: the app cannot trust the bot's status right now",

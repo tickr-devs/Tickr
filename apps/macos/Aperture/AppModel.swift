@@ -49,6 +49,19 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   }
 }
 
+/// Open positions the bot is not watching, and why.
+public struct Unattended: Equatable, Sendable {
+  public enum Reason: Equatable, Sendable {
+    /// The bot reported itself stopped.
+    case stopped
+    /// The bot's status went stale: it may have crashed.
+    case silent
+  }
+
+  public let reason: Reason
+  public let count: Int
+}
+
 /// Everything the windows and the menu bar show. Polls the local API; never talks to the broker.
 @MainActor
 @Observable
@@ -122,12 +135,15 @@ public final class AppModel {
     }
   }
 
-  /// How many positions the bot left open when it stopped, however it was stopped (stop-bot from
-  /// any device, the session end, a crash); nil while it runs or holds nothing. Shown until the
-  /// status says otherwise, because nothing closes these positions at the session's end.
-  public var stoppedWithOpenPositions: Int? {
-    guard let status, status.botState == .stopped, !status.positions.isEmpty else { return nil }
-    return status.positions.count
+  /// Open positions with no running bot behind them: the bot reported itself stopped (stop-bot
+  /// from any device, a graceful shutdown), or its status went stale (a crash leaves the last
+  /// status saying "running"). nil while a fresh status shows it running, or it holds nothing.
+  /// Nothing closes such positions at the session's end, so the app keeps saying so.
+  public var unattendedPositions: Unattended? {
+    guard let response, let status = response.status, !status.positions.isEmpty else { return nil }
+    if status.botState == .stopped { return Unattended(reason: .stopped, count: status.positions.count) }
+    if response.stale { return Unattended(reason: .silent, count: status.positions.count) }
+    return nil
   }
 
   /// What is left of today's daily loss limit after realized losses and open reservations, as

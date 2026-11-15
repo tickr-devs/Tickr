@@ -57,8 +57,8 @@ struct RootView: View {
         detail
           .id(section)
           .transition(.opacity.combined(with: .move(edge: .bottom)))
-        if let count = model.stoppedWithOpenPositions {
-          StoppedBanner(count: count)
+        if let unattended = model.unattendedPositions {
+          UnattendedBanner(unattended: unattended)
             .padding(Tokens.Space.l)
             .frame(maxHeight: .infinity, alignment: .top)
             .transition(.move(edge: .top).combined(with: .opacity))
@@ -71,7 +71,7 @@ struct RootView: View {
       }
       .animation(Tokens.Motion.standard, value: section)
       .animation(Tokens.Motion.standard, value: model.toast)
-      .animation(Tokens.Motion.standard, value: model.stoppedWithOpenPositions)
+      .animation(Tokens.Motion.standard, value: model.unattendedPositions)
       .navigationTitle(Text(section.title))
       .navigationSubtitle(Text(verbatim: subtitle))
       .toolbar { DayToolbar() }
@@ -214,10 +214,10 @@ private struct DayToolbar: ToolbarContent {
   }
 }
 
-/// The bot is down while it holds positions: shown above every screen for as long as the status
-/// says so, since nothing closes these positions at the session's end.
-struct StoppedBanner: View {
-  let count: Int
+/// Open positions with no running bot behind them: shown above every screen for as long as the
+/// status says so, since nothing closes these positions at the session's end.
+struct UnattendedBanner: View {
+  let unattended: Unattended
 
   /// SF Symbol of the banner.
   static let symbol = "exclamationmark.octagon.fill"
@@ -228,8 +228,9 @@ struct StoppedBanner: View {
         .font(Tokens.Typography.symbol)
         .foregroundStyle(Palette.loss)
       VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-        Text(L10n.Bot.stoppedTitle).font(Tokens.Typography.callout.weight(.semibold))
-        Text(L10n.Bot.stoppedOpen(count))
+        Text(unattended.reason == .stopped ? L10n.Bot.stoppedTitle : L10n.Bot.silentTitle)
+          .font(Tokens.Typography.callout.weight(.semibold))
+        Text(unattended.reason == .stopped ? L10n.Bot.stoppedOpen(unattended.count) : L10n.Bot.silentOpen(unattended.count))
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.textSecondary)
           .fixedSize(horizontal: false, vertical: true)

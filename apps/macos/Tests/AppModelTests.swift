@@ -72,12 +72,13 @@ struct AppModelTests {
   }
 
   /// The status fixture with the bot in `state`.
-  static func status(botState state: String) throws -> Data {
+  static func status(botState state: String, stale: Bool = false) throws -> Data {
     let data = try Data(contentsOf: fixturesDir.appendingPathComponent("status-response-v1.json"))
     var response = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     var status = try #require(response["status"] as? [String: Any])
     status["bot_state"] = state
     response["status"] = status
+    response["stale"] = stale
     return try JSONSerialization.data(withJSONObject: response)
   }
 
@@ -122,17 +123,20 @@ struct AppModelTests {
     #expect(model.accountError != nil)
   }
 
-  @Test("A stopped bot that still holds positions is flagged, however it was stopped")
-  func stoppedWithOpenPositions() async throws {
+  @Test("Positions with a stopped or silent bot are flagged; a fresh running bot is not")
+  func unattendedPositions() async throws {
+    let cases: [(String, Bool, Unattended?)] = [
+      ("stopped", false, Unattended(reason: .stopped, count: 1)),
+      ("running", true, Unattended(reason: .silent, count: 1)),
+      ("running", false, nil),
+    ]
     let model = AppModel(baseURL: APIClient.defaultBaseURL)
-    let stopped = try Self.status(botState: "stopped")
-    RouteProtocol.routes.withLock { $0.bodies["/status"] = stopped }
-    await model.refreshStatus()
-    #expect(model.stoppedWithOpenPositions == 1)
-    let running = try Self.status(botState: "running")
-    RouteProtocol.routes.withLock { $0.bodies["/status"] = running }
-    await model.refreshStatus()
-    #expect(model.stoppedWithOpenPositions == nil)
+    for (state, stale, expected) in cases {
+      let body = try Self.status(botState: state, stale: stale)
+      RouteProtocol.routes.withLock { $0.bodies["/status"] = body }
+      await model.refreshStatus()
+      #expect(model.unattendedPositions == expected, "\(state), stale \(stale)")
+    }
   }
 
   @Test("Each command send carries its own idempotency key")
