@@ -43,6 +43,8 @@ final class ApertureUITests: XCTestCase {
   static let watchingCard = "overview-watching"
   /// The month calendar of Trades & days (MonthCalendar.id).
   static let calendar = "trades-calendar"
+  /// The fixtures' live day (2026-11-16) as the calendar names it (Format.dayLabel).
+  static let fixtureDayLabel = "Mon, Nov 16"
   /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "ask_above_trigger"
@@ -195,8 +197,9 @@ final class ApertureUITests: XCTestCase {
     open(Self.sections[2], in: app)
     let calendar = app.descendants(matching: .any)[Self.calendar].firstMatch
     XCTAssertTrue(calendar.waitForExistence(timeout: Self.timeout), "calendar\n\(app.debugDescription)")
-    // The fixture's recorded days are buttons in the month grid.
-    XCTAssertTrue(calendar.buttons.count > 0, "calendar days\n\(app.debugDescription)")
+    // The fixture's live day is a cell of the month grid, named by its date.
+    XCTAssertTrue(calendar.buttons[Self.fixtureDayLabel].waitForExistence(timeout: Self.timeout),
+      "calendar day\n\(app.debugDescription)")
   }
 
   @MainActor
