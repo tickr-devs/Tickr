@@ -30,7 +30,7 @@ enum FlowStages {
 /// The day's screener symbols as chips scrolling across the top of the live flow, as in the
 /// design: the symbol, then its screener and change from the previous close in the screener's
 /// colour. A symbol the universe left out is dimmed and struck through, the cause in its tooltip.
-/// Without chips the event ticker takes the place, with a note why.
+/// The event ticker runs under the chips; without chips it is alone, with a note why.
 struct ScreenerChips: View {
   @Environment(AppModel.self) private var model
 
@@ -40,13 +40,18 @@ struct ScreenerChips: View {
   var body: some View {
     Group {
       if let chips = model.flow?.chips, !chips.isEmpty {
-        Marquee(moving: model.isLive) {
-          HStack(spacing: Tokens.Space.s) {
-            ForEach(chips, id: \.symbol) { chip in
-              Chip(chip: chip)
+        VStack(alignment: .leading, spacing: Tokens.Space.s) {
+          Marquee(moving: model.isLive) {
+            HStack(spacing: Tokens.Space.s) {
+              ForEach(chips, id: \.symbol) { chip in
+                Chip(chip: chip)
+              }
             }
+            .padding(.trailing, Tokens.Space.s)
           }
-          .padding(.trailing, Tokens.Space.s)
+          // The day's events (fills, stops, exits) stay on the Overview under the chips.
+          Ticker(model.tickerItems, moving: model.isLive)
+            .frame(height: Tokens.Size.ticker)
         }
       } else {
         VStack(alignment: .leading, spacing: Tokens.Space.xs) {
@@ -78,9 +83,8 @@ private struct Chip: View {
         .font(Tokens.Typography.chip)
         .strikethrough(excluded)
         .foregroundStyle(excluded ? Palette.textQuaternary : Palette.textPrimary)
-      Text(detail)
+      detail
         .font(Tokens.Typography.annotation)
-        .foregroundStyle(excluded ? Palette.textQuaternary : color)
     }
     .lineLimit(1)
     .fixedSize()
@@ -98,26 +102,41 @@ private struct Chip: View {
   /// The first screener that listed the symbol names its colour and its word.
   private var source: ScreenerSource? { chip.sources.first }
 
-  /// "gainers +18.2%"; "skipped" for a symbol the universe left out.
-  private var detail: LocalizedStringResource {
-    if chip.excludedCause != nil { return L10n.Flow.chipSkipped }
-    let word = switch source {
-    case .gainers: L10n.Flow.chipGainers
-    case .losers: L10n.Flow.chipLosers
-    case .topActives, nil: L10n.Flow.chipActives
+  /// "gainers +18.2%" in the screener's colour; "skipped" for a symbol the universe left out; a
+  /// missing change as a dim dash; the change alone when no screener is named.
+  @ViewBuilder private var detail: some View {
+    if chip.excludedCause != nil {
+      Text(L10n.Flow.chipSkipped).foregroundStyle(Palette.textQuaternary)
+    } else {
+      HStack(spacing: Tokens.Space.xs) {
+        if let word { Text(word).foregroundStyle(color) }
+        if let change = chip.changePct {
+          Text(L10n.Trades.percent(Money.signed(change.value, fractionDigits: Self.changeDigits)))
+            .foregroundStyle(color)
+        } else {
+          Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
+        }
+      }
     }
-    let change = chip.changePct.map {
-      String(localized: L10n.Trades.percent(Money.signed($0.value, fractionDigits: Self.changeDigits)))
-    }
-    return L10n.Flow.chip(String(localized: word), change ?? Format.missing)
   }
 
-  /// Gainers green, top actives blue, losers pink, as in the design.
+  /// The screener's word on the chip; nil when the flow names none.
+  private var word: LocalizedStringResource? {
+    switch source {
+    case .gainers: L10n.Flow.chipGainers
+    case .losers: L10n.Flow.chipLosers
+    case .topActives: L10n.Flow.chipActives
+    case nil: nil
+    }
+  }
+
+  /// Gainers green, top actives blue, losers pink, as in the design; no screener in plain text.
   private var color: Color {
     switch source {
     case .gainers: Palette.profitText
     case .losers: Palette.seriesATRText
-    case .topActives, nil: Palette.infoText
+    case .topActives: Palette.infoText
+    case nil: Palette.textTertiary
     }
   }
 

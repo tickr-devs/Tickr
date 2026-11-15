@@ -2092,23 +2092,6 @@
         }
       }
     },
-    "flow.chip" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ %2$@"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ %2$@"
-          }
-        }
-      }
-    },
     "flow.chipActives" : {
       "extractionState" : "manual",
       "localizations" : {

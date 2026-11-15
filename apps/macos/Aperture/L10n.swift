@@ -463,9 +463,6 @@ enum L10n {
     static var chipSkipped: LocalizedStringResource {
       LocalizedStringResource("flow.chipSkipped", defaultValue: "skipped", bundle: L10n.bundle)
     }
-    static func chip(_ source: String, _ change: String) -> LocalizedStringResource {
-      LocalizedStringResource("flow.chip", defaultValue: "\(source) \(change)", bundle: L10n.bundle)
-    }
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title",
         defaultValue: "Live flow · screeners → strategy → risk → order → broker stop",
