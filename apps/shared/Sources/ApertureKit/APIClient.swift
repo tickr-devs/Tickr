@@ -187,12 +187,12 @@ public struct APIClient: Sendable {
     try await perform(request(path: Self.pendingPath, body: nil), expect: Self.ok)
   }
 
-  /// Risk limits and session times from the bot's config, as the API loaded them.
   /// What runs on its own on the Mac (reconcile, backup, launchd jobs) and today's session times.
   public func jobs() async throws -> JobsV1 {
     try await perform(request(path: Self.jobsPath, body: nil), expect: Self.ok)
   }
 
+  /// Risk limits and session times from the bot's config, as the API loaded them.
   public func settings() async throws -> SettingsV1 {
     try await perform(request(path: Self.settingsPath, body: nil), expect: Self.ok)
   }

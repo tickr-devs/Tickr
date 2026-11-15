@@ -63,7 +63,8 @@ public struct BackupJobV1: Codable, Hashable, Sendable {
 }
 
 /// A launchd job on the Mac: its name, its start time in the Mac's local time ("HH:MM") and the
-/// weekdays it runs on (1 Monday … 7 Sunday).
+/// weekdays it runs on, in launchd numbering as in the Python contract: 1 = Monday … 5 = Friday,
+/// and both 0 and 7 mean Sunday.
 public struct LaunchdJobV1: Codable, Hashable, Sendable {
   public let name: String
   public let localTime: String
