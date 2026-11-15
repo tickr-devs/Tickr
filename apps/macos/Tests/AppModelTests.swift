@@ -131,7 +131,8 @@ struct AppModelTests {
       fixturesDir.appendingPathComponent("decisions-v1.json")) }
     await chart.loadDecisions(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
     #expect(chart.decisions?.decisions.map(\.action) == [.watch, .enter, .enter])
-    #expect(chart.decisions?.decisions.last?.observer == true)
+    #expect(chart.decisions?.decisions[1].observer == true)
+    #expect(chart.decisions?.decisions.last?.admission == .refused)
     RouteProtocol.routes.withLock { $0.bodies["/decisions"] = nil }
     await chart.loadDecisions(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
     #expect(chart.decisions == nil)
