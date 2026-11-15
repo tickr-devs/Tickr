@@ -20,7 +20,6 @@ struct SettingsView: View {
   /// Tallest the pane area grows to its content before it scrolls, in points.
   static let maxPaneHeight: CGFloat = 600
 
-
   var body: some View {
     VStack(spacing: 0) {
       SettingsTabBar(selection: $tab)
