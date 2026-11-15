@@ -107,6 +107,8 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         assert day_trade.planned_loss_usd == closed.planned_loss_usd
         assert day_trade.mae_usd is not None and day_trade.mfe_usd is not None
         assert day_trade.mae_usd < 0 < day_trade.mfe_usd  # rose a little, then stopped out
+        # Lower bound: the stop-out shows its 1 R loss, not the fall after the stop filled.
+        assert day_trade.mae_usd == day_trade.result_gross_usd == -day_trade.planned_loss_usd
         room = status.daily_room_usd
         assert room is not None and room < cfg.risk.max_daily_loss_usd
         assert [c.kind for c in status.recent_commands] == [

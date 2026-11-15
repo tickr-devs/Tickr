@@ -11,8 +11,8 @@ import json
 import re
 import sqlite3
 import threading
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -49,7 +49,9 @@ def average_fill_price(orders: list[OrderRow]) -> Decimal | None:
 OBSERVED = "order-observed"
 _WORKING = (str(OrderState.ACCEPTED), str(OrderState.PARTIALLY_FILLED))
 
-BarSource = Callable[[str, date], Sequence[api.BarV1]]
+
+class MalformedJournal(ValueError):
+    """An `order-observed` row lacks what the metrics read; the message is the cause."""
 
 
 @dataclass(frozen=True)
@@ -63,23 +65,30 @@ class FillTimes:
 
 
 def fill_times(store: Store, orders: list[OrderRow]) -> FillTimes:
+    """Raises MalformedJournal for a row it cannot read; callers show null instead."""
     legs = {o.client_order_id: o.leg for o in orders}
     rows = store.query(
-        f"SELECT at_utc, key, body FROM journal WHERE kind = ? AND key IN "
+        f"SELECT seq, at_utc, key, body FROM journal WHERE kind = ? AND key IN "
         f"({', '.join('?' for _ in legs)}) ORDER BY seq", (OBSERVED, *legs)) if legs else []
     first = stop = last = None
     filled: dict[str, Decimal] = {}
     for row in rows:
-        body, at, cid = json.loads(row["body"]), datetime.fromisoformat(row["at_utc"]), row["key"]
-        quantity = Decimal(str(body["filled_quantity"]))
+        cid = row["key"]
+        try:
+            body = json.loads(row["body"])
+            at = datetime.fromisoformat(row["at_utc"])
+            quantity = Decimal(str(body["filled_quantity"]))
+            state = str(body["state"])
+        except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
+            raise MalformedJournal(f"journal row {row['seq']} ({OBSERVED} {cid}): "
+                                   f"{type(exc).__name__}: {exc}") from exc
         more = quantity > filled.get(cid, ZERO)
         filled[cid] = quantity
         if legs[cid] is Leg.ENTRY:
             if first is None and quantity > 0:
                 first = at
             continue
-        if legs[cid] is Leg.STOP and first is not None and stop is None \
-                and body["state"] in _WORKING:
+        if legs[cid] is Leg.STOP and first is not None and stop is None and state in _WORKING:
             stop = at
         if more:
             last = at
@@ -91,31 +100,52 @@ def _minute(at: datetime) -> datetime:
 
 
 def excursions(bars: Sequence[api.BarV1], entry: Decimal, quantity: Decimal,
-               start: datetime | None, end: datetime | None,
+               exits: Sequence[Decimal], times: FillTimes,
                ) -> tuple[Decimal | None, Decimal | None]:
-    """(MAE, MFE) in USD from the M1 bars of every minute from `start` to `end`, both minutes
-    included whole (partial minutes: the first bar may hold prices from before the fill, the
-    last from after the exit). (None, None) without both of those bars."""
-    if start is None or end is None:
+    """(MAE, MFE) in USD as a lower bound: only prices certainly traded while the trade was
+    open count, namely the entry fill price, the exit fill prices and the M1 bars strictly
+    between the minute of the first entry fill read and the minute of the last exit fill
+    read. The two edge bars are partial minutes (they may hold prices from before the fill or
+    after the exit), so their prices are left out; they must still be captured, as proof that
+    the capture covered the window: (None, None) without them."""
+    start, end = times.first_fill, times.last_exit_fill
+    if start is None or end is None or not exits:
         return None, None
     first, last = _minute(start), _minute(end)
-    inside = [b for b in bars if first <= b.start <= last]
-    if not {first, last} <= {b.start for b in inside}:
+    if not {first, last} <= {b.start for b in bars}:
         return None, None
-    low, high = min(b.low for b in inside), max(b.high for b in inside)
+    inner = [b for b in bars if first < b.start < last]
+    low = min([entry, *exits, *(b.low for b in inner)])
+    high = max([entry, *exits, *(b.high for b in inner)])
     return (low - entry) * quantity, (high - entry) * quantity
 
 
+def trade_metrics(store: Store, trade: api.DayTrade,
+                  bars: Sequence[api.BarV1] | None) -> api.DayTrade:
+    """`trade` with its display metrics (docs/api.md, "Per-trade metrics"); `bars` None
+    leaves MAE and MFE null. Raises MalformedJournal. Display only: never on the daily-loss
+    or trading path."""
+    orders = [order_from_row(o) for o in store.query(
+        "SELECT * FROM orders WHERE trade_id = ? ORDER BY rowid", (trade.trade_id,))]
+    times = fill_times(store, orders)
+    confirmed = (None if times.first_fill is None or times.stop_confirmed is None
+                 else api.seconds_between(times.first_fill, times.stop_confirmed))
+    mae = mfe = None
+    if bars is not None:
+        exits = [o.average_fill_price for o in orders if o.leg is not Leg.ENTRY
+                 and o.filled_quantity > 0 and o.average_fill_price is not None]
+        mae, mfe = excursions(bars, trade.entry_price, trade.quantity, exits, times)
+    return replace(trade, stop_confirmed_after_seconds=confirmed, mae_usd=mae, mfe_usd=mfe)
+
+
 def closed_trades(store: Store, environment: str | None = None,
-                  closed_on: date | None = None,
-                  bars: BarSource | None = None) -> list[api.DayTrade]:
+                  closed_on: date | None = None) -> list[api.DayTrade]:
     """Closed trades that had fills, oldest close first, with their gross result.
 
     `environment` limits them to runs of that environment; None takes every run (the bot's own
     database view). `closed_on` keeps only trades closed that New York date (checked before
     their orders are read, so the bot's per-step call stays cheap). Quantity is what was
-    sold; prices are fill-weighted averages. `bars` gives the captured M1 bars of a symbol on
-    a New York date; without it MAE and MFE are null."""
+    sold; prices are fill-weighted averages."""
     if environment is None:
         rows = store.query("SELECT * FROM trades WHERE closed_at IS NOT NULL "
                            "ORDER BY closed_at, trade_id")
@@ -125,8 +155,8 @@ def closed_trades(store: Store, environment: str | None = None,
                            "ORDER BY t.closed_at, t.trade_id", (environment,))
     result = []
     for row in rows:
-        closed_at = datetime.fromisoformat(row["closed_at"])
-        if closed_on is not None and ny_date_of(closed_at) != closed_on:
+        if closed_on is not None and ny_date_of(
+                datetime.fromisoformat(row["closed_at"])) != closed_on:
             continue
         orders = [order_from_row(o) for o in store.query(
             "SELECT * FROM orders WHERE trade_id = ? ORDER BY rowid", (row["trade_id"],))]
@@ -137,20 +167,17 @@ def closed_trades(store: Store, environment: str | None = None,
         if entry_price is None or exit_price is None or quantity == 0:
             continue  # never filled: not a trade
         stops = [o.stop_price for o in orders if o.leg is Leg.STOP and o.stop_price is not None]
-        times = fill_times(store, orders)
-        confirmed = (None if times.first_fill is None or times.stop_confirmed is None
-                     else api.seconds_between(times.first_fill, times.stop_confirmed))
-        mae, mfe = (None, None) if bars is None else excursions(
-            bars(row["symbol"], ny_date_of(closed_at)), entry_price, quantity,
-            times.first_fill, times.last_exit_fill)
         result.append(api.DayTrade(
             trade_id=row["trade_id"], symbol=row["symbol"], quantity=quantity,
             entry_price=entry_price, exit_price=exit_price,
-            opened_at=datetime.fromisoformat(row["opened_at"]), closed_at=closed_at,
+            opened_at=datetime.fromisoformat(row["opened_at"]),
+            closed_at=datetime.fromisoformat(row["closed_at"]),
             exit_reason=row["close_cause"], stop_price=stops[0] if stops else None,
             planned_loss_usd=Decimal(row["planned_loss_usd"]),
             result_gross_usd=(exit_price - entry_price) * quantity,
-            stop_confirmed_after_seconds=confirmed, mae_usd=mae, mfe_usd=mfe))
+            # Display metrics are never read here (see `trade_metrics`): this path feeds the
+            # daily-loss check and stays as it was.
+            stop_confirmed_after_seconds=None, mae_usd=None, mfe_usd=None))
     return result
 
 
@@ -178,8 +205,10 @@ class History:
 
     # ------------------------------------------------------------ sources
 
-    def _read_db(self, bars: BarSource | None = None) -> tuple[list[api.DayTrade], set[date]]:
-        """Closed trades and New York dates of bot runs; none while no database exists."""
+    def _read_db(self, metrics_of: tuple[date, date] | None = None,
+                 ) -> tuple[list[api.DayTrade], set[date]]:
+        """Closed trades and New York dates of bot runs; none while no database exists.
+        `metrics_of` (day, today): the trades closed that day get their display metrics."""
         if not self.paths.database.exists():
             return [], set()
         try:
@@ -191,7 +220,9 @@ class History:
             if version != len(MIGRATIONS):
                 raise HistoryUnavailable(
                     f"database schema v{version}, this API reads v{len(MIGRATIONS)}")
-            trades = closed_trades(store, self.paths.environment, bars=bars)
+            trades = closed_trades(store, self.paths.environment)
+            if metrics_of is not None:
+                trades = [self._with_metrics(store, t, *metrics_of) for t in trades]
             runs = {ny_date_of(datetime.fromisoformat(r["started_at"])) for r in store.query(
                 "SELECT started_at FROM runs WHERE environment = ?", (self.paths.environment,))}
             return trades, runs
@@ -199,6 +230,16 @@ class History:
             raise HistoryUnavailable(f"database unreadable: {exc}") from exc
         finally:
             store.close()
+
+    def _with_metrics(self, store: Store, trade: api.DayTrade, day: date,
+                      today: date) -> api.DayTrade:
+        if ny_date_of(trade.closed_at) != day:
+            return trade
+        try:
+            return trade_metrics(store, trade,
+                                 self._bars_by_symbol(day, today).get(trade.symbol, []))
+        except MalformedJournal:
+            return trade  # display only: an unreadable journal row shows null metrics
 
     def _capture_days(self) -> set[date]:
         if not self.paths.capture.is_dir():
@@ -252,11 +293,7 @@ class History:
         return api.DaysV1(environment=self.paths.environment, days=tuple(summaries))
 
     def day(self, day: date, today: date) -> api.DayV1:
-        def bars(symbol: str, closed_on: date) -> list[api.BarV1]:
-            # Only the asked day's file is read; a trade of another day is not listed anyway.
-            return self._bars_by_symbol(day, today).get(symbol, []) if closed_on == day else []
-
-        trades, _ = self._read_db(bars)
+        trades, _ = self._read_db((day, today))
         of_day = self._of_day(trades, day)
         symbols = tuple(sorted(self._bars_by_symbol(day, today)))
         return api.DayV1(environment=self.paths.environment, day=day, trades=tuple(of_day),

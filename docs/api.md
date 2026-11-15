@@ -173,16 +173,23 @@ Computed by the reader from what the bot already records; `null` means unknown, 
   `null` when the stop was never confirmed (rejected, or filled or gone before a read showed it
   working) or no fill read is journaled.
 - `mae_usd` / `mfe_usd` (`day-v1` only): maximum adverse and favourable excursion over the time
-  the trade was open, `(lowest low - entry_price) x quantity` and
-  `(highest high - entry_price) x quantity`, from the captured M1 bars of the symbol on the
-  trade's date. The window runs from the minute of the first entry fill read (as above) to the
-  minute of the last read that showed more shares sold by a stop or exit order; every bar
-  starting in those minutes counts. M1 bars are coarse: the first and last bars are partial
-  minutes and are taken whole, so they may hold prices from before the fill or after the exit
-  (a stopped-out trade can show an MAE beyond -1 R), and the fill read may come a few seconds
-  after the fill. Minutes without a bar inside the window are skipped (no trades). The values
-  are not clipped: MAE is positive when every low stayed above the entry. `null` when the
-  bars of the first or the last minute are not captured, or either end is not journaled.
+  the trade was open, as a **lower bound** (never overstated):
+  `(lowest price - entry_price) x quantity` and `(highest price - entry_price) x quantity`,
+  over only the prices certainly traded while the trade was open: the entry fill price
+  (fill-weighted average), the fill price of each stop or exit order that sold shares, and the
+  low and high of the captured M1 bars strictly between the minute of the first entry fill read
+  (as above) and the minute of the last read that showed more shares sold. The bars of those
+  two edge minutes are partial minutes that may hold prices from before the fill or after the
+  exit, so their prices are left out; they must still be captured, as proof the capture covered
+  the window. Minutes without a bar inside the window are skipped (no trades). So a stop-out at
+  -1 R shows an MAE of about -1 R (its fill), never the fall after it, and a trade within one
+  or two minutes shows only its fill prices. As the entry price is always included, MAE is at
+  most 0 and MFE at least 0. `null` when the bars of either edge minute are not captured, or
+  either end of the window is not journaled.
+- A journal row these metrics cannot read gives `null` for the trade's stop timing and
+  excursions, never an error. In the bot it is journaled once per trade
+  (`stop-timing-failed`) and the step goes on. The daily-loss check never reads them: the
+  bot computes them only for the status file.
 
 ### GET /explain (read-only)
 

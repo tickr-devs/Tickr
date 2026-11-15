@@ -11,7 +11,13 @@ from decimal import Decimal
 import pytest
 
 from aperture.api import contract
-from aperture.api.history import History, HistoryPaths, HistoryUnavailable, closed_trades
+from aperture.api.history import (
+    History,
+    HistoryPaths,
+    HistoryUnavailable,
+    closed_trades,
+    trade_metrics,
+)
 from aperture.data.capture import BARS_FILE
 from aperture.store import Store
 
@@ -156,10 +162,11 @@ def _range_bar(minute: int, low: str, high: str) -> str:
                        "provider": "webull", "receipt_time": start.isoformat()}) + "\n"
 
 
-def _journaled_trade(paths: HistoryPaths) -> None:
-    """Entry fill observed at 0:40.5, stop working at 0:42.75, exit filled at 3:10."""
+def _journaled_trade(paths: HistoryPaths, exit_price: str = "12.75") -> None:
+    """Entry 12.34 x 10, fill observed at 0:40.5, stop working at 0:42.75, exit (at
+    `exit_price`) filled at 3:10."""
     store, clock = _timed_store(paths)
-    _trade(store, _run(store), "t1", OPEN + timedelta(minutes=30))
+    _trade(store, _run(store), "t1", OPEN + timedelta(minutes=30), exit_=exit_price)
     _observed(store, clock, "t1-entry", 10, "ACCEPTED", "0")
     _observed(store, clock, "t1-entry", 40.5, "FILLED", "10")
     _observed(store, clock, "t1-stop", 42.75, "ACCEPTED", "0")
@@ -169,39 +176,67 @@ def _journaled_trade(paths: HistoryPaths) -> None:
     store.close()
 
 
-BARS = [_range_bar(-1, "11.00", "12.40"),  # before the fill's minute: left out
-        _range_bar(0, "12.10", "12.40"),  # the fill's minute, whole (partial minute)
-        _range_bar(1, "12.30", "12.60"),
-        _range_bar(3, "12.20", "12.90"),  # the exit's minute, whole; minute 2 had no bar
-        _range_bar(4, "10.00", "20.00")]  # after the exit's minute: left out
+BARS = {-1: _range_bar(-1, "11.00", "12.40"),  # before the fill's minute: left out
+        0: _range_bar(0, "12.10", "12.40"),  # the fill's minute: partial, prices left out
+        1: _range_bar(1, "12.30", "12.60"),  # inner minutes count whole
+        2: _range_bar(2, "12.25", "12.70"),
+        3: _range_bar(3, "10.00", "20.00"),  # the exit's minute: partial, prices left out
+        4: _range_bar(4, "10.00", "20.00")}  # after the exit's minute: left out
+
+
+def _bars(*minutes: int) -> list[str]:
+    return [BARS[m] for m in minutes]
 
 
 def test_stop_confirmation_time_and_excursions_from_journal_and_capture(paths):
     _journaled_trade(paths)
-    _bars_file(paths, DAY, BARS)
+    _bars_file(paths, DAY, _bars(-1, 0, 1, 2, 3, 4))
     (trade,) = History(paths).day(DAY, LATER).trades
     assert trade.stop_confirmed_after_seconds == Decimal("2.250")
     assert trade.planned_loss_usd == Decimal("50")
-    assert trade.mae_usd == (Decimal("12.10") - Decimal("12.34")) * 10  # -2.40
-    assert trade.mfe_usd == (Decimal("12.90") - Decimal("12.34")) * 10  # 5.60
+    assert trade.mae_usd == (Decimal("12.25") - Decimal("12.34")) * 10  # inner low: -0.90
+    assert trade.mfe_usd == (Decimal("12.75") - Decimal("12.34")) * 10  # exit fill: 4.10
 
 
-def test_the_bot_view_has_stop_timing_but_never_reads_capture(paths):
+def test_a_stop_out_shows_its_loss_as_mae_not_the_fall_after_it(paths):
+    _journaled_trade(paths, exit_price="11.80")  # gapped through: the fill sets the MAE
+    _bars_file(paths, DAY, _bars(0, 1, 2, 3, 4))
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert trade.mae_usd == trade.result_gross_usd == Decimal("-5.40")
+    assert trade.mfe_usd == (Decimal("12.70") - Decimal("12.34")) * 10
+
+
+def test_a_trade_within_two_minutes_has_only_its_fill_prices(paths):
+    store, clock = _timed_store(paths)
+    _trade(store, _run(store), "t1", OPEN + timedelta(minutes=30), exit_="12.30")
+    _observed(store, clock, "t1-entry", 50, "FILLED", "10")
+    _observed(store, clock, "t1-exit", 70, "FILLED", "10")  # next minute: no inner bar
+    store.close()
+    _bars_file(paths, DAY, _bars(0, 1))
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert trade.mae_usd == (Decimal("12.30") - Decimal("12.34")) * 10
+    assert trade.mfe_usd == Decimal(0)  # never certainly above the entry: no guess
+
+
+def test_the_daily_loss_path_reads_no_journal_and_no_capture(paths):
     _journaled_trade(paths)
-    _bars_file(paths, DAY, BARS)
+    _bars_file(paths, DAY, _bars(0, 1, 2, 3))
     store = Store.open_readonly(paths.database)
     (trade,) = closed_trades(store, closed_on=DAY)
+    shown = trade_metrics(store, trade, None)  # what the status writer adds, for display
     store.close()
-    assert trade.stop_confirmed_after_seconds == Decimal("2.250")
-    assert (trade.mae_usd, trade.mfe_usd) == (None, None)
+    assert (trade.stop_confirmed_after_seconds, trade.mae_usd, trade.mfe_usd) == (
+        None, None, None)
+    assert shown.stop_confirmed_after_seconds == Decimal("2.250")
+    assert (shown.mae_usd, shown.mfe_usd) == (None, None)
 
 
-@pytest.mark.parametrize("lines", [None, BARS[:3] + BARS[4:], BARS[2:]],
+@pytest.mark.parametrize("minutes", [(), (0, 1, 2), (1, 2, 3)],
                          ids=["no-capture", "no-exit-minute", "no-fill-minute"])
-def test_excursions_are_null_without_capture_of_both_edge_minutes(paths, lines):
+def test_excursions_are_null_without_capture_of_both_edge_minutes(paths, minutes):
     _journaled_trade(paths)
-    if lines is not None:
-        _bars_file(paths, DAY, lines)
+    if minutes:
+        _bars_file(paths, DAY, _bars(*minutes))
     (trade,) = History(paths).day(DAY, LATER).trades
     assert (trade.mae_usd, trade.mfe_usd) == (None, None)
     assert trade.stop_confirmed_after_seconds == Decimal("2.250")
@@ -213,13 +248,27 @@ def test_window_ends_at_the_read_that_showed_the_last_shares_sold(paths):
     _observed(store, clock, "t1-entry", 5, "FILLED", "10")
     _observed(store, clock, "t1-stop", 6, "ACCEPTED", "0")
     _observed(store, clock, "t1-stop", 70, "PARTIALLY_FILLED", "4")
-    _observed(store, clock, "t1-exit", 100, "FILLED", "6")  # the last shares: minute 1
+    _observed(store, clock, "t1-exit", 150, "FILLED", "6")  # the last shares: minute 2
     _observed(store, clock, "t1-stop", 250, "CANCELLED", "4")  # no more sold: not the end
     store.close()
-    _bars_file(paths, DAY, BARS)
+    _bars_file(paths, DAY, _bars(0, 1, 2, 3, 4))
     (trade,) = History(paths).day(DAY, LATER).trades
     assert trade.stop_confirmed_after_seconds == Decimal("1.000")
-    assert trade.mfe_usd == (Decimal("12.60") - Decimal("12.34")) * 10  # minutes 0-1 only
+    assert trade.mae_usd == (Decimal("12.30") - Decimal("12.34")) * 10  # minute 1 only
+
+
+def test_a_malformed_journal_row_shows_null_metrics_not_an_error(paths):
+    _journaled_trade(paths)
+    store, clock = _timed_store(paths)
+    _observed(store, clock, "t1-stop", 200, "ACCEPTED", "0")
+    with store.transaction():
+        store.append("order-observed", {"state": "ACCEPTED"}, key="t1-stop")
+    store.close()
+    _bars_file(paths, DAY, _bars(0, 1, 2, 3))
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert (trade.stop_confirmed_after_seconds, trade.mae_usd, trade.mfe_usd) == (
+        None, None, None)
+    assert trade.result_gross_usd == Decimal("4.10")
 
 
 @pytest.mark.parametrize("rows", [

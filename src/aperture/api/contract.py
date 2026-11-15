@@ -319,8 +319,8 @@ class ErrorV1:
 class DayTrade:
     """A closed trade with fills. `stop_price` is the first protective stop sent (null if none
     was); 1 R = `planned_loss_usd`. `stop_confirmed_after_seconds` as in `Trade`. `mae_usd` /
-    `mfe_usd`: (lowest low - entry) x quantity and (highest high - entry) x quantity over the
-    captured M1 bars of the minutes the trade was open; null without that capture."""
+    `mfe_usd`: lower bounds of the excursions in USD, from the fill prices and the captured M1
+    bars strictly inside the trade's minutes (docs/api.md); null without that capture."""
 
     trade_id: str
     symbol: str
