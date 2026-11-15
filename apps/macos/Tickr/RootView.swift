@@ -117,7 +117,7 @@ struct RootView: View {
     }
   }
 
-  /// "sandbox · price-action-v1 v1 · positions: 1", as in the design's title bar; the day is in
+  /// "Sandbox · price-action-v1 v1 · positions: 1", as in the design's title bar; the day is in
   /// the toolbar's day picker. Before the first status, the day.
   private var subtitle: String {
     guard let status = model.status else {
@@ -126,7 +126,7 @@ struct RootView: View {
         : String(localized: L10n.Common.recordedDay(Format.dayLabel(model.shownDay)))
     }
     let positions = String(localized: L10n.Toolbar.positions(status.positions.count))
-    return "\(status.environment) · \(Format.strategy(status.strategy)) · \(positions)"
+    return "\(ApiText.environment(status.environment)) · \(Format.strategy(status.strategy)) · \(positions)"
   }
 }
 
@@ -204,7 +204,9 @@ private struct DayToolbar: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItemGroup(placement: .navigation) {
-      Button { model.showPreviousDay() } label: { Label(String(localized: L10n.Toolbar.previousDay), systemImage: Self.previousSymbol) }
+      Button { model.showPreviousDay() } label: {
+        Label(String(localized: L10n.Toolbar.previousDay), systemImage: Self.previousSymbol)
+      }
         .disabled(model.previousDay == nil)
         .help(Text(L10n.Toolbar.previousDayHelp))
       Menu {

@@ -130,7 +130,7 @@ private struct Header: View {
           }
           #endif
           if let status = model.status {
-            Badge(verbatim: status.environment, color: Palette.warningText)
+            Badge(verbatim: ApiText.environment(status.environment), color: Palette.warningText)
             let open = status.tradingGate.open
             StateGlyph(open ? Self.gateOpenSymbol : Self.gateClosedSymbol, tone: open ? .profit : .warning,
               label: Text(verbatim: String(localized: open ? L10n.Overview.gateOpen : L10n.Overview.gateClosed)
@@ -817,7 +817,8 @@ struct StopBadge: View {
 
   var body: some View {
     StateGlyph(symbol, tone: state == .verified ? .profit : state == .pending ? .warning : .loss,
-      label: Text(verbatim: state.title), live: state != .verified, event: [AnyHashable(state), AnyHashable(price)], style: compact ? .compact : .tile)
+      label: Text(verbatim: state.title), live: state != .verified, event: [AnyHashable(state), AnyHashable(price)],
+      style: compact ? .compact : .tile)
   }
 
   private var symbol: String {

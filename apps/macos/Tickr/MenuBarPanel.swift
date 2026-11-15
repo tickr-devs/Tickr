@@ -315,11 +315,12 @@ private struct MenuFooter: View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       HStack {
         if let environment = model.status?.environment {
-          Badge(verbatim: environment, color: Palette.accentText)
+          Badge(verbatim: ApiText.environment(environment), color: Palette.accentText)
         }
         Spacer()
         TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
-          Text(L10n.MenuBar.brokerRead(Format.age(since: model.status?.freshness.lastBrokerReadAt?.date, now: model.botTime(context.date))))
+          Text(L10n.MenuBar.brokerRead(
+            Format.age(since: model.status?.freshness.lastBrokerReadAt?.date, now: model.botTime(context.date))))
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(Palette.textQuaternary)
             .contentTransition(.numericText())
