@@ -101,7 +101,7 @@ public final class AppModel {
   /// reopening the window.
   var openingPlayed = false
   /// Centre of Overview's header mark on screen (global coordinates), where the opening lands.
-  var overviewMarkCentre: CGPoint?
+  @ObservationIgnored var overviewMarkCentre: CGPoint?
 
   // History.
   public private(set) var days: [DaySummary] = []
