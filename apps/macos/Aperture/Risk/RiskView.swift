@@ -142,7 +142,8 @@ private struct EntryGateCard: View {
 
   var body: some View {
     Card(L10n.Risk.entryGate, tint: allowed ? nil : Palette.warning, tone: allowed ? .profit : .warning, trailing: {
-      StatusPill(allowed ? L10n.Risk.allowed : L10n.Risk.blocked, tone: allowed ? .profit : .warning, live: allowed)
+      StatusPill(allowed ? L10n.Risk.allowed : L10n.Risk.blocked, tone: allowed ? .profit : .warning, live: allowed,
+        event: model.status?.freshness.lastBrokerReadAt?.date)
     }) {
       if let status = model.status {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {

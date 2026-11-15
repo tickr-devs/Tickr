@@ -528,6 +528,7 @@ private struct PositionTab: View {
 }
 
 private struct PositionDetail: View {
+  @Environment(AppModel.self) private var model
   let row: PositionRow
 
   /// Smallest size of the price chart, and width of the figures column, in points.
@@ -541,7 +542,7 @@ private struct PositionDetail: View {
         .frame(minWidth: Self.chartMinWidth, minHeight: Self.chartMinHeight)
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.s) {
-          StopBadge(state: row.position.stop.state)
+          StopBadge(state: row.position.stop.state, read: model.status?.freshness.lastBrokerReadAt?.date)
           Text(verbatim: row.position.symbol).font(Tokens.Typography.metric)
           Spacer()
           if let value = row.unrealized {
@@ -629,6 +630,8 @@ private struct PositionDetail: View {
 struct StopBadge: View {
   let state: StopState
   var compact = false
+  /// The bot's last broker read: an unprotected stop pulses once per read that still finds it so.
+  var read: Date?
 
   /// Symbols of the stop states.
   static let verifiedSymbol = "checkmark.shield.fill"
@@ -638,7 +641,7 @@ struct StopBadge: View {
 
   var body: some View {
     StateGlyph(symbol, tone: state == .verified ? .profit : state == .pending ? .warning : .loss,
-      label: Text(verbatim: state.title), live: state != .verified, style: compact ? .compact : .tile)
+      label: Text(verbatim: state.title), live: state != .verified, event: read, style: compact ? .compact : .tile)
       .modifier(AlarmPulse(active: state == .missing || state == .unknown))
   }
 

@@ -139,6 +139,7 @@ private struct MenuPositions: View {
 
 /// One open position: result so far, a bar from the stop up, stop, entry and last.
 struct MenuPosition: View {
+  @Environment(AppModel.self) private var model
   let position: Position
   /// The position with its latest bar; nil until a fresh bar arrives.
   let row: PositionRow?
@@ -178,7 +179,7 @@ struct MenuPosition: View {
       }
       StopTargetBar(progress: progress)
       HStack {
-        StopBadge(state: position.stop.state, compact: true)
+        StopBadge(state: position.stop.state, compact: true, read: model.status?.freshness.lastBrokerReadAt?.date)
         Spacer()
         Text(L10n.MenuBar.entry(Format.price(position.entryPrice.value)))
         Spacer()
