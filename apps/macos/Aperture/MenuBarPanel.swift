@@ -51,7 +51,8 @@ private struct StatusBanner: View {
     .padding(.vertical, Tokens.Space.s)
     .background(color.opacity(Tokens.Opacity.wash), in: .rect(cornerRadius: Tokens.Radius.medium))
     .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(color.opacity(Tokens.Opacity.border)))
-    .animation(Tokens.Motion.standard, value: model.headline.pulse)
+    // The colour follows the severity, so a severity change animates even under the same words.
+    .animation(Tokens.Motion.standard, value: [AnyHashable(model.headline.pulse), AnyHashable(model.headline.severity)])
   }
 }
 
