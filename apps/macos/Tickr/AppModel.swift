@@ -466,7 +466,7 @@ public final class AppModel {
     } catch APIError.refused(_, _, let cause) {
       return .refused(cause)
     } catch {
-      return .refused(Self.describe(error))
+      return .refused(ErrorText.text(error))
     }
   }
 
