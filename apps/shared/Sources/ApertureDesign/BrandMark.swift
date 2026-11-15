@@ -3,13 +3,15 @@ import SwiftUI
 /// The Tickr mark: a price line drawn as a tick that breaks upward, with a spark at its end. The
 /// app icon and the iOS launch screen draw the same line (apps/scripts/make_brand_assets.py).
 ///
-/// On appear the line draws itself, the area under it fades in and the spark then keeps breathing,
-/// meaning "live". With Reduce Motion the finished mark stands still.
+/// On appear the line draws itself and the area under it fades in. While `live` (the bot's data is
+/// current) the spark then keeps pulsing; otherwise, and with Reduce Motion, the mark stands still.
 public struct BrandMark: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn: CGFloat = 0
   @State private var breathing = false
+  @State private var settled = false
   let size: CGFloat
+  let live: Bool
 
   /// Points of the line as shares of the mark's side, left to right (POINTS in make_brand_assets.py).
   static let start = CGPoint(x: 0.205, y: 0.51)
@@ -23,8 +25,9 @@ public struct BrandMark: View {
   static let sparkDiameter = 0.09
   static let areaBottom = 0.86
 
-  public init(size: CGFloat = Tokens.Size.logo) {
+  public init(size: CGFloat = Tokens.Size.logo, live: Bool) {
     self.size = size
+    self.live = live
   }
 
   public var body: some View {
@@ -40,12 +43,16 @@ public struct BrandMark: View {
         .stroke(
           LinearGradient(colors: [Palette.profit, Palette.accent], startPoint: .topTrailing, endPoint: .bottomLeading),
           style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
-      Circle()
-        .fill(Palette.profit.opacity(Tokens.Opacity.faint))
-        .frame(width: diameter, height: diameter)
-        .scaleEffect(breathing ? Tokens.Motion.pulseScale : 1)
-        .opacity(breathing ? 0 : drawn)
-        .position(x: spark.x * size, y: spark.y * size)
+      if live && settled && !reduceMotion {
+        Circle()
+          .fill(Palette.profit.opacity(Tokens.Opacity.faint))
+          .frame(width: diameter, height: diameter)
+          .scaleEffect(breathing ? Tokens.Motion.pulseScale : 1)
+          .opacity(breathing ? 0 : 1)
+          .position(x: spark.x * size, y: spark.y * size)
+          .onAppear(perform: pulse)
+          .onDisappear { breathing = false }
+      }
       Circle()
         .fill(Palette.profit)
         .frame(width: diameter, height: diameter)
@@ -65,9 +72,13 @@ public struct BrandMark: View {
     withAnimation(Tokens.Motion.draw) {
       drawn = 1
     } completion: {
-      withAnimation(.easeOut(duration: Tokens.Motion.breatheSeconds).repeatForever(autoreverses: false)) {
-        breathing = true
-      }
+      settled = true
+    }
+  }
+
+  private func pulse() {
+    withAnimation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
+      breathing = true
     }
   }
 }
@@ -99,7 +110,7 @@ struct TickArea: Shape {
 }
 
 #Preview {
-  BrandMark()
+  BrandMark(live: true)
     .padding()
     .background(Palette.background)
 }

@@ -179,6 +179,6 @@ breaks upward, with a spark at its end.
   (`LaunchBackground` = `background`, `LaunchMark`). Change the script and run it; never edit the
   generated files. `tests/test_brand_assets.py` fails when they differ.
 - In the apps the same line is `BrandMark` (ApertureDesign): it draws itself on appear and its
-  spark then pulses; still with Reduce Motion.
+  spark then pulses while the bot's data is live; still otherwise and with Reduce Motion.
 - macOS has no launch screen (Apple HIG). The menu bar extra keeps an SF Symbol, because it shows
   the bot's state; notifications and the About panel use the app icon.
