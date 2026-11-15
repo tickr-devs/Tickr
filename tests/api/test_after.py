@@ -133,7 +133,8 @@ def test_closes_come_from_the_calendar_and_name_a_refused_day():
 
 @pytest.fixture
 def paths(tmp_path) -> HistoryPaths:
-    return HistoryPaths("sandbox", tmp_path / "aperture.sqlite3", tmp_path / "capture" / "sandbox")
+    return HistoryPaths("sandbox", tmp_path / "aperture.sqlite3", tmp_path / "capture" / "sandbox",
+                        CALENDAR, Decimal(900))
 
 
 def _line(minute: int, high: str, close: str) -> str:
