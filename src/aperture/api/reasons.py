@@ -321,7 +321,12 @@ _SEPARATOR = "; "
 
 
 def _ny_wire(text: str) -> str:
-    return _ny_time(datetime.strptime(text, "%Y-%m-%dT%H:%M:%S.%f%z"))
+    """A wire time as HH:MM New York; a text the pattern matched but no calendar has (month
+    13, hour 25) stays as written."""
+    try:
+        return _ny_time(datetime.strptime(text, "%Y-%m-%dT%H:%M:%S.%f%z"))
+    except ValueError:
+        return text
 
 
 def _prose_one(text: str) -> Reason:

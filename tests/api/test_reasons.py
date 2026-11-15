@@ -203,3 +203,19 @@ def test_planned_loss_texts_of_after_and_performance_read():
         "planned_loss_not_positive_r")
     assert reasons.prose_reasons("planned loss 0 is not positive: no R")[0].params == {
         "planned_loss": "0"}
+
+
+@pytest.mark.parametrize("text", [
+    "the bars end at 2026-13-45T25:61:00.000Z",
+    "no reconcile-checked row from 2026-02-30T14:30:00.000Z to 2026-11-16T15:00:00.000Z "
+    "(1800 s, more than [orders] reconcile_max_gap_seconds 900)",
+])
+def test_an_impossible_wire_time_stays_as_written_and_never_raises(text):
+    """Codes are built with every document, the daily-loss path's trades included: reading a
+    cause must never raise."""
+    (reason,) = reasons.prose_reasons(text)
+    assert reason.code in ("bars_end", "reconcile_gap")
+    assert "2026-13-45T25:61:00.000Z" in reason.params.values() or (
+        reason.params["since"] == "2026-02-30T14:30:00.000Z" and reason.params["until"] == "10:00")
+    trade = contract.WhatIfV1(None, None, None, text)
+    assert trade.cause_codes == (reason,)
