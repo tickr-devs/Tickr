@@ -393,7 +393,10 @@ def settings_violations(path: Path) -> list[tuple[int, str]]:
 # The owner's rule (docs/design-system.md, "Motion"): anything that reads as data or activity
 # moves only when the bot's data changes. Pure decoration (the brand mark, an empty-state
 # ornament) may loop, marked `// decorative: <why>` on the same line or the line above.
-LOOP = re.compile(r"\.repeatForever\(|TimelineView\(\s*\.animation\b")
+LOOP = re.compile(
+    r"\.repeatForever\(|TimelineView\(\s*\.animation\b"
+    r"|\brepeatCount\s*=\s*(?:Float)?\.(?:infinity|greatestFiniteMagnitude)\b"
+)
 DECORATIVE = "// decorative:"
 
 
