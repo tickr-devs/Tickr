@@ -140,6 +140,7 @@ public struct BrandMark: View {
     withAnimation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
       breathing = true
     }
+    // decorative: the shine across the brand mark is an ornament (owner, 2026-11-15).
     withAnimation(.easeInOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
       shine = 1 + Self.shineLength
     }
