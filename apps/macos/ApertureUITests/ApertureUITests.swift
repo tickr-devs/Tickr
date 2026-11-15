@@ -63,11 +63,14 @@ final class ApertureUITests: XCTestCase {
     continueAfterFailure = false
   }
 
-  /// Scrolls the screen down, a step at a time, until `element` can be clicked.
+  /// Scrolls the screen, a step at a time, until `element` can be clicked.
   @MainActor
   private func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
-    for _ in 0..<Self.scrollSteps where !element.isHittable {
-      app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -Self.scrollStep)
+    // The sign of a scroll delta follows the Mac's scroll direction setting: try one way, then the other.
+    for direction: CGFloat in [-1, 1] {
+      for _ in 0..<Self.scrollSteps where !element.isHittable {
+        app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: direction * Self.scrollStep)
+      }
     }
   }
 
