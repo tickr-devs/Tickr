@@ -208,18 +208,24 @@ def test_an_alert_whose_thread_cannot_start_is_reported_and_sent_again_next_time
         starts.append(target)
         if len(starts) == 1:
             raise RuntimeError("can't start new thread")
-        return threading.Thread(target=target)  # never started: enough to count the attempt
+        thread = threading.Thread(target=target)
+        thread.start()
+        return thread
 
-    mac = Recorder()
-    alerter = Alerter(CONFIG, "Aperture", Channels((), ((MACOS, mac),), spawn=spawn), Clock())
-    # The bot's loop gets an outcome, never the exception.
+    mac, phone = Recorder(fail=True), Recorder(fail=True)
+    alerter = Alerter(CONFIG, "Aperture",
+                      Channels((), ((MACOS, mac), (IMESSAGE, phone)), spawn=spawn), Clock())
+    # The bot's loop gets an outcome, never the exception; the other channel still runs.
     assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SENDING
-    (failed,) = alerter.completed()
-    assert (failed.delivery, failed.channel) == (Delivery.FAILED, MACOS)
-    assert failed.error == "macos: not started: RuntimeError"
-    # Not suppressed until a restart: the next occurrence is sent.
+    outcomes = {o.channel: (o.delivery, o.error) for o in alerter.flush()}
+    assert outcomes == {MACOS: (Delivery.FAILED, "macos: not started: RuntimeError"),
+                        IMESSAGE: (Delivery.FAILED, "imessage: boom")}
+    # Not suppressed until a restart: the next occurrence is sent, on both channels.
+    phone.fail = mac.fail = False
     assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SENDING
-    assert len(starts) == 2
+    assert {o.channel: o.delivery for o in alerter.flush()} == {
+        MACOS: Delivery.SHOWN, IMESSAGE: Delivery.SHOWN}
+    assert len(mac.shown) == len(phone.shown) == 1
 
 
 def test_a_send_that_raises_leaves_no_alert_marked_as_sending():
