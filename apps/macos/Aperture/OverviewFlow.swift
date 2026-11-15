@@ -236,7 +236,6 @@ private struct WatchingRow: View {
     .overlay {
       RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin)
     }
-    .accessibilityElement(children: .combine)
   }
 
   /// How close the deciding check is to passing, as a thin bar in the verdict's colour; empty
