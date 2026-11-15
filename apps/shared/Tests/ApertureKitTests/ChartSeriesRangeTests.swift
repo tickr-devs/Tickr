@@ -59,6 +59,20 @@ struct ChartSeriesRangeTests {
     #expect(days.candles[0].end == (try WireTime("2026-11-02T05:00:00.000Z").date))
   }
 
+  @Test("Gapless candles sit back to back from the first start and keep their values")
+  func gapless() throws {
+    let series = ChartSeries(chart: try chart("1h", "5d", [
+      ("2026-11-13T20:00:00.000Z", "10", "100"),
+      ("2026-11-16T14:30:00.000Z", "30", "100"),
+    ]))
+    let gapless = series.gapless()
+    #expect(gapless.candles.map(\.start) == [series.candles[0].start, series.candles[0].start.addingTimeInterval(3600)])
+    #expect(gapless.candles[1].end == series.candles[0].start.addingTimeInterval(7200))
+    #expect(gapless.candles.map(\.close) == [10, 30])
+    #expect(gapless.vwap == series.vwap)
+    #expect(gapless.timeframe == .h1)
+  }
+
   @Test("The ATR of a chart-v1 series runs over its own candles")
   func atrOverCandles() throws {
     let bars = (0..<20).map { day in (String(format: "2026-10-%02dT04:00:00.000Z", day + 1), "10", "1000") }

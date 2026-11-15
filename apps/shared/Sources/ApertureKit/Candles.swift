@@ -147,6 +147,29 @@ public struct ChartSeries: Hashable, Sendable {
     fastEMA = Indicators.ema(closes, period: Indicators.fastEMAPeriod)
     slowEMA = Indicators.ema(closes, period: Indicators.slowEMAPeriod)
   }
+
+  private init(timeframe: Timeframe, candles: [Candle], vwap: [Double?], fastEMA: [Double?], slowEMA: [Double?]) {
+    self.timeframe = timeframe
+    self.candles = candles
+    self.vwap = vwap
+    self.fastEMA = fastEMA
+    self.slowEMA = slowEMA
+  }
+
+  /// The same candles back to back from the first one's start, one length each, every value
+  /// kept: a chart over several sessions or months then draws no overnight, weekend or holiday
+  /// gaps. Candle `i` keeps its index, so its real start is the original series' `candles[i]`.
+  public func gapless() -> ChartSeries {
+    guard let origin = candles.first?.start else { return self }
+    let length = timeframe.seconds
+    let moved = candles.enumerated().map { index, candle in
+      let start = origin.addingTimeInterval(TimeInterval(index) * length)
+      return Candle(
+        start: start, end: start.addingTimeInterval(length), open: candle.open, high: candle.high,
+        low: candle.low, close: candle.close, volume: candle.volume, extended: candle.extended)
+    }
+    return ChartSeries(timeframe: timeframe, candles: moved, vwap: vwap, fastEMA: fastEMA, slowEMA: slowEMA)
+  }
 }
 
 public enum Candles {
