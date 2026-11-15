@@ -26,7 +26,7 @@ The API still binds loopback only. The iPhone reaches it through an HTTPS proxy 
 [Tailscale](https://tailscale.com) `serve`, which is reachable only from devices signed in to the
 owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
 tailnet name. The proxy points at a second loopback port, `[api] remote_port`, opened only when
-`[api] remote_hosts` is set. Every request on that port must carry the paired token, whatever its
+`[api] remote_hosts_file` names a host. Every request on that port must carry the paired token, whatever its
 `Host` header says, except `POST /pair`, which redeems a one-time pairing code for that token; the
 local port never accepts the remote name. Whether a token is needed is
 decided by the port a request arrives on, never by a header the caller chooses.
