@@ -81,9 +81,14 @@ public struct ChartSeries: Hashable, Sendable {
 }
 
 public enum Candles {
-  /// Candles of `timeframe` from M1 bars (oldest first). A candle starts on a whole multiple of
-  /// the timeframe (09:35, 09:40 for M5) and holds the bars that start inside it; a candle without
-  /// bars is not made, so gaps stay gaps.
+  /// Hour and minute of the regular session's open in New York: candles are counted from it.
+  static let sessionOpenHour = 9
+  static let sessionOpenMinute = 30
+
+  /// Candles of `timeframe` from M1 bars (oldest first). Candles are counted from the session's
+  /// 09:30 open in New York (09:35, 09:40 for M5; 09:30, 10:30 for H1, as brokers draw them, not
+  /// clock hours) and hold the bars that start inside them; a candle without bars is not made, so
+  /// gaps stay gaps.
   public static func make(_ bars: [BarV1], timeframe: Timeframe) -> [Candle] {
     groups(bars, timeframe: timeframe).map(\.candle)
   }
@@ -93,7 +98,7 @@ public enum Candles {
     var groups: [(candle: Candle, lastBar: Int)] = []
     let length = timeframe.seconds
     for (index, bar) in bars.enumerated() {
-      let start = Date(timeIntervalSince1970: (bar.start.date.timeIntervalSince1970 / length).rounded(.down) * length)
+      let start = candleStart(bar.start.date, length: length)
       let high = double(bar.high)
       let low = double(bar.low)
       let close = double(bar.close)
@@ -111,6 +116,17 @@ public enum Candles {
       }
     }
     return groups
+  }
+
+  /// Start of the candle of `length` seconds holding `date`: whole lengths from that day's
+  /// 09:30 in New York (earlier bars fall into candles before it).
+  static func candleStart(_ date: Date, length: TimeInterval) -> Date {
+    var open = WireDate.newYork.dateComponents([.year, .month, .day], from: date)
+    open.hour = sessionOpenHour
+    open.minute = sessionOpenMinute
+    guard let anchor = WireDate.newYork.date(from: open) else { return date }
+    let offset = (date.timeIntervalSince(anchor) / length).rounded(.down) * length
+    return anchor.addingTimeInterval(offset)
   }
 
   static func double(_ value: DecimalString) -> Double {

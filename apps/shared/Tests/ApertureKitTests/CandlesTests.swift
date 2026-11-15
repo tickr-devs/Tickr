@@ -92,6 +92,22 @@ struct CandlesTests {
     #expect(!near(series.vwap[0], 9))
   }
 
+  @Test("H1 candles start at the 09:30 open, not on clock hours")
+  func hourFromTheOpen() throws {
+    // 15:00 UTC is 10:00 in New York on 2026-11-16 (EST): the 09:30 candle.
+    let bars = [
+      try bar(0, "10", "11", "9", "10.5", "100"),
+      try bar(29, "10.5", "12", "10", "11", "50"),
+      try bar(30, "11", "11", "11", "11", "10"),
+    ]
+    let candles = Candles.make(bars, timeframe: .h1)
+    #expect(candles.count == 2)
+    #expect(candles[0].start == (try WireTime("2026-11-16T14:30:00.000Z").date))
+    #expect(candles[0].volume == 150)
+    #expect(candles[1].start == (try WireTime("2026-11-16T15:30:00.000Z").date))
+    #expect(candles[1].end == (try WireTime("2026-11-16T16:30:00.000Z").date))
+  }
+
   @Test("Whole-hour timeframes name their hours")
   func hours() {
     #expect(Timeframe.h1.hours == 1)
