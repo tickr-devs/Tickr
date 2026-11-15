@@ -384,6 +384,8 @@ private struct DayFigures: Equatable {
 private struct DayCard: View {
   /// Size of the day's result curve, in points.
   static let curveSize = CGSize(width: 120, height: 50)
+  /// Smallest scale the result and the counts may shrink to before they truncate.
+  static let minimumScale = 0.6
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The result as shown: counts up from zero to the day's result when the card appears.
@@ -393,7 +395,8 @@ private struct DayCard: View {
   let figures: DayFigures
 
   var body: some View {
-    HStack(spacing: Tokens.Space.m) {
+    // The curve goes under the figures at large text sizes, so the result stays whole.
+    RowStack(spacing: Tokens.Space.m) {
       VStack(alignment: .leading, spacing: Tokens.Space.xs) {
         HStack(spacing: Tokens.Space.s) {
           if live { PulseDot(Palette.profit, size: Tokens.Size.dotSmall) }
@@ -405,6 +408,8 @@ private struct DayCard: View {
           .font(Tokens.Typography.metric)
           .foregroundStyle(Palette.result(figures.result))
           .contentTransition(.numericText(value: NSDecimalNumber(decimal: shown).doubleValue))
+          .lineLimit(1)
+          .minimumScaleFactor(Self.minimumScale)
           .accessibilityLabel(Text(verbatim: Money.signedUSD(figures.result)))
         Text(figures.counts)
           .font(Tokens.Typography.annotation)
@@ -607,14 +612,26 @@ private struct TradesList: View {
   private func row(symbol: String, time: String, tag: String, tagSymbol: String, tone: Tone, result: String,
     figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      HStack(spacing: Tokens.Space.s) {
-        Text(verbatim: symbol).font(Tokens.Typography.calloutMono.bold())
-        Text(verbatim: time).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
-        Spacer()
-        StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
-        Text(verbatim: result)
-          .font(Tokens.Typography.calloutMono.bold())
-          .foregroundStyle(tone.text)
+      // Symbol and time, then the tag and the result; at large text sizes the second pair goes
+      // under the first, so the symbol and the figures stay whole.
+      RowStack(spacing: Tokens.Space.s) {
+        HStack(spacing: Tokens.Space.s) {
+          Text(verbatim: symbol).font(Tokens.Typography.calloutMono.bold())
+            .lineLimit(1)
+            .fixedSize()
+          Text(verbatim: time).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
+            .lineLimit(1)
+            .minimumScaleFactor(DayCard.minimumScale)
+        }
+        Spacer(minLength: 0)
+        HStack(spacing: Tokens.Space.s) {
+          StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
+          Text(verbatim: result)
+            .font(Tokens.Typography.calloutMono.bold())
+            .foregroundStyle(tone.text)
+            .lineLimit(1)
+            .fixedSize()
+        }
       }
       ChipFlow {
         chipViews(figures)
