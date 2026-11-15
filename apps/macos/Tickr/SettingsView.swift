@@ -76,6 +76,8 @@ private struct GeneralSettings: View {
 
   /// URL schemes the local API address may use.
   static let schemes: Set = ["http", "https"]
+  /// How long after the pane appears the address field's automatic focus is released.
+  static let focusRelease: Duration = .milliseconds(150)
 
   var body: some View {
     Group {
@@ -87,9 +89,10 @@ private struct GeneralSettings: View {
         ThemeCard()
       }
       .fixedSize(horizontal: false, vertical: true)
+      DemoDaySection()
       JobsSection()
     }
-    .onAppear { draft = model.baseURL.absoluteString }
+    .onAppear { draft = model.address.absoluteString }
     .alert(String(localized: L10n.Settings.invalidAddress), isPresented: $invalid) {
       Button(String(localized: L10n.Settings.ok), role: .cancel) {}
     } message: {
@@ -142,8 +145,12 @@ private struct GeneralSettings: View {
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
     }
-    // Settings opens with nothing in focus, so the address is not selected under the cursor.
-    .task { editing = false }
+    // Settings opens with nothing in focus, so the address is not selected under the cursor:
+    // AppKit gives the field focus once the window is up, so it is taken back just after.
+    .task {
+      try? await Task.sleep(for: Self.focusRelease)
+      editing = false
+    }
   }
 
   private func apply() {
@@ -192,6 +199,44 @@ private struct ThemeCard: View {
   private func choose(_ value: String) {
     appearance = value
     NSApplication.shared.appearance = TickrMacApp.appearance(value)
+  }
+}
+
+/// The "Demo day" switch as a card: the name with a one-line explanation, the demo chip while it
+/// is on, and the switch in the environment chip's colour. On, the app shows the demo day behind
+/// the bot's address (AppModel.setDemoDay) and remembers the choice; the address above is
+/// untouched.
+private struct DemoDaySection: View {
+  @Environment(AppModel.self) private var model
+  @AppStorage(Defaults.demoDay) private var demoDay = false
+
+  /// Accessibility id of the switch, for the UI tests.
+  static let id = "settings-demo-day"
+
+  var body: some View {
+    SettingsCard(L10n.Settings.demoDay, footnote: Text(L10n.Settings.demoDayExplanation)) {
+      HStack(spacing: Tokens.Space.m) {
+        Toggle(isOn: Binding(get: { model.demoDay }, set: { on in
+          demoDay = on
+          model.setDemoDay(on)
+        })) {
+          Text(L10n.Settings.demoDay)
+        }
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .tint(Palette.warning)
+        .accessibilityIdentifier(Self.id)
+        Text(L10n.Settings.demoDay)
+          .font(Tokens.Typography.callout)
+          .foregroundStyle(Palette.textSecondary)
+          .accessibilityHidden(true)
+        Spacer(minLength: Tokens.Space.s)
+      }
+    } trailing: {
+      if model.demoDay { Badge(L10n.Toolbar.demoChip, tone: .warning) }
+    }
+    .animation(Tokens.Motion.quick, value: model.demoDay)
   }
 }
 
@@ -733,6 +778,8 @@ private struct SessionStrip: View {
       .font(Tokens.Typography.annotation)
       .foregroundStyle(color)
       .fixedSize()
+      // On the card's colour, so the now line passes behind a label rather than through it.
+      .background(Palette.surface)
       .frame(width: trailing ? max(x - Tokens.Space.xs, 0) : nil, alignment: .trailing)
       .offset(x: trailing ? 0 : x, y: y)
   }
