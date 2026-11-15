@@ -85,12 +85,12 @@ final class MarqueeLayerView: PlatformView {
     animation.fromValue = 0
     animation.toValue = -width
     animation.duration = Double(width) / speed
+    // decorative: the ticker scrolls as an ornament; its items change only on real events (owner, 2026-11-15).
     animation.repeatCount = .infinity
     // Kept while the app is in the background or the view leaves its window, so it resumes.
     animation.isRemovedOnCompletion = false
     // Carry on from where the old loop was, within the new width.
     animation.timeOffset = Double(min(-current, width)) / speed
-    // decorative: the ticker scrolls as an ornament; its items change only on real events (owner, 2026-11-15).
     strip.add(animation, forKey: Self.animationKey)
   }
 }
