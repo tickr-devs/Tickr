@@ -178,6 +178,8 @@ public enum Tokens {
     public static let faint = 0.35
     /// Borders tinted with an accent, secondary marks.
     public static let border = 0.45
+    /// An off chip among on ones (the Chart's studies).
+    public static let muted = 0.55
     /// Visible but not dominant: inactive elements, pulse rings at start.
     public static let medium = 0.7
     /// Light-mode card shadow.

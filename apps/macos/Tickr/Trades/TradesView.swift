@@ -172,7 +172,12 @@ private struct DayListCard: View {
 
   var body: some View {
     if !model.days.isEmpty {
-      Card(L10n.Trades.allDays) {
+      Card(L10n.Trades.allDays, trailing: {
+        Text(L10n.Trades.allDaysHint)
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(Palette.textQuaternary)
+          .lineLimit(1)
+      }, content: {
         // The screen's scroll view scrolls the list too; a nested one would collapse to nothing.
         LazyVStack(spacing: Tokens.Space.xxs) {
           ForEach(model.days) { day in
@@ -182,7 +187,7 @@ private struct DayListCard: View {
             .buttonStyle(.plain)
           }
         }
-      }
+      })
     }
   }
 
@@ -215,7 +220,10 @@ private struct DayRow: View {
           .foregroundStyle(Palette.textQuaternary)
       }
       Spacer(minLength: Tokens.Space.s)
-      CleanMark(clean: day.clean)
+      if day.clean.verdict != .unknown {
+        CleanDot(verdict: day.clean.verdict)
+          .help(Text(verbatim: CleanMark.text(day.clean)))
+      }
       if !day.hasBars {
         Image(systemName: "chart.bar.xaxis")
           .foregroundStyle(Palette.textQuaternary)
@@ -224,8 +232,11 @@ private struct DayRow: View {
       MoneyText(value: day.resultGrossUsd.value, usd: true, font: Tokens.Typography.calloutMono)
     }
     .padding(.horizontal, Tokens.Space.s)
-    .padding(.vertical, Tokens.Space.xs)
-    .background(isShown ? Palette.accent.opacity(Tokens.Opacity.wash) : .clear, in: .rect(cornerRadius: Tokens.Radius.small))
+    .padding(.vertical, Tokens.Space.s)
+    .background(isShown ? Palette.selection : .clear, in: .rect(cornerRadius: Tokens.Radius.medium))
+    .overlay(
+      RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+        .strokeBorder(isShown ? Palette.separatorStrong : .clear, lineWidth: Tokens.Stroke.thin))
     .contentShape(.rect)
     .animation(Tokens.Motion.quick, value: isShown)
   }
@@ -407,7 +418,9 @@ private struct TradesTable: View {
       }
       .width(min: Column.priceMin, ideal: Column.price)
       TableColumn(Self.header(L10n.Trades.reason)) { trade in
-        Badge(verbatim: Board.exitReasonTitle(trade.exitReason), color: Palette.textTertiary)
+        // Coloured as the event ticker colours the exit: by its result, amber when forced.
+        Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
+          color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
       }
       .width(min: Column.reasonMin, ideal: Column.reason)
       TableColumn(Self.header(L10n.Trades.resultR)) { trade in

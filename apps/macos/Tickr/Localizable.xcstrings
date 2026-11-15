@@ -1191,6 +1191,23 @@
         }
       }
     },
+    "chart.atrChip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ATR"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ATR"
+          }
+        }
+      }
+    },
     "chart.atrWaiting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2218,6 +2235,40 @@
         }
       }
     },
+    "chart.onPrice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On price"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На цене"
+          }
+        }
+      }
+    },
+    "chart.onPriceHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lines drawn over the price"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Линии поверх цены"
+          }
+        }
+      }
+    },
     "chart.open" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2231,6 +2282,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "О"
+          }
+        }
+      }
+    },
+    "chart.panes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Панели"
+          }
+        }
+      }
+    },
+    "chart.panesHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indicators with a pane of their own under the price"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Индикаторы со своей панелью под ценой"
           }
         }
       }
@@ -2707,6 +2792,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Панель RSI (%lld) с полосами перекупленности и перепроданности"
+          }
+        }
+      }
+    },
+    "chart.scrollHistory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "scroll history"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "прокрутка истории"
+          }
+        }
+      }
+    },
+    "chart.scrollHistoryHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom in, then slide to move through the earlier candles"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приблизьте график и сдвигайте ползунок к более ранним свечам"
           }
         }
       }
@@ -11205,6 +11324,23 @@
         }
       }
     },
+    "trades.allDaysHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "newest first · click: open day"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "сначала новые · щелчок: открыть день"
+          }
+        }
+      }
+    },
     "trades.anotherBot" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11551,13 +11687,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Today · %@"
+            "value" : "%@ · today"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сегодня · %@"
+            "value" : "%@ · сегодня"
           }
         }
       }

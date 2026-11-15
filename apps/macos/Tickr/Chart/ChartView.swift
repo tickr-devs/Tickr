@@ -75,7 +75,7 @@ struct ChartView: View {
   /// SF Symbols of the chip-row buttons.
   static let zoomOutSymbol = "minus"
   static let zoomInSymbol = "plus"
-  static let fitSymbol = "arrow.left.and.right"
+  static let fitSymbol = "arrow.up.left.and.arrow.down.right"
   static let railSymbol = "sidebar.trailing"
   static let candlesSymbol = "chart.bar.fill"
   static let lineSymbol = "chart.xyaxis.line"
@@ -107,6 +107,7 @@ struct ChartView: View {
           .overlay(
             RoundedRectangle(cornerRadius: Tokens.Radius.large)
               .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
+        historyScroller
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       if showDecisions {
@@ -259,8 +260,8 @@ struct ChartView: View {
         styleChips
         Spacer(minLength: Tokens.Space.s)
         zoomButtons
-        if model.isLive && showsDay { livePill }
         decisionsToggle
+        if model.isLive && showsDay { livePill }
       }
       indicatorToggles
     }
@@ -323,8 +324,14 @@ struct ChartView: View {
 
   private var styleChips: some View {
     HStack(spacing: Tokens.Space.xs) {
-      chip(Self.candlesSymbol, title: L10n.Chart.candles, selected: style == .candles) { style = .candles }
-      chip(Self.lineSymbol, title: L10n.Chart.lineStyle, selected: style == .line) { style = .line }
+      Button { style = .candles } label: {
+        Label { Text(L10n.Chart.candles) } icon: { Image(systemName: Self.candlesSymbol) }
+      }
+      .buttonStyle(.chip(selected: style == .candles))
+      Button { style = .line } label: {
+        Label { Text(L10n.Chart.lineStyle) } icon: { Image(systemName: Self.lineSymbol) }
+      }
+      .buttonStyle(.chip(selected: style == .line))
     }
     .help(Text(L10n.Chart.styleHelp))
   }
@@ -339,9 +346,10 @@ struct ChartView: View {
   }
 
   /// Lines over the price (the bot's own first, then the studies), then the panes below it, then
-  /// the trade marks.
+  /// the trade marks, each group named as in the design.
   private var indicatorToggles: some View {
     ChipFlow(spacing: Tokens.Space.xs) {
+      caption(L10n.Chart.onPrice, help: L10n.Chart.onPriceHelp)
       Toggle(isOn: $showVWAP) { Text(L10n.Chart.vwap) }
       Toggle(isOn: $showFastEMA) { Text(L10n.Chart.ema(Indicators.fastEMAPeriod)) }
       Toggle(isOn: $showSlowEMA) { Text(L10n.Chart.ema(Indicators.slowEMAPeriod)) }
@@ -350,14 +358,16 @@ struct ChartView: View {
       Toggle(isOn: $showBollinger) { Text(L10n.Chart.bollinger) }
         .help(Text(L10n.Chart.bollingerHelp(Studies.bollingerPeriod)))
       separator
+      caption(L10n.Chart.panes, help: L10n.Chart.panesHelp)
       Toggle(isOn: $showVolume) { Text(L10n.Chart.volume) }
-      Toggle(isOn: $showMACD) { Text(L10n.Chart.macd) }
-        .help(Text(L10n.Chart.macdHelp(Studies.macdFast, Studies.macdSlow, Studies.macdSignal)))
+      Toggle(isOn: $showATR) { Text(L10n.Chart.atrChip) }
+        .help(Text(L10n.Chart.atr(Indicators.atrPeriod)))
       Toggle(isOn: $showRSI) { Text(L10n.Chart.rsiChip) }
         .help(Text(L10n.Chart.rsiHelp(Studies.rsiPeriod)))
+      Toggle(isOn: $showMACD) { Text(L10n.Chart.macd) }
+        .help(Text(L10n.Chart.macdHelp(Studies.macdFast, Studies.macdSlow, Studies.macdSignal)))
       Toggle(isOn: $showStochastic) { Text(L10n.Chart.stochastic) }
         .help(Text(L10n.Chart.stochasticHelp(Studies.stochasticPeriod, Studies.stochasticSmoothing)))
-      Toggle(isOn: $showATR) { Text(L10n.Chart.atr(Indicators.atrPeriod)) }
       separator
       Toggle(isOn: $showMarks) { Text(L10n.Chart.tradesChip) }
         .help(Text(L10n.Chart.tradesChipHelp))
@@ -366,20 +376,60 @@ struct ChartView: View {
     .toggleStyle(.chip)
   }
 
+  /// A group's name in the study chips ("ON PRICE", "PANES").
+  private func caption(_ title: LocalizedStringResource, help: LocalizedStringResource) -> some View {
+    Text(title)
+      .textCase(.uppercase)
+      .font(Tokens.Typography.annotationBold)
+      .tracking(Tokens.Typography.labelTracking)
+      .foregroundStyle(Palette.textQuaternary)
+      .padding(.trailing, Tokens.Space.xxs)
+      .help(Text(help))
+  }
+
   private var zoomButtons: some View {
     HStack(spacing: Tokens.Space.xs) {
       chip(Self.zoomOutSymbol, title: L10n.Chart.zoomOut) { viewport.zoomOut(total: candleCount) }
         .keyboardShortcut(Viewport.zoomOutKey, modifiers: .command)
         .help(Text(L10n.Chart.zoomOutHelp))
         .disabled(viewport.visible == nil)
-      chip(Self.fitSymbol, title: L10n.Chart.fit) { viewport.fit() }
-        .keyboardShortcut(Viewport.fitKey, modifiers: .command)
-        .help(Text(L10n.Chart.fitHelp))
       chip(Self.zoomInSymbol, title: L10n.Chart.zoomIn) { viewport.zoomIn(total: candleCount) }
         .keyboardShortcut(Viewport.zoomInKey, modifiers: .command)
         .help(Text(L10n.Chart.zoomInHelp))
+      chip(Self.fitSymbol, title: L10n.Chart.fit) { viewport.fit() }
+        .keyboardShortcut(Viewport.fitKey, modifiers: .command)
+        .help(Text(L10n.Chart.fitHelp))
     }
     .disabled(candleCount == 0)
+  }
+
+  /// "scroll history": a slider over the candles that moves the zoomed window; at the newest
+  /// candles (and disabled) while the whole range is shown.
+  private var historyScroller: some View {
+    let total = candleCount
+    let shown = viewport.visible ?? total
+    let last = Double(max(total - shown, 0))
+    return HStack(spacing: Tokens.Space.m) {
+      Text(L10n.Chart.scrollHistory)
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+        .fixedSize()
+      Slider(
+        value: Binding(
+          get: {
+            guard let plot, let position = viewport.position, let index = plot.index(at: position) else { return last }
+            return min(Double(index), last)
+          },
+          set: { value in
+            guard let plot, plot.candles.indices.contains(Int(value)) else { return }
+            viewport.position = Int(value) >= Int(last) ? nil : plot.candles[Int(value)].start
+          }),
+        in: 0...max(last, 1))
+      .tint(Palette.highlight)
+      .controlSize(.small)
+      .disabled(viewport.visible == nil)
+    }
+    .help(Text(L10n.Chart.scrollHistoryHelp))
   }
 
   /// "● LIVE" while the chart follows the live day.

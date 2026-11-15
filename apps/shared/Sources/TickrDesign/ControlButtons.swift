@@ -201,14 +201,10 @@ public struct ChipButtonStyle: ButtonStyle {
   }
 }
 
-/// An on/off chip (a chart study, the trade marks): the chip look of `ChipButtonStyle`, on is
-/// selected. The title reads uppercase, as the design's chips do.
+/// An on/off chip (a chart study, the trade marks), uppercase as the design's chips: on is
+/// `textPrimary` on `selection` with the chip's hairline, off is the plain chip at `Opacity.muted`.
 public struct ChipToggleStyle: ToggleStyle {
-  let tone: Tone
-
-  public init(tone: Tone = .info) {
-    self.tone = tone
-  }
+  public init() {}
 
   public func makeBody(configuration: Configuration) -> some View {
     Button {
@@ -216,7 +212,32 @@ public struct ChipToggleStyle: ToggleStyle {
     } label: {
       configuration.label.textCase(.uppercase)
     }
-    .buttonStyle(.chip(selected: configuration.isOn, tone: tone))
+    .buttonStyle(ChipToggleButton(isOn: configuration.isOn))
+    .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+  }
+}
+
+/// The button inside a `ChipToggleStyle`.
+private struct ChipToggleButton: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+  let isOn: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.chip, style: .continuous)
+    configuration.label
+      .labelStyle(ControlLabelStyle())
+      .font(Tokens.Typography.label)
+      .lineLimit(1)
+      .foregroundStyle(isOn ? Palette.textPrimary : Palette.textTertiary)
+      .padding(.horizontal, Tokens.Space.s)
+      .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
+      .background(isOn ? Palette.selection : Palette.chipFill, in: shape)
+      .overlay(shape.strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
+      .contentShape(shape)
+      .opacity(!enabled ? Tokens.Opacity.faint : isOn ? 1 : Tokens.Opacity.muted)
+      .scaleEffect(configuration.isPressed ? Tokens.Motion.pressScale : 1)
+      .animation(Tokens.Motion.quick, value: configuration.isPressed)
+      .animation(Tokens.Motion.quick, value: isOn)
   }
 }
 

@@ -1383,6 +1383,33 @@ enum L10n {
     static func volumeAverage(_ period: Int) -> LocalizedStringResource {
       LocalizedStringResource("chart.volumeAverage", defaultValue: "Average volume \(period)", bundle: L10n.bundle)
     }
+    /// Name of the study chips drawn over the price.
+    static var onPrice: LocalizedStringResource {
+      LocalizedStringResource("chart.onPrice", defaultValue: "On price", bundle: L10n.bundle)
+    }
+    static var onPriceHelp: LocalizedStringResource {
+      LocalizedStringResource("chart.onPriceHelp", defaultValue: "Lines drawn over the price", bundle: L10n.bundle)
+    }
+    /// Name of the study chips with a pane of their own.
+    static var panes: LocalizedStringResource {
+      LocalizedStringResource("chart.panes", defaultValue: "Panes", bundle: L10n.bundle)
+    }
+    static var panesHelp: LocalizedStringResource {
+      LocalizedStringResource("chart.panesHelp", defaultValue: "Indicators with a pane of their own under the price",
+        bundle: L10n.bundle)
+    }
+    /// Chip of the ATR pane.
+    static var atrChip: LocalizedStringResource {
+      LocalizedStringResource("chart.atrChip", defaultValue: "ATR", bundle: L10n.bundle)
+    }
+    /// Label of the slider that scrolls a zoomed chart through its history.
+    static var scrollHistory: LocalizedStringResource {
+      LocalizedStringResource("chart.scrollHistory", defaultValue: "scroll history", bundle: L10n.bundle)
+    }
+    static var scrollHistoryHelp: LocalizedStringResource {
+      LocalizedStringResource("chart.scrollHistoryHelp",
+        defaultValue: "Zoom in, then slide to move through the earlier candles", bundle: L10n.bundle)
+    }
     /// The pill shown while the chart follows the live day.
     static var live: LocalizedStringResource {
       LocalizedStringResource("chart.live", defaultValue: "Live", bundle: L10n.bundle)
@@ -1780,7 +1807,7 @@ enum L10n {
     }
     /// The heading of the live day.
     static func dayTitleToday(_ day: String) -> LocalizedStringResource {
-      LocalizedStringResource("trades.dayTitleToday", defaultValue: "Today · \(day)", bundle: L10n.bundle)
+      LocalizedStringResource("trades.dayTitleToday", defaultValue: "\(day) · today", bundle: L10n.bundle)
     }
     /// The calendar card's label: the month, then what its tiles show.
     static func monthLabel(_ month: String) -> LocalizedStringResource {
@@ -1798,6 +1825,10 @@ enum L10n {
     static var tradesHint: LocalizedStringResource {
       LocalizedStringResource("trades.tradesHint", defaultValue: "click: details · double-click: show on Chart",
         bundle: L10n.bundle)
+    }
+    /// The order of the day list and what clicking a day does.
+    static var allDaysHint: LocalizedStringResource {
+      LocalizedStringResource("trades.allDaysHint", defaultValue: "newest first · click: open day", bundle: L10n.bundle)
     }
     /// What clicking a skipped signal does.
     static var notTakenHint: LocalizedStringResource {

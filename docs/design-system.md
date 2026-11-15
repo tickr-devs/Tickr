@@ -148,6 +148,7 @@ and `display` → `.largeTitle`; `heading` → `.title2`; `quote` → `.title3`;
 | `faint` | 0.35 | Volume bars, inactive fills |
 | `shadow` | 0.12 | Light card shadow |
 | `border` | 0.45 | Accent-tinted borders |
+| `muted` | 0.55 | An off chip among on ones (the Chart's studies) |
 | `medium` | 0.70 | Inactive elements, pulse start |
 | `overlay` | 0.85 | Readouts over content |
 
@@ -267,7 +268,7 @@ still reads it. Every control takes a `Tone`.
 | `.buttonStyle(.icon(tone))` | One-symbol actions, the bot's command toolbar | `Size.iconButton` circle (`iconButtonCompact`), tone wash and border; needs a `hint` |
 | `IconToolbar` | A row of icon buttons | Sunken capsule, `separatorStrong` border |
 | `.buttonStyle(.chip(selected:))` | One of a few choices side by side (position tabs, the Chart's ranges and intervals) | `Typography.label` in `textTertiary` on `chipFill`, `separatorStrong` hairline, `Radius.chip`, `Space.s` × 6 pt padding; selected: `textPrimary` on `selection` with a tone outline |
-| `.toggleStyle(.chip)` | An on/off choice among chips (the Chart's studies, trade marks) | The chip above, title uppercase; on is selected |
+| `.toggleStyle(.chip)` | An on/off choice among chips (the Chart's studies, trade marks) | The chip above, title uppercase; on: `textPrimary` on `selection` with the `separatorStrong` hairline; off: the plain chip at `Opacity.muted` |
 | `StateGlyph` | A state without a word (stop verified, paused, stream fresh, gate closed) | SF Symbol on a `Size.glyph` tile in the tone, `Opacity.glow` fill; `live` pulses the outline (`Motion.glyphPulseScale`) |
 | `StatusPill` | A state that needs its word (bot running, an exit reason) | Capsule, `PulseDot` (one pulse per `event` while live) or a `systemImage` in its place, `Typography.badge` uppercase |
 | `IconMetric` | A figure named by a symbol (entry, stop, quantity, time) | Symbol in the tone, `Typography.chipValue` figure, sunken `Radius.medium` chip; the name is its hint. `compact`: a `Radius.small` chip that fits its figure (`captionMono`), in rows under a list item |
