@@ -14,6 +14,7 @@ renders the job files, reads them, and loads them. Manual trades and the Sandbox
 
 The bot job has one starter besides its schedule: near the flatten time the watchdog may start it once a day (see "Watchdog", `watchdog-restarted-bot`).
 | test-alert | `local.tickr.test-alert` | only on `launchctl kickstart` (grants the Messages permission, see below) | never |
+| nightly-fetch | `local.tickr.nightly-fetch` | `[runtime] nightly_fetch_start_local` on `launch_weekdays` (after the close); stops itself before the next open | never |
 | api | `local.tickr.api` | at login, always on, loopback only | launchd keeps it alive |
 
 Times in `[runtime]` are the **Mac's local time**. The calendar decides whether there is a
@@ -156,11 +157,24 @@ mkdir -p ~/Library/Logs/Tickr
     --env-file ~/.config/tickr/env \
     --log-dir ~/Library/Logs/Tickr \
     --out data/launchd
-# Read the five files in data/launchd, then:
+# Read the six files in data/launchd, then:
 for job in preflight bot watchdog api test-alert; do
   cp data/launchd/local.tickr.$job.plist ~/Library/LaunchAgents/
   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.$job.plist
 done
+```
+
+The nightly fetch is loaded on its own, and only when no other history fetch is running on the
+Mac: both draw on the same Webull request budget. Its first run seeds `nightly/current/` from a
+finished `data/backtest` folder; until then the Lab replay refuses (its folder does not exist).
+Run the seed once by hand, outside market hours, then load the job:
+
+```sh
+set -a; . ~/.config/tickr/env; set +a
+.venv/bin/python -m tickr.backtest --config config/bot.toml nightly \
+    --out data/nightly --seed data/backtest
+cp data/launchd/local.tickr.nightly-fetch.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.nightly-fetch.plist
 ```
 
 After changing `[runtime]` values, render again, then
@@ -236,10 +250,20 @@ stopped, after the close or on a non-trading day:
   a `.gz` that is unreadable or holds other bytes (look at both, remove the wrong one).
 - Chart cache (`chart/<env>/<SYMBOL>/<date>.json`, written by the API): day files older than
   `[chart] cache_max_age_days` are deleted (the dry run counts them); symbol folders stay.
+- History cache (`history/<env>/<date>/`, the bot's prior-session bars): day folders older than
+  `[market_data] history_cache_max_age_days` are deleted whole; the bot only reads today's
+  folder. A folder holding anything but cache files (`<SYMBOL>-<n>.jsonl`, `.partial`), a
+  symlink or a subfolder is kept with a printed cause.
+- Old archives: only when `[run] maintain_archive_max_age_days` is above 0 (shipped 0: never).
+  A capture or decision day folder older than that many days and outside the last
+  `maintain_keep_sessions` sessions, whose files are all `*.jsonl.gz`, is deleted, under the same guards as archiving (open trade, missing `day-end`). Captured days
+  feed replay, research and the advisor: deleting them loses that evidence for good.
+- Both delete steps are planned before anything is archived, so the dry run lists exactly what
+  `--apply` deletes, and today is never touched.
 - `--apply` also runs a SQLite WAL checkpoint; it deletes no row and never vacuums.
 - Refused (exit 3, nothing touched) while the bot holds its lock, when the calendar cannot count
   the sessions, or when the database is missing or has another schema. Exit 1 means one file
-  failed to archive: the run stopped there and that file is left as it was.
+  failed to archive or delete: the run stopped there and what is left stays for the next run.
 
 ## The Mac must be awake
 
@@ -289,6 +313,13 @@ A sell whose send outcome is unknown is not given up on while the account holds 
 than the bot's orders explain: it may have filled. If the alert stays, look in the Webull app.
 If the shares were sold there by hand and the bot's order never arrived, the bot keeps waiting
 for it and the rest of the position may have no stop: close it in the Webull app.
+
+### `quantity-mismatch`
+
+When the account holds more of the bot's symbol than its orders explain (shares bought by hand),
+an exit or the flatten sells only the bot's own shares; the trade then stays `exiting` until the
+foreign shares are gone, so entries stay blocked, `stop-bot` is refused and the protection busy
+cause says "exit in progress": sell or explain the extra shares in the Webull app.
 
 ### `refused: the database holds runs of environment ...`
 

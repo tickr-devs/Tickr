@@ -19,12 +19,24 @@ struct SettingsView: View {
 
   var body: some View {
     TabView {
-      GeneralSettings().tabItem { Label(String(localized: L10n.Settings.general), systemImage: Self.generalSymbol) }
-      TradingSettings().tabItem { Label(String(localized: L10n.Settings.trading), systemImage: Self.tradingSymbol) }
-      NotificationSettings().tabItem { Label(String(localized: L10n.Settings.notifications), systemImage: Self.notificationsSymbol) }
-      EnvironmentSettings().tabItem { Label(String(localized: L10n.Settings.environment), systemImage: Self.environmentSymbol) }
-      StorageSettings().tabItem { Label(String(localized: L10n.Settings.storage), systemImage: Self.storageSymbol) }
-      AdvancedSettings().tabItem { Label(String(localized: L10n.Settings.advanced), systemImage: Self.advancedSymbol) }
+      Tab { GeneralSettings() } label: {
+        Label(String(localized: L10n.Settings.general), systemImage: Self.generalSymbol)
+      }
+      Tab { TradingSettings() } label: {
+        Label(String(localized: L10n.Settings.trading), systemImage: Self.tradingSymbol)
+      }
+      Tab { NotificationSettings() } label: {
+        Label(String(localized: L10n.Settings.notifications), systemImage: Self.notificationsSymbol)
+      }
+      Tab { EnvironmentSettings() } label: {
+        Label(String(localized: L10n.Settings.environment), systemImage: Self.environmentSymbol)
+      }
+      Tab { StorageSettings() } label: {
+        Label(String(localized: L10n.Settings.storage), systemImage: Self.storageSymbol)
+      }
+      Tab { AdvancedSettings() } label: {
+        Label(String(localized: L10n.Settings.advanced), systemImage: Self.advancedSymbol)
+      }
     }
     .frame(width: Self.width)
     .scenePadding()
@@ -226,7 +238,7 @@ private struct EnvironmentSettings: View {
   var body: some View {
     Form {
       Section {
-        LabeledContent(String(localized: L10n.Settings.environment), value: model.status?.environment ?? model.settings?.environment ?? Format.missing)
+        LabeledContent(String(localized: L10n.Settings.environment), value: (model.status?.environment ?? model.settings?.environment).map(ApiText.environment) ?? Format.missing)
         if let gate = model.status?.tradingGate {
           LabeledContent(String(localized: L10n.Settings.tradingGate),
             value: String(localized: gate.open ? L10n.Settings.gateOpen : L10n.Settings.gateClosed))
