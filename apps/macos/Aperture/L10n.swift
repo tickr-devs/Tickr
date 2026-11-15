@@ -1,3 +1,4 @@
+import ApertureKit
 import Foundation
 
 /// Every text of the macOS app that a person reads, in English, with its Russian translation in
