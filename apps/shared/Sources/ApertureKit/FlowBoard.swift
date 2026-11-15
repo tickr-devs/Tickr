@@ -61,12 +61,16 @@ public enum FlowBoard {
       if stage == .strategy, let cause = refusedByRisk[symbol] {
         return FlowMark(id: symbol, stage: .risk, refused: true, note: cause)
       }
-      let tone: FlowMark.Tone = switch stops[symbol] {
-      case .pending?: .pending
-      case .neverVerified?, .unknown?: .alarm
-      case .verified?, nil: .normal
-      }
-      return FlowMark(id: symbol, stage: stage, tone: tone)
+      return FlowMark(id: symbol, stage: stage, tone: tone(stops[symbol]))
+    }
+  }
+
+  /// How a symbol's broker stop colours its mark: waiting, never confirmed or unknown.
+  private static func tone(_ stop: FlowStopState?) -> FlowMark.Tone {
+    switch stop {
+    case .pending?: .pending
+    case .neverVerified?, .unknown?: .alarm
+    case .verified?, nil: .normal
     }
   }
 }
