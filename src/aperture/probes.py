@@ -16,7 +16,8 @@ account route, no order, the account id is never read):
   chart's own slice of the bars limit: `[chart] webull_enabled` must be true, and the config
   file must not have changed since the bot started (the bot gave up that slice when it started).
   If the experiment fails the bot may lose its broker reads, so it REFUSES to start while the
-  bot's status shows an open position or a working order of its own, or cannot be read.
+  bot's status or its last broker read shows a position or a working order of its own, or
+  either cannot be read or is stale.
 
 Every request is sent once and never repeated. Evidence goes to
 `<data_dir>/<[probe] evidence_dir>/<NY date>/<probe>-<UTC time>/`: one JSON line per request and
@@ -275,6 +276,20 @@ def _refuse_while_exposed(cfg: Config, at: datetime) -> None:
     if status.positions or status.position is not None or (
             block is not None and block.cause == api.OWN_TRADE_OPEN):
         raise ProbeRefused("the bot has an open position or a working order of its own; run "
+                           "this probe while it is flat")
+    # The status hides a working entry behind an earlier entry block (after the last-entry
+    # time, say), so the bot's last broker read has to agree.
+    try:
+        account = api.read_account(cfg.root / cfg.run.data_dir / cfg.api.account_file)
+    except (OSError, api.ContractError) as exc:
+        raise ProbeRefused(f"the bot's account file cannot be read ({type(exc).__name__}), so "
+                           "it is unknown whether a trade is open") from exc
+    age = (at - account.read_at).total_seconds()
+    if age > cfg.api.account_stale_seconds:
+        raise ProbeRefused(f"the bot's last broker read is {round(age)} s old, so it is "
+                           "unknown whether a trade is open")
+    if account.positions or any(order.ours for order in account.orders):
+        raise ProbeRefused("the broker shows a position or a working order of the bot's; run "
                            "this probe while it is flat")
 
 

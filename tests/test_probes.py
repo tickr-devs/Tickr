@@ -21,6 +21,7 @@ from aperture.data.base import FakeMarketData
 
 ROOT = Path(__file__).resolve().parents[1]
 CFG = config.load(ROOT / "config" / "bot.toml")
+ACCOUNT = ROOT / "tests" / "api" / "fixtures" / "account-v1.json"
 EXAMPLE = ROOT / "tests" / "api" / "fixtures" / "status-v1.example.json"
 T0 = datetime(2026, 11, 16, 13, 0, tzinfo=UTC)  # 08:00 New York
 
@@ -225,17 +226,27 @@ class Bot:
         self.path = cfg.root / cfg.run.data_dir / cfg.api.status_file
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.example = api.loads(api.StatusV1, EXAMPLE.read_bytes())
+        self.account = api.loads(api.AccountV1, ACCOUNT.read_bytes())
 
     def write(self) -> None:
         at = self.clock.now()
         read_at = at if self.reads_broker else T0 - timedelta(minutes=5)
         fences = () if self.fence is None else (api.Fence(self.fence, at, "x"),)
         flat = replace(self.example, position=None, positions=(), entry_block=None)
+        seen = replace(self.account, read_at=at, positions=(), orders=())
+        order = self.account.orders[0]
+        if self.exposed == "broker-position":
+            seen = replace(seen, positions=self.account.positions[:1])
+        elif self.exposed == "broker-order":
+            seen = replace(seen, orders=(replace(order, ours=True),))
+        elif self.exposed == "foreign-order":
+            seen = replace(seen, orders=(replace(order, ours=False),))
+        api.write_account(self.path.parent / self.cfg.api.account_file, seen)
         shown = {None: flat, "position": replace(flat, positions=self.example.positions),
                  "first-position": replace(flat, position=self.example.position),
                  "working-order": replace(flat, entry_block=self.example.entry_block)}
         api.write_status(self.path, replace(
-            shown[self.exposed], written_at=at, fences=fences,
+            shown.get(self.exposed, flat), written_at=at, fences=fences,
             freshness=replace(self.example.freshness, last_broker_read_at=read_at)))
 
 
@@ -340,13 +351,33 @@ def test_chart_client_refuses_a_config_changed_after_the_bot_started(tmp_path):
     assert "changed after the bot started" in refused_client(tmp_path, cfg, path)
 
 
-@pytest.mark.parametrize("exposed", ["position", "first-position", "working-order"])
+@pytest.mark.parametrize("exposed", ["position", "first-position", "working-order",
+                                     "broker-position", "broker-order"])
 def test_chart_client_refuses_while_the_bot_has_a_trade_open(tmp_path, exposed):
     cfg = cfg_in(tmp_path, chart_on=True)
     path = config_file(tmp_path)
     live_bot(cfg)
     Bot(cfg, Clock(), exposed=exposed).write()
     assert "run this probe while it is flat" in refused_client(tmp_path, cfg, path)
+
+
+def test_chart_client_runs_next_to_an_order_that_is_not_the_bots(tmp_path):
+    verdict, _, _, _ = client_run(tmp_path, exposed="foreign-order")
+    assert verdict == probes.PASSED
+
+
+def test_chart_client_refuses_when_the_bots_last_broker_read_cannot_say(tmp_path):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    path = config_file(tmp_path)
+    live_bot(cfg)
+    bot = Bot(cfg, Clock())
+    bot.write()
+    account = bot.path.parent / cfg.api.account_file
+    api.write_account(account, replace(bot.account, positions=(), orders=(), read_at=T0 - timedelta(
+        seconds=float(CFG.api.account_stale_seconds) + 1)))
+    assert "last broker read is 31 s old" in refused_client(tmp_path, cfg, path)
+    account.unlink()
+    assert "account file cannot be read" in refused_client(tmp_path, cfg, path)
 
 
 def test_chart_client_refuses_when_the_bots_status_cannot_say(tmp_path):
