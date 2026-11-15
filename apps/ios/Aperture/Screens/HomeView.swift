@@ -53,7 +53,8 @@ struct HomeView: View {
             .rise(step: Order.positions.rawValue)
         }
         let todayFlow = model.flow?.day == model.today ? model.flow : nil
-        LiveFlowCard(status: status, flow: todayFlow, marks: FlowBoard.marks(flow: todayFlow, skipped: nil),
+        LiveFlowCard(status: status, flow: todayFlow, flowPending: model.flow == nil && model.flowError == nil,
+          marks: FlowBoard.marks(flow: todayFlow, skipped: nil),
           maxPositions: model.settings?.risk.maxOpenPositions,
           current: model.isFresh && WireDate(newYorkDateOf: status.writtenAt.date) == model.today)
           .rise(step: Order.flow.rawValue)
@@ -302,10 +303,13 @@ private struct PositionRow: View {
         // time, as on Positions, never as a live result.
         let current = marks.map(model.isCurrent) ?? false
         if let marks, marks.closes.count > 1 {
-          DrawnSparkline(values: marks.closes.map { NSDecimalNumber(decimal: $0).doubleValue },
-            color: current ? Palette.result(marks.unrealized) : Palette.textQuaternary)
-            .frame(width: Self.sparkWidth, height: Self.sparkHeight)
-            .accessibilityHidden(true)
+          ViewThatFits(in: .horizontal) {
+            DrawnSparkline(values: marks.closes.map { NSDecimalNumber(decimal: $0).doubleValue },
+              color: current ? Palette.result(marks.unrealized) : Palette.textQuaternary)
+              .frame(width: Self.sparkWidth, height: Self.sparkHeight)
+            Color.clear.frame(width: 0, height: 0)
+          }
+          .accessibilityHidden(true)
         }
         VStack(alignment: .trailing, spacing: Tokens.Space.xs) {
           if let marks {
@@ -330,6 +334,10 @@ private struct PositionRow: View {
             .font(Tokens.Typography.annotation)
             .foregroundStyle(Palette.textQuaternary)
         }
+        // Each value on one line; the sparkline gives way first when the row is narrow.
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
         Image(systemName: "chevron.right")
           .font(.footnote.weight(.semibold))
           .foregroundStyle(Palette.textQuaternary)
@@ -360,6 +368,9 @@ private struct LiveFlowCard: View {
   let status: StatusV1
   /// Today's flow: stage counts and the day's stops; nil until read.
   let flow: FlowV1?
+  /// The first /flow read has not answered yet: the stages show a placeholder, not the status's
+  /// numbers they would jump from.
+  let flowPending: Bool
   /// Today's symbols, each at the furthest stage it reached; empty until the flow is read.
   let marks: [FlowMark]
   let maxPositions: Int?
@@ -417,18 +428,25 @@ private struct LiveFlowCard: View {
     } else {
       flow.map { String(localized: L10n.Flow.stopsVerified(flowVerified ?? 0, $0.stops.count)) }
     }
+    // Only an entry block that needs the operator outranks the day's count; a calm pause shows
+    // only before there is one.
+    let blocked = !status.entriesAllowed && !status.entriesCalm
+    let riskCount = count(.risk)
+    // With a flow, every count comes from it; the status's numbers only stand in when /flow failed.
+    let fromStatus = flow == nil
     return [
       Stage(id: .screen, name: L10n.Flow.screen, value: count(.screeners), color: Palette.accent),
       Stage(id: .stocks, name: L10n.Flow.stocks, value: count(.universe), color: Palette.seriesUniverse),
-      Stage(id: .strategy, name: L10n.Flow.strategy, value: count(.strategy) ?? status.strategy.version,
-        color: Palette.highlight),
+      Stage(id: .strategy, name: L10n.Flow.strategy,
+        value: count(.strategy) ?? (fromStatus ? status.strategy.version : nil), color: Palette.highlight),
       Stage(id: .risk, name: L10n.Flow.risk,
-        value: status.entriesAllowed
-          ? count(.risk) ?? RiskFormat.amount(status.dailyRoomUsd?.value)
-          : String(localized: status.entriesCalm ? L10n.Risk.notNow : L10n.Flow.blocked),
-        color: status.entriesAllowed ? Palette.warning : status.entriesCalm ? Palette.textQuaternary : Palette.loss),
-      Stage(id: .order, name: L10n.Flow.order, value: count(.order) ?? String(status.tradesToday.count),
-        color: Palette.info),
+        value: blocked ? String(localized: L10n.Flow.blocked)
+          : riskCount ?? (status.entriesAllowed ? RiskFormat.amount(status.dailyRoomUsd?.value)
+            : String(localized: L10n.Risk.notNow)),
+        color: blocked ? Palette.loss
+          : status.entriesAllowed || riskCount != nil ? Palette.warning : Palette.textQuaternary),
+      Stage(id: .order, name: L10n.Flow.order,
+        value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: Palette.info),
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
         color: allProtected ? Palette.profit : Palette.loss),
     ]
@@ -463,6 +481,8 @@ private struct LiveFlowCard: View {
             column(stage)
           }
         }
+        // Until the first /flow read answers, a placeholder instead of numbers that would jump.
+        .redacted(reason: current && flowPending ? .placeholder : [])
         // A symbol's dot flies to its next stage only when a new read moves it.
         .animation(reduceMotion ? nil : Tokens.Motion.standard, value: marks)
         HStack(spacing: Tokens.Space.s) {
