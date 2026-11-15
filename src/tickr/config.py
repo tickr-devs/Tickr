@@ -114,6 +114,7 @@ class OrdersConfig:
     cancel_retry_spacing_seconds: Decimal
     cancel_not_sent_alert_seconds: Decimal
     max_unprotected_seconds: Decimal
+    detail_unreadable_seconds: Decimal
     max_exit_seconds: Decimal
     shutdown_deadline_seconds: Decimal
     reconcile_interval_seconds: Decimal
@@ -154,6 +155,8 @@ class ApiConfig:
     remote_token_hash_file: str
     remote_token_bytes: int
     remote_pairing_file: str
+    remote_pairing_code_file: str
+    remote_pairing_code_ttl_seconds: int
     status_file: str
     account_file: str
     account_stale_seconds: Decimal
@@ -269,6 +272,9 @@ class RuntimeConfig:
     bot_start_local: str
     launch_weekdays: tuple[int, ...]
     watchdog_start_local: str
+    nightly_fetch_start_local: str
+    nightly_fetch_out: str
+    nightly_fetch_seed: str
     watchdog_after_flatten_seconds: int
     watchdog_before_close_seconds: int
     watchdog_bot_check_seconds: int
@@ -492,6 +498,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
+    if built["orders"].detail_unreadable_seconds <= 0:
+        raise ConfigError("[orders] detail_unreadable_seconds must be above 0")
     if built["orders"].stop_held_proof_seconds <= 0:
         raise ConfigError("[orders] stop_held_proof_seconds must be above 0")
     if built["orders"].reconcile_proof_seconds <= 0:

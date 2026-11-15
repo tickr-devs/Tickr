@@ -130,7 +130,7 @@ private struct Header: View {
           }
           #endif
           if let status = model.status {
-            Badge(verbatim: status.environment, color: Palette.warningText)
+            Badge(verbatim: ApiText.environment(status.environment), color: Palette.warningText)
             let open = status.tradingGate.open
             StateGlyph(open ? Self.gateOpenSymbol : Self.gateClosedSymbol, tone: open ? .profit : .warning,
               label: Text(verbatim: String(localized: open ? L10n.Overview.gateOpen : L10n.Overview.gateClosed)
@@ -817,7 +817,8 @@ struct StopBadge: View {
 
   var body: some View {
     StateGlyph(symbol, tone: state == .verified ? .profit : state == .pending ? .warning : .loss,
-      label: Text(verbatim: state.title), live: state != .verified, event: [AnyHashable(state), AnyHashable(price)], style: compact ? .compact : .tile)
+      label: Text(verbatim: state.title), live: state != .verified, event: [AnyHashable(state), AnyHashable(price)],
+      style: compact ? .compact : .tile)
   }
 
   private var symbol: String {
@@ -999,8 +1000,6 @@ private struct Radar: View {
 private struct SafetyCard: View {
   @Environment(AppModel.self) private var model
 
-  /// How often the ages ("3 s ago") refresh, in seconds.
-  static let tick: TimeInterval = 1
   /// Fence names the bot raises for a position or an open order it did not place (engine
   /// Fence.FOREIGN_POSITION and FOREIGN_ORDER). A fence kind is the name, then ":" and a key
   /// when it has one, as in "foreign-position:ABCD".
@@ -1011,7 +1010,7 @@ private struct SafetyCard: View {
 
   var body: some View {
     Card(L10n.Safety.title) {
-      TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+      TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
         VStack(spacing: Tokens.Space.s) {
           ForEach(rows(now: model.botTime(context.date))) { row in
             HStack(spacing: Tokens.Space.s) {

@@ -8,6 +8,7 @@ placeholders; every value is XML-escaped; an unknown or unfilled placeholder is 
 from __future__ import annotations
 
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -15,6 +16,11 @@ from xml.sax.saxutils import escape
 from tickr.config import Config, ConfigError, RuntimeConfig
 
 TEMPLATE_SUFFIX = ".plist.template"
+# The nightly fetch writes its outcome here, in [runtime] nightly_fetch_out (backtest/nightly.py);
+# GET /jobs reads it.
+NIGHTLY_OUTCOME_FILE = "nightly.json"
+# The nightly fetch's last good data, in [runtime] nightly_fetch_out; the Lab replays it.
+NIGHTLY_CURRENT = "current"
 _PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
 _HHMM = re.compile(r"^(\d{2}):(\d{2})$")
 # launchd calendar units (protocol constants): hours 0-23, minutes 0-59, weekdays 0-7 where
@@ -36,6 +42,7 @@ class Schedule:
     preflight: LocalTime
     bot: LocalTime
     watchdog: LocalTime
+    nightly: LocalTime
     weekdays: tuple[int, ...]
 
 
@@ -54,6 +61,7 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
     preflight = _local_time("preflight_start_local", runtime.preflight_start_local)
     bot = _local_time("bot_start_local", runtime.bot_start_local)
     watchdog = _local_time("watchdog_start_local", runtime.watchdog_start_local)
+    nightly = _local_time("nightly_fetch_start_local", runtime.nightly_fetch_start_local)
     if (preflight.hour, preflight.minute) >= (bot.hour, bot.minute):
         raise ConfigError("[runtime] preflight_start_local must be before bot_start_local")
     days = runtime.launch_weekdays
@@ -71,7 +79,23 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
         raise ConfigError("[runtime] min_free_disk_mb must be positive")
     if runtime.watchdog_bot_check_seconds <= 0:
         raise ConfigError("[runtime] watchdog_bot_check_seconds must be positive")
-    return Schedule(preflight=preflight, bot=bot, watchdog=watchdog, weekdays=tuple(days))
+    for key in ("nightly_fetch_out", "nightly_fetch_seed"):
+        if not getattr(runtime, key) or Path(getattr(runtime, key)).is_absolute():
+            raise ConfigError(f"[runtime] {key} must be a folder relative to the repo root")
+    return Schedule(preflight=preflight, bot=bot, watchdog=watchdog, nightly=nightly,
+                    weekdays=tuple(days))
+
+
+def check_lab_folder(config: Config) -> None:
+    """Refuse unless the Lab replays the nightly job's current/ folder, so its data is refreshed.
+    Only render-launchd and check-config call this: a Lab setting never stops the bot's preflight.
+    """
+    lab = (config.root / config.run.data_dir / config.api.lab_replay_data_dir).resolve()
+    nightly = (config.root / config.runtime.nightly_fetch_out / NIGHTLY_CURRENT).resolve()
+    if lab != nightly:
+        raise ConfigError(f"[api] lab_replay_data_dir must be the nightly job's "
+                          f"{NIGHTLY_CURRENT}/ folder ([runtime] nightly_fetch_out), or the Lab "
+                          "replays data never refreshed")
 
 
 def check_timings(config: Config) -> None:
@@ -147,6 +171,24 @@ def _calendar_xml(at: LocalTime, weekdays: tuple[int, ...]) -> str:
     return f"<array>{entries}</array>"
 
 
+# Permission bits of the group and others: a file or folder holding secrets has none of them.
+PRIVATE_MODE_MASK = stat.S_IRWXG | stat.S_IRWXO
+
+
+def check_env_file(path: Path) -> None:
+    """The credentials file the jobs source must exist and be readable by its owner only. Only
+    its metadata is looked at, never its contents."""
+    try:
+        info = path.stat()
+    except OSError as exc:
+        raise ConfigError(f"env file {path} not usable ({type(exc).__name__}); create it with "
+                          "chmod 600 (docs/operations.md, One-time setup, step 2)") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise ConfigError(f"env file {path} is not a regular file")
+    if stat.S_IMODE(info.st_mode) & PRIVATE_MODE_MASK:
+        raise ConfigError(f"env file {path} is readable by other accounts (run: chmod 600 {path})")
+
+
 @dataclass(frozen=True)
 class Paths:
     """Owner machine paths that go into the plists (absolute)."""
@@ -173,6 +215,9 @@ def values(runtime: RuntimeConfig, paths: Paths) -> dict[str, str]:
         "PREFLIGHT_CALENDAR": _calendar_xml(sched.preflight, sched.weekdays),
         "BOT_CALENDAR": _calendar_xml(sched.bot, sched.weekdays),
         "WATCHDOG_CALENDAR": _calendar_xml(sched.watchdog, sched.weekdays),
+        "NIGHTLY_CALENDAR": _calendar_xml(sched.nightly, sched.weekdays),
+        "NIGHTLY_OUT": escape(runtime.nightly_fetch_out),
+        "NIGHTLY_SEED": escape(runtime.nightly_fetch_seed),
         "BOT_EXIT_TIMEOUT": str(runtime.bot_exit_timeout_seconds),
     }
 

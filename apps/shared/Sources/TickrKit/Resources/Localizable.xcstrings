@@ -1630,6 +1630,74 @@
         }
       }
     },
+    "kit.environment.demo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Демо"
+          }
+        }
+      }
+    },
+    "kit.environment.production" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Production"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Production"
+          }
+        }
+      }
+    },
+    "kit.environment.sandbox" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sandbox"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sandbox"
+          }
+        }
+      }
+    },
+    "kit.environment.unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown environment"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестная среда"
+          }
+        }
+      }
+    },
     "kit.error.unexpected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1681,6 +1749,23 @@
         }
       }
     },
+    "kit.event.exitAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ @ %@ %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ по %@ %@"
+          }
+        }
+      }
+    },
     "kit.event.fence" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1728,6 +1813,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ОТКРЫТА"
+          }
+        }
+      }
+    },
+    "kit.event.quantityAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %@ @ %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %@ по %@"
           }
         }
       }
@@ -2039,6 +2141,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Лимит запросов деталей ордеров исчерпан"
+          }
+        }
+      }
+    },
+    "kit.fence.detail_unreadable" : {
+      "comment" : "A fence (a block on new entries): detail_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An order's detail cannot be read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Детали ордера не читаются"
           }
         }
       }
@@ -2528,6 +2648,24 @@
         }
       }
     },
+    "kit.fenceReason.detail_unreadable" : {
+      "comment" : "A fence's cause (`Fence.code`). detail_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The order's detail has been unreadable for {seconds} s; its state is unknown: check it in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Детали ордера не читаются уже {seconds} с, его состояние неизвестно: проверьте в приложении Webull"
+          }
+        }
+      }
+    },
     "kit.fenceReason.exit_not_filled" : {
       "comment" : "A fence's cause (`Fence.code`). exit_not_filled",
       "extractionState" : "manual",
@@ -2870,6 +3008,24 @@
         }
       }
     },
+    "kit.fenceReason.stop_cancel_unconfirmed" : {
+      "comment" : "A fence's cause (`Fence.code`). stop_cancel_unconfirmed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The stop's cancel was sent and its detail has been unreadable for {seconds} s: the stop may be gone and nothing is sold; check the position in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отмена стопа отправлена, а его детали не читаются уже {seconds} с: стопа может не быть, ничего не продано; проверьте позицию в приложении Webull"
+          }
+        }
+      }
+    },
     "kit.fenceReason.stop_covers_part" : {
       "comment" : "A fence's cause (`Fence.code`). stop_covers_part",
       "extractionState" : "manual",
@@ -2956,6 +3112,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Подтверждённого стопа нет уже {seconds} с: позиция закрывается"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.unprotected_stop_unreadable" : {
+      "comment" : "A fence's cause (`Fence.code`). unprotected_stop_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No verified stop for {seconds} s and a stop's detail cannot be read: that stop is kept and nothing is sold; close the position in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подтверждённого стопа нет уже {seconds} с, детали стопа не читаются: стоп оставлен, ничего не продано; закройте позицию в приложении Webull"
           }
         }
       }
@@ -4931,6 +5105,40 @@
         }
       }
     },
+    "kit.refusedByRisk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refused by risk"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отклонено риском"
+          }
+        }
+      }
+    },
+    "kit.refusedByRiskDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refused by risk: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отклонено риском: %@"
+          }
+        }
+      }
+    },
     "kit.rule.ask_above_trigger" : {
       "comment" : "Strategy check: ask_above_trigger",
       "extractionState" : "manual",
@@ -5462,6 +5670,108 @@
         }
       }
     },
+    "kit.universe.conflictingRows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listed by the screeners under conflicting details"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скринеры дали противоречивые данные"
+          }
+        }
+      }
+    },
+    "kit.universe.currency" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currency not allowed: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Валюта не разрешена: %@"
+          }
+        }
+      }
+    },
+    "kit.universe.exchange" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exchange not allowed: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Биржа не разрешена: %@"
+          }
+        }
+      }
+    },
+    "kit.universe.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Left out by the universe filter"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не прошёл отбор"
+          }
+        }
+      }
+    },
+    "kit.universe.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security type not allowed: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тип бумаги не разрешён: %@"
+          }
+        }
+      }
+    },
+    "kit.universe.typeUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security type unknown"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тип бумаги неизвестен"
+          }
+        }
+      }
+    },
     "kit.wire.badDate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5696,6 +6006,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "неподдерживаемая версия %@ %lld, приложение читает %lld"
+          }
+        }
+      }
+    },
+    "kit.wire.wrongShape" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the answer has the wrong shape"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ответ неожиданной формы"
           }
         }
       }

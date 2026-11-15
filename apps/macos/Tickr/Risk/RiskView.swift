@@ -62,9 +62,6 @@ private struct LossRoomCard: View {
 
   /// Diameter of the ring, in points.
   static let ringSize: CGFloat = 220
-  /// Room left below this share of the limit turns the ring amber, below `alarm` red.
-  static let calm = 0.5
-  static let alarm = 0.2
 
   private var limit: Decimal? { model.settings?.risk.maxDailyLossUsd.value }
   /// Today's net result; nil while the bot's status is unknown. The limit counts the live day only.
@@ -85,8 +82,8 @@ private struct LossRoomCard: View {
 
   private var color: Color {
     if room == nil { return Palette.textQuaternary }
-    if fraction < Self.alarm { return Palette.loss }
-    if fraction < Self.calm { return Palette.warning }
+    if fraction < Tokens.Room.alarm { return Palette.loss }
+    if fraction < Tokens.Room.calm { return Palette.warning }
     return Palette.profit
   }
 
@@ -109,7 +106,7 @@ private struct LossRoomCard: View {
         }
         .frame(width: Self.ringSize, height: Self.ringSize)
         .frame(maxWidth: .infinity)
-        .modifier(AlarmPulse(active: room != nil && fraction < Self.alarm))
+        .modifier(AlarmPulse(active: room != nil && fraction < Tokens.Room.alarm))
         VStack(spacing: Tokens.Space.s) {
           StatLine(L10n.Risk.limit, value: limit.map(Format.usd) ?? Format.missing, symbol: Self.limitSymbol)
           StatLine(
@@ -163,7 +160,7 @@ private struct EntryGateCard: View {
     }
     Card(L10n.Risk.entryGate, tint: gate == .blocked ? Palette.warning : nil, tone: tone, trailing: {
       StatusPill(title, tone: tone, live: gate == .allowed, event: gate)
-    }) {
+    }, content: {
       if let status = model.status {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
           if let block = status.entryBlock {
@@ -187,7 +184,7 @@ private struct EntryGateCard: View {
       } else {
         StatusUnknown()
       }
-    }
+    })
   }
 }
 
@@ -219,13 +216,13 @@ private struct FencesCard: View {
       if let fences {
         Badge(L10n.Common.fences(fences.count), color: fences.isEmpty ? Palette.textQuaternary : Palette.warningText)
       }
-    }) {
+    }, content: {
       if let fences {
         list(fences)
       } else {
         Footnote(L10n.Common.unavailable)
       }
-    }
+    })
   }
 
   @ViewBuilder private func list(_ fences: [Fence]) -> some View {
@@ -273,7 +270,8 @@ private struct LimitsCard: View {
           StatLine(L10n.Risk.dailyLoss, value: Format.usd(risk.maxDailyLossUsd.value))
           StatLine(L10n.Risk.minRoom, value: Format.usd(risk.minDailyRoomUsd.value))
           StatLine(L10n.Risk.openPositions, value: String(risk.maxOpenPositions))
-          StatLine(L10n.Risk.quoteAge, value: String(localized: L10n.Risk.seconds(Format.secondsNumber(risk.maxQuoteAgeSeconds.value))))
+          StatLine(L10n.Risk.quoteAge,
+            value: String(localized: L10n.Risk.seconds(Format.secondsNumber(risk.maxQuoteAgeSeconds.value))))
         }
       } else {
         Footnote(model.settingsError == nil ? L10n.Common.unavailable : L10n.Risk.settingsUnavailable)
@@ -376,13 +374,10 @@ private struct PositionSlots: View {
 private struct SessionCard: View {
   @Environment(AppModel.self) private var model
 
-  /// How often the clock ticks, in seconds.
-  static let tick: TimeInterval = 1
-
   var body: some View {
     Card(L10n.Risk.session) {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+        TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
           Text(L10n.Risk.clock(Format.marketTime(model.botTime(context.date))))
             .font(Tokens.Typography.metric)
             .monospacedDigit()
@@ -390,7 +385,8 @@ private struct SessionCard: View {
             .foregroundStyle(Palette.textPrimary)
         }
         if let session = model.settings?.session {
-          StatLine(L10n.Risk.lastEntry, value: String(localized: L10n.Risk.minutesBeforeClose(session.lastEntryMinutesBeforeClose)))
+          StatLine(L10n.Risk.lastEntry,
+            value: String(localized: L10n.Risk.minutesBeforeClose(session.lastEntryMinutesBeforeClose)))
           StatLine(L10n.Risk.flatten, value: String(localized: L10n.Risk.minutesBeforeClose(session.flattenMinutesBeforeClose)))
           StatLine(L10n.Risk.halfDays, value: String(localized: session.halfDaysEnabled ? L10n.Common.on : L10n.Common.off))
         }
@@ -406,7 +402,7 @@ private struct AccountCard: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    Card(L10n.Risk.account, tint: tint, trailing: { badges }) {
+    Card(L10n.Risk.account, tint: tint, trailing: { badges }, content: {
       if let response = model.account {
         content(response)
       } else if model.accountError != nil {
@@ -414,7 +410,7 @@ private struct AccountCard: View {
       } else {
         Footnote(L10n.Risk.accountReading)
       }
-    }
+    })
     // Keyed on the account, not the read: a new read of the same account moves nothing.
     .animation(Tokens.Motion.standard, value: model.account?.state)
   }
