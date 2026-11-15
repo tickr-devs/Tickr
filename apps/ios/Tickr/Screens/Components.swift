@@ -251,7 +251,7 @@ extension PushedHeader where Leading == EmptyView, Actions == EmptyView {
 }
 
 /// "‹ Home": the way back from a pushed screen, drawn as on the design instead of the system's
-/// glass circle. The edge swipe still goes back (`TickrNavigation`).
+/// glass circle. The edge swipe still goes back (`EdgeSwipeBack`).
 struct BackButton: View {
   /// Symbol of the way back.
   static let symbol = "chevron.left"
@@ -286,6 +286,7 @@ extension View {
   func pushedScreen(_ title: LocalizedStringResource) -> some View {
     toolbarVisibility(.hidden, for: .navigationBar)
       .navigationTitle(Text(title))
+      .background { EdgeSwipeBack() }
   }
 }
 
