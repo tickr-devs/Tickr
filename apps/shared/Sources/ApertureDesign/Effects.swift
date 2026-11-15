@@ -6,7 +6,6 @@ import SwiftUI
 /// A status dot with a ring that keeps expanding and fading out, meaning "live".
 public struct PulseDot: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var expanded = false
   let color: Color
   let size: CGFloat
   let pulsing: Bool
@@ -25,14 +24,27 @@ public struct PulseDot: View {
         if pulsing && !reduceMotion {
           Circle()
             .stroke(color, lineWidth: Tokens.Stroke.bold)
-            .scaleEffect(expanded ? Tokens.Motion.pulseScale : 1)
-            .opacity(expanded ? 0 : Tokens.Opacity.medium)
-            .animation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false),
-              value: expanded)
+            .pulseRing(scale: Tokens.Motion.pulseScale)
         }
       }
-      .onAppear { expanded = true }
       .accessibilityHidden(true)
+  }
+}
+
+extension View {
+  /// Grows this ring to `scale` while it fades out, again and again. The animation reaches only
+  /// the ring's scale and opacity: an endless `.animation(_:value:)` on the whole ring also caught
+  /// its first move into place (a card rising in, a list laying out) and replayed that forever,
+  /// so the ring pulsed away from what it rings.
+  public func pulseRing(scale: CGFloat) -> some View {
+    phaseAnimator([false, true]) { ring, expanded in
+      ring
+        .scaleEffect(expanded ? scale : 1)
+        .opacity(expanded ? 0 : Tokens.Opacity.medium)
+    } animation: { expanded in
+      // Out with the pulse; back to the start at once, unseen.
+      expanded ? .easeOut(duration: Tokens.Motion.pulseSeconds) : nil
+    }
   }
 }
 

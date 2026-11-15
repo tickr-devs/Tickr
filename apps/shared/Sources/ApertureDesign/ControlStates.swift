@@ -99,7 +99,6 @@ public struct Badge: View {
 /// shown as the pointer's tooltip. `live` pulses the outline.
 public struct StateGlyph: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var pulsing = false
   let systemImage: String
   let tone: Tone
   let label: Text
@@ -138,11 +137,7 @@ public struct StateGlyph: View {
         if live && !reduceMotion {
           shape
             .stroke(tone.fill, lineWidth: Tokens.Stroke.bold)
-            .scaleEffect(pulsing ? Tokens.Motion.glyphPulseScale : 1)
-            .opacity(pulsing ? 0 : Tokens.Opacity.medium)
-            .animation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false),
-              value: pulsing)
-            .onAppear { pulsing = true }
+            .pulseRing(scale: Tokens.Motion.glyphPulseScale)
         }
       }
       .animation(Tokens.Motion.quick, value: tone)
