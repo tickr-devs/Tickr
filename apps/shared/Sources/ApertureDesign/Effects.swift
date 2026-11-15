@@ -63,7 +63,7 @@ public struct Rise: ViewModifier {
   let delay: Double
 
   public func body(content: Content) -> some View {
-    let shown = shown
+    let isShown = shown
     let still = reduceMotion
     // Applied when drawing, not in layout: animated as plain opacity and offset, each frame of the
     // entrance laid out the whole screen again (Risk's six cards: 19 to 27 hitches on the first
@@ -71,8 +71,8 @@ public struct Rise: ViewModifier {
     content
       .visualEffect { effect, _ in
         effect
-          .opacity(shown ? 1 : 0)
-          .offset(y: shown || still ? 0 : Tokens.Size.riseOffset)
+          .opacity(isShown ? 1 : 0)
+          .offset(y: isShown || still ? 0 : Tokens.Size.riseOffset)
       }
       .onAppear {
         withAnimation(Tokens.Motion.entrance.delay(delay)) { shown = true }
