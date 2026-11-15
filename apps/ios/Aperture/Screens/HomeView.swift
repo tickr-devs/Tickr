@@ -325,7 +325,7 @@ private struct LiveFlowCard: View {
           Text(L10n.Flow.quotes(String(localized: status.freshness.stream.title)))
             .foregroundStyle(streamColor)
           Text(L10n.Flow.brokerRead(Format.timeOrDash(status.freshness.lastBrokerReadAt)))
-            .foregroundStyle(status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
+            .foregroundStyle(current && status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
         }
         .font(Tokens.Typography.annotation)
         ForEach(status.fences, id: \.kind) { fence in
@@ -347,6 +347,8 @@ private struct LiveFlowCard: View {
 
   /// The quote stream's state in its colour: a lost stream is an alarm.
   private var streamColor: Color {
+    // An old status says nothing about the stream now.
+    guard current else { return Palette.textQuaternary }
     switch status.freshness.stream {
     case .fresh: return Palette.profitText
     case .quiet: return Palette.warningText
