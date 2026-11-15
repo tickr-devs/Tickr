@@ -48,13 +48,17 @@ private struct ActiveStrategyCard: View {
               .font(Tokens.Typography.metric)
               .foregroundStyle(Palette.textPrimary)
           }
+          .fixedSize()
           VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
             CardLabel(L10n.Lab.shownDayResult)
             MoneyText(value: model.shownResult, usd: true, font: Tokens.Typography.metric)
           }
-          Spacer(minLength: Tokens.Space.l)
+          .fixedSize()
+          // The figures keep their one line; the curve takes the room left, so it neither squeezes
+          // them in a narrow window nor leaves a gap before it in a wide one.
           DrawnSparkline(values: model.cumulativeResults, color: Palette.result(model.shownResult))
-            .frame(width: Tokens.Size.sideColumn, height: Tokens.Size.sparkline)
+            .frame(maxWidth: .infinity)
+            .frame(height: Tokens.Size.sparkline)
         }
         Footnote(L10n.Lab.swapNote)
       }

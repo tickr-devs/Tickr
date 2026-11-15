@@ -13,13 +13,34 @@ OUT="$(cd "$OUT" && pwd)"
 # Seconds one language may take before the run counts as hung.
 LIMIT=420
 swift build --product ApertureMac
-BIN="$(swift build --show-bin-path)/ApertureMac"
+# A bare executable has no bundle that declares Russian, so macOS would show it in English
+# whatever -AppleLanguages says. Wrap the debug build in a minimal app that declares both
+# languages, with its own bundle id, so its settings never touch the real app's.
+# (Its String Catalogs stay in SwiftPM's resource bundles, found from the build folder.)
+APP="build/LayoutSweep.app"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS"
+cp "$(swift build --show-bin-path)/ApertureMac" "$APP/Contents/MacOS/ApertureMac"
+cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Tickr</string>
+  <key>CFBundleIdentifier</key><string>local.aperture.layoutsweep</string>
+  <key>CFBundleExecutable</key><string>ApertureMac</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>ru</string></array>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+BIN="$APP/Contents/MacOS/ApertureMac"
 status=0
 for lang in en ru; do
   rm -rf "${OUT:?}/$lang"
   mkdir -p "$OUT/$lang"
-  # A separate defaults domain per run would be cleaner, but the swift-run binary has no bundle
-  # id; the sweep resets the one key it changes (chart.decisions) when it ends.
   APERTURE_FIXTURES=1 APERTURE_LAYOUT_SWEEP="$OUT/$lang" \
     "$BIN" -AppleLanguages "($lang)" -AppleLocale "${lang}_US" -ApplePersistenceIgnoreState YES \
     -appearance dark > "$OUT/$lang.log" 2>&1 &
