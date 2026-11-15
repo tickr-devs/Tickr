@@ -4363,13 +4363,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "field %@ has a value this app does not know"
+            "value" : "field %@ has a value this app cannot read"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "в поле %@ значение, которого приложение не знает"
+            "value" : "в поле %@ значение, которое приложение не может прочитать"
           }
         }
       }
@@ -4403,7 +4403,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ответ — не корректный JSON"
+            "value" : "ответ — некорректный JSON"
           }
         }
       }

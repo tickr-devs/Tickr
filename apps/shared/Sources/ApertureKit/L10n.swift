@@ -252,10 +252,10 @@ enum L10n {
     LocalizedStringResource("kit.wire.fieldWrongType", defaultValue: "field \(field) has the wrong type",
       bundle: bundle)
   }
-  /// Contract error detail; argument: the field's path. A value this app has no case for.
+  /// Contract error detail; argument: the field's path. A value this app cannot read (an unknown case, a number out of range).
   static func fieldUnknownValue(_ field: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.wire.fieldUnknownValue",
-      defaultValue: "field \(field) has a value this app does not know", bundle: bundle)
+      defaultValue: "field \(field) has a value this app cannot read", bundle: bundle)
   }
   /// Contract error detail; arguments: the field's path, what is wrong with its value.
   static func fieldInvalid(_ field: String, _ cause: String) -> LocalizedStringResource {

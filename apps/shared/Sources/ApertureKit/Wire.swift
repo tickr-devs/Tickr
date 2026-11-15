@@ -39,6 +39,8 @@ public enum Wire {
     case .valueNotFound(_, let context):
       return String(localized: L10n.fieldNull(path(context.codingPath)))
     case .typeMismatch(_, let context):
+      // A wrong type at the top has no field to name: the answer as a whole is not what was asked for.
+      if context.codingPath.isEmpty { return String(localized: L10n.notJSON) }
       return String(localized: L10n.fieldWrongType(path(context.codingPath)))
     case .dataCorrupted(let context):
       if let own = context.underlyingError as? ContractError {

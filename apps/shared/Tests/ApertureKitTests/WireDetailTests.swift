@@ -33,7 +33,7 @@ import Testing
   }
 
   @Test func unknownEnumValue() throws {
-    #expect(try detail { $0["bot_state"] = "sleeping" } == "field bot_state has a value this app does not know")
+    #expect(try detail { $0["bot_state"] = "sleeping" } == "field bot_state has a value this app cannot read")
   }
 
   @Test func wireRuleKeepsItsCause() throws {
