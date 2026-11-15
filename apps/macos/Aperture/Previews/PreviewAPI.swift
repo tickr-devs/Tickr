@@ -22,11 +22,9 @@ enum PreviewAPI {
     if let path = ProcessInfo.processInfo.environment[diagnosticsKey] {
       Task { @MainActor in
         try? await Task.sleep(for: .seconds(diagnosticsDelay))
-        let lines = NSApplication.shared.windows.map {
-          "\(type(of: $0)) title=\($0.title) visible=\($0.isVisible) frame=\($0.frame) level=\($0.level.rawValue)"
-        }
-        let text = (["windows=\(lines.count)", "active=\(NSApplication.shared.isActive)",
-          "policy=\(NSApplication.shared.activationPolicy().rawValue)"] + lines).joined(separator: "\n")
+        let app = NSApplication.shared
+        let windows = app.windows.map { String(describing: ($0, $0.isVisible, $0.frame, $0.level.rawValue)) }
+        let text = String(describing: (app.isActive, app.activationPolicy().rawValue, windows))
         try? text.write(toFile: path, atomically: true, encoding: .utf8)
       }
     }
