@@ -1086,6 +1086,9 @@ private struct SafetyCard: View {
   /// Grows to its row's height (`filling()`), as a `Card` does.
   @Environment(\.cardFills) private var fills
 
+  /// Accessibility id of the card, for the UI tests.
+  static let id = "overview-safety"
+
   /// Fence names the bot raises for a position or an open order it did not place (engine
   /// Fence.FOREIGN_POSITION and FOREIGN_ORDER). A fence kind is the name, then ":" and a key
   /// when it has one, as in "foreign-position:ABCD".
@@ -1125,6 +1128,8 @@ private struct SafetyCard: View {
     .padding(Tokens.Space.l)
     .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
     .tickrCard(radius: Tokens.Radius.large)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier(Self.id)
   }
 
   private enum RowID: Hashable { case status, stops, entries, reconcile, stream, read, foreign, foreignOrders, pause }
