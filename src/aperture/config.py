@@ -59,16 +59,6 @@ def apply_renamed_keys(name: str, table: Any, found: list[str]) -> Any:
         found.append(rename)
         table[new] = table.pop(old)
     return table
-    table = dict(table)
-    for (section, old), new in RENAMED_KEYS.items():
-        if section != name or old not in table:
-            continue
-        if new in table:
-            raise ConfigError(f"[{name}] has both {old} (old name) and {new}; keep only {new}")
-        warnings.warn(f"[{name}] {old} is the old name of {new}; rename it in config/bot.toml",
-                      RenamedKeyWarning, stacklevel=2)
-        table[new] = table.pop(old)
-    return table
 
 
 @dataclass(frozen=True)
