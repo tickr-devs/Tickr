@@ -506,7 +506,8 @@ private struct ProtectionChain: View {
       (L10n.Positions.filled(position.quantity.text, Money.price(position.entryPrice.value)),
         Format.clock((position.entry.filledAt ?? position.openedAt).date), true),
       // No time: the status does not say when the stop was sent, and its order id means nothing here.
-      (L10n.Positions.stopSent(position.stop.price?.text ?? ""), "", state == .pending || state == .verified),
+      (L10n.Positions.stopSent(position.stop.price.map { Money.price($0.value) } ?? Format.missing), "",
+        state == .pending || state == .verified),
       (L10n.Positions.stopWorking, Board.stopStateTitle(state), state.isProtected),
       (L10n.Positions.reconciled, brokerReadAt.map(Format.clock) ?? Format.missing, brokerReadAt != nil && reconciled),
     ]

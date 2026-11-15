@@ -563,7 +563,7 @@ private struct TradesList: View {
           result: String(localized: L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value))),
           figures: [
             Figure(symbol: StopGlyph.stateSymbol(state), label: L10n.Activity.hintStop,
-              value: position.stop.price?.text ?? Format.missing, tone: StopGlyph.stateTone(state)),
+              value: position.stop.price.map { Money.price($0.value) } ?? Format.missing, tone: StopGlyph.stateTone(state)),
           ],
           stopState: state)
           .rise(step: ActivityView.Order.list.rawValue)
