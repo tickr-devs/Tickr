@@ -57,6 +57,10 @@ struct ChartView: View {
 
   /// Width of the symbol picker, in points.
   static let pickerWidth: CGFloat = 150
+  /// Least size of the chart screen beside the sidebar and the inspector, in points: sidebar
+  /// (200) + inspector (240) + this stays under the window's least width (1000).
+  static let minimumWidth: CGFloat = 420
+  static let minimumHeight: CGFloat = 420
   /// Height of the separators between control groups, in points.
   static let separatorHeight: CGFloat = 18
   /// Key equivalent of the decisions inspector (with ⌥⌘), as for inspectors in Apple's apps.
@@ -79,6 +83,14 @@ struct ChartView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .padding(Tokens.Space.xl)
+    // A fixed least size, the content cut at it: the screen's least size must not follow its
+    // content (controls that switch layout, a readout whose values change under the pointer).
+    // When it did, the split view resized this column inside its own layout pass, the new
+    // width changed the content's least size again, and AppKit threw ("needs another Update
+    // Constraints in Window pass") with the inspector open in a narrow window.
+    .frame(minWidth: Self.minimumWidth, maxWidth: .infinity, minHeight: Self.minimumHeight,
+      maxHeight: .infinity, alignment: .topLeading)
+    .clipped()
     .inspector(isPresented: $showDecisions) {
       DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: symbol != nil)
     }
