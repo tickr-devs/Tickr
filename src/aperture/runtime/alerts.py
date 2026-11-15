@@ -274,7 +274,12 @@ class Channels:
         """Start the background channels, run the others; (name, error or None) of the latter."""
         self._threads = [t for t in self._threads if t.is_alive()]
         for name, channel in self._background:
-            self._threads.append(self._spawn(_once(channel, name, title, text, done)))
+            try:
+                self._threads.append(self._spawn(_once(channel, name, title, text, done)))
+            except Exception as exc:  # noqa: BLE001 - a thread that cannot start
+                # Reported like any failed send, so the caller never raises into the bot's
+                # loop and never waits for an outcome that cannot come.
+                done(name, f"not started: {type(exc).__name__}")
         results: list[tuple[str, str | None]] = []
         for name, channel in self._channels:
             try:
@@ -405,7 +410,13 @@ class Alerter:
         pending = self._channels.background
         if pending:
             self._sending[key] = len(pending)
-        results = self._channels.send(f"{self._title}: {kind.value}", text, done)
+        try:
+            results = self._channels.send(f"{self._title}: {kind.value}", text, done)
+        except BaseException:
+            # No outcome will follow for sends that never started: the alert must not stay
+            # suppressed until the process restarts.
+            self._sending.pop(key, None)
+            raise
         failed = [error if name == NOTIFIER else f"{name}: {error}"
                   for name, error in results if error is not None]
         if len(failed) < len(results):

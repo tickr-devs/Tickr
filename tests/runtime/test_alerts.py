@@ -201,6 +201,38 @@ def test_an_alert_no_channel_delivered_is_sent_again_once_its_sends_have_ended()
     alerter.flush()
 
 
+def test_an_alert_whose_thread_cannot_start_is_reported_and_sent_again_next_time():
+    starts = []
+
+    def spawn(target):
+        starts.append(target)
+        if len(starts) == 1:
+            raise RuntimeError("can't start new thread")
+        return threading.Thread(target=target)  # never started: enough to count the attempt
+
+    mac = Recorder()
+    alerter = Alerter(CONFIG, "Aperture", Channels((), ((MACOS, mac),), spawn=spawn), Clock())
+    # The bot's loop gets an outcome, never the exception.
+    assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SENDING
+    (failed,) = alerter.completed()
+    assert (failed.delivery, failed.channel) == (Delivery.FAILED, MACOS)
+    assert failed.error == "macos: not started: RuntimeError"
+    # Not suppressed until a restart: the next occurrence is sent.
+    assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SENDING
+    assert len(starts) == 2
+
+
+def test_a_send_that_raises_leaves_no_alert_marked_as_sending():
+    class Broken(Channels):
+        def send(self, title, text, done):
+            raise RuntimeError("boom")
+
+    alerter = Alerter(CONFIG, "Aperture", Broken((), ((MACOS, Recorder()),)), Clock())
+    for _ in range(2):  # the second call reaches send again instead of being suppressed
+        with pytest.raises(RuntimeError):
+            alerter.alert(AlertKind.BOT_CRASHED, "x")
+
+
 RECIPIENT = "+15550001234-canary"
 
 
