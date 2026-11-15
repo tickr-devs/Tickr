@@ -1098,12 +1098,12 @@ enum ChartText {
     LocalizedStringResource("chart.indicator.macd", defaultValue: "MACD(\(fast),\(slow),\(signal))")
   }
   static let macdSignal = LocalizedStringResource("chart.indicator.macdSignal", defaultValue: "Signal")
-  static let macdHistogram = LocalizedStringResource("chart.indicator.macdHistogram", defaultValue: "Hist")
-  /// Stochastic pane legend: %K with the periods, then %D.
+  static let macdHistogram = LocalizedStringResource("chart.indicator.macdHistogram", defaultValue: "Histogram")
+  /// Stochastic pane legend: the %K line with the periods, then the %D line.
   static func stochasticK(_ period: Int, _ smoothing: Int) -> LocalizedStringResource {
-    LocalizedStringResource("chart.indicator.stochK", defaultValue: "Stoch(\(period),\(smoothing)) %K")
+    LocalizedStringResource("chart.indicator.stochK", defaultValue: "Stoch(\(period),\(smoothing)) K")
   }
-  static let stochasticD = LocalizedStringResource("chart.indicator.stochD", defaultValue: "%D")
+  static let stochasticD = LocalizedStringResource("chart.indicator.stochD", defaultValue: "D")
   /// RSI pane legend.
   static func rsi(_ period: Int) -> LocalizedStringResource {
     LocalizedStringResource("chart.indicator.rsi", defaultValue: "RSI\(period)")

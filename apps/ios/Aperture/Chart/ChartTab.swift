@@ -69,9 +69,11 @@ struct ChartTab: View {
           DayHeader(chart: chart, url: url)
           SymbolChips(chart: chart, url: url)
           if let series = chart.series, !series.candles.isEmpty {
+            // The controls sit above the chart, as in charting apps, so the panes below never push
+            // them under the tab bar.
+            ChartControls(chart: chart, series: series, lines: $lines, viewport: $viewport)
             CandleChart(series: series, studies: chart.studies, atr: chart.atr, trades: chart.trades,
               position: chart.openPosition, events: chart.events, lines: lines, viewport: $viewport)
-            ChartControls(chart: chart, series: series, lines: $lines, viewport: $viewport)
             DayTrades(trades: chart.trades)
             DecisionsCard(decisions: chart.shownDecisions, failure: chart.shownDecisionsFailure)
           } else {
@@ -286,16 +288,31 @@ private struct ChartControls: View {
   var body: some View {
     @Bindable var chart = chart
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      HStack(spacing: Tokens.Space.s) {
-        ForEach(Timeframe.allCases) { timeframe in
-          let selected = timeframe == chart.timeframe
-          Button { chart.timeframe = timeframe } label: {
-            Text(ChartFormat.title(timeframe)).chip(on: selected)
+      ScrollView(.horizontal) {
+        HStack(spacing: Tokens.Space.s) {
+          ForEach(Timeframe.allCases) { timeframe in
+            let selected = timeframe == chart.timeframe
+            Button { chart.timeframe = timeframe } label: {
+              Text(ChartFormat.title(timeframe)).chip(on: selected)
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
           }
-          .buttonStyle(.plain)
-          .accessibilityAddTraits(selected ? .isSelected : [])
         }
-        Spacer(minLength: Tokens.Space.s)
+      }
+      .scrollIndicators(.hidden)
+      HStack(spacing: Tokens.Space.s) {
+        Picker(selection: $lines.style) {
+          Label { Text(ChartText.candles) } icon: { Image(systemName: "chart.bar.fill") }
+            .tag(CandleChart.Style.candles)
+          Label { Text(ChartText.lineStyle) } icon: { Image(systemName: "chart.xyaxis.line") }
+            .tag(CandleChart.Style.line)
+        } label: {
+          Text(ChartText.lineStyle)
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.iconOnly)
+        .fixedSize()
         Group {
           Button { zoom(by: ChartViewport.zoomStep) } label: { Image(systemName: "minus") }
             .disabled(!viewport.canZoomOut(series))
@@ -317,19 +334,6 @@ private struct ChartControls: View {
           .accessibilityHint(Text(ChartText.liveHint))
           .accessibilityAddTraits(following ? .isSelected : [])
         }
-      }
-      HStack(spacing: Tokens.Space.s) {
-        Picker(selection: $lines.style) {
-          Label { Text(ChartText.candles) } icon: { Image(systemName: "chart.bar.fill") }
-            .tag(CandleChart.Style.candles)
-          Label { Text(ChartText.lineStyle) } icon: { Image(systemName: "chart.xyaxis.line") }
-            .tag(CandleChart.Style.line)
-        } label: {
-          Text(ChartText.lineStyle)
-        }
-        .pickerStyle(.segmented)
-        .labelStyle(.iconOnly)
-        .fixedSize()
         Spacer(minLength: Tokens.Space.s)
         Menu {
           Section {
@@ -352,6 +356,7 @@ private struct ChartControls: View {
           }
         } label: {
           Label { Text(ChartText.indicators) } icon: { Image(systemName: "square.grid.2x2") }
+            .labelStyle(.iconOnly)
             .chip(on: true)
         }
         .menuActionDismissBehavior(.disabled)
@@ -375,6 +380,8 @@ private struct ChipLook: ViewModifier {
   func body(content: Content) -> some View {
     content
       .font(Tokens.Typography.captionMono)
+      .lineLimit(1)
+      .fixedSize()
       .foregroundStyle(on ? text : Palette.textTertiary)
       .padding(.horizontal, Tokens.Space.m)
       .padding(.vertical, Tokens.Space.s)

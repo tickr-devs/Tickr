@@ -1913,13 +1913,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hist"
+            "value" : "Histogram"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Гист"
+            "value" : "Гистограмма"
           }
         }
       }
@@ -2015,13 +2015,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%%D"
+            "value" : "D"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%%D"
+            "value" : "D"
           }
         }
       }
@@ -2032,13 +2032,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stoch(%1$lld,%2$lld) %%K"
+            "value" : "Stoch(%1$lld,%2$lld) K"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stoch(%1$lld,%2$lld) %%K"
+            "value" : "Stoch(%1$lld,%2$lld) K"
           }
         }
       }

@@ -67,7 +67,7 @@ struct CandleChart: View {
   /// Height of the price pane, in points.
   static let priceHeight: CGFloat = 300
   /// Height of each study pane, in points.
-  static let paneHeight: CGFloat = 84
+  static let paneHeight: CGFloat = 72
   /// Share of a candle's time slot its body fills; the rest is the gap between candles.
   static let bodyShare = 0.64
   /// Space above and below the visible prices, as a share of their range.
@@ -78,7 +78,7 @@ struct CandleChart: View {
   static let paneAxisMarks = 2
   /// Width every pane gives its scale labels, so the plot areas of all panes are equally wide
   /// and candles, volume and studies line up.
-  static let axisLabelWidth: CGFloat = 44
+  static let axisLabelWidth: CGFloat = 50
   /// Smallest scale the readout line may shrink to before it truncates.
   static let readoutMinimumScale = 0.7
   /// Size of a watch or entry mark on its candle, in points.
@@ -87,6 +87,8 @@ struct CandleChart: View {
   static let extremeLeader: CGFloat = 12
   /// Room above a study pane's line for its legend, as a share of the pane's value range.
   static let legendHeadroom = 0.35
+  /// Annotations near an edge move inside the chart instead of being cut off.
+  static let keepInside = AnnotationOverflowResolution(x: .fit(to: .chart), y: .fit(to: .chart))
   /// Colours of the moving-average lines, in the order of `Studies.movingAveragePeriods`.
   static let averageColours = [Palette.info, Palette.warning, Palette.highlight]
   /// Line series of the moving averages, in the same order.
@@ -190,6 +192,7 @@ struct CandleChart: View {
         crosshair(candle)
           .annotation(position: .bottom, spacing: 0, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
             Text(candle.start, format: ChartFormat.time)
+              .fixedSize()
               .font(Tokens.Typography.annotationBold)
               .foregroundStyle(Palette.surface)
               .padding(.horizontal, Tokens.Space.xs)
@@ -223,7 +226,7 @@ struct CandleChart: View {
     .accessibilityLabel(Text(ChartText.title))
   }
 
-  /// The close as a line with a fill fading down to the bottom of the pane, coloured by whether
+  /// The close as a line with a fill fading down to the volume bars, coloured by whether
   /// the stretch on screen ended above where it began.
   @ChartContentBuilder
   private func lineArea(_ scale: PriceScale) -> some ChartContent {
@@ -231,7 +234,7 @@ struct CandleChart: View {
     ForEach(series.candles) { candle in
       AreaMark(
         x: .value(Plot.time, middle(candle)),
-        yStart: .value(Plot.price, scale.domain.lowerBound),
+        yStart: .value(Plot.price, scale.volumeBase + scale.volumeHeight),
         yEnd: .value(Plot.price, candle.close))
         .foregroundStyle(
           LinearGradient(
@@ -254,10 +257,14 @@ struct CandleChart: View {
       let low = series.candles[found.low]
       PointMark(x: .value(Plot.time, middle(high)), y: .value(Plot.price, high.high))
         .symbolSize(0)
-        .annotation(position: .top, spacing: Tokens.Space.xxs) { extremeLabel(high.high) }
+        .annotation(position: .top, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
+          extremeLabel(high.high)
+        }
       PointMark(x: .value(Plot.time, middle(low)), y: .value(Plot.price, low.low))
         .symbolSize(0)
-        .annotation(position: .bottom, spacing: Tokens.Space.xxs) { extremeLabel(low.low) }
+        .annotation(position: .bottom, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
+          extremeLabel(low.low)
+        }
     }
   }
 
@@ -270,6 +277,7 @@ struct CandleChart: View {
     }
     .font(Tokens.Typography.annotation)
     .foregroundStyle(Palette.textTertiary)
+    .fixedSize()
   }
 
   /// The touched candle's line, drawn in every pane so it reads as one line through them.
