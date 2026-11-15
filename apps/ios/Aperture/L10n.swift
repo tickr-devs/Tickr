@@ -167,6 +167,26 @@ enum L10n {
   }
 
   enum Control {
+    static var stopTitle: LocalizedStringResource {
+      LocalizedStringResource("control.stopTitle",
+        defaultValue: "Stop the bot?",
+        bundle: L10n.bundle)
+    }
+    static var stopWarning: LocalizedStringResource {
+      LocalizedStringResource("control.stopWarning",
+        defaultValue: "The bot ends gracefully: entry orders are cancelled and broker stops stay. Open positions stay open under DAY stops, and nothing closes them at the session's end. The phone cannot start the bot again: start it on the Mac.",
+        bundle: L10n.bundle)
+    }
+    static var emergencyTitle: LocalizedStringResource {
+      LocalizedStringResource("control.emergencyTitle",
+        defaultValue: "Emergency stop?",
+        bundle: L10n.bundle)
+    }
+    static var emergencyWarning: LocalizedStringResource {
+      LocalizedStringResource("control.emergencyWarning",
+        defaultValue: "The bot pauses entries, cancels its entry orders and sells every position it holds at market through the normal exit. Each stop is cancelled only right before its sale. Entries stay paused until you resume them.",
+        bundle: L10n.bundle)
+    }
     static var resume: LocalizedStringResource {
       LocalizedStringResource("control.resume", defaultValue: "Resume Entries", bundle: L10n.bundle)
     }
@@ -187,7 +207,7 @@ enum L10n {
     }
     static var message: LocalizedStringResource {
       LocalizedStringResource("control.message",
-        defaultValue: "Pausing and cancelling never touch broker stops. Flatten closes the bot's own positions through the normal exit. Stop ends the bot gracefully with stops left resting; it stays stopped until started again on the Mac. Emergency pauses entries, cancels entry orders and flattens everything. Each command is queued once; the bot reports the result.",
+        defaultValue: "Pausing and cancelling never touch broker stops. Flatten closes the bot's own positions through the normal exit. Stop ends the bot gracefully: positions stay open under DAY stops and nothing closes them at the session's end; only the Mac can start it again. Emergency pauses entries, cancels entry orders and flattens everything. Each command is queued once; the bot reports the result.",
         bundle: L10n.bundle)
     }
     static var unknown: LocalizedStringResource {
