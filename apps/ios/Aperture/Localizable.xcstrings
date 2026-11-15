@@ -4017,6 +4017,23 @@
         }
       }
     },
+    "flow.stopsCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld"
+          }
+        }
+      }
+    },
     "flow.stopsVerified" : {
       "extractionState" : "manual",
       "localizations" : {

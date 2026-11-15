@@ -34,6 +34,21 @@ import Testing
     #expect(latest.tone == .amber)
   }
 
+  @Test("A fence keyed by an open position's trade or order names that symbol first")
+  func fenceSymbol() throws {
+    let positions = try status("status-response-v1.json").positions
+    func fence(_ kind: String) throws -> Fence {
+      let json = #"{"kind":"\#(kind)","since":"2026-11-16T15:00:00.123Z","text":"t","code":"x","params":{}}"#
+      return try Wire.decoder().decode(Fence.self, from: Data(json.utf8))
+    }
+    #expect(Board.fenceSymbol(try fence("unprotected-timeout:0001"), positions: positions) == "ABCD")
+    #expect(Board.fenceSymbol(try fence("status-unknown:ap-0001-s"), positions: positions) == "ABCD")
+    #expect(Board.fenceSymbol(try fence("unprotected:0002"), positions: positions) == nil)
+    #expect(Board.fenceSymbol(try fence("startup-reconcile"), positions: positions) == nil)
+    #expect(Board.fenceText(try fence("unprotected-timeout:0001"), positions: positions)
+      .hasPrefix("ABCD" + ApiText.keySeparator))
+  }
+
   /// The fixture's status with a second open position, EFGH, whose stop is still pending.
   func twoPositions() throws -> StatusResponseV1 {
     var response = try #require(try JSONSerialization.jsonObject(with: fixture("status-response-v1.json")) as? [String: Any])

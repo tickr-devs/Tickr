@@ -345,6 +345,10 @@ enum L10n {
     static func stopsVerified(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.stopsVerified", defaultValue: "\(verified)/\(total) ✓", bundle: L10n.bundle)
     }
+    /// The Stop stage while some stop is not verified: "0/1", without the check mark.
+    static func stopsCount(_ verified: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stopsCount", defaultValue: "\(verified)/\(total)", bundle: L10n.bundle)
+    }
     /// Symbols at a live-flow stage beyond the dots shown: "+5".
     static func more(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.more", defaultValue: "+\(count)", bundle: L10n.bundle)

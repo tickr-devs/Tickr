@@ -47,7 +47,8 @@ struct HomeView: View {
         }
         let todayFlow = model.flow?.day == model.today ? model.flow : nil
         LiveFlowCard(status: status, flow: todayFlow, flowPending: model.flowPending,
-          marks: FlowBoard.marks(flow: todayFlow, skipped: model.skipped?.day == model.today ? model.skipped : nil),
+          marks: FlowBoard.marks(flow: todayFlow, skipped: model.skipped?.day == model.today ? model.skipped : nil,
+            positions: status.positions),
           maxPositions: model.settings?.risk.maxOpenPositions,
           current: model.isFresh && WireDate(newYorkDateOf: status.writtenAt.date) == model.today)
           .rise(step: Order.flow.rawValue)
@@ -438,9 +439,9 @@ private struct LiveFlowCard: View {
     }
     // An open position waiting for its stop shows first; then the day's stops from the flow.
     let stops: String? = if verified < positions.count || flow?.stops.isEmpty != false {
-      positions.isEmpty ? nil : String(localized: L10n.Flow.stopsVerified(verified, positions.count))
+      positions.isEmpty ? nil : Self.stops(verified, of: positions.count)
     } else {
-      flow.map { String(localized: L10n.Flow.stopsVerified(flowVerified ?? 0, $0.stops.count)) }
+      flow.map { Self.stops(flowVerified ?? 0, of: $0.stops.count) }
     }
     // The day's count stays; an entry block shows under it, red when it needs the operator.
     let blocked = !status.entriesAllowed && !status.entriesCalm
@@ -463,6 +464,11 @@ private struct LiveFlowCard: View {
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
         color: allProtected ? Palette.profit : Palette.loss, urgent: verified < positions.count),
     ]
+  }
+
+  /// "2/2 ✓" only when every stop is verified; otherwise the bare count, never a check mark.
+  private static func stops(_ verified: Int, of total: Int) -> String {
+    String(localized: verified == total ? L10n.Flow.stopsVerified(verified, total) : L10n.Flow.stopsCount(verified, total))
   }
 
   /// How many symbols reached `stage` today; nil until the flow is read.
@@ -521,7 +527,9 @@ private struct LiveFlowCard: View {
       }
       .font(Tokens.Typography.annotation)
       ForEach(status.fences, id: \.kind) { fence in
-        Label { Text(verbatim: fence.text) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
+        Label { Text(verbatim: Board.fenceText(fence, positions: status.positions)) } icon: {
+          Image(systemName: "exclamationmark.triangle.fill")
+        }
           .font(.caption)
           .foregroundStyle(Palette.warningText)
       }
@@ -589,7 +597,11 @@ private struct LiveFlowCard: View {
     let passed = here.filter { !$0.refused }
     let refused = here.filter(\.refused)
     VStack(spacing: Tokens.Space.xs) {
-      if !passed.isEmpty { dots(passed, color: stage.color).accessibilityHidden(true) }
+      // A stop dot is green unless its own stop is waiting or unconfirmed: one unprotected
+      // position reddens the stage, never the day's other stops.
+      if !passed.isEmpty {
+        dots(passed, color: stage.id == .stop ? Palette.profit : stage.color).accessibilityHidden(true)
+      }
       if !refused.isEmpty {
         // No hover on a phone: a tap anywhere on the tray, a full touch target wide and tall,
         // lists who was refused and why in a popover that stays until dismissed (HIG).
@@ -684,6 +696,10 @@ private struct LatestEventLine: View {
   let text: String
   let color: Color
 
+  /// Lines the event's text may take: a fence's symbol and what it says (how long, what next)
+  /// must not be cut off on a phone.
+  static let textLines = 3
+
   /// The newest of the status's events and today's risk refusals (a refusal is an event too).
   static func latest(status: StatusV1, skipped: SkippedV1?) -> LatestEventLine? {
     Board.latestEvent(status, skipped: skipped).map {
@@ -697,6 +713,7 @@ private struct LatestEventLine: View {
         .foregroundStyle(Palette.textQuaternary)
       Text(verbatim: tag).bold().textCase(.uppercase).foregroundStyle(color)
       Text(verbatim: text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
+        .lineLimit(Self.textLines)
       Spacer(minLength: 0)
     }
     .font(Tokens.Typography.annotation.monospaced())
