@@ -12,9 +12,9 @@ struct CleanMark: View {
     Group {
       switch clean.verdict {
       case .clean:
-        Image(systemName: "checkmark.seal.fill").foregroundStyle(Palette.profitText)
+        Image(systemName: Self.cleanSymbol).foregroundStyle(Palette.profitText)
       case .notClean:
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.lossText)
+        Image(systemName: Self.notCleanSymbol).foregroundStyle(Palette.warningText)
       case .unknown:
         EmptyView()
       }
@@ -34,5 +34,32 @@ struct CleanMark: View {
     case .unknown:
       return String(localized: L10n.Trades.cleanUnknown(clean.cause ?? Format.missing))
     }
+  }
+}
+
+/// The shown day's verdict in its header: a clean day, or one that needs a look, with what made
+/// it so in the tooltip; nothing while the verdict is unknown.
+struct CleanBadge: View {
+  let clean: CleanDay
+
+  /// Accessibility id of the badge, for the UI tests.
+  static let id = "trades-clean-badge"
+
+  var body: some View {
+    switch clean.verdict {
+    case .clean: badge(L10n.Trades.cleanBadge, symbol: CleanMark.cleanSymbol, color: Palette.profitText)
+    case .notClean: badge(L10n.Trades.needsLookBadge, symbol: CleanMark.notCleanSymbol, color: Palette.warningText)
+    case .unknown: EmptyView()
+    }
+  }
+
+  private func badge(_ title: LocalizedStringResource, symbol: String, color: Color) -> some View {
+    HStack(spacing: Tokens.Space.xs) {
+      Image(systemName: symbol).foregroundStyle(color)
+      Badge(title, color: color)
+    }
+    .help(Text(verbatim: CleanMark.text(clean)))
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier(Self.id)
   }
 }

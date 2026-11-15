@@ -39,11 +39,29 @@ struct MonthCalendar: View {
           }
         }
       }
+      legend
     }
     .animation(Tokens.Motion.standard, value: shown)
     .onChange(of: model.shownDay) { _, day in month = DayCalendar.Month(day) }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(Self.id)
+  }
+
+  /// What the cells' corner dots mean.
+  private var legend: some View {
+    HStack(spacing: Tokens.Space.s) {
+      dot(Palette.profit)
+      Text(L10n.Trades.cleanLegend)
+      dot(Palette.warning)
+      Text(L10n.Trades.needsLook)
+    }
+    .font(Tokens.Typography.annotation)
+    .foregroundStyle(Palette.textQuaternary)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func dot(_ color: Color) -> some View {
+    Circle().fill(color).frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
   }
 
   private func header(_ shown: DayCalendar.Month, months: [DayCalendar.Month]) -> some View {
@@ -128,7 +146,7 @@ private struct CalendarDay: View {
       .overlay(alignment: .topTrailing) {
         if let clean = cell.summary?.clean, clean.verdict != .unknown {
           Circle()
-            .fill(clean.verdict == .clean ? Palette.profit : Palette.loss)
+            .fill(clean.verdict == .clean ? Palette.profit : Palette.warning)
             .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
             .padding(Tokens.Space.xxs)
         }

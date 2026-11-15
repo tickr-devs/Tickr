@@ -1462,6 +1462,22 @@ enum L10n {
     static func cleanUnknown(_ cause: String) -> LocalizedStringResource {
       LocalizedStringResource("trades.cleanUnknown", defaultValue: "Clean or not is unknown: \(cause)", bundle: L10n.bundle)
     }
+    /// Day header badge: the journal, the broker and the bot's records agreed.
+    static var cleanBadge: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day · records agree", bundle: L10n.bundle)
+    }
+    /// Day header badge: the day was not clean.
+    static var needsLookBadge: LocalizedStringResource {
+      LocalizedStringResource("trades.needsLookBadge", defaultValue: "Needs a look · records differ", bundle: L10n.bundle)
+    }
+    /// Calendar legend of the green dot.
+    static var cleanLegend: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanLegend", defaultValue: "clean day: journal, broker and records agree", bundle: L10n.bundle)
+    }
+    /// Calendar legend of the amber dot.
+    static var needsLook: LocalizedStringResource {
+      LocalizedStringResource("trades.needsLook", defaultValue: "needs a look", bundle: L10n.bundle)
+    }
     /// A refusal with the end of its window (a cooldown), New York time.
     static func refusedUntil(_ message: String, _ time: String) -> LocalizedStringResource {
       LocalizedStringResource("trades.refusedUntil", defaultValue: "\(message) · until \(time)", bundle: L10n.bundle)

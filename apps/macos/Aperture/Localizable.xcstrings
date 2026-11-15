@@ -8034,6 +8034,23 @@
         }
       }
     },
+    "trades.cleanBadge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clean day · records agree"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чистый день · записи сходятся"
+          }
+        }
+      }
+    },
     "trades.cleanDay" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8047,6 +8064,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Чистый день: брокер и записи бота сходились, у каждой позиции был стоп, день закрыт чисто."
+          }
+        }
+      }
+    },
+    "trades.cleanLegend" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clean day: journal, broker and records agree"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "чистый день: журнал, брокер и записи сходятся"
           }
         }
       }
@@ -8319,6 +8353,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Лучший открытый результат (MFE), не меньше"
+          }
+        }
+      }
+    },
+    "trades.needsLook" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "needs a look"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "нужна проверка"
+          }
+        }
+      }
+    },
+    "trades.needsLookBadge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs a look · records differ"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужна проверка · записи расходятся"
           }
         }
       }
