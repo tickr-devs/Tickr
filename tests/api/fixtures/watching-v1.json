@@ -104,7 +104,7 @@
     "verdict": "ENTER",
     "quantity": "200",
     "binding": null,
-    "binding_cause": "the planned loss or the notional cap: the record does not tell them apart"
+    "binding_cause": "not proven by the record: the planned loss, the notional cap or the daily room"
   },
   "api_version": 1
 }

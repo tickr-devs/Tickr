@@ -1232,9 +1232,10 @@ class SizeBinding(StrEnum):
 class LatestSizeV1:
     """The size the active strategy gave its latest sized decision of the day: the measured
     value of its recorded `quantity` check (whole shares; below 1 = too small to enter), on any
-    verdict. `binding`: the limit that cut it, only where the record says so in structured form
-    (a `daily_loss_budget_usd` check: sized down to the daily room); otherwise null with
-    `binding_cause`. Read from the decision record, never recomputed."""
+    verdict: the last size given, not a forecast of the next one. `binding`: the limit that cut
+    it, only where the record proves it (`daily_room`: a `daily_loss_budget_usd` check and
+    floor(its room / the recorded `sizing_risk_per_share`) equal to the quantity); otherwise null
+    with `binding_cause`. Read from the decision record, never resized."""
 
     symbol: str
     at: datetime  # the decision's bar start
@@ -1266,8 +1267,9 @@ _NOT_WATCHING = (Verdict.ENTER, Verdict.HOLD, Verdict.EXIT)
 # Rule names the strategies record for their sizing (strategy/price_action_v1.py, simple.py).
 QUANTITY_RULE = "quantity"
 DAILY_ROOM_RULE = "daily_loss_budget_usd"
-BINDING_NOT_RECORDED = ("the planned loss or the notional cap: the record does not tell "
-                        "them apart")
+SIZING_RISK_RULE = "sizing_risk_per_share"
+BINDING_NOT_RECORDED = ("not proven by the record: the planned loss, the notional cap or "
+                        "the daily room")
 
 
 def closeness(check: Check | None, places: int) -> tuple[Decimal | None, str | None]:
@@ -1343,6 +1345,18 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: 
                       latest_size=latest_size(records))
 
 
+def _room_binds(checks: dict[str, Check], quantity: Decimal) -> bool:
+    """True only when the record proves the daily room set the quantity: the planned loss was
+    lowered to the room AND floor(room / recorded sizing risk per share) is the quantity. The
+    room check alone does not prove it: the notional cap can still cut below that."""
+    room, risk = checks.get(DAILY_ROOM_RULE), checks.get(SIZING_RISK_RULE)
+    if room is None or risk is None or room.measured is None or risk.measured is None:
+        return False
+    if risk.measured <= 0:
+        return False
+    return (room.measured / risk.measured).to_integral_value(rounding=ROUND_FLOOR) == quantity
+
+
 def latest_size(records: tuple[DecisionRecord, ...]) -> LatestSizeV1 | None:
     """The newest record of `records` with a measured `quantity` check, as LatestSizeV1."""
     for r in reversed(_oldest_first(records)):
@@ -1350,8 +1364,7 @@ def latest_size(records: tuple[DecisionRecord, ...]) -> LatestSizeV1 | None:
         quantity = checks.get(QUANTITY_RULE)
         if quantity is None or quantity.measured is None:
             continue
-        room = checks.get(DAILY_ROOM_RULE)
-        binding = SizeBinding.DAILY_ROOM if room is not None and room.passed else None
+        binding = SizeBinding.DAILY_ROOM if _room_binds(checks, quantity.measured) else None
         d = r.decision
         return LatestSizeV1(r.symbol, r.bar_start, StrategyId(d.strategy, d.version), d.verdict,
                             quantity.measured, binding,

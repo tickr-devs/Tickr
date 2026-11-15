@@ -169,10 +169,22 @@ def test_latest_size_is_the_newest_recorded_quantity_with_its_structured_binding
         "symbol": "ABCD", "at": "2026-11-16T15:00:00.000Z",
         "strategy": {"name": ACTIVE[0], "version": ACTIVE[1]}, "verdict": "ENTER",
         "quantity": "200", "binding": None, "binding_cause": contract.BINDING_NOT_RECORDED}
-    records = (_watch("ABCD", 0, sized), _watch("QRST", 4, PASS, room, small))
+    risk = check("0.335", ">", "0", contract.SIZING_RISK_RULE)
+    risk = Check(risk.rule, risk.measured, risk.operator, risk.threshold, True)
+    records = (_watch("ABCD", 0, sized), _watch("QRST", 4, PASS, room, risk, small))
     latest = contract.watching_document(DAY, records, 3, 4, 4).latest_size
     assert (latest.symbol, latest.quantity, latest.binding, latest.binding_cause) == (
-        "QRST", Decimal("37"), contract.SizeBinding.DAILY_ROOM, None)
+        "QRST", Decimal("37"), contract.SizeBinding.DAILY_ROOM, None)  # floor(12.5/0.335) = 37
+    # Planned 100 lowered to room 95, risk 0.10: by loss 950, but the notional cap (5000 at
+    # 50.00) gives 100. The room check is there, yet the cap bound: no binding is claimed.
+    capped = (_watch("QRST", 5, PASS,
+                     Check(contract.DAILY_ROOM_RULE, Decimal(95), "<", Decimal(100), True),
+                     Check(contract.SIZING_RISK_RULE, Decimal("0.10"), ">", Decimal(0), True),
+                     Check(contract.QUANTITY_RULE, Decimal(100), ">=", Decimal(1), True)),)
+    latest = contract.watching_document(DAY, capped, 3, 4, 4).latest_size
+    assert (latest.binding, latest.binding_cause) == (None, contract.BINDING_NOT_RECORDED)
+    without_risk = (_watch("QRST", 6, PASS, room, small),)  # simple.py records no sizing risk
+    assert contract.watching_document(DAY, without_risk, 3, 4, 4).latest_size.binding is None
     assert contract.watching_document(DAY, (_watch("ABCD", 0, FAIL),), 3, 4, 4
                                       ).latest_size is None
 
