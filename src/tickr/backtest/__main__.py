@@ -21,6 +21,7 @@ from tickr.backtest.universe import (
     CAP_FILE,
     POOL_FILE,
     REFUSED_FILE,
+    active_screen,
     drop_unpriced,
     read_pool,
     select_liquid,
@@ -66,7 +67,7 @@ def step_select(cfg: Config, settings: BacktestSettings, out: Path, first: date,
                                    settings.liquid_min_price_usd)
     else:
         pool, caps = select_pool(rows, sessions, settings.gainer_change_percent,
-                                 cfg.market_data.min_session_dollar_volume_usd,
+                                 active_screen(cfg),
                                  settings.max_pool_per_day)
     path = out / POOL_FILE
     write_pool(pool, path)
@@ -136,6 +137,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--last-sessions", type=int, default=None,
                      help="replay only the pool days of the latest N sessions (ending at the "
                           "pool's last day)")
+    run.add_argument("--end-day", type=date.fromisoformat, default=None,
+                     help="with --last-sessions: the window ends at this pool day instead of "
+                          "the pool's last day (--last-sessions 1 --end-day D replays day D)")
     return parser
 
 
@@ -150,7 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             from tickr.backtest.run import run_backtest
 
             run_backtest(cfg, settings, replay_settings, out, args.results, args.strategy,
-                         args.values, args.last_sessions)
+                         args.values, args.last_sessions, args.end_day)
             return 0
         if args.step == "select":
             step_select(cfg, settings, out, args.first, args.last, args.rule, args.daily)
