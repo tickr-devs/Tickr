@@ -52,6 +52,7 @@ contrast on `surface` in both appearances.
 | `warning` / `warningText` | Paused, blocked, stale, closed gate, environment chip | `#F59E0B` / `#B45309` | `#FBBF24` / `#FCD34D` |
 | `info` / `infoText` | Entries, orders, commands in flight | `#3B82F6` / `#1D4ED8` | `#60A5FA` / `#93C5FD` |
 | `highlight` / `highlightText` | Recorded day, BACKLOG, observers | `#8B5CF6` / `#6D28D9` | `#A78BFA` / `#C4B5FD` |
+| `chipFill` | Unselected chip (ranges, intervals, studies); a selected chip takes `selection` with an `info` outline | `#F3F6FD` | `#111834` |
 | `accentFill` / `onAccent` | Primary button fill and its text | `#0B766F` / `#FFFFFF` | `#2DD4BF` / `#04131A` |
 | `sheen` | Light gradient across a filled control (at `Opacity.wash`) | `#FFFFFF` | `#FFFFFF` |
 | `seriesVWAP` | VWAP line | = `warning` | = `warning` |
@@ -102,8 +103,9 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `body` / `bodyMono` | `.body` | Values in rows |
 | `callout` / `calloutMono` | `.callout` | Labels, explanations |
 | `caption` / `captionMono` | `.caption` | Secondary notes |
-| `subheadlineMono` | `.subheadline` mono | A detail line under a figure or beside a symbol (menu-bar panel) |
+| `subheadlineMono` | `.subheadline` mono | A detail line under a figure or beside a symbol (menu-bar panel); the Mac title bar's connection status |
 | `headingMono` | `.title3` mono | A symbol heading a compact row (menu-bar panel positions) |
+| `dayStepper` | 11.5 pt mono | The Mac title bar's day stepper |
 | `label` | 11 pt semibold mono, uppercase, tracking 0.8 | Card section labels |
 | `badge` | 10.5 pt bold mono, tracking 0.6 | Badges and tags |
 | `annotation` / `annotationBold` | 10.5 pt mono | Chart axes, ticker, pipeline values |
