@@ -324,9 +324,6 @@ enum L10n {
   }
 
   enum Root {
-    static func run(_ id: String) -> LocalizedStringResource {
-      LocalizedStringResource("root.run", defaultValue: "run \(id)", bundle: L10n.bundle)
-    }
     static var apiUnreachable: LocalizedStringResource {
       LocalizedStringResource("root.apiUnreachable", defaultValue: "API unreachable", bundle: L10n.bundle)
     }
@@ -932,6 +929,10 @@ enum L10n {
     static var jobWatchdog: LocalizedStringResource {
       LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
     }
+    /// A launchd job this app does not know by name.
+    static var jobOther: LocalizedStringResource {
+      LocalizedStringResource("settings.job.other", defaultValue: "Other job", bundle: L10n.bundle)
+    }
     static func lastAt(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.lastAt", defaultValue: "last \(time)", bundle: L10n.bundle)
     }
@@ -986,9 +987,6 @@ enum L10n {
     }
     static var staleAfter: LocalizedStringResource {
       LocalizedStringResource("settings.staleAfter", defaultValue: "Status stale after", bundle: L10n.bundle)
-    }
-    static var run: LocalizedStringResource {
-      LocalizedStringResource("settings.run", defaultValue: "Run", bundle: L10n.bundle)
     }
     static var notAvailableYet: LocalizedStringResource {
       LocalizedStringResource("settings.notAvailableYet", defaultValue: "Not available yet", bundle: L10n.bundle)
@@ -1692,6 +1690,10 @@ enum L10n {
   }
   /// A refused entry in words: the rule behind its code, and the detail of a pause after a loss.
   enum Cause {
+    /// Title of a refusal whose code this app has no words for; the bot's detail follows it.
+    static var other: LocalizedStringResource {
+      LocalizedStringResource("cause.other", defaultValue: "Other reason", bundle: L10n.bundle)
+    }
     /// What the rule behind `code` is.
     static func title(_ code: RefusalCode) -> LocalizedStringResource {
       switch code {
@@ -2220,6 +2222,19 @@ enum L10n {
     /// Row without a deciding check.
     static var noCheck: LocalizedStringResource {
       LocalizedStringResource("watching.noCheck", defaultValue: "No deciding check recorded", bundle: L10n.bundle)
+    }
+    /// The card's caption: what each row shows besides the symbol.
+    static var columns: LocalizedStringResource {
+      LocalizedStringResource("watching.columns", defaultValue: "decisive check · quote age", bundle: L10n.bundle)
+    }
+    /// Tooltip of a row's quote age.
+    static func quoteAgeHelp(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("watching.quoteAgeHelp", defaultValue: "Age of the quote when the strategy decided at \(time) ET",
+        bundle: L10n.bundle)
+    }
+    /// When the strategy decided, for a row without a quote age.
+    static func decidedAt(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("watching.decidedAt", defaultValue: "Decided at \(time) ET", bundle: L10n.bundle)
     }
   }
   enum EntrySent {

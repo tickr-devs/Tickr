@@ -62,8 +62,6 @@ private struct LossRoomCard: View {
 
   /// Diameter of the ring, in points.
   static let ringSize: CGFloat = 220
-  /// Smallest scale the amount in the ring shrinks to.
-  static let amountMinimumScale = 0.5
 
   private var limit: Decimal? { model.settings?.risk.maxDailyLossUsd.value }
   /// Today's net result; nil while the bot's status is unknown. The limit counts the live day only.
@@ -98,7 +96,7 @@ private struct LossRoomCard: View {
               // One line inside the ring, shrinking for a long amount ("248.40 USD" wrapped).
               MoneyText(value: room, usd: true, font: Tokens.Typography.hero, colored: false, signed: false)
                 .lineLimit(1)
-                .minimumScaleFactor(Self.amountMinimumScale)
+                .minimumScaleFactor(Tokens.Shrink.most)
                 .contentTransition(.numericText())
             } else {
               Text(verbatim: Format.missing).font(Tokens.Typography.hero)
@@ -293,8 +291,6 @@ private struct PositionSlots: View {
   static let tileMinWidth: CGFloat = 84
   /// Height of a tile, so free and taken tiles line up, in points.
   static let tileHeight: CGFloat = 64
-  /// Smallest scale a tile's text shrinks to before it truncates.
-  static let textMinimumScale = 0.8
 
   private var free: Int { max(0, limit - positions.count) }
 
@@ -344,7 +340,7 @@ private struct PositionSlots: View {
         .foregroundStyle(colors.text)
     }
     .lineLimit(1)
-    .minimumScaleFactor(Self.textMinimumScale)
+    .minimumScaleFactor(Tokens.Shrink.slight)
     .padding(Tokens.Space.s)
     .frame(maxWidth: .infinity, minHeight: Self.tileHeight, alignment: .topLeading)
     .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.medium))
@@ -413,7 +409,8 @@ private struct AccountCard: View {
         Footnote(L10n.Risk.accountReading)
       }
     }
-    .animation(Tokens.Motion.standard, value: model.account)
+    // Keyed on the account, not the read: a new read of the same account moves nothing.
+    .animation(Tokens.Motion.standard, value: model.account?.state)
   }
 
   private var tint: Color? {

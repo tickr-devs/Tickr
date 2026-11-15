@@ -88,7 +88,6 @@ private struct DecisionRow: View {
         Text(verbatim: reason)
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.warningText)
-          .help(Text(verbatim: decision.refusal?.code ?? reason))
       }
       if let entry = decision.entryPrice, let stop = decision.stopPrice {
         Text(L10n.Chart.entryStop(Format.price(entry.value), Format.price(stop.value)))
@@ -123,12 +122,11 @@ private struct CheckRow: View {
       .accessibilityLabel(Text(check.passed ? L10n.Chart.checkPassed : L10n.Chart.checkFailed))
       VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
         // The rule in words (ApiText), wrapped between them over a few lines rather than cut
-        // mid-word; the bot's own name is the hint.
+        // mid-word.
         Text(verbatim: ApiText.rule(check.rule))
           .font(Tokens.Typography.captionMono)
           .lineLimit(DecisionsInspector.ruleLines)
           .fixedSize(horizontal: false, vertical: true)
-          .help(Text(verbatim: check.rule))
         Text(verbatim: comparison)
           .font(Tokens.Typography.captionMono)
           .foregroundStyle(Palette.textTertiary)

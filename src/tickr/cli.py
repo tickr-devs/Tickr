@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     from tickr.runtime.market import StreamInbox
 
 LOCK_FILE = "tickr.lock"
+# Lock file name of the code before the rename to Tickr; a bot holding it blocks every start.
+LEGACY_LOCK_FILE = "aperture.lock"  # rename-keep
 
 
 def data_paths(cfg: config_module.Config) -> tuple[Path, Path]:
@@ -175,7 +177,7 @@ def _engine(path: Path, broker: Broker | None = None,
     may already send cancels or orders)."""
     cfg = config_module.load(path)
     database, lock_path = data_paths(cfg)
-    with SingleInstanceLock(lock_path):
+    with SingleInstanceLock(lock_path, lock_path.with_name(LEGACY_LOCK_FILE)):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds)
         _require_environment(store, cfg)
         run_id = store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
@@ -356,9 +358,10 @@ def _explain(args: argparse.Namespace) -> int:
 
 
 def _maintain(args: argparse.Namespace) -> int:
-    """Archive finished days' capture and decision files, checkpoint the database (see
+    """Archive finished days' capture and decision files, prune caches and old archives,
+    checkpoint the database (see
     `tickr.maintain`). Holds the bot's lock: refused while the bot runs. Dry run unless
-    --apply. Exit 0 done, 1 an archive failed, 3 refused."""
+    --apply. Exit 0 done, 1 an archive or delete failed, 3 refused."""
     from tickr import maintain
 
     cfg = config_module.load(args.config)
@@ -367,7 +370,7 @@ def _maintain(args: argparse.Namespace) -> int:
         calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
     except CalendarRefused as exc:
         raise ManualRefused(f"calendar unreadable: {exc}") from exc
-    with SingleInstanceLock(lock_path):
+    with SingleInstanceLock(lock_path, lock_path.with_name(LEGACY_LOCK_FILE)):
         try:
             return maintain.run(cfg, calendar, database, ny_date_of(NOW()), apply=args.apply,
                                 out=print)
@@ -459,7 +462,7 @@ def _run(path: Path) -> int:
         return 3
     strategy = service.strategy_id(cfg)
     database, lock_path = data_paths(cfg)
-    with SingleInstanceLock(lock_path):
+    with SingleInstanceLock(lock_path, lock_path.with_name(LEGACY_LOCK_FILE)):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds,
                            now=NOW)
         _require_environment(store, cfg)
@@ -595,7 +598,8 @@ def main(argv: list[str] | None = None) -> int:
                                     "today for a symbol, with every check")
     explain_parser.add_argument("symbol")
     maint = sub.add_parser("maintain", help="with the bot stopped: gzip finished days' capture "
-                           "and decision files, checkpoint the database (dry run by default)")
+                           "and decision files, prune caches and old archives, checkpoint the "
+                           "database (dry run by default)")
     maint.add_argument("--apply", action="store_true", help="act; without it only print")
     fence = sub.add_parser("clear-fence", help="clear an operator fence after looking at it")
     fence.add_argument("name")

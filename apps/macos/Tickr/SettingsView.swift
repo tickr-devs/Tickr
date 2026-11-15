@@ -19,12 +19,24 @@ struct SettingsView: View {
 
   var body: some View {
     TabView {
-      GeneralSettings().tabItem { Label(String(localized: L10n.Settings.general), systemImage: Self.generalSymbol) }
-      TradingSettings().tabItem { Label(String(localized: L10n.Settings.trading), systemImage: Self.tradingSymbol) }
-      NotificationSettings().tabItem { Label(String(localized: L10n.Settings.notifications), systemImage: Self.notificationsSymbol) }
-      EnvironmentSettings().tabItem { Label(String(localized: L10n.Settings.environment), systemImage: Self.environmentSymbol) }
-      StorageSettings().tabItem { Label(String(localized: L10n.Settings.storage), systemImage: Self.storageSymbol) }
-      AdvancedSettings().tabItem { Label(String(localized: L10n.Settings.advanced), systemImage: Self.advancedSymbol) }
+      Tab { GeneralSettings() } label: {
+        Label(String(localized: L10n.Settings.general), systemImage: Self.generalSymbol)
+      }
+      Tab { TradingSettings() } label: {
+        Label(String(localized: L10n.Settings.trading), systemImage: Self.tradingSymbol)
+      }
+      Tab { NotificationSettings() } label: {
+        Label(String(localized: L10n.Settings.notifications), systemImage: Self.notificationsSymbol)
+      }
+      Tab { EnvironmentSettings() } label: {
+        Label(String(localized: L10n.Settings.environment), systemImage: Self.environmentSymbol)
+      }
+      Tab { StorageSettings() } label: {
+        Label(String(localized: L10n.Settings.storage), systemImage: Self.storageSymbol)
+      }
+      Tab { AdvancedSettings() } label: {
+        Label(String(localized: L10n.Settings.advanced), systemImage: Self.advancedSymbol)
+      }
     }
     .frame(width: Self.width)
     .scenePadding()
@@ -282,7 +294,6 @@ private struct AdvancedSettings: View {
             ?? Format.missing)
         LabeledContent(String(localized: L10n.Settings.staleAfter),
           value: model.settings.map { Format.seconds($0.statusStaleSeconds.value) } ?? Format.missing)
-        LabeledContent(String(localized: L10n.Settings.run), value: model.status?.runId ?? Format.missing)
       } header: {
         Text(L10n.Common.bot)
       } footer: {
@@ -299,7 +310,7 @@ private struct AdvancedSettings: View {
 
 /// What runs on its own on the Mac (GET /jobs): the bot service, its reconcile loop and the launchd
 /// jobs with their start times, as in the board's session card. Read while Settings is open.
-private struct JobsSection: View {
+struct JobsSection: View {
   @Environment(AppModel.self) private var model
 
   /// Symbols of the rows.
@@ -361,9 +372,10 @@ private struct JobsSection: View {
     }
   }
 
-  /// A launchd job's name in the person's language; a job this app does not know reads as named.
+  /// A launchd job's name in the person's language; a job this app does not know reads as
+  /// "Other job", never as its launchd name.
   static func title(_ name: String) -> String {
-    guard let job = LaunchdJob(rawValue: name) else { return name }
+    guard let job = LaunchdJob(rawValue: name) else { return String(localized: L10n.Settings.jobOther) }
     switch job {
     case .preflight: return String(localized: L10n.Settings.jobPreflight)
     case .bot: return String(localized: L10n.Settings.jobBot)

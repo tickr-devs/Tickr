@@ -54,9 +54,10 @@ struct JobsSection: View {
     }
   }
 
-  /// A launchd job's name in the person's language; a job this app does not know reads as named.
+  /// A launchd job's name in the person's language; a job this app does not know reads as
+  /// "Other job", never as its launchd name.
   static func title(_ name: String) -> String {
-    guard let job = LaunchdJob(rawValue: name) else { return name }
+    guard let job = LaunchdJob(rawValue: name) else { return String(localized: L10n.Settings.jobOther) }
     switch job {
     case .preflight: return String(localized: L10n.Settings.jobPreflight)
     case .bot: return String(localized: L10n.Settings.jobBot)
@@ -93,7 +94,8 @@ struct JobsSection: View {
   @ViewBuilder
   private func backup(_ job: BackupJobV1) -> some View {
     let failed = job.lastFailedAt.map { failure in job.lastAt.map { failure.date > $0.date } ?? true } ?? false
-    SettingsRow(L10n.Settings.backup, systemImage: Self.backupSymbol, tone: failed ? .loss : job.lastAt == nil ? .neutral : .profit) {
+    let tone: Tone = failed ? .loss : job.lastAt == nil ? .neutral : .profit
+    SettingsRow(L10n.Settings.backup, systemImage: Self.backupSymbol, tone: tone) {
       if failed, let at = job.lastFailedAt {
         StatusPill(L10n.Settings.backupFailed(Format.time(at.date)), tone: .loss)
       } else if let at = job.lastAt {

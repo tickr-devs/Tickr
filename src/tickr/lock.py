@@ -17,8 +17,13 @@ class AlreadyRunning(RuntimeError):
 
 
 class SingleInstanceLock:
-    def __init__(self, path: Path | str) -> None:
+    """`legacy`: a lock file under an older name (before the rename to Tickr) that a bot of the
+    old code would still hold; `acquire()` refuses while any process holds it, and never removes it.
+    """
+
+    def __init__(self, path: Path | str, legacy: Path | str | None = None) -> None:
         self.path = Path(path)
+        self.legacy = None if legacy is None else Path(legacy)
         self._fd: int | None = None
 
     def acquire(self) -> None:
@@ -29,6 +34,9 @@ class SingleInstanceLock:
         except BlockingIOError as exc:
             os.close(fd)
             raise AlreadyRunning(str(self.path)) from exc
+        if self.legacy is not None and _held(self.legacy):
+            os.close(fd)
+            raise AlreadyRunning(str(self.legacy))
         os.ftruncate(fd, 0)
         os.write(fd, str(os.getpid()).encode())
         self._fd = fd
@@ -46,6 +54,23 @@ class SingleInstanceLock:
 
     def __exit__(self, *exc: object) -> None:
         self.release()
+
+
+def _held(path: Path) -> bool:
+    """True when another process holds the lock on `path` (a missing file is not held)."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except FileNotFoundError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
 
 
 def recorded_holder(path: Path | str) -> int | None:

@@ -919,6 +919,23 @@
         }
       }
     },
+    "cause.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other reason"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая причина"
+          }
+        }
+      }
+    },
     "cause.outsideSession" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1269,9 +1286,33 @@
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Полосы Боллинджера вокруг средней за %lld свечей"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Полосы Боллинджера вокруг средней за %lld свечи"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Полосы Боллинджера вокруг средней за %lld свечей"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Полосы Боллинджера вокруг средней за %lld свечу"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Полосы Боллинджера вокруг средней за %lld свечи"
+                }
+              }
+            }
           }
         }
       }
@@ -4152,7 +4193,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Data %1$@ – %2$@ (%3$lld sessions) · ends %2$@"
+            "value" : "Data %1$@ – %2$@ (%#@sessions@) · ends %2$@"
+          },
+          "substitutions" : {
+            "sessions" : {
+              "argNum" : 3,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg session"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg sessions"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "ru" : {
@@ -4383,9 +4446,21 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "with bot limits · %lld trades"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "with bot limits · %lld trade"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "with bot limits · %lld trades"
+                }
+              }
+            }
           }
         },
         "ru" : {
@@ -6516,23 +6591,6 @@
         }
       }
     },
-    "root.run" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "run %@"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "запуск %@"
-          }
-        }
-      }
-    },
     "root.stale" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7825,6 +7883,23 @@
         }
       }
     },
+    "settings.job.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other job"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая задача"
+          }
+        }
+      }
+    },
     "settings.job.preflight" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8246,23 +8321,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Записанных дней"
-          }
-        }
-      }
-    },
-    "settings.run" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Запуск"
           }
         }
       }
@@ -10319,6 +10377,23 @@
         }
       }
     },
+    "watching.columns" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "decisive check · quote age"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "решающая проверка · возраст котировки"
+          }
+        }
+      }
+    },
     "watching.count" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10332,6 +10407,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld из %2$lld"
+          }
+        }
+      }
+    },
+    "watching.decidedAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decided at %@ ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Решение в %@ ET"
           }
         }
       }
@@ -10366,6 +10458,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "В этот день стратегия ни за чем не следит."
+          }
+        }
+      }
+    },
+    "watching.quoteAgeHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Age of the quote when the strategy decided at %@ ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Возраст котировки, когда стратегия решила в %@ ET"
           }
         }
       }

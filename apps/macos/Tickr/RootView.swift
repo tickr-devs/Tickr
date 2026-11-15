@@ -159,20 +159,12 @@ private struct Sidebar: View {
 private struct BotStateCard: View {
   @Environment(AppModel.self) private var model
 
-  /// Characters of the run id shown; enough to tell runs apart.
-  static let runIdPrefix = 8
-
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       CardLabel(L10n.Common.bot)
       HStack(spacing: Tokens.Space.s) {
         PulseDot(color, pulsing: model.isLive, event: model.status?.botState)
         Text(verbatim: stateText).font(Tokens.Typography.callout.weight(.semibold)).foregroundStyle(color)
-      }
-      if let run = model.status?.runId {
-        Text(L10n.Root.run(String(run.prefix(Self.runIdPrefix))))
-          .font(Tokens.Typography.captionMono)
-          .foregroundStyle(Palette.textQuaternary)
       }
       Text(verbatim: model.baseURL.host() ?? model.baseURL.absoluteString)
         .font(Tokens.Typography.captionMono)
@@ -269,7 +261,7 @@ struct ConnectionStatus: View {
       HStack(spacing: Tokens.Space.s) {
         // Pulses only while a fresh status keeps arriving; a down or silent bot's dot holds still.
         PulseDot(Self.color(hasStatus: model.status != nil, stale: model.response?.stale, failed: model.fetchError != nil),
-          size: Tokens.Size.dotSmall, pulsing: isFresh, event: model.headline.text)
+          size: Tokens.Size.dotSmall, pulsing: isFresh, event: model.headline.pulse)
         Text(verbatim: text(now: model.botTime(context.date)))
           .font(Tokens.Typography.captionMono)
           .foregroundStyle(Palette.textTertiary)

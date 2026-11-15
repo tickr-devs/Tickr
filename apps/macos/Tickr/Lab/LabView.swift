@@ -181,7 +181,7 @@ private struct RefusalsCard: View {
                 .tint(Palette.warning)
                 .accessibilityHidden(true)
             }
-            .help(Text(verbatim: count.cause?.code ?? String(localized: L10n.Lab.noCause)))
+            .help(help(count.cause))
             .accessibilityElement(children: .combine)
           }
         } else if let error = model.skippedError {
@@ -196,8 +196,14 @@ private struct RefusalsCard: View {
 
   private func title(_ cause: RefusalCause?) -> Text {
     if let code = cause?.known { return Text(L10n.Cause.title(code)) }
-    if let cause { return Text(verbatim: cause.code) }
+    if let cause { return cause.hasCode ? Text(L10n.Cause.other) : Text(verbatim: cause.code) }
     return Text(L10n.Lab.noCause)
+  }
+
+  /// The tooltip: the bot's detail of the first refusal with this cause, else the title.
+  private func help(_ cause: RefusalCause?) -> Text {
+    guard let cause, cause.hasCode, !cause.detail.isEmpty else { return title(cause) }
+    return Text(verbatim: cause.readable(time: Format.marketMinute))
   }
 }
 
@@ -310,8 +316,6 @@ private struct ReplayCard: View {
   static let refusalSymbol = "info.circle"
   /// Narrowest a figure gets before the figures wrap to another row, in points.
   static let figureMinWidth: CGFloat = 96
-  /// Smallest scale a figure shrinks to before it truncates.
-  static let figureMinimumScale = 0.7
 
   private var replay: LabReplayV1? { model.labReplay }
   private var running: Bool { replay?.state == .running }
@@ -432,7 +436,7 @@ private struct ReplayCard: View {
     VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
       value
         .lineLimit(1)
-        .minimumScaleFactor(Self.figureMinimumScale)
+        .minimumScaleFactor(Tokens.Shrink.standard)
       Text(title)
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.textTertiary)

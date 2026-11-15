@@ -152,7 +152,7 @@ private struct Header: View {
     let content = content
     let shape = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
     return HStack(spacing: Tokens.Space.m) {
-      PulseDot(content.color, pulsing: model.isLive, event: content.title)
+      PulseDot(content.color, pulsing: model.isLive, event: content.pulse)
       Text(verbatim: content.title).font(Tokens.Typography.button).foregroundStyle(content.color)
         .lineLimit(1)
         .fixedSize()
@@ -175,14 +175,16 @@ private struct Header: View {
     let detail: String?
     let color: Color
     let alarm: Bool
+    /// What the dot pulses on: the title, but a stale status's age is no new event.
+    let pulse: Headline.Pulse
   }
 
   private var content: Content {
     if !model.isLive {
+      let title = String(localized: L10n.Common.recordedDay(Format.dayLabel(model.shownDay)))
       return Content(
-        title: String(localized: L10n.Common.recordedDay(Format.dayLabel(model.shownDay))),
-        detail: String(localized: L10n.Overview.recordedDetail),
-        color: Palette.highlightText, alarm: false)
+        title: title, detail: String(localized: L10n.Overview.recordedDetail),
+        color: Palette.highlightText, alarm: false, pulse: .text(title))
     }
     let headline = model.headline
     var detail: String?
@@ -196,7 +198,7 @@ private struct Header: View {
       }
     }
     return Content(title: headline.text, detail: detail, color: headline.severity.color,
-      alarm: headline.severity == .alarm)
+      alarm: headline.severity == .alarm, pulse: headline.pulse)
   }
 }
 
@@ -224,15 +226,13 @@ private struct DayResult: View {
 
   /// Width of the result's sparkline, in points.
   static let sparklineWidth: CGFloat = 200
-  /// Smallest scale a long result shrinks to before it truncates.
-  static let minimumScale = 0.7
 
   var body: some View {
     VStack(alignment: .trailing, spacing: Tokens.Space.xs) {
       CardLabel(L10n.Overview.dayResult)
       MoneyText(value: counted, usd: true, font: Tokens.Typography.display)
         .lineLimit(1)
-        .minimumScaleFactor(Self.minimumScale)
+        .minimumScaleFactor(Tokens.Shrink.standard)
       Text(verbatim: subtitle).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
       DrawnSparkline(values: model.cumulativeResults, color: Palette.result(model.shownResult))
         .frame(width: Self.sparklineWidth, height: Tokens.Size.sparkline)
@@ -762,8 +762,13 @@ private struct PositionDetail: View {
       }
       let sent = EntrySent.line(row.position.entry,
         cause: ApiText.prose(row.position.entryCauseCodes, text: row.position.entryCause))
-      StatLine(L10n.EntrySent.title, value: sent.text, color: sent.color, symbol: Self.sentSymbol)
-        .hint(sent.help.map { Text(verbatim: $0) } ?? Text(L10n.EntrySent.title))
+      let line = StatLine(L10n.EntrySent.title, value: sent.text, color: sent.color, symbol: Self.sentSymbol)
+      // A hint only when there is something to add (the bot's cause of a missing record).
+      if let help = sent.help {
+        line.hint(verbatim: help)
+      } else {
+        line
+      }
     }
   }
 

@@ -21,12 +21,16 @@ struct ApiTextTests {
     #expect(ApiText.entryBlock(try block("brand_new_cause", "As the bot says")) == "As the bot says")
   }
 
-  @Test("A fence reads as its kind and key")
+  @Test("A fence reads as its kind; only a symbol key follows it, never a trade or order id")
   func fences() throws {
     #expect(ApiText.fence(try fence("foreign-position:EFGH"))
       == String(localized: L10n.fenceForeignPosition) + ApiText.keySeparator + "EFGH")
     #expect(ApiText.fence(try fence("entry-stop")) == String(localized: L10n.fenceEntryStop))
-    #expect(ApiText.fence(try fence("new-kind:X")) == "new-kind:X")
+    #expect(ApiText.fence(try fence("foreign-order:manual-1")) == String(localized: L10n.fenceForeignOrder))
+    #expect(ApiText.fence(try fence("exit-refused:t14")) == String(localized: L10n.fenceExitRefused))
+    #expect(ApiText.fence(try fence("new-kind:X")) == String(localized: L10n.fenceOther))
+    #expect(ApiText.fence(try fence("new-kind:X"), symbol: "ABCD")
+      == "ABCD" + ApiText.keySeparator + String(localized: L10n.fenceOther))
   }
 
   @Test("The bot's detail stays readable after the fence's title")
@@ -88,14 +92,16 @@ struct ApiTextTests {
     #expect(stop.contains("12.5") && !stop.contains("{"))
   }
 
-  @Test("Order values and check rules translate; unknown ones stay as sent")
+  @Test("Order values and check rules translate; unknown ones read as words, never as the code")
   func values() {
     #expect(ApiText.orderSide("SELL") == String(localized: L10n.orderSideSell))
     #expect(ApiText.orderType("STOP_LOSS") == String(localized: L10n.orderTypeStopLoss))
     #expect(ApiText.orderStatus("ACCEPTED") == String(localized: L10n.orderStatusAccepted))
-    #expect(ApiText.orderStatus("WEIRD") == "WEIRD")
+    #expect(ApiText.orderStatus("WEIRD") == String(localized: L10n.orderStatusOther))
+    #expect(ApiText.orderSide("SHORT") == String(localized: L10n.orderSideOther))
+    #expect(ApiText.orderType("TRAILING") == String(localized: L10n.orderTypeOther))
     #expect(ApiText.rule("spread_ratio") == String(localized: L10n.ruleSpreadRatio))
-    #expect(ApiText.rule("new_rule") == "new_rule")
+    #expect(ApiText.rule("new_rule") == String(localized: L10n.ruleOther))
   }
 
   @Test("The headline is built from codes, with the status age in whole seconds")

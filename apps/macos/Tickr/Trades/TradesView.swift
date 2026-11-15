@@ -248,9 +248,6 @@ private struct DayRow: View {
 private struct DayStatsRow: View {
   @Environment(AppModel.self) private var model
 
-  /// Figures shrink to this share of their size before they truncate.
-  static let figureMinimumScale = 0.6
-
   private var results: [Decimal] { model.shownTrades.map(\.resultGrossUsd.value) }
 
   private var averageR: Decimal? {
@@ -269,7 +266,7 @@ private struct DayStatsRow: View {
       }
     }
     .lineLimit(1)
-    .minimumScaleFactor(Self.figureMinimumScale)
+    .minimumScaleFactor(Tokens.Shrink.tight)
   }
 
   private var result: some View {
@@ -507,10 +504,15 @@ private struct TradeDetailCard: View {
               GridRow {
                 let sent = EntrySent.line(trade.entry, cause: ApiText.prose(trade.entryCauseCodes, text: trade.entryCause))
                 Text(L10n.EntrySent.title).foregroundStyle(Palette.textSecondary)
-                Text(verbatim: sent.text)
+                let value = Text(verbatim: sent.text)
                   .font(Tokens.Typography.bodyMono)
                   .foregroundStyle(sent.color)
-                  .help(sent.help.map { Text(verbatim: $0) } ?? Text(L10n.EntrySent.title))
+                // A tooltip only when there is something to add (the bot's cause of a missing record).
+                if let help = sent.help {
+                  value.help(Text(verbatim: help))
+                } else {
+                  value
+                }
               }
               excursion(L10n.Trades.maeAtLeast, trade.maeUsd)
               excursion(L10n.Trades.mfeAtLeast, trade.mfeUsd)
@@ -616,7 +618,6 @@ private struct SkippedRow: View {
         }
         if let cause = group.cause {
           CauseText(cause: cause)
-            .help(Text(verbatim: cause.code))
         }
         // The what-if is the setup's first signal: a repeat would not have been a second trade.
         let setup = group.first
@@ -659,18 +660,27 @@ private struct CauseText: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-      if let code = cause.known {
-        Text(L10n.Cause.title(code))
-          .font(Tokens.Typography.callout)
-          .foregroundStyle(Palette.textPrimary)
+      Group {
+        if let code = cause.known {
+          Text(L10n.Cause.title(code))
+        } else if cause.hasCode {
+          // A code this app has no words for is never shown; its detail follows.
+          Text(L10n.Cause.other)
+        }
       }
+      .font(Tokens.Typography.callout)
+      .foregroundStyle(Palette.textPrimary)
       Group {
         if let cooldown = cause.cooldown {
           Text(L10n.Cause.cooldownDetail(Format.marketMinute(cooldown.loss), Format.marketMinute(cooldown.until)))
-        } else if cause.known == nil {
-          // A cause this app has no words for: the bot's own text, times made readable.
+        } else if cause.known == nil, !cause.hasCode {
+          // Prose the bot wrote without a code: as written, times made readable.
           Text(verbatim: cause.detail.isEmpty ? cause.code
             : cause.code + RefusalCause.separator + cause.readable(time: Format.marketMinute))
+        } else if cause.known == nil {
+          if !cause.detail.isEmpty {
+            Text(verbatim: cause.readable(time: Format.marketMinute))
+          }
         } else if let phrase = cause.phrase {
           Text(verbatim: phrase)
             .help(Text(verbatim: cause.readable(time: Format.marketMinute)))

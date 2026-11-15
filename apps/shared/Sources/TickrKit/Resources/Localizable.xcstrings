@@ -372,40 +372,6 @@
         }
       }
     },
-    "kit.command.entryStopOff" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entry stop off"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Стоп входов: выкл."
-          }
-        }
-      }
-    },
-    "kit.command.entryStopOn" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entry stop on"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Стоп входов: вкл."
-          }
-        }
-      }
-    },
     "kit.command.flatten" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -470,6 +436,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Остановить бота"
+          }
+        }
+      }
+    },
+    "kit.error.unexpected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unexpected error in the app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "непредвиденная ошибка в приложении"
           }
         }
       }
@@ -1212,6 +1195,23 @@
         }
       }
     },
+    "kit.fenceKind.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other block"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая блокировка"
+          }
+        }
+      }
+    },
     "kit.fenceReason.cancel_crashed" : {
       "comment" : "A fence's cause (`Fence.code`). cancel_crashed",
       "extractionState" : "manual",
@@ -1585,7 +1585,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "У брокера {held} акций, по деталям ордера {expected}"
+            "value" : "Акций у брокера: {held}, по деталям ордера: {expected}"
           }
         }
       }
@@ -1693,7 +1693,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подтверждённый стоп покрывает {verified} из {expected} акций"
+            "value" : "Подтверждённый стоп покрывает акций: {verified} из {expected}"
           }
         }
       }
@@ -1729,7 +1729,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стопы покрывают {covered} акций, у брокера {held}"
+            "value" : "Акций под стопами: {covered}, у брокера: {held}"
           }
         }
       }
@@ -2268,6 +2268,57 @@
         }
       }
     },
+    "kit.orderOther.side" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown side"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестная сторона"
+          }
+        }
+      }
+    },
+    "kit.orderOther.status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown status"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный статус"
+          }
+        }
+      }
+    },
+    "kit.orderOther.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown type"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный тип"
+          }
+        }
+      }
+    },
     "kit.prose.all_checks_passed" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). all_checks_passed",
       "extractionState" : "manual",
@@ -2515,7 +2566,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "У сделки {count} ордеров входа, ожидался 1"
+            "value" : "Ордеров входа у сделки: {count}, ожидался 1"
           }
         }
       }
@@ -4068,6 +4119,23 @@
         }
       }
     },
+    "kit.ruleOther" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other check"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая проверка"
+          }
+        }
+      }
+    },
     "kit.state.missing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4302,6 +4370,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ожидалось время строкой"
+          }
+        }
+      }
+    },
+    "kit.wire.fieldInvalid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "field %1$@: %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "поле %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "kit.wire.fieldMissing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "field %@ is missing"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "нет поля %@"
+          }
+        }
+      }
+    },
+    "kit.wire.fieldNull" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "field %@ is null"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "поле %@ равно null"
+          }
+        }
+      }
+    },
+    "kit.wire.fieldUnknownValue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "field %@ has a value this app cannot read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "в поле %@ значение, которое приложение не может прочитать"
+          }
+        }
+      }
+    },
+    "kit.wire.fieldWrongType" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "field %@ has the wrong type"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "у поля %@ неверный тип"
+          }
+        }
+      }
+    },
+    "kit.wire.notJSON" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the answer is not valid JSON"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ответ — некорректный JSON"
           }
         }
       }

@@ -175,6 +175,7 @@ enum L10n {
     }
     static var stopWarning: LocalizedStringResource {
       LocalizedStringResource("control.stopWarning",
+        // swiftlint:disable:next line_length
         defaultValue: "The bot ends gracefully: entry orders are cancelled and broker stops stay. Open positions stay open under DAY stops, and nothing closes them at the session's end. The phone cannot start the bot again: start it on the Mac.",
         bundle: L10n.bundle)
     }
@@ -185,6 +186,7 @@ enum L10n {
     }
     static var emergencyWarning: LocalizedStringResource {
       LocalizedStringResource("control.emergencyWarning",
+        // swiftlint:disable:next line_length
         defaultValue: "The bot pauses entries, cancels its entry orders and sells every position it holds at market through the normal exit. Each stop is cancelled only right before its sale. Entries stay paused until you resume them.",
         bundle: L10n.bundle)
     }
@@ -208,6 +210,7 @@ enum L10n {
     }
     static var short: LocalizedStringResource {
       LocalizedStringResource("control.short",
+        // swiftlint:disable:next line_length
         defaultValue: "Pausing and cancelling never touch broker stops; flattening cancels each stop only right before its sale. Each command is sent once.",
         bundle: L10n.bundle)
     }
@@ -424,6 +427,7 @@ enum L10n {
     }
     static var flattenMessage: LocalizedStringResource {
       LocalizedStringResource("positions.flattenMessage",
+        // swiftlint:disable:next line_length
         defaultValue: "The bot cancels this position's stop, re-reads the quantity and sells at market through the normal exit. Only this symbol closes; the bot's other positions and positions not opened by the bot are not touched.",
         bundle: L10n.bundle)
     }
@@ -508,6 +512,7 @@ enum L10n {
     }
     static func roomNote(_ amount: String) -> LocalizedStringResource {
       LocalizedStringResource("risk.roomNote",
+        // swiftlint:disable:next line_length
         defaultValue: "The limit counts the net day result: profits offset losses. Open trades reserve their planned loss. Below \(amount) of room the bot opens nothing new.",
         bundle: L10n.bundle)
     }
@@ -788,6 +793,10 @@ enum L10n {
   /// Refusal causes in words (src/tickr/risk/causes.py). A code the app does not know is shown
   /// as the bot wrote it.
   enum Cause {
+    /// Title of a refusal whose code this app has no words for; the bot's detail follows it.
+    static var other: LocalizedStringResource {
+      LocalizedStringResource("cause.other", defaultValue: "Other reason", bundle: L10n.bundle)
+    }
     static func until(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("cause.until", defaultValue: "until \(time)", bundle: L10n.bundle)
     }
@@ -901,7 +910,8 @@ enum L10n {
       LocalizedStringResource("lab.noCause", defaultValue: "No cause recorded", bundle: L10n.bundle)
     }
     static func noTrades(_ name: String, _ version: String, _ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.noTrades", defaultValue: "\(name) v\(version): no simulated trades (\(cause))", bundle: L10n.bundle)
+      LocalizedStringResource("lab.noTrades", defaultValue: "\(name) v\(version): no simulated trades (\(cause))",
+        bundle: L10n.bundle)
     }
     static var versions: LocalizedStringResource {
       LocalizedStringResource("lab.versions", defaultValue: "Today if each version traded", bundle: L10n.bundle)
@@ -1044,6 +1054,7 @@ enum L10n {
     }
     static var later: LocalizedStringResource {
       LocalizedStringResource("lab.later",
+        // swiftlint:disable:next line_length
         defaultValue: "Results are simulated from the captured bars; observers never trade. Approving a new version stays on the Mac.",
         bundle: L10n.bundle)
     }
@@ -1082,6 +1093,7 @@ enum L10n {
     }
     static var askMessage: LocalizedStringResource {
       LocalizedStringResource("pair.askMessage",
+        // swiftlint:disable:next line_length
         defaultValue: "The phone will read the bot's status from this address and can send commands. Any earlier pairing is replaced.",
         bundle: L10n.bundle)
     }
@@ -1111,6 +1123,7 @@ enum L10n {
     }
     static var sheetFooter: LocalizedStringResource {
       LocalizedStringResource("pair.sheetFooter",
+        // swiftlint:disable:next line_length
         defaultValue: "On the Mac run `python -m tickr.api --config config/bot.toml pair`, then AirDrop the pairing file it names to this phone and paste the link here.",
         bundle: L10n.bundle)
     }
@@ -1152,6 +1165,10 @@ enum L10n {
     static var jobWatchdog: LocalizedStringResource {
       LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
     }
+    /// A launchd job this app does not know by name.
+    static var jobOther: LocalizedStringResource {
+      LocalizedStringResource("settings.job.other", defaultValue: "Other job", bundle: L10n.bundle)
+    }
     static var reconcile: LocalizedStringResource {
       LocalizedStringResource("settings.reconcile", defaultValue: "Reconcile", bundle: L10n.bundle)
     }
@@ -1170,6 +1187,7 @@ enum L10n {
     }
     static var environmentFooter: LocalizedStringResource {
       LocalizedStringResource("settings.environmentFooter",
+        // swiftlint:disable:next line_length
         defaultValue: "Sandbox or Production is set in config/bot.toml on the Mac; Production also needs your authorization file there. The phone only shows it.",
         bundle: L10n.bundle)
     }
@@ -1229,7 +1247,8 @@ enum L10n {
       LocalizedStringResource("settings.failing", defaultValue: "\(count) failing", bundle: L10n.bundle)
     }
     static func brokerCounts(_ positions: Int, _ orders: Int) -> LocalizedStringResource {
-      LocalizedStringResource("settings.brokerCounts", defaultValue: "positions: \(positions) · orders: \(orders)", bundle: L10n.bundle)
+      LocalizedStringResource("settings.brokerCounts", defaultValue: "positions: \(positions) · orders: \(orders)",
+        bundle: L10n.bundle)
     }
     static func stops(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("settings.stops", defaultValue: "\(verified) of \(total) verified", bundle: L10n.bundle)
@@ -1248,6 +1267,7 @@ enum L10n {
     }
     static var addressFooter: LocalizedStringResource {
       LocalizedStringResource("settings.addressFooter",
+        // swiftlint:disable:next line_length
         defaultValue: "In the Simulator the Mac's own address works. On the phone, pair with the link that `python -m tickr.api pair` leaves on the Mac; it reaches the Mac through Tailscale over HTTPS. The token stays in this phone's Keychain and goes only to the paired address.",
         bundle: L10n.bundle)
     }
@@ -1272,9 +1292,6 @@ enum L10n {
     static var strategy: LocalizedStringResource {
       LocalizedStringResource("settings.strategy", defaultValue: "Strategy", bundle: L10n.bundle)
     }
-    static var run: LocalizedStringResource {
-      LocalizedStringResource("settings.run", defaultValue: "Run", bundle: L10n.bundle)
-    }
     static var lockScreen: LocalizedStringResource {
       LocalizedStringResource("settings.lockScreen", defaultValue: "Lock-screen alerts", bundle: L10n.bundle)
     }
@@ -1286,6 +1303,7 @@ enum L10n {
     }
     static var notificationsFooter: LocalizedStringResource {
       LocalizedStringResource("settings.notificationsFooter",
+        // swiftlint:disable:next line_length
         defaultValue: "Alerts for stops, fills, paused entries and broker mismatches arrive when push notifications are set up. Environment and limits are set in the bot's config on the Mac; the phone only shows them.",
         bundle: L10n.bundle)
     }

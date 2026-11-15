@@ -14,6 +14,10 @@ backups_dir = "backups"
 # Closed sessions whose capture and decision folders `tickr maintain` leaves uncompressed (today is never touched);
 # older finished days are gzipped in place; read by maintain.
 maintain_keep_sessions = 20
+# Days, counted back from today's New York date, an archived (all *.jsonl.gz) finished capture or decision day folder is
+# kept; `tickr maintain --apply` deletes older ones. 0 = never delete (shipped: retention is an open owner question,
+# docs/backlog.md); read by maintain.
+maintain_archive_max_age_days = 0
 
 [strategy]
 # Active strategy name = folder under strategies/; its decisions may reach the safety layer.
@@ -67,6 +71,7 @@ half_days_enabled = false
 
 [orders]
 # Prefix of bot client order ids; read by orders and reconciliation to recognise own orders.
+# Kept "ap-" after the rename to Tickr on purpose: changing it would orphan orders placed under the old prefix.
 client_order_id_prefix = "ap-"
 # Prefix of probe client order ids; leftovers with it block the bot start; read by runtime.
 probe_client_order_id_prefix = "probe-"
@@ -188,6 +193,8 @@ broker_read_warn_seconds = 15
 poll_seconds = 3
 # Largest accepted command request body in bytes; larger = refused; read by the api server.
 max_request_body_bytes = 1024
+# Seconds either API port waits for a client's next bytes (request line, headers, body) before closing the connection, so an idle or slow connection cannot hold a server thread forever; read by the api server.
+request_timeout_seconds = 10
 # Maximum unconsumed commands waiting in the inbox; more = new commands refused; read by the api server.
 max_pending_commands = 20
 # A command older than this many seconds when the bot reads it is refused as expired, never executed late; read by the bot via read_commands.
@@ -286,6 +293,9 @@ history_sessions = 5
 # Prior-session bar cache folder relative to [run] data_dir; files go to <history_dir>/<environment>/<NY date asked
 # on>/<symbol>-<sessions>.jsonl (replay bar format); read by data.history.
 history_dir = "history"
+# Days, counted back from today's New York date, a day folder of the prior-session history cache is kept; `tickr
+# maintain --apply` deletes older ones (the bot only reads today's folder); at least 1; read by maintain.
+history_cache_max_age_days = 2
 # Most discovery candidates (best first) kept on the L1 stream besides the position and the strategy's WATCH symbols, so
 # a candidate has a fresh quote the minute the strategy first says ENTER; count. At most stream_max_symbols minus
 # stream_reserved_symbols (checked when config loads); read by runtime.market.
