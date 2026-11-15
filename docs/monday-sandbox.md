@@ -17,6 +17,11 @@ the bot (step 9).
    cd ~/Development/Aperture && git status --short && git pull
    .venv/bin/pip install -q -e ".[webull]"
    ```
+   If `git status --short` lists `config/bot.toml` (you changed a setting), the pull stops with
+   "local changes would be overwritten". Then: `git stash`, `git pull`, `git stash pop`, and
+   step 3 tells you whether the merged file is valid.
+   The API job runs all the time and keeps the old code until it is started again: after a
+   pull, `launchctl kickstart -k gui/$(id -u)/local.aperture.api`.
    If the pull brought `ops/migrate-from-aperture.sh` (the rename to Tickr), stop here and run
    that script in the same sitting (dry run first, then `--apply`): after such a pull the old
    launchd jobs no longer start and nothing alerts. Every command below then says `tickr`
@@ -24,9 +29,12 @@ the bot (step 9).
 2. Load the environment in the Terminal you will use: `source .venv/bin/activate`, then
    `set -a; . ~/.config/aperture/env; set +a`.
 3. `aperture check-config`: the environment is `sandbox`, the gate is as you expect.
-4. `python -m aperture.runtime preflight; echo $?`: the exit code is 0 and every check passes.
-   On a weekend it reports "no session today", which is correct. A `database-other-environment`
-   or `stopped-by-operator` cause: see operations.md before anything else.
+4. `python -m aperture.runtime preflight; echo $?`: every check has `"passed": true`. On Monday
+   the exit code is 0. On Sunday it is 3 with `"session_today": false` and the calendar check
+   saying `no session ...: WEEKEND`; that is correct, and the Webull token is then not checked
+   (it is checked by the 08:30 run on Monday). Exit code 1 names its cause; a
+   `database-other-environment` or `stopped-by-operator` cause: see operations.md before
+   anything else.
 5. If `ops/launchd/` changed in the pull, render and load the jobs again (operations.md,
    "Install the jobs"). Then send yourself a test alert:
    `launchctl kickstart gui/$(id -u)/local.aperture.test-alert`. The Mac notification and the
@@ -80,8 +88,10 @@ limit of 30 requests per 60 s per route that the bot uses.
   python -m aperture.research latency \
     --quotes data/capture/sandbox/2026-11-16/quotes.jsonl \
     --notices data/capture/sandbox/2026-11-16/notices.jsonl \
-    --settings config/research.toml --out out/latency
+    --settings config/research.toml --out data/probe-2026-11-16/latency
   ```
+  If `notices.jsonl` does not exist (the stream sent no notice), leave the `--notices` line
+  out: the command refuses a file that is missing.
   The bot does not record which symbols it subscribed, so a symbol missing from the report
   was either never subscribed or silent: compare with the symbols the apps showed as watched.
 - **Chart C2** (is the bars limit shared between processes): with the bot stopped, at the
@@ -94,14 +104,18 @@ limit of 30 requests per 60 s per route that the bot uses.
 - **Chart C1** (a second Webull client next to the running bot): needs
   `[chart] webull_enabled = true` in `config/bot.toml` from before the bot started, so the
   bot has left the chart its slice of the bars limit. If you want C1 on Monday, set it on
-  Sunday evening and do not touch the config after the bot starts. Then, any time the bot
+  Sunday evening and do not touch the config after the bot starts. The API does
+  not become a second Webull client by that setting: it builds no chart client until this
+  probe is recorded as passed (GET /chart answers 503 and says so), and the launchd API job
+  is not given the Webull keys anyway. Then, any time the bot
   runs: `python -m aperture.probes chart-client SYM`. It reads one bar every 30 s for 10
   minutes, watches that the bot keeps reading the broker and that the token folder does not
   change, and prints `passed` or `failed`. Do not open charts in the apps while it runs: they
   share the same four requests a minute. It refuses without a running bot, with the chart off,
   when the config changed after the bot started, and while the bot has a position or a working
   order (run it while the bot is flat: if the second client breaks the bot's broker access,
-  nothing is then open).
+  nothing is then open). That check is made once, at the start, so the best time is outside
+  the entry window: before 09:30 or after the last entry at 15:45.
 - Both write their evidence to `data/probes/<date>/`: paste `summary.json` into the project
   chat. Until both are recorded for an environment, `[chart] webull_enabled` goes back to
   `false` there after the probe.
