@@ -20,6 +20,8 @@ public struct BrandMark: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn: CGFloat = 0
   @State private var breathing = false
+  /// Where the live shine is along the line (0 to 1 plus its length, so it leaves at the end).
+  @State private var shine: CGFloat = 0
   @State private var settled = false
   let size: CGFloat
   let live: Bool
@@ -43,6 +45,8 @@ public struct BrandMark: View {
   static let glowRadius = 0.18
   /// Seconds before the line starts drawing, so a window is on screen before it moves.
   static let drawDelay = 0.35
+  /// Length of the live shine running along the line, as a share of the line.
+  static let shineLength: CGFloat = 0.28
 
   public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand) {
     self.size = size
@@ -78,6 +82,11 @@ public struct BrandMark: View {
           LinearGradient(colors: [lineColor, lineEnd], startPoint: .topTrailing, endPoint: .bottomLeading),
           style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
       if live && settled && !reduceMotion {
+        // While live a highlight runs up the line to the spark, and the spark sends out a ring.
+        TickShine(points: Self.points, phase: shine, length: Self.shineLength)
+          .stroke(Palette.shine.opacity(Tokens.Opacity.medium),
+            style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
+          .blendMode(.plusLighter)
         Circle()
           .fill(lineColor.opacity(Tokens.Opacity.medium))
           .frame(width: diameter * Self.ringStart, height: diameter * Self.ringStart)
@@ -85,7 +94,10 @@ public struct BrandMark: View {
           .opacity(breathing ? 0 : 1)
           .position(x: spark.x * size, y: spark.y * size)
           .onAppear(perform: pulse)
-          .onDisappear { breathing = false }
+          .onDisappear {
+            breathing = false
+            shine = 0
+          }
       }
       Circle()
         .fill(lineColor)
@@ -115,6 +127,9 @@ public struct BrandMark: View {
     withAnimation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
       breathing = true
     }
+    withAnimation(.easeInOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
+      shine = 1 + Self.shineLength
+    }
   }
 }
 
@@ -126,6 +141,23 @@ struct TickLine: Shape {
     Path { path in
       path.addLines(points.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) })
     }
+  }
+}
+
+/// A piece of the tick's line `length` long that ends at `phase` (shares of the line), animatable
+/// so it can run along the line.
+struct TickShine: Shape {
+  let points: [CGPoint]
+  var phase: CGFloat
+  let length: CGFloat
+
+  var animatableData: CGFloat {
+    get { phase }
+    set { phase = newValue }
+  }
+
+  func path(in rect: CGRect) -> Path {
+    TickLine(points: points).path(in: rect).trimmedPath(from: max(0, phase - length), to: min(1, phase))
   }
 }
 
