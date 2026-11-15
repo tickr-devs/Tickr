@@ -30,21 +30,13 @@ struct SettingsView: View {
     }
     .frame(width: Self.width)
     .background(Palette.background)
-    // The window keeps the pane's name (Window menu); the title bar shows it in the design's
-    // small monospace instead of the system's bold title, with no glass behind it.
+    // No title bar of its own: the tab strip sits in it, level with the window buttons (the strip
+    // is centred and narrow enough to clear them), and the chosen tab says which pane this is.
+    // The window keeps the pane's name for the Window menu.
+    .ignoresSafeArea(.container, edges: .top)
     .navigationTitle(Text(tab.title))
     .toolbar(removing: .title)
-    .toolbar {
-      ToolbarItem(placement: .principal) {
-        Text(tab.title)
-          .font(Tokens.Typography.calloutMono)
-          .foregroundStyle(Palette.textQuaternary)
-          .fixedSize()
-      }
-      .sharedBackgroundVisibility(.hidden)
-    }
-    .toolbarBackground(Palette.titleBar, for: .windowToolbar)
-    .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .task(id: model.baseURL) { await model.followJobs() }
   }
 

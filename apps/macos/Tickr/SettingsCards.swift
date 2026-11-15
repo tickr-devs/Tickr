@@ -93,7 +93,7 @@ struct SettingsTabBar: View {
     }
     .frame(maxWidth: .infinity)
     .padding(.horizontal, Tokens.Space.m)
-    .padding(.top, Tokens.Space.xs)
+    .padding(.top, Tokens.Space.s)
     .padding(.bottom, Tokens.Space.s)
     .background(Palette.titleBar)
     .overlay(alignment: .bottom) { Rectangle().fill(Palette.separator).frame(height: Tokens.Stroke.thin) }
