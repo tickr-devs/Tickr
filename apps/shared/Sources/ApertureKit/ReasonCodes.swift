@@ -114,6 +114,7 @@ public enum FenceReason: String, CaseIterable, Sendable {
   case stopsOverPosition = "stops_over_position"
   case unprotectedCloseByHand = "unprotected_close_by_hand"
   case unprotectedExiting = "unprotected_exiting"
+  case unprotectedStopUnreadable = "unprotected_stop_unreadable"
   case stopRejectedExiting = "stop_rejected_exiting"
   case exitRefusedNoStop = "exit_refused_no_stop"
   case exitRefusedStopAgain = "exit_refused_stop_again"
@@ -153,6 +154,7 @@ public enum FenceReason: String, CaseIterable, Sendable {
     case .stopsOverPosition: [ReasonSentence(L10n.fenceReasonStopsOverPosition, [.covered, .held])]
     case .unprotectedCloseByHand: [ReasonSentence(L10n.fenceReasonUnprotectedCloseByHand, [.seconds])]
     case .unprotectedExiting: [ReasonSentence(L10n.fenceReasonUnprotectedExiting, [.seconds])]
+    case .unprotectedStopUnreadable: [ReasonSentence(L10n.fenceReasonUnprotectedStopUnreadable, [.seconds])]
     case .stopRejectedExiting: [ReasonSentence(L10n.fenceReasonStopRejectedExiting, [])]
     case .exitRefusedNoStop: [ReasonSentence(L10n.fenceReasonExitRefusedNoStop, [])]
     case .exitRefusedStopAgain: [ReasonSentence(L10n.fenceReasonExitRefusedStopAgain, [])]

@@ -121,6 +121,12 @@ extension L10n {
     LocalizedStringResource("kit.fenceReason.unprotected_exiting",
       defaultValue: "No verified stop for {seconds} s: closing the position", bundle: bundle)
   }
+  /// A fence's cause (`Fence.code`). unprotected_stop_unreadable (values: seconds)
+  static var fenceReasonUnprotectedStopUnreadable: LocalizedStringResource {
+    LocalizedStringResource("kit.fenceReason.unprotected_stop_unreadable",
+      // swiftlint:disable:next line_length
+      defaultValue: "No verified stop for {seconds} s and a stop's detail cannot be read: that stop is kept and nothing is sold; close the position in the Webull app", bundle: bundle)
+  }
   /// A fence's cause (`Fence.code`). stop_rejected_exiting
   static var fenceReasonStopRejectedExiting: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.stop_rejected_exiting",

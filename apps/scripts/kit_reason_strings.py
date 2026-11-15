@@ -151,6 +151,13 @@ GROUPS = [
                 "Подтверждённого стопа нет уже {seconds} с: позиция закрывается",
             ),
             (
+                "unprotected_stop_unreadable",
+                "No verified stop for {seconds} s and a stop's detail cannot be read: that stop "
+                "is kept and nothing is sold; close the position in the Webull app",
+                "Подтверждённого стопа нет уже {seconds} с, детали стопа не читаются: стоп "
+                "оставлен, ничего не продано; закройте позицию в приложении Webull",
+            ),
+            (
                 "stop_rejected_exiting",
                 "The protective stop was refused after retries: closing the position",
                 "Защитный стоп отклонён после повторных попыток: позиция закрывается",

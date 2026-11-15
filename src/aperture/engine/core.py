@@ -677,6 +677,9 @@ class Engine:
             self._not_found(row, held)
             return
         except RateLimited:
+            # Not a failed read: our budget refused it, nothing was asked. The order keeps its
+            # place in `_detail_answered_ids` (the budget's cooldown bounds this, and the
+            # detail-budget fence blocks entries meanwhile).
             raise
         except BrokerError as exc:
             # Keep the last known state and try again next step, but never silently: a read
@@ -1096,6 +1099,13 @@ class Engine:
             return
         self._set_fence(Fence.UNPROTECTED, trade.trade_id,
                         f"verified stop covers {verified} of {expected}")
+        # Stops last seen working, with no cancel of ours, whose Detail is only unreadable now:
+        # they are not proof (the fences above alert), but closing for them would cancel a
+        # likely working stop and end the day's entries over a read outage. No exit for them.
+        unreadable = sum((s.open_quantity for s in stops if s.verified and not s.cancelling
+                          and self._detail_lost(s)), ZERO)
+        if verified + unreadable >= expected:
+            return
         age = self._fence_age(f"{Fence.UNPROTECTED}:{trade.trade_id}") or 0.0
         exiting = trade.state is TradeState.EXITING or any(e.live for e in exits)
         if age >= float(self.config.orders.max_unprotected_seconds) and not exiting:
@@ -1107,9 +1117,19 @@ class Engine:
                 # False when an exit was already requested earlier in this pass (stop-rejected),
                 # and telling the operator to sell by hand then would double the sale.
                 refused = self._has_fence(Fence.EXIT_REFUSED, trade.trade_id)
-                text = (f"no verified stop for {int(age)} s and the closing order was refused "
-                        "before: close the position in the Webull app" if refused else
-                        f"no verified stop for {int(age)} s; exiting")
+                # A stop whose latest Detail read failed is not cancelled by the exit
+                # (`_exit_step`), so the close waits for its Detail: say so, not "exiting".
+                unread = any(s.live and self._failing_since(s.client_order_id) is not None
+                             for s in stops)
+                if refused:
+                    text = (f"no verified stop for {int(age)} s and the closing order was "
+                            "refused before: close the position in the Webull app")
+                elif unread:
+                    text = (f"no verified stop for {int(age)} s and a stop's Detail cannot be "
+                            "read: that stop is kept, nothing is sold; close the position in "
+                            "the Webull app")
+                else:
+                    text = f"no verified stop for {int(age)} s; exiting"
                 self._set_fence(Fence.UNPROTECTED_TIMEOUT, trade.trade_id, text)
 
     def _exit_step(self, trade: TradeRow, entry: OrderRow, stops: list[OrderRow],

@@ -1824,6 +1824,24 @@
         }
       }
     },
+    "kit.fenceReason.unprotected_stop_unreadable" : {
+      "comment" : "A fence's cause (`Fence.code`). unprotected_stop_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No verified stop for {seconds} s and a stop's detail cannot be read: that stop is kept and nothing is sold; close the position in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подтверждённого стопа нет уже {seconds} с, детали стопа не читаются: стоп оставлен, ничего не продано; закройте позицию в приложении Webull"
+          }
+        }
+      }
+    },
     "kit.fenceReason.working_not_in_records" : {
       "comment" : "A fence's cause (`Fence.code`). working_not_in_records",
       "extractionState" : "manual",

@@ -51,6 +51,9 @@ def test_every_fixed_fence_text_the_engine_writes_is_recognized():
      {"covered": "120", "held": "100"}),
     ("unprotected-timeout:t1", "no verified stop for 31 s; exiting", "unprotected_exiting",
      {"seconds": "31"}),
+    ("unprotected-timeout:t1", "no verified stop for 31 s and a stop's Detail cannot be read: "
+     "that stop is kept, nothing is sold; close the position in the Webull app",
+     "unprotected_stop_unreadable", {"seconds": "31"}),
     ("unprotected-timeout:t1", "no verified stop for 31 s and the closing order was refused "
      "before: close the position in the Webull app", "unprotected_close_by_hand",
      {"seconds": "31"}),

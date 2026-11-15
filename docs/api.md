@@ -146,7 +146,8 @@ clients show the text.
   `send_outcome_unknown`, `crashed_during_send`; `order_missing`; `status_unmapped` `{status}`;
   `detail_unreadable` / `stop_cancel_unconfirmed` `{seconds}`;
   `stop_covers_part` `{verified, expected}`; `stops_over_position` `{covered, held}`;
-  `unprotected_exiting` / `unprotected_close_by_hand` `{seconds}`; `stop_rejected_exiting`;
+  `unprotected_exiting` / `unprotected_close_by_hand` / `unprotected_stop_unreadable`
+  `{seconds}`; `stop_rejected_exiting`;
   `exit_refused_no_stop`, `exit_refused_stop_again`; `cancel_outcome_unknown` `{outcome}`,
   `cancel_crashed`;
   `cancel_failed`; `cancel_not_sent` `{seconds}`; `given_up_order_filled`,

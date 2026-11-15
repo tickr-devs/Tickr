@@ -83,6 +83,9 @@ def test_bug_a_unreadable_stop_is_not_cancelled_into_a_bare_position(store):
     assert f"{Fence.UNPROTECTED}:{trade}" in engine.fences()
     loop(engine, 50)  # 180 s: past max_unprotected_seconds, the exit was requested
     assert engine.trade(trade).exit_requested == "unprotected-too-long"
+    # The text says the stop is kept and the close waits, not "exiting".
+    assert "a stop's Detail cannot be read" in engine.fences()[
+        f"{Fence.UNPROTECTED_TIMEOUT}:{trade}"]
     assert held(broker) == {"ABC": D(2)}
     # Hard rule 2 / spec 9 teardown: the shares keep a working stop or get their close.
     assert working_stops(broker) >= 2 or sent(broker, OrderType.MARKET) == 1

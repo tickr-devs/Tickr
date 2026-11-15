@@ -162,3 +162,30 @@ def test_the_unreadable_wait_survives_a_restart(store):
     again = Engine(store, broker, CFG, "restart1", lambda: OPEN, clock=engine.clock)
     run(again, 2)
     assert has(again, Fence.DETAIL_UNREADABLE)
+
+
+def test_a_detail_outage_on_a_verified_stop_alerts_but_never_closes(store):
+    """Reviewer finding (PR #372): a working, verified stop whose Detail fails for 75 s keeps
+    the trade as it is. The outage is fenced and alerted (`detail-unreadable`, `unprotected`),
+    but no exit is requested and no `unprotected-timeout` is set: the stop is never cancelled,
+    no MARKET order is sent, and every fence clears once Detail answers again."""
+    broker = StopDetailDies()
+    engine = make(store, broker)
+    trade = enter(engine, "2")
+    broker.fill(legs(engine, trade, Leg.ENTRY)[0].client_order_id, D(2), D(10))
+    run(engine, 4)
+    assert working_stops(broker) == 2 and not engine.fences()
+    broker.dead = True
+    run(engine, 25)  # 75 s, past detail_unreadable_seconds + max_unprotected_seconds
+    assert has(engine, Fence.DETAIL_UNREADABLE) and has(engine, Fence.UNPROTECTED)
+    assert not has(engine, Fence.UNPROTECTED_TIMEOUT)
+    assert engine.trade(trade).exit_requested is None
+    broker.dead = False
+    run(engine, 5)
+    (stop,) = legs(engine, trade, Leg.STOP)
+    assert stop.cancel_state is None and stop.broker_state is OrderState.ACCEPTED
+    assert working_stops(broker) == 2
+    assert not [r for r in broker.sent if r.order_type is OrderType.MARKET]
+    assert engine.trade(trade).exit_requested is None
+    assert engine.trade(trade).state is TradeState.OPEN
+    assert engine.fences() == {}

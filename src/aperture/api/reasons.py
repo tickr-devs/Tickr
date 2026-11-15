@@ -95,7 +95,10 @@ _FENCE = {
     "unprotected-timeout": _shapes(
         ("unprotected_close_by_hand", r"no verified stop for (?P<seconds>[0-9]+) s and the "
          r"closing order was refused before: close the position in the Webull app"),
-        ("unprotected_exiting", r"no verified stop for (?P<seconds>[0-9]+) s; exiting")),
+        ("unprotected_exiting", r"no verified stop for (?P<seconds>[0-9]+) s; exiting"),
+        ("unprotected_stop_unreadable", r"no verified stop for (?P<seconds>[0-9]+) s and a "
+         r"stop's Detail cannot be read: that stop is kept, nothing is sold; close the position "
+         r"in the Webull app")),
     "stop-rejected": _shapes(
         ("stop_rejected_exiting", r"protective stop refused after retries; exiting")),
     "exit-refused": _shapes(
