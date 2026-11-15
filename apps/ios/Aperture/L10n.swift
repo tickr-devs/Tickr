@@ -712,6 +712,32 @@ enum L10n {
     }
   }
 
+  /// The "Watching closely" card (GET /watching).
+  enum Watching {
+    static var title: LocalizedStringResource {
+      LocalizedStringResource("watching.title", defaultValue: "Watching closely", bundle: L10n.bundle)
+    }
+    static var none: LocalizedStringResource {
+      LocalizedStringResource("watching.none", defaultValue: "The strategy is not watching any symbol closely.",
+        bundle: L10n.bundle)
+    }
+    static var closeness: LocalizedStringResource {
+      LocalizedStringResource("watching.closeness", defaultValue: "How close the deciding check is to passing",
+        bundle: L10n.bundle)
+    }
+    static func shown(_ shown: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("watching.shown", defaultValue: "\(shown) of \(total)", bundle: L10n.bundle)
+    }
+    static func failed(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("watching.failed", defaultValue: "Couldn't read the watched symbols: \(cause)",
+        bundle: L10n.bundle)
+    }
+    static func stale(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("watching.stale", defaultValue: "Last read shown; refresh failed: \(cause)",
+        bundle: L10n.bundle)
+    }
+  }
+
   enum Lab {
     static var title: LocalizedStringResource {
       LocalizedStringResource("lab.title", defaultValue: "Strategy lab", bundle: L10n.bundle)

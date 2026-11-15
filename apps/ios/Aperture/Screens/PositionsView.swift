@@ -8,6 +8,7 @@ import SwiftUI
 struct PositionsView: View {
   @Environment(AppModel.self) private var model
   @State private var prices = Container.shared.positionsModel()
+  @State private var watching = Container.shared.watchingModel()
 
   var body: some View {
     Screen(L10n.App.positions) {
@@ -34,14 +35,21 @@ struct PositionsView: View {
               .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
           }
         }
+        WatchingCard(watching: watching.watching, failure: watching.failure)
+          .rise(step: PositionDetail.Order.watching.rawValue)
       }
     }
     .animation(Tokens.Motion.standard, value: model.selectedSymbol)
     .refreshable {
       await model.refresh()
       if let url = model.connection.url, let status = model.status { await prices.load(url, status: status) }
+      if let url = model.connection.url { await watching.load(url, day: model.today) }
     }
     .task(id: model.connection.url) { await model.followAccount() }
+    .task(id: WatchKey(url: model.connection.url, day: model.today)) {
+      guard let url = model.connection.url else { return }
+      await watching.follow(url, day: model.today)
+    }
     .task(id: followKey) {
       guard let url = model.connection.url, let status = model.status, !status.positions.isEmpty else { return }
       await prices.follow(url, status: status)
@@ -52,6 +60,11 @@ struct PositionsView: View {
   private var followKey: FollowKey {
     FollowKey(url: model.connection.url, day: model.status.map { WireDate(newYorkDateOf: $0.writtenAt.date) },
       positions: model.status?.positions ?? [])
+  }
+
+  private struct WatchKey: Hashable {
+    let url: URL?
+    let day: WireDate
   }
 
   private struct FollowKey: Hashable {
@@ -140,7 +153,7 @@ private struct PositionChips: View {
 
 private struct PositionDetail: View {
   /// Order in which the blocks rise in (`rise(step:)`).
-  enum Order: Int { case chips = 1, title, levels, chain, stats, flatten }
+  enum Order: Int { case chips = 1, title, levels, chain, stats, flatten, watching }
 
   /// Height of the Flatten button, in points.
   static let buttonHeight: CGFloat = 50
