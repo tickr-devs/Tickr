@@ -8,6 +8,11 @@ public struct VersionCurve: Hashable, Sendable, Identifiable {
   public struct Point: Hashable, Sendable {
     public let at: Date
     public let total: Decimal
+
+    public init(at: Date, total: Decimal) {
+      self.at = at
+      self.total = total
+    }
   }
 
   public let name: String
