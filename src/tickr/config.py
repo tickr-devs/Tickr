@@ -158,6 +158,8 @@ class ApiConfig:
     remote_pairing_file: str
     remote_pairing_code_file: str
     remote_pairing_code_ttl_seconds: int
+    demo_port: int
+    demo_timeout_seconds: Decimal
     status_file: str
     account_file: str
     account_stale_seconds: Decimal
@@ -177,6 +179,7 @@ class ApiConfig:
     journal_rows: int
     start_bot_command: tuple[str, ...]
     start_bot_timeout_seconds: Decimal
+    advisor_runs: int
     watching_closeness_decimal_places: int
     check_decimal_places: int
     flow_change_pct_decimal_places: int
