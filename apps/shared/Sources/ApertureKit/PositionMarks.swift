@@ -42,11 +42,14 @@ public struct PositionMarks: Hashable, Sendable {
       let low = since.map(\.low.value).min(),
       let high = since.map(\.high.value).max() else { return nil }
     let risk: Decimal? = stop.flatMap { $0 < entry ? entry - $0 : nil }
-    last = lastBar.close.value
+    let last = lastBar.close.value
+    let adverse = min(low - entry, 0)
+    let favorable = max(high - entry, 0)
+    self.last = last
     lastAt = lastBar.start.date
     unrealized = (last - entry) * quantity
-    adverse = min(low - entry, 0)
-    favorable = max(high - entry, 0)
+    self.adverse = adverse
+    self.favorable = favorable
     resultR = risk.map { (last - entry) / $0 }
     adverseR = risk.map { adverse / $0 }
     favorableR = risk.map { favorable / $0 }
