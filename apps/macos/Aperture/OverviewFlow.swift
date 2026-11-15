@@ -27,8 +27,10 @@ enum FlowStages {
   }
 }
 
-/// The day's screener symbols as chips: change from the previous close, coloured by sign; a
-/// symbol the universe left out is struck through, with the cause as its tooltip.
+/// The day's screener symbols as chips scrolling across the top of the live flow, as in the
+/// design: the symbol, then its screener and change from the previous close in the screener's
+/// colour. A symbol the universe left out is dimmed and struck through, the cause in its tooltip.
+/// Without chips the event ticker takes the place, with a note why.
 struct ScreenerChips: View {
   @Environment(AppModel.self) private var model
 
@@ -37,21 +39,25 @@ struct ScreenerChips: View {
 
   var body: some View {
     Group {
-      if let chips = model.flow?.chips {
-        if chips.isEmpty {
-          Footnote(L10n.Screener.none)
-        } else {
-          ScrollView(.horizontal) {
-            HStack(spacing: Tokens.Space.s) {
-              ForEach(chips, id: \.symbol) { chip in
-                Chip(chip: chip)
-              }
+      if let chips = model.flow?.chips, !chips.isEmpty {
+        Marquee(moving: model.isLive) {
+          HStack(spacing: Tokens.Space.s) {
+            ForEach(chips, id: \.symbol) { chip in
+              Chip(chip: chip)
             }
           }
-          .scrollIndicators(.never)
+          .padding(.trailing, Tokens.Space.s)
         }
-      } else if let error = model.flowError {
-        Footnote(L10n.Screener.unavailable(error), color: Palette.warningText)
+      } else {
+        VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+          Ticker(model.tickerItems, moving: model.isLive)
+            .frame(height: Tokens.Size.ticker)
+          if model.flow != nil {
+            Footnote(L10n.Screener.none)
+          } else if let error = model.flowError {
+            Footnote(L10n.Screener.unavailable(error), color: Palette.warningText)
+          }
+        }
       }
     }
     .accessibilityElement(children: .contain)
@@ -62,23 +68,57 @@ struct ScreenerChips: View {
 private struct Chip: View {
   let chip: FlowChipV1
 
+  /// Decimals of the change ("+18.2%").
+  static let changeDigits = 1
+
   var body: some View {
     let excluded = chip.excludedCause != nil
-    HStack(spacing: Tokens.Space.xs) {
+    VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
       Text(verbatim: chip.symbol)
-        .font(Tokens.Typography.annotationBold)
+        .font(Tokens.Typography.chip)
         .strikethrough(excluded)
         .foregroundStyle(excluded ? Palette.textQuaternary : Palette.textPrimary)
-      Text(verbatim: chip.changePct.map { String(localized: L10n.Trades.percent(Money.signed($0.value))) } ?? Format.missing)
+      Text(detail)
         .font(Tokens.Typography.annotation)
-        .foregroundStyle(excluded ? Palette.textQuaternary : chip.changePct.map { Palette.result($0.value) } ?? Palette.textQuaternary)
+        .foregroundStyle(excluded ? Palette.textQuaternary : color)
     }
-    .padding(.horizontal, Tokens.Space.s)
-    .padding(.vertical, Tokens.Space.xxs)
-    .background(Palette.surface, in: .capsule)
-    .overlay(Capsule().strokeBorder(Palette.separatorStrong))
+    .lineLimit(1)
+    .fixedSize()
+    .padding(.horizontal, Tokens.Space.m)
+    .padding(.vertical, Tokens.Space.s)
+    .frame(minWidth: Tokens.Size.flowChip, alignment: .leading)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium))
+    .overlay {
+      RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin)
+    }
     .help(Text(verbatim: help))
     .accessibilityElement(children: .combine)
+  }
+
+  /// The first screener that listed the symbol names its colour and its word.
+  private var source: ScreenerSource? { chip.sources.first }
+
+  /// "gainers +18.2%"; "skipped" for a symbol the universe left out.
+  private var detail: LocalizedStringResource {
+    if chip.excludedCause != nil { return L10n.Flow.chipSkipped }
+    let word = switch source {
+    case .gainers: L10n.Flow.chipGainers
+    case .losers: L10n.Flow.chipLosers
+    case .topActives, nil: L10n.Flow.chipActives
+    }
+    let change = chip.changePct.map {
+      String(localized: L10n.Trades.percent(Money.signed($0.value, fractionDigits: Self.changeDigits)))
+    }
+    return L10n.Flow.chip(String(localized: word), change ?? Format.missing)
+  }
+
+  /// Gainers green, top actives blue, losers pink, as in the design.
+  private var color: Color {
+    switch source {
+    case .gainers: Palette.profitText
+    case .losers: Palette.seriesATRText
+    case .topActives, nil: Palette.infoText
+    }
   }
 
   /// Why the chip looks as it does: the exclusion, the missing change, then the screeners.
