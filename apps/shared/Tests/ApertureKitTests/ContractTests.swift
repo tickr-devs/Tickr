@@ -90,6 +90,12 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(watching.rows.last?.closenessCause != nil)
   }
 
+  @Test func settingsBrokerReadAges() throws {
+    let settings = try Wire.decoder().decode(SettingsV1.self, from: fixture("settings-v1.json"))
+    #expect(settings.brokerReadMaxAgeSeconds.text == "30")
+    #expect(settings.brokerReadWarnSeconds.text == "15")
+  }
+
   @Test func wireDateArithmetic() throws {
     #expect(try WireDate("2026-11-16").adding(days: -29) == WireDate("2026-10-18"))
     #expect(try WireDate("2026-03-08").adding(days: 1) == WireDate("2026-03-09"))
