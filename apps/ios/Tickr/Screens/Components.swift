@@ -134,9 +134,9 @@ enum Format {
 }
 
 extension DynamicTypeSize {
-  /// Rows of several parts (a symbol, figures, a tag) stack their parts from the largest standard
-  /// text size up, so words and figures stay whole instead of breaking letter by letter.
-  var stacksRows: Bool { self >= .xxxLarge }
+  /// Rows of several parts (a symbol, figures, a tag) stack their parts from XXL up, so words and
+  /// figures stay whole instead of breaking letter by letter (Russian names need it from XXL).
+  var stacksRows: Bool { self >= .xxLarge }
 }
 
 /// A row at ordinary text sizes that becomes a leading-aligned column when the text size
@@ -235,7 +235,7 @@ struct EnvironmentBadge: View {
   let environment: String
 
   var body: some View {
-    Text(verbatim: environment.uppercased())
+    Text(verbatim: ApiText.environment(environment).uppercased())
       .font(Tokens.Typography.badge)
       .tracking(Tokens.Typography.badgeTracking)
       .padding(.horizontal, Tokens.Space.s)
@@ -243,7 +243,7 @@ struct EnvironmentBadge: View {
       .foregroundStyle(Palette.warningText)
       .background(Palette.warning.opacity(Tokens.Opacity.wash), in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
       .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.small).strokeBorder(Palette.warning.opacity(Tokens.Opacity.border)))
-      .accessibilityLabel(Text(L10n.Connect.environment(environment)))
+      .accessibilityLabel(Text(L10n.Connect.environment(ApiText.environment(environment))))
   }
 }
 

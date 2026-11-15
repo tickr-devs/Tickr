@@ -10,7 +10,8 @@ struct WatchingCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      HStack {
+      // The label, then its note; the note goes under it at large text sizes.
+      RowStack {
         CardLabel(L10n.Watching.title)
         Spacer()
         if let watching, watching.total > watching.rows.count {
@@ -84,7 +85,7 @@ private struct WatchingRow: View {
           .tint(current ? Palette.accent : Palette.textQuaternary)
           .accessibilityLabel(Text(L10n.Watching.closeness))
       } else if let cause = row.closenessCause {
-        Text(verbatim: cause)
+        Text(verbatim: ApiText.prose(row.closenessCauseCodes, text: cause))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       }

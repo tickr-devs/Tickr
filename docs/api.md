@@ -5,6 +5,9 @@ local API. The API process is separate from the bot and never talks to the broke
 account routes: it serves the status and account files the bot writes and drops operator commands
 into an inbox the bot reads. Its one market-data read, `GET /chart`, is off by default (below).
 
+Planned additions for the backlog screens (advisor, trailing stop, Production gate, notifications)
+are in `docs/api-planned.md`.
+
 Run it: `python -m tickr.api --config config/bot.toml`. Settings are in `config/bot.toml` `[api]`.
 
 ## Transport and safety
@@ -24,7 +27,8 @@ The API still binds loopback only. The iPhone reaches it through an HTTPS proxy 
 owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
 tailnet name. The proxy points at a second loopback port, `[api] remote_port`, opened only when
 `[api] remote_hosts` is set. Every request on that port must carry the paired token, whatever its
-`Host` header says; the local port never accepts the remote name. Whether a token is needed is
+`Host` header says, except `POST /pair`, which redeems a one-time pairing code for that token; the
+local port never accepts the remote name. Whether a token is needed is
 decided by the port a request arrives on, never by a header the caller chooses.
 
 1. Install Tailscale on the Mac and the iPhone, sign in to the same account, enable MagicDNS and
@@ -33,19 +37,29 @@ decided by the port a request arrives on, never by a header the caller chooses.
    never the `[api] port`). `tailscale serve status` shows the address, e.g.
    `https://mac.tailnet-name.ts.net`.
 3. In `config/bot.toml` set `[api] remote_hosts = ["mac.tailnet-name.ts.net"]` and restart the API.
-4. `python -m tickr.api --config config/bot.toml pair` makes a new token and leaves the pairing
-   link in a file readable by you only (`[api] remote_pairing_file` under `data_dir`); the token is
-   never printed. AirDrop that file to the iPhone (not Notes or Messages, which sync to iCloud),
-   then in the iOS app: Settings › Pair with Mac, paste the link. The API deletes the file when the
-   phone first connects with the token. The Mac keeps only the token's SHA-256
-   (`[api] remote_token_hash_file`); pairing again revokes the previous token.
+4. `python -m tickr.api --config config/bot.toml pair` revokes the current phone token at once and
+   leaves a pairing link with a one-time code in a file readable by you only
+   (`[api] remote_pairing_file` under `data_dir`); nothing secret is printed. With the API running,
+   AirDrop that file to the iPhone and open it, or paste the link in Settings › Pair with Mac,
+   within `[api] remote_pairing_code_ttl_seconds`. The phone redeems the code once at `POST /pair`
+   for its token; the API then deletes the link file. A copy of the link left anywhere (Files,
+   iCloud Drive, a clipboard) is worthless after that or after expiry. The Mac keeps only SHA-256
+   digests: of the waiting code (`[api] remote_pairing_code_file`, with its expiry) and of the
+   token (`[api] remote_token_hash_file`).
 
 Rules on the remote port: `Host` must be one of `remote_hosts` (no port when 443, else
 `name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
 `401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
 An unreadable token hash file answers `503 unavailable`. The local port (the Mac app, the status
-page) needs no token, as before: any process on this Mac can use it. Until the phone first connects,
-the pairing file holds the token in clear (0600); delete it if you abandon a pairing. `remote_hosts = []` (the shipped value) turns remote access off.
+page) needs no token, as before: any process on this Mac can use it.
+
+`POST /pair` (remote port only; the local port answers `404`): the same `Host` and `Origin` rules,
+no token, body exactly `{"code": "<code from the link>"}`. `200` with `paired-v1`
+(`{"token": "...", "api_version": 1}`) once: the code is burnt, a new token's SHA-256 replaces the
+stored one, and the link file is deleted. `401 unauthorized` when no pairing is waiting, the code
+is wrong (nothing changes) or it has expired (the code and the link file are deleted); `400` for
+any other body; `503` when the code file is unreadable. Neither the code nor the token appears in
+an error or the log. `remote_hosts = []` (the shipped value) turns remote access off.
 
 The phone keeps the token in its Keychain (this device only) together with the address it was
 paired with, and sends it only over HTTPS to exactly that address; changing the address by hand
@@ -146,8 +160,10 @@ clients show the text.
 - `fences[].code` / `params`, by kind: `startup_reconcile_pending`; `positions_read_failed` /
   `open_orders_read_failed` `{error}` (an exception type name); `detail_budget`;
   `send_outcome_unknown`, `crashed_during_send`; `order_missing`; `status_unmapped` `{status}`;
+  `detail_unreadable` / `stop_cancel_unconfirmed` `{seconds}`;
   `stop_covers_part` `{verified, expected}`; `stops_over_position` `{covered, held}`;
-  `unprotected_exiting` / `unprotected_close_by_hand` `{seconds}`; `stop_rejected_exiting`;
+  `unprotected_exiting` / `unprotected_close_by_hand` / `unprotected_stop_unreadable`
+  `{seconds}`; `stop_rejected_exiting`;
   `exit_refused_no_stop`, `exit_refused_stop_again`; `cancel_outcome_unknown` `{outcome}`,
   `cancel_crashed`;
   `cancel_failed`; `cancel_not_sent` `{seconds}`; `given_up_order_filled`,
@@ -501,6 +517,11 @@ reads and writes nothing for it.
 - `session`: today's New York date with `regular_open`, `last_entry_at`, `flatten_at` and
   `regular_close`, or null with `session_cause` (a weekend, a closure, a half day with
   `half_days_enabled = false`, a calendar that does not cover today).
+- `nightly_fetch`: the nightly backtest-data refresh's last outcome, from its `nightly.json`
+  (docs/backtest.md, "Nightly"): `finished_at`, `last_day` (where the Lab's data now ends),
+  `new_sessions` added (0 = already up to date) and `cause` when it was refused or stopped (the
+  data then stays as it was). All null with `cause` when it never ran or the file is unreadable.
+  `launchd` lists it as `nightly-fetch`.
 
 ### GET /journal (read-only)
 

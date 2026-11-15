@@ -386,6 +386,15 @@ class AccountResponseV1:
 
 
 @dataclass(frozen=True)
+class PairedV1:
+    """POST /pair on the remote port: the bearer token the phone keeps from now on. Answered
+    once per pairing code; the server keeps only the token's SHA-256."""
+
+    token: str
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
 class CommandAcceptedV1:
     """POST /commands/*: the command is queued for the bot, not yet executed."""
 
@@ -679,7 +688,7 @@ class LaunchdJobV1:
     the Mac's own time zone) on `weekdays` (launchd numbering: 1 = Monday ... 5 = Friday,
     0 and 7 = Sunday). The session calendar still decides whether the day trades."""
 
-    name: str  # preflight, bot or watchdog
+    name: str  # preflight, bot, watchdog or nightly-fetch
     local_time: str
     weekdays: tuple[int, ...]
 
@@ -741,6 +750,19 @@ class JournalV1:
 
 
 @dataclass(frozen=True)
+class NightlyFetchJobV1:
+    """The nightly backtest-data refresh's last outcome (its `nightly.json`): `finished_at`;
+    `last_day`, where the Lab's data now ends; `new_sessions` added that night (0 = already up to
+    date); `cause` when it was refused or stopped (the data stays as it was). All null with
+    `cause` when it never ran or its file cannot be read."""
+
+    finished_at: datetime | None
+    last_day: date | None
+    new_sessions: int | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
 class JobsV1:
     """GET /jobs: when the bot's scheduled work last ran and runs next, for the Settings jobs
     strip. Read-only: from the status file, the database (read-only), config and calendar.
@@ -756,6 +778,7 @@ class JobsV1:
     launchd: tuple[LaunchdJobV1, ...]
     session: SessionTimesV1 | None
     session_cause: str | None
+    nightly_fetch: NightlyFetchJobV1
     api_version: int = _const(API_VERSION)
 
 
@@ -1520,6 +1543,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "command-v1": CommandV1,
     "status-response-v1": StatusResponseV1,
     "command-accepted-v1": CommandAcceptedV1,
+    "paired-v1": PairedV1,
     "pending-commands-v1": PendingCommandsV1,
     "error-v1": ErrorV1,
     "days-v1": DaysV1,
