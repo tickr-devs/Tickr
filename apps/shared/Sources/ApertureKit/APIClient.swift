@@ -94,6 +94,7 @@ public struct APIClient: Sendable {
   static let accountPath = "/account"
   static let jobsPath = "/jobs"
   static let journalPath = "/journal"
+  static let labReplayPath = "/lab/replay"
   static let observersPath = "/observers"
   static let decisionsPath = "/decisions"
   static let skippedPath = "/skipped"
@@ -196,6 +197,19 @@ public struct APIClient: Sendable {
   /// The latest rows of the bot's journal with their numbers, newest last.
   public func journal() async throws -> JournalV1 {
     try await perform(request(path: Self.journalPath, body: nil), expect: Self.ok)
+  }
+
+  /// The Lab's replay of the current strategy over the recent sessions: idle, running, done with
+  /// its summary, or failed with a cause.
+  public func labReplay() async throws -> LabReplayV1 {
+    try await perform(request(path: Self.labReplayPath, body: nil), expect: Self.ok)
+  }
+
+  /// Start a Lab replay. Accepted (202) answers the replay as it now stands; the API refuses a
+  /// start while one runs with 409 `conflict`, thrown as `APIError.refused`.
+  public func startLabReplay() async throws -> LabReplayV1 {
+    let body = try JSONSerialization.data(withJSONObject: [String: String]())
+    return try await perform(request(path: Self.labReplayPath, body: body), expect: Self.accepted)
   }
 
   /// Risk limits and session times from the bot's config, as the API loaded them.
