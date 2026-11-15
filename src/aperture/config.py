@@ -155,6 +155,16 @@ class MarketDataConfig:
 
 
 @dataclass(frozen=True)
+class ChartConfig:
+    webull_enabled: bool
+    requests_per_minute: int
+    bars_per_request: int
+    live_ttl_seconds: Decimal
+    cache_dir: str
+    session_lookback_days: int
+
+
+@dataclass(frozen=True)
 class ObserversConfig:
     strategy_modules: tuple[str, ...]
     max_observers: int
@@ -253,6 +263,7 @@ class Config:
     runtime: RuntimeConfig
     alerts: AlertsConfig
     market_data: MarketDataConfig
+    chart: ChartConfig
     observers: ObserversConfig
     advisor: AdvisorConfig
     environments: dict[str, EnvironmentConfig]
@@ -279,6 +290,7 @@ _SECTIONS: dict[str, type] = {
     "runtime": RuntimeConfig,
     "alerts": AlertsConfig,
     "market_data": MarketDataConfig,
+    "chart": ChartConfig,
     "observers": ObserversConfig,
     "advisor": AdvisorConfig,
 }
@@ -401,6 +413,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if built["api"].account_stale_seconds <= built["orders"].reconcile_interval_seconds:
         raise ConfigError("[api] account_stale_seconds must be above [orders] "
                           "reconcile_interval_seconds (the account file is written per reconcile)")
+    chart: ChartConfig = built["chart"]
+    if chart.requests_per_minute < 1 or chart.bars_per_request < 1:
+        raise ConfigError("[chart] requests_per_minute and bars_per_request must be at least 1")
+    if chart.live_ttl_seconds <= 0 or chart.session_lookback_days < 1:
+        raise ConfigError("[chart] live_ttl_seconds must be above 0 and session_lookback_days "
+                          "at least 1")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
