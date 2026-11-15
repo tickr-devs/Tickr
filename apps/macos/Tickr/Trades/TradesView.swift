@@ -445,12 +445,13 @@ private struct TradesTable: View {
       TableColumn(Self.header(L10n.Trades.resultR)) { row in
         Text(verbatim: row.resultR.map(Risk.text) ?? Format.missing)
           .font(Tokens.Typography.calloutMono)
-          .foregroundStyle(row.resultR.map(Palette.result) ?? Palette.textQuaternary)
+          .foregroundStyle(row.resultRColor)
       }
       .width(min: Column.figureMin, ideal: Column.figure)
       TableColumn(Self.header(L10n.Trades.result)) { row in
         if let result = row.result {
-          MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono)
+          // Greyed while it is as of an older bar, as in the menu-bar panel.
+          MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono, muted: row.isStale)
         } else {
           Text(L10n.Trades.open)
             .textCase(.lowercase)
@@ -551,6 +552,19 @@ enum TradeRow: Identifiable {
     case .open(let row): row.resultR ?? row.latestResultR
     case .closed(let trade): trade.resultR
     }
+  }
+
+  /// An open position whose R and result are as of an older bar (`PositionRow.isStale`): they
+  /// show greyed, not as the current figures.
+  var isStale: Bool {
+    if case .open(let row) = self { return row.isStale }
+    return false
+  }
+
+  /// Colour of the R: by its sign, greyed while stale or missing.
+  var resultRColor: Color {
+    guard let resultR, !isStale else { return Palette.textQuaternary }
+    return Palette.result(resultR)
   }
 
   /// Gross result in USD now (open) or at the exit; nil while an open one has no bar yet.
