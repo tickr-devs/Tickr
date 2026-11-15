@@ -239,12 +239,13 @@ private struct TradesTable: View {
 
   var body: some View {
     Card(L10n.Trades.tradesOfDay) {
-      // Positions still open come first: the table holds closed trades only.
-      ForEach(model.positions) { row in
+      // On the live day, positions still open come first: the table holds closed trades only.
+      let open = model.isLive ? model.positions : []
+      ForEach(open) { row in
         OpenPositionRow(row: row, showOnChart: showOnChart)
         Divider()
       }
-      if model.shownTrades.isEmpty && !model.positions.isEmpty {
+      if model.shownTrades.isEmpty && !open.isEmpty {
         Footnote(L10n.Trades.noClosedTrades)
       } else if model.shownTrades.isEmpty {
         ContentUnavailableView {
