@@ -115,4 +115,17 @@ def test_a_repeated_enter_of_a_traded_signal_is_not_a_second_trade():
     obs = run([signal("10:00"), signal("10:04")]).identities[0]
     assert obs.simulated["skipped_same_signal"] == 1 and obs.trades == 1
     other = run([signal("10:00"), observer("10:04")]).identities[0]
-    assert other.simulated["skipped_same_signal"] == 0
+    assert other.simulated["skipped_same_signal"] == 0  # no trigger: never deduplicated
+    during = run([signal("10:00"), signal("10:01")]).identities[0]
+    assert (during.simulated["skipped_overlap"], during.simulated["skipped_same_signal"]) == (1, 0)
+
+
+def test_the_active_strategy_is_not_deduplicated():
+    from dataclasses import replace
+
+    def signal(clock):
+        rec = active(clock)
+        return replace(rec, decision=replace(rec.decision, setup="x", trigger=Decimal("10.05")))
+
+    act = run([signal("10:00"), signal("10:04")]).identities[0]
+    assert act.simulated["skipped_same_signal"] == 0

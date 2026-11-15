@@ -68,7 +68,7 @@ owner decision (`[strategy] active`), not something this candidate does.
 `strategies/volume-shock-v1/` with `src/aperture/strategy/volume_shock_v1.py` (shared entry and
 sizing in `strategy/simple.py`). It is family L4 of `docs/strategy-ledger.md`: a volume shock in
 a stock trading a little above its previous close; the module docstring and the strategy.toml
-hold the rules and values. The first signal of the session stays valid for `signal_valid_bars` minutes unless a later bar
+hold the rules and values. The first signal of the session stays valid for `signal_valid_minutes` unless a later bar
 trades below its low; the stop is at least `minimum_stop_percent` below the entry window's
 floor and the bid (the bar's low only when lower), so
 results are not directly comparable with the history test, which used the bar's low. The
@@ -84,7 +84,7 @@ Enable: `observers = ["volume-shock-v1"]`.
 `strategy/simple.py`). It is family L2 of `docs/strategy-ledger.md`: the first close between
 10:00 and 15:00 that is further above the session open than the stock's usual move at that
 minute over the prior sessions; the docstring and the strategy.toml hold the rules and values.
-The first signal of the session stays valid for `signal_valid_bars` minutes unless a later bar
+The first signal of the session stays valid for `signal_valid_minutes` unless a later bar
 trades below its stop level; the stop is the lower of the band level (or VWAP when it is
 higher and below the close) and the minimum distance below the entry window's floor and the
 bid.
@@ -110,7 +110,7 @@ Notes for both candidates (from the trading-core review of `strategy/simple.py`)
 - Quotes are subscribed for the active strategy's WATCH set only (`runtime/service.py`
   `_evaluate`), so an observer shows ENTER only on a symbol the active strategy also watches;
   the rest show WATCH, which the daily report should count as missed for no quote.
-- A valid signal can log ENTER on each of its up to `signal_valid_bars` minutes: count one
+- A valid signal can log ENTER on each of its up to `signal_valid_minutes`: count one
   entry per signal, not one per record. The daily observer report simulates at most one
   trade per signal (`skipped_same_signal`); the `outcomes` research command still measures
   every ENTER record.
@@ -166,8 +166,8 @@ python -m aperture.research observers \
 Per identity (active first): decisions by verdict, ENTERs (taken / refused for the active),
 every ENTER simulated like `whatif` (taken or not, so every version is measured the same way;
 an ENTER while an earlier simulated trade of the same identity in that symbol is open is
-`skipped_overlap`, and one repeating a signal, same symbol, setup and trigger, that already
-made a simulated trade is `skipped_same_signal`), trades, wins, losses, total and average R, gross USD for ENTERs with a
+`skipped_overlap`, and an observer's ENTER repeating a signal, same day, symbol, setup and
+trigger, that already made a simulated trade is `skipped_same_signal`), trades, wins, losses, total and average R, gross USD for ENTERs with a
 recorded quantity; for observers the bar-by-bar diff against the active decisions and the
 number of ENTER bars shared with it. Outputs `observers.csv` and `observers.json`, labelled
 `simulated`. The local API serves each observer's gross USD from this same simulation at

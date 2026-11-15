@@ -92,7 +92,7 @@ def test_loss_budget_sizes_down():
     assert ("daily_loss_budget_usd", True) in rules(small)
 
 
-def test_a_signal_older_than_signal_valid_bars_minutes_expires():
+def test_a_signal_older_than_signal_valid_minutes_minutes_expires():
     decision = make().evaluate(ctx(shock(count=11, at=5)))
     assert decision.verdict is Verdict.IGNORE
     assert rules(decision)[-1] == ("signal_age_minutes", False)
@@ -224,3 +224,9 @@ def test_non_finite_values_are_refused(value):
     vals["sizing"]["planned_loss_usd"] = float(value)
     with pytest.raises(ValueError):
         vs.create(vals)
+
+
+def test_a_later_low_equal_to_the_signal_low_invalidates():
+    bars = shock(count=11, at=9)
+    bars[10] = bar(TODAY, 10, 20.4, 20.4, 20.3, 20.35, 3_000)
+    assert rules(make().evaluate(ctx(bars)))[-1] == ("signal_not_invalidated", False)

@@ -102,7 +102,7 @@ def test_before_the_earliest_minute_is_no_signal():
     assert rules(make().evaluate(ctx(today(20, jump_at=19))))[-1] == ("signal", False)
 
 
-def test_the_first_signal_stays_valid_for_signal_valid_bars_then_expires():
+def test_the_first_signal_stays_valid_for_signal_valid_minutes_then_expires():
     still = make().evaluate(ctx(today(45, jump_at=40)))  # signal bar 40, last bar 44
     assert still.verdict is Verdict.WATCH and still.trigger == d("20.4")
     expired = make().evaluate(ctx(today(46, jump_at=40)))
@@ -113,7 +113,7 @@ def test_the_first_signal_stays_valid_for_signal_valid_bars_then_expires():
 def test_no_look_ahead_over_every_prefix():
     bars = today(50, jump_at=42)
     verdicts = [make().evaluate(ctx(bars[:k])).verdict for k in range(1, len(bars) + 1)]
-    # WATCH from the signal bar 42 for signal_valid_bars = 5 bars, never before
+    # WATCH from the signal bar 42 for signal_valid_minutes = 5 bars, never before
     assert [k for k, v in enumerate(verdicts) if v is Verdict.WATCH] == [42, 43, 44, 45, 46]
     altered = bars[:43] + [bar(TODAY, i, 30, 31, 29, 30, 9_000) for i in range(43, 50)]
     assert make().evaluate(ctx(altered[:43])) == make().evaluate(ctx(bars[:43]))

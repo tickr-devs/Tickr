@@ -13,7 +13,7 @@ Values come from `strategies/volume-shock-v1/strategy.toml`. On the last complet
    `prior_window_complete` check. Today's window must be consecutive minutes too.
 3. The bar closes in the top of its range: (close - low) / (high - low) >= `close_location_min`.
 4. This is the first bar of the session where 1-3 hold, it started at most
-   `signal_valid_bars` - 1 minutes ago ([entry]), and no later bar traded below its low.
+   `signal_valid_minutes` - 1 minutes ago ([entry]), and no later bar traded below its low.
    After that the session is spent.
 
 There is no time-of-day limit (the history test had none); the platform's last-entry time
@@ -141,7 +141,7 @@ class VolumeShockV1:
             checks.append(v1._flag("prior_window_complete", False,
                                    "a prior session lacks a minute of the volume window"))
             return ignore()
-        check, first = simple.first_signal(session, fires, c.signal_valid_bars)
+        check, first = simple.first_signal(session, fires, c.signal_valid_minutes)
         checks.append(check)
         if first is None:
             return ignore()

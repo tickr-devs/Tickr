@@ -14,7 +14,7 @@ Values come from `strategies/noise-band-v1/strategy.toml`. On the last completed
 4. This is the first bar of the session where 1-3 hold. An earlier bar whose band is unknown
    (a prior session lacks that minute) counts as not fired.
 
-The first signal stays valid for `signal_valid_bars` minutes ([entry]) while no later bar
+The first signal stays valid for `signal_valid_minutes` ([entry]) while no later bar
 trades below its stop level; after that the session is spent. Then ENTER with
 the stop at the higher of the band level and the session VWAP (VWAP only while it is below
 the close), or lower, at the minimum stop distance below the entry window and the bid, and the
@@ -135,7 +135,7 @@ class NoiseBandV1:
             checks.append(v1._flag("prior_band_complete", False,
                                    "a prior session lacks its 09:30 bar or this minute"))
             return ignore()
-        check, first = simple.first_signal(session, fires, c.signal_valid_bars)
+        check, first = simple.first_signal(session, fires, c.signal_valid_minutes)
         checks.append(check)
         if first is None:
             return ignore()

@@ -33,7 +33,7 @@ Schema = dict[str, dict[str, Callable[[Any], Any]]]
 COMMON: Schema = {
     "strategy": {"name": v1._text, "version": v1._text},
     "entry": {"entry_window_percent": v1._positive, "minimum_stop_percent": v1._positive,
-              "signal_valid_bars": v1._positive_int},
+              "signal_valid_minutes": v1._positive_int},
     "liquidity": {"max_spread_ratio": v1._positive, "min_previous_close_usd": v1._positive},
     "sizing": {"planned_loss_usd": v1._positive, "max_position_notional_usd": v1._positive},
 }
@@ -45,7 +45,7 @@ class Common:
     version: str
     entry_window_percent: Decimal
     minimum_stop_percent: Decimal
-    signal_valid_bars: int
+    signal_valid_minutes: int
     max_spread_ratio: Decimal
     min_previous_close_usd: Decimal
     planned_loss_usd: Decimal
@@ -112,9 +112,9 @@ def session_from_open(session: Sequence[Bar]) -> Check:
 
 
 def first_signal(session: Sequence[Bar], fires: Callable[[int], bool],
-                 valid_bars: int) -> tuple[Check, int | None]:
+                 valid_minutes: int) -> tuple[Check, int | None]:
     """The first bar of the session where the signal fired, decided from the bars alone so a
-    restart changes nothing, and still valid: it started at most `valid_bars` - 1 minutes
+    restart changes nothing, and still valid: it started at most `valid_minutes` - 1 minutes
     before the last bar (minutes, not bars, so a halt or data gap does not stretch it). The
     validity window gives a quote that arrives a little after the signal bar a chance; the
     entry window around the signal close keeps a late entry from chasing. Returns the check
@@ -123,17 +123,17 @@ def first_signal(session: Sequence[Bar], fires: Callable[[int], bool],
     if first is None:
         return v1._flag("signal", False, "no signal bar this session"), None
     age = (session[-1].start - session[first].start) // M1
-    check = v1._check("signal_age_minutes", Decimal(age), "<", Decimal(valid_bars),
+    check = v1._check("signal_age_minutes", Decimal(age), "<", Decimal(valid_minutes),
                       f"first signal on bar {first} of the session")
     return check, (first if check.passed else None)
 
 
 def not_invalidated(session: Sequence[Bar], first: int, stop_level: Decimal) -> Check:
-    """No bar after the signal bar traded below the signal's stop level: a signal that has
-    already failed is not entered late."""
+    """Every bar after the signal bar stayed above the signal's stop level: a signal whose stop
+    level has already traded is not entered late."""
     later = session[first + 1:]
     lowest = min((b.low for b in later), default=None)
-    return v1._flag("signal_not_invalidated", lowest is None or lowest >= stop_level,
+    return v1._flag("signal_not_invalidated", lowest is None or lowest > stop_level,
                     f"lowest low after the signal {lowest}, stop level {stop_level}")
 
 
