@@ -181,6 +181,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `breatheSeconds` / `breatheScale` | 2.4 s / ×1.08 | One swell of a glow when its value changes (never a loop) |
 | `rotationSeconds` | 4 s per turn | Radar sweep |
 | `tickerSpeed` | 22 pt/s | Event ticker (edges fade over 6% of its width) |
+| `marqueeFrameSeconds` | 1/30 s | Redraw step of a scrolling marquee; it holds still while its window is in the background |
 | `pipelineSeconds` | 4.2 s | Light travelling the live flow |
 | `pressScale` | ×0.97 | Buttons and chips while pressed |
 | `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event |

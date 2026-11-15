@@ -234,9 +234,17 @@ public struct Ticker: View {
 }
 
 /// A row that scrolls slowly to the left in a loop, faded at both ends, paused when `moving` is
-/// false or Reduce Motion is on; then it is an ordinary horizontal scroll view.
+/// false or Reduce Motion is on; then it is an ordinary horizontal scroll view. It redraws at most
+/// `Tokens.Motion.marqueeFrameSeconds` apart and holds still while its window is in the
+/// background: a marquee redrawn every display frame kept a third of a CPU core busy on every
+/// screen (Instruments, 2026-11-15).
 public struct Marquee<Row: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  #if os(macOS)
+  @Environment(\.controlActiveState) private var activeState
+  #else
+  @Environment(\.scenePhase) private var scenePhase
+  #endif
   @State private var contentWidth: CGFloat = 0
   let moving: Bool
   /// Points per second.
@@ -252,13 +260,13 @@ public struct Marquee<Row: View>: View {
   public var body: some View {
     Group {
       if moving && !reduceMotion {
-        TimelineView(.animation) { context in
+        let schedule = AnimationTimelineSchedule(
+          minimumInterval: Tokens.Motion.marqueeFrameSeconds, paused: inBackground)
+        TimelineView(schedule) { context in
           let t = context.date.timeIntervalSinceReferenceDate
           let offset = contentWidth > 0 ? -CGFloat((t * speed).truncatingRemainder(dividingBy: Double(contentWidth))) : 0
           HStack(spacing: 0) {
-            row.background(GeometryReader { proxy in
-              Color.clear.preference(key: WidthKey.self, value: proxy.size.width)
-            })
+            row.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
             row
           }
           .offset(x: offset)
@@ -266,7 +274,6 @@ public struct Marquee<Row: View>: View {
           // (else it widens the whole screen and pushes everything else off the sides).
           .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
-        .onPreferenceChange(WidthKey.self) { contentWidth = $0 }
         .clipped()
       } else {
         ScrollView(.horizontal, showsIndicators: false) { row }
@@ -278,6 +285,15 @@ public struct Marquee<Row: View>: View {
       startPoint: .leading, endPoint: .trailing))
     .accessibilityElement(children: .combine)
   }
+
+  /// The window is not the one in use (macOS) or the app is not on screen (iOS).
+  private var inBackground: Bool {
+    #if os(macOS)
+    activeState == .inactive
+    #else
+    scenePhase != .active
+    #endif
+  }
 }
 
 private enum MarqueeLayout {
@@ -285,7 +301,3 @@ private enum MarqueeLayout {
   static let fadeEdge = 0.06
 }
 
-private struct WidthKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
