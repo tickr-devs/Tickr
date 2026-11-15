@@ -44,8 +44,6 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct RootView: View {
   @Environment(AppModel.self) private var model
-  @Environment(ChartModel.self) private var chart
-  @AppStorage(ChartView.Keys.decisions) private var showDecisions = false
 
   /// Sidebar width: least, preferred and most, in points.
   static let sidebarMin: CGFloat = 200
@@ -105,17 +103,6 @@ struct RootView: View {
       .navigationSubtitle(Text(verbatim: subtitle))
       .toolbar { DayToolbar() }
     }
-    // The Chart's decisions inspector is a column of the window itself, as in Apple's apps, not
-    // a split view nested in the Chart screen: on macOS 27 the nested split's columns resized
-    // each other's safe area inside the window's layout pass until AppKit threw ("needs another
-    // Update Constraints in Window pass"). Shown on the Chart only; the setting stays for it.
-    .inspector(isPresented: decisionsShown) {
-      DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: chart.hasSymbol)
-    }
-  }
-
-  private var decisionsShown: Binding<Bool> {
-    Binding(get: { showDecisions && section == .chart }, set: { showDecisions = $0 })
   }
 
   @ViewBuilder private var detail: some View {

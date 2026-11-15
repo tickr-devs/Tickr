@@ -55,12 +55,26 @@ struct ChartView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      controls
-      content
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    // The decisions as a fixed-width pane beside the chart, not an `.inspector` split: on
+    // macOS 27 every split-view form (nested in the screen, or a column of the window) let the
+    // columns' least sizes and safe areas resize each other inside AppKit's layout pass until it
+    // threw ("needs another Update Constraints in Window pass").
+    HStack(spacing: 0) {
+      VStack(alignment: .leading, spacing: Tokens.Space.m) {
+        controls
+        content
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      .padding(Tokens.Space.xl)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      if showDecisions {
+        Divider()
+        DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: chart.hasSymbol)
+          .frame(width: DecisionsInspector.width)
+          .transition(.move(edge: .trailing))
+      }
     }
-    .padding(Tokens.Space.xl)
+    .animation(Tokens.Motion.standard, value: showDecisions)
     .task(id: LoadKey(baseURL: model.baseURL, symbol: symbol, day: model.shownDay, live: model.isLive)) {
       await keepLoading()
     }

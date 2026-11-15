@@ -10,10 +10,8 @@ struct DecisionsInspector: View {
   /// The chart shows a symbol; without one there is nothing to ask the bot about.
   let hasSymbol: Bool
 
-  /// Width of the inspector column, in points.
-  static let minWidth: CGFloat = 240
-  static let idealWidth: CGFloat = 280
-  static let maxWidth: CGFloat = 440
+  /// Width of the decisions pane beside the chart, in points.
+  static let width: CGFloat = 280
   /// Accessibility id of the inspector's content, for the UI tests.
   static let contentID = "chart-decisions-list"
 
@@ -26,7 +24,7 @@ struct DecisionsInspector: View {
       // the Chart with the inspector shown.
       .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
       .accessibilityIdentifier(Self.contentID)
-      .inspectorColumnWidth(min: Self.minWidth, ideal: Self.idealWidth, max: Self.maxWidth)
+      .background(Palette.surface)
   }
 
   @ViewBuilder private var content: some View {
@@ -151,6 +149,6 @@ extension Verdict {
 #if DEBUG
 #Preview {
   DecisionsInspector(decisions: PreviewAPI.decisions(), error: nil, hasSymbol: true)
-    .frame(width: DecisionsInspector.idealWidth, height: PreviewAPI.windowHeight)
+    .frame(width: DecisionsInspector.width, height: PreviewAPI.windowHeight)
 }
 #endif
