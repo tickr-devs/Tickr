@@ -70,7 +70,8 @@ struct LabView: View {
 
   /// The trading strategy's line, then each observer's whose trades the bot could list.
   private func curves(_ status: StatusV1) -> [VersionCurve] {
-    [VersionCurve.active(name: status.strategy.name, version: status.strategy.version, trades: status.tradesToday)]
+    [VersionCurve.active(name: status.strategy.name, version: status.strategy.version, trades: status.tradesToday,
+      total: status.resultTodayGrossUsd.value)]
       + (lab.observers?.observers.compactMap(VersionCurve.simulated) ?? [])
   }
 
