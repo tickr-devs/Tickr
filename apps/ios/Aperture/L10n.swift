@@ -179,9 +179,15 @@ enum L10n {
     static var flattenAll: LocalizedStringResource {
       LocalizedStringResource("control.flattenAll", defaultValue: "Flatten All Positions", bundle: L10n.bundle)
     }
+    static var stopBot: LocalizedStringResource {
+      LocalizedStringResource("control.stopBot", defaultValue: "Stop the Bot", bundle: L10n.bundle)
+    }
+    static var emergency: LocalizedStringResource {
+      LocalizedStringResource("control.emergency", defaultValue: "Emergency: Pause, Cancel, Flatten", bundle: L10n.bundle)
+    }
     static var message: LocalizedStringResource {
       LocalizedStringResource("control.message",
-        defaultValue: "Pausing and cancelling never touch broker stops. Flatten closes the bot's own positions through the normal exit. Each command is queued once; the bot reports the result.",
+        defaultValue: "Pausing and cancelling never touch broker stops. Flatten closes the bot's own positions through the normal exit. Stop ends the bot gracefully with stops left resting; it stays stopped until started again on the Mac. Emergency pauses entries, cancels entry orders and flattens everything. Each command is queued once; the bot reports the result.",
         bundle: L10n.bundle)
     }
     static var unknown: LocalizedStringResource {
@@ -319,7 +325,7 @@ enum L10n {
     }
     static var flattenMessage: LocalizedStringResource {
       LocalizedStringResource("positions.flattenMessage",
-        defaultValue: "The bot cancels the stop, re-reads the quantity and sells at market through the normal exit. Flatten closes every position the bot holds; positions not opened by the bot are not touched.",
+        defaultValue: "The bot cancels this position's stop, re-reads the quantity and sells at market through the normal exit. Only this symbol closes; the bot's other positions and positions not opened by the bot are not touched.",
         bundle: L10n.bundle)
     }
     static var riskBand: LocalizedStringResource {

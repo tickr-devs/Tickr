@@ -17,6 +17,10 @@ struct BotControl: ViewModifier {
         }
         Button { run(.cancelOwnOrders) } label: { Text(L10n.Control.cancelOrders) }
         Button(role: .destructive) { run(.flatten) } label: { Text(L10n.Control.flattenAll) }
+        if status.botState == .running {
+          Button(role: .destructive) { run(.stopBot) } label: { Text(L10n.Control.stopBot) }
+        }
+        Button(role: .destructive) { run(.emergency) } label: { Text(L10n.Control.emergency) }
       }
       Button(role: .cancel) {} label: { Text(L10n.Common.cancel) }
     } message: {
@@ -34,15 +38,22 @@ struct BotControl: ViewModifier {
     Task { await Self.confirmAndSend(command, model: model) }
   }
 
-  /// Face ID for anything that cancels or closes; pausing and resuming entries is safe without it.
-  /// The model checks freshness before and after Face ID.
+  /// Face ID for anything that cancels, closes or stops; pausing and resuming entries is safe
+  /// without it. The model checks freshness before and after Face ID.
   static func confirmAndSend(_ command: OperatorCommand, model: AppModel) async {
     let reason = String(localized: L10n.Control.reason(Board.commandTitle(command.kind)))
-    let needsOwner = command == .cancelOwnOrders || command == .flatten
-    if needsOwner {
+    if needsOwner(command) {
       await model.send(command, confirmOwner: { await Biometrics.confirm(reason) })
     } else {
       await model.send(command)
+    }
+  }
+
+  /// Whether `command` needs the owner's Face ID or passcode: all but pausing and resuming entries.
+  static func needsOwner(_ command: OperatorCommand) -> Bool {
+    switch command {
+    case .entryStop: return false
+    case .cancelOwnOrders, .flatten, .flattenSymbol, .stopBot, .emergency: return true
     }
   }
 }
