@@ -53,11 +53,22 @@ final class ApertureUITests: XCTestCase {
   static let zoomItem = "Zoom"
   /// English label of the toolbar's sidebar button while the sidebar is hidden.
   static let showSidebar = "Show Sidebar"
+  /// Most scroll steps taken to bring an element into view, and the size of one, in points.
+  static let scrollSteps = 8
+  static let scrollStep: CGFloat = 120
   /// How long an element may take to appear, in seconds (the app polls every few seconds).
   static let timeout: TimeInterval = 10
 
   override func setUpWithError() throws {
     continueAfterFailure = false
+  }
+
+  /// Scrolls the screen down, a step at a time, until `element` can be clicked.
+  @MainActor
+  private func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
+    for _ in 0..<Self.scrollSteps where !element.isHittable {
+      app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -Self.scrollStep)
+    }
   }
 
   /// The app, started on the fixture API in English.
@@ -164,6 +175,8 @@ final class ApertureUITests: XCTestCase {
     // SwiftUI's Table reads as an outline; clicking the symbol's cell selects its row.
     let symbol = app.outlineRows.staticTexts.matching(NSPredicate(format: "value == %@", Self.tradeSymbol)).firstMatch
     XCTAssertTrue(symbol.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
+    // In a window as small as the runner's display the screen scrolls; bring the row into view.
+    scrollIntoView(symbol, in: app)
     symbol.click()
     let detail = app.descendants(matching: .any)[Self.tradeDetail].firstMatch
     XCTAssertTrue(detail.staticTexts[Self.stopConfirmedAfter].waitForExistence(timeout: Self.timeout),
