@@ -261,6 +261,11 @@ enum L10n {
   static var notJSON: LocalizedStringResource {
     LocalizedStringResource("kit.wire.notJSON", defaultValue: "the answer is not valid JSON", bundle: bundle)
   }
+  /// Contract error detail: the answer is JSON, but not an object of the kind asked for
+  /// (for example a list where one record was expected).
+  static var wrongShape: LocalizedStringResource {
+    LocalizedStringResource("kit.wire.wrongShape", defaultValue: "the answer has the wrong shape", bundle: bundle)
+  }
   /// Contract error detail; arguments: version key, version received, version this app reads.
   static func unsupportedVersion(_ key: String, _ value: Int, _ expected: Int) -> LocalizedStringResource {
     LocalizedStringResource("kit.wire.unsupportedVersion",
@@ -301,6 +306,25 @@ enum L10n {
   /// A risk refusal recorded as text; argument: the bot's detail.
   static func refusedByRiskDetail(_ detail: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.refusedByRiskDetail", defaultValue: "Refused by risk: \(detail)", bundle: bundle)
+  }
+
+  // MARK: Environments (ApiText.environment)
+
+  /// Where the bot trades: the broker's test environment.
+  static var environmentSandbox: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.sandbox", defaultValue: "Sandbox", bundle: bundle)
+  }
+  /// Where the bot runs: `tickr demo`, a made-up day with no broker.
+  static var environmentDemo: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.demo", defaultValue: "Demo", bundle: bundle)
+  }
+  /// Where the bot trades: the real account.
+  static var environmentProduction: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.production", defaultValue: "Production", bundle: bundle)
+  }
+  /// Where the bot trades, when the bot sends no environment name.
+  static var environmentUnknown: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.unknown", defaultValue: "Unknown environment", bundle: bundle)
   }
 
   // MARK: Fences (ApiText.fenceTitle)

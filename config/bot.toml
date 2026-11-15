@@ -171,10 +171,14 @@ remote_hosts = []
 remote_port = 8767
 # File holding the SHA-256 (hex) of the paired phone's bearer token, relative to data_dir; written by `python -m tickr.api pair`, never the token itself; read by the api server.
 remote_token_hash_file = "remote-token.sha256"
-# Random bytes in a newly paired bearer token (URL-safe text is about 4/3 as long); read by `python -m tickr.api pair`.
+# Random bytes in a newly made bearer token and in a one-time pairing code (URL-safe text is about 4/3 as long), at least 16 (128 bits); read by `python -m tickr.api pair` and the api server (POST /pair).
 remote_token_bytes = 32
-# File where `pair` leaves the pairing link (it holds the token) for the owner to move to the phone, relative to data_dir; written 0600, never printed, deleted by the api server on the first request that presents the new token; read by `pair` and the api server.
+# File where `pair` leaves the pairing link (it holds the one-time pairing code, never the token) for the owner to move to the phone, relative to data_dir; written 0600, never printed, deleted by the api server when the phone redeems the code or the code has expired; read by `pair` and the api server.
 remote_pairing_file = "remote-pairing-link"
+# File holding the SHA-256 (hex) of the waiting one-time pairing code and when it expires, relative to data_dir; written 0600 by `pair`, deleted by the api server when the code is redeemed or found expired; read by the api server (POST /pair).
+remote_pairing_code_file = "remote-pairing-code.json"
+# Seconds a pairing code stays redeemable after `pair` made it; later the phone gets 401 and the owner runs `pair` again; read by `pair`.
+remote_pairing_code_ttl_seconds = 600
 # Status file the bot writes and the API serves, relative to data_dir; read by the bot's status writer and the api server.
 status_file = "status.json"
 # Account file the bot writes after each successful broker read of positions and open orders (reconciliation) and the API serves at GET /account, relative to data_dir; read by the bot's account writer and the api server.
@@ -230,7 +234,7 @@ after_r_decimal_places = 4
 # Lab "replay the last days" (POST /lab/replay): sessions the backtest replays, ending at the last fetched pool day; read by the api server.
 lab_replay_sessions = 20
 # Folder of the fetched backtest data the Lab replay reads (never fetches), relative to data_dir; read by the api server.
-lab_replay_data_dir = "backtest"
+lab_replay_data_dir = "nightly/current"
 # Folder of the Lab replay's run and result, relative to data_dir; only the latest run is kept; read by the api server.
 lab_replay_results_dir = "lab-replay"
 # `nice` increment of the Lab replay process (0-19, higher = lower CPU priority), so it never starves the bot; read by the api server.
@@ -400,6 +404,16 @@ bot_start_local = "09:00"
 launch_weekdays = [1, 2, 3, 4, 5]
 # Watchdog job start, Mac local time HH:MM, same weekdays; it then waits for its calendar-derived checks; read by runtime.launchd.
 watchdog_start_local = "09:05"
+# Nightly backtest-data refresh job start (`python -m tickr.backtest nightly`), Mac local time HH:MM, same weekdays: after the
+# close, so it never shares the market-data budget with the bot; it stops itself before the next open
+# (config/backtest.toml); read by runtime.launchd.
+nightly_fetch_start_local = "19:00"
+# Rolling folder the nightly job keeps (current/ is what the Lab replays: [api] lab_replay_data_dir must point at it),
+# relative to the repo root; read by runtime.launchd.
+nightly_fetch_out = "data/nightly"
+# A fetch-all folder the nightly job starts from while its folder has no current/ yet, relative to the repo root;
+# read by runtime.launchd.
+nightly_fetch_seed = "data/backtest"
 # First watchdog broker check this many seconds after the flatten time (15:57:30 ET on a normal day); must be above
 # [session] flatten_grace_seconds so the bot's own day-end check comes first; read by runtime.watchdog.
 watchdog_after_flatten_seconds = 150
