@@ -11,11 +11,19 @@ struct SettingsView: View {
   @Environment(AppModel.self) private var model
   @State private var tab: SettingsTab = .general
   @State private var contentHeight: CGFloat = 0
+  /// Height of the title bar the window still reserves above the content (measured): the tab
+  /// strip is drawn into it, so the pane asks for that much less height.
+  @State private var titleInset: CGFloat = 0
 
   /// Width of the Settings window, in points (the design's compact 680).
   static let width: CGFloat = 680
   /// Tallest the pane area grows to its content before it scrolls, in points.
   static let maxPaneHeight: CGFloat = 600
+
+  /// The pane's height: its content up to the cap, less the title bar it is drawn under.
+  private var paneHeight: CGFloat {
+    max(min(max(contentHeight, 1), Self.maxPaneHeight) - titleInset, 1)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -26,7 +34,9 @@ struct SettingsView: View {
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
       }
       .scrollBounceBehavior(.basedOnSize)
-      .frame(height: min(max(contentHeight, 1), Self.maxPaneHeight))
+      // The window adds the title bar's height to what the view asks for; the view then grows
+      // into it, so no empty band is left at the bottom.
+      .frame(idealHeight: paneHeight, maxHeight: .infinity)
     }
     .frame(width: Self.width)
     .background(Palette.background)
@@ -37,6 +47,7 @@ struct SettingsView: View {
     .navigationTitle(Text(tab.title))
     .toolbar(removing: .title)
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { titleInset = $0 }
     .task(id: model.baseURL) { await model.followJobs() }
   }
 
@@ -534,7 +545,7 @@ struct JobsSection: View {
 
   /// Widths of the name and "when" columns, in points (the design's 86 and 130, the name widened
   /// for the Russian names).
-  static let nameWidth: CGFloat = 150
+  static let nameWidth: CGFloat = 180
   static let whenWidth: CGFloat = 112
   /// Days in a week; launchd numbers them 0 (or 7) Sunday, 1 Monday … 6 Saturday.
   static let week = 7
