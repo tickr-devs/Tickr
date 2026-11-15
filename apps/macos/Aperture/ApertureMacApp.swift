@@ -66,6 +66,11 @@ struct ApertureMacApp: App {
   var body: some Scene {
     Window(String(localized: L10n.App.name), id: WindowID.main) {
       RootView()
+        .overlay {
+          if !model.openingPlayed {
+            BrandOpening(target: { model.overviewMarkCentre }) { model.openingPlayed = true }
+          }
+        }
         .environment(model)
         // The design's accent for links, selection and controls (as on iOS), not the system blue.
         .tint(Palette.info)
