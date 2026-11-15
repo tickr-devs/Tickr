@@ -363,11 +363,15 @@ recently listed first (within a discovery pass: gainers, losers, top actives, ea
   (the bot database);
 - `stop`: those whose stop is `verified` (below).
 
-`stops`: one per trade in `order`, oldest first, `{trade_id, symbol, state}`. `state` is
-`verified` once a broker Detail read journaled one of the trade's stop orders working after the
-first entry fill read (the same rows as `stop_confirmed_after_seconds`), `pending` while no
-read did (also for a trade closed before any did), `unknown` when its journal rows cannot be
-read. The live state of an open position's stop (`missing` included) is in `/status`.
+`stops`: one per trade in `order`, oldest first (then by trade id), `{trade_id, symbol,
+state}`. `state` is its own enum, not status-v1's stop state:
+- `verified`: a broker Detail read journaled one of the trade's stop orders working after the
+  first entry fill read (the same rows as `stop_confirmed_after_seconds`);
+- `pending`: no such read yet, and the trade is still open and the date is today;
+- `never_verified`: no such read, and the trade is closed (a rejected stop on a flattened
+  trade, a stop that filled before any read saw it working) or the date is past;
+- `unknown`: its journal rows cannot be read.
+The live state of an open position's stop (`missing` included) is in `/status`.
 
 `reconcile`: the bot keeps only its latest reconciliation and status, so only today has them.
 `agreement` (`match` / `mismatch`), `read_at` and `mismatch` come from the account file when

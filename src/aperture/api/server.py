@@ -694,7 +694,7 @@ class Handler(BaseHTTPRequestHandler):
         return flow.flow_document(
             settings.history.environment, day,
             flow.chips(passes, settings.universe, settings.change_pct_places), records,
-            self.server.history.entries(day),
+            self.server.history.entries(day, today),
             flow.reconcile(day, today, settings.status_path, settings.account_path))
 
     def _read_json_body(self) -> dict[str, Any] | None:

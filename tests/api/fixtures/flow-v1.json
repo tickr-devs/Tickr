@@ -62,25 +62,28 @@
     },
     {
       "stage": "strategy",
-      "count": 2,
+      "count": 3,
       "symbols": [
         "ABCD",
+        "EFGH",
         "WXYZ"
       ]
     },
     {
       "stage": "risk",
-      "count": 2,
+      "count": 3,
       "symbols": [
         "ABCD",
+        "EFGH",
         "WXYZ"
       ]
     },
     {
       "stage": "order",
-      "count": 2,
+      "count": 3,
       "symbols": [
         "ABCD",
+        "EFGH",
         "WXYZ"
       ]
     },
@@ -100,6 +103,11 @@
     },
     {
       "trade_id": "t-0002",
+      "symbol": "EFGH",
+      "state": "never_verified"
+    },
+    {
+      "trade_id": "t-0003",
       "symbol": "ABCD",
       "state": "pending"
     }

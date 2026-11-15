@@ -182,7 +182,7 @@ def flow_document(environment: str, day: date, chip_list: tuple[api.FlowChipV1, 
                   reconciled: api.FlowReconcileV1) -> api.FlowV1:
     """`records`: the active strategy's records of `day`; `stops`: one per trade whose entry
     filled that day (`History.entries`)."""
-    verified = [s.symbol for s in stops if s.state is api.StopState.VERIFIED]
+    verified = [s.symbol for s in stops if s.state is api.FlowStopState.VERIFIED]
     stages = (
         (api.FlowStage.SCREENERS, [c.symbol for c in chip_list]),
         (api.FlowStage.UNIVERSE, [c.symbol for c in chip_list if c.excluded_cause is None]),

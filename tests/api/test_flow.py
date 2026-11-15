@@ -10,6 +10,7 @@ import pytest
 
 from aperture.api import contract
 from aperture.api.contract import closeness
+from aperture.api.history import History, HistoryPaths
 from aperture.broker.fake import FakeBroker
 from aperture.config import GateResult
 from aperture.data.base import ScreenerKind, ScreenerRow
@@ -35,6 +36,8 @@ from .test_decisions import (
     _serve,
     _write,
 )
+from .test_history import DAY as HDAY
+from .test_history import OPEN, _observed, _run, _timed_store, _trade, _trade_rows
 from .test_server import doc, request
 
 PAST = DAY - timedelta(days=3)
@@ -307,3 +310,46 @@ def test_read_only(api, cfg, path):
            tail='{"role": "active", "symbol": "ABCD", broken\n')
     resp, payload = request(api, "GET", path)
     assert (resp.status, doc(payload)["error"]) == (503, "unavailable")
+
+
+# ---------------------------------------------------------------- stop state per trade
+
+
+def _entries_day(tmp_path):
+    """Entries filled (read at 10:00:30 New York); only `seen` has its stop read working.
+    `before` opened 23:59:59 New York the evening before, `after` the next morning."""
+    paths = HistoryPaths("sandbox", tmp_path / "db.sqlite3", tmp_path / "capture")
+    store, clock = _timed_store(paths)
+    run = _run(store)
+    for trade_id, closed in (("seen", None), ("open", None),
+                             ("closed", OPEN + timedelta(minutes=9))):
+        _trade(store, run, trade_id, closed, exit_=None if closed is None else "12.30")
+        _observed(store, clock, f"{trade_id}-entry", 30, "FILLED", "10")
+    _observed(store, clock, "seen-stop", 33, "ACCEPTED", "0")
+    with store.transaction():
+        for trade_id, opened in (("before", OPEN.replace(hour=4, minute=59, second=59)),
+                                 ("after", OPEN.replace(hour=5) + timedelta(days=1))):
+            _trade_rows(store, run, trade_id, None, "12.34", None, "11.90", "10")
+            store.execute("UPDATE trades SET opened_at = ? WHERE trade_id = ?",
+                          (opened.isoformat(), trade_id))
+    store.close()
+    return History(paths)
+
+
+def _states(history, day, today):
+    return [(s.trade_id, s.state.value) for s in history.entries(day, today)]
+
+
+def test_stop_is_pending_only_for_an_open_trade_today(tmp_path):
+    history = _entries_day(tmp_path)
+    assert _states(history, HDAY, HDAY) == [  # same opened_at: by trade_id
+        ("closed", "never_verified"), ("open", "pending"), ("seen", "verified")]
+
+
+def test_stop_never_seen_on_a_past_day_is_never_verified(tmp_path):
+    history = _entries_day(tmp_path)
+    later = HDAY + timedelta(days=1)
+    assert _states(history, HDAY, later) == [
+        ("closed", "never_verified"), ("open", "never_verified"), ("seen", "verified")]
+    assert _states(history, later, later) == [("after", "pending")]
+    assert _states(history, HDAY - timedelta(days=1), later) == [("before", "never_verified")]

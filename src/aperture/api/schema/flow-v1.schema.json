@@ -122,7 +122,7 @@
             "enum": [
               "verified",
               "pending",
-              "missing",
+              "never_verified",
               "unknown"
             ]
           }

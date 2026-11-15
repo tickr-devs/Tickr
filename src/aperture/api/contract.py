@@ -675,6 +675,15 @@ class FlowStage(StrEnum):
     STOP = "stop"  # that trade's broker stop was seen working (verified)
 
 
+class FlowStopState(StrEnum):
+    """Not status-v1's StopState: a day's trades, closed ones included, from the journal."""
+
+    VERIFIED = "verified"  # a broker read showed one of its stops working after the fill
+    PENDING = "pending"  # open today, no such read yet
+    NEVER_VERIFIED = "never_verified"  # closed, or a past day, without any such read
+    UNKNOWN = "unknown"  # its journal rows cannot be read
+
+
 class Agreement(StrEnum):
     MATCH = "match"
     MISMATCH = "mismatch"
@@ -703,13 +712,11 @@ class FlowStageV1:
 
 @dataclass(frozen=True)
 class FlowStopV1:
-    """The stop of one trade whose entry filled that day: `verified` once a broker read showed
-    one of its stops working after the first fill, `pending` while none did, `unknown` when its
-    journal rows cannot be read."""
+    """The stop of one trade whose entry filled that day (FlowStopState)."""
 
     trade_id: str
     symbol: str
-    state: StopState
+    state: FlowStopState
 
 
 @dataclass(frozen=True)
