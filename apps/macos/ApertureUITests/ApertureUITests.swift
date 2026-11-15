@@ -137,7 +137,8 @@ final class ApertureUITests: XCTestCase {
   func testTradesShowTheSkippedSignals() {
     let app = launch()
     open(Self.sections[2], in: app)
-    let cause = app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", Self.refusalCause))
+    // A skipped row is one button, so the cause is part of its longer label.
+    let cause = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Self.refusalCause))
     XCTAssertTrue(cause.firstMatch.waitForExistence(timeout: Self.timeout), "refusal cause\n\(app.debugDescription)")
   }
 

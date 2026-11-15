@@ -279,7 +279,7 @@ private struct TradesTable: View {
 }
 
 /// The active strategy's entry signals of the shown day that did not become a position: refused
-/// by the platform (with the cause) or never evaluated, with their what-if levels and checks.
+/// by the platform (with the cause) or never evaluated, with their what-if levels.
 private struct NotTakenCard: View {
   @Environment(AppModel.self) private var model
   let showOnChart: (String) -> Void

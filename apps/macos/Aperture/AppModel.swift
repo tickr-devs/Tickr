@@ -382,6 +382,7 @@ public final class AppModel {
   private func loadSelectedDay() async {
     observers = nil
     skipped = nil
+    skippedError = nil
     await refreshObservers()
     await refreshSkipped()
     guard let day = selectedDay, day != today else {
