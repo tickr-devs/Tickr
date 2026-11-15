@@ -156,6 +156,7 @@ def run_nightly(source: fetch.HistorySource, calendar: SessionCalendar, cfg: Con
             raise BacktestError(f"{free_mb} MB free, below [backtest] nightly_min_free_disk_mb "
                                 f"{settings.nightly_min_free_disk_mb}")
         base = root / CURRENT
+        _recover(root)
         if not (base / POOL_FILE).exists():
             if seed is None or not (seed / POOL_FILE).exists():
                 raise BacktestError(f"no {CURRENT}/{POOL_FILE} yet: pass --seed with a folder "
@@ -313,6 +314,14 @@ def _trim(staging: Path, symbols: set[str]) -> None:
     statuses = fetch.load_statuses(staging)
     fetch._write_lines(staging / fetch.MINUTES_STATUS_FILE,
                        (s for s in statuses if s["symbol"] in symbols))
+
+
+def _recover(root: Path) -> None:
+    """A night that stopped inside `_swap` (between moving current/ aside and moving staging/
+    in) left only previous/: that is the last good data, so it becomes current/ again."""
+    current, previous = root / CURRENT, root / PREVIOUS
+    if not current.exists() and previous.exists():
+        previous.rename(current)
 
 
 def _swap(root: Path, staging: Path) -> None:

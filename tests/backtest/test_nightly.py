@@ -108,6 +108,17 @@ def test_a_night_adds_only_the_new_session_and_trims_the_window(tmp_path):
     assert night(tmp_path, again, at(NEW_DAY, 23)).new_sessions == 0 and again.requests == 0
 
 
+def test_a_swap_cut_short_restores_the_last_good_data(tmp_path):
+    folder = seed(tmp_path)
+    night(tmp_path, source(), at(NEW_DAY, 20), seed_folder=folder)
+    root = tmp_path / "nightly"
+    (root / nightly.CURRENT).rename(root / nightly.PREVIOUS)  # stopped inside the swap
+    again = source()
+    assert night(tmp_path, again, at(NEW_DAY, 23)).new_sessions == 0  # not re-seeded
+    assert again.requests == 0 and (root / nightly.CURRENT / "pool.csv").exists()
+    assert not (root / nightly.PREVIOUS).exists()
+
+
 def test_refusals_leave_current_as_it_was(tmp_path):
     folder = seed(tmp_path)
     with pytest.raises(BacktestError, match="regular session"):
