@@ -388,7 +388,7 @@ private struct PositionRow: View {
                   .foregroundStyle(Palette.warningText)
               }
             }
-            Text(L10n.Common.quantityAt(position.quantity.text, position.entryPrice.text))
+            Text(L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value)))
               .font(Tokens.Typography.calloutMono.weight(.semibold))
               .foregroundStyle(Palette.textPrimary)
             Text(L10n.Home.since(Format.time(position.openedAt.date)))
