@@ -141,7 +141,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `stage` | 52 | Stages of the live flow |
 | `dayResultWidth` | 300 | Overview's day result beside the header |
 | `gridColumnMin` | 300 | Narrowest column of a card grid before it stacks |
-| `logo` / `logoSmall` / `emptyMark` | 56 / 26 / 88 | Brand mark (`BrandMark`): the tick-shaped price line of the app icon |
+| `logo` / `logoSmall` / `emptyMark` | 64 / 26 / 88 | Brand mark (`BrandMark`): the tick-shaped price line of the app icon |
 | `sparkline` | 34 | Sparkline height |
 | `bar` | 8 | Progress bar height |
 | `ticker` | 22 | Ticker strip height |

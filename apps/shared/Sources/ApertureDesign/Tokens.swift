@@ -162,7 +162,7 @@ public enum Tokens {
     /// SF Symbols inside an icon well.
     public static let iconWellSymbol: CGFloat = 15
     /// The brand mark (BrandMark) in a header, and small in a panel.
-    public static let logo: CGFloat = 56
+    public static let logo: CGFloat = 64
     public static let logoSmall: CGFloat = 26
     /// The brand mark as the illustration of an empty screen.
     public static let emptyMark: CGFloat = 88

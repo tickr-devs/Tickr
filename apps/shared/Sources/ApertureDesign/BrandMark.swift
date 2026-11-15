@@ -41,6 +41,8 @@ public struct BrandMark: View {
   static let ringGrowth: CGFloat = 2.4
   /// Radius of the soft glow behind the line, as a share of the side (the canvas header's glow).
   static let glowRadius = 0.18
+  /// Seconds before the line starts drawing, so a window is on screen before it moves.
+  static let drawDelay = 0.35
 
   public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand) {
     self.size = size
@@ -62,8 +64,13 @@ public struct BrandMark: View {
     let diameter = size * Self.sparkDiameter
     ZStack(alignment: .topLeading) {
       TickArea(points: Self.points, bottom: Self.areaBottom)
-        .fill(LinearGradient(colors: [areaColor.opacity(Tokens.Opacity.border), areaColor.opacity(0)],
-          startPoint: .top, endPoint: .bottom))
+        // Fades out downwards and in from the left, so it reads as a glow under the line, not a box.
+        .fill(LinearGradient(colors: [areaColor.opacity(Tokens.Opacity.border), .clear],
+          startPoint: UnitPoint(x: Self.breakout.x, y: Self.breakout.y),
+          endPoint: UnitPoint(x: Self.breakout.x, y: Self.areaBottom)))
+        .mask(LinearGradient(colors: [.clear, .black],
+          startPoint: UnitPoint(x: Self.start.x, y: Self.start.y),
+          endPoint: UnitPoint(x: Self.bounce.x, y: Self.start.y)))
         .opacity(drawn)
       TickLine(points: Self.points)
         .trim(from: 0, to: drawn)
@@ -87,7 +94,7 @@ public struct BrandMark: View {
         .position(x: spark.x * size, y: spark.y * size)
     }
     .frame(width: size, height: size)
-    .shadow(color: tone == .brand ? lineColor.opacity(Tokens.Opacity.faint) : .clear, radius: size * Self.glowRadius)
+    .shadow(color: tone == .brand ? lineColor.opacity(Tokens.Opacity.border) : .clear, radius: size * Self.glowRadius)
     .onAppear(perform: appear)
     .accessibilityHidden(true)
   }
@@ -97,7 +104,7 @@ public struct BrandMark: View {
       drawn = 1
       return
     }
-    withAnimation(Tokens.Motion.draw) {
+    withAnimation(Tokens.Motion.draw.delay(Self.drawDelay)) {
       drawn = 1
     } completion: {
       settled = true
