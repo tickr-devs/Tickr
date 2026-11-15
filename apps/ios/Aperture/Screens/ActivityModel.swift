@@ -29,6 +29,10 @@ final class ActivityModel {
   var month = DayCalendar.Month(WireDate(newYorkDateOf: .now))
   /// Number of the newest load of a day; an answer to an older one is dropped.
   @ObservationIgnored private var latestRequest = 0
+  /// Number of the newest load of the days list, likewise.
+  @ObservationIgnored private var latestDaysRequest = 0
+  /// The bot's address the days were listed from; another address starts again from today.
+  @ObservationIgnored private var source: URL?
 
   /// Today in New York.
   var today: WireDate { WireDate(newYorkDateOf: .now) }
@@ -48,14 +52,24 @@ final class ActivityModel {
   }
 
   /// List the recorded days for the calendar.
+  /// A different address than before drops the past day chosen on the other Mac.
   func loadDays(_ url: URL) async {
+    if url != source {
+      source = url
+      days = []
+      showToday()
+    }
+    latestDaysRequest += 1
+    let request = latestDaysRequest
     do {
-      days = try await client(url).days().days
+      let listed = try await client(url).days().days
+      guard request == latestDaysRequest else { return }
+      days = listed
       daysFailure = nil
     } catch is CancellationError {
       return
     } catch {
-      daysFailure = error.localizedDescription
+      if request == latestDaysRequest { daysFailure = error.localizedDescription }
     }
   }
 
@@ -74,9 +88,9 @@ final class ActivityModel {
       guard request == latestRequest else { return }
       self.day = loaded
       phase = .loaded
-    } catch is CancellationError {
-      return
     } catch {
+      // A cancelled load (a refresh cut short by leaving the tab) fails too, so the day offers
+      // a retry instead of a spinner that never ends.
       if request == latestRequest { phase = .failed(error.localizedDescription) }
     }
   }
