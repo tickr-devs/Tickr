@@ -31,10 +31,10 @@ final class OverviewCommandsUITests: XCTestCase {
   static let shrinkShare = 0.8
   /// Points inside an edge where the drag grabs it.
   static let edgeInset: CGFloat = 2
-  /// Seconds the corner is held before the drag, and points of room kept under the card after it
-  /// is scrolled into view.
+  /// Seconds an edge is held before the drag, and points between the window's top and the card
+  /// once it is scrolled into view (the title bar and some room).
   static let dragSeconds: TimeInterval = 0.5
-  static let margin: CGFloat = 24
+  static let topRoom: CGFloat = 96
   /// How long an element may take to appear, and how long a moving element must keep still
   /// before it is read or clicked, polled every `settlePoll`, in seconds.
   static let timeout: TimeInterval = 10
@@ -69,10 +69,12 @@ final class OverviewCommandsUITests: XCTestCase {
     app.menuItems[Self.zoomItem].click()
     // Grabbed just inside each edge: a zoomed window's edge is the screen's, where the pointer
     // cannot reach.
-    let right = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -Self.edgeInset, dy: 0))
+    let right = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+      .withOffset(CGVector(dx: -Self.edgeInset, dy: 0))
     right.press(forDuration: Self.dragSeconds,
       thenDragTo: right.withOffset(CGVector(dx: -window.frame.width * Self.shrinkShare, dy: 0)))
-    let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: -Self.edgeInset))
+    let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
+      .withOffset(CGVector(dx: 0, dy: -Self.edgeInset))
     bottom.press(forDuration: Self.dragSeconds,
       thenDragTo: bottom.withOffset(CGVector(dx: 0, dy: -window.frame.height * Self.shrinkShare)))
     XCTAssertEqual(window.frame.width, Self.minWidth, accuracy: 1, "the window is not at its least width")
@@ -84,8 +86,9 @@ final class OverviewCommandsUITests: XCTestCase {
     XCTAssertTrue(screen.waitForExistence(timeout: Self.timeout), "overview screen")
     let card = app.descendants(matching: .any)[Self.safetyCard].firstMatch
     waitUntilStill(card, "safety card", in: app)
-    // Bring the whole card into the window: scroll the screen until its foot is in view.
-    let below = card.frame.maxY - window.frame.maxY + Self.margin
+    // Bring the card to the top of the window, clear of the Dock that can cover a window's foot
+    // on a small display (the least window is taller than the space above the Dock there).
+    let below = card.frame.minY - window.frame.minY - Self.topRoom
     if below > 0 {
       screen.scroll(byDeltaX: 0, deltaY: -below)
       waitUntilStill(card, "safety card", in: app)
