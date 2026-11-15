@@ -115,6 +115,9 @@ class ObserverSet:
         self._enabled = list(observers)
         self._lock = threading.Lock()
         self._failures: list[ObserverFailure] = []
+        # observer folder -> symbol -> bar of its latest WATCH/ENTER; newest bar evaluated
+        self._watching: dict[str, dict[str, datetime]] = {}
+        self._newest_bar: datetime | None = None
         self._queue: queue.Queue[object] = queue.Queue(maxsize=queue_size)
         self._idle = threading.Condition()
         self._pending = 0
@@ -162,6 +165,20 @@ class ObserverSet:
             taken = tuple(self._failures)
             self._failures.clear()
         return taken
+
+    def watching(self) -> frozenset[str]:
+        """Symbols whose latest decision by an enabled observer was WATCH or ENTER on the
+        newest evaluated bar or the one before (the worker may be mid-bar): the observers' own
+        quote wishes, so the platform can subscribe them below the active strategy's. A
+        symbol no longer evaluated drops out after a bar."""
+        with self._lock:
+            if self._newest_bar is None:
+                return frozenset()
+            since = self._newest_bar - M1
+            enabled = {o.folder for o in self._enabled}
+            return frozenset(s for folder, symbols in self._watching.items()
+                             if folder in enabled
+                             for s, bar in symbols.items() if bar >= since)
 
     def wait_idle(self, timeout: float) -> bool:
         """True once every queued evaluation is done (tests, orderly shutdown)."""
@@ -220,6 +237,14 @@ class ObserverSet:
                 continue
             assert isinstance(decision, Decision)
             enter = decision.verdict is Verdict.ENTER
+            with self._lock:
+                symbols = self._watching.setdefault(observer.folder, {})
+                if enter or decision.verdict is Verdict.WATCH:
+                    symbols[context.symbol] = bar_start
+                else:
+                    symbols.pop(context.symbol, None)
+                if self._newest_bar is None or bar_start > self._newest_bar:
+                    self._newest_bar = bar_start
             record = DecisionRecord(
                 time=at,
                 bar_start=bar_start,

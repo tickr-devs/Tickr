@@ -113,8 +113,11 @@ class MarketRuntime:
         self.settings = DiscoverySettings.from_config(config)
         self.subscribed: set[str] = set()
         self.watch: set[str] = set()  # the strategy's WATCH symbols, set by the service
+        # Observers' WATCH and ENTER symbols, set by the service; lowest priority on the stream
+        self.observer_watch: set[str] = set()
         self.discovery: DiscoveryState | None = None
         self._candidates_retry_at = monotonic()  # candidates off until then after a refusal
+        self._observers_retry_at = monotonic()  # observer symbols off until then after one
         self._next_discovery = monotonic()
         self._started = now()
 
@@ -166,15 +169,29 @@ class MarketRuntime:
         best = self.discovery.candidates[:self.config.market_data.candidate_subscriptions]
         return {c.instrument.symbol for c in best}
 
+    def _observer_symbols(self, taken: set[str]) -> set[str]:
+        """Up to `observer_subscriptions` observer symbols not already on the stream for the
+        active strategy, those already subscribed first (no churn), then by name. Same
+        live-transport rule as candidates."""
+        if (not self.health.transport.up
+                or self.monotonic() < self._observers_retry_at):
+            return set()
+        wanted = self.observer_watch - taken
+        ordered = sorted(wanted, key=lambda s: (s not in self.subscribed, s))
+        return set(ordered[:self.config.market_data.observer_subscriptions])
+
     def _sync_subscriptions(self) -> None:
         """L1 for the open position and the strategy's WATCH symbols (spec 6), then the best
-        discovery candidates, so a quote is there the first minute the strategy says ENTER.
-        Candidates are kept only while the transport is up, and go in their own request: a
-        refusal (the per-connection symbol limit is unproven) never touches the position's
-        subscription, and candidates then stay off for `candidate_retry_seconds`."""
+        discovery candidates, so a quote is there the first minute the strategy says ENTER,
+        then the observers' WATCH symbols so their results are not limited to the active
+        strategy's symbols. Candidates and observer symbols are kept only while the transport
+        is up, and each tier goes in its own request after the one above it: a refusal (the
+        per-connection symbol limit is unproven) never touches a higher tier, and that tier
+        then stays off for `candidate_retry_seconds`."""
         essential = self._position_symbols() | self._entry_symbols() | self.watch
         candidates = self._candidate_symbols() - essential
-        desired = essential | candidates
+        observed = self._observer_symbols(essential | candidates)
+        desired = essential | candidates | observed
         removed = self.subscribed - desired
         if removed:
             try:
@@ -187,9 +204,12 @@ class MarketRuntime:
             self.subscribed -= removed
         if not self._subscribe(essential - self.subscribed, "subscribe"):
             return
+        retry = float(self.config.market_data.candidate_retry_seconds)
         if not self._subscribe(candidates - self.subscribed, "subscribe-candidates"):
-            self._candidates_retry_at = (
-                self.monotonic() + float(self.config.market_data.candidate_retry_seconds))
+            self._candidates_retry_at = self.monotonic() + retry
+            return
+        if not self._subscribe(observed - self.subscribed, "subscribe-observers"):
+            self._observers_retry_at = self.monotonic() + retry
 
     def _subscribe(self, added: set[str], where: str) -> bool:
         if not added:

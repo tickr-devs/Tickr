@@ -378,3 +378,64 @@ def test_candidates_are_dropped_while_the_transport_is_down(tmp_path):
     clock[0] = rig.now
     rig.market.tick()  # candidates are in their retry pause
     assert rig.engine.trade(t).exit_requested is None
+
+
+def test_observer_symbols_are_a_lowest_tier_of_the_stream(tmp_path):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from aperture.runtime.market import DiscoveryState
+
+    rig = Rig(tmp_path, now=SATURDAY)
+    rig.market.config = replace(CFG, market_data=replace(
+        CFG.market_data, candidate_subscriptions=1, observer_subscriptions=2))
+    rig.market.discovery = DiscoveryState(rig.now, "x", (  # type: ignore[arg-type]
+        SimpleNamespace(instrument=SimpleNamespace(symbol="AAA")),))
+    rig.market.watch = {"WAT"}
+    rig.market.observer_watch = {"WAT", "AAA", "OB1", "OB2", "OB3"}
+    rig.market.tick()
+    assert rig.source.subscribed == {"WAT"}  # transport not up: no candidates, no observers
+    rig.source.transport(True, rig.now, "up")
+    rig.market.tick()
+    # the active strategy's symbols are not counted against the observer slots
+    assert rig.source.subscribed == {"WAT", "AAA", "OB1", "OB2"}
+    rig.market.observer_watch = {"OB0", "OB2", "OB3"}
+    rig.market.tick()  # an already subscribed symbol keeps its slot (no churn)
+    assert rig.source.subscribed == {"WAT", "AAA", "OB0", "OB2"}
+    rig.market.observer_watch = set()
+    rig.market.tick()
+    assert rig.source.subscribed == {"WAT", "AAA"}
+
+
+def test_refused_observer_symbols_never_take_the_active_symbols_off(tmp_path):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from aperture.broker.webull import StreamSession
+    from aperture.runtime.market import DiscoveryState
+
+    limit = 2
+    sent: set[str] = set()
+
+    def send_subscribe(symbols):
+        if len(sent | set(symbols)) > limit:
+            raise RuntimeError("symbol limit")
+        sent.update(symbols)
+
+    session = StreamSession(Budget(), lambda: MONDAY_11, lambda where, exc: None, max_symbols=100)
+    session.bind(send_subscribe, lambda symbols: sent.difference_update(symbols),
+                 lambda: (sent.clear(), session.on_connected()))
+    rig = Rig(tmp_path, source=SessionSource(session))
+    rig.market.config = replace(CFG, market_data=replace(
+        CFG.market_data, candidate_subscriptions=1, observer_subscriptions=3))
+    rig.market.bind()
+    session.on_connected()
+    t = rig.position()
+    rig.market.discovery = DiscoveryState(rig.now, "x", (  # type: ignore[arg-type]
+        SimpleNamespace(instrument=SimpleNamespace(symbol="AAA")),))
+    rig.market.observer_watch = {"OB1", "OB2"}
+    rig.market.tick(discover=False)
+    assert rig.market.subscribed == {"ABC", "AAA"}  # observers refused as one request
+    assert session.up and rig.engine.trade(t).exit_requested is None
+    rig.market.tick(discover=False)  # observer symbols are off until candidate_retry_seconds
+    assert rig.market.subscribed == {"ABC", "AAA"}
