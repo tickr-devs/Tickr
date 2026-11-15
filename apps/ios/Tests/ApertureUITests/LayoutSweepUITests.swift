@@ -2,7 +2,7 @@ import XCTest
 
 /// Layout sweep: every tab, scrolled to its end, in English and Russian at the default and at
 /// large Dynamic Type sizes, for checking that nothing slides under the bars, overlaps or gets
-/// clipped. Run on each iPhone size (CI: `layout-sweep` in .github/workflows/ios-app.yml runs it
+/// clipped. Run on each iPhone size (CI: .github/workflows/layout-sweep.yml runs it
 /// on an iPhone SE, a standard and a Pro Max against `aperture demo`):
 ///   xcodebuild test -project apps/ios/Aperture.xcodeproj -scheme "Aperture iOS Screen Tour" \
 ///     -destination 'platform=iOS Simulator,name=iPhone 17' \
