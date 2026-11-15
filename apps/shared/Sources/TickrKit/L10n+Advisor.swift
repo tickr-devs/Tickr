@@ -129,9 +129,6 @@ public enum AdvisorWords {
   public static func tradesMean(_ trades: Int, _ mean: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.advisor.tradesMean", defaultValue: "\(trades) tr · \(mean)", bundle: L10n.bundle)
   }
-  public static func rValue(_ value: String) -> LocalizedStringResource {
-    LocalizedStringResource("kit.advisor.rValue", defaultValue: "\(value) R", bundle: L10n.bundle)
-  }
   public static func verdictEdge(_ name: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.advisor.verdict.edge",
       defaultValue: "\(name): the interval is above 0, evidence of an edge.",

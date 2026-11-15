@@ -681,23 +681,6 @@
         }
       }
     },
-    "kit.advisor.rValue" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ R"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ R"
-          }
-        }
-      }
-    },
     "kit.advisor.simulated" : {
       "extractionState" : "manual",
       "localizations" : {
