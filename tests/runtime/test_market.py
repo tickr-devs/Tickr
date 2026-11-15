@@ -592,3 +592,31 @@ def test_no_observer_symbol_is_added_while_trading_even_after_a_failed_pass(tmp_
     rig.position()
     rig.market.tick(discover=False)
     assert "OB1" not in rig.source.subscribed
+
+
+def test_no_unsubscribe_failure_reconnects_with_a_position_open(tmp_path):
+    from aperture.runtime.market import DiscoveryState
+
+    rig, session, sent, reconnects = stream_rig(
+        tmp_path, lambda symbols: None, candidate_subscriptions=1, observer_subscriptions=0)
+    t = rig.position()
+    rig.market.watch = {"WAT"}
+    rig.market.tick(discover=False)
+    assert rig.market.subscribed == {"ABC", "AAA", "WAT"}
+
+    def refuse(symbols):
+        raise RuntimeError("HTTP 429")
+
+    session._send_unsubscribe = refuse
+    # a candidate rotates out
+    rig.market.discovery = DiscoveryState(rig.now, "x", candidates("WAT"))  # type: ignore[arg-type]
+    rig.market.tick(discover=False)
+    # WATCH -> still a candidate -> dropped
+    rig.market.watch = set()
+    rig.market.tick(discover=False)
+    rig.market.discovery = DiscoveryState(rig.now, "x", ())  # type: ignore[arg-type]
+    rig.market.tick(discover=False)
+    assert rig.market.subscribed == {"ABC"} and session.up and reconnects == []
+    rig.advance(LOST_AFTER.total_seconds() * 2)
+    rig.market.tick(discover=False)
+    assert rig.engine.trade(t).exit_requested is None and reconnects == []

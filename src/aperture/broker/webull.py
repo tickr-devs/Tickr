@@ -1470,7 +1470,7 @@ class StreamSession:
             if len(self._symbols | added | self._maybe_held) > self._max_symbols:
                 # Maybe-held leftovers would push the provider past its cap (a 417 and a
                 # reconnect): this sync unsubscribes them first, as stale.
-                self._sent.update(self._maybe_held - added)
+                self._sent.update(self._maybe_held - self._symbols - added)
                 self._maybe_held.clear()
             first = self._listener is None
             self._listener = listener
