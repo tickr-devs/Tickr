@@ -925,13 +925,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Entry %1$@ · stop %2$@"
+            "value": "Skipped entry %1$@ · stop %2$@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вход %1$@ · стоп %2$@"
+            "value": "Пропущенный вход %1$@ · стоп %2$@"
           }
         }
       }
@@ -1170,6 +1170,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "О"
+          }
+        }
+      }
+    },
+    "chart.skippedMark": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · skipped"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · пропущен"
           }
         }
       }

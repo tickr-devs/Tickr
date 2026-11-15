@@ -1021,6 +1021,10 @@ enum L10n {
     static func observerMark(_ action: String) -> LocalizedStringResource {
       LocalizedStringResource("chart.observerMark", defaultValue: "\(action) · observer", bundle: L10n.bundle)
     }
+    /// Chart mark of the strategy's ENTER that was not taken (refused by risk or the gate).
+    static func skippedMark(_ action: String) -> LocalizedStringResource {
+      LocalizedStringResource("chart.skippedMark", defaultValue: "\(action) · skipped", bundle: L10n.bundle)
+    }
     /// Decisions inspector is empty.
     static var noDecisions: LocalizedStringResource {
       LocalizedStringResource("chart.noDecisions", defaultValue: "No decisions were recorded for this symbol on this day.", bundle: L10n.bundle)
@@ -1037,9 +1041,9 @@ enum L10n {
     static func strategyVersion(_ name: String, _ version: String) -> LocalizedStringResource {
       LocalizedStringResource("chart.strategyVersion", defaultValue: "\(name) v\(version)", bundle: L10n.bundle)
     }
-    /// Planned entry and stop of an ENTER decision.
+    /// What-if entry and stop of an ENTER that was not taken (refused, or an observer's).
     static func entryStop(_ entry: String, _ stop: String) -> LocalizedStringResource {
-      LocalizedStringResource("chart.entryStop", defaultValue: "Entry \(entry) · stop \(stop)", bundle: L10n.bundle)
+      LocalizedStringResource("chart.entryStop", defaultValue: "Skipped entry \(entry) · stop \(stop)", bundle: L10n.bundle)
     }
     /// VoiceOver and tooltip: a check passed.
     static var checkPassed: LocalizedStringResource {

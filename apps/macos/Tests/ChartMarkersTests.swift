@@ -55,6 +55,23 @@ struct ChartMarkersTests {
     #expect(marks[0].observer == false)
     #expect(marks[1].price == ChartMarkers.double(try #require(decisions[1].entryPrice).value))
     #expect(marks[1].observer == true)
+    #expect(marks[0].hollow == false)
+    #expect(marks[1].hollow == true)
+  }
+
+  @Test("The strategy's ENTER with a what-if entry was not taken: it is marked skipped and hollow")
+  func skippedEnter() throws {
+    let url = fixturesDir.appendingPathComponent("decisions-v1.json")
+    let text = try String(contentsOf: url, encoding: .utf8)
+      .replacingOccurrences(of: "\"observer\": true", with: "\"observer\": false")
+    let decisions = try Wire.decoder().decode(DecisionsV1.self, from: Data(text.utf8)).decisions
+    let mark = try #require(ChartMarkers.decisionMarks(decisions: decisions, candles: []).first)
+    #expect(mark.action == .enter)
+    #expect(mark.observer == false)
+    #expect(mark.skipped == true)
+    #expect(mark.hollow == true)
+    let expected = L10n.Chart.skippedMark(String(localized: Verdict.enter.title))
+    #expect(String(localized: mark.label) == String(localized: expected))
   }
 
   @Test("A decision with no price and no candle around it has no mark; WATCH is never marked")

@@ -33,7 +33,7 @@ struct CandleChart: View {
   /// Symbols of entry and exit marks.
   static let entrySymbol = "arrowtriangle.up.fill"
   static let exitSymbol = "arrowtriangle.down.fill"
-  /// Symbols of decision marks: the trading strategy's, and an observer's.
+  /// Symbols of decision marks: one the strategy acted on, and one that did not trade.
   static let decisionSymbol = "diamond.fill"
   static let observerSymbol = "diamond"
 
@@ -115,14 +115,14 @@ struct CandleChart: View {
       ForEach(decisions) { mark in
         PointMark(x: .value(Plot.time, mark.time), y: .value(Plot.price, mark.price))
           .symbol {
-            Image(systemName: mark.observer ? Self.observerSymbol : Self.decisionSymbol)
+            Image(systemName: mark.hollow ? Self.observerSymbol : Self.decisionSymbol)
               .font(Tokens.Typography.annotation)
-              .foregroundStyle(mark.action.color)
+              .foregroundStyle(mark.color)
           }
           .annotation(position: .top) {
             Text(mark.label)
               .font(Tokens.Typography.annotation)
-              .foregroundStyle(mark.action.color)
+              .foregroundStyle(mark.color)
           }
       }
       if live, let last = candles.last {
