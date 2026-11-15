@@ -10,14 +10,16 @@ import XCTest
 /// so the tour does not take them itself. `apps/scripts/tour_capture.swift`, started from a
 /// terminal that already has the Screen Recording permission, takes each one when the tour asks.
 /// Run on the Mac, once per appearance:
-///   swift apps/scripts/tour_capture.swift /tmp/tour-dark &
+///   swift apps/scripts/tour_capture.swift \
+///     ~/Library/Containers/local.aperture.operator.uitests.xctrunner/Data/tmp/tour-dark &
 ///   TEST_RUNNER_TOUR_API=http://127.0.0.1:8776 TEST_RUNNER_TOUR_APPEARANCE=Dark \
-///   TEST_RUNNER_TOUR_CAPTURE_DIR=/tmp/tour-dark \
+///   TEST_RUNNER_TOUR_CAPTURE=tour-dark \
 ///   xcodebuild test -workspace Aperture.xcworkspace -scheme "Aperture macOS" \
 ///     -only-testing:"Aperture macOS UITests/ScreenTourUITests"
 /// Environment: TOUR_API (the demo's API), TOUR_APPEARANCE (Light or Dark, default Light) and
-/// TOUR_CAPTURE_DIR (the capture script's folder; without it the tour keeps XCUIScreen
-/// attachments, which need the runner itself to have Screen Recording).
+/// TOUR_CAPTURE (the name of the capture folder; without it the tour keeps XCUIScreen
+/// attachments, which need the runner itself to have Screen Recording). The runner is sandboxed,
+/// so the folder is in its own temporary directory, the path given to the script above.
 /// The app runs in English: the tour finds the standard menus and Cancel by their English titles.
 @MainActor
 final class ScreenTourUITests: XCTestCase {
@@ -62,7 +64,9 @@ final class ScreenTourUITests: XCTestCase {
     guard try await Self.environment(of: api) == Self.demoEnvironment else {
       throw XCTSkip("TOUR_API \(api) is not `aperture demo`: the tour runs only on the demo")
     }
-    captureDir = environment["TOUR_CAPTURE_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+    captureDir = environment["TOUR_CAPTURE"].map {
+      FileManager.default.temporaryDirectory.appending(path: $0, directoryHint: .isDirectory)
+    }
     let appearance = environment["TOUR_APPEARANCE"] ?? Self.defaultAppearance
     app.launchArguments = ["-apiBaseURL", api, "-AppleInterfaceStyle", appearance,
                            "-AppleLanguages", "(\(Self.language))", "-ApplePersistenceIgnoreState", "YES"]

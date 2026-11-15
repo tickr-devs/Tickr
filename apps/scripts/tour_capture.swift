@@ -7,6 +7,8 @@
 // app's window and then `<name>.done`.
 //
 // Usage: swift apps/scripts/tour_capture.swift <folder> [process name, default Aperture]
+// The sandboxed test runner can only write inside its container, so <folder> is
+// ~/Library/Containers/local.aperture.operator.uitests.xctrunner/Data/tmp/<TOUR_CAPTURE name>.
 // Stops when `<folder>/stop` appears (the tour writes it when it ends).
 
 import CoreGraphics
