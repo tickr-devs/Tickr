@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from aperture import config
+from aperture.api.reasons import gate_reason
 from aperture.cli import main
 from aperture.risk.admission import AdmissionLimits
 
@@ -161,6 +162,7 @@ def test_gate_open_for_environment_without_authorization(tmp_path):
     cfg = config.load(BOT)
     loaded = config.load(_with_environment(tmp_path, _open_name(cfg)))
     assert config.trading_gate(loaded).open
+    assert gate_reason(config.trading_gate(loaded).cause).code == "trading_enabled"
 
 
 def test_gate_closed_when_trading_disabled(tmp_path):
@@ -169,6 +171,7 @@ def test_gate_closed_when_trading_disabled(tmp_path):
     gate = config.trading_gate(loaded)
     assert not gate.open
     assert "disabled" in gate.cause
+    assert gate_reason(gate.cause).params == {"environment": loaded.environment_name}
 
 
 def _enabled_gated(tmp_path: Path) -> config.Config:
@@ -196,12 +199,14 @@ def test_gate_requires_authorization_file(tmp_path):
     cfg = _enabled_gated(tmp_path)
     gate = config.trading_gate(cfg)
     assert not gate.open and "not found" in gate.cause
+    assert gate_reason(gate.cause).params == {"file": cfg.environment.authorization_file}
 
 
 def test_gate_opens_with_matching_authorization(tmp_path):
     cfg = _enabled_gated(tmp_path)
     _authorize(cfg)
     assert config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).code == "authorization_valid"
 
 
 def test_gate_refuses_stale_digest(tmp_path):
@@ -209,12 +214,14 @@ def test_gate_refuses_stale_digest(tmp_path):
     _authorize(cfg, config_digest="0" * 64)
     gate = config.trading_gate(cfg)
     assert not gate.open and "digest" in gate.cause
+    assert gate_reason(gate.cause).code == "authorization_digest_mismatch"
 
 
 def test_gate_refuses_other_environment(tmp_path):
     cfg = _enabled_gated(tmp_path)
     _authorize(cfg, environment="elsewhere")
     assert not config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).code == "authorization_other_environment"
 
 
 def test_gate_refuses_extra_fields(tmp_path):
@@ -223,6 +230,8 @@ def test_gate_refuses_extra_fields(tmp_path):
     _authorize(cfg)
     path.write_text(path.read_text("utf-8") + 'extra = "x"\n', "utf-8")
     assert not config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).params == {
+        "keys": "approved_on, config_digest, environment, statement"}
 
 
 def test_source_never_names_environments():
@@ -359,6 +368,27 @@ def test_observer_watching_seconds_must_be_positive(tmp_path):
     path = _copy(tmp_path, text)
     with pytest.raises(config.ConfigError, match="watching_seconds"):
         config.load(path)
+
+
+def _observers(tmp_path: Path, names: str) -> Path:
+    text = re.sub(r"(?m)^observers = \[.*\]", f"observers = [{names}]", BOT.read_text("utf-8"))
+    return _copy(tmp_path, text)
+
+
+def test_an_observer_listed_twice_is_refused(tmp_path):
+    with pytest.raises(config.ConfigError, match="observers lists price-action-v2 more than once"):
+        config.load(_observers(tmp_path, '"price-action-v2", "noise-band-v1", "price-action-v2"'))
+
+
+def test_the_active_strategy_as_an_observer_is_refused(tmp_path):
+    active = config.load(BOT).strategy.active
+    with pytest.raises(config.ConfigError, match="cannot also be an observer"):
+        config.load(_observers(tmp_path, f'"{active}"'))
+
+
+def test_distinct_observers_load(tmp_path):
+    cfg = config.load(_observers(tmp_path, '"price-action-v2", "noise-band-v1"'))
+    assert cfg.strategy.observers == ("price-action-v2", "noise-band-v1")
 
 
 def _copy_in(tmp_path: Path, name: str, text: str) -> Path:
