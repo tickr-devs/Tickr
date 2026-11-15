@@ -1735,6 +1735,23 @@
         }
       }
     },
+    "flow.actives" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "actives"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "активные"
+          }
+        }
+      }
+    },
     "flow.blocked" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1769,6 +1786,23 @@
         }
       }
     },
+    "flow.chip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
     "flow.closedCount" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1782,6 +1816,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "закрыто: %lld"
+          }
+        }
+      }
+    },
+    "flow.decided" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld decided"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "решений: %lld"
           }
         }
       }
@@ -1803,6 +1854,57 @@
         }
       }
     },
+    "flow.excluded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "skipped"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пропуск"
+          }
+        }
+      }
+    },
+    "flow.filled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld filled"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "исполнено: %lld"
+          }
+        }
+      }
+    },
+    "flow.gainers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gainers"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "рост"
+          }
+        }
+      }
+    },
     "flow.live" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1820,6 +1922,23 @@
         }
       }
     },
+    "flow.losers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "losers"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "падение"
+          }
+        }
+      }
+    },
     "flow.match" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1833,6 +1952,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "совпадает"
+          }
+        }
+      }
+    },
+    "flow.mismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mismatch"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "расхождение"
           }
         }
       }
@@ -1884,6 +2020,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ордер"
+          }
+        }
+      }
+    },
+    "flow.passed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld passed"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "прошли: %lld"
+          }
+        }
+      }
+    },
+    "flow.pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pending"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ждут: %lld"
           }
         }
       }
@@ -1956,6 +2126,40 @@
         }
       }
     },
+    "flow.seen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld seen"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "найдено: %lld"
+          }
+        }
+      }
+    },
+    "flow.stocks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld stocks"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "акций: %lld"
+          }
+        }
+      }
+    },
     "flow.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1986,6 +2190,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Отбор"
+          }
+        }
+      }
+    },
+    "flow.unknownStops" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld unknown"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "неизвестно: %lld"
+          }
+        }
+      }
+    },
+    "flow.unverified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld never verified"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "без проверки: %lld"
+          }
+        }
+      }
+    },
+    "flow.verified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld verified"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "подтверждено: %lld"
           }
         }
       }

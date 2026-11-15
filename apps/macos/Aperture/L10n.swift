@@ -424,6 +424,51 @@ enum L10n {
   }
 
   enum Flow {
+    static func seen(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.seen", defaultValue: "\(count) seen", bundle: L10n.bundle)
+    }
+    static func stocks(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stocks", defaultValue: "\(count) stocks", bundle: L10n.bundle)
+    }
+    static func decided(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.decided", defaultValue: "\(count) decided", bundle: L10n.bundle)
+    }
+    static func passed(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.passed", defaultValue: "\(count) passed", bundle: L10n.bundle)
+    }
+    static func filled(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.filled", defaultValue: "\(count) filled", bundle: L10n.bundle)
+    }
+    static func verified(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.verified", defaultValue: "\(count) verified", bundle: L10n.bundle)
+    }
+    static func pending(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.pending", defaultValue: "\(count) pending", bundle: L10n.bundle)
+    }
+    static func unverified(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.unverified", defaultValue: "\(count) never verified", bundle: L10n.bundle)
+    }
+    static func unknownStops(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.unknownStops", defaultValue: "\(count) unknown", bundle: L10n.bundle)
+    }
+    static var mismatch: LocalizedStringResource {
+      LocalizedStringResource("flow.mismatch", defaultValue: "mismatch", bundle: L10n.bundle)
+    }
+    static var gainers: LocalizedStringResource {
+      LocalizedStringResource("flow.gainers", defaultValue: "gainers", bundle: L10n.bundle)
+    }
+    static var losers: LocalizedStringResource {
+      LocalizedStringResource("flow.losers", defaultValue: "losers", bundle: L10n.bundle)
+    }
+    static var actives: LocalizedStringResource {
+      LocalizedStringResource("flow.actives", defaultValue: "actives", bundle: L10n.bundle)
+    }
+    static var excluded: LocalizedStringResource {
+      LocalizedStringResource("flow.excluded", defaultValue: "skipped", bundle: L10n.bundle)
+    }
+    static func chip(_ source: String, _ change: String) -> LocalizedStringResource {
+      LocalizedStringResource("flow.chip", defaultValue: "\(source) \(change)", bundle: L10n.bundle)
+    }
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title",
         defaultValue: "Live flow · screeners → strategy → risk → order → broker stop",

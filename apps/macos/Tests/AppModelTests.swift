@@ -164,6 +164,20 @@ struct AppModelTests {
     #expect(model.skippedError != nil)
   }
 
+  @Test("The shown day's live flow is read; a failed read clears it")
+  func liveFlow() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    RouteProtocol.routes.withLock { $0.bodies["/flow"] = try? Data(contentsOf:
+      fixturesDir.appendingPathComponent("flow-v1.json")) }
+    await model.refreshFlow()
+    #expect(model.flow?.stages.map(\.count) == [4, 3, 3, 3, 3, 1])
+    #expect(model.flowError == nil)
+    RouteProtocol.routes.withLock { $0.bodies["/flow"] = nil }
+    await model.refreshFlow()
+    #expect(model.flow == nil)
+    #expect(model.flowError != nil)
+  }
+
   @Test("The chart reads a symbol's decisions; a failed read clears them")
   func chartDecisions() async throws {
     let chart = ChartModel()

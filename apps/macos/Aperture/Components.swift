@@ -261,6 +261,15 @@ enum Format {
   static let newYork = TimeZone(identifier: "America/New_York") ?? .current
   /// Placeholder for a value the app does not have.
   static let missing = "—"
+  /// Decimals of a change in percent ("+18.2%").
+  static let percentDigits = 1
+  /// Sign after a percentage.
+  static let percentSign = "%"
+
+  /// "+18.2%", "−9.1%".
+  static func changePercent(_ value: Decimal) -> String {
+    Money.signed(value, fractionDigits: percentDigits) + percentSign
+  }
   /// Up to this many seconds an age reads in seconds, beyond it in minutes.
   static let secondsShownUpTo = 120
   /// Seconds in a minute.
