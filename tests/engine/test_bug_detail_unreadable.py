@@ -26,8 +26,9 @@ from aperture.broker.base import BrokerError
 from aperture.broker.fake import FakeBroker
 from aperture.store import Store
 from aperture.types import OrderState, OrderType
-from tests.engine.test_chaos import Chaos
-from tests.engine.test_engine import Leg, enter, legs, make, run, working_stops
+
+from .test_chaos import Chaos
+from .test_engine import Leg, enter, legs, make, run, working_stops
 
 
 @pytest.fixture

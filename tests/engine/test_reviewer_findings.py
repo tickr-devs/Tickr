@@ -19,7 +19,8 @@ from aperture.broker.fake import FakeBroker
 from aperture.engine.core import Engine, Fence
 from aperture.store import Store
 from aperture.types import OrderState, OrderType, Side
-from tests.engine.test_engine import CFG, OPEN, Clock, Leg, enter, legs, make, working_stops
+
+from .test_engine import CFG, OPEN, Clock, Leg, enter, legs, make, working_stops
 
 
 class Unreadable(BrokerError):
