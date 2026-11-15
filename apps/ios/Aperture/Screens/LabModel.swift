@@ -113,7 +113,7 @@ final class LabModel {
     } catch {
       guard url == replaySource else { return }
       replay = nil
-      replayFailure = AppModel.describe(error)
+      replayFailure = AppModel.describe(error) ?? replayFailure
     }
   }
 
@@ -138,7 +138,7 @@ final class LabModel {
       return
     } catch {
       guard url == replaySource else { return }
-      replayFailure = AppModel.describe(error)
+      replayFailure = AppModel.describe(error) ?? replayFailure
     }
   }
 
