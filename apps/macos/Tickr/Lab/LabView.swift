@@ -545,18 +545,18 @@ private struct ReplayCard: View {
             format: { Money.plain($0, fractionDigits: .zero) },
             delta: { Money.signed($0, fractionDigits: .zero) })
           compareRow(L10n.Lab.replayWinRate, summary.winRatePercent?.value, other.winRatePercent?.value,
-            format: { String(localized: L10n.Trades.percent(Money.plain($0, fractionDigits: Self.percentDigits))) },
-            delta: { String(localized: L10n.Lab.replayPoints(Money.signed($0, fractionDigits: Self.percentDigits))) })
+            format: { String(localized: L10n.Trades.percent(Money.plain($0, fractionDigits: StatDigits.percent))) },
+            delta: { String(localized: L10n.Lab.replayPoints(Money.signed($0, fractionDigits: StatDigits.percent))) })
           compareRow(L10n.Lab.replayMeanR, summary.meanR?.value, other.meanR?.value,
-            format: { Risk.text($0, fractionDigits: Self.rDigits) },
-            delta: { Risk.text($0, fractionDigits: Self.rDigits) })
+            format: { Risk.text($0, fractionDigits: StatDigits.r) },
+            delta: { Risk.text($0, fractionDigits: StatDigits.r) })
           compareRow(L10n.Lab.replayProfitFactor, summary.profitFactor?.value, other.profitFactor?.value,
-            format: { Money.plain($0, fractionDigits: Self.factorDigits) },
-            delta: { Money.signed($0, fractionDigits: Self.factorDigits) })
+            format: { Money.plain($0, fractionDigits: StatDigits.factor) },
+            delta: { Money.signed($0, fractionDigits: StatDigits.factor) })
           compareRow(L10n.Lab.replayMaxDrawdown, summary.maxDrawdownR.map { -$0.value },
             other.maxDrawdownR.map { -$0.value },
-            format: { Risk.text($0, fractionDigits: Self.rDigits) },
-            delta: { Risk.text($0, fractionDigits: Self.rDigits) })
+            format: { Risk.text($0, fractionDigits: StatDigits.r) },
+            delta: { Risk.text($0, fractionDigits: StatDigits.r) })
           compareRow(L10n.Lab.replayWithBotLimits, summary.botTotalUsd.value, other.botTotalUsd.value,
             format: { Money.signedUSD($0) }, delta: { Money.signedUSD($0) })
         }
@@ -598,7 +598,7 @@ private struct ReplayCard: View {
     Text(verbatim: value.map(format) ?? Format.missing)
       .foregroundStyle(value == nil ? Palette.textQuaternary : Palette.textPrimary)
       .lineLimit(1)
-      .minimumScaleFactor(Self.figureMinimumScale)
+      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   /// "mean R · 95%: −0.21 … +0.57", or plain "mean R" without an interval.

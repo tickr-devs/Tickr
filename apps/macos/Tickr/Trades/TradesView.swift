@@ -499,7 +499,7 @@ private struct TradeDetailCard: View {
           .popover(isPresented: $anotherShown, arrowEdge: .bottom) {
             AnotherStrategyView(trade: trade)
           }
-        }) {
+        }, content: {
           VStack(alignment: .leading, spacing: Tokens.Space.m) {
             Grid(alignment: .leading, horizontalSpacing: Tokens.Space.l, verticalSpacing: Tokens.Space.s) {
               GridRow {
@@ -554,7 +554,7 @@ private struct TradeDetailCard: View {
             }
             Footnote(L10n.Trades.excursionLowerBound)
           }
-        }
+        })
       } else {
         Card(L10n.Trades.selectedTrade) { Footnote(L10n.Trades.selectTrade) }
       }
@@ -590,8 +590,6 @@ private struct AnotherStrategyView: View {
 
   /// Width of the popover, in points.
   static let width: CGFloat = 380
-  /// Decimals of an R.
-  static let rDigits = 2
   /// Columns of the result grid: what, R, USD.
   static let columns = 3
 
@@ -651,7 +649,7 @@ private struct AnotherStrategyView: View {
   /// The bot's own result in R (per share, as the version's).
   @ViewBuilder private var botR: some View {
     if let r = trade.resultR {
-      Text(verbatim: Risk.text(r, fractionDigits: Self.rDigits))
+      Text(verbatim: Risk.text(r, fractionDigits: StatDigits.r))
         .font(Tokens.Typography.calloutMono)
         .foregroundStyle(Palette.result(r))
     } else {
@@ -689,7 +687,7 @@ private struct AnotherStrategyView: View {
               WhatIfText.exit(item.exitReason)))
               .font(Tokens.Typography.captionMono)
               .foregroundStyle(Palette.textTertiary)
-            Text(verbatim: Risk.text(item.resultR.value, fractionDigits: Self.rDigits))
+            Text(verbatim: Risk.text(item.resultR.value, fractionDigits: StatDigits.r))
               .font(Tokens.Typography.captionMono)
               .foregroundStyle(Palette.result(item.resultR.value))
             if let usd = item.resultGrossUsd?.value {
@@ -706,7 +704,7 @@ private struct AnotherStrategyView: View {
           Text(L10n.Lab.versionName(found.strategy ?? found.folder, found.version ?? Format.missing))
             .fontWeight(.semibold)
           if let r = found.resultR?.value {
-            Text(verbatim: Risk.text(r, fractionDigits: Self.rDigits))
+            Text(verbatim: Risk.text(r, fractionDigits: StatDigits.r))
               .font(Tokens.Typography.calloutMono)
               .foregroundStyle(Palette.result(r))
           } else {
