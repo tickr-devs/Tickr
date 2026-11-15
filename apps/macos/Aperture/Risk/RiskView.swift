@@ -68,7 +68,7 @@ private struct LossRoomCard: View {
         ResultRing(fraction: fraction, color: color) {
           VStack(spacing: Tokens.Space.xxs) {
             if let room {
-              MoneyText(value: room, usd: true, font: Tokens.Typography.hero, colored: false)
+              MoneyText(value: room, usd: true, font: Tokens.Typography.hero, colored: false, signed: false)
                 .contentTransition(.numericText())
             } else {
               Text(verbatim: Format.missing).font(Tokens.Typography.hero)
