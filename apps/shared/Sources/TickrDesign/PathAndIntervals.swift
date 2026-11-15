@@ -128,8 +128,9 @@ public struct IntervalRow: Identifiable {
   /// The interval's bounds in words, for VoiceOver (the bar itself is not read).
   public let value: String
 
-  public init(id: String, name: String, detail: String, color: Color, low: Double?, mean: Double?, high: Double?,
-    value: String) {
+  public init(
+    id: String, name: String, detail: String, color: Color, low: Double?, mean: Double?, high: Double?, value: String
+  ) {
     self.id = id
     self.name = name
     self.detail = detail
