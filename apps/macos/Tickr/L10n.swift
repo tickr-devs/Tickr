@@ -1047,25 +1047,37 @@ enum L10n {
       LocalizedStringResource("settings.stopBotAction", defaultValue: "Stop…", bundle: L10n.bundle)
     }
     static var startBotHint: LocalizedStringResource {
-      LocalizedStringResource("settings.startBotHint", defaultValue: "Starts the bot job on this Mac through launchd. The bot runs its preflight first.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.startBotHint",
+        defaultValue: "Starts the bot job on this Mac through launchd. The bot runs its preflight first.",
+        bundle: L10n.bundle)
     }
     static var startQuestion: LocalizedStringResource {
       LocalizedStringResource("settings.startQuestion", defaultValue: "Start the bot?", bundle: L10n.bundle)
     }
     static var startExplanation: LocalizedStringResource {
-      LocalizedStringResource("settings.startExplanation", defaultValue: "launchd starts the bot job as on a scheduled morning: preflight first, then trading if every check passes. An earlier Stop is cleared, so scheduled starts run again.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.startExplanation",
+        // swiftlint:disable:next line_length
+        defaultValue: "launchd starts the bot job as on a scheduled morning: preflight first, then trading if every check passes. An earlier Stop is cleared, so scheduled starts run again.",
+        bundle: L10n.bundle)
     }
     static var startAccepted: LocalizedStringResource {
-      LocalizedStringResource("settings.startAccepted", defaultValue: "Start requested: the bot runs its preflight first.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.startAccepted",
+        defaultValue: "Start requested: the bot runs its preflight first.",
+        bundle: L10n.bundle)
     }
     static var startAcceptedCleared: LocalizedStringResource {
-      LocalizedStringResource("settings.startAcceptedCleared", defaultValue: "Start requested; your earlier Stop was cleared, so scheduled starts run again.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.startAcceptedCleared",
+        defaultValue: "Start requested; your earlier Stop was cleared, so scheduled starts run again.",
+        bundle: L10n.bundle)
     }
     static func startRefused(_ cause: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.startRefused", defaultValue: "Not started: \(cause)", bundle: L10n.bundle)
     }
     static var startStopFooter: LocalizedStringResource {
-      LocalizedStringResource("settings.startStopFooter", defaultValue: "Start goes through launchd, never inside the app. Stop is refused while a trade is open or entering: flatten first. A stopped bot stays stopped, also on the next trading day, until you press Start.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.startStopFooter",
+        // swiftlint:disable:next line_length
+        defaultValue: "Start goes through launchd, never inside the app. Stop is refused while a trade is open or entering: flatten first. A stopped bot stays stopped, also on the next trading day, until you press Start.",
+        bundle: L10n.bundle)
     }
     static var configuration: LocalizedStringResource {
       LocalizedStringResource("settings.configuration", defaultValue: "Configuration", bundle: L10n.bundle)
@@ -1080,13 +1092,19 @@ enum L10n {
       LocalizedStringResource("settings.configChanged", defaultValue: "Changed", bundle: L10n.bundle)
     }
     static var configChangedHint: LocalizedStringResource {
-      LocalizedStringResource("settings.configChangedHint", defaultValue: "The file differs from the one the bot's API loaded: running processes keep the old values until they restart.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.configChangedHint",
+        // swiftlint:disable:next line_length
+        defaultValue: "The file differs from the one the bot's API loaded: running processes keep the old values until they restart.",
+        bundle: L10n.bundle)
     }
     static var configTop: LocalizedStringResource {
       LocalizedStringResource("settings.configTop", defaultValue: "Top level", bundle: L10n.bundle)
     }
     static var configFooter: LocalizedStringResource {
-      LocalizedStringResource("settings.configFooter", defaultValue: "Read-only, as the file is on disk now. Every key with its comment. Credentials appear only as variable names.", bundle: L10n.bundle)
+      LocalizedStringResource("settings.configFooter",
+        // swiftlint:disable:next line_length
+        defaultValue: "Read-only, as the file is on disk now. Every key with its comment. Credentials appear only as variable names.",
+        bundle: L10n.bundle)
     }
   }
 
