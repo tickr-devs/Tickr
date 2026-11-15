@@ -1,11 +1,12 @@
 import XCTest
 
 /// End-to-end checks of the operator app with no bot running: the app is launched with the
-/// fixture API (PreviewAPI.fixturesArgument), so every screen shows the contract fixtures in
+/// fixture API (PreviewAPI.fixturesKey), so every screen shows the contract fixtures in
 /// tests/api/fixtures, the same data as the previews. Commands are never confirmed here.
 final class ApertureUITests: XCTestCase {
-  /// Launch argument of the fixture API (PreviewAPI.fixturesArgument in the app).
-  static let fixturesArgument = "-ApertureFixtures"
+  /// Environment variable of the fixture API (PreviewAPI.fixturesKey in the app) and its value.
+  static let fixturesKey = "APERTURE_FIXTURES"
+  static let fixturesOn = "1"
   /// Pins the app to English so the texts below match the String Catalog's English values.
   static let languageArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
   /// Sidebar sections (AppSection raw values) and the accessibility id prefixes of their rows
@@ -32,13 +33,10 @@ final class ApertureUITests: XCTestCase {
   @MainActor
   private func launch() -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = [Self.fixturesArgument] + Self.languageArguments
-    let diagnostics = NSTemporaryDirectory() + "aperture-ui-diagnostics.txt"
-    app.launchEnvironment["APERTURE_UI_DIAGNOSTICS"] = diagnostics
+    app.launchArguments = Self.languageArguments
+    app.launchEnvironment[Self.fixturesKey] = Self.fixturesOn
     app.launch()
-    let window = app.windows.firstMatch.waitForExistence(timeout: Self.timeout)
-    print("DIAG>>> " + ((try? String(contentsOfFile: diagnostics, encoding: .utf8)) ?? "no diagnostics file"))
-    XCTAssertTrue(window, "no window after launch")
+    XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: Self.timeout), "no window after launch")
     return app
   }
 

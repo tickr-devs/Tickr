@@ -49,8 +49,6 @@ struct ApertureMacApp: App {
         .frame(minWidth: Self.minWidth, minHeight: Self.minHeight)
     }
     .defaultSize(width: Self.defaultWidth, height: Self.defaultHeight)
-    // The main window opens at every launch, also when the system would otherwise restore none.
-    .defaultLaunchBehavior(.presented)
     .commands { AppCommands(model: model) }
 
     Settings {
