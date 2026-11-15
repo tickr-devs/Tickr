@@ -6733,6 +6733,23 @@
         }
       }
     },
+    "trades.stopConfirmedHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counted from when the bot saw the entry fill to when the broker confirmed the stop."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Считается от момента, когда бот увидел исполнение входа, до подтверждения стопа брокером."
+          }
+        }
+      }
+    },
     "trades.symbol" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6797,6 +6814,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Закрытые сделки"
+          }
+        }
+      }
+    },
+    "trades.unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестно"
           }
         }
       }

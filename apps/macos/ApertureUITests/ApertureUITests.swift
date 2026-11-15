@@ -33,6 +33,8 @@ final class ApertureUITests: XCTestCase {
   /// The selected trade's detail card and a label it shows only for a selected trade.
   static let tradeDetail = "trades-detail"
   static let stopConfirmedAfter = "Stop confirmed after"
+  /// The first trade in day-v1.json.
+  static let tradeSymbol = "WXYZ"
   /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "ask_above_trigger"
@@ -149,9 +151,10 @@ final class ApertureUITests: XCTestCase {
   func testTradesShowTheSelectedTradeDetail() {
     let app = launch()
     open(Self.sections[2], in: app)
-    let row = app.tables.firstMatch.tableRows.firstMatch
-    XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
-    row.click()
+    // SwiftUI's Table reads as an outline; clicking the symbol's cell selects its row.
+    let symbol = app.outlineRows.staticTexts.matching(NSPredicate(format: "value == %@", Self.tradeSymbol)).firstMatch
+    XCTAssertTrue(symbol.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
+    symbol.click()
     let detail = app.descendants(matching: .any)[Self.tradeDetail].firstMatch
     XCTAssertTrue(detail.staticTexts[Self.stopConfirmedAfter].waitForExistence(timeout: Self.timeout),
       "trade detail\n\(app.debugDescription)")

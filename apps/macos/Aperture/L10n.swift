@@ -1155,6 +1155,14 @@ enum L10n {
     static var excursionLowerBound: LocalizedStringResource {
       LocalizedStringResource("trades.excursionLowerBound", defaultValue: "MAE and MFE count only prices proven to come while the shares were held, so the real excursion can be larger.", bundle: L10n.bundle)
     }
+    /// Detail value the bot could not compute (MAE/MFE without captured bars).
+    static var unknown: LocalizedStringResource {
+      LocalizedStringResource("trades.unknown", defaultValue: "Unknown", bundle: L10n.bundle)
+    }
+    /// Tooltip of the stop confirmation time.
+    static var stopConfirmedHelp: LocalizedStringResource {
+      LocalizedStringResource("trades.stopConfirmedHelp", defaultValue: "Counted from when the bot saw the entry fill to when the broker confirmed the stop.", bundle: L10n.bundle)
+    }
     /// Detail value the bot did not record.
     static var notRecorded: LocalizedStringResource {
       LocalizedStringResource("trades.notRecorded", defaultValue: "Not recorded", bundle: L10n.bundle)

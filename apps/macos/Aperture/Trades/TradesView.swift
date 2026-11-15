@@ -299,6 +299,7 @@ private struct TradeDetailCard: View {
               }
               GridRow {
                 Text(L10n.Trades.stopConfirmedAfter).foregroundStyle(Palette.textSecondary)
+                  .help(Text(L10n.Trades.stopConfirmedHelp))
                 if let seconds = trade.stopConfirmedAfterSeconds {
                   Text(verbatim: Format.seconds(seconds.value)).font(Tokens.Typography.bodyMono)
                 } else {
@@ -325,7 +326,7 @@ private struct TradeDetailCard: View {
       if let value {
         MoneyText(value: value.value, usd: true)
       } else {
-        notRecorded
+        Text(L10n.Trades.unknown).foregroundStyle(Palette.textQuaternary)
       }
     }
   }
