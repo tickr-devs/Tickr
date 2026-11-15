@@ -6,9 +6,9 @@ import Testing
 
 @Suite("One send per decision, as the app shows it")
 struct EntrySentTests {
-  /// An entry record with `sends` (nil = not recorded) and an acknowledged send.
-  private func entry(sends: Int?) throws -> EntrySend {
-    let outcome = sends == nil ? "null" : #""acknowledged""#
+  /// An entry record with `sends` (nil = not recorded) and `latest` as both outcomes.
+  private func entry(sends: Int?, outcome latest: String = "acknowledged") throws -> EntrySend {
+    let outcome = sends == nil ? "null" : "\"\(latest)\""
     let json = """
       {"client_order_id": "ap-0001-e", "intent_at": null, "sent_at": null, "send_outcome": \(outcome),
        "latest_outcome": \(outcome), "sends": \(sends.map(String.init) ?? "null"), "filled_at": null}
@@ -26,6 +26,17 @@ struct EntrySentTests {
     let missing = EntrySent.line(try entry(sends: nil), cause: "journal unreadable")
     #expect(missing.text == String(localized: L10n.EntrySent.notRecorded))
     #expect(missing.help == "journal unreadable")
+  }
+
+  @Test("Sent once but not yet answered by the broker is a warning, on the line and the safety row")
+  func awaiting() throws {
+    for outcome in ["unknown", "attempted", "intent"] {
+      let waiting = try entry(sends: 1, outcome: outcome)
+      #expect(EntrySent.line(waiting, cause: nil).color == Palette.warningText)
+      let entries = [(symbol: "ABCD", entry: waiting), (symbol: "EFGH", entry: try entry(sends: 1))]
+      #expect(EntrySent.summary(entries)?.text == String(localized: L10n.EntrySent.awaiting(1)))
+      #expect(EntrySent.summary(entries)?.color == Palette.warningText)
+    }
   }
 
   @Test("The safety row names the first entry sent other than once, before missing records")

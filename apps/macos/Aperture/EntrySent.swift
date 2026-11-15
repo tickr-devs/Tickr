@@ -13,11 +13,21 @@ enum EntrySent {
     let sent = String(localized: sends == 1 ? L10n.EntrySent.once : L10n.EntrySent.times(sends))
     let outcome = (entry.latestOutcome ?? entry.sendOutcome).map { String(localized: $0.title) }
     let text = outcome.map { String(localized: L10n.EntrySent.withOutcome(sent, $0)) } ?? sent
-    return (text, entry.sentOtherThanOnce ? Palette.lossText : Palette.textPrimary, entry.clientOrderId)
+    let color = entry.sentOtherThanOnce ? Palette.lossText : awaitsBroker(entry) ? Palette.warningText : Palette.textPrimary
+    return (text, color, entry.clientOrderId)
+  }
+
+  /// The send's latest state is not a broker answer yet: not sent, no answer, or unknown.
+  static func awaitsBroker(_ entry: EntrySend) -> Bool {
+    switch entry.latestOutcome ?? entry.sendOutcome {
+    case .intent, .attempted, .unknown: true
+    case .acknowledged, .refused, .absent, nil: false
+    }
   }
 
   /// The Safety card's row over today's entries (open positions and closed trades): the first
-  /// entry sent other than once, else how many have no record, else all once; nil without entries.
+  /// entry sent other than once, else how many have no record, else how many await the broker's
+  /// answer, else all once; nil without entries.
   static func summary(_ entries: [(symbol: String, entry: EntrySend)]) -> (text: String, color: Color)? {
     guard !entries.isEmpty else { return nil }
     if let breach = entries.first(where: { $0.entry.sentOtherThanOnce }), let sends = breach.entry.sends {
@@ -26,6 +36,10 @@ enum EntrySent {
     let unrecorded = entries.filter { $0.entry.sends == nil }.count
     if unrecorded > 0 {
       return (String(localized: L10n.EntrySent.unrecorded(unrecorded)), Palette.warningText)
+    }
+    let awaiting = entries.filter { awaitsBroker($0.entry) }.count
+    if awaiting > 0 {
+      return (String(localized: L10n.EntrySent.awaiting(awaiting)), Palette.warningText)
     }
     return (String(localized: L10n.EntrySent.allOnce(entries.count)), Palette.profitText)
   }

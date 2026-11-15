@@ -1803,6 +1803,23 @@
         }
       }
     },
+    "entrySent.awaiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld awaiting the broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ждут ответа брокера: %lld"
+          }
+        }
+      }
+    },
     "entrySent.breach" : {
       "extractionState" : "manual",
       "localizations" : {

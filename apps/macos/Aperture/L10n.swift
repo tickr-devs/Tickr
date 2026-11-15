@@ -1715,6 +1715,10 @@ enum L10n {
     static func unrecorded(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("entrySent.unrecorded", defaultValue: "Not recorded: \(count)", bundle: L10n.bundle)
     }
+    /// Safety row: entries sent once whose outcome the broker has not confirmed yet.
+    static func awaiting(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("entrySent.awaiting", defaultValue: "\(count) awaiting the broker", bundle: L10n.bundle)
+    }
     /// Send outcome: recorded, not sent yet.
     static var intent: LocalizedStringResource {
       LocalizedStringResource("entrySent.intent", defaultValue: "not sent yet", bundle: L10n.bundle)
