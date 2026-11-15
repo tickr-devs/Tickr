@@ -82,7 +82,7 @@ private struct ObserversCard: View {
             Footnote(L10n.Lab.observersEmpty)
           }
           let lines = lines(observers)
-          if let span = span(observers) {
+          if realDayMatches, let span = span(observers) {
             DayCurvesChart(lines: lines, start: span.start, end: span.end, live: model.isLive)
             Footnote(L10n.Lab.curvesNote)
             if let active = lines.first(where: \.active) {
@@ -129,6 +129,14 @@ private struct ObserversCard: View {
     guard let first = times.min(), let last = times.max() else { return nil }
     let end = model.isLive ? max(model.status?.writtenAt.date ?? last, last) : last
     return (first, end)
+  }
+
+  /// True when the real trades and result the app shows are of the observers' day, so the
+  /// chart never draws one day's observers against another day's real line while days switch.
+  private var realDayMatches: Bool {
+    guard let day = model.observers?.day else { return false }
+    if model.isLive { return day == model.today && model.status != nil && model.todayDocument?.day == day }
+    return model.dayDocument?.day == day
   }
 
   /// Symbols the bot traded or holds on the observers' day, to compare each observer's entries
