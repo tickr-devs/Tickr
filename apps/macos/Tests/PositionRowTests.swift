@@ -1,6 +1,6 @@
+import ApertureDesign
 @testable import ApertureKit
 @testable import ApertureMac
-import ApertureDesign
 import Foundation
 import Testing
 

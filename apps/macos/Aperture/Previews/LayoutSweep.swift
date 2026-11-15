@@ -1,6 +1,6 @@
 #if DEBUG
-import AppKit
 import ApertureKit
+import AppKit
 import SwiftUI
 
 /// Layout sweep: with `sweepKey` set (and the fixtures, `PreviewAPI.fixturesKey`), the app walks

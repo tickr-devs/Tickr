@@ -1,5 +1,5 @@
-@testable import ApertureMac
 import ApertureDesign
+@testable import ApertureMac
 import Testing
 
 @Suite("Toolbar connection dot")

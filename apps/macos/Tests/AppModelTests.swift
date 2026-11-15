@@ -1,5 +1,5 @@
-@testable import ApertureMac
 import ApertureKit
+@testable import ApertureMac
 import FactoryTesting
 import Foundation
 import Synchronization

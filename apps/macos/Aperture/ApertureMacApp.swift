@@ -1,6 +1,6 @@
-import AppKit
 import ApertureDesign
 import ApertureKit
+import AppKit
 import SwiftUI
 
 /// User-default keys of the app (Settings window).
