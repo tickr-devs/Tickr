@@ -90,11 +90,16 @@ private struct ObserversCard: View {
     }
   }
 
-  /// Symbols the bot traded or holds on the shown day, to compare each observer's entries with.
-  private var traded: Set<String> {
-    guard model.isLive else { return Set(model.shownTrades.map(\.symbol)) }
-    let status = model.status
-    return Set((status?.tradesToday.map(\.symbol) ?? []) + (status?.positions.map(\.symbol) ?? []))
+  /// Symbols the bot traded or holds on the observers' day, to compare each observer's entries
+  /// with; nil while that day's trades are not read, so no row claims the bot traded none.
+  private var traded: Set<String>? {
+    guard let day = model.observers?.day else { return nil }
+    if model.isLive {
+      guard let status = model.status, day == model.today else { return nil }
+      return Set(status.tradesToday.map(\.symbol) + status.positions.map(\.symbol))
+    }
+    guard let document = model.dayDocument, document.day == day else { return nil }
+    return Set(document.trades.map(\.symbol))
   }
 }
 
