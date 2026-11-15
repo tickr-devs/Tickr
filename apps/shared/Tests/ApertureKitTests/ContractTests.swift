@@ -41,6 +41,8 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "bars-v1": { try roundTrip(BarsV1.self, $0) },
       "settings-v1": { try roundTrip(SettingsV1.self, $0) },
       "explain-v1": { try roundTrip(ExplainV1.self, $0) },
+      "observers-v1": { try roundTrip(ObserversV1.self, $0) },
+      "decisions-v1": { try roundTrip(DecisionsV1.self, $0) },
     ]
     for name in names {
       let schema = String(name.prefix { $0 != "." })
@@ -57,7 +59,8 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       .map { String($0.dropLast(".schema.json".count)) }
     #expect(Set(names) == ["status-v1", "command-v1", "status-response-v1",
       "command-accepted-v1", "pending-commands-v1", "error-v1",
-      "days-v1", "day-v1", "bars-v1", "settings-v1", "explain-v1"])
+      "days-v1", "day-v1", "bars-v1", "settings-v1", "explain-v1",
+      "observers-v1", "decisions-v1"])
   }
 
   @Test func fullStatusValues() throws {
