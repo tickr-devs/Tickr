@@ -132,6 +132,8 @@ class ApiConfig:
     flow_change_pct_decimal_places: int
     performance_max_range_days: int
     performance_decimal_places: int
+    price_after_minutes: tuple[int, ...]
+    after_r_decimal_places: int
 
 
 @dataclass(frozen=True)

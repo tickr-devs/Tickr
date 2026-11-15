@@ -120,6 +120,9 @@ def _research_total(cfg, records, path):
 # ---------------------------------------------------------------- GET /skipped
 
 
+NO_BARS = "no captured bars for 2026-11-16"
+
+
 def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
     refused = _enter(ACTIVE, Role.ACTIVE, minute=7, admission=Admission.REFUSED,
                      cause="POSITION_LIMIT_REACHED: 1 open position, limit 1")
@@ -137,7 +140,10 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
          "admission": "not_evaluated", "refusal_cause": None, "refusal": None,
          "entry_price": "12.10", "stop_price": "11.80",
          "checks": [{"rule": "relative_volume", "measured": "2.4", "operator": ">=",
-                     "threshold": "1.5", "passed": True, "note": ""}]},
+                     "threshold": "1.5", "passed": True, "note": ""}],
+         "prices_after": [], "prices_after_cause": NO_BARS,
+         "what_if": {"result_gross_usd": None, "result_r": None, "exit_reason": None,
+                     "cause": NO_BARS}},
         {"at": "2026-11-16T15:07:00.000Z", "symbol": "ABCD",
          "strategy": {"name": "price-action-v1", "version": "1"},
          "admission": "refused",
@@ -146,7 +152,10 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
                      "since": None, "until": None},
          "entry_price": "12.10", "stop_price": "11.80",
          "checks": [{"rule": "relative_volume", "measured": "2.4", "operator": ">=",
-                     "threshold": "1.5", "passed": True, "note": ""}]},
+                     "threshold": "1.5", "passed": True, "note": ""}],
+         "prices_after": [], "prices_after_cause": NO_BARS,
+         "what_if": {"result_gross_usd": None, "result_r": None, "exit_reason": None,
+                     "cause": NO_BARS}},
     ]
     # /decisions carries the same admission and cause
     decisions = _get(api, "/decisions?symbol=ABCD&date=2026-11-16", "decisions-v1")

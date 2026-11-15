@@ -168,6 +168,9 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         # The bot's periodic `order-held` rows prove the shares held until shortly before
         # the stop-out, so the bars after the fill count: the rise is shown.
         assert day_trade.mfe_usd > 0
+        # Prices after the exit come from the same capture (later ones not captured yet).
+        assert [p.minutes for p in day_trade.prices_after] == list(cfg.api.price_after_minutes)
+        assert day_trade.prices_after[0].price is not None
         room = status.daily_room_usd
         assert room is not None and room < cfg.risk.max_daily_loss_usd
         assert [c.kind for c in status.recent_commands] == [
@@ -196,6 +199,9 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
                                        for s in skipped["signals"]} == {("AAA", "refused"),
                                                                         ("CCC", "refused")}
         assert all(s["refusal"] and s["entry_price"] for s in skipped["signals"])
+        # Each skipped signal has its prices after and its simulated what-if.
+        assert all(s["prices_after"][0]["price"] and s["what_if"]["result_gross_usd"]
+                   and s["what_if"]["cause"] is None for s in skipped["signals"])
         assert {s["refusal"]["code"] for s in skipped["signals"]} == {
             "SYMBOL_COOLDOWN", "OWN_POSITION_OPEN"}
         # The cooldown refusal carries its times: 30 minutes from AAA's stop-out.

@@ -38,6 +38,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from aperture.api import contract, flow
+from aperture.api.after import AfterSettings, SkippedAfter
 from aperture.api.chart import Chart, ChartRefused, ChartSettings, parse_query
 from aperture.api.contract import (
     AccountResponseV1,
@@ -120,6 +121,7 @@ class ApiSettings:
     performance_max_range_days: int  # longest GET /performance range, both ends counted
     performance_decimal_places: int  # rounding of GET /performance quotients
     chart: ChartSettings  # GET /chart: source switch, cache and calendar
+    after: AfterSettings  # prices after, overshoot (day-v1) and what-if (skipped-v1)
 
 
 def settings_from_config(cfg: Config) -> ApiSettings:
@@ -154,6 +156,11 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         raise ConfigError("[api] performance_max_range_days must be positive")
     if api.performance_decimal_places < 0:
         raise ConfigError("[api] performance_decimal_places must not be negative")
+    minutes = api.price_after_minutes
+    if not minutes or minutes[0] <= 0 or list(minutes) != sorted(set(minutes)):
+        raise ConfigError("[api] price_after_minutes must be strictly increasing minutes > 0")
+    if api.after_r_decimal_places < 0:
+        raise ConfigError("[api] after_r_decimal_places must not be negative")
     data = cfg.root / cfg.run.data_dir
     return ApiSettings(
         host=api.host,
@@ -187,6 +194,8 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         performance_max_range_days=api.performance_max_range_days,
         performance_decimal_places=api.performance_decimal_places,
         chart=ChartSettings.from_config(cfg),
+        after=AfterSettings(minutes, api.after_r_decimal_places,
+                            (cfg.root / cfg.session.calendar_file).parent),
     )
 
 
@@ -229,8 +238,9 @@ class ApiServer(ThreadingHTTPServer):
         # Shared with the other listener so both count the inbox under one lock.
         self.inbox_lock = inbox_lock or threading.Lock()
         self.page = (STATIC_DIR / "status.html").read_bytes()
-        self.history = History(settings.history)
+        self.history = History(settings.history, settings.after)
         self.observer_results = ObserverResults(settings.simulation)
+        self.skipped = SkippedAfter(settings.simulation, settings.after.minutes)
         # No source until one is attached (python -m aperture.api, or the demo's world).
         self.chart = Chart(settings.chart)
         port = settings.remote_port if remote else settings.port
@@ -689,7 +699,8 @@ class Handler(BaseHTTPRequestHandler):
                     log.path(day))
                 document: Any = contract.observers_document(day, identities, records, results)
             elif path == "/skipped":
-                document = contract.skipped_document(day, log.records(day, role=Role.ACTIVE))
+                document = self.server.skipped.document(
+                    day, today, log.records(day, role=Role.ACTIVE), log.path(day))
             elif path == "/watching":
                 document = contract.watching_document(
                     day, log.records(day, role=Role.ACTIVE), settings.watching_max_rows,
