@@ -469,7 +469,7 @@ enum L10n {
 
   enum Position {
     static var openChart: LocalizedStringResource {
-      LocalizedStringResource("position.openChart", defaultValue: "Open Chart", bundle: L10n.bundle)
+      LocalizedStringResource("position.openChart", defaultValue: "Open chart →", bundle: L10n.bundle)
     }
     static var picker: LocalizedStringResource {
       LocalizedStringResource("position.picker", defaultValue: "Position", bundle: L10n.bundle)
@@ -603,7 +603,7 @@ enum L10n {
       LocalizedStringResource("riskRoom.title", defaultValue: "Risk room today", bundle: L10n.bundle)
     }
     static var details: LocalizedStringResource {
-      LocalizedStringResource("riskRoom.details", defaultValue: "Details", bundle: L10n.bundle)
+      LocalizedStringResource("riskRoom.details", defaultValue: "Details →", bundle: L10n.bundle)
     }
     static func left(_ limit: String) -> LocalizedStringResource {
       LocalizedStringResource("riskRoom.left", defaultValue: "of \(limit) USD left", bundle: L10n.bundle)
@@ -1334,6 +1334,10 @@ enum L10n {
       LocalizedStringResource("risk.stale", defaultValue: "STALE", bundle: L10n.bundle)
     }
     /// When the bot last read the broker (New York time) and how long ago.
+    /// The market clock on the Session card: "14:46:17 ET", 24-hour New York time.
+    static func clock(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.clock", defaultValue: "\(time) ET", bundle: L10n.bundle)
+    }
     static func readAt(_ time: String, _ age: String) -> LocalizedStringResource {
       LocalizedStringResource("risk.readAt", defaultValue: "Broker read at \(time) · \(age) s ago", bundle: L10n.bundle)
     }
