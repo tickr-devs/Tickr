@@ -64,10 +64,12 @@ def svg(body: str, size: float = CANVAS, defs: str = "") -> str:
             f'viewBox="0 0 {pt(1, size)} {pt(1, size)}">{defs}{body}</svg>\n')
 
 
-def gradient(ident: str, top: str, bottom: str, top_opacity: float = 1, bottom_opacity: float = 1) -> str:
+def gradient(ident: str, top: str, bottom: str,
+             top_opacity: float = 1, bottom_opacity: float = 1) -> str:
     return (f'<linearGradient id="{ident}" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="#{top}" stop-opacity="{top_opacity}"/>'
-            f'<stop offset="1" stop-color="#{bottom}" stop-opacity="{bottom_opacity}"/></linearGradient>')
+            f'<stop offset="1" stop-color="#{bottom}" stop-opacity="{bottom_opacity}"/>'
+            '</linearGradient>')
 
 
 def layers(colors: dict[str, tuple[str, str]], size: float = CANVAS) -> dict[str, str]:
@@ -80,7 +82,8 @@ def layers(colors: dict[str, tuple[str, str]], size: float = CANVAS) -> dict[str
     stroke = (f'stroke-width="{pt(LINE_WIDTH, size)}" stroke-linecap="round" '
               f'stroke-linejoin="round" fill="none"')
     return {
-        "area": svg(f'<path d="{area}" fill="url(#a)"/>', size, gradient("a", accent, accent, AREA_OPACITY, 0)),
+        "area": svg(f'<path d="{area}" fill="url(#a)"/>', size,
+                    gradient("a", accent, accent, AREA_OPACITY, 0)),
         "line": svg(f'<path d="{line_path(size)}" stroke="url(#l)" {stroke}/>', size,
                     gradient("l", profit_dark, profit_light)),
         "spark": svg(f'<circle cx="{pt(last_x, size)}" cy="{pt(last_y, size)}" '
@@ -113,7 +116,9 @@ def icon_json(colors: dict[str, tuple[str, str]]) -> str:
     surface_dark = colors["surface"][1]
     return xcode_json({
         "fill": {"automatic-gradient": srgb(background_light)},
-        "fill-specializations": [{"appearance": "dark", "value": {"automatic-gradient": srgb(surface_dark)}}],
+        "fill-specializations": [
+            {"appearance": "dark", "value": {"automatic-gradient": srgb(surface_dark)}},
+        ],
         # Front to back.
         "groups": [
             group("Spark", "spark", True, "neutral", False),
@@ -146,7 +151,8 @@ def outputs() -> dict[Path, str]:
         for name, content in layers(colors).items():
             files[icon / "Assets" / f"{name}.svg"] = content
     small = layers(colors, LAUNCH_MARK)
-    mark = svg("".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("area", "line", "spark")), LAUNCH_MARK)
+    body = "".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("area", "line", "spark"))
+    mark = svg(body, LAUNCH_MARK)
     info = {"info": {"author": "xcode", "version": 1}}
     files[IOS_ASSETS / "Contents.json"] = xcode_json(info)
     files[IOS_ASSETS / "LaunchBackground.colorset/Contents.json"] = colorset(*colors["background"])

@@ -45,6 +45,7 @@ def test_icon_layers_exist_and_dark_appearance_is_set():
 def test_launch_background_is_the_window_background():
     module = load()
     light, dark = module.palette()["background"]
-    colorset = json.loads((module.IOS_ASSETS / "LaunchBackground.colorset" / "Contents.json").read_text())
+    path = module.IOS_ASSETS / "LaunchBackground.colorset" / "Contents.json"
+    colorset = json.loads(path.read_text())
     reds = [c["color"]["components"]["red"] for c in colorset["colors"]]
     assert reds == [f"0x{light[:2]}", f"0x{dark[:2]}"]
