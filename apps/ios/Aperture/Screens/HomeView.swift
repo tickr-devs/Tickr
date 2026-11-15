@@ -227,7 +227,7 @@ private struct Summary: View {
           // Each position's protection and the gate as glyphs; the words are in their hints.
           HStack(spacing: Tokens.Space.xs) {
             ForEach(status.positions, id: \.symbol) { position in
-              StopGlyph(state: position.stop.state, symbol: position.symbol)
+              StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
             }
             if !status.tradingGate.open {
               StateGlyph(Self.gateClosedSymbol, tone: .warning,
@@ -275,7 +275,7 @@ private struct PositionRow: View {
       HStack(spacing: Tokens.Space.m) {
         VStack(alignment: .leading, spacing: Tokens.Space.xs) {
           HStack(spacing: Tokens.Space.s) {
-            StopGlyph(state: position.stop.state, symbol: position.symbol)
+            StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
             Text(verbatim: position.symbol)
               .font(.headline.monospaced())
               .foregroundStyle(Palette.textPrimary)

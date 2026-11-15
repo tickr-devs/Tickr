@@ -270,11 +270,13 @@ struct NoticeOverlay: ViewModifier {
 }
 
 /// A position's protection as a compact shield glyph: green when the broker stop is verified, red
-/// otherwise, pulsing once each time its state changes while unprotected. Its hint names the
+/// otherwise, pulsing once each time its state or price changes while unprotected. Its hint names the
 /// symbol and the state.
 struct StopGlyph: View {
   let state: StopState
   let symbol: String
+  /// The stop's price: a moved stop is a change too.
+  var price: DecimalString?
 
   /// Symbols of the stop states, and of a stop level next to a price.
   static let verifiedSymbol = "checkmark.shield.fill"
@@ -285,7 +287,7 @@ struct StopGlyph: View {
 
   var body: some View {
     StateGlyph(glyph, tone: tone, label: Text(verbatim: symbol + Format.separator + Board.stopStateTitle(state)),
-      live: !state.isProtected, event: state, style: .compact)
+      live: !state.isProtected, event: [AnyHashable(state), AnyHashable(price)], style: .compact)
   }
 
   private var glyph: String { Self.stateSymbol(state) }

@@ -688,7 +688,7 @@ private struct PositionDetail: View {
         .frame(minWidth: Self.chartMinWidth, minHeight: Self.chartMinHeight)
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.s) {
-          StopBadge(state: row.position.stop.state)
+          StopBadge(state: row.position.stop.state, price: row.position.stop.price)
           Text(verbatim: row.position.symbol).font(Tokens.Typography.metric)
           Spacer()
           if let value = row.unrealized {
@@ -788,10 +788,12 @@ private struct PositionDetail: View {
 }
 
 /// A position's protection as a shield glyph: green when the broker stop is verified, red otherwise,
-/// pulsing once each time its state changes while unprotected; the state's words are its hint.
+/// pulsing once each time its state or price changes while unprotected; the state's words are its hint.
 struct StopBadge: View {
   let state: StopState
   var compact = false
+  /// The stop's price: a moved stop is a change too.
+  var price: DecimalString?
 
   /// Symbols of the stop states.
   static let verifiedSymbol = "checkmark.shield.fill"
@@ -801,7 +803,7 @@ struct StopBadge: View {
 
   var body: some View {
     StateGlyph(symbol, tone: state == .verified ? .profit : state == .pending ? .warning : .loss,
-      label: Text(verbatim: state.title), live: state != .verified, event: state, style: compact ? .compact : .tile)
+      label: Text(verbatim: state.title), live: state != .verified, event: [AnyHashable(state), AnyHashable(price)], style: compact ? .compact : .tile)
   }
 
   private var symbol: String {
