@@ -95,7 +95,7 @@ def test_loss_budget_sizes_down():
 def test_only_the_first_signal_of_the_session_counts():
     decision = make().evaluate(ctx(shock(count=11, at=5)))
     assert decision.verdict is Verdict.IGNORE
-    assert rules(decision)[-1] == ("first_signal_of_session", False)
+    assert rules(decision)[-1] == ("signal_age_bars", False)
 
 
 @pytest.mark.parametrize("close", [20.1, 20.7])
@@ -140,10 +140,10 @@ def test_open_position_is_held():
 def test_no_look_ahead_the_signal_fires_only_on_its_bar_and_later_bars_change_nothing():
     bars = shock(count=14, at=8)
     verdicts = [make().evaluate(ctx(bars[:k])).verdict for k in range(1, len(bars) + 1)]
-    assert verdicts.index(Verdict.WATCH) == 8 and verdicts.count(Verdict.WATCH) == 1
+    assert [k for k, v in enumerate(verdicts) if v is Verdict.WATCH] == [8, 9, 10, 11, 12]
     altered = bars[:9] + [bar(TODAY, i, 30, 31, 29, 30, 500_000) for i in range(9, 14)]
     assert make().evaluate(ctx(altered[:9])) == make().evaluate(ctx(bars[:9]))
-    assert rules(make().evaluate(ctx(altered)))[-1] == ("first_signal_of_session", False)
+    assert make().evaluate(ctx(altered[:12])).trigger == make().evaluate(ctx(bars[:9])).trigger
 
 
 def test_a_minute_missing_in_a_prior_session_is_refused_not_zero():
@@ -173,3 +173,24 @@ def test_loads_as_an_observer_from_the_repo_config():
     loaded = load_strategy(ROOT, "volume-shock-v1", modules)
     assert (loaded.strategy.name, loaded.strategy.version) == ("volume-shock-v1", "1")
     check_history(loaded, cfg.market_data.history_sessions)
+
+
+def test_the_stop_keeps_the_minimum_distance_below_the_bid():
+    # ask inside the window, bid below its floor: the bid rule sets the stop
+    decision = make().evaluate(ctx(shock(), quote("20.25", "20.30")))
+    assert decision.verdict is Verdict.ENTER
+    assert decision.stop == d("20.25") * d("0.995") < decision.entry_low * d("0.995")
+
+
+@pytest.mark.parametrize("key,value",
+                         [("entry_window_percent", 100), ("minimum_stop_percent", 150)])
+def test_percent_bounds_are_refused(key, value):
+    vals = copy.deepcopy(VALUES)
+    vals["entry"][key] = value
+    with pytest.raises(ValueError):
+        vs.create(vals)
+
+
+def test_today_not_starting_at_the_open_is_refused():
+    decision = make().evaluate(ctx(shock()[1:]))
+    assert rules(decision)[-1] == ("session_from_open", False)

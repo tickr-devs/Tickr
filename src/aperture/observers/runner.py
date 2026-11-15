@@ -28,7 +28,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from aperture.observers.loader import LoadedStrategy
@@ -61,13 +61,21 @@ def _contract_problem(observer: LoadedStrategy, symbol: str, decision: object) -
     return None
 
 
-def freeze(context: SymbolContext) -> SymbolContext:
-    """An immutable copy for the worker: tuples of bars, no position."""
+def freeze(context: SymbolContext, at: datetime, max_quote_age: timedelta) -> SymbolContext:
+    """An immutable copy for the worker: tuples of bars, no position, no daily loss budget
+    (that room is the active strategy's; an observer sizes as if it traded alone), and no
+    quote older than `max_quote_age` at `at` by provider time (the platform's freshness rule
+    for entries)."""
+    quote = context.quote
+    if quote is not None and at - quote.provider_time > max_quote_age:
+        quote = None
     return replace(
         context,
         bars=tuple(context.bars),
         prior_sessions=tuple(tuple(session) for session in context.prior_sessions),
         position=None,
+        loss_budget_usd=None,
+        quote=quote,
     )
 
 
@@ -78,12 +86,14 @@ class ObserverSet:
         log: DecisionLog,
         max_evaluation_seconds: Decimal,
         queue_size: int,
+        max_quote_age_seconds: Decimal,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         if queue_size < 1:
             raise ValueError("queue_size must be at least 1")
         self.log = log
         self.max_seconds = float(max_evaluation_seconds)
+        self.max_quote_age = timedelta(seconds=float(max_quote_age_seconds))
         self.monotonic = monotonic
         self._enabled = list(observers)
         self._lock = threading.Lock()
@@ -114,7 +124,7 @@ class ObserverSet:
             raise ValueError(f"decision time {at.isoformat()} is before the bar completed")
         if self._worker is None or not self.enabled:
             return ()
-        frozen = freeze(context)
+        frozen = freeze(context, at, self.max_quote_age)
         with self._idle:
             try:
                 self._queue.put_nowait((frozen, at))

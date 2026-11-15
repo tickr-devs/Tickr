@@ -60,7 +60,7 @@ class Fake:
 def observer_set(tmp_path, *fakes, max_seconds="0.5", clock=None, queue_size=8):
     loaded = [LoadedStrategy(f"folder-{i}", f) for i, f in enumerate(fakes)]
     log = DecisionLog(tmp_path / "decisions")
-    observers = ObserverSet(loaded, log, Decimal(max_seconds), queue_size,
+    observers = ObserverSet(loaded, log, Decimal(max_seconds), queue_size, Decimal(5),
                             clock or (lambda: 0.0))
     return observers, log
 
@@ -281,7 +281,7 @@ def test_real_strategy_variant_runs_as_observer(tmp_path):
     cfg = _config(tmp_path, ["v2"])
     _variant(tmp_path, "v2", "2")
     observers = ObserverSet(load_observers(cfg), DecisionLog(tmp_path / "d"), Decimal(5),
-                            cfg.observers.queue_size)
+                            cfg.observers.queue_size, cfg.risk.max_quote_age_seconds)
     assert observers.on_evaluation(context(), START + 3 * M1) == ()
     assert settle(observers) == () and observers.close(5)
 
@@ -304,3 +304,20 @@ def test_log_is_safe_for_two_writers(tmp_path):
         t.join()
     log.close()
     assert len(load_records([log.path(date(2026, 11, 10))])) == 600
+
+
+def test_freeze_drops_the_loss_budget_and_a_stale_quote():
+    from datetime import timedelta
+
+    from aperture.observers.runner import freeze
+    from aperture.types import Quote
+
+    base = context()
+    at = base.bars[-1].start + 2 * M1
+    fresh = Quote(base.symbol, Decimal(1), Decimal(2), Decimal(1), Decimal(1), at, at)
+    stale = Quote(base.symbol, Decimal(1), Decimal(2), Decimal(1), Decimal(1),
+                  at - timedelta(seconds=6), at)
+    limit = timedelta(seconds=5)
+    kept = freeze(replace(base, quote=fresh, loss_budget_usd=Decimal(3)), at, limit)
+    assert kept.quote == fresh and kept.loss_budget_usd is None
+    assert freeze(replace(base, quote=stale), at, limit).quote is None

@@ -101,15 +101,19 @@ def test_before_the_earliest_minute_is_no_signal():
     assert rules(make().evaluate(ctx(today(20, jump_at=19))))[-1] == ("signal", False)
 
 
-def test_only_the_first_signal_of_the_session_counts():
-    decision = make().evaluate(ctx(today(45, jump_at=40)))
-    assert rules(decision)[-1] == ("first_signal_of_session", False)
+def test_the_first_signal_stays_valid_for_signal_valid_bars_then_expires():
+    still = make().evaluate(ctx(today(45, jump_at=40)))  # signal bar 40, last bar 44
+    assert still.verdict is Verdict.WATCH and still.trigger == d("20.4")
+    expired = make().evaluate(ctx(today(46, jump_at=40)))
+    assert expired.verdict is Verdict.IGNORE
+    assert rules(expired)[-1] == ("signal_age_bars", False)
 
 
 def test_no_look_ahead_over_every_prefix():
     bars = today(50, jump_at=42)
     verdicts = [make().evaluate(ctx(bars[:k])).verdict for k in range(1, len(bars) + 1)]
-    assert verdicts.index(Verdict.WATCH) == 42 and verdicts.count(Verdict.WATCH) == 1
+    # WATCH from the signal bar 42 for signal_valid_bars = 5 bars, never before
+    assert [k for k, v in enumerate(verdicts) if v is Verdict.WATCH] == [42, 43, 44, 45, 46]
     altered = bars[:43] + [bar(TODAY, i, 30, 31, 29, 30, 9_000) for i in range(43, 50)]
     assert make().evaluate(ctx(altered[:43])) == make().evaluate(ctx(bars[:43]))
 
@@ -134,7 +138,7 @@ def test_a_prior_half_day_silences_the_afternoon_only():
 
 def test_today_without_the_0930_bar_is_refused():
     decision = make().evaluate(ctx(today(41, jump_at=40)[1:]))
-    assert rules(decision)[-1] == ("session_open_bar", False)
+    assert rules(decision)[-1] == ("session_from_open", False)
 
 
 def test_missing_prior_session_and_cheap_stock_are_refused():

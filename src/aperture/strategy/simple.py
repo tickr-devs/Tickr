@@ -14,6 +14,7 @@ from decimal import ROUND_FLOOR, Decimal
 from itertools import pairwise
 from typing import Any
 
+from aperture.strategy import indicators as ind
 from aperture.strategy import price_action_v1 as v1
 from aperture.strategy.base import Check, Decision, SymbolContext, Verdict
 from aperture.types import Bar
@@ -22,13 +23,15 @@ ZERO = v1.ZERO
 ONE = v1.ONE
 TWO = v1.TWO
 PERCENT = v1.PERCENT
+REGULAR_OPEN = (9, 30)  # New York hour and minute of the regular session's first bar
 
 Schema = dict[str, dict[str, Callable[[Any], Any]]]
 
 # Sections every simple strategy carries, next to its own [signal] section.
 COMMON: Schema = {
     "strategy": {"name": v1._text, "version": v1._text},
-    "entry": {"entry_window_percent": v1._positive, "minimum_stop_percent": v1._positive},
+    "entry": {"entry_window_percent": v1._positive, "minimum_stop_percent": v1._positive,
+              "signal_valid_bars": v1._positive_int},
     "liquidity": {"max_spread_ratio": v1._positive, "min_previous_close_usd": v1._positive},
     "sizing": {"planned_loss_usd": v1._positive, "max_position_notional_usd": v1._positive},
 }
@@ -40,6 +43,7 @@ class Common:
     version: str
     entry_window_percent: Decimal
     minimum_stop_percent: Decimal
+    signal_valid_bars: int
     max_spread_ratio: Decimal
     min_previous_close_usd: Decimal
     planned_loss_usd: Decimal
@@ -68,6 +72,12 @@ def parse(values: Mapping[str, Any], schema: Schema, name: str) -> dict[str, Any
                 flat[key] = convert(table[key])
             except ValueError as exc:
                 raise ValueError(f"[{section}] {key} {exc}") from None
+    for key, value in flat.items():
+        if isinstance(value, Decimal) and not value.is_finite():
+            raise ValueError(f"{key} must be finite")
+    for key in ("entry_window_percent", "minimum_stop_percent"):
+        if flat[key] >= PERCENT:
+            raise ValueError(f"[entry] {key} must be below 100")
     if flat["name"] != name:
         raise ValueError(f"[strategy] name must be {name!r}")
     return flat
@@ -90,16 +100,28 @@ def previous_close(context: SymbolContext) -> Decimal | None:
     return prior[-1][-1].close if prior else None
 
 
-def first_signal(session: Sequence[Bar], fires: Callable[[int], bool]) -> Check:
-    """The signal must fire on the last bar and on no earlier bar of the session, decided from
-    the bars alone so a restart changes nothing. This is one signal bar per symbol and
-    session: if the quote does not allow an entry during that minute, the session is spent."""
-    last = len(session) - 1
-    earlier = next((i for i in range(last) if fires(i)), None)
-    if earlier is not None:
-        return v1._flag("first_signal_of_session", False,
-                        f"already fired on bar {earlier} of the session")
-    return v1._flag("signal", fires(last), "on the last completed bar")
+def session_from_open(session: Sequence[Bar]) -> Check:
+    """The session's bars must start with the 09:30 bar, so "first signal of the session" and
+    the session open are decided over the whole session (bars_per_symbol covers it)."""
+    t = ind.ny_time(session[0])
+    return v1._flag("session_from_open", (t.hour, t.minute) == REGULAR_OPEN,
+                    f"first session bar starts {t.isoformat()}")
+
+
+def first_signal(session: Sequence[Bar], fires: Callable[[int], bool],
+                 valid_bars: int) -> tuple[Check, int | None]:
+    """The first bar of the session where the signal fired, decided from the bars alone so a
+    restart changes nothing, and still valid: at most `valid_bars` - 1 bars before the last.
+    That leaves time for the platform to subscribe the quote of a WATCH symbol; the entry
+    window around the signal close keeps a late entry from chasing. Returns the check and the
+    signal bar's index (None when there is no valid signal)."""
+    first = next((i for i in range(len(session)) if fires(i)), None)
+    if first is None:
+        return v1._flag("signal", False, "no signal bar this session"), None
+    age = len(session) - 1 - first
+    check = v1._check("signal_age_bars", Decimal(age), "<", Decimal(valid_bars),
+                      f"first signal on bar {first} of the session")
+    return check, (first if check.passed else None)
 
 
 def decide(strategy: Any, context: SymbolContext, verdict: Verdict, checks: Sequence[Check],
@@ -112,9 +134,10 @@ def enter(strategy: Any, c: Common, context: SymbolContext, checks: list[Check],
           setup: str, signal_close: Decimal, stop_level: Decimal) -> Decision:
     """WATCH without a quote; otherwise ENTER when the ask is inside the window around the
     signal close (entry_window_percent below and above it), the spread is acceptable and
-    the stop sizes to at least one share. The stop is the lower of `stop_level` and the
-    minimum stop distance below the window's floor, so stop < entry_low always holds (the
-    platform's admission shape)."""
+    the stop sizes to at least one share. The stop is the lowest of `stop_level` and the
+    minimum stop distance below both the window's floor and the bid, so stop < entry_low
+    always holds (the platform's admission shape) and the bid is never at the stop. The
+    recorded invalidation is `stop_level`, which can be above the stop used."""
     window = c.entry_window_percent / PERCENT
     entry_low, entry_high = signal_close * (ONE - window), signal_close * (ONE + window)
     levels = {"setup": setup, "trigger": signal_close, "invalidation": stop_level}
@@ -139,7 +162,8 @@ def enter(strategy: Any, c: Common, context: SymbolContext, checks: list[Check],
         checks.append(v1._check("ask_not_below_price_window", quote.ask, ">=", entry_low))
     if not checks[-1].passed:
         return ignore()
-    stop = min(stop_level, entry_low * (ONE - c.minimum_stop_percent / PERCENT))
+    distance = ONE - c.minimum_stop_percent / PERCENT
+    stop = min(stop_level, entry_low * distance, quote.bid * distance)
     checks.append(v1._check("stop_below_bid", stop, "<", quote.bid))
     if not checks[-1].passed:
         return ignore()
