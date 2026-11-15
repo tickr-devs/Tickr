@@ -782,9 +782,13 @@ private struct SafetyCard: View {
 
   /// How often the ages ("3 s ago") refresh, in seconds.
   static let tick: TimeInterval = 1
-  /// Start of the fence kind the bot raises for a position it did not open; the kind goes on
-  /// with ":" and the symbol, as in "foreign-position:ABCD" (engine Fence.FOREIGN_POSITION).
-  static let foreignPositionPrefix = "foreign-position"
+  /// Fence names the bot raises for a position or an open order it did not place (engine
+  /// Fence.FOREIGN_POSITION and FOREIGN_ORDER). A fence kind is the name, then ":" and a key
+  /// when it has one, as in "foreign-position:ABCD".
+  static let foreignPositionFence = "foreign-position"
+  static let foreignOrderFence = "foreign-order"
+  /// Separator between a fence's name and its key (protocol value).
+  static let fenceKeySeparator: Character = ":"
 
   var body: some View {
     Card(L10n.Safety.title) {
@@ -807,7 +811,7 @@ private struct SafetyCard: View {
     }
   }
 
-  private enum RowID: Hashable { case status, stops, entries, reconcile, stream, read, foreign, pause }
+  private enum RowID: Hashable { case status, stops, entries, reconcile, stream, read, foreign, foreignOrders, pause }
 
   private struct Row: Identifiable {
     let id: RowID
@@ -823,7 +827,9 @@ private struct SafetyCard: View {
     }
     let positions = Board.positions(status)
     let verified = positions.filter { $0.stop.state == .verified }.count
-    let foreign = status.fences.contains { $0.kind.hasPrefix(Self.foreignPositionPrefix) }
+    let fenceNames = Set(status.fences.map { String($0.kind.prefix { $0 != Self.fenceKeySeparator }) })
+    let foreign = fenceNames.contains(Self.foreignPositionFence)
+    let foreignOrders = fenceNames.contains(Self.foreignOrderFence)
     let stream = status.freshness.stream
     let entries = positions.map { (symbol: $0.symbol, entry: $0.entry) }
       + status.tradesToday.map { (symbol: $0.symbol, entry: $0.entry) }
@@ -847,6 +853,9 @@ private struct SafetyCard: View {
       Row(id: .foreign, label: L10n.Safety.foreignPositions,
         value: String(localized: foreign ? L10n.Safety.present : L10n.Common.none),
         color: foreign ? Palette.lossText : Palette.profitText),
+      Row(id: .foreignOrders, label: L10n.Safety.foreignOrders,
+        value: String(localized: foreignOrders ? L10n.Safety.present : L10n.Common.none),
+        color: foreignOrders ? Palette.lossText : Palette.profitText),
       Row(id: .pause, label: L10n.Safety.entryPause,
         value: String(localized: status.entryStop ? L10n.Common.on : L10n.Common.off),
         color: status.entryStop ? Palette.warningText : Palette.textQuaternary),
