@@ -501,15 +501,17 @@ private struct LiveFlowCard: View {
           }
         }
         // Six columns side by side; at large text sizes one row per stage, so the names stay whole.
-        if typeSize.stacksRows {
-          VStack(alignment: .leading, spacing: Tokens.Space.s) {
-            ForEach(stages) { stage in row(stage) }
-          }
-        } else {
-          HStack(alignment: .top) {
-            ForEach(stages) { stage in
-              if stage.id != .screen { Spacer(minLength: 0) }
-              column(stage)
+        Group {
+          if typeSize.stacksRows {
+            VStack(alignment: .leading, spacing: Tokens.Space.s) {
+              ForEach(stages) { stage in row(stage) }
+            }
+          } else {
+            HStack(alignment: .top) {
+              ForEach(stages) { stage in
+                if stage.id != .screen { Spacer(minLength: 0) }
+                column(stage)
+              }
             }
           }
         }
