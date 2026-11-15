@@ -1,7 +1,7 @@
 """Contract fixtures for client tests (the macOS app's Swift tests decode every one of them).
 
 Files are named `<schema name>[.<variant>].json`. They are generated from the contract code;
-regenerate with `APERTURE_WRITE_FIXTURES=1 pytest tests/api/test_fixtures.py` and review the diff.
+regenerate with `TICKR_WRITE_FIXTURES=1 pytest tests/api/test_fixtures.py` and review the diff.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from aperture.api import contract
-from aperture.api.contract import (
+from tickr.api import contract
+from tickr.api.contract import (
     AccountOrder,
     AccountPosition,
     AccountResponseV1,
@@ -54,6 +54,8 @@ from aperture.api.contract import (
     FlowStopV1,
     FlowV1,
     JobsV1,
+    JournalRowV1,
+    JournalV1,
     LabReplayState,
     LabReplaySummaryV1,
     LabReplayV1,
@@ -79,12 +81,12 @@ from aperture.api.contract import (
     WatchingV1,
     WhatIfV1,
 )
-from aperture.api.history import NO_ENTRY, NOT_READ
-from aperture.api.performance import performance
-from aperture.data.base import ScreenerKind
-from aperture.replay.engine import ExitReason
-from aperture.research.records import Admission
-from aperture.strategy.base import Verdict
+from tickr.api.history import NO_ENTRY, NOT_READ
+from tickr.api.performance import performance
+from tickr.data.base import ScreenerKind
+from tickr.replay.engine import ExitReason
+from tickr.research.records import Admission
+from tickr.strategy.base import Verdict
 
 from .samples import T0, account, entry, status
 from .schema_check import errors
@@ -215,6 +217,13 @@ def documents() -> dict[str, object]:
             BackupJobV1(T0 + timedelta(days=4), T0 + timedelta(days=4, hours=7),
                         "OperationalError", None),
             _LAUNCHD, None, "2026-11-21 is a weekend"),
+        # The Overview's journal card: the latest rows, oldest first; "line #731".
+        "journal-v1": JournalV1(731, (
+            JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),
+            JournalRowV1(729, T0 - timedelta(seconds=8), "trade-opened", "ABCD"),
+            JournalRowV1(730, T0 - timedelta(seconds=4), "reconcile-checked", None),
+            JournalRowV1(731, T0, "stop-from-fill", "ABCD")), None),
+        "journal-v1.empty": JournalV1(None, (), "the bot has not created its database yet"),
         # Saturday: the replay of the last 20 sessions finished, with its SIMULATED numbers.
         "lab-replay-v1": LabReplayV1(
             LabReplayState.DONE, "3f0c9a1e5b7d4c2a8e6f1b0d9c7a5e3f", "price-action-v1", "1", 20,
@@ -433,14 +442,14 @@ def _text(document: object) -> str:
 
 def test_fixtures_are_current():
     docs = documents()
-    if os.environ.get("APERTURE_WRITE_FIXTURES") == "1":
+    if os.environ.get("TICKR_WRITE_FIXTURES") == "1":
         for name, document in docs.items():
             (FIXTURES / f"{name}.json").write_text(_text(document), "utf-8")
     on_disk = {p.stem for p in FIXTURES.glob("*.json")}
     assert on_disk == set(docs), "fixtures on disk differ from documents()"
     for name, document in docs.items():
         assert (FIXTURES / f"{name}.json").read_text("utf-8") == _text(document), (
-            f"{name}: regenerate with APERTURE_WRITE_FIXTURES=1 and review the diff")
+            f"{name}: regenerate with TICKR_WRITE_FIXTURES=1 and review the diff")
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.json")), ids=lambda p: p.name)

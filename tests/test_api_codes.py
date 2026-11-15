@@ -11,16 +11,16 @@ import json
 import re
 from pathlib import Path
 
-from aperture.api import reasons
-from aperture.api.contract import OWN_TRADE_OPEN, BotState
-from aperture.engine.core import Fence
-from aperture.risk.causes import AdmissionCause
+from tickr.api import reasons
+from tickr.api.contract import OWN_TRADE_OPEN, BotState
+from tickr.engine.core import Fence
+from tickr.risk.causes import AdmissionCause
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "apps" / "scripts" / "kit_api_strings.py"
 REASONS_SCRIPT = ROOT / "apps" / "scripts" / "kit_reason_strings.py"
-KIT_CATALOG = ROOT / "apps/shared/Sources/ApertureKit/Resources/Localizable.xcstrings"
-SERVICE = ROOT / "src" / "aperture" / "runtime" / "service.py"
+KIT_CATALOG = ROOT / "apps/shared/Sources/TickrKit/Resources/Localizable.xcstrings"
+SERVICE = ROOT / "src" / "tickr" / "runtime" / "service.py"
 
 
 def load():
@@ -129,11 +129,25 @@ def test_every_refusal_shape_has_a_sentence_naming_only_values_the_bot_sends():
     assert_sentences_fit_shapes(sent, sentences)
 
 
+# Causes the API writes itself whose values are English text (a simulation's own outcome words,
+# an unexpected error's message), so the app shows the bot's words.
+PROSE_IN_BOT_WORDS = {"simulation_outcome", "display_failed"}
+
+
+def test_every_prose_shape_has_a_sentence_naming_only_values_the_bot_sends():
+    sent = {
+        code: shapes
+        for code, shapes in shape_params(reasons._PROSE).items()
+        if code not in PROSE_IN_BOT_WORDS
+    }
+    assert_sentences_fit_shapes(sent, load_reasons().codes("ProseReason"))
+
+
 def test_every_translation_names_the_same_values_as_the_english():
     strings = json.loads(KIT_CATALOG.read_text(encoding="utf-8"))["strings"]
     token = re.compile(r"\{\w+\}")
     for key, entry in strings.items():
-        if not key.startswith(("kit.gate.", "kit.fenceReason.", "kit.refusal.")):
+        if not key.startswith(("kit.gate.", "kit.fenceReason.", "kit.refusal.", "kit.prose.")):
             continue
         units = {lang: entry["localizations"][lang]["stringUnit"]["value"] for lang in ("en", "ru")}
         assert set(token.findall(units["en"])) == set(token.findall(units["ru"])), key
