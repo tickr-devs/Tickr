@@ -77,7 +77,8 @@ struct LabView: View {
   /// Why an observer has no line: the bot could not list its simulated trades.
   private var missing: [String] {
     (lab.observers?.observers ?? []).filter { $0.trades == nil }.map { observer in
-      String(localized: L10n.Lab.noTrades(observer.name, observer.version, ApiText.prose(observer.tradesCauseCodes, text: observer.tradesCause) ?? Format.missing))
+      let cause = ApiText.prose(observer.tradesCauseCodes, text: observer.tradesCause) ?? Format.missing
+      return String(localized: L10n.Lab.noTrades(observer.name, observer.version, cause))
     }
   }
 
