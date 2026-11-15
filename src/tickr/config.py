@@ -68,6 +68,7 @@ class RunConfig:
     database_busy_timeout_seconds: Decimal
     backups_dir: str
     maintain_keep_sessions: int
+    maintain_archive_max_age_days: int
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,8 @@ class ApiConfig:
     remote_token_hash_file: str
     remote_token_bytes: int
     remote_pairing_file: str
+    remote_pairing_code_file: str
+    remote_pairing_code_ttl_seconds: int
     status_file: str
     account_file: str
     account_stale_seconds: Decimal
@@ -161,6 +164,7 @@ class ApiConfig:
     broker_read_warn_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
+    request_timeout_seconds: Decimal
     max_pending_commands: int
     command_max_age_seconds: Decimal
     status_recent_commands: int
@@ -209,6 +213,7 @@ class MarketDataConfig:
     stream_reserved_subscribe_requests: int
     candidate_retry_seconds: Decimal
     history_dir: str
+    history_cache_max_age_days: int
     stream_reconnect_delay_seconds: Decimal
     stream_max_symbols: int
     stream_reserved_symbols: int
@@ -265,6 +270,9 @@ class RuntimeConfig:
     bot_start_local: str
     launch_weekdays: tuple[int, ...]
     watchdog_start_local: str
+    nightly_fetch_start_local: str
+    nightly_fetch_out: str
+    nightly_fetch_seed: str
     watchdog_after_flatten_seconds: int
     watchdog_before_close_seconds: int
     watchdog_bot_check_seconds: int
@@ -467,7 +475,13 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         )
     if run.maintain_keep_sessions < 1:
         raise ConfigError("[run] maintain_keep_sessions must be at least 1 (today is always kept)")
+    if run.maintain_archive_max_age_days < 0:
+        raise ConfigError("[run] maintain_archive_max_age_days must be 0 (never delete archives) "
+                          "or a number of days")
     md: MarketDataConfig = built["market_data"]
+    if md.history_cache_max_age_days < 1:
+        raise ConfigError("[market_data] history_cache_max_age_days must be at least 1 (today's "
+                          "cache is in use)")
     if (md.candidate_subscriptions + md.observer_subscriptions
             > md.stream_max_symbols - md.stream_reserved_symbols):
         raise ConfigError(

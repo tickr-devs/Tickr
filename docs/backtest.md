@@ -35,6 +35,8 @@ names. The first response of each kind and every failed one are kept in `<out>/r
    the minute-level rule below and uses no minute data. Ranking by the day's high is look-ahead,
    so the cap is set not to bind; `pool_cap.csv` records each session's candidates and drops,
    and the report states on how many sessions it bound.
+   A symbol with any non-positive daily price in the window (forward adjustment can push old
+   bars below zero) is left out of selection; `pool_refused.csv` lists it with the bar.
    `select --rule liquid` builds a pool without look-ahead instead, for research beyond
    gainers: per session the `liquid_top_count` symbols with the highest previous-session dollar
    volume whose previous close is at least `liquid_min_price_usd`. Only the previous session
@@ -54,13 +56,43 @@ names. The first response of each kind and every failed one are kept in `<out>/r
    and how many of its sessions had no replayed day (no gainer, or incomplete data). With few
    sessions, the interval and the hold-out are wide by construction, and report.md says so.
 
+## Nightly
+
+`python -m tickr.backtest nightly --out data/nightly --seed data/backtest` keeps a rolling folder
+of the last `[backtest] nightly_window_sessions` sessions for the Lab's replay
+(`[api] lab_replay_data_dir` is its `current/`). launchd runs it after the close
+(`local.tickr.nightly-fetch`, `[runtime] nightly_fetch_*`, docs/operations.md). A full fetch of
+that many sessions takes many hours under Webull's limits, so a night adds only what the newest
+completed sessions bring:
+
+1. Daily bars of every universe symbol for the new sessions (and the one before, for its close),
+   as their own `daily/n<last day>-<chunk>.jsonl` files. The universe is the folder's own.
+2. The new sessions' pool days (same gainer rule as `select`), appended to `pool.csv` and
+   `pool_cap.csv`.
+3. Minute bars only for the sessions the new pool days need (each day and `history_sessions`
+   before it) that the symbol's minute file holds no bar for, merged into that file.
+4. Pool days older than the window are dropped, with minute files no pool day uses any more.
+
+The night is built in `staging/` (minute and daily files hard-linked from `current/`, every file
+it changes written under a new name, so `current/` is never modified), then swapped in.
+`raw/` stays outside. Without `current/` it starts from `--seed` (a `fetch-all` folder).
+Refused, leaving `current/` as it was and the cause in `nightly.json`: during the regular
+session, with less free disk than `nightly_min_free_disk_mb`, with more missing sessions than
+`nightly_max_new_sessions` (run `fetch-all` instead), and once the next session's open minus
+`nightly_stop_minutes_before_open` is reached, so it never shares the market-data budget with
+the bot. GET /jobs shows the last outcome. The universe is not refreshed: a new listing enters
+the pool only after the next `fetch-all`.
+
 ## How a pool day is replayed
 
 - Skipped (with cause) when the symbol lacks bars on the day or on any of the `history_sessions`
   sessions before it, or its run is incomplete: live, the bot refuses a symbol with incomplete
   history. Also skipped when the daily (forward-adjusted) to M1 (unadjusted) price scale differs
   between the previous session and the day by more than `split_tolerance_percent`: a split
-  between them would make the gate's change meaningless.
+  between them would make the gate's change meaningless. When the replay engine refuses a
+  symbol (a bad bar, e.g. a 0.01 USD print whose synthetic bid is not positive), the symbol is
+  replayed again one pool day at a time on that day's bars only, and the days still refused are
+  skipped as `REPLAY_REFUSED` with the engine's message; the run never stops for one bar.
 - The strategy sits behind a gate (`backtest/gate.py`): it is asked only from the first completed
   bar at which close >= previous session's last close x (1 + `gainer_change_percent` / 100) and the
   session's dollar volume so far reached the discovery floor; then for the rest of the day. Before
@@ -94,6 +126,7 @@ names. The first response of each kind and every failed one are kept in `<out>/r
 - The rank on the 200-row gainers list is not reconstructed; the change threshold is a proxy.
 - The spread floor and quote-dependent strategy checks see the replay's synthetic quote, not real
   quotes; real spreads of fast gainers are often wider, so results are likely optimistic there.
-- Survivorship: the instrument list is today's, so symbols delisted since the window are missing.
+- Survivorship: the instrument list is today's, so symbols delisted since the window are missing
+  (this applies to the gainer pool and to the liquid pool alike).
 - Each symbol is replayed independently; the bot view applies the one-position and daily-loss
   limits afterwards, first come first served.
