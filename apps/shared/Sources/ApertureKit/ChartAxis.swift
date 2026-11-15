@@ -141,8 +141,8 @@ public enum ChartAxis {
       times[kept[1]].timeIntervalSince(times[kept[0]]) < hungGap {
       kept.removeFirst()
     }
-    if kept.count > 1, anchor(of: times[kept[kept.count - 1]], shown: shown) == .trailing,
-      times[kept[kept.count - 1]].timeIntervalSince(times[kept[kept.count - 2]]) < hungGap {
+    if let last = kept.last, let before = kept.dropLast().last, anchor(of: times[last], shown: shown) == .trailing,
+      times[last].timeIntervalSince(times[before]) < hungGap {
       kept.removeLast()
     }
     return kept
