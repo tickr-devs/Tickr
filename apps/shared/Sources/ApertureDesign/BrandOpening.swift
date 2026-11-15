@@ -90,9 +90,15 @@ public struct BrandOpening: View {
       withAnimation(.easeOut(duration: Tokens.Motion.launchFadeSeconds)) { faded = true } completion: { finished() }
       return
     }
-    try? await Task.sleep(for: .seconds(Tokens.Motion.openingDelaySeconds + Tokens.Motion.openingDrawSeconds))
-    withAnimation(Tokens.Motion.openingFly) { flown = true }
-    try? await Task.sleep(for: .seconds(Tokens.Motion.openingFlySeconds))
+    // A cut-short wait must not rush the rest through in one frame: the opening then just goes.
+    do {
+      try await Task.sleep(for: .seconds(Tokens.Motion.openingDelaySeconds + Tokens.Motion.openingDrawSeconds))
+      withAnimation(Tokens.Motion.openingFly) { flown = true }
+      try await Task.sleep(for: .seconds(Tokens.Motion.openingFlySeconds))
+    } catch {
+      finished()
+      return
+    }
     withAnimation(.easeOut(duration: Tokens.Motion.launchFadeSeconds)) { faded = true } completion: { finished() }
   }
 }
