@@ -997,13 +997,13 @@ enum L10n {
     static var stochastic: LocalizedStringResource {
       LocalizedStringResource("chart.stochastic", defaultValue: "Stoch", bundle: L10n.bundle)
     }
-    /// Readout: stochastic %K.
+    /// Readout: stochastic %K line.
     static var stochasticK: LocalizedStringResource {
-      LocalizedStringResource("chart.stochasticK", defaultValue: "%K", bundle: L10n.bundle)
+      LocalizedStringResource("chart.stochasticK", defaultValue: "K", bundle: L10n.bundle)
     }
-    /// Readout: stochastic %D.
+    /// Readout: stochastic %D line.
     static var stochasticD: LocalizedStringResource {
-      LocalizedStringResource("chart.stochasticD", defaultValue: "%D", bundle: L10n.bundle)
+      LocalizedStringResource("chart.stochasticD", defaultValue: "D", bundle: L10n.bundle)
     }
     /// Tooltip of the Stoch toggle.
     static func stochasticHelp(_ period: Int, _ smoothing: Int) -> LocalizedStringResource {

@@ -1622,13 +1622,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%%D"
+            "value" : "D"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%%D"
+            "value" : "D"
           }
         }
       }
@@ -1656,13 +1656,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%%K"
+            "value" : "K"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%%K"
+            "value" : "K"
           }
         }
       }
