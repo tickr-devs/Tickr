@@ -1,5 +1,5 @@
 """ApertureKit sentences for the bot's reason codes with values (api/reasons.py), in English and
-Russian: the trading gate's cause and each fence's cause.
+Russian: the trading gate's cause, each fence's cause and a refused entry's detail.
 
 `python3 apps/scripts/kit_reason_strings.py` writes ReasonCodes.swift, L10n+Reasons.swift (a part
 of the kit's L10n) and the kit's catalog entries; run apps/scripts/format_xcstrings.py after it.
@@ -243,6 +243,116 @@ GROUPS = [
             ),
         ],
     ),
+    (
+        "RefusalReason",
+        "kit.refusal.",
+        "A refused entry's detail (`refusal.params`), after the rule's title.",
+        [
+            (
+                "CLOCK_INVALID",
+                "The last broker read is {seconds} s in the future",
+                "Последнее чтение брокера на {seconds} с в будущем",
+            ),
+            (
+                "BROKER_READ_STALE",
+                "Last broker read {age} s ago, limit {limit} s",
+                "Последнее чтение брокера {age} с назад, предел {limit} с",
+            ),
+            (
+                "CALENDAR_DAY_MISMATCH",
+                "The calendar's day {calendar_day} is not today ({today})",
+                "День календаря {calendar_day} не сегодняшний ({today})",
+            ),
+            ("HALF_DAY", "{day} is a half day", "{day} — сокращённый день"),
+            (
+                "OUTSIDE_REGULAR_SESSION",
+                "Regular hours are {open}–{close} New York time",
+                "Основная сессия {open}–{close} по Нью-Йорку",
+            ),
+            ("AFTER_LAST_ENTRY", "No new entries after {time}", "Новых входов после {time} нет"),
+            ("OWN_POSITION_OPEN", "Own positions open: {count}", "Открыто своих позиций: {count}"),
+            ("OWN_ORDER_WORKING", "Own orders working: {count}", "Активных своих ордеров: {count}"),
+            (
+                "POSITION_LIMIT_REACHED",
+                "{open} open, limit {limit}",
+                "Открыто {open} при пределе {limit}",
+            ),
+            (
+                "SYMBOL_COOLDOWN",
+                "{symbol} closed at a loss; no entry before {until}",
+                "{symbol} закрыт в убыток; входа нет до {until}",
+            ),
+            ("DECISION_NOT_ENTER", "The decision was {verdict}", "Решение: {verdict}"),
+            (
+                "DECISION_NOT_ACTIVE",
+                "Decision from {strategy} {version}; the active strategy is {active}",
+                "Решение от {strategy} {version}; активная стратегия — {active}",
+            ),
+            ("DECISION_INCOMPLETE", "An entry without {fields}", "Вход без {fields}"),
+            (
+                "DECISION_INVALID",
+                "Needs 0 < stop {stop} < entry low {entry_low} ≤ entry high {entry_high}",
+                "Нужно 0 < стоп {stop} < низ входа {entry_low} ≤ верх входа {entry_high}",
+            ),
+            (
+                "ORDER_PRICES_INVALID",
+                "Limit {limit} outside the window {entry_low}–{entry_high}",
+                "Лимит {limit} вне окна {entry_low}–{entry_high}",
+            ),
+            (
+                "QUOTE_SYMBOL_MISMATCH",
+                "Quote for {quote_symbol}, decision for {symbol}",
+                "Котировка по {quote_symbol}, решение по {symbol}",
+            ),
+            (
+                "QUOTE_INVALID",
+                "Bid {bid} / ask {ask} cannot be traded",
+                "По биду {bid} / аску {ask} торговать нельзя",
+            ),
+            (
+                "QUOTE_TIME_INVALID",
+                "Quote time {seconds} s ahead of the clock, limit {limit} s",
+                "Время котировки на {seconds} с впереди часов, предел {limit} с",
+            ),
+            (
+                "QUOTE_STALE",
+                "Quote {age} s old, limit {limit} s",
+                "Котировке {age} с, предел {limit} с",
+            ),
+            (
+                "PRICE_OUTSIDE_WINDOW",
+                "Ask {ask} outside {entry_low}–{limit}",
+                "Аск {ask} вне {entry_low}–{limit}",
+            ),
+            (
+                "QUANTITY_NOT_WHOLE",
+                "Quantity {quantity} is not a whole number of shares",
+                "Количество {quantity} — не целое число акций",
+            ),
+            (
+                "QUANTITY_BELOW_ONE",
+                "Quantity {quantity} is under 1 (platform maximum {maximum})",
+                "Количество {quantity} меньше 1 (максимум платформы {maximum})",
+            ),
+            (
+                "NOTIONAL_OVER_CAP",
+                "Value {notional} USD over the cap of {cap} USD",
+                "Сумма {notional} USD выше предела {cap} USD",
+            ),
+            (
+                "PLANNED_LOSS_OVER_LIMIT",
+                "Planned loss {planned_loss} USD over the limit of {limit} USD",
+                "Плановый убыток {planned_loss} USD выше предела {limit} USD",
+            ),
+            (
+                "DAILY_CEILING",
+                "Room {room} USD is under the minimum {min_room} USD "
+                "(limit {ceiling}, realized {realized}, reserved {reserved})",
+                "Запас {room} USD меньше минимума {min_room} USD "
+                "(лимит {ceiling}, реализовано {realized}, зарезервировано {reserved})",
+            ),
+        ],
+    ),
 ]
 
 PARAM = re.compile(r"\{(\w+)\}")
@@ -251,7 +361,7 @@ LINE = 130
 
 
 def camel(name):
-    parts = name.split("_")
+    parts = name.lower().split("_")
     return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
 
 

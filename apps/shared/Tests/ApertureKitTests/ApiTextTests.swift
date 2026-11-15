@@ -64,6 +64,17 @@ struct ApiTextTests {
     #expect(ReasonParam.fill("{symbol} is {state}", names: names, params: ["symbol": "AB"]) == nil)
   }
 
+  @Test("A refusal's detail reads as its sentence, a closed gate as the gate's; else nil")
+  func refusals() {
+    #expect(ApiText.refusalDetail(code: "QUOTE_STALE", params: ["age": "9", "limit": "5"])
+      == RefusalReason.quoteStale.text(["age": "9", "limit": "5"]))
+    #expect(ApiText.refusalDetail(code: "QUOTE_STALE", params: ["age": "9"]) == nil)
+    #expect(ApiText.refusalDetail(code: "GATE_CLOSED", params: ["gate": "trading_disabled", "environment": "production"])
+      == GateReason.tradingDisabled.text(["environment": "production"]))
+    #expect(ApiText.refusalDetail(code: "GATE_CLOSED", params: [:]) == nil)
+    #expect(ApiText.refusalDetail(code: "NEW_RULE", params: ["age": "9"]) == nil)
+  }
+
   @Test("Order values and check rules translate; unknown ones stay as sent")
   func values() {
     #expect(ApiText.orderSide("SELL") == String(localized: L10n.orderSideSell))

@@ -14,6 +14,7 @@ from pathlib import Path
 from aperture.api import reasons
 from aperture.api.contract import OWN_TRADE_OPEN, BotState
 from aperture.engine.core import Fence
+from aperture.risk.causes import AdmissionCause
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "apps" / "scripts" / "kit_api_strings.py"
@@ -104,11 +105,31 @@ def test_every_gate_and_fence_reason_has_a_sentence_naming_only_values_the_bot_s
             assert names <= sent[code], code
 
 
+# Refusal details with values but no sentence: their values are English words or text
+# (a calendar's own code, the names of missing amounts), so the app shows the bot's words.
+REFUSALS_IN_BOT_WORDS = {"CALENDAR_UNKNOWN", "DAILY_MONEY_UNKNOWN"}
+# Values reasons.refusal_params adds beyond the recorded detail's shape.
+REFUSAL_EXTRA_PARAMS = {"AFTER_LAST_ENTRY": {"time"}, "SYMBOL_COOLDOWN": {"until"}}
+
+
+def test_every_refusal_detail_has_a_sentence_naming_only_values_the_bot_sends():
+    sentences = load_reasons().codes("RefusalReason")
+    sent = {
+        code: shape_params(shapes)[""] | REFUSAL_EXTRA_PARAMS.get(code, set())
+        for code, shapes in reasons._REFUSAL.items()
+    }
+    sent.update({c: n for c, n in REFUSAL_EXTRA_PARAMS.items() if c not in sent})
+    assert set(sentences) == set(sent) - REFUSALS_IN_BOT_WORDS
+    for code, names in sentences.items():
+        assert code in AdmissionCause.__members__, code
+        assert names <= sent[code], code
+
+
 def test_every_translation_names_the_same_values_as_the_english():
     strings = json.loads(KIT_CATALOG.read_text(encoding="utf-8"))["strings"]
     token = re.compile(r"\{\w+\}")
     for key, entry in strings.items():
-        if not key.startswith(("kit.gate.", "kit.fenceReason.")):
+        if not key.startswith(("kit.gate.", "kit.fenceReason.", "kit.refusal.")):
             continue
         units = {lang: entry["localizations"][lang]["stringUnit"]["value"] for lang in ("en", "ru")}
         assert set(token.findall(units["en"])) == set(token.findall(units["ru"])), key

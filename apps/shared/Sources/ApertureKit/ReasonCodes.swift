@@ -4,23 +4,53 @@ import Foundation
 
 /// A value a reason sentence names (`params` of a gate, a fence or a cause).
 public enum ReasonParam: String, CaseIterable, Sendable {
+  case active
+  case age
+  case ask
+  case bid
+  case calendarDay = "calendar_day"
+  case cap
+  case ceiling
+  case close
+  case count
   case covered
+  case day
+  case entryHigh = "entry_high"
+  case entryLow = "entry_low"
   case environment
   case error
   case expected
+  case fields
   case file
   case filled
   case held
   case keys
+  case limit
+  case maximum
+  case minRoom = "min_room"
+  case notional
+  case open
   case order
   case orders
+  case plannedLoss = "planned_loss"
   case quantity
+  case quoteSymbol = "quote_symbol"
+  case realized
+  case reserved
+  case room
   case seconds
   case state
   case status
+  case stop
   case stopPrice = "stop_price"
+  case strategy
   case symbol
+  case time
+  case today
+  case until
+  case verdict
   case verified
+  case version
 }
 
 /// The trading gate's cause (`Gate.code`). An unknown code has no case; show the bot's own text then.
@@ -179,6 +209,102 @@ public enum FenceReason: String, CaseIterable, Sendable {
     case .heldUntrackedSell: [.orders, .symbol]
     case .exitNotFilled: [.order, .quantity, .symbol, .seconds, .filled, .state]
     case .closeNotSent: [.quantity, .expected, .symbol]
+    }
+  }
+
+  /// The sentence with the values the bot sent; nil when one of them is missing.
+  public func text(_ params: [String: String]) -> String? {
+    ReasonParam.fill(String(localized: template), names: names, params: params)
+  }
+}
+
+/// A refused entry's detail (`refusal.params`), after the rule's title. An unknown code has no case; show the bot's own text then.
+public enum RefusalReason: String, CaseIterable, Sendable {
+  case clockInvalid = "CLOCK_INVALID"
+  case brokerReadStale = "BROKER_READ_STALE"
+  case calendarDayMismatch = "CALENDAR_DAY_MISMATCH"
+  case halfDay = "HALF_DAY"
+  case outsideRegularSession = "OUTSIDE_REGULAR_SESSION"
+  case afterLastEntry = "AFTER_LAST_ENTRY"
+  case ownPositionOpen = "OWN_POSITION_OPEN"
+  case ownOrderWorking = "OWN_ORDER_WORKING"
+  case positionLimitReached = "POSITION_LIMIT_REACHED"
+  case symbolCooldown = "SYMBOL_COOLDOWN"
+  case decisionNotEnter = "DECISION_NOT_ENTER"
+  case decisionNotActive = "DECISION_NOT_ACTIVE"
+  case decisionIncomplete = "DECISION_INCOMPLETE"
+  case decisionInvalid = "DECISION_INVALID"
+  case orderPricesInvalid = "ORDER_PRICES_INVALID"
+  case quoteSymbolMismatch = "QUOTE_SYMBOL_MISMATCH"
+  case quoteInvalid = "QUOTE_INVALID"
+  case quoteTimeInvalid = "QUOTE_TIME_INVALID"
+  case quoteStale = "QUOTE_STALE"
+  case priceOutsideWindow = "PRICE_OUTSIDE_WINDOW"
+  case quantityNotWhole = "QUANTITY_NOT_WHOLE"
+  case quantityBelowOne = "QUANTITY_BELOW_ONE"
+  case notionalOverCap = "NOTIONAL_OVER_CAP"
+  case plannedLossOverLimit = "PLANNED_LOSS_OVER_LIMIT"
+  case dailyCeiling = "DAILY_CEILING"
+
+  /// The sentence, naming each value of `names` as {name}.
+  public var template: LocalizedStringResource {
+    switch self {
+    case .clockInvalid: L10n.refusalReasonClockInvalid
+    case .brokerReadStale: L10n.refusalReasonBrokerReadStale
+    case .calendarDayMismatch: L10n.refusalReasonCalendarDayMismatch
+    case .halfDay: L10n.refusalReasonHalfDay
+    case .outsideRegularSession: L10n.refusalReasonOutsideRegularSession
+    case .afterLastEntry: L10n.refusalReasonAfterLastEntry
+    case .ownPositionOpen: L10n.refusalReasonOwnPositionOpen
+    case .ownOrderWorking: L10n.refusalReasonOwnOrderWorking
+    case .positionLimitReached: L10n.refusalReasonPositionLimitReached
+    case .symbolCooldown: L10n.refusalReasonSymbolCooldown
+    case .decisionNotEnter: L10n.refusalReasonDecisionNotEnter
+    case .decisionNotActive: L10n.refusalReasonDecisionNotActive
+    case .decisionIncomplete: L10n.refusalReasonDecisionIncomplete
+    case .decisionInvalid: L10n.refusalReasonDecisionInvalid
+    case .orderPricesInvalid: L10n.refusalReasonOrderPricesInvalid
+    case .quoteSymbolMismatch: L10n.refusalReasonQuoteSymbolMismatch
+    case .quoteInvalid: L10n.refusalReasonQuoteInvalid
+    case .quoteTimeInvalid: L10n.refusalReasonQuoteTimeInvalid
+    case .quoteStale: L10n.refusalReasonQuoteStale
+    case .priceOutsideWindow: L10n.refusalReasonPriceOutsideWindow
+    case .quantityNotWhole: L10n.refusalReasonQuantityNotWhole
+    case .quantityBelowOne: L10n.refusalReasonQuantityBelowOne
+    case .notionalOverCap: L10n.refusalReasonNotionalOverCap
+    case .plannedLossOverLimit: L10n.refusalReasonPlannedLossOverLimit
+    case .dailyCeiling: L10n.refusalReasonDailyCeiling
+    }
+  }
+
+  /// The values the sentence names.
+  public var names: [ReasonParam] {
+    switch self {
+    case .clockInvalid: [.seconds]
+    case .brokerReadStale: [.age, .limit]
+    case .calendarDayMismatch: [.calendarDay, .today]
+    case .halfDay: [.day]
+    case .outsideRegularSession: [.open, .close]
+    case .afterLastEntry: [.time]
+    case .ownPositionOpen: [.count]
+    case .ownOrderWorking: [.count]
+    case .positionLimitReached: [.open, .limit]
+    case .symbolCooldown: [.symbol, .until]
+    case .decisionNotEnter: [.verdict]
+    case .decisionNotActive: [.strategy, .version, .active]
+    case .decisionIncomplete: [.fields]
+    case .decisionInvalid: [.stop, .entryLow, .entryHigh]
+    case .orderPricesInvalid: [.limit, .entryLow, .entryHigh]
+    case .quoteSymbolMismatch: [.quoteSymbol, .symbol]
+    case .quoteInvalid: [.bid, .ask]
+    case .quoteTimeInvalid: [.seconds, .limit]
+    case .quoteStale: [.age, .limit]
+    case .priceOutsideWindow: [.ask, .entryLow, .limit]
+    case .quantityNotWhole: [.quantity]
+    case .quantityBelowOne: [.quantity, .maximum]
+    case .notionalOverCap: [.notional, .cap]
+    case .plannedLossOverLimit: [.plannedLoss, .limit]
+    case .dailyCeiling: [.room, .minRoom, .ceiling, .realized, .reserved]
     }
   }
 
