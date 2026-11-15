@@ -275,7 +275,8 @@ enum L10n {
 
   /// Left out by the universe filter: the screeners disagree about this instrument.
   static var universeConflictingRows: LocalizedStringResource {
-    LocalizedStringResource("kit.universe.conflictingRows", defaultValue: "Listed by the screeners under conflicting details", bundle: bundle)
+    LocalizedStringResource("kit.universe.conflictingRows",
+      defaultValue: "Listed by the screeners under conflicting details", bundle: bundle)
   }
   /// Left out by the universe filter; argument: the exchange.
   static func universeExchange(_ value: String) -> LocalizedStringResource {
