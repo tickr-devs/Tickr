@@ -170,10 +170,15 @@ extension TickerItem.Tone {
 /// A slowly scrolling strip of recent events (a marquee), paused when `moving` is false or Reduce
 /// Motion is on; then it is an ordinary horizontal scroll view.
 public struct Ticker: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var contentWidth: CGFloat = 0
   let items: [TickerItem]
   let moving: Bool
   /// Points per second.
   let speed: Double
+
+  /// Share of the strip's width that fades out at each end.
+  static let fadeEdge = 0.06
 
   public init(_ items: [TickerItem], moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed) {
     self.items = items
@@ -182,45 +187,8 @@ public struct Ticker: View {
   }
 
   public var body: some View {
-    Marquee(moving: moving && !items.isEmpty, speed: speed) { row }
-  }
-
-  private var row: some View {
-    HStack(spacing: Tokens.Space.xl) {
-      ForEach(items) { item in
-        HStack(spacing: Tokens.Space.s) {
-          Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
-          Text(item.text).foregroundStyle(Palette.textTertiary)
-        }
-        .font(Tokens.Typography.annotation)
-        .lineLimit(1)
-        .fixedSize()
-      }
-    }
-    .padding(.trailing, Tokens.Space.xl)
-  }
-
-}
-
-/// A row that scrolls slowly to the left in a loop, faded at both ends, paused when `moving` is
-/// false or Reduce Motion is on; then it is an ordinary horizontal scroll view.
-public struct Marquee<Row: View>: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var contentWidth: CGFloat = 0
-  let moving: Bool
-  /// Points per second.
-  let speed: Double
-  let row: Row
-
-  public init(moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed, @ViewBuilder row: () -> Row) {
-    self.moving = moving
-    self.speed = speed
-    self.row = row()
-  }
-
-  public var body: some View {
     Group {
-      if moving && !reduceMotion {
+      if moving && !reduceMotion && !items.isEmpty {
         TimelineView(.animation) { context in
           let t = context.date.timeIntervalSinceReferenceDate
           let offset = contentWidth > 0 ? -CGFloat((t * speed).truncatingRemainder(dividingBy: Double(contentWidth))) : 0
@@ -242,19 +210,29 @@ public struct Marquee<Row: View>: View {
       }
     }
     .mask(LinearGradient(
-      stops: [.init(color: .clear, location: 0), .init(color: .black, location: MarqueeLayout.fadeEdge),
-        .init(color: .black, location: 1 - MarqueeLayout.fadeEdge), .init(color: .clear, location: 1)],
+      stops: [.init(color: .clear, location: 0), .init(color: .black, location: Self.fadeEdge),
+        .init(color: .black, location: 1 - Self.fadeEdge), .init(color: .clear, location: 1)],
       startPoint: .leading, endPoint: .trailing))
     .accessibilityElement(children: .combine)
   }
-}
 
-private enum MarqueeLayout {
-  /// Share of a marquee's width that fades out at each end.
-  static let fadeEdge = 0.06
-}
+  private var row: some View {
+    HStack(spacing: Tokens.Space.xl) {
+      ForEach(items) { item in
+        HStack(spacing: Tokens.Space.s) {
+          Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
+          Text(item.text).foregroundStyle(Palette.textTertiary)
+        }
+        .font(Tokens.Typography.annotation)
+        .lineLimit(1)
+        .fixedSize()
+      }
+    }
+    .padding(.trailing, Tokens.Space.xl)
+  }
 
-private struct WidthKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+  private struct WidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+  }
 }

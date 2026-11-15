@@ -259,12 +259,8 @@ private struct LiveFlowCard: View {
       .font(Tokens.Typography.captionMono)
       .foregroundStyle(Palette.textQuaternary)
     } content: {
-      if let chips = model.flow?.chips, !chips.isEmpty {
-        FlowChips(chips: chips, moving: model.isLive)
-      } else {
-        Ticker(model.tickerItems, moving: model.isLive)
-          .frame(height: Tokens.Size.ticker)
-      }
+      Ticker(model.tickerItems, moving: model.isLive)
+        .frame(height: Tokens.Size.ticker)
       Pipeline(stages: stages, moving: model.isLive)
         .frame(height: Pipeline.height)
     }
@@ -272,148 +268,33 @@ private struct LiveFlowCard: View {
 
   private var stages: [Pipeline.Stage] {
     let status = model.isLive ? model.status : nil
-    let flow = model.flow
     let positions = status.map(Board.positions) ?? []
     let position = positions.first { $0.stop.state != .verified } ?? positions.first
-    // Green only while every open position's stop, and every stop of the day's trades the flow
-    // knows, is verified at the broker.
-    let tally = flow.map(StopTally.init)
-    let stopVerified = positions.allSatisfy { $0.stop.state == .verified } && tally?.alarm != true
+    // Green only while every open position's stop is verified at the broker.
+    let stopVerified = positions.allSatisfy { $0.stop.state == .verified }
     let stopColor = stopVerified ? Palette.profit : Palette.loss
     let stopText = stopVerified ? Palette.profitText : Palette.lossText
-    // An open position waiting for its stop says so first; then the day's stops from the flow.
-    let waiting = positions.first { $0.stop.state != .verified }
-    let stopValue: String? = waiting.map { $0.stop.state.title } ?? tally.map { $0.text } ?? status.map { _ in
-      position.map { $0.stop.state.title } ?? String(localized: L10n.Common.noPosition)
-    }
-    let mismatch = flow?.reconcile.agreement == .mismatch
     return [
-      .init(id: .screeners, name: L10n.Flow.screeners, value: count(.screeners, L10n.Flow.seen),
-        symbol: Self.screenersSymbol, color: Palette.accent, text: Palette.accentText),
-      .init(id: .universe, name: L10n.Flow.universe, value: count(.universe, L10n.Flow.stocks),
-        symbol: Self.universeSymbol, color: Palette.seriesUniverse, text: Palette.seriesATRText),
-      .init(id: .strategy, name: L10n.Common.strategy,
-        value: count(.strategy, L10n.Flow.decided) ?? status.map { Format.strategy($0.strategy) },
+      .init(id: .screeners, name: L10n.Flow.screeners, value: nil, symbol: Self.screenersSymbol, color: Palette.accent,
+        text: Palette.accentText),
+      .init(id: .universe, name: L10n.Flow.universe, value: nil, symbol: Self.universeSymbol,
+        color: Palette.seriesUniverse, text: Palette.seriesATRText),
+      .init(id: .strategy, name: L10n.Common.strategy, value: status.map { Format.strategy($0.strategy) },
         symbol: Self.strategySymbol, color: Palette.highlight, text: Palette.highlightText),
       .init(id: .risk, name: L10n.Common.risk,
-        value: status?.entryBlock != nil ? String(localized: L10n.Flow.blocked)
-          : count(.risk, L10n.Flow.passed) ?? status.map { _ in String(localized: L10n.Flow.entriesAllowed) },
+        value: status.map { String(localized: $0.entryBlock == nil ? L10n.Flow.entriesAllowed : L10n.Flow.blocked) },
         symbol: Self.riskSymbol, color: Palette.warning, text: Palette.warningText),
-      .init(id: .order, name: L10n.Flow.order,
-        value: count(.order, L10n.Flow.filled) ?? status.map { String(localized: L10n.Flow.closedCount($0.tradesToday.count)) },
+      .init(id: .order, name: L10n.Flow.order, value: status.map { String(localized: L10n.Flow.closedCount($0.tradesToday.count)) },
         symbol: Self.orderSymbol, color: Palette.info, text: Palette.infoText),
-      .init(id: .stop, name: L10n.Flow.brokerStop, value: stopValue, symbol: Self.stopSymbol, color: stopColor,
-        text: stopText),
-      .init(id: .reconcile, name: L10n.Flow.reconcile, value: reconcileValue(status),
-        symbol: Self.reconcileSymbol, color: mismatch ? Palette.loss : Palette.info,
-        text: mismatch ? Palette.lossText : Palette.infoText),
+      .init(id: .stop, name: L10n.Flow.brokerStop,
+        value: status.map { _ in position.map { $0.stop.state.title } ?? String(localized: L10n.Common.noPosition) },
+        symbol: Self.stopSymbol, color: stopColor, text: stopText),
+      .init(id: .reconcile, name: L10n.Flow.reconcile,
+        value: status.map {
+          $0.fences.isEmpty ? String(localized: L10n.Flow.match) : String(localized: L10n.Common.fences($0.fences.count))
+        },
+        symbol: Self.reconcileSymbol, color: Palette.info, text: Palette.infoText),
     ]
-  }
-
-  /// "412 seen": how many symbols reached `stage` on the shown day; nil without a flow.
-  private func count(_ stage: FlowStage, _ text: (Int) -> LocalizedStringResource) -> String? {
-    guard let found = model.flow?.stages.first(where: { $0.stage == stage }) else { return nil }
-    return String(localized: text(found.count))
-  }
-
-  /// The flow's latest reconciliation, else the live status's fences.
-  private func reconcileValue(_ status: StatusV1?) -> String? {
-    switch model.flow?.reconcile.agreement {
-    case .match: return String(localized: L10n.Flow.match)
-    case .mismatch: return String(localized: L10n.Flow.mismatch)
-    case nil:
-      return status.map {
-        $0.fences.isEmpty ? String(localized: L10n.Flow.match) : String(localized: L10n.Common.fences($0.fences.count))
-      }
-    }
-  }
-}
-
-/// The day's broker stops by state, as the stop stage reports them: the worst state first.
-private struct StopTally {
-  let verified: Int
-  let pending: Int
-  let neverVerified: Int
-  let unknown: Int
-
-  init(_ flow: FlowV1) {
-    func tally(_ state: FlowStopState) -> Int { flow.stops.filter { $0.state == state }.count }
-    verified = tally(.verified)
-    pending = tally(.pending)
-    neverVerified = tally(.neverVerified)
-    unknown = tally(.unknown)
-  }
-
-  /// A stop the broker has not confirmed.
-  var alarm: Bool { pending + neverVerified + unknown > 0 }
-
-  var text: String {
-    if unknown > 0 { return String(localized: L10n.Flow.unknownStops(unknown)) }
-    if neverVerified > 0 { return String(localized: L10n.Flow.unverified(neverVerified)) }
-    if pending > 0 { return String(localized: L10n.Flow.pending(pending)) }
-    return String(localized: L10n.Flow.verified(verified))
-  }
-}
-
-/// The symbols the screeners listed on the shown day, scrolling as chips: symbol, then the
-/// screener and the change from the previous close in the screener's colour.
-private struct FlowChips: View {
-  let chips: [FlowChipV1]
-  let moving: Bool
-
-  var body: some View {
-    Marquee(moving: moving) {
-      HStack(spacing: Tokens.Space.s) {
-        ForEach(chips, id: \.symbol) { FlowChip(chip: $0) }
-      }
-      .padding(.trailing, Tokens.Space.s)
-    }
-  }
-}
-
-private struct FlowChip: View {
-  let chip: FlowChipV1
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-      Text(verbatim: chip.symbol)
-        .font(Tokens.Typography.chip)
-        .foregroundStyle(chip.excludedCause == nil ? Palette.textPrimary : Palette.textQuaternary)
-      Text(detail)
-        .font(Tokens.Typography.annotation)
-        .foregroundStyle(color)
-    }
-    .lineLimit(1)
-    .fixedSize()
-    .padding(.horizontal, Tokens.Space.m)
-    .padding(.vertical, Tokens.Space.s)
-    .frame(minWidth: Tokens.Size.flowChip, alignment: .leading)
-    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium))
-    .overlay {
-      RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin)
-    }
-    .help(Text(verbatim: chip.excludedCause ?? chip.changeCause ?? chip.symbol))
-  }
-
-  private var source: ScreenerSource? { chip.sources.first }
-
-  private var detail: LocalizedStringResource {
-    if chip.excludedCause != nil { return L10n.Flow.excluded }
-    let name = switch source {
-    case .gainers: String(localized: L10n.Flow.gainers)
-    case .losers: String(localized: L10n.Flow.losers)
-    case .topActives, nil: String(localized: L10n.Flow.actives)
-    }
-    return L10n.Flow.chip(name, chip.changePct.map { Format.changePercent($0.value) } ?? Format.missing)
-  }
-
-  private var color: Color {
-    if chip.excludedCause != nil { return Palette.textQuaternary }
-    switch source {
-    case .gainers: return Palette.profitText
-    case .losers: return Palette.seriesATRText
-    case .topActives, nil: return Palette.infoText
-    }
   }
 }
 

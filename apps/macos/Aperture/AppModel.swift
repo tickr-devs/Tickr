@@ -14,9 +14,6 @@ enum Pace {
   static let barsSeconds: Double = 15
   /// The broker account read the bot keeps (GET /account); the API serves the bot's last read.
   static let accountSeconds: Double = 15
-  /// The live flow (GET /flow): screener chips and stage counts, which change with each screener
-  /// pass and decision.
-  static let flowSeconds: Double = 15
   /// How long a command toast stays on screen.
   static let toastSeconds: Double = 6
 }
@@ -107,9 +104,6 @@ public final class AppModel {
   /// Gross performance in R over the `performanceDays` days that end on the shown day.
   public private(set) var performance: PerformanceV1?
   public private(set) var performanceError: String?
-  /// The shown day's live flow (screener chips, stage counts, stops); nil until read.
-  public private(set) var flow: FlowV1?
-  public private(set) var flowError: String?
 
   // Positions with their latest bars.
   private var barsBySymbol: [String: BarsV1] = [:]
@@ -264,13 +258,6 @@ public final class AppModel {
         try? await Task.sleep(for: .seconds(Pace.accountSeconds))
       }
     })
-    tasks.append(Task { [weak self] in
-      while !Task.isCancelled {
-        guard let self else { return }
-        await self.refreshFlow()
-        try? await Task.sleep(for: .seconds(Pace.flowSeconds))
-      }
-    })
   }
 
   public func stop() {
@@ -293,12 +280,10 @@ public final class AppModel {
     observers = nil
     skipped = nil
     performance = nil
-    flow = nil
     Task {
       await refreshStatus()
       await refreshHistory()
       await refreshAccount()
-      await refreshFlow()
     }
   }
 
@@ -317,7 +302,6 @@ public final class AppModel {
         todayDocument = nil
         barsBySymbol = [:]
         await refreshHistory()
-        await refreshFlow()
       }
       resolveSentCommands()
       // Counts come from status, the trade list from /days/<today>: when status shows a
@@ -418,34 +402,15 @@ public final class AppModel {
     }
   }
 
-  /// Reads the shown day's live flow. An answer for a day no longer shown is dropped; a failed
-  /// read clears the flow, so old counts never read as current.
-  public func refreshFlow() async {
-    let day = shownDay
-    do {
-      let document = try await client.flow(day: day)
-      guard day == shownDay else { return }
-      flow = document
-      flowError = nil
-    } catch {
-      guard day == shownDay else { return }
-      flow = nil
-      flowError = Self.describe(error)
-    }
-  }
-
   private func loadSelectedDay() async {
     observers = nil
     skipped = nil
     skippedError = nil
     performance = nil
     performanceError = nil
-    flow = nil
-    flowError = nil
     await refreshObservers()
     await refreshSkipped()
     await refreshPerformance()
-    await refreshFlow()
     guard let day = selectedDay, day != today else {
       dayDocument = nil
       return
