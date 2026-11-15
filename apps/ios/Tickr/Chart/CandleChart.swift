@@ -650,33 +650,32 @@ struct CandleChart: View {
     let price: Double
     let fill: Color
     /// Where on the scale the tag is drawn: at `price`, or pinned to the top or bottom edge of
-    /// the price area when `price` is off it (`PriceTagPlacement`).
+    /// the price area when `price` is off it, and pushed clear of the other tags
+    /// (`PriceTagPlacement`).
     let shownAt: Double
   }
 
   /// Each entry and stop on the chart (the trades' and the open position's), then the last close,
-  /// each placed inside the price area of `scale`.
+  /// placed inside the price area of `scale` and apart from each other.
   private func priceTags(_ scale: PriceScale) -> [PriceTag] {
-    // The price area is above the volume bars; half a tag's room keeps the whole tag inside it.
-    let area = (scale.volumeBase + scale.volumeHeight)...scale.domain.upperBound
-    let half = tagClearance(scale) / 2
-    func tag(_ price: Double, _ fill: Color) -> PriceTag {
-      PriceTag(price: price, fill: fill, shownAt: PriceTagPlacement.position(of: price, in: area, halfHeight: half))
-    }
-    var tags: [PriceTag] = []
+    var tags: [(price: Double, fill: Color)] = []
     var levels = trades.map { (ChartFormat.double($0.entryPrice), $0.stopPrice.map(ChartFormat.double), true) }
     if let position {
       levels.append((ChartFormat.double(position.entryPrice), position.stop.price.map(ChartFormat.double),
         position.stop.state.isProtected))
     }
     for (entry, stop, protected) in levels {
-      tags.append(tag(entry, Palette.info))
-      if let stop { tags.append(tag(stop, Self.stopColour(protected: protected))) }
+      tags.append((entry, Palette.info))
+      if let stop { tags.append((stop, Self.stopColour(protected: protected))) }
     }
     if let last = series.candles.last {
-      tags.append(tag(last.close, last.isUp ? Palette.profit : Palette.loss))
+      tags.append((last.close, last.isUp ? Palette.profit : Palette.loss))
     }
-    return tags
+    // The price area is above the volume bars; half a tag's room keeps the whole tag inside it
+    // and a whole one keeps two tags apart.
+    let area = (scale.volumeBase + scale.volumeHeight)...scale.domain.upperBound
+    let shown = PriceTagPlacement.positions(of: tags.map(\.price), in: area, halfHeight: tagClearance(scale) / 2)
+    return zip(tags, shown).map { PriceTag(price: $0.price, fill: $0.fill, shownAt: $1) }
   }
 
   private func priceTag(_ tag: PriceTag) -> some View {
