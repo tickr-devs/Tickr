@@ -1,16 +1,17 @@
-@testable import Tickr
-import TickrDesign
-import TickrKit
 import Foundation
 import Testing
+import TickrDesign
+import TickrKit
+@testable import Tickr
 
 /// The Home entries glyph follows the bot's entry block and its precedence (#317), and the
 /// connection dot follows the answer's freshness.
 @MainActor
 @Suite struct HomeLogicTests {
   /// The example status with its entry block, operator pause and gate replaced.
-  private func status(block cause: String?, attention: Bool = true, entryStop: Bool = false,
-    gateOpen: Bool = true) throws -> StatusV1 {
+  private func status(
+    block cause: String?, attention: Bool = true, entryStop: Bool = false, gateOpen: Bool = true
+  ) throws -> StatusV1 {
     var object = try fixtureObject("status-v1.example.json")
     object["entry_block"] = cause.map {
       ["cause": $0, "text": "held", "attention": attention, "params": [String: String]()] as [String: Any]

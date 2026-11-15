@@ -1,9 +1,9 @@
-@testable import Tickr
-import TickrDesign
-import TickrKit
 import Foundation
 import SwiftUI
 import Testing
+import TickrDesign
+import TickrKit
+@testable import Tickr
 
 /// "after 1m +0.06 · 5m −0.18": the prices after a skipped signal or an exit, each change in its
 /// sign's colour and a missing price as a dash.

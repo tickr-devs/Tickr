@@ -143,8 +143,9 @@ final class LabModel {
 
   /// Whether a refusal no longer holds: the replay read since moved on (another state or run), or
   /// `replaySeconds` have passed since it came, so its reason (the session open) may be gone.
-  static func refusalCleared(_ refused: (state: LabReplayState?, runId: String?, at: Date), by read: LabReplayV1,
-    now: Date) -> Bool {
+  static func refusalCleared(
+    _ refused: (state: LabReplayState?, runId: String?, at: Date), by read: LabReplayV1, now: Date
+  ) -> Bool {
     refused.state != read.state || refused.runId != read.runId
       || now.timeIntervalSince(refused.at) >= replaySeconds
   }

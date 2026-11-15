@@ -1,6 +1,6 @@
-import TickrKit
 import Foundation
 import Testing
+import TickrKit
 
 /// The repository's contract fixtures (tests/api/fixtures), read from the checkout: the tests run
 /// in the Simulator, which sees the Mac's files.

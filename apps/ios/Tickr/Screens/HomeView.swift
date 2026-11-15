@@ -314,7 +314,6 @@ private struct Summary: View {
     }
   }
 
-
   private func subline(_ status: StatusV1) -> String {
     var parts: [LocalizedStringResource] = []
     for position in status.positions {
