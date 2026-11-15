@@ -13,6 +13,9 @@ candidates and drops, and the report shows where it bound.
 
 Daily bars are forward-adjusted; a ratio of two adjacent bars of the same series is unaffected.
 A symbol without a bar on the previous session is skipped for that day (no previous close).
+So `previous_close` and `day_close` are on the ADJUSTED daily scale, while M1 bars are raw: never
+compare a pool price with an M1 price directly (a split shows as a +100% gap, a dividend biases
+the gap up). `PoolEntry.previous_close_on_minute_scale` converts with the day's own M1 close.
 """
 
 from __future__ import annotations
@@ -46,6 +49,14 @@ class PoolEntry:
     day_high_change_percent: Decimal
     day_dollar_volume_usd: Decimal
 
+    def previous_close_on_minute_scale(self, minute_day_close: Decimal) -> Decimal:
+        """The previous close on the raw M1 scale of `session_date`: previous_close x (that day's
+        last M1 close / day_close). The adjusted ratio previous/day is kept, so a split or a
+        dividend between the two sessions does not appear as a price move."""
+        if self.day_close <= 0 or minute_day_close <= 0:
+            raise BacktestError(f"{self.symbol} {self.session_date}: close not positive")
+        return self.previous_close * minute_day_close / self.day_close
+
 
 @dataclass(frozen=True)
 class CapRecord:
@@ -59,6 +70,34 @@ class CapRecord:
     @property
     def dropped(self) -> int:
         return self.candidates - self.kept
+
+
+REFUSED_FILE = "pool_refused.csv"
+
+
+def drop_unpriced(rows: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Daily rows without the symbols that have any non-positive price in the window, and the
+    cause per dropped symbol. Forward adjustment can push old bars of a symbol to zero or below
+    (seen: SCLX 2026-04-30 close -84.05); its day-to-day ratios are then meaningless too, so the
+    whole symbol is left out of selection rather than one row."""
+    rows = list(rows)
+    refused: dict[str, str] = {}
+    for row in rows:
+        if row["symbol"] in refused:
+            continue
+        for key in ("open", "high", "low", "close"):
+            if Decimal(row[key]) <= 0:
+                refused[row["symbol"]] = f"{row['date']} {key} {row[key]} not positive"
+                break
+    return [r for r in rows if r["symbol"] not in refused], refused
+
+
+def write_refused(refused: dict[str, str], path: Path) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(("symbol", "cause"))
+        for symbol in sorted(refused):
+            writer.writerow((symbol, refused[symbol]))
 
 
 def select_pool(rows: Iterable[dict[str, Any]], sessions: Sequence[date],

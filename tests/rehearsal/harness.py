@@ -18,11 +18,11 @@ from typing import Any
 
 import pytest
 
+from rehearsal.world import World, flat_session, ny
 from tickr import cli, config
 from tickr.api import contract as api
 from tickr.runtime import service
 from tickr.store import JournalRow, Store
-from rehearsal.world import World, flat_session, ny
 
 ROOT = Path(__file__).resolve().parents[2]
 DAY = date(2026, 11, 16)  # a Monday; the five sessions before it are Nov 9-13

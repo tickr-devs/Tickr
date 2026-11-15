@@ -30,7 +30,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
-from tickr.api.reasons import refusal_params
+from tickr.api.reasons import UNRECOGNIZED as UNRECOGNIZED_CODE
+from tickr.api.reasons import Reason, prose_reasons, refusal_params
 from tickr.data.base import ScreenerKind
 from tickr.replay.engine import ExitReason
 from tickr.research.records import Admission, DecisionRecord
@@ -82,6 +83,26 @@ def _params_added_later() -> Any:
 
 # A reason's parameters: name -> plain text value (docs/api.md, "Reason codes").
 Params = dict[str, str]
+
+# A cause's code and parameters ({code, params}; docs/api.md, "Reason codes").
+ReasonV1 = Reason
+REASONS_OF = "reasons_of"
+
+
+def _reasons_of(source: str) -> Any:
+    """`<source>_codes`: the codes of the cause in field `source`. Computed only when a document
+    is encoded (`to_jsonable`), never when one is built or read, so no path that builds these
+    records (the daily-loss check reads `DayTrade`s) ever parses a cause; the attribute itself
+    stays empty. Added after version 1 shipped."""
+    return field(init=False, default=(), metadata={REASONS_OF: source, ADDED_AFTER_V1: True})
+
+
+def _codes_for(document: Any, source: str) -> tuple[Reason, ...]:
+    """Display only: a reason table that fails on a text shows it unrecognized, never raises."""
+    try:
+        return prose_reasons(getattr(document, source))
+    except Exception:  # noqa: BLE001 - see docstring
+        return (Reason(UNRECOGNIZED_CODE),)
 
 # The code of a reason the bot wrote before it recorded codes; clients show the text.
 UNRECORDED = "unrecorded"
@@ -216,6 +237,7 @@ class Position:
     entry: EntrySend
     entry_cause: str | None  # why a field of `entry` is null; null when none is
 
+    entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
 @dataclass(frozen=True)
 class Trade:
@@ -236,6 +258,7 @@ class Trade:
     # before the bot journaled it. Added after version 1 shipped.
     strategy: StrategyId | None = _added_later(None)
 
+    entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
 @dataclass(frozen=True)
 class Freshness:
@@ -366,6 +389,15 @@ class AccountResponseV1:
 
 
 @dataclass(frozen=True)
+class PairedV1:
+    """POST /pair on the remote port: the bearer token the phone keeps from now on. Answered
+    once per pairing code; the server keeps only the token's SHA-256."""
+
+    token: str
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
 class CommandAcceptedV1:
     """POST /commands/*: the command is queued for the bot, not yet executed."""
 
@@ -405,6 +437,7 @@ class PriceAfterV1:
     change_usd: Decimal | None
     cause: str | None
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 @dataclass(frozen=True)
 class WhatIfV1:
@@ -417,6 +450,7 @@ class WhatIfV1:
     exit_reason: ExitReason | None
     cause: str | None
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 @dataclass(frozen=True)
 class DayTrade:
@@ -456,6 +490,9 @@ class DayTrade:
     # written; the default only spares paths that never show it (the daily-loss check).
     strategy: StrategyId | None = None
 
+    entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
+    prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
+    overshoot_cause_codes: tuple[ReasonV1, ...] = _reasons_of("overshoot_cause")
 
 class CleanVerdict(StrEnum):
     """Did the broker and the bot's records agree all that New York day (docs/api.md)."""
@@ -479,6 +516,7 @@ class CleanCause:
     text: str  # plain words, from the rows
     journal_seqs: tuple[int, ...]  # the journal rows (seq) that prove it, oldest first
 
+    text_codes: tuple[ReasonV1, ...] = _reasons_of("text")
 
 @dataclass(frozen=True)
 class CleanDay:
@@ -493,6 +531,7 @@ class CleanDay:
     last_reconcile_at: datetime | None
     day_end_seq: int | None  # the date's `day-end` row, if any
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 @dataclass(frozen=True)
 class DaySummary:
@@ -646,6 +685,163 @@ class SettingsV1:
     api_version: int = _const(API_VERSION)
 
 
+# ---------------------------------------------------------------- jobs (read-only)
+
+
+@dataclass(frozen=True)
+class LaunchdJobV1:
+    """One launchd job on the Mac, as configured in [runtime]: it starts at `local_time` ("HH:MM",
+    the Mac's own time zone) on `weekdays` (launchd numbering: 1 = Monday ... 5 = Friday,
+    0 and 7 = Sunday). The session calendar still decides whether the day trades."""
+
+    name: str  # preflight, bot, watchdog or nightly-fetch
+    local_time: str
+    weekdays: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ReconcileJobV1:
+    """The bot's broker reconciliation, every `interval_seconds` while it runs."""
+
+    interval_seconds: Decimal
+    last_at: datetime | None  # the bot's last successful broker read (status freshness)
+    next_at: datetime | None  # last_at + interval while the bot is running, else null
+
+
+@dataclass(frozen=True)
+class BackupJobV1:
+    """The bot's verified daily database backup, made on its first loop pass of each New York
+    date. `last_failed_*` only when a failure is newer than the last backup. `cause`: why
+    `last_at` is null."""
+
+    last_at: datetime | None
+    last_failed_at: datetime | None
+    last_failed_error: str | None  # the error's type name, never its text (it may hold paths)
+    cause: str | None
+
+
+@dataclass(frozen=True)
+class SessionTimesV1:
+    """Today's New York session and the bot's cutoffs from the calendar and [session]."""
+
+    day: date
+    regular_open: datetime
+    last_entry_at: datetime
+    flatten_at: datetime
+    regular_close: datetime
+
+
+@dataclass(frozen=True)
+class JournalRowV1:
+    """One row of the bot's durable journal. `kind` is the bot's own event name
+    (`trade-opened`, `order-intent`, `reconcile-checked` ...); `symbol` when the row's body names
+    one. The body itself is not served."""
+
+    seq: int  # the journal's own row number: grows by one per row, never reused
+    at: datetime
+    kind: str
+    symbol: str | None
+
+
+@dataclass(frozen=True)
+class JournalV1:
+    """GET /journal: the latest `[api] journal_rows` journal rows, oldest first, from the
+    database opened read-only. `last_seq`: the newest row's number ("line #N"), null with
+    `cause` when there is no database or it cannot be read."""
+
+    last_seq: int | None
+    rows: tuple[JournalRowV1, ...]
+    cause: str | None
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
+class NightlyFetchJobV1:
+    """The nightly backtest-data refresh's last outcome (its `nightly.json`): `finished_at`;
+    `last_day`, where the Lab's data now ends; `new_sessions` added that night (0 = already up to
+    date); `cause` when it was refused or stopped (the data stays as it was). All null with
+    `cause` when it never ran or its file cannot be read."""
+
+    finished_at: datetime | None
+    last_day: date | None
+    new_sessions: int | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
+class JobsV1:
+    """GET /jobs: when the bot's scheduled work last ran and runs next, for the Settings jobs
+    strip. Read-only: from the status file, the database (read-only), config and calendar.
+    `bot_state` and `bot_started_at` are null without a valid status file; `session` is null
+    with `session_cause` when today has no session the bot trades."""
+
+    served_at: datetime
+    bot_state: BotState | None
+    status_stale: bool
+    bot_started_at: datetime | None
+    reconcile: ReconcileJobV1
+    backup: BackupJobV1
+    launchd: tuple[LaunchdJobV1, ...]
+    session: SessionTimesV1 | None
+    session_cause: str | None
+    nightly_fetch: NightlyFetchJobV1
+    api_version: int = _const(API_VERSION)
+
+
+# ---------------------------------------------------------------- lab replay
+
+
+class LabReplayState(StrEnum):
+    IDLE = "idle"  # no run yet
+    RUNNING = "running"
+    DONE = "done"  # finished with a report
+    FAILED = "failed"  # finished without a report: `cause` says why
+
+
+@dataclass(frozen=True)
+class LabReplaySummaryV1:
+    """The run's SIMULATED report (backtest report.json), only the numbers the Lab shows.
+    Every signal: `trades` ... `max_drawdown_r`, the mean R interval resampling whole days
+    (null when too few days). Bot limits: what the bot could have taken under its risk checks.
+    Null numbers mean no trades to compute them from."""
+
+    first_day: date  # the replayed window: the last `sessions` sessions of the fetched data
+    last_day: date
+    sessions: int
+    sessions_without_replayed_days: int  # no gainer that day, or incomplete fetched data
+    replayed_symbol_days: int
+    trades: int
+    win_rate_percent: Decimal | None
+    mean_r: Decimal | None
+    total_r: Decimal | None
+    profit_factor: Decimal | None
+    mean_r_interval_low: Decimal | None
+    mean_r_interval_high: Decimal | None
+    confidence_percent: Decimal
+    max_drawdown_r: Decimal | None
+    bot_trades: int
+    bot_total_usd: Decimal
+    bot_max_drawdown_usd: Decimal | None
+
+
+@dataclass(frozen=True)
+class LabReplayV1:
+    """GET and POST /lab/replay: the Lab's SIMULATED replay of the active strategy over the last
+    sessions of the already fetched backtest data (it never fetches). One run at a time; only
+    the latest is kept. `summary` when `state` is done; `cause` when failed."""
+
+    state: LabReplayState
+    run_id: str | None
+    strategy: str | None
+    version: str | None
+    sessions: int  # [api] lab_replay_sessions asked for
+    started_at: datetime | None
+    finished_at: datetime | None
+    cause: str | None
+    summary: LabReplaySummaryV1 | None
+    api_version: int = _const(API_VERSION)
+
+
 # ---------------------------------------------------------------- explain (read-only)
 
 
@@ -745,6 +941,7 @@ class ObserverTradeV1:
     result_r: Decimal | None
     cause: str | None
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 @dataclass(frozen=True)
 class ObserverV1:
@@ -764,6 +961,8 @@ class ObserverV1:
     trades_cause: str | None
     trades_truncated: bool
 
+    result_cause_codes: tuple[ReasonV1, ...] = _reasons_of("result_cause")
+    trades_cause_codes: tuple[ReasonV1, ...] = _reasons_of("trades_cause")
 
 @dataclass(frozen=True)
 class ObserversV1:
@@ -989,6 +1188,7 @@ class SkippedSignalV1:
     prices_after_cause: str | None
     what_if: WhatIfV1
 
+    prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
 
 @dataclass(frozen=True)
 class SkippedV1:
@@ -1128,15 +1328,41 @@ class WatchingRowV1:
     quote_age_seconds: Decimal | None
     quote_age_cause: str | None
 
+    closeness_cause_codes: tuple[ReasonV1, ...] = _reasons_of("closeness_cause")
+    quote_age_cause_codes: tuple[ReasonV1, ...] = _reasons_of("quote_age_cause")
+
+class SizeBinding(StrEnum):
+    DAILY_ROOM = "daily_room"  # sized down to the room the daily loss ceiling leaves
+
+
+@dataclass(frozen=True)
+class LatestSizeV1:
+    """The size the active strategy gave its latest sized decision of the day: the measured
+    value of its recorded `quantity` check (whole shares; below 1 = too small to enter), on any
+    verdict: the last size given, not a forecast of the next one. `binding`: the limit that cut
+    it, only where the record proves it (`daily_room`: a `daily_loss_budget_usd` check and
+    floor(its room / the recorded `sizing_risk_per_share`) equal to the quantity); otherwise null
+    with `binding_cause`. Read from the decision record, never resized."""
+
+    symbol: str
+    at: datetime  # the decision's bar start
+    strategy: StrategyId
+    verdict: Verdict
+    quantity: Decimal
+    binding: SizeBinding | None
+    binding_cause: str | None
+
 
 @dataclass(frozen=True)
 class WatchingV1:
     """GET /watching?date=: the symbols the active strategy is closest to entering on, closest
-    first, at most `[api] watching_max_rows`; `total` counts them before the cap."""
+    first, at most `[api] watching_max_rows`; `total` counts them before the cap.
+    `latest_size`: see LatestSizeV1, null when no decision of the day was sized."""
 
     day: date
     total: int
     rows: tuple[WatchingRowV1, ...]
+    latest_size: LatestSizeV1 | None
     api_version: int = _const(API_VERSION)
 
 
@@ -1145,6 +1371,12 @@ QUOTE_AGE_NOT_RECORDED = "not recorded: decision records hold no quote time"
 _RISE = (">", ">=")  # passes once measured rises to the threshold
 _FALL = ("<", "<=")  # passes once measured falls to the threshold
 _NOT_WATCHING = (Verdict.ENTER, Verdict.HOLD, Verdict.EXIT)
+# Rule names the strategies record for their sizing (strategy/price_action_v1.py, simple.py).
+QUANTITY_RULE = "quantity"
+DAILY_ROOM_RULE = "daily_loss_budget_usd"
+SIZING_RISK_RULE = "sizing_risk_per_share"
+BINDING_NOT_RECORDED = ("not proven by the record: the planned loss, the notional cap or "
+                        "the daily room")
 
 
 def closeness(check: Check | None, places: int) -> tuple[Decimal | None, str | None]:
@@ -1216,7 +1448,35 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: 
             closeness=value, closeness_cause=cause, quote_age_seconds=None,
             quote_age_cause=QUOTE_AGE_NOT_RECORDED))
     rows.sort(key=lambda w: (w.closeness is None, -(w.closeness or 0), w.symbol))
-    return WatchingV1(day=day, total=len(rows), rows=tuple(rows[:max_rows]))
+    return WatchingV1(day=day, total=len(rows), rows=tuple(rows[:max_rows]),
+                      latest_size=latest_size(records))
+
+
+def _room_binds(checks: dict[str, Check], quantity: Decimal) -> bool:
+    """True only when the record proves the daily room set the quantity: the planned loss was
+    lowered to the room AND floor(room / recorded sizing risk per share) is the quantity. The
+    room check alone does not prove it: the notional cap can still cut below that."""
+    room, risk = checks.get(DAILY_ROOM_RULE), checks.get(SIZING_RISK_RULE)
+    if room is None or risk is None or room.measured is None or risk.measured is None:
+        return False
+    if risk.measured <= 0:
+        return False
+    return (room.measured / risk.measured).to_integral_value(rounding=ROUND_FLOOR) == quantity
+
+
+def latest_size(records: tuple[DecisionRecord, ...]) -> LatestSizeV1 | None:
+    """The newest record of `records` with a measured `quantity` check, as LatestSizeV1."""
+    for r in reversed(_oldest_first(records)):
+        checks = {c.rule: c for c in r.decision.checks}
+        quantity = checks.get(QUANTITY_RULE)
+        if quantity is None or quantity.measured is None:
+            continue
+        binding = SizeBinding.DAILY_ROOM if _room_binds(checks, quantity.measured) else None
+        d = r.decision
+        return LatestSizeV1(r.symbol, r.bar_start, StrategyId(d.strategy, d.version), d.verdict,
+                            quantity.measured, binding,
+                            None if binding else BINDING_NOT_RECORDED)
+    return None
 
 
 # ---------------------------------------------------------------- performance (read-only)
@@ -1229,6 +1489,7 @@ class ExclusionV1:
     cause: str
     trades: int
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 @dataclass(frozen=True)
 class PerformanceDayV1:
@@ -1274,12 +1535,21 @@ class PerformanceV1:
     days: tuple[PerformanceDayV1, ...]
     api_version: int = _const(API_VERSION)
 
+    win_rate_cause_codes: tuple[ReasonV1, ...] = _reasons_of("win_rate_cause")
+    expectancy_gross_r_cause_codes: tuple[ReasonV1, ...] = _reasons_of("expectancy_gross_r_cause")
+    expectancy_gross_usd_cause_codes: tuple[ReasonV1, ...] = (
+        _reasons_of("expectancy_gross_usd_cause"))
+    average_win_gross_r_cause_codes: tuple[ReasonV1, ...] = _reasons_of("average_win_gross_r_cause")
+    average_loss_gross_r_cause_codes: tuple[ReasonV1, ...] = (
+        _reasons_of("average_loss_gross_r_cause"))
+    profit_factor_gross_cause_codes: tuple[ReasonV1, ...] = _reasons_of("profit_factor_gross_cause")
 
 SCHEMA_TYPES: dict[str, type] = {
     "status-v1": StatusV1,
     "command-v1": CommandV1,
     "status-response-v1": StatusResponseV1,
     "command-accepted-v1": CommandAcceptedV1,
+    "paired-v1": PairedV1,
     "pending-commands-v1": PendingCommandsV1,
     "error-v1": ErrorV1,
     "days-v1": DaysV1,
@@ -1287,6 +1557,9 @@ SCHEMA_TYPES: dict[str, type] = {
     "bars-v1": BarsV1,
     "chart-v1": ChartV1,
     "settings-v1": SettingsV1,
+    "jobs-v1": JobsV1,
+    "journal-v1": JournalV1,
+    "lab-replay-v1": LabReplayV1,
     "explain-v1": ExplainV1,
     "observers-v1": ObserversV1,
     "decisions-v1": DecisionsV1,
@@ -1321,7 +1594,9 @@ def parse_time(text: str) -> datetime:
 
 def to_jsonable(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
-        return {f.name: to_jsonable(getattr(value, f.name)) for f in fields(value)}
+        return {f.name: to_jsonable(_codes_for(value, f.metadata[REASONS_OF])
+                                    if REASONS_OF in f.metadata else getattr(value, f.name))
+                for f in fields(value)}
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, bool | int | str) or value is None:
@@ -1446,8 +1721,9 @@ def from_jsonable(cls: type, raw: Any, where: str = "$") -> Any:
     if missing:
         raise ContractError(f"{where}: missing keys: {', '.join(missing)}")
     meta = {f.name: f.metadata or None for f in fields(cls)}
+    computed = {f.name for f in fields(cls) if not f.init}  # rebuilt from their source field
     return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n])
-                  for n in expected if n in raw})
+                  for n in expected if n in raw and n not in computed})
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

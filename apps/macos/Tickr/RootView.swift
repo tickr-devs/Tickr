@@ -99,6 +99,8 @@ struct RootView: View {
       }
       .animation(Tokens.Motion.standard, value: model.toast)
       .animation(Tokens.Motion.standard, value: model.unattendedPositions)
+      // Hints of the screen, the banner and the toast, drawn above all of them.
+      .hintHost()
       .navigationTitle(Text(section.title))
       .navigationSubtitle(Text(verbatim: subtitle))
       .toolbar { DayToolbar() }
@@ -115,7 +117,7 @@ struct RootView: View {
     }
   }
 
-  /// "sandbox · price-action-v1 v1 · positions: 1", as in the design's title bar; the day is in
+  /// "Sandbox · price-action-v1 v1 · positions: 1", as in the design's title bar; the day is in
   /// the toolbar's day picker. Before the first status, the day.
   private var subtitle: String {
     guard let status = model.status else {
@@ -124,7 +126,7 @@ struct RootView: View {
         : String(localized: L10n.Common.recordedDay(Format.dayLabel(model.shownDay)))
     }
     let positions = String(localized: L10n.Toolbar.positions(status.positions.count))
-    return "\(status.environment) · \(Format.strategy(status.strategy)) · \(positions)"
+    return "\(ApiText.environment(status.environment)) · \(Format.strategy(status.strategy)) · \(positions)"
   }
 }
 
@@ -157,20 +159,12 @@ private struct Sidebar: View {
 private struct BotStateCard: View {
   @Environment(AppModel.self) private var model
 
-  /// Characters of the run id shown; enough to tell runs apart.
-  static let runIdPrefix = 8
-
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       CardLabel(L10n.Common.bot)
       HStack(spacing: Tokens.Space.s) {
         PulseDot(color, pulsing: model.isLive, event: model.status?.botState)
         Text(verbatim: stateText).font(Tokens.Typography.callout.weight(.semibold)).foregroundStyle(color)
-      }
-      if let run = model.status?.runId {
-        Text(L10n.Root.run(String(run.prefix(Self.runIdPrefix))))
-          .font(Tokens.Typography.captionMono)
-          .foregroundStyle(Palette.textQuaternary)
       }
       Text(verbatim: model.baseURL.host() ?? model.baseURL.absoluteString)
         .font(Tokens.Typography.captionMono)
@@ -269,7 +263,7 @@ struct ConnectionStatus: View {
       HStack(spacing: Tokens.Space.s) {
         // Pulses only while a fresh status keeps arriving; a down or silent bot's dot holds still.
         PulseDot(Self.color(hasStatus: model.status != nil, stale: model.response?.stale, failed: model.fetchError != nil),
-          size: Tokens.Size.dotSmall, pulsing: isFresh, event: model.headline.text)
+          size: Tokens.Size.dotSmall, pulsing: isFresh, event: model.headline.pulse)
         Text(verbatim: text(now: model.botTime(context.date)))
           .font(Tokens.Typography.captionMono)
           .foregroundStyle(Palette.textTertiary)

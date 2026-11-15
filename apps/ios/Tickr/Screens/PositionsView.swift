@@ -20,7 +20,7 @@ struct PositionsView: View {
             Label { Text(L10n.Positions.none) } icon: { BrandMark.empty() }
           } description: {
             if let block = status.entryBlock {
-              Text(verbatim: block.text)
+              Text(verbatim: ApiText.entryBlock(block))
             } else {
               Text(L10n.Positions.watching)
             }
@@ -182,10 +182,12 @@ private struct PositionDetail: View {
     let quantity = position.quantity.value
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
       VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-        HStack(alignment: .firstTextBaseline) {
+        RowStack(alignment: .firstTextBaseline) {
           Text(verbatim: position.symbol)
             .font(.largeTitle.monospaced().bold())
-          Spacer()
+            .lineLimit(1)
+            .fixedSize()
+          Spacer(minLength: 0)
           if let marks {
             // An old last bar (capture stopped, a past session) is shown as history: muted and
             // dated, never as a live result.
@@ -208,7 +210,7 @@ private struct PositionDetail: View {
             .accessibilityElement(children: .combine)
           }
         }
-        Text(L10n.Positions.shares(position.quantity.text, position.entryPrice.text,
+        Text(L10n.Positions.shares(position.quantity.text, Money.price(position.entryPrice.value),
           Format.clock(position.openedAt.date)))
           .font(Tokens.Typography.captionMono)
           .foregroundStyle(Palette.textTertiary)
@@ -224,7 +226,8 @@ private struct PositionDetail: View {
         reconciled: model.isFresh && model.account?.stale == false)
         .rise(step: Order.chain.rawValue)
 
-      HStack(spacing: Tokens.Space.s) {
+      // Three tiles in a row; one under another at large text sizes, so labels and figures stay whole.
+      RowStack(spacing: Tokens.Space.s) {
         StatTile(label: L10n.Positions.maxLoss,
           value: Risk.plannedLoss(entry: entry, stop: stop, quantity: quantity).map { Money.plain($0) }
             ?? Format.missing)
@@ -281,6 +284,9 @@ private struct LevelsCard: View {
   static let labelLift: CGFloat = 9
   /// Where everything sits when the scale has no range (one price only), as a fraction from the top.
   static let middle: CGFloat = 0.5
+  /// Largest text size of the level labels: they sit on their lines in a drawing of fixed height,
+  /// so larger text would cover the other level. The levels are also in the drawing's VoiceOver label.
+  static let largestLabelSize = DynamicTypeSize.xxLarge
 
   @State private var drawn = false
   let entry: Decimal
@@ -305,7 +311,8 @@ private struct LevelsCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      HStack {
+      // The label, then its note; the note goes under it at large text sizes.
+      RowStack {
         CardLabel(L10n.Positions.riskBand)
         Spacer()
         if marks == nil {
@@ -337,8 +344,9 @@ private struct LevelsCard: View {
           line(L10n.Positions.entryLevel(Money.plain(entry)), color: Palette.textQuaternary,
             textColor: Palette.textTertiary, y: entryY, width: width)
           if let stop {
+            // The lower level's label hangs under its line, so the two labels never meet.
             line(L10n.Positions.stopLevel(Money.plain(stop)), color: Palette.loss, textColor: Palette.lossText,
-              y: height * level(of: stop), width: width)
+              y: height * level(of: stop), width: width, below: stop < entry)
           }
           if let marks {
             price(marks, width: width, height: height)
@@ -346,6 +354,7 @@ private struct LevelsCard: View {
         }
       }
       .frame(height: Self.height)
+      .dynamicTypeSize(...Self.largestLabelSize)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(Text(L10n.Positions.levels(Money.plain(entry),
         stop.map { Money.plain($0) } ?? String(localized: L10n.Common.unknown))))
@@ -390,8 +399,10 @@ private struct LevelsCard: View {
     .frame(width: width, height: height)
   }
 
-  private func line(_ text: LocalizedStringResource, color: Color, textColor: Color, y: CGFloat, width: CGFloat)
-    -> some View {
+  /// A dashed level across the width with its label just above it, or just under it when `below`.
+  private func line(
+    _ text: LocalizedStringResource, color: Color, textColor: Color, y: CGFloat, width: CGFloat, below: Bool = false
+  ) -> some View {
     ZStack(alignment: .leading) {
       Path { path in
         path.move(to: .zero)
@@ -405,7 +416,7 @@ private struct LevelsCard: View {
         .foregroundStyle(textColor)
         .padding(.horizontal, Tokens.Space.xs)
         .background(Palette.surface)
-        .offset(x: Tokens.Space.xs, y: -Self.labelLift)
+        .offset(x: Tokens.Space.xs, y: below ? Self.labelLift : -Self.labelLift)
     }
     .offset(y: y)
   }
@@ -489,17 +500,19 @@ private struct ProtectionChain: View {
     if entry.sendOutcome == .unknown, entry.latestOutcome == .acknowledged {
       return String(localized: L10n.Positions.entryConfirmedLater)
     }
-    return entry.sentAt.map { Format.clock($0.date) } ?? position.entryCause ?? Format.missing
+    return entry.sentAt.map { Format.clock($0.date) }
+      ?? ApiText.prose(position.entryCauseCodes, text: position.entryCause) ?? Format.missing
   }
 
   private var steps: [(label: LocalizedStringResource, detail: String, ok: Bool)] {
     let state = position.stop.state
     return [
       (L10n.Positions.entrySent, entryDetail, entryProven),
-      (L10n.Positions.filled(position.quantity.text, position.entryPrice.text),
+      (L10n.Positions.filled(position.quantity.text, Money.price(position.entryPrice.value)),
         Format.clock((position.entry.filledAt ?? position.openedAt).date), true),
       // No time: the status does not say when the stop was sent, and its order id means nothing here.
-      (L10n.Positions.stopSent(position.stop.price?.text ?? ""), "", state == .pending || state == .verified),
+      (L10n.Positions.stopSent(position.stop.price.map { Money.price($0.value) } ?? Format.missing), "",
+        state == .pending || state == .verified),
       (L10n.Positions.stopWorking, Board.stopStateTitle(state), state.isProtected),
       (L10n.Positions.reconciled, brokerReadAt.map(Format.clock) ?? Format.missing, brokerReadAt != nil && reconciled),
     ]

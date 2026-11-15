@@ -58,11 +58,13 @@ struct MoneyText: View {
   var colored = true
   /// A result carries its sign ("+12.40"); an amount such as the room left does not ("292.00").
   var signed = true
+  /// Greyed: a figure as of an older moment, not the current one.
+  var muted = false
 
   var body: some View {
     Text(verbatim: text)
       .font(font)
-      .foregroundStyle(colored ? Palette.result(value) : Palette.textPrimary)
+      .foregroundStyle(muted ? Palette.textQuaternary : colored ? Palette.result(value) : Palette.textPrimary)
       .contentTransition(.numericText(value: NSDecimalNumber(decimal: value).doubleValue))
       .animation(Tokens.Motion.quick, value: value)
   }
@@ -225,6 +227,8 @@ enum Format {
   /// Joins the items of a list ("Gainers, Most active") and the lines of a tooltip.
   static let listSeparator = ", "
   static let lineSeparator = "\n"
+  /// Joins the parts of a one-line summary ("1 min +0.06 · 5 min +0.14").
+  static let itemSeparator = " · "
   /// Up to this many seconds an age reads in seconds, beyond it in minutes.
   static let secondsShownUpTo = 120
   /// Seconds in a minute.
@@ -249,6 +253,45 @@ enum Format {
       timeZone: newYork, calendar: calendar))
   }
 
+  /// Date styles of a chart over several sessions or months, in New York time and the person's
+  /// language.
+  private static func chartStyle(_ style: Date.FormatStyle) -> Date.FormatStyle {
+    var style = style
+    style.timeZone = newYork
+    return style
+  }
+
+  /// "Fri 13": the session a five-day axis label starts.
+  static func chartSessionDay(_ date: Date) -> String {
+    date.formatted(chartStyle(Date.FormatStyle().weekday(.abbreviated).day()))
+  }
+
+  /// "Fri 13 14:30": a candle of a five-day chart.
+  static func chartSessionMinute(_ date: Date) -> String {
+    "\(chartSessionDay(date)) \(marketMinute(date))"
+  }
+
+  /// "Fri Nov 13": a daily candle.
+  static func chartDay(_ date: Date) -> String {
+    date.formatted(chartStyle(Date.FormatStyle().weekday(.abbreviated).month(.abbreviated).day()))
+  }
+
+  /// "Nov 9": a weekly candle (its Monday), or the week a one-month axis label starts.
+  static func chartMonthDay(_ date: Date) -> String {
+    date.formatted(chartStyle(Date.FormatStyle().month(.abbreviated).day()))
+  }
+
+  /// "Nov 2026": a monthly candle.
+  static func chartMonthYear(_ date: Date) -> String {
+    date.formatted(chartStyle(Date.FormatStyle().month(.abbreviated).year()))
+  }
+
+  /// "Nov" on a long axis; "2026" where a year begins.
+  static func chartMonth(_ date: Date) -> String {
+    let january = WireDate.newYork.component(.month, from: date) == 1
+    return date.formatted(chartStyle(january ? Date.FormatStyle().year() : Date.FormatStyle().month(.abbreviated)))
+  }
+
   /// "Fri Nov 13" in the person's language.
   static func dayLabel(_ day: WireDate) -> String {
     var style = Date.FormatStyle().weekday(.abbreviated).month(.abbreviated).day()
@@ -271,7 +314,17 @@ enum Format {
 
   /// "5 s": a duration from the bot's settings.
   static func seconds(_ value: Decimal) -> String {
-    String(localized: L10n.Format.seconds(Money.plain(value)))
+    String(localized: L10n.Format.seconds(secondsNumber(value)))
+  }
+
+  /// "5" for 5.00, "0.5" for 0.50: a setting in seconds without trailing zeros.
+  static func secondsNumber(_ value: Decimal) -> String {
+    NSDecimalNumber(decimal: value).stringValue
+  }
+
+  /// "4 s": an age or duration in whole seconds, rounded.
+  static func wholeSeconds(_ value: Decimal) -> String {
+    Money.plain(value, fractionDigits: 0)
   }
 
   /// "250.00 USD": an amount from the bot's settings.

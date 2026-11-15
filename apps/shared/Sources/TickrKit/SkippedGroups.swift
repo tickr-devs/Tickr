@@ -27,6 +27,40 @@ public enum RefusalCode: String, Sendable, CaseIterable {
   case dailyCeiling = "DAILY_CEILING"
   case entryBudget = "ENTRY_BUDGET_UNAVAILABLE"
   case stopBudget = "STOP_BUDGET_UNAVAILABLE"
+
+  /// SF Symbols of the refusal families: the gate or an operator pause, a broker read or
+  /// reconciliation, exposure the bot did not open, the session's hours, the bot's own position or
+  /// order, a pause after a loss, a setup gone, the quote, the price window, size and loss limits,
+  /// and the request budget; and of a cause this app has no words for.
+  public static let gateSymbol = "lock.fill"
+  public static let brokerSymbol = "arrow.triangle.2.circlepath"
+  public static let exposureSymbol = "person.crop.circle.badge.questionmark"
+  public static let sessionSymbol = "clock"
+  public static let ownSymbol = "square.stack.fill"
+  public static let cooldownSymbol = "pause.circle.fill"
+  public static let setupSymbol = "xmark.circle"
+  public static let quoteSymbol = "waveform.path.ecg"
+  public static let priceSymbol = "arrow.up.and.down"
+  public static let sizeSymbol = "scalemass.fill"
+  public static let budgetSymbol = "speedometer"
+  public static let unknownSymbol = "questionmark.circle"
+
+  /// The symbol of this refusal's family, for a row or a glyph next to its words.
+  public var symbol: String {
+    switch self {
+    case .gateClosed, .entryStop: return Self.gateSymbol
+    case .notReconciled, .brokerReadMissing, .brokerReadStale: return Self.brokerSymbol
+    case .unresolvedExposure, .foreignExposure: return Self.exposureSymbol
+    case .halfDay, .outsideSession, .afterLastEntry: return Self.sessionSymbol
+    case .ownPosition, .ownOrder, .positionLimit: return Self.ownSymbol
+    case .cooldown: return Self.cooldownSymbol
+    case .setupInvalidated: return Self.setupSymbol
+    case .quoteMissing, .quoteStale: return Self.quoteSymbol
+    case .priceOutside: return Self.priceSymbol
+    case .quantityBelowOne, .notionalOverCap, .plannedLossOver, .dailyCeiling: return Self.sizeSymbol
+    case .entryBudget, .stopBudget: return Self.budgetSymbol
+    }
+  }
 }
 
 /// The single recorded cause of a refused entry, "CODE: detail", as the bot writes it
@@ -40,6 +74,8 @@ public struct RefusalCause: Hashable, Sendable {
   /// a loss has both ends.
   public let since: Date?
   public let until: Date?
+  /// The values the detail names, when the bot sent the refusal structured.
+  public let params: [String: String]
 
   /// Between the code and the detail.
   public static let separator = ": "
@@ -50,6 +86,7 @@ public struct RefusalCause: Hashable, Sendable {
   public init(_ text: String, refusal: RefusalV1? = nil) {
     since = refusal?.since?.date
     until = refusal?.until?.date
+    params = refusal?.params ?? [:]
     if let range = text.range(of: Self.separator) {
       code = String(text[..<range.lowerBound])
       detail = String(text[range.upperBound...])
@@ -59,8 +96,23 @@ public struct RefusalCause: Hashable, Sendable {
     }
   }
 
+  /// The detail in the person's language, nil when there is no sentence for it or a value is
+  /// missing.
+  public var phrase: String? { ApiText.refusalDetail(code: code, params: params) }
+
   /// The code, when the apps know it.
   public var known: RefusalCode? { RefusalCode(rawValue: code) }
+
+  /// Whether the text starts with a machine code ("SYMBOL_COOLDOWN") rather than being the bot's
+  /// prose without one. A code is never shown to a person: one the apps do not know reads as
+  /// "Other reason" followed by its detail; prose without a code is shown as written.
+  public var hasCode: Bool {
+    code.contains(where: \.isLetter)
+      && code.allSatisfy { ($0.isLetter && $0.isUppercase) || $0.isNumber || $0 == Self.codeJoiner }
+  }
+
+  /// Joins the words of a code ("SYMBOL_COOLDOWN").
+  static let codeJoiner: Character = "_"
 
   /// The ISO-8601 times in `detail`, in the order written.
   public var times: [Date] {

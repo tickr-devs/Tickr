@@ -113,8 +113,12 @@ enum Format {
       timeZone: WireDate.newYork.timeZone, calendar: WireDate.newYork))
   }
 
+  /// "Fri, Nov 13" in the person's language: the New York day, as the bot keeps its sessions,
+  /// whatever the phone's time zone (noon in New York is already the next day from UTC+7 eastward).
   static func day(_ date: Date) -> String {
-    date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    var style = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+    style.timeZone = WireDate.newYork.timeZone
+    return date.formatted(style)
   }
 
   static func timeOrDash(_ time: WireTime?) -> String {
@@ -126,6 +130,34 @@ enum Format {
     guard let response, let age = response.ageSeconds else { return L10n.Age.none }
     let seconds = NSDecimalNumber(decimal: age.value).intValue
     return response.stale ? L10n.Age.stale(seconds) : L10n.Age.updated(seconds)
+  }
+}
+
+extension DynamicTypeSize {
+  /// Rows of several parts (a symbol, figures, a tag) stack their parts from XXL up, so words and
+  /// figures stay whole instead of breaking letter by letter (Russian names need it from XXL).
+  var stacksRows: Bool { self >= .xxLarge }
+}
+
+/// A row at ordinary text sizes that becomes a leading-aligned column when the text size
+/// `stacksRows`; alignment and spacing as an `HStack`'s.
+struct RowStack<Content: View>: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
+  let alignment: VerticalAlignment
+  let spacing: CGFloat?
+  let content: Content
+
+  init(alignment: VerticalAlignment = .center, spacing: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+    self.alignment = alignment
+    self.spacing = spacing
+    self.content = content()
+  }
+
+  var body: some View {
+    let layout = typeSize.stacksRows
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: spacing))
+      : AnyLayout(HStackLayout(alignment: alignment, spacing: spacing))
+    layout { content }
   }
 }
 
@@ -179,9 +211,6 @@ struct ConnectionPrompt: View {
 
 /// A label and a value in a small card, used in rows of three.
 struct StatTile: View {
-  /// Smallest scale a value may shrink to before it truncates (also used by the watching card).
-  static let minimumScale = 0.7
-
   let label: LocalizedStringResource
   let value: String
   var color: Color = Palette.textPrimary
@@ -206,7 +235,7 @@ struct EnvironmentBadge: View {
   let environment: String
 
   var body: some View {
-    Text(verbatim: environment.uppercased())
+    Text(verbatim: ApiText.environment(environment).uppercased())
       .font(Tokens.Typography.badge)
       .tracking(Tokens.Typography.badgeTracking)
       .padding(.horizontal, Tokens.Space.s)
@@ -214,7 +243,7 @@ struct EnvironmentBadge: View {
       .foregroundStyle(Palette.warningText)
       .background(Palette.warning.opacity(Tokens.Opacity.wash), in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
       .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.small).strokeBorder(Palette.warning.opacity(Tokens.Opacity.border)))
-      .accessibilityLabel(Text(L10n.Connect.environment(environment)))
+      .accessibilityLabel(Text(L10n.Connect.environment(ApiText.environment(environment))))
   }
 }
 
@@ -270,13 +299,13 @@ struct NoticeOverlay: ViewModifier {
 }
 
 /// A position's protection as a compact shield glyph: green when the broker stop is verified, red
-/// otherwise, pulsing once per broker read that still finds it unprotected. Its hint names the
+/// otherwise, pulsing once each time its state or price changes while unprotected. Its hint names the
 /// symbol and the state.
 struct StopGlyph: View {
   let state: StopState
   let symbol: String
-  /// The bot's last broker read, the event the pulse follows.
-  var read: Date?
+  /// The stop's price: a moved stop is a change too.
+  var price: DecimalString?
 
   /// Symbols of the stop states, and of a stop level next to a price.
   static let verifiedSymbol = "checkmark.shield.fill"
@@ -287,10 +316,15 @@ struct StopGlyph: View {
 
   var body: some View {
     StateGlyph(glyph, tone: tone, label: Text(verbatim: symbol + Format.separator + Board.stopStateTitle(state)),
-      live: !state.isProtected, event: read, style: .compact)
+      live: !state.isProtected, event: [AnyHashable(state), AnyHashable(price)], style: .compact)
   }
 
-  private var glyph: String {
+  private var glyph: String { Self.stateSymbol(state) }
+
+  private var tone: Tone { Self.stateTone(state) }
+
+  /// The symbol of a stop state: a checked shield, an hourglass, a crossed or an exclaimed shield.
+  static func stateSymbol(_ state: StopState) -> String {
     switch state {
     case .verified: return Self.verifiedSymbol
     case .pending: return Self.pendingSymbol
@@ -299,7 +333,8 @@ struct StopGlyph: View {
     }
   }
 
-  private var tone: Tone {
+  /// The tone of a stop state: green verified, amber pending, red missing or unknown.
+  static func stateTone(_ state: StopState) -> Tone {
     switch state {
     case .verified: return .profit
     case .pending: return .warning

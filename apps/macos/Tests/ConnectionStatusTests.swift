@@ -3,6 +3,7 @@ import TickrDesign
 @testable import TickrMac
 
 @Suite("Toolbar connection dot")
+@MainActor
 struct ConnectionStatusTests {
   @Test("Fresh is green, stale amber, none or a failed read red")
   func color() {

@@ -12,11 +12,17 @@ enum Pace {
   static let historySeconds: Double = 30
   /// Bars of the open positions (one new M1 bar a minute).
   static let barsSeconds: Double = 15
+  /// Candles of a range beyond one day (GET /chart): the bot keeps them a while, and the
+  /// shortest candle there is five minutes long.
+  static let chartSeconds: Double = 60
   /// The day's flow (screener chips, stage counts, stops, reconciliation) and the symbols the
   /// strategy is watching closely; both change with every decision.
   static let flowSeconds: Double = 5
   /// The broker account read the bot keeps (GET /account); the API serves the bot's last read.
   static let accountSeconds: Double = 15
+  /// The Lab's replay (GET /lab/replay) while the Lab is open: idle or done, and while it runs.
+  static let labReplaySeconds: Double = 30
+  static let labReplayRunningSeconds: Double = 3
   /// How long a command toast stays on screen.
   static let toastSeconds: Double = 6
 }
@@ -48,6 +54,10 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   public var quantity: Decimal { position.quantity.value }
 
   public var unrealized: Decimal? { lastBarClose.map { ($0 - entry) * quantity } }
+  /// Result at the newest captured bar, fresh or not.
+  public var latestUnrealized: Decimal? { latestClose.map { ($0 - entry) * quantity } }
+  /// The newest bar is too old to be the current price: figures are shown greyed, as of its time.
+  public var isStale: Bool { lastBarClose == nil && latestClose != nil }
   public var resultR: Decimal? {
     guard let last = lastBarClose else { return nil }
     return Risk.multiple(entry: entry, stop: stop, price: last)
@@ -94,6 +104,22 @@ public final class AppModel {
   /// The broker's view of the account at the bot's last read; nil until read.
   public private(set) var account: AccountResponseV1?
   public private(set) var accountError: String?
+  /// The Lab's simulated replay of the active strategy (GET /lab/replay), read while the Lab is open.
+  public private(set) var labReplay: LabReplayV1?
+  /// Why it could not be read, if it could not.
+  public private(set) var labReplayError: String?
+  /// Why the last start was refused (409): a reason to wait, not a failure.
+  public private(set) var labReplayRefusal: String?
+  /// The replay as read when the refusal came, as state and run, and when it came: a later read
+  /// that differs means the replay moved on, and past `Pace.labReplaySeconds` the reason may no
+  /// longer hold (the session closed), so either clears it.
+  private var labReplayRefusedAt: (state: LabReplayState?, runId: String?, at: Date)?
+  /// A start is on its way to the API.
+  public private(set) var labReplayStarting = false
+  /// What runs on its own on the Mac (GET /jobs), read while Settings is open.
+  public private(set) var jobs: JobsV1?
+  /// Why the jobs could not be read, if they could not.
+  public private(set) var jobsError: String?
 
   // Navigation (the sidebar selection lives here so any card can jump to a section).
   var section: AppSection = .overview
@@ -187,13 +213,18 @@ public final class AppModel {
   /// the bot computes it; nil while the status is unknown or the bot cannot compute it.
   public var dailyRoom: Decimal? { status?.dailyRoomUsd?.value }
 
-  /// A captured M1 bar is fresh while its close (start + one minute) is no older than the
-  /// server's `status_stale_seconds`. Without settings nothing counts as fresh.
+  /// A captured M1 bar is current while it can still be the newest completed bar: the bot keeps
+  /// completed bars only, so the next one closes a full bar after it. It stays current for one bar
+  /// plus the server's `status_stale_seconds` after its close. Without settings nothing is current.
   func barIsFresh(start: Date, now: Date) -> Bool {
     guard let settings else { return false }
-    let staleSeconds = NSDecimalNumber(decimal: settings.statusStaleSeconds.value).doubleValue
-    let barClose = start.addingTimeInterval(Self.barSeconds)
-    return now.timeIntervalSince(barClose) <= staleSeconds
+    return Self.barIsCurrent(start: start, now: now,
+      staleSeconds: NSDecimalNumber(decimal: settings.statusStaleSeconds.value).doubleValue)
+  }
+
+  static func barIsCurrent(start: Date, now: Date, staleSeconds: TimeInterval) -> Bool {
+    let barClose = start.addingTimeInterval(barSeconds)
+    return now.timeIntervalSince(barClose) <= barSeconds + staleSeconds
   }
 
   /// Length of one captured bar (M1).
@@ -306,6 +337,12 @@ public final class AppModel {
     todayDocument = nil
     barsBySymbol = [:]
     account = nil
+    jobs = nil
+    jobsError = nil
+    labReplay = nil
+    labReplayError = nil
+    labReplayRefusal = nil
+    labReplayRefusedAt = nil
     observers = nil
     skipped = nil
     performance = nil
@@ -341,7 +378,7 @@ public final class AppModel {
         await refreshHistory()
       }
     } catch {
-      fetchError = Self.describe(error)
+      fetchError = Self.describe(error) ?? fetchError
     }
     if settings == nil { await refreshSettings() }
   }
@@ -358,7 +395,7 @@ public final class AppModel {
       settings = try await client.settings()
       settingsError = nil
     } catch {
-      settingsError = Self.describe(error)
+      settingsError = Self.describe(error) ?? settingsError
     }
   }
 
@@ -368,11 +405,92 @@ public final class AppModel {
       todayDocument = try await client.day(today)
       historyError = nil
     } catch {
-      historyError = Self.describe(error)
+      historyError = Self.describe(error) ?? historyError
     }
     await refreshObservers()
     await refreshSkipped()
     await refreshPerformance()
+  }
+
+  /// Reads the Lab's replay; a failed read clears it, so an old result never reads as current.
+  public func refreshLabReplay() async {
+    let url = baseURL
+    do {
+      let read = try await client.labReplay()
+      guard url == baseURL else { return }
+      labReplay = read
+      labReplayError = nil
+      if let refused = labReplayRefusedAt, refused.state != read.state || refused.runId != read.runId
+        || Date.now.timeIntervalSince(refused.at) >= Pace.labReplaySeconds {
+        labReplayRefusal = nil
+        labReplayRefusedAt = nil
+      }
+    } catch is CancellationError {
+      return
+    } catch {
+      guard url == baseURL else { return }
+      labReplay = nil
+      labReplayError = Self.describe(error) ?? labReplayError
+    }
+  }
+
+  /// Starts the Lab's replay once; a refusal (a run going, the session open, no data) is kept as
+  /// the reason, never retried.
+  public func startLabReplay() async {
+    let url = baseURL
+    labReplayStarting = true
+    defer { labReplayStarting = false }
+    do {
+      let started = try await client.startLabReplay()
+      guard url == baseURL else { return }
+      labReplay = started
+      labReplayRefusal = nil
+      labReplayRefusedAt = nil
+      labReplayError = nil
+    } catch APIError.refused(_, _, let cause) {
+      guard url == baseURL else { return }
+      labReplayRefusal = cause
+      labReplayRefusedAt = (labReplay?.state, labReplay?.runId, .now)
+    } catch {
+      guard url == baseURL else { return }
+      labReplayError = Self.describe(error) ?? labReplayError
+    }
+  }
+
+  /// Reads the replay until cancelled, more often while it runs; used while the Lab is open.
+  public func followLabReplay() async {
+    while !Task.isCancelled {
+      await refreshLabReplay()
+      let seconds = labReplay?.state == .running ? Pace.labReplayRunningSeconds : Pace.labReplaySeconds
+      try? await Task.sleep(for: .seconds(seconds))
+    }
+  }
+
+  /// Reads the jobs; a failed read clears them, so old times never read as current.
+  public func refreshJobs() async {
+    let url = baseURL
+    do {
+      let read = try await client.jobs()
+      guard url == baseURL else { return }
+      jobs = read
+      jobsError = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      guard url == baseURL else { return }
+      jobs = nil
+      jobsError = Self.describe(error) ?? jobsError
+    }
+  }
+
+  /// Reads the jobs at the status poll rate until cancelled; used while Settings is open.
+  public func followJobs() async {
+    while !Task.isCancelled {
+      await refreshJobs()
+      let seconds = response.map { NSDecimalNumber(decimal: $0.pollSeconds.value).doubleValue }
+        ?? Pace.initialPollSeconds
+      try? await Task.sleep(for: .seconds(max(seconds, 1)))
+    }
   }
 
   public func refreshAccount() async {
@@ -382,7 +500,7 @@ public final class AppModel {
     } catch {
       // A failed read never shows an older answer as current.
       account = nil
-      accountError = Self.describe(error)
+      accountError = Self.describe(error) ?? accountError
     }
   }
 
@@ -397,7 +515,7 @@ public final class AppModel {
     } catch {
       guard day == shownDay else { return }
       observers = nil
-      observersError = Self.describe(error)
+      observersError = Self.describe(error) ?? observersError
     }
   }
 
@@ -413,7 +531,7 @@ public final class AppModel {
     } catch {
       guard day == shownDay else { return }
       skipped = nil
-      skippedError = Self.describe(error)
+      skippedError = Self.describe(error) ?? skippedError
     }
   }
 
@@ -429,7 +547,7 @@ public final class AppModel {
     } catch {
       guard day == shownDay else { return }
       performance = nil
-      performanceError = Self.describe(error)
+      performanceError = Self.describe(error) ?? performanceError
     }
   }
 
@@ -445,7 +563,7 @@ public final class AppModel {
     } catch {
       guard day == shownDay else { return }
       flow = nil
-      flowError = Self.describe(error)
+      flowError = Self.describe(error) ?? flowError
     }
     do {
       let document = try await client.watching(day: day)
@@ -455,7 +573,7 @@ public final class AppModel {
     } catch {
       guard day == shownDay else { return }
       watching = nil
-      watchingError = Self.describe(error)
+      watchingError = Self.describe(error) ?? watchingError
     }
   }
 
@@ -485,7 +603,7 @@ public final class AppModel {
     } catch {
       guard day == selectedDay else { return }
       dayDocument = nil
-      historyError = Self.describe(error)
+      historyError = Self.describe(error) ?? historyError
     }
   }
 
@@ -530,7 +648,7 @@ public final class AppModel {
       show(record)
     } catch {
       show(SentCommand(id: UUID().uuidString, kind: command.kind, title: title, outcome: .refused,
-        cause: String(localized: L10n.Bot.notSent(Self.describe(error))), warning: nil))
+        cause: String(localized: L10n.Bot.notSent(ErrorText.text(error))), warning: nil))
     }
     await refreshStatus()
   }
@@ -555,7 +673,9 @@ public final class AppModel {
     }
   }
 
-  static func describe(_ error: Error) -> String {
-    (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+  /// Nil for a cancelled read: callers keep the error they had (`describe(error) ?? old`), so a read
+  /// cancelled by `stop()` never clears a real failure and makes stale data look current.
+  static func describe(_ error: Error) -> String? {
+    ErrorText.describe(error)
   }
 }

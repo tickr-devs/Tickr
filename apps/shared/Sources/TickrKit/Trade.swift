@@ -21,6 +21,8 @@ public struct Trade: Codable, Hashable, Sendable {
   public let entry: EntrySend
   /// Why the bot has no entry send record for the trade; nil when it has one.
   public let entryCause: String?
+  /// `entry_cause` as codes (docs/api.md, "Reason codes"); empty when there is none.
+  public let entryCauseCodes: [ReasonV1]
   /// The strategy and version that opened the trade; nil when the bot did not record it.
   public let strategy: StrategyId?
 
@@ -36,6 +38,7 @@ public struct Trade: Codable, Hashable, Sendable {
     case stopConfirmedAfterSeconds = "stop_confirmed_after_seconds"
     case entry
     case entryCause = "entry_cause"
+    case entryCauseCodes = "entry_cause_codes"
   }
 
   public init(from decoder: Decoder) throws {
@@ -52,6 +55,7 @@ public struct Trade: Codable, Hashable, Sendable {
     stopConfirmedAfterSeconds = try c.decodeNullable(DecimalString.self, forKey: .stopConfirmedAfterSeconds)
     entry = try c.decode(EntrySend.self, forKey: .entry)
     entryCause = try c.decodeNullable(String.self, forKey: .entryCause)
+    entryCauseCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .entryCauseCodes) ?? []
     // Added after version 1 shipped: an older status has no such key.
     strategy = try c.decodeIfPresent(StrategyId.self, forKey: .strategy)
   }
@@ -70,6 +74,7 @@ public struct Trade: Codable, Hashable, Sendable {
     try c.encodeNullable(stopConfirmedAfterSeconds, forKey: .stopConfirmedAfterSeconds)
     try c.encode(entry, forKey: .entry)
     try c.encodeNullable(entryCause, forKey: .entryCause)
+    try c.encode(entryCauseCodes, forKey: .entryCauseCodes)
     try c.encodeNullable(strategy, forKey: .strategy)
   }
 }

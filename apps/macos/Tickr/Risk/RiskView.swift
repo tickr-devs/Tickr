@@ -96,7 +96,10 @@ private struct LossRoomCard: View {
         ResultRing(fraction: fraction, color: color) {
           VStack(spacing: Tokens.Space.xxs) {
             if let room {
+              // One line inside the ring, shrinking for a long amount ("248.40 USD" wrapped).
               MoneyText(value: room, usd: true, font: Tokens.Typography.hero, colored: false, signed: false)
+                .lineLimit(1)
+                .minimumScaleFactor(Tokens.Shrink.most)
                 .contentTransition(.numericText())
             } else {
               Text(verbatim: Format.missing).font(Tokens.Typography.hero)
@@ -159,15 +162,16 @@ private struct EntryGateCard: View {
     case .blocked: L10n.Risk.blocked
     }
     Card(L10n.Risk.entryGate, tint: gate == .blocked ? Palette.warning : nil, tone: tone, trailing: {
-      StatusPill(title, tone: tone, live: gate == .allowed, event: model.status?.freshness.lastBrokerReadAt?.date)
+      StatusPill(title, tone: tone, live: gate == .allowed, event: gate)
     }) {
       if let status = model.status {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
           if let block = status.entryBlock {
-            Text(verbatim: block.text)
+            Text(verbatim: ApiText.entryBlock(block))
               .font(Tokens.Typography.body)
               .foregroundStyle(block.attention ? Palette.textPrimary : Palette.textSecondary)
-            Footnote(verbatim: block.cause, color: Palette.textQuaternary)
+              // The bot's own words keep the detail (times, amounts) until it sends them as values.
+              .help(Text(verbatim: block.text))
           }
           StatLine(
             L10n.Risk.operatorPause, value: String(localized: status.entryStop ? L10n.Common.on : L10n.Common.off),
@@ -176,7 +180,7 @@ private struct EntryGateCard: View {
             L10n.Risk.tradingGate, value: String(localized: status.tradingGate.open ? L10n.Risk.gateOpen : L10n.Risk.gateClosed),
             color: status.tradingGate.open ? Palette.profitText : Palette.warningText)
           if !status.tradingGate.open {
-            Footnote(verbatim: status.tradingGate.cause, color: Palette.textQuaternary)
+            Footnote(verbatim: ApiText.gate(status.tradingGate), color: Palette.textQuaternary)
           }
         }
         .animation(Tokens.Motion.standard, value: status.entryBlock)
@@ -233,8 +237,16 @@ private struct FencesCard: View {
           HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
             VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-              Text(verbatim: fence.text).foregroundStyle(Palette.textPrimary)
-              Text(L10n.Risk.fenceSince(fence.kind, Format.marketTime(fence.since.date)))
+              Text(verbatim: model.status.map { Board.fenceTitle(fence, status: $0) } ?? ApiText.fence(fence))
+                .foregroundStyle(Palette.textPrimary)
+              // What the fence says often tells what to do, so it stays visible; the bot's own
+              // words are the tooltip.
+              Text(verbatim: ApiText.fenceDetail(fence))
+                .font(Tokens.Typography.callout)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(Text(verbatim: fence.text))
+              Text(L10n.Risk.fenceSince(Format.marketTime(fence.since.date)))
                 .font(Tokens.Typography.captionMono)
                 .foregroundStyle(Palette.textQuaternary)
             }
@@ -254,18 +266,109 @@ private struct LimitsCard: View {
   var body: some View {
     Card(L10n.Risk.limits) {
       if let risk = model.settings?.risk {
+        PositionSlots(limit: risk.maxOpenPositions, positions: model.positions)
         VStack(spacing: Tokens.Space.s) {
           StatLine(L10n.Risk.plannedLoss, value: Format.usd(risk.plannedLossUsd.value))
           StatLine(L10n.Risk.notionalCap, value: Format.usd(risk.positionNotionalCapUsd.value))
           StatLine(L10n.Risk.dailyLoss, value: Format.usd(risk.maxDailyLossUsd.value))
           StatLine(L10n.Risk.minRoom, value: Format.usd(risk.minDailyRoomUsd.value))
           StatLine(L10n.Risk.openPositions, value: String(risk.maxOpenPositions))
-          StatLine(L10n.Risk.quoteAge, value: String(localized: L10n.Risk.seconds(Money.plain(risk.maxQuoteAgeSeconds.value))))
+          StatLine(L10n.Risk.quoteAge, value: String(localized: L10n.Risk.seconds(Format.secondsNumber(risk.maxQuoteAgeSeconds.value))))
         }
       } else {
         Footnote(model.settingsError == nil ? L10n.Common.unavailable : L10n.Risk.settingsUnavailable)
       }
     }
+  }
+}
+
+/// One tile per position the config allows, as on the design: an open position's symbol, size,
+/// entry and stop with its state (as `StopBadge`: confirmed green, pending amber, missing or
+/// unknown red), and a dashed tile for each free slot. More positions than the limit (a broker
+/// mismatch) still show every one.
+private struct PositionSlots: View {
+  let limit: Int
+  let positions: [PositionRow]
+
+  /// Narrowest a tile gets before the tiles wrap to another row, in points.
+  static let tileMinWidth: CGFloat = 84
+  /// Height of a tile, so free and taken tiles line up, in points.
+  static let tileHeight: CGFloat = 64
+
+  private var free: Int { max(0, limit - positions.count) }
+
+  var body: some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.tileMinWidth), spacing: Tokens.Space.s)],
+      spacing: Tokens.Space.s) {
+      ForEach(positions) { row in
+        taken(row)
+      }
+      ForEach(0..<free, id: \.self) { _ in
+        freeTile
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(Text(L10n.Risk.slots))
+  }
+
+  /// Colours of a stop state, as `StopBadge` draws it: confirmed green, pending amber, missing or
+  /// unknown red.
+  private func colors(_ state: StopState) -> (frame: Color, text: Color) {
+    switch state {
+    case .verified: return (Palette.profit, Palette.profitText)
+    case .pending: return (Palette.warning, Palette.warningText)
+    case .missing, .unknown: return (Palette.loss, Palette.lossText)
+    }
+  }
+
+  private func taken(_ row: PositionRow) -> some View {
+    let state = row.position.stop.state
+    let colors = colors(state)
+    return VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+      HStack(spacing: Tokens.Space.xs) {
+        Text(verbatim: row.position.symbol)
+          .font(Tokens.Typography.calloutMono.weight(.bold))
+          .foregroundStyle(Palette.textPrimary)
+        Spacer(minLength: 0)
+        StopBadge(state: state, compact: true)
+      }
+      Text(L10n.Risk.slotSize(Format.quantity(row.quantity), Format.price(row.entry)))
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+      // Without a stop price the line says the state ("No stop"), never a bare dash.
+      Group {
+        if let stop = row.stop { Text(L10n.Risk.slotStop(Format.price(stop))) } else { Text(verbatim: state.title) }
+      }
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(colors.text)
+    }
+    .lineLimit(1)
+    .minimumScaleFactor(Tokens.Shrink.slight)
+    .padding(Tokens.Space.s)
+    .frame(maxWidth: .infinity, minHeight: Self.tileHeight, alignment: .topLeading)
+    .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.medium))
+    .overlay {
+      RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+        .strokeBorder(colors.frame, lineWidth: Tokens.Stroke.thin)
+    }
+    // The state in words too, not only in colour: read by VoiceOver and shown on hover.
+    .help(Text(verbatim: state.title))
+    .accessibilityElement(children: .combine)
+    .accessibilityValue(Text(verbatim: state.title))
+  }
+
+  private var freeTile: some View {
+    Text(L10n.Risk.freeSlot)
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(Palette.textQuaternary)
+      .frame(maxWidth: .infinity, minHeight: Self.tileHeight)
+      .overlay {
+        RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+          .strokeBorder(Palette.separatorStrong,
+            style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
+      }
+      .help(Text(L10n.Risk.freeSlot))
+      .accessibilityLabel(Text(L10n.Risk.freeSlot))
   }
 }
 
@@ -312,7 +415,8 @@ private struct AccountCard: View {
         Footnote(L10n.Risk.accountReading)
       }
     }
-    .animation(Tokens.Motion.standard, value: model.account)
+    // Keyed on the account, not the read: a new read of the same account moves nothing.
+    .animation(Tokens.Motion.standard, value: model.account?.state)
   }
 
   private var tint: Color? {
@@ -370,8 +474,8 @@ private struct AccountCard: View {
         HStack(spacing: Tokens.Space.s) {
           Text(verbatim: order.symbol).font(Tokens.Typography.calloutMono)
           Group {
-            Text(verbatim: order.side)
-            Text(verbatim: order.type)
+            Text(verbatim: ApiText.orderSide(order.side))
+            Text(verbatim: ApiText.orderType(order.type))
             Text(verbatim: order.quantity.text)
           }
           .font(Tokens.Typography.captionMono)
@@ -379,7 +483,7 @@ private struct AccountCard: View {
           if let price = order.stopPrice ?? order.limitPrice {
             Text(verbatim: price.text).font(Tokens.Typography.captionMono)
           }
-          Text(verbatim: order.status)
+          Text(verbatim: ApiText.orderStatus(order.status))
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(Palette.textTertiary)
           if !order.ours {
@@ -387,7 +491,7 @@ private struct AccountCard: View {
           }
         }
       }
-      Footnote(L10n.Risk.readAt(Format.marketTime(account.readAt.date), Money.plain(response.ageSeconds.value)))
+      Footnote(L10n.Risk.readAt(Format.marketTime(account.readAt.date), Format.wholeSeconds(response.ageSeconds.value)))
     }
   }
 }

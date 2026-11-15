@@ -12,8 +12,16 @@ when the ask is at or below its limit, a STOP_LOSS SELL fills at the bid once th
 below its stop (a gap fills below the stop), a MARKET SELL fills at the bid. Only in the regular
 session of the world's market day.
 
+`Exchange.unverify_stops` is a demo fault for QA: from then on the symbol's stop orders show a
+status the adapter cannot map (`OrderState.UNKNOWN`), are not working and never fill, so the
+bot sees a position without a verified stop and the apps show it unprotected.
+
 `go_live` switches the clock from simulated to real time: from then on a bot sleep really
 sleeps and the world's time moves with the wall clock, shifted by a fixed offset.
+
+`daily_history` draws older days for the charts only: one D bar per weekday before the minute
+history, a seeded random walk that ends at the first minute day's open. The feed serves them on
+D charts; the bot never reads them (its history reads are minute bars, which they do not have).
 
 `textured` roughens a planned path for `tickr demo`, so its charts look like a real tape:
 bodies and wicks of different sizes and an uneven volume, the same on every run (seeded by
@@ -26,7 +34,7 @@ import random
 import time
 import zlib
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as wall_time
 from decimal import ROUND_FLOOR, Decimal
@@ -35,7 +43,7 @@ from tickr.broker.base import Acknowledgement
 from tickr.broker.fake import FakeBroker
 from tickr.calendar import NEW_YORK, MarketDay, ny_date_of
 from tickr.data.base import BarSpan, FakeMarketData, ScreenerKind, ScreenerRow, SessionBar
-from tickr.types import Bar, OrderRequest, OrderType, Quote, Side
+from tickr.types import Bar, OrderRequest, OrderState, OrderType, Quote, Side
 
 M1 = timedelta(minutes=1)
 REGULAR_SESSION = "RTH"  # the provider's label of a regular-session bar (the world has no other)
@@ -46,6 +54,10 @@ SECONDS_PER_MINUTE = Decimal(60)
 SCREENER_EXCHANGE = "NSQ"
 SCREENER_CURRENCY = "USD"
 SCREENER_TYPE = "COMMON_STOCK"
+# Raw status a stop shows after the stop-unverified demo fault: one the adapter does not map.
+UNVERIFIED_STOP_STATUS = "DEMO_UNVERIFIED"
+SATURDAY = 5  # date.weekday() of Saturday; Monday is 0
+REGULAR_OPEN = "09:30"  # New York label of a chart-only D bar (protocol: the regular open)
 
 # (from "HH:MM", to "HH:MM", price at the end, volume per minute): a straight price move.
 Leg = tuple[str, str, Decimal, Decimal]
@@ -95,6 +107,47 @@ def day_bars(symbol: str, market_day: MarketDay, base: Decimal, volume: Decimal,
                         min(price, close) - wick, close, minute_volume))
         price = close
     return bars
+
+
+@dataclass(frozen=True)
+class DailyWalk:
+    """How `daily_history` draws a day; every field is a fraction of the price.
+
+    move: spread of a day's close against its open. gap: spread of a day's open against the
+    previous close. wick: largest high above (and low below) the day's body."""
+
+    move: Decimal
+    gap: Decimal
+    wick: Decimal
+
+
+def weekdays_before(day: date, count: int) -> list[date]:
+    """The `count` weekdays before `day`, oldest first (chart decoration: holidays included)."""
+    found: list[date] = []
+    while len(found) < count:
+        day -= timedelta(days=1)
+        if day.weekday() < SATURDAY:
+            found.append(day)
+    return list(reversed(found))
+
+
+def daily_history(symbol: str, days: Sequence[date], first_open: Decimal, volume: Decimal,
+                  walk: DailyWalk) -> list[Bar]:
+    """One D bar per day of `days` (oldest first), labelled at the regular open; the last
+    one closes so that the next day opens at `first_open`. Deterministic: seeded by symbol."""
+    rng = random.Random(zlib.crc32(f"{symbol} daily".encode()))
+    move, gap, wick = float(walk.move), float(walk.gap), float(walk.wick)
+    bars: list[Bar] = []
+    next_open = first_open
+    for day in reversed(days):
+        close = max((next_open / Decimal(repr(1.0 + rng.gauss(0.0, gap)))).quantize(CENT), CENT)
+        open_ = max((close / Decimal(repr(1.0 + rng.gauss(0.0, move)))).quantize(CENT), CENT)
+        high = (max(open_, close) * Decimal(repr(1.0 + rng.uniform(0.0, wick)))).quantize(CENT)
+        low = (min(open_, close) * Decimal(repr(1.0 - rng.uniform(0.0, wick)))).quantize(CENT)
+        bars.append(Bar(symbol, ny(day, REGULAR_OPEN), open_, high, max(low, CENT), close,
+                        volume))
+        next_open = open_
+    return list(reversed(bars))
 
 
 @dataclass(frozen=True)
@@ -166,6 +219,7 @@ class World:
         self.quote_size = quote_size
         self.today: dict[str, list[Bar]] = {}
         self.history: dict[str, list[Bar]] = {}
+        self.daily: dict[str, list[Bar]] = {}  # chart-only D bars before the minute history
         self.screeners: dict[ScreenerKind, list[str]] = {k: [] for k in ScreenerKind}
         self.exchange = Exchange(self)
         self.feed = Feed(self, provider)
@@ -179,9 +233,11 @@ class World:
     # --- scenario ------------------------------------------------------------------------
 
     def add_symbol(self, symbol: str, today: list[Bar], history: Iterable[Bar],
-                   kinds: Iterable[ScreenerKind] = (ScreenerKind.GAINERS,)) -> None:
+                   kinds: Iterable[ScreenerKind] = (ScreenerKind.GAINERS,),
+                   daily: Iterable[Bar] = ()) -> None:
         self.today[symbol] = today
         self.history[symbol] = list(history)
+        self.daily[symbol] = list(daily)
         for kind in kinds:
             self.screeners[kind].append(symbol)
 
@@ -257,12 +313,27 @@ class Exchange(FakeBroker):
         self.world = world
         self.requests: dict[str, OrderRequest] = {}
         self.fills: list[tuple[datetime, str, Side, OrderType, Decimal, Decimal]] = []
+        self.unverified_symbols: set[str] = set()
 
     def place(self, request: OrderRequest) -> Acknowledgement:
         ack = super().place(request)
         self.requests[request.client_order_id] = request
+        self._unverify(request.client_order_id)
         self._match(request.client_order_id)  # a marketable order fills on arrival
         return ack
+
+    def unverify_stops(self, symbol: str) -> None:
+        """The demo fault: `symbol`'s working stops, and every later one, stop being working."""
+        self.unverified_symbols.add(symbol)
+        for cid in list(self.orders):
+            self._unverify(cid)
+
+    def _unverify(self, cid: str) -> None:
+        order = self.orders[cid]
+        if (order.symbol in self.unverified_symbols and order.order_type is OrderType.STOP_LOSS
+                and not order.state.terminal):
+            self.orders[cid] = replace(order, state=OrderState.UNKNOWN,
+                                       raw_status=UNVERIFIED_STOP_STATUS)
 
     def match(self) -> None:
         for cid in list(self.orders):
@@ -270,8 +341,9 @@ class Exchange(FakeBroker):
 
     def _match(self, cid: str) -> None:
         order = self.orders[cid]
-        if order.state.terminal or not self.world.in_session():
-            return
+        if (order.state.terminal or order.state is OrderState.UNKNOWN
+                or not self.world.in_session()):
+            return  # an unverified stop is not working, so it never fills
         request = self.requests[cid]
         quote = self.world.quote(order.symbol, self.world.exchange_lead)
         price: Decimal | None = None
@@ -327,7 +399,8 @@ class Feed(FakeMarketData):
     def history_bars(self, symbol: str, span: BarSpan, end: datetime,
                      count: int) -> list[SessionBar]:
         """GET /chart in the demo: the world's regular-session minutes started by now, or one
-        D bar per session day merged from them (labelled with its first minute)."""
+        D bar per session day merged from them (labelled with its first minute), after the
+        chart-only D bars of the days before the minute history."""
         self._call("history_bars", [symbol, span.value])
         minutes = sorted((b for b in self.world.history.get(symbol, [])
                           + self.world.today.get(symbol, [])
@@ -339,10 +412,13 @@ class Feed(FakeMarketData):
             days: dict[date, list[Bar]] = {}
             for b in minutes:
                 days.setdefault(ny_date_of(b.start), []).append(b)
-            rows = [SessionBar(Bar(symbol, bars[0].start, bars[0].open,
-                                   max(b.high for b in bars), min(b.low for b in bars),
-                                   bars[-1].close, sum((b.volume for b in bars), Decimal(0))),
-                               None) for bars in days.values()]
+            older = [SessionBar(b, None) for b in self.world.daily.get(symbol, [])
+                     if b.start < end]
+            rows = older + [
+                SessionBar(Bar(symbol, bars[0].start, bars[0].open, max(b.high for b in bars),
+                               min(b.low for b in bars), bars[-1].close,
+                               sum((b.volume for b in bars), Decimal(0))), None)
+                for bars in days.values()]
         return rows[-count:] if count > 0 else []
 
     def snapshot(self, symbols: Sequence[str]) -> list[Quote]:

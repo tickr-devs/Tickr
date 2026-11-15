@@ -76,6 +76,23 @@ public enum APIError: Error, LocalizedError, Equatable {
   }
 }
 
+/// Any error as the apps show it: its own description in the person's language when it has
+/// one (APIError, ContractError), a plain "unexpected error" otherwise; never Swift's English
+/// debug form of the error.
+public enum ErrorText {
+  /// What a failed read shows, or nil for a cancelled one: whoever cancelled it has moved on,
+  /// so it shows nothing.
+  public static func describe(_ error: Error) -> String? {
+    error is CancellationError ? nil : text(error)
+  }
+
+  /// Always a sentence, for a failure the person must see even when it was cancelled (a
+  /// command that may not have been sent).
+  public static func text(_ error: Error) -> String {
+    (error as? LocalizedError)?.errorDescription ?? String(localized: L10n.unexpectedError)
+  }
+}
+
 /// Client for the bot's local API. Stateless; safe to share.
 public struct APIClient: Sendable {
   /// Where the bot's local API listens by default (config/bot.toml `[api]`); the apps' settings
@@ -92,6 +109,13 @@ public struct APIClient: Sendable {
   static let daysPath = "/days"
   static let barsPath = "/bars"
   static let accountPath = "/account"
+  static let jobsPath = "/jobs"
+  static let journalPath = "/journal"
+  static let labReplayPath = "/lab/replay"
+  /// Remote port only: redeem a pairing link's one-time code for the bearer token.
+  static let pairPath = "/pair"
+  /// Body key of the pairing code.
+  static let codeKey = "code"
   static let observersPath = "/observers"
   static let decisionsPath = "/decisions"
   static let skippedPath = "/skipped"
@@ -186,6 +210,37 @@ public struct APIClient: Sendable {
     try await perform(request(path: Self.pendingPath, body: nil), expect: Self.ok)
   }
 
+  /// What runs on its own on the Mac (reconcile, backup, launchd jobs) and today's session times.
+  public func jobs() async throws -> JobsV1 {
+    try await perform(request(path: Self.jobsPath, body: nil), expect: Self.ok)
+  }
+
+  /// The latest rows of the bot's journal with their numbers, newest last.
+  public func journal() async throws -> JournalV1 {
+    try await perform(request(path: Self.journalPath, body: nil), expect: Self.ok)
+  }
+
+  /// The Lab's replay of the current strategy over the recent sessions: idle, running, done with
+  /// its summary, or failed with a cause.
+  public func labReplay() async throws -> LabReplayV1 {
+    try await perform(request(path: Self.labReplayPath, body: nil), expect: Self.ok)
+  }
+
+  /// Start a Lab replay. Accepted (202) answers the replay as it now stands; the API refuses a
+  /// start while one runs with 409 `conflict`, thrown as `APIError.refused`.
+  public func startLabReplay() async throws -> LabReplayV1 {
+    let body = try JSONSerialization.data(withJSONObject: [String: String]())
+    return try await perform(request(path: Self.labReplayPath, body: body), expect: Self.accepted)
+  }
+
+  /// Redeem a pairing link's one-time code at the Mac's HTTPS address for the bearer token the
+  /// phone keeps from then on. Sent without a token; the code works once, before it expires, and
+  /// a refused code is thrown as `APIError.refused` (401 `unauthorized`).
+  public func redeemPairing(code: String) async throws -> PairedV1 {
+    let body = try JSONSerialization.data(withJSONObject: [Self.codeKey: code], options: [.sortedKeys])
+    return try await perform(request(path: Self.pairPath, body: body), expect: Self.ok)
+  }
+
   /// Risk limits and session times from the bot's config, as the API loaded them.
   public func settings() async throws -> SettingsV1 {
     try await perform(request(path: Self.settingsPath, body: nil), expect: Self.ok)
@@ -250,6 +305,8 @@ public struct APIClient: Sendable {
     do {
       (data, response) = try await session.data(for: request)
     } catch {
+      // A cancelled request stays a cancellation, so callers can tell it from a failure.
+      if error is CancellationError || (error as? URLError)?.code == .cancelled { throw CancellationError() }
       throw APIError.unreachable(error.localizedDescription)
     }
     guard let http = response as? HTTPURLResponse else {
@@ -265,7 +322,7 @@ public struct APIClient: Sendable {
     do {
       return try decoder.decode(T.self, from: data)
     } catch {
-      throw APIError.contract(String(describing: error))
+      throw APIError.contract(Wire.detail(error))
     }
   }
 }

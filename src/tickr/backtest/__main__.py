@@ -20,11 +20,14 @@ from tickr.backtest.settings import BacktestSettings, load_settings
 from tickr.backtest.universe import (
     CAP_FILE,
     POOL_FILE,
+    REFUSED_FILE,
+    drop_unpriced,
     read_pool,
     select_liquid,
     select_pool,
     write_caps,
     write_pool,
+    write_refused,
 )
 from tickr.broker.base import BrokerError
 from tickr.calendar import CalendarRefused, SessionCalendar
@@ -39,9 +42,13 @@ def _calendar(cfg: Config) -> SessionCalendar:
 
 
 def _history(cfg: Config, out: Path) -> fetch.HistorySource:
+    return history_from_config_raw(cfg, out / "raw")
+
+
+def history_from_config_raw(cfg: Config, raw: Path) -> fetch.HistorySource:
     from tickr.broker.webull import history_from_config
 
-    return history_from_config(cfg, raw_dir=out / "raw")
+    return history_from_config(cfg, raw_dir=raw)
 
 
 RULE_GAINERS = "gainers"
@@ -52,7 +59,7 @@ def step_select(cfg: Config, settings: BacktestSettings, out: Path, first: date,
                 last: date, rule: str = RULE_GAINERS, daily: Path | None = None) -> Path:
     window = fetch.daily_window(_calendar(cfg), first, last,
                                 cfg.market_data.history_max_lookback_days)
-    rows = fetch.load_daily((daily or out) / fetch.DAILY_DIR)
+    rows, refused = drop_unpriced(fetch.load_daily((daily or out) / fetch.DAILY_DIR))
     sessions = [d.ny_date for d in window]
     if rule == RULE_LIQUID:
         pool, caps = select_liquid(rows, sessions, settings.liquid_top_count,
@@ -64,6 +71,9 @@ def step_select(cfg: Config, settings: BacktestSettings, out: Path, first: date,
     path = out / POOL_FILE
     write_pool(pool, path)
     write_caps(caps, out / CAP_FILE)
+    write_refused(refused, out / REFUSED_FILE)
+    if refused:
+        print(f"{len(refused)} symbols left out for non-positive daily prices -> {REFUSED_FILE}")
     bound = [c for c in caps if c.dropped]
     if bound and rule == RULE_LIQUID:
         print(f"{sum(c.dropped for c in bound)} chosen symbol-days had no bar on the day")
@@ -112,11 +122,20 @@ def build_parser() -> argparse.ArgumentParser:
                               help="gainers (default) or liquid: top previous-day dollar volume")
             step.add_argument("--daily", type=Path,
                               help="data directory whose daily/ to read (default: --out)")
+    nightly = sub.add_parser("nightly", help="add the newest completed sessions to a rolling "
+                             "folder (docs/backtest.md, Nightly)")
+    nightly.add_argument("--out", type=Path, required=True,
+                         help="rolling folder (current/, staging/, raw/, nightly.json)")
+    nightly.add_argument("--seed", type=Path, default=None,
+                         help="a fetch-all folder to start from when current/ does not exist")
     run = sub.add_parser("run")
     run.add_argument("--out", type=Path, required=True, help="data directory (fetched)")
     run.add_argument("--results", type=Path, required=True, help="output directory")
     run.add_argument("--strategy", required=True, help="strategy module exposing create()")
     run.add_argument("--values", type=Path, required=True, help="strategy.toml for create()")
+    run.add_argument("--last-sessions", type=int, default=None,
+                     help="replay only the pool days of the latest N sessions (ending at the "
+                          "pool's last day)")
     return parser
 
 
@@ -131,10 +150,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             from tickr.backtest.run import run_backtest
 
             run_backtest(cfg, settings, replay_settings, out, args.results, args.strategy,
-                         args.values)
+                         args.values, args.last_sessions)
             return 0
         if args.step == "select":
             step_select(cfg, settings, out, args.first, args.last, args.rule, args.daily)
+            return 0
+        if args.step == "nightly":
+            from datetime import UTC, datetime
+
+            from tickr.backtest.nightly import RAW, run_nightly
+
+            history = history_from_config_raw(cfg, out / RAW)
+            outcome = run_nightly(history, _calendar(cfg), cfg, settings,
+                                  replay_settings.history_sessions, out, args.seed,
+                                  lambda: datetime.now(UTC))
+            print(f"nightly: done, data ends {outcome.last_day}, {outcome.requests} requests")
             return 0
         source = _history(cfg, out)
         if args.step in ("fetch-universe", "fetch-all"):

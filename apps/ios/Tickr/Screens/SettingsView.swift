@@ -15,7 +15,6 @@ struct SettingsView: View {
   static let gateOpenSymbol = "lock.open.fill"
   static let gateClosedSymbol = "lock.fill"
   static let strategySymbol = "cpu"
-  static let runSymbol = "number"
   static let lockScreenSymbol = "bell.badge.fill"
   static let appSymbol = "app.fill"
   static let contractSymbol = "doc.text.fill"
@@ -66,7 +65,7 @@ struct SettingsView: View {
           let running = status.botState == .running
           SettingsRow(L10n.Settings.state, systemImage: Self.stateSymbol, tone: running ? .accent : .neutral) {
             StatusPill(status.botState.title, tone: running ? .accent : .neutral,
-              live: running && model.response?.stale == false, event: status.writtenAt.date)
+              live: running && model.response?.stale == false, event: status.botState)
           }
           let open = status.tradingGate.open
           SettingsRow(L10n.Settings.gate, systemImage: open ? Self.gateOpenSymbol : Self.gateClosedSymbol,
@@ -74,15 +73,10 @@ struct SettingsView: View {
             StatusPill(open ? L10n.Settings.gateOpen : L10n.Settings.gateClosed, tone: open ? .profit : .warning)
           }
           if !open {
-            InfoCaption(verbatim: status.tradingGate.cause, tone: .warning)
+            InfoCaption(verbatim: ApiText.gate(status.tradingGate), tone: .warning)
           }
           SettingsRow(L10n.Settings.strategy, systemImage: Self.strategySymbol, tone: .highlight) {
             Badge(L10n.Common.strategyVersion(status.strategy.name, status.strategy.version), tone: .highlight)
-          }
-          if let runId = status.runId {
-            SettingsRow(L10n.Settings.run, systemImage: Self.runSymbol, tone: .neutral) {
-              Text(verbatim: runId).font(.body.monospaced())
-            }
           }
         } header: {
           Text(L10n.Settings.bot)
@@ -95,6 +89,7 @@ struct SettingsView: View {
       if model.isConfigured {
         PreflightSection()
         SessionSection(session: model.settings?.session)
+        JobsSection()
       }
 
       Section {
@@ -122,6 +117,7 @@ struct SettingsView: View {
     .navigationTitle(Text(L10n.Settings.title))
     .onAppear { draft = model.connection.address }
     .task(id: model.connection.url) { await model.followAccount() }
+    .task(id: model.connection.url) { await model.followJobs() }
     .onChange(of: model.connection.address) { _, address in draft = address }
     .sheet(isPresented: $showPairing) { PairingSheet() }
     .confirmationDialog(Text(L10n.Pair.forgetTitle), isPresented: $confirmForget, titleVisibility: .visible) {
@@ -203,7 +199,7 @@ private struct PairingSheet: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button {
-            if let pairing { model.pair(pairing) }
+            if let pairing { Task { await model.pair(pairing) } }
             dismiss()
           } label: {
             Text(L10n.Pair.pair)

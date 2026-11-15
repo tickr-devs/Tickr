@@ -13,7 +13,7 @@ the approved design canvas. Code follows it one to one:
    - `apps/scripts/check_swift_rules.py` (rule `numbers`, using `check_swift_literals.py`) fails CI on a number other than 0 and 1 unless it is a documented `static let` constant, an enum raw value, a subscript index or a halving `/ 2`.
    - SwiftLint (`.swiftlint.yml`) fails CI on a colour made outside `Palette.swift`, a hue name instead of a role, and a font size outside `Tokens.Typography`.
    - A screen may define its own documented constant only for a value no other screen uses (a chart's padding ratio, say); anything shared belongs in `Tokens`.
-   - The rules check covers `apps/shared`, `apps/macos` and `apps/ios` in the `swift-rules` workflow on every pull request. It has no baseline: every violation fails. The `test` job also runs the check (`tests/test_swift_rules.py`). SwiftLint covers `apps/shared`; each app joins it once its code has moved onto the system.
+   - The rules check covers `apps/shared`, `apps/macos` and `apps/ios` in the `swift-rules` workflow on every pull request. It has no baseline: every violation fails. The `test` job also runs the check (`tests/test_swift_rules.py`). SwiftLint runs in the same workflow and covers `apps/shared` and `apps/ios` (macOS joins next); an app's own `.swiftlint.yml` may relax SwiftLint's size limits only, until its long files are split.
 2. **No user-facing text in code.** Every string a person reads is defined once, in the target's `L10n.swift`, as `LocalizedStringResource("key", defaultValue: "English")`, and translated in the String Catalog (`Localizable.xcstrings`) beside it. A catalog is committed exactly as Xcode writes it (`apps/scripts/format_xcstrings.py` rewrites it so), and a key's `table:` is a string literal or left out: Xcode's extraction cannot follow a constant, so it would copy the keys into `Localizable.xcstrings` on every build.
    - Views use `L10n` entries. `Text("…")`, `Button("…")`, `Text(verbatim: "…")` and computed properties returning English all fail CI (rule `text`). Other string literals may only be SF Symbol names, documented `static let` identifiers and enum raw values; the one capitalised protocol token allowed in a documented constant is the HTTP scheme `Bearer`.
    - CI fails when an `L10n` key has no Russian translation in the catalog (rule `catalog`).
@@ -23,7 +23,7 @@ the approved design canvas. Code follows it one to one:
 4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
 5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop (the brand mark's spark, the empty-positions radar, the ticker's scroll), marked `// decorative: <why>` in code; the `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
 6. **Formatting: Swift uses 2-space indentation.**
-   - `.editorconfig`, SwiftLint's `indentation_width` (shared package) and the rules check (rule `indent`, every app) enforce it.
+   - `.editorconfig`, SwiftLint's `indentation_width` (shared package, iOS) and the rules check (rule `indent`, every app) enforce it.
    - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
 7. **Current Apple stack only.** macOS and iOS 26, Swift 6 with strict concurrency, Swift Testing, Observation, dependencies through Factory, async/await, NavigationStack/SplitView, Swift Charts, String Catalogs, `#Preview`; no deprecated API. The rules check (rule `legacy`, tests included) rejects the old ones; the full list is in CLAUDE.md.
 
@@ -139,6 +139,18 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `medium` | 0.70 | Inactive elements, pulse start |
 | `overlay` | 0.85 | Readouts over content |
 
+## Text shrink (`Tokens.Shrink`)
+
+How far a line of text may shrink to fit (`minimumScaleFactor`) before it truncates. A screen picks
+a step; it does not define its own factor.
+
+| Token | Value | Use |
+|---|---|---|
+| `slight` | 0.8 | Button titles, tile text |
+| `standard` | 0.7 | Figures, values and day labels in cards, chips and charts |
+| `tight` | 0.6 | Results in tight cells: calendar day cells, the day ring, the day's figures (Trades) |
+| `most` | 0.5 | A large amount inside a ring |
+
 ## Sizes (`Tokens.Size`)
 
 | Token | pt | Use |
@@ -224,8 +236,9 @@ still reads it. Every control takes a `Tone`.
 | `IconToolbar` | A row of icon buttons | Sunken capsule, `separatorStrong` border |
 | `.buttonStyle(.chip(selected:))` | One of a few choices side by side (position tabs) | `Typography.chip`, `Radius.small`; selected: tone wash and border |
 | `StateGlyph` | A state without a word (stop verified, paused, stream fresh, gate closed) | SF Symbol on a `Size.glyph` tile in the tone, `Opacity.glow` fill; `live` pulses the outline (`Motion.glyphPulseScale`) |
-| `StatusPill` | A state that needs its word (bot running) | Capsule, `PulseDot` (pulsing while live), `Typography.badge` uppercase |
-| `IconMetric` | A figure named by a symbol (entry, stop, quantity, time) | Symbol in the tone, `Typography.chipValue` figure, sunken `Radius.medium` chip; the name is its hint |
+| `StatusPill` | A state that needs its word (bot running, an exit reason) | Capsule, `PulseDot` (one pulse per `event` while live) or a `systemImage` in its place, `Typography.badge` uppercase |
+| `IconMetric` | A figure named by a symbol (entry, stop, quantity, time) | Symbol in the tone, `Typography.chipValue` figure, sunken `Radius.medium` chip; the name is its hint. `compact`: a `Radius.small` chip that fits its figure (`captionMono`), in rows under a list item |
+| `ChipFlow` | A row of chips under a list item | Layout that wraps chips onto new lines (`Space.xs` apart) instead of clipping on a narrow phone or at large Dynamic Type |
 | `MetricChip` | A figure whose label must stay visible | Uppercase `label`, `chipValue` figure, unit in `captionMono`, tone rail on the leading edge |
 | `DeltaTag` | A money change | Triangle up or down, signed figure, `Tone.result` wash |
 | `MeterBar` | A share of a whole, a price between two levels | `Size.bar` capsule track, glowing gradient fill that grows on appear (`Motion.fill`), optional `MeterMark` figures under it |
@@ -233,7 +246,7 @@ still reads it. Every control takes a `Tone`.
 | `ValueRow` | "◷ label … value" rows | Symbol in a `Size.rowSymbol` column, `callout` label in `textTertiary`, `bodyMono` value |
 | `SectionHeader` | A section's heading with a count and an accessory | Glowing tone tick (`labelSize` tall), uppercase `label`, count capsule |
 | `InfoCaption` | Where a value comes from, why something is off | `caption` with a leading symbol |
-| `.hint(_:)` | The apps' tooltip | Mac: a `Radius.medium` bubble on `surface` above the view after `Motion.hintDelay` of hover, at most `Size.hintMaxWidth` wide. Phone: long press shows it in a context menu, which cancels the tap of the button it explains |
+| `.hint(_:)` | The apps' tooltip | Mac: a `Radius.medium` bubble on `surface` above the view (below it when there is no room) after `Motion.hintDelay` of hover, at most `Size.hintMaxWidth` wide, kept inside the window. It is drawn by `.hintHost()`, which every Mac window and panel root carries; a hint outside a host does not show. Phone: long press shows it in a context menu, which cancels the tap of the button it explains |
 
 ## Brand: app icon and launch screen
 

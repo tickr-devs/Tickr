@@ -21,7 +21,14 @@
       "closeness": "0.9983",
       "closeness_cause": null,
       "quote_age_seconds": null,
-      "quote_age_cause": "not recorded: decision records hold no quote time"
+      "quote_age_cause": "not recorded: decision records hold no quote time",
+      "closeness_cause_codes": [],
+      "quote_age_cause_codes": [
+        {
+          "code": "quote_age_not_recorded",
+          "params": {}
+        }
+      ]
     },
     {
       "symbol": "WXYZ",
@@ -42,7 +49,14 @@
       "closeness": "0.6451",
       "closeness_cause": null,
       "quote_age_seconds": null,
-      "quote_age_cause": "not recorded: decision records hold no quote time"
+      "quote_age_cause": "not recorded: decision records hold no quote time",
+      "closeness_cause_codes": [],
+      "quote_age_cause_codes": [
+        {
+          "code": "quote_age_not_recorded",
+          "params": {}
+        }
+      ]
     },
     {
       "symbol": "EFGH",
@@ -63,8 +77,34 @@
       "closeness": null,
       "closeness_cause": "quote_valid: a yes/no check has no measured value",
       "quote_age_seconds": null,
-      "quote_age_cause": "not recorded: decision records hold no quote time"
+      "quote_age_cause": "not recorded: decision records hold no quote time",
+      "closeness_cause_codes": [
+        {
+          "code": "yes_no_check",
+          "params": {
+            "rule": "quote_valid"
+          }
+        }
+      ],
+      "quote_age_cause_codes": [
+        {
+          "code": "quote_age_not_recorded",
+          "params": {}
+        }
+      ]
     }
   ],
+  "latest_size": {
+    "symbol": "QRST",
+    "at": "2026-11-16T14:57:00.000Z",
+    "strategy": {
+      "name": "price-action-v1",
+      "version": "1"
+    },
+    "verdict": "ENTER",
+    "quantity": "200",
+    "binding": null,
+    "binding_cause": "not proven by the record: the planned loss, the notional cap or the daily room"
+  },
   "api_version": 1
 }

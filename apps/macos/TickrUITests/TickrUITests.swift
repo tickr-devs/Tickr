@@ -28,8 +28,9 @@ final class TickrUITests: XCTestCase {
   static let fixturesBadge = "FIXTURES"
   /// The toolbar's connection status (ConnectionStatus.id).
   static let connectionItem = "toolbar-connection"
-  /// The refusal message of the first signal in skipped-v1.json.
-  static let refusalCause = "1 open position(s), limit 1"
+  /// The refusal detail of the first signal in skipped-v1.json, as the English app words it
+  /// (kit.refusal.POSITION_LIMIT_REACHED with open 1, limit 1).
+  static let refusalCause = "1 open, limit 1"
   /// The selected trade's detail card and a label it shows only for a selected trade.
   static let tradeDetail = "trades-detail"
   static let stopConfirmedAfter = "Stop confirmed after"
@@ -41,16 +42,17 @@ final class TickrUITests: XCTestCase {
   /// The performance card (PerformanceCard.id) and the start of its exclusion line.
   static let performanceCard = "trades-performance"
   static let excludedPrefix = "Left out: 1"
-  /// The Overview's screener chips (ScreenerChips.id) and watching card (WatchingCard.id).
-  static let screenerChips = "overview-screener-chips"
+  /// The Overview's latest-event line (LatestEvent.id) and watching card (WatchingCard.id).
+  static let latestEvent = "overview-latest-event"
   static let watchingCard = "overview-watching"
   /// The month calendar of Trades & days (MonthCalendar.id).
   static let calendar = "trades-calendar"
   /// The fixtures' live day (2026-11-16) as the calendar names it (Format.dayLabel).
   static let fixtureDayLabel = "Mon, Nov 16"
-  /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
+  /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json
+  /// (ask_above_trigger), as the English app shows it (ApiText.rule).
   static let decisionsToggle = "chart-decisions"
-  static let decisionRule = "ask_above_trigger"
+  static let decisionRule = "Ask above trigger"
   /// English titles of the standard Window menu and its Zoom item.
   static let windowMenu = "Window"
   static let zoomItem = "Zoom"
@@ -73,6 +75,11 @@ final class TickrUITests: XCTestCase {
   static let narrowShare = 0.35
   /// How long an element may take to appear, in seconds (the app polls every few seconds).
   static let timeout: TimeInterval = 10
+  /// How often a moving element's frame is read, and how long it must keep still before it is
+  /// clicked, in seconds: cards rise in one after another and a screen reflows as its reads
+  /// arrive, so a click aimed at a frame read a moment earlier can land beside the element.
+  static let settlePoll: TimeInterval = 0.2
+  static let settleQuiet: TimeInterval = 1
 
   override func setUpWithError() throws {
     continueAfterFailure = false
@@ -108,6 +115,27 @@ final class TickrUITests: XCTestCase {
     XCTAssertTrue(screen.waitForExistence(timeout: Self.timeout), "screen \(section)")
   }
 
+  /// Waits until `element` exists and has kept the same frame for `settleQuiet` seconds, so a
+  /// click lands on it. Fails if it is still moving after `timeout`.
+  @MainActor
+  private func waitUntilStill(_ element: XCUIElement, _ name: String, in app: XCUIApplication) {
+    XCTAssertTrue(element.waitForExistence(timeout: Self.timeout), "\(name)\n\(app.debugDescription)")
+    let deadline = Date.now.addingTimeInterval(Self.timeout)
+    var frame = element.frame
+    var stillSince = Date.now
+    while Date.now < deadline {
+      _ = XCTWaiter.wait(for: [XCTestExpectation(description: "settle")], timeout: Self.settlePoll)
+      let now = element.frame
+      if now != frame {
+        frame = now
+        stillSince = .now
+      } else if Date.now.timeIntervalSince(stillSince) >= Self.settleQuiet {
+        return
+      }
+    }
+    XCTFail("\(name) kept moving\n\(app.debugDescription)")
+  }
+
   @MainActor
   func testEverySectionOpensItsScreen() {
     let app = launch()
@@ -125,6 +153,9 @@ final class TickrUITests: XCTestCase {
     let enabled = NSPredicate(format: "isEnabled == true")
     expectation(for: enabled, evaluatedWith: flatten)
     waitForExpectations(timeout: Self.timeout)
+    // The controls card rises in below the fold; clicked while it moved, the click (after the
+    // scroll that brings it into view) once missed the button and no confirmation came.
+    waitUntilStill(flatten, "flatten button", in: app)
     flatten.click()
     let sheet = app.sheets.firstMatch
     XCTAssertTrue(sheet.waitForExistence(timeout: Self.timeout), "flatten asks for confirmation")
@@ -191,7 +222,9 @@ final class TickrUITests: XCTestCase {
     open(Self.sections[2], in: app)
     // SwiftUI's Table reads as an outline; clicking the symbol's cell selects its row.
     let symbol = app.outlineRows.staticTexts.matching(NSPredicate(format: "value == %@", Self.tradeSymbol)).firstMatch
-    XCTAssertTrue(symbol.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
+    // The table rises in with its card; clicked while it moved, the click once landed in the table
+    // beside the row (the table took focus, no row was selected).
+    waitUntilStill(symbol, "trade row", in: app)
     symbol.click()
     let detail = app.descendants(matching: .any)[Self.tradeDetail].firstMatch
     XCTAssertTrue(detail.staticTexts[Self.stopConfirmedAfter].waitForExistence(timeout: Self.timeout),
@@ -212,8 +245,8 @@ final class TickrUITests: XCTestCase {
   @MainActor
   func testOverviewShowsTheFlowAndWatchedSymbols() {
     let app = launch()
-    let chips = app.descendants(matching: .any)[Self.screenerChips].firstMatch
-    XCTAssertTrue(chips.waitForExistence(timeout: Self.timeout), "screener chips\n\(app.debugDescription)")
+    let event = app.descendants(matching: .any)[Self.latestEvent].firstMatch
+    XCTAssertTrue(event.waitForExistence(timeout: Self.timeout), "latest event\n\(app.debugDescription)")
     let watching = app.descendants(matching: .any)[Self.watchingCard].firstMatch
     let check = watching.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", Self.decisionRule))
     XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "watched symbol\n\(app.debugDescription)")

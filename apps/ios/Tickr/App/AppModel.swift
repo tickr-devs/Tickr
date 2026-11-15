@@ -40,10 +40,18 @@ final class AppModel {
   private(set) var account: AccountResponseV1?
   /// Why the broker read could not be fetched, if it could not.
   private(set) var accountError: String?
+  /// What runs on its own on the Mac (GET /jobs), read while Settings is on screen.
+  private(set) var jobs: JobsV1?
+  /// Why the jobs could not be read, if they could not.
+  private(set) var jobsError: String?
   /// Today's live flow (GET /flow): stage counts and stops, read while Home is on screen.
   private(set) var flow: FlowV1?
   /// Why the flow could not be read, if it could not.
   private(set) var flowError: String?
+  /// Today's skipped signals (GET /skipped), read with the flow: where a refused symbol stopped.
+  private(set) var skipped: SkippedV1?
+  /// The day the last /flow answer (or failure) was for; until it is today the flow is pending.
+  private(set) var flowAnsweredDay: WireDate?
   private(set) var sending = false
   var notice: Notice?
   var selectedTab: AppTab = .home
@@ -126,8 +134,12 @@ final class AppModel {
     settingsError = nil
     account = nil
     accountError = nil
+    jobs = nil
+    jobsError = nil
     flow = nil
     flowError = nil
+    skipped = nil
+    flowAnsweredDay = nil
     start()
   }
 
@@ -144,7 +156,7 @@ final class AppModel {
       followBotClock(servedAt: fresh.servedAt.date)
       resolveAwaited(fresh)
     } catch {
-      fetchError = Self.describe(error)
+      fetchError = Self.describe(error) ?? fetchError
       return
     }
     if settings == nil { await refreshSettings(url) }
@@ -179,7 +191,7 @@ final class AppModel {
       // An old snapshot proves nothing about the broker now.
       if connection.url == url {
         account = nil
-        accountError = Self.describe(error)
+        accountError = Self.describe(error) ?? accountError
       }
     }
   }
@@ -195,25 +207,62 @@ final class AppModel {
     }
   }
 
+  func refreshJobs() async {
+    guard let url = connection.url else { return }
+    do {
+      let read = try await Container.shared.apiClient(connection.endpoint(for: url)).jobs()
+      guard connection.url == url else { return }
+      jobs = read
+      jobsError = nil
+    } catch is CancellationError {
+      return
+    } catch {
+      if connection.url == url {
+        jobs = nil
+        jobsError = Self.describe(error) ?? jobsError
+      }
+    }
+  }
+
+  /// Reads the jobs at the status poll rate until cancelled; used while Settings is open.
+  func followJobs() async {
+    while !Task.isCancelled {
+      await refreshJobs()
+      let seconds = response.map { NSDecimalNumber(decimal: $0.pollSeconds.value).doubleValue }
+        ?? Self.initialPollSeconds
+      try? await Task.sleep(for: .seconds(max(seconds, Self.minimumPollSeconds)))
+    }
+  }
+
   /// Reads today's live flow; the answer is dropped when the address or the day changed meanwhile.
   func refreshFlow() async {
     guard let url = connection.url else { return }
     let day = today
+    let client = Container.shared.apiClient(connection.endpoint(for: url))
     do {
-      let read = try await Container.shared.apiClient(connection.endpoint(for: url)).flow(day: day)
+      let read = try await client.flow(day: day)
       guard connection.url == url, day == today else { return }
       flow = read
       flowError = nil
+      flowAnsweredDay = day
     } catch is CancellationError {
       return
     } catch {
       // Old counts prove nothing about the day now.
-      if connection.url == url {
-        flow = nil
-        flowError = Self.describe(error)
-      }
+      guard connection.url == url, day == today else { return }
+      flow = nil
+      flowError = Self.describe(error) ?? flowError
+      flowAnsweredDay = day
     }
+    // The refusals only place refused symbols on the board; without them they stay where they
+    // stopped, so a failed read is not an error of its own.
+    let refusals = try? await client.skipped(day: day)
+    guard connection.url == url, day == today else { return }
+    skipped = refusals
   }
+
+  /// The first /flow answer for today has not come yet (a new address, a new day).
+  var flowPending: Bool { flowAnsweredDay != today }
 
   /// Reads today's live flow every `flowSeconds` until cancelled; used while Home is on screen.
   func followFlow() async {
@@ -231,7 +280,7 @@ final class AppModel {
       settings = read
       settingsError = nil
     } catch {
-      if connection.url == url { settingsError = Self.describe(error) }
+      if connection.url == url { settingsError = Self.describe(error) ?? settingsError }
     }
   }
 
@@ -276,19 +325,29 @@ final class AppModel {
         notice = Notice(L10n.Notice.queued(title), tone: .info)
       }
     } catch {
-      notice = Notice(L10n.Notice.failed(title, Self.describe(error)), tone: .failure)
+      notice = Notice(L10n.Notice.failed(title, ErrorText.text(error)), tone: .failure)
     }
     await refresh()
   }
 
-  /// Uses a pairing link: the Mac's HTTPS address and its token replace the current connection.
-  /// Refused, with the earlier connection kept, when the Keychain does not take the token.
-  func pair(_ pairing: Pairing) {
-    guard Container.shared.keychain().saveToken(pairing.token) else {
+  /// Uses a pairing link: redeems its one-time code at the Mac's HTTPS address for the bearer
+  /// token, then that address and token replace the current connection. Refused, with the earlier
+  /// connection kept, when the Mac refuses the code (used, expired, or another pairing started) or
+  /// the Keychain does not take the token.
+  func pair(_ pairing: Pairing) async {
+    let redeemed: PairedV1
+    do {
+      redeemed = try await Container.shared.apiClient(APIClient.Endpoint(baseURL: pairing.url))
+        .redeemPairing(code: pairing.code)
+    } catch {
+      notice = Notice(L10n.Pair.notRedeemed(ErrorText.text(error)), tone: .failure)
+      return
+    }
+    guard Container.shared.keychain().saveToken(redeemed.token) else {
       notice = Notice(L10n.Pair.notSaved, tone: .failure)
       return
     }
-    connection = Connection(pairing)
+    connection = Connection(paired: pairing.url, token: redeemed.token)
     notice = Notice(L10n.Pair.paired(Connection.displayHost(pairing.url) ?? String(localized: L10n.Pair.thisMac)),
       tone: .success)
   }
@@ -306,7 +365,9 @@ final class AppModel {
     }
   }
 
-  static func describe(_ error: Error) -> String {
-    (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+  /// Nil for a cancelled read: callers keep the error they had (`describe(error) ?? old`), so a read
+  /// cancelled by `stop()` never clears a real failure and makes stale data look current.
+  static func describe(_ error: Error) -> String? {
+    ErrorText.describe(error)
   }
 }

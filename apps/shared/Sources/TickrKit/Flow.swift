@@ -170,6 +170,10 @@ public struct WatchingRowV1: Codable, Hashable, Sendable {
   public let closenessCause: String?
   public let quoteAgeSeconds: DecimalString?
   public let quoteAgeCause: String?
+  /// `closeness_cause` as codes (docs/api.md, "Reason codes"); empty when there is none.
+  public let closenessCauseCodes: [ReasonV1]
+  /// `quote_age_cause` as codes (docs/api.md, "Reason codes"); empty when there is none.
+  public let quoteAgeCauseCodes: [ReasonV1]
 
   enum CodingKeys: String, CodingKey {
     case symbol, at, strategy, verdict, closeness
@@ -177,6 +181,8 @@ public struct WatchingRowV1: Codable, Hashable, Sendable {
     case closenessCause = "closeness_cause"
     case quoteAgeSeconds = "quote_age_seconds"
     case quoteAgeCause = "quote_age_cause"
+    case closenessCauseCodes = "closeness_cause_codes"
+    case quoteAgeCauseCodes = "quote_age_cause_codes"
   }
 
   public init(from decoder: Decoder) throws {
@@ -190,6 +196,8 @@ public struct WatchingRowV1: Codable, Hashable, Sendable {
     closenessCause = try c.decodeNullable(String.self, forKey: .closenessCause)
     quoteAgeSeconds = try c.decodeNullable(DecimalString.self, forKey: .quoteAgeSeconds)
     quoteAgeCause = try c.decodeNullable(String.self, forKey: .quoteAgeCause)
+    closenessCauseCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .closenessCauseCodes) ?? []
+    quoteAgeCauseCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .quoteAgeCauseCodes) ?? []
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -203,6 +211,54 @@ public struct WatchingRowV1: Codable, Hashable, Sendable {
     try c.encodeNullable(closenessCause, forKey: .closenessCause)
     try c.encodeNullable(quoteAgeSeconds, forKey: .quoteAgeSeconds)
     try c.encodeNullable(quoteAgeCause, forKey: .quoteAgeCause)
+    try c.encode(closenessCauseCodes, forKey: .closenessCauseCodes)
+    try c.encode(quoteAgeCauseCodes, forKey: .quoteAgeCauseCodes)
+  }
+}
+
+/// What can hold the size of an entry below what the strategy asked for.
+public enum SizeBinding: String, Codable, Sendable, CaseIterable {
+  /// Sized down to fit the room left under the daily loss limit.
+  case dailyRoom = "daily_room"
+}
+
+/// The latest entry size the bot worked out today: for which symbol and decision, the quantity, and
+/// what bound it, if anything did.
+public struct LatestSizeV1: Codable, Hashable, Sendable {
+  public let symbol: String
+  public let at: WireTime
+  public let strategy: StrategyId
+  public let verdict: Verdict
+  public let quantity: DecimalString
+  /// Nil when nothing held the size down.
+  public let binding: SizeBinding?
+  public let bindingCause: String?
+
+  enum CodingKeys: String, CodingKey {
+    case symbol, at, strategy, verdict, quantity, binding
+    case bindingCause = "binding_cause"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    symbol = try c.decode(String.self, forKey: .symbol)
+    at = try c.decode(WireTime.self, forKey: .at)
+    strategy = try c.decode(StrategyId.self, forKey: .strategy)
+    verdict = try c.decode(Verdict.self, forKey: .verdict)
+    quantity = try c.decode(DecimalString.self, forKey: .quantity)
+    binding = try c.decodeNullable(SizeBinding.self, forKey: .binding)
+    bindingCause = try c.decodeNullable(String.self, forKey: .bindingCause)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(symbol, forKey: .symbol)
+    try c.encode(at, forKey: .at)
+    try c.encode(strategy, forKey: .strategy)
+    try c.encode(verdict, forKey: .verdict)
+    try c.encode(quantity, forKey: .quantity)
+    try c.encodeNullable(binding, forKey: .binding)
+    try c.encodeNullable(bindingCause, forKey: .bindingCause)
   }
 }
 
@@ -211,10 +267,13 @@ public struct WatchingV1: Codable, Hashable, Sendable {
   public let day: WireDate
   public let total: Int
   public let rows: [WatchingRowV1]
+  /// The latest entry size today, or nil before the first.
+  public let latestSize: LatestSizeV1?
   public let apiVersion: Int
 
   enum CodingKeys: String, CodingKey {
     case day, total, rows
+    case latestSize = "latest_size"
     case apiVersion = "api_version"
   }
 
@@ -224,6 +283,7 @@ public struct WatchingV1: Codable, Hashable, Sendable {
     day = try c.decode(WireDate.self, forKey: .day)
     total = try c.decode(Int.self, forKey: .total)
     rows = try c.decode([WatchingRowV1].self, forKey: .rows)
+    latestSize = try c.decodeNullable(LatestSizeV1.self, forKey: .latestSize)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -231,6 +291,7 @@ public struct WatchingV1: Codable, Hashable, Sendable {
     try c.encode(day, forKey: .day)
     try c.encode(total, forKey: .total)
     try c.encode(rows, forKey: .rows)
+    try c.encodeNullable(latestSize, forKey: .latestSize)
     try c.encode(apiVersion, forKey: .apiVersion)
   }
 }

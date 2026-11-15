@@ -82,14 +82,17 @@ struct CandleChart: View {
   /// Width every pane gives its scale labels, so the plot areas of all panes are equally wide
   /// and candles, volume and studies line up.
   static let axisLabelWidth: CGFloat = 50
-  /// Smallest scale the readout line may shrink to before it truncates.
-  static let readoutMinimumScale = 0.7
   /// Size of a watch or entry mark on its candle, in points.
   static let eventSize: CGFloat = 60
   /// Length of the leader line of the high and low labels, in points.
   static let extremeLeader: CGFloat = 12
   /// Room above a study pane's line for its legend, as a share of the pane's value range.
   static let legendHeadroom = 0.35
+  /// Clock labels on screen at most, on one day.
+  static let clockLabels = 4
+  /// Width a time label needs with a gap to the next, in points at the default text size:
+  /// labels closer than this are left out.
+  static let timeLabelSlot: CGFloat = 52
   /// Annotations near an edge move inside the chart instead of being cut off.
   static let keepInside = AnnotationOverflowResolution(x: .fit(to: .chart), y: .fit(to: .chart))
   /// Colours of the moving-average lines, in the order of `Studies.movingAveragePeriods`.
@@ -98,6 +101,8 @@ struct CandleChart: View {
   static let averageSeries: [Series] = [.shortAverage, .mediumAverage, .longAverage]
 
   let series: ChartSeries
+  /// Real times of the candles, for the readout and the axis beyond one day.
+  var times = ChartTimes.day
   /// Moving averages, Bollinger, MACD, RSI and stochastic of `series`' candles.
   let studies: CandleStudies
   /// The ATR line, one value per candle of `series`.
@@ -108,7 +113,16 @@ struct CandleChart: View {
   /// The trading strategy's watch and entry marks.
   let events: [ChartEvent]
   let lines: Lines
+  /// Beyond one day the whole range is on screen (zoom in to read closer); one day opens on
+  /// the newest candles.
+  var fitsAll = false
   @Binding var viewport: ChartViewport
+  /// The value scales' width, grown with Dynamic Type so a price such as 128.40 is never cut.
+  @ScaledMetric(relativeTo: .caption2) private var axisWidth = CandleChart.axisLabelWidth
+  /// The time labels' slot, grown with Dynamic Type.
+  @ScaledMetric(relativeTo: .caption2) private var labelSlot = CandleChart.timeLabelSlot
+  /// The price pane's plot width, for spacing the time labels.
+  @State private var chartWidth: CGFloat = 0
 
   @State private var selected: Date?
 
@@ -118,7 +132,7 @@ struct CandleChart: View {
         .font(Tokens.Typography.captionMono)
         .foregroundStyle(selected == nil ? Palette.textQuaternary : Palette.textSecondary)
         .lineLimit(1)
-        .minimumScaleFactor(Self.readoutMinimumScale)
+        .minimumScaleFactor(Tokens.Shrink.standard)
       legend(priceLegend)
       VStack(spacing: 0) {
         priceChart
@@ -137,13 +151,29 @@ struct CandleChart: View {
     .padding(Tokens.Space.l)
     .tickrCard()
     .animation(Tokens.Motion.standard, value: lines)
-    .onAppear { viewport.followEnd(series) }
-    .onChange(of: series.timeframe) { viewport.followEnd(series) }
+    .onAppear { place() }
+    .onChange(of: fitsAll) { place() }
+    .onChange(of: series.timeframe) { place() }
+    .onChange(of: series.candles.first?.start) { if fitsAll { viewport.fit(series) } }
     .onChange(of: series.candles.last) { old, _ in
-      // Keep following the newest candle when it was already in view.
-      if let old, old.end >= viewport.scroll.addingTimeInterval(window) { viewport.followEnd(series) }
+      if fitsAll {
+        viewport.fit(series)
+      } else if let old, old.end >= viewport.scroll.addingTimeInterval(window) {
+        // Keep following the newest candle when it was already in view.
+        viewport.followEnd(series)
+      }
     }
     .sensoryFeedback(.selection, trigger: selectedCandle)
+  }
+
+  /// The whole range beyond one day; on one day the usual zoom, ending at the newest candle.
+  private func place() {
+    if fitsAll {
+      viewport.fit(series)
+    } else {
+      viewport.unfit()
+      viewport.followEnd(series)
+    }
   }
 
   // MARK: price pane
@@ -178,7 +208,7 @@ struct CandleChart: View {
           lineMarks(Self.averageSeries[item.offset], item.element, Self.averageColours[item.offset])
         }
       }
-      if lines.vwap { lineMarks(.vwap, series.vwap, Palette.seriesVWAP) }
+      if showsVWAP { lineMarks(.vwap, series.vwap, Palette.seriesVWAP) }
       if lines.fastEMA { lineMarks(.fastEMA, series.fastEMA, Palette.seriesFastEMA) }
       if lines.slowEMA { lineMarks(.slowEMA, series.slowEMA, Palette.seriesSlowEMA) }
       extremes
@@ -194,7 +224,7 @@ struct CandleChart: View {
       if let candle = selectedCandle {
         crosshair(candle)
           .annotation(position: .bottom, spacing: 0, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-            Text(candle.start, format: ChartFormat.time)
+            Text(verbatim: times.text(candle.start))
               .fixedSize()
               .font(Tokens.Typography.annotationBold)
               .foregroundStyle(Palette.surface)
@@ -228,6 +258,7 @@ struct CandleChart: View {
       }
     }
     .modifier(Scrolling(window: window, domain: timeDomain, scroll: $viewport.scroll))
+    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: { chartWidth = $0 })
     .chartXSelection(value: $selected)
     .chartPlotStyle { $0.background(Palette.surfaceSunken) }
     .accessibilityLabel(Text(ChartText.title))
@@ -262,25 +293,46 @@ struct CandleChart: View {
     if let found = series.candles.extremes(in: visibleIndices) {
       let high = series.candles[found.high]
       let low = series.candles[found.low]
+      // Beside its candle, on the side with more room, so a high or low near either edge of
+      // the screen is never cut (the chart's own fit does not know the scrolled stretch).
+      let highLeft = labelGoesLeft(high)
+      let lowLeft = labelGoesLeft(low)
       PointMark(x: .value(Plot.time, middle(high)), y: .value(Plot.price, high.high))
         .symbolSize(0)
-        .annotation(position: .top, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
-          extremeLabel(high.high)
+        .annotation(position: highLeft ? .leading : .trailing, spacing: Tokens.Space.xxs,
+          overflowResolution: Self.keepInside) {
+          extremeLabel(high.high, left: highLeft)
         }
       PointMark(x: .value(Plot.time, middle(low)), y: .value(Plot.price, low.low))
         .symbolSize(0)
-        .annotation(position: .bottom, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
-          extremeLabel(low.low)
+        .annotation(position: lowLeft ? .leading : .trailing, spacing: Tokens.Space.xxs,
+          overflowResolution: Self.keepInside) {
+          extremeLabel(low.low, left: lowLeft)
         }
     }
   }
 
-  private func extremeLabel(_ price: Double) -> some View {
-    HStack(spacing: Tokens.Space.xxs) {
-      Text(price, format: ChartFormat.price)
-      Rectangle()
-        .fill(Palette.textTertiary)
-        .frame(width: Self.extremeLeader, height: Tokens.Stroke.hairline)
+  /// Whether a high or low label goes left of its candle: when the candle is in the right half
+  /// of the screen.
+  private func labelGoesLeft(_ candle: Candle) -> Bool {
+    let shown = shownStretch
+    let half = shown.lowerBound.addingTimeInterval(shown.upperBound.timeIntervalSince(shown.lowerBound) / 2)
+    return middle(candle) > half
+  }
+
+  /// The price with a short leader pointing at its candle.
+  private func extremeLabel(_ price: Double, left: Bool) -> some View {
+    let leader = Rectangle()
+      .fill(Palette.textTertiary)
+      .frame(width: Self.extremeLeader, height: Tokens.Stroke.hairline)
+    return HStack(spacing: Tokens.Space.xxs) {
+      if left {
+        Text(price, format: ChartFormat.price)
+        leader
+      } else {
+        leader
+        Text(price, format: ChartFormat.price)
+      }
     }
     .font(Tokens.Typography.annotation)
     .foregroundStyle(Palette.textTertiary)
@@ -384,7 +436,7 @@ struct CandleChart: View {
   private var priceLegend: [LegendItem] {
     guard let index = legendIndex else { return [] }
     var items: [LegendItem] = []
-    if lines.vwap { items.append(LegendItem(name: ChartText.vwap, value: series.vwap[index], colour: Palette.seriesVWAP)) }
+    if showsVWAP { items.append(LegendItem(name: ChartText.vwap, value: series.vwap[index], colour: Palette.seriesVWAP)) }
     if lines.fastEMA {
       items.append(LegendItem(name: ChartText.ema(Indicators.fastEMAPeriod), value: series.fastEMA[index],
         colour: Palette.seriesFastEMA))
@@ -439,7 +491,8 @@ struct CandleChart: View {
     if !items.isEmpty {
       HStack(spacing: Tokens.Space.s) {
         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-          HStack(spacing: Tokens.Space.xxs) {
+          // A clear gap between a name ending in a number and its value ("EMA9  28.84").
+          HStack(spacing: Tokens.Space.xs) {
             Text(item.name)
             Text(item.value.map { ChartFormat.price.format($0) } ?? ChartFormat.missing)
           }
@@ -449,7 +502,7 @@ struct CandleChart: View {
       .font(Tokens.Typography.annotation)
       .monospacedDigit()
       .lineLimit(1)
-      .minimumScaleFactor(Self.readoutMinimumScale)
+      .minimumScaleFactor(Tokens.Shrink.standard)
       .padding(.top, Tokens.Space.xxs)
     }
   }
@@ -597,9 +650,9 @@ struct CandleChart: View {
       .font(Tokens.Typography.annotationBold)
       .foregroundStyle(Palette.surface)
       .lineLimit(1)
-      .minimumScaleFactor(Self.readoutMinimumScale)
+      .minimumScaleFactor(Tokens.Shrink.standard)
       .padding(.horizontal, Tokens.Space.xxs)
-      .frame(width: Self.axisLabelWidth, alignment: .leading)
+      .frame(width: axisWidth, alignment: .leading)
       .background(tag.fill, in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
   }
 
@@ -609,19 +662,50 @@ struct CandleChart: View {
       .foregroundStyle(colour)
   }
 
-  private var timeAxis: some AxisContent {
-    AxisMarks(values: .automatic) { value in
+  /// Clock times on one day; beyond one day, where each session, week, month or quarter begins.
+  /// A label near either end of the stretch on screen hangs inward, so it is never cut.
+  @AxisContentBuilder private var timeAxis: some AxisContent {
+    let marks = axisMarks
+    let shown = shownStretch
+    let byTime = Dictionary(marks.map { ($0.time, $0) }, uniquingKeysWith: { first, _ in first })
+    AxisMarks(values: marks.map(\.time)) { value in
       AxisGridLine(stroke: StrokeStyle(lineWidth: Tokens.Stroke.hairline))
         .foregroundStyle(Palette.separator)
-      AxisValueLabel {
-        // Never truncated to "…" at the right edge.
-        if let date = value.as(Date.self) {
-          Text(date, format: ChartFormat.time)
-            .font(Tokens.Typography.annotation)
-            .foregroundStyle(Palette.textQuaternary)
-            .fixedSize()
-        }
+      // Looked up by time, never by position: a mark Charts leaves out must not shift the
+      // labels after it onto the wrong candles.
+      let mark = value.as(Date.self).flatMap { byTime[$0] }
+      AxisValueLabel(anchor: Self.unitPoint(mark.map { ChartAxis.anchor(of: $0.time, shown: shown) } ?? .centre)) {
+        Text(verbatim: mark?.text ?? ChartFormat.missing)
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(Palette.textQuaternary)
+          .fixedSize()
       }
+    }
+  }
+
+  /// The labelled times on screen: round clock times spaced for the zoom on one day, the range's
+  /// own boundaries beyond it; none closer than a label's width, and none outside the stretch on
+  /// screen (a label just past the left edge hung back into it, cut: "L3:50").
+  private var axisMarks: [ChartAxisLabel] {
+    let shown = shownStretch
+    let all = times.marks.isEmpty
+      ? ChartAxis.clockMarks(in: timeDomain, shown: window, count: Self.clockLabels)
+        .map { ChartAxisLabel(time: $0, text: $0.formatted(ChartFormat.time)) }
+      : times.marks
+    let inside = all.filter { shown.contains($0.time) }
+    let plot = chartWidth - axisWidth
+    guard plot > 0 else { return inside }
+    let gap = window * Double(labelSlot / plot)
+    return ChartAxis.spaced(inside.map(\.time), gap: gap, shown: shown, preferred: { inside[$0].major })
+      .map { inside[$0] }
+  }
+
+  /// Where a time label's top hangs from its tick.
+  private static func unitPoint(_ anchor: ChartAxis.Anchor) -> UnitPoint {
+    switch anchor {
+    case .leading: .topLeading
+    case .centre: .top
+    case .trailing: .topTrailing
     }
   }
 
@@ -632,8 +716,8 @@ struct CandleChart: View {
       .font(Tokens.Typography.annotation)
       .foregroundStyle(colour)
       .lineLimit(1)
-      .minimumScaleFactor(Self.readoutMinimumScale)
-      .frame(width: Self.axisLabelWidth, alignment: .leading)
+      .minimumScaleFactor(Tokens.Shrink.standard)
+      .frame(width: axisWidth, alignment: .leading)
   }
 
   // MARK: readout and zoom
@@ -667,6 +751,15 @@ struct CandleChart: View {
 
   /// Seconds of the day on screen.
   private var window: TimeInterval { viewport.window(series) }
+
+  /// The stretch of time on screen.
+  private var shownStretch: ClosedRange<Date> {
+    let start = max(viewport.scroll, timeDomain.lowerBound)
+    return start...start.addingTimeInterval(window)
+  }
+
+  /// VWAP is a session's line: drawn on intraday candles only.
+  private var showsVWAP: Bool { lines.vwap && series.timeframe.isIntraday }
 
   private var selectedCandle: Candle? {
     guard let selected else { return nil }
@@ -750,6 +843,7 @@ private struct PaneAxes: ViewModifier {
   }
 
   let marks: Marks
+  @ScaledMetric(relativeTo: .caption2) private var axisWidth = CandleChart.axisLabelWidth
 
   func body(content: Content) -> some View {
     content
@@ -773,8 +867,8 @@ private struct PaneAxes: ViewModifier {
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
         .lineLimit(1)
-        .minimumScaleFactor(CandleChart.readoutMinimumScale)
-        .frame(width: CandleChart.axisLabelWidth, alignment: .leading)
+        .minimumScaleFactor(Tokens.Shrink.standard)
+        .frame(width: axisWidth, alignment: .leading)
     }
   }
 }
@@ -791,6 +885,8 @@ struct ChartViewport: Equatable {
 
   var visible = ChartViewport.defaultVisible
   var scroll = Date.distantPast
+  /// Most candles the zoom may show: `mostVisible` on one day, every candle of a longer range.
+  var most = ChartViewport.mostVisible
 
   /// Seconds of the day on screen.
   func window(_ series: ChartSeries) -> TimeInterval { visible * series.timeframe.seconds }
@@ -801,7 +897,7 @@ struct ChartViewport: Equatable {
   }
 
   func canZoomOut(_ series: ChartSeries) -> Bool {
-    visible < min(Self.mostVisible, Double(series.candles.count))
+    visible < min(most, Double(series.candles.count))
   }
 
   var canZoomIn: Bool { visible > Self.fewestVisible }
@@ -815,8 +911,23 @@ struct ChartViewport: Equatable {
   /// Show `factor` times as many candles, keeping the right edge where it is.
   mutating func zoom(by factor: Double, _ series: ChartSeries) {
     let end = scroll.addingTimeInterval(window(series))
-    visible = min(max(visible * factor, Self.fewestVisible), Self.mostVisible)
+    visible = min(max(visible * factor, min(Self.fewestVisible, most)), most)
     scroll = end.addingTimeInterval(-window(series))
+  }
+
+  /// Every candle on screen, first to last: a range beyond one day.
+  mutating func fit(_ series: ChartSeries) {
+    guard let first = series.candles.first else { return }
+    most = Double(series.candles.count)
+    visible = most
+    scroll = first.start
+  }
+
+  /// Back to one day's zoom after a longer range was fitted.
+  mutating func unfit() {
+    guard most != Self.mostVisible else { return }
+    most = Self.mostVisible
+    visible = Self.defaultVisible
   }
 
   /// Scroll so the newest candle sits at the right edge.
@@ -874,11 +985,20 @@ enum ChartFormat {
   static let time = Date.VerbatimFormatStyle(
     format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)",
     timeZone: WireDate.newYork.timeZone, calendar: WireDate.newYork)
-  static let day: Date.FormatStyle = {
-    var style = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+  static let day = newYork(Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+  /// Dates of a chart beyond one day, in New York and the person's language: "Fri 13" (a
+  /// session), "Nov 9" (a week), "Nov 2026" (a monthly candle), "Nov" and "2026" on a long axis.
+  static let sessionDay = newYork(Date.FormatStyle.dateTime.weekday(.abbreviated).day())
+  static let monthDay = newYork(Date.FormatStyle.dateTime.month(.abbreviated).day())
+  static let monthYear = newYork(Date.FormatStyle.dateTime.month(.abbreviated).year())
+  static let month = newYork(Date.FormatStyle.dateTime.month(.abbreviated))
+  static let year = newYork(Date.FormatStyle.dateTime.year())
+
+  private static func newYork(_ style: Date.FormatStyle) -> Date.FormatStyle {
+    var style = style
     style.timeZone = WireDate.newYork.timeZone
     return style
-  }()
+  }
 
   /// A wire decimal as a number to draw.
   static func double(_ value: DecimalString) -> Double {

@@ -1,6 +1,6 @@
+@testable import TickrKit
 import Foundation
 import Testing
-@testable import TickrKit
 
 @Suite("Contract: the strategy that opened each trade")
 struct ContractTradeStrategyTests {

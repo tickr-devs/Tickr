@@ -4,6 +4,9 @@ the replay engine with the strategy behind the gainer gate (gate.py), one proces
 A pool day is skipped, with its cause in `skipped.csv`, when the symbol's M1 file lacks the day
 or one of the `history_sessions` sessions before it, or the fetch recorded that run incomplete:
 live, the bot refuses a symbol whose prior-session history is incomplete, so it never trades it.
+A symbol whose replay the engine refuses (a bad bar, such as a 0.01 USD print that makes the
+synthetic bid non-positive) is replayed again one pool day at a time on only that day's bars,
+and only the days that are still refused are skipped (`REPLAY_REFUSED`), never the whole run.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ import tomllib
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -30,6 +33,7 @@ from tickr.config import Config
 from tickr.replay.bars import load_bars
 from tickr.replay.clock import calendar_clock
 from tickr.replay.engine import ReplayResult, replay
+from tickr.replay.errors import ReplayError
 from tickr.replay.report import write_all
 from tickr.replay.settings import ReplaySettings
 from tickr.strategy.base import Strategy
@@ -66,16 +70,43 @@ def factory(module_name: str, values: dict) -> Callable[[], Strategy]:
     return lambda: create(values)
 
 
-def run_symbol(task: Task) -> ReplayResult:
+def run_symbol(task: Task) -> tuple[ReplayResult | None, list[dict[str, str]]]:
+    """The symbol's replay and the pool days it had to skip (see the module docstring)."""
     create = factory(task.strategy_module, task.values)
-    pool = [(task.symbol, d) for d in task.pool_days]
     bars = load_bars([task.bars_file])
     if set(bars) != {task.symbol}:
         raise BacktestError(f"{task.bars_file}: holds {sorted(bars)}, not {task.symbol}")
-    clock = calendar_clock(SessionCalendar.load(task.calendar_dir), task.cfg.session)
-    return replay(lambda: GainerGate(create(), pool, task.change_percent,
-                                     task.dollar_volume_floor),
-                  bars, task.settings, clock)
+    calendar = SessionCalendar.load(task.calendar_dir)
+    clock = calendar_clock(calendar, task.cfg.session)
+
+    def one(days: tuple[date, ...], series: tuple) -> ReplayResult:
+        pool = [(task.symbol, d) for d in days]
+        return replay(lambda: GainerGate(create(), pool, task.change_percent,
+                                         task.dollar_volume_floor),
+                      {task.symbol: series}, task.settings, clock)
+
+    try:
+        return one(task.pool_days, bars[task.symbol]), []
+    except ReplayError:
+        pass
+    parts: list[ReplayResult] = []
+    skipped: list[dict[str, str]] = []
+    lookback = task.cfg.market_data.history_max_lookback_days
+    for day in task.pool_days:
+        wanted = {d.ny_date for d in sessions_before(calendar, day, task.settings.history_sessions,
+                                                      lookback)} | {day}
+        series = tuple(b for b in bars[task.symbol] if ny_date_of(b.start) in wanted)
+        try:
+            parts.append(one((day,), series))
+        except ReplayError as exc:
+            skipped.append({"symbol": task.symbol, "session_date": day.isoformat(),
+                            "cause": f"REPLAY_REFUSED: {exc}"})
+    if not parts:
+        return None, skipped
+    # The per-day replays overlap in their history sessions: count the symbol's file once.
+    series = bars[task.symbol]
+    return replace(merge(parts), sessions=len({ny_date_of(b.start) for b in series}),
+                   bars=len(series)), skipped
 
 
 def tradable_days(cfg: Config, calendar: SessionCalendar, pool: list[PoolEntry], out: Path,
@@ -114,15 +145,17 @@ def tradable_days(cfg: Config, calendar: SessionCalendar, pool: list[PoolEntry],
                             "cause": "SESSION_WITHOUT_BARS: "
                             + " ".join(d.isoformat() for d in missing)})
             continue
-        # Daily bars are forward-adjusted, M1 bars are not: the ratio daily/M1 is the same on
-        # both days unless a split falls between them.
-        before = entry.previous_close / closes[wanted[-1]] if wanted else None
-        after = entry.day_close / closes[day]
-        if before is not None and abs(before / after - 1) * 100 > tolerance_percent:
-            skipped.append({"symbol": symbol, "session_date": day.isoformat(),
-                            "cause": f"SPLIT_BETWEEN_SESSIONS: daily/M1 scale {before:.4f} "
-                            f"before, {after:.4f} on the day"})
-            continue
+        # Daily bars are forward-adjusted, M1 bars are not: on the day's M1 scale the pool's
+        # previous close matches the previous session's last M1 close unless a split (or a
+        # dividend above the tolerance) falls between them.
+        if wanted:
+            expected = entry.previous_close_on_minute_scale(closes[day])
+            raw = closes[wanted[-1]]
+            if abs(expected / raw - 1) * 100 > tolerance_percent:
+                skipped.append({"symbol": symbol, "session_date": day.isoformat(),
+                                "cause": f"SPLIT_BETWEEN_SESSIONS: previous close {raw} on M1, "
+                                f"{expected:.4f} on the day's M1 scale"})
+                continue
         days[symbol].append(day)
     return dict(days), skipped
 
@@ -136,17 +169,40 @@ def _last_closes(path: Path) -> dict[date, Decimal]:
     return closes
 
 
+def last_sessions(calendar: SessionCalendar, pool: list[PoolEntry], count: int,
+                  max_lookback_days: int) -> tuple[list[PoolEntry], list[date]]:
+    """The pool cut to the `count` latest open sessions that end at its last day, and those
+    sessions (oldest first). Sessions without a pool day stay counted: the window is calendar
+    sessions, not days that happened to have gainers."""
+    if count <= 0:
+        raise BacktestError(f"--last-sessions must be positive, got {count}")
+    if not pool:
+        raise BacktestError("the pool is empty")
+    last = max(e.session_date for e in pool)
+    before = sessions_before(calendar, last, count - 1, max_lookback_days) if count > 1 else []
+    sessions = [d.ny_date for d in before] + [last]
+    kept = set(sessions)
+    return [e for e in pool if e.session_date in kept], sessions
+
+
 def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: ReplaySettings,
-                 out: Path, results: Path, strategy_module: str, values_path: Path) -> None:
+                 out: Path, results: Path, strategy_module: str, values_path: Path,
+                 last_session_count: int | None = None) -> None:
     calendar_dir = (cfg.root / cfg.session.calendar_file).parent
     calendar = SessionCalendar.load(calendar_dir)
     with open(values_path, "rb") as handle:
         values = tomllib.load(handle)
     factory(strategy_module, values)  # refuse bad values before any work
     pool = read_pool(out / POOL_FILE)
+    window: list[date] | None = None
+    if last_session_count is not None:
+        pool, window = last_sessions(calendar, pool, last_session_count,
+                                     cfg.market_data.history_max_lookback_days)
     days, skipped = tradable_days(cfg, calendar, pool, out, replay_settings.history_sessions,
                                   settings.split_tolerance_percent)
     caps = read_caps(out / CAP_FILE)
+    if window is not None:
+        caps = [c for c in caps if c.session_date in set(window)]
     floor = cfg.market_data.min_session_dollar_volume_usd
     tasks = [Task(symbol, out / fetch.MINUTES_DIR / f"{symbol}.jsonl", tuple(sorted(d)),
                   strategy_module, values, settings.gainer_change_percent, floor, calendar_dir,
@@ -156,7 +212,12 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
     print(f"run: {sum(len(t.pool_days) for t in tasks)} symbol-days over {len(tasks)} symbols, "
           f"{len(skipped)} skipped, {settings.workers} workers")
     with ProcessPoolExecutor(max_workers=settings.workers) as pool_executor:
-        parts = list(pool_executor.map(run_symbol, tasks))
+        outcomes = list(pool_executor.map(run_symbol, tasks))
+    parts = [part for part, _ in outcomes if part is not None]
+    refused = [row for _, rows in outcomes for row in rows]
+    skipped = skipped + refused
+    if not parts:
+        raise BacktestError("every pool day was refused by the replay engine")
     merged = merge(parts)
     results.mkdir(parents=True, exist_ok=True)
     write_all(merged, results, replay_settings.output_decimal_places)
@@ -164,9 +225,15 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
         writer = csv.DictWriter(handle, fieldnames=("symbol", "session_date", "cause"))
         writer.writeheader()
         writer.writerows(skipped)
-    traded_days = sum(len(t.pool_days) for t in tasks)
+    traded_days = sum(len(t.pool_days) for t in tasks) - len(refused)
+    recent = None
+    if window is not None:
+        gone = {(r["symbol"], r["session_date"]) for r in refused}
+        replayed = {d for s, ds in days.items() for d in ds if (s, d.isoformat()) not in gone}
+        recent = report.LastSessions(last_session_count, window[0], window[-1],
+                                     sum(1 for d in window if d not in replayed))
     text = report.write_report(merged, pool, caps, traded_days, skipped, cfg, settings,
-                               replay_settings, results)
+                               replay_settings, results, recent)
     print(text)
 
 

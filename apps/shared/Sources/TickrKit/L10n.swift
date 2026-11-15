@@ -6,6 +6,17 @@ enum L10n {
   /// The package's resource bundle, which holds the String Catalog.
   static var bundle: LocalizedStringResource.BundleDescription { .atURL(Bundle.module.bundleURL) }
 
+  // MARK: Event texts (Board.events)
+
+  /// An entry or an open position: "ABCD 54 @ 28.30", in the cards' own wording.
+  static func eventQuantityAt(_ symbol: String, _ quantity: String, _ price: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.event.quantityAt", defaultValue: "\(symbol) \(quantity) @ \(price)", bundle: bundle)
+  }
+  /// An exit with its result: "ABCD @ 29.10 +43.20".
+  static func eventExitAt(_ symbol: String, _ price: String, _ result: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.event.exitAt", defaultValue: "\(symbol) @ \(price) \(result)", bundle: bundle)
+  }
+
   // MARK: Event tags (Board.events)
 
   /// Event tag: a trade was entered.
@@ -116,14 +127,6 @@ enum L10n {
   static var commandResumeEntries: LocalizedStringResource {
     LocalizedStringResource("kit.command.resumeEntries", defaultValue: "Resume entries", bundle: bundle)
   }
-  /// Operator command as recorded: the entry stop was switched on.
-  static var commandEntryStopOn: LocalizedStringResource {
-    LocalizedStringResource("kit.command.entryStopOn", defaultValue: "Entry stop on", bundle: bundle)
-  }
-  /// Operator command as recorded: the entry stop was switched off.
-  static var commandEntryStopOff: LocalizedStringResource {
-    LocalizedStringResource("kit.command.entryStopOff", defaultValue: "Entry stop off", bundle: bundle)
-  }
   /// Operator command: cancel every open order the bot placed.
   static var commandCancelOwnOrders: LocalizedStringResource {
     LocalizedStringResource("kit.command.cancelOwnOrders", defaultValue: "Cancel own orders", bundle: bundle)
@@ -153,6 +156,21 @@ enum L10n {
     LocalizedStringResource("kit.headline.connecting", defaultValue: "Connecting to the local API…",
       bundle: bundle)
   }
+  /// Headline: entries are allowed.
+  static var headlineAllowed: LocalizedStringResource {
+    LocalizedStringResource("kit.headline.allowed", defaultValue: "Entries allowed.", bundle: bundle)
+  }
+  /// Headline: the status is old; argument: its age in whole seconds.
+  static func headlineStale(_ seconds: Int) -> LocalizedStringResource {
+    LocalizedStringResource("kit.headline.stale",
+      defaultValue: "Bot status is \(seconds) s old: the bot may be down. Do not trust the rest of this page.",
+      bundle: bundle)
+  }
+  /// Headline: the bot has no status; argument: the API's cause.
+  static func headlineUnavailable(_ cause: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.headline.unavailable",
+      defaultValue: "Bot status unavailable: \(cause). Entries are not possible.", bundle: bundle)
+  }
   /// Headline start; arguments: symbol, stop state. The bot's summary follows the space.
   static func headlineNoVerifiedStop(_ symbol: String, _ state: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.headline.noVerifiedStop",
@@ -175,6 +193,10 @@ enum L10n {
   static func apiUnreachable(_ detail: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.api.unreachable", defaultValue: "Local API not reachable: \(detail)",
       bundle: bundle)
+  }
+  /// An error that brings no description of its own.
+  static var unexpectedError: LocalizedStringResource {
+    LocalizedStringResource("kit.error.unexpected", defaultValue: "unexpected error in the app", bundle: bundle)
   }
   /// Contract error detail.
   static var apiNotHTTP: LocalizedStringResource {
@@ -224,9 +246,85 @@ enum L10n {
     LocalizedStringResource("kit.wire.nullableKeyMissing", defaultValue: "nullable key must be present",
       bundle: bundle)
   }
+  /// Contract error detail; argument: the field's path ("positions.0.stop").
+  static func fieldMissing(_ field: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.wire.fieldMissing", defaultValue: "field \(field) is missing", bundle: bundle)
+  }
+  /// Contract error detail; argument: the field's path.
+  static func fieldNull(_ field: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.wire.fieldNull", defaultValue: "field \(field) is null", bundle: bundle)
+  }
+  /// Contract error detail; argument: the field's path.
+  static func fieldWrongType(_ field: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.wire.fieldWrongType", defaultValue: "field \(field) has the wrong type",
+      bundle: bundle)
+  }
+  /// Contract error detail; argument: the field's path. A value this app cannot read (an unknown case, a number out of range).
+  static func fieldUnknownValue(_ field: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.wire.fieldUnknownValue",
+      defaultValue: "field \(field) has a value this app cannot read", bundle: bundle)
+  }
+  /// Contract error detail; arguments: the field's path, what is wrong with its value.
+  static func fieldInvalid(_ field: String, _ cause: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.wire.fieldInvalid", defaultValue: "field \(field): \(cause)", bundle: bundle)
+  }
+  /// Contract error detail: the answer could not be read as JSON at all.
+  static var notJSON: LocalizedStringResource {
+    LocalizedStringResource("kit.wire.notJSON", defaultValue: "the answer is not valid JSON", bundle: bundle)
+  }
+  /// Contract error detail: the answer is JSON, but not an object of the kind asked for
+  /// (for example a list where one record was expected).
+  static var wrongShape: LocalizedStringResource {
+    LocalizedStringResource("kit.wire.wrongShape", defaultValue: "the answer has the wrong shape", bundle: bundle)
+  }
   /// Contract error detail; arguments: version key, version received, version this app reads.
   static func unsupportedVersion(_ key: String, _ value: Int, _ expected: Int) -> LocalizedStringResource {
     LocalizedStringResource("kit.wire.unsupportedVersion",
       defaultValue: "unsupported \(key) \(value), this app reads \(expected)", bundle: bundle)
+  }
+
+  // MARK: Environments (ApiText.environment)
+
+  /// Where the bot trades: the broker's test environment.
+  static var environmentSandbox: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.sandbox", defaultValue: "Sandbox", bundle: bundle)
+  }
+  /// Where the bot runs: `tickr demo`, a made-up day with no broker.
+  static var environmentDemo: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.demo", defaultValue: "Demo", bundle: bundle)
+  }
+  /// Where the bot trades: the real account.
+  static var environmentProduction: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.production", defaultValue: "Production", bundle: bundle)
+  }
+  /// Where the bot trades, when the bot sends no environment name.
+  static var environmentUnknown: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.unknown", defaultValue: "Unknown environment", bundle: bundle)
+  }
+
+  // MARK: Fences (ApiText.fenceTitle)
+
+  /// A fence of a kind this app does not know; the bot's detail follows it.
+  static var fenceOther: LocalizedStringResource {
+    LocalizedStringResource("kit.fenceKind.other", defaultValue: "Other block", bundle: bundle)
+  }
+
+  // MARK: Codes this app does not know (ApiText)
+
+  /// A broker order's side this app does not know.
+  static var orderSideOther: LocalizedStringResource {
+    LocalizedStringResource("kit.orderOther.side", defaultValue: "Unknown side", bundle: bundle)
+  }
+  /// A broker order's type this app does not know.
+  static var orderTypeOther: LocalizedStringResource {
+    LocalizedStringResource("kit.orderOther.type", defaultValue: "Unknown type", bundle: bundle)
+  }
+  /// A broker order's status this app does not know.
+  static var orderStatusOther: LocalizedStringResource {
+    LocalizedStringResource("kit.orderOther.status", defaultValue: "Unknown status", bundle: bundle)
+  }
+  /// A strategy check whose rule this app does not know (a newer strategy).
+  static var ruleOther: LocalizedStringResource {
+    LocalizedStringResource("kit.ruleOther", defaultValue: "Other check", bundle: bundle)
   }
 }

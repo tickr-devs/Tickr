@@ -20,8 +20,10 @@ from tickr.api.contract import (
     AccountPosition,
     AccountResponseV1,
     Agreement,
+    BackupJobV1,
     BarsV1,
     BarV1,
+    BotState,
     ChartBarV1,
     ChartInterval,
     ChartRange,
@@ -51,15 +53,28 @@ from tickr.api.contract import (
     FlowStopState,
     FlowStopV1,
     FlowV1,
+    JobsV1,
+    JournalRowV1,
+    JournalV1,
+    LabReplayState,
+    LabReplaySummaryV1,
+    LabReplayV1,
+    LatestSizeV1,
+    LaunchdJobV1,
+    NightlyFetchJobV1,
     ObserverDecisionV1,
     ObserversV1,
     ObserverTradeV1,
     ObserverV1,
+    PairedV1,
     PendingCommandsV1,
     PriceAfterV1,
+    ReconcileJobV1,
     RiskSettings,
     SessionSettings,
+    SessionTimesV1,
     SettingsV1,
+    SizeBinding,
     SkippedSignalV1,
     SkippedV1,
     StatusResponseV1,
@@ -118,6 +133,8 @@ def documents() -> dict[str, object]:
         "status-response-v1.unavailable": _response(
             None, None, False, "the bot has not written a status file"),
         "command-accepted-v1": CommandAcceptedV1(command=command, warning=None),
+        # An example only: real tokens never leave the phone's Keychain and the Mac's memory.
+        "paired-v1": PairedV1(token="example-token-not-a-secret_0123456789-abcdef"),
         "command-accepted-v1.warning": CommandAcceptedV1(
             command=command, warning="the bot does not look alive; the command runs only if "
                                      "the bot reads it before it expires"),
@@ -187,6 +204,57 @@ def documents() -> dict[str, object]:
                          Decimal("10")),
             SessionSettings("America/New_York", 15, 5, False), Decimal("15"), POLL,
             Decimal("30"), Decimal("15")),
+        # 10:00 New York on a Monday: the bot runs, its last broker read was 4 s ago.
+        "jobs-v1": JobsV1(
+            T0, BotState.RUNNING, False, T0.replace(hour=13, minute=12, second=4),
+            ReconcileJobV1(Decimal("10"), T0 - timedelta(seconds=4),
+                           T0 + timedelta(seconds=6)),
+            BackupJobV1(T0.replace(hour=13, minute=12, second=9), None, None, None),
+            _LAUNCHD, SessionTimesV1(
+                DAY, datetime(2026, 11, 16, 14, 30, tzinfo=UTC),
+                datetime(2026, 11, 16, 20, 45, tzinfo=UTC),
+                datetime(2026, 11, 16, 20, 55, tzinfo=UTC),
+                datetime(2026, 11, 16, 21, 0, tzinfo=UTC)), None,
+            # Last night added Friday 2026-11-13 to the Lab's data.
+            NightlyFetchJobV1(datetime(2026, 11, 14, 1, 42, 7, tzinfo=UTC), DAY - timedelta(days=3),
+                              1, None)),
+        # A Saturday with the bot stopped: no session, the last backup failed after Friday's.
+        "jobs-v1.weekend": JobsV1(
+            T0 + timedelta(days=5), BotState.STOPPED, True, None,
+            ReconcileJobV1(Decimal("10"), T0 + timedelta(days=4, hours=6), None),
+            BackupJobV1(T0 + timedelta(days=4), T0 + timedelta(days=4, hours=7),
+                        "OperationalError", None),
+            _LAUNCHD, None, "2026-11-21 is a weekend",
+            # Friday night stopped before the 429 window cleared: the data still ends Thursday.
+            NightlyFetchJobV1(T0 + timedelta(days=4, hours=21), None, 0,
+                              "stopped at 2026-11-23T12:30:00+00:00, before the next session "
+                              "([backtest] nightly_stop_minutes_before_open); current is "
+                              "unchanged")),
+        # The Overview's journal card: the latest rows, oldest first; "line #731".
+        "journal-v1": JournalV1(731, (
+            JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),
+            JournalRowV1(729, T0 - timedelta(seconds=8), "trade-opened", "ABCD"),
+            JournalRowV1(730, T0 - timedelta(seconds=4), "reconcile-checked", None),
+            JournalRowV1(731, T0, "stop-from-fill", "ABCD")), None),
+        "journal-v1.empty": JournalV1(None, (), "the bot has not created its database yet"),
+        # Saturday: the replay of the last 20 sessions finished, with its SIMULATED numbers.
+        "lab-replay-v1": LabReplayV1(
+            LabReplayState.DONE, "3f0c9a1e5b7d4c2a8e6f1b0d9c7a5e3f", "price-action-v1", "1", 20,
+            T0 + timedelta(days=5), T0 + timedelta(days=5, minutes=4, seconds=31), None,
+            LabReplaySummaryV1(
+                DAY - timedelta(days=25), DAY - timedelta(days=2), 20, 1, 143, 37,
+                Decimal("43.24"), Decimal("0.18"), Decimal("6.66"), Decimal("1.41"),
+                Decimal("-0.21"), Decimal("0.57"), Decimal("95"), Decimal("4.20"), 22,
+                Decimal("412.50"), Decimal("187.00"))),
+        "lab-replay-v1.idle": LabReplayV1(LabReplayState.IDLE, None, None, None, 20, None,
+                                          None, None, None),
+        "lab-replay-v1.running": LabReplayV1(
+            LabReplayState.RUNNING, "3f0c9a1e5b7d4c2a8e6f1b0d9c7a5e3f", "price-action-v1",
+            "1", 20, T0 + timedelta(days=5), None, None, None),
+        "lab-replay-v1.failed": LabReplayV1(
+            LabReplayState.FAILED, "3f0c9a1e5b7d4c2a8e6f1b0d9c7a5e3f", "price-action-v1", "1",
+            20, T0 + timedelta(days=5), T0 + timedelta(days=5, seconds=2),
+            "backtest/minutes is missing: run fetch first", None),
         "day-v1.empty": DayV1("sandbox", DAY - timedelta(days=3), (), Decimal("0"), ()),
         "bars-v1": BarsV1("sandbox", "ABCD", DAY, tuple(
             BarV1(T0 + timedelta(minutes=i), Decimal(o), Decimal(h), Decimal(lo), Decimal(c),
@@ -336,8 +404,15 @@ def documents() -> dict[str, object]:
                           Verdict.IGNORE, CheckV1("quote_valid", None, "is", None, False,
                                                   "own symbol, 0 < bid <= ask"),
                           None, "quote_valid: a yes/no check has no measured value", None,
-                          "not recorded: decision records hold no quote time"))),
-        "watching-v1.empty": WatchingV1(DAY - timedelta(days=3), 0, ()),
+                          "not recorded: decision records hold no quote time")),
+            LatestSizeV1("QRST", T0.replace(microsecond=0) - timedelta(minutes=3),
+                         StrategyId("price-action-v1", "1"), Verdict.ENTER, Decimal("200"),
+                         None, contract.BINDING_NOT_RECORDED)),
+        # Late in a losing day: the latest sized decision was cut to the daily room.
+        "watching-v1.daily-room": WatchingV1(DAY, 0, (), LatestSizeV1(
+            "QRST", T0.replace(microsecond=0), StrategyId("price-action-v1", "1"),
+            Verdict.WATCH, Decimal("37"), SizeBinding.DAILY_ROOM, None)),
+        "watching-v1.empty": WatchingV1(DAY - timedelta(days=3), 0, (), None),
         "performance-v1": performance("sandbox", DAY - timedelta(days=6), DAY, (
             _closed("t-0001", -3, "100", "50"), _closed("t-0002", -3, "-50", "50"),
             _closed("t-0003", 0, "0", "50"), _closed("t-0004", 0, "-25", "50"),
@@ -367,6 +442,12 @@ def _closed(trade_id: str, day_offset: int, result: str, planned_loss: str) -> D
                     closed_at - timedelta(minutes=1), closed_at, "strategy_exit", None,
                     Decimal(planned_loss), Decimal(result), None, None, None, NO_ENTRY,
                     NOT_READ, (), NOT_READ, None, None, NOT_READ)
+
+
+_LAUNCHD = (LaunchdJobV1("preflight", "08:30", (1, 2, 3, 4, 5)),
+            LaunchdJobV1("bot", "09:00", (1, 2, 3, 4, 5)),
+            LaunchdJobV1("watchdog", "09:05", (1, 2, 3, 4, 5)),
+            LaunchdJobV1("nightly-fetch", "19:00", (1, 2, 3, 4, 5)))
 
 
 def _text(document: object) -> str:

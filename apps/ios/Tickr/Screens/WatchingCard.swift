@@ -10,7 +10,8 @@ struct WatchingCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      HStack {
+      // The label, then its note; the note goes under it at large text sizes.
+      RowStack {
         CardLabel(L10n.Watching.title)
         Spacer()
         if let watching, watching.total > watching.rows.count {
@@ -44,6 +45,7 @@ struct WatchingCard: View {
 }
 
 private struct WatchingRow: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   let row: WatchingRowV1
   /// False while a refresh failed and the row is the last read: its bar is dimmed.
   let current: Bool
@@ -55,32 +57,35 @@ private struct WatchingRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+      RowStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
         Text(verbatim: row.symbol)
           .font(Tokens.Typography.calloutMono.bold())
           .foregroundStyle(Palette.textPrimary)
+          .lineLimit(1)
+          .fixedSize()
         Text(row.verdict.title)
           .font(Tokens.Typography.annotationBold)
           .foregroundStyle(row.verdict.color)
-        Spacer()
+        Spacer(minLength: 0)
         Text(verbatim: Format.time(row.at.date))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       }
       if let check = row.decisiveCheck {
-        Text(verbatim: [check.rule, check.measured?.text ?? Format.missing, check.operator,
+        Text(verbatim: [ApiText.rule(check.rule), check.measured?.text ?? Format.missing, check.operator,
           check.threshold?.text ?? Format.missing].joined(separator: ChartFormat.space))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textTertiary)
-          .lineLimit(1)
-          .minimumScaleFactor(StatTile.minimumScale)
+          // One line at ordinary sizes; at large ones it wraps rather than cutting the figures.
+          .lineLimit(typeSize.stacksRows ? nil : 1)
+          .minimumScaleFactor(Tokens.Shrink.standard)
       }
       if let closeness {
         ProgressView(value: min(max(closeness, 0), 1))
           .tint(current ? Palette.accent : Palette.textQuaternary)
           .accessibilityLabel(Text(L10n.Watching.closeness))
       } else if let cause = row.closenessCause {
-        Text(verbatim: cause)
+        Text(verbatim: ApiText.prose(row.closenessCauseCodes, text: cause))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       }
