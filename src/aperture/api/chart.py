@@ -19,10 +19,15 @@ How an answer is built:
   months before today, moved back to the start of its week or month so the first candle is whole.
 - Merging: open of the first bar, close of the last, highest high, lowest low, summed volume,
   exact Decimal.
-- Cache: a closed session's M1 bars are kept on disk (minute bars are unadjusted, so a closed day
-  never changes); the session in progress and the daily series stay in memory for
-  `[chart] live_ttl_seconds`; once a session day is over, the daily series stays until the next
-  session's pre-market opens.
+- Cache: a session's M1 bars are written to disk once `[chart] closed_day_settle_seconds` have
+  passed after its extended close (minute bars are unadjusted, so a settled day never changes),
+  and only if the day has bars; until then, and for a day without bars, they stay in memory for
+  `[chart] live_ttl_seconds`. The daily series stays in memory for the live TTL while today's
+  session is not over, then until the next session's pre-market opens. Nothing prunes the disk
+  cache yet (a known gap).
+- Concurrency: the provider is read outside the shared state lock. Answers for one symbol run one
+  at a time (a per-symbol lock), so a second request for the same symbol waits and then finds the
+  first one's cache instead of spending budget twice; other symbols are not held up.
 """
 
 from __future__ import annotations
@@ -84,6 +89,7 @@ class ChartSettings:
     webull_enabled: bool
     bars_per_request: int
     live_ttl: timedelta
+    closed_day_settle: timedelta
     cache_dir: Path  # <data_dir>/<cache_dir>/<environment>
     calendar_dir: Path
     session_lookback_days: int
@@ -95,6 +101,7 @@ class ChartSettings:
             webull_enabled=chart.webull_enabled,
             bars_per_request=chart.bars_per_request,
             live_ttl=timedelta(seconds=float(chart.live_ttl_seconds)),
+            closed_day_settle=timedelta(seconds=float(chart.closed_day_settle_seconds)),
             cache_dir=cfg.root / cfg.run.data_dir / chart.cache_dir / cfg.environment_name,
             calendar_dir=(cfg.root / cfg.session.calendar_file).parent,
             session_lookback_days=chart.session_lookback_days,
@@ -218,14 +225,16 @@ class _Live:
 
 
 class Chart:
-    """Answers GET /chart from a `MarketData` source. Thread safe (one answer at a time)."""
+    """Answers GET /chart from a `MarketData` source. Thread safe: shared state under one
+    lock, never held across a provider read; one answer at a time per symbol."""
 
     def __init__(self, settings: ChartSettings, source: MarketData | None = None,
                  off_cause: str = OFF_CAUSE) -> None:
         self.settings = settings
         self._source = source
         self._off_cause = off_cause
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # source, calendar, live cache, symbol locks
+        self._symbol_locks: dict[str, threading.Lock] = {}
         self._calendar: SessionCalendar | None = None
         self._live: dict[tuple[str, str, date | None], _Live] = {}
 
@@ -240,8 +249,11 @@ class Chart:
         """The chart document, or ChartRefused (rate_limited, unavailable)."""
         with self._lock:
             source = self._source
-            if source is None:
-                raise ChartRefused("unavailable", self._off_cause)
+            off_cause = self._off_cause
+            symbol_lock = self._symbol_locks.setdefault(symbol, threading.Lock())
+        if source is None:
+            raise ChartRefused("unavailable", off_cause)
+        with symbol_lock:
             try:
                 if interval in INTRADAY_MINUTES:
                     read_at, bars = self._intraday(source, symbol, interval,
@@ -265,9 +277,15 @@ class Chart:
     # ------------------------------------------------------------ intraday
 
     def _calendar_(self) -> SessionCalendar:
-        if self._calendar is None:
-            self._calendar = SessionCalendar.load(self.settings.calendar_dir)
-        return self._calendar
+        with self._lock:
+            if self._calendar is None:
+                self._calendar = SessionCalendar.load(self.settings.calendar_dir)
+            return self._calendar
+
+    def _cached(self, key: tuple[str, str, date | None], now: datetime) -> _Live | None:
+        with self._lock:
+            live = self._live.get(key)
+        return live if live is not None and now < live.expires else None
 
     def _sessions(self, now: datetime, count: int) -> list[MarketDay]:
         """The latest `count` sessions whose pre-market has begun, oldest first."""
@@ -301,19 +319,21 @@ class Chart:
 
     def _minutes(self, source: MarketData, symbol: str, day: MarketDay,
                  now: datetime) -> tuple[datetime, list[SessionBar]]:
-        """M1 bars of one session day: from disk once the day is over, from memory while it
-        runs and within the live TTL, else one provider read."""
-        closed = now >= day.extended_close
+        """M1 bars of one session day: from disk once the day has settled, from memory within
+        the live TTL, else one provider read. A day is written to disk only once settled (its
+        last minutes are final) and only if it has bars, so a read just after the close or an
+        empty or transient answer is never kept for good."""
+        settled = now >= day.extended_close + self.settings.closed_day_settle
         path = self.settings.cache_dir / symbol / f"{day.ny_date.isoformat()}.json"
-        if closed:
+        key = (symbol, BarSpan.M1.value, day.ny_date)
+        if settled:
             cached = read_day_file(path, symbol)
             if cached is not None:
                 return cached
-        else:
-            live = self._live.get((symbol, BarSpan.M1.value, day.ny_date))
-            if live is not None and now < live.expires:
-                return live.read_at, live.rows
-        end = day.extended_close if closed else now
+        live = self._cached(key, now)
+        if live is not None:
+            return live.read_at, live.rows
+        end = min(now, day.extended_close)
         got = source.history_bars(symbol, BarSpan.M1, end, self.settings.bars_per_request)
         rows = [r for r in got if r.bar.symbol == symbol and ny_date_of(r.bar.start) == day.ny_date]
         if len(got) >= self.settings.bars_per_request and len(rows) == len(got):
@@ -322,17 +342,17 @@ class Chart:
                                "([chart] bars_per_request)")
         for row in rows:
             place(day, row)  # refused before anything is cached
-        if closed:
+        if settled and rows:
             write_day_file(path, symbol, day.ny_date, now, rows)
         else:
-            self._remember((symbol, BarSpan.M1.value, day.ny_date), now + self.settings.live_ttl,
-                           now, rows)
+            self._remember(key, now + self.settings.live_ttl, now, rows)
         return now, rows
 
     def _remember(self, key: tuple[str, str, date | None], expires: datetime, read_at: datetime,
                   rows: list[SessionBar]) -> None:
-        self._live = {k: v for k, v in self._live.items() if v.expires > read_at}
-        self._live[key] = _Live(expires, read_at, rows)
+        with self._lock:
+            self._live = {k: v for k, v in self._live.items() if v.expires > read_at}
+            self._live[key] = _Live(expires, read_at, rows)
 
     # ------------------------------------------------------------ daily
 
@@ -356,8 +376,8 @@ class Chart:
         range and interval), shared by all of them. Kept across midnight until it expires: a
         series read earlier starts earlier, so it still covers every range."""
         today = ny_date_of(now)
-        live = self._live.get((symbol, BarSpan.D.value, None))
-        if live is not None and now < live.expires:
+        live = self._cached((symbol, BarSpan.D.value, None), now)
+        if live is not None:
             return live.read_at, live.rows
         back = months_back(today, max(RANGE_MONTHS.values()))
         first = min(bucket_day(back, ChartInterval.W1), bucket_day(back, ChartInterval.MO1))

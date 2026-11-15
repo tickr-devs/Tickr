@@ -304,11 +304,15 @@ from the bot's capture). Code: `src/aperture/api/chart.py`; settings: `[chart]` 
   first candle is whole. Daily bars are forward-adjusted, minute bars are not (SDK docstring).
 - Merging: open of the first bar, close of the last, highest high, lowest low, summed volume,
   exact decimals.
-- Cache: a closed session's M1 bars are kept on disk under `<data_dir>/<[chart] cache_dir>/
-  <environment>/<SYMBOL>/<date>.json` (minute bars are unadjusted, so a closed day never changes;
-  nothing deletes these files yet). The session in progress, and the daily series while the day's
-  session is not over, are read again after `[chart] live_ttl_seconds`; after the session the daily
-  series is kept until the next pre-market opens.
+- Cache: a session's M1 bars are kept on disk under `<data_dir>/<[chart] cache_dir>/
+  <environment>/<SYMBOL>/<date>.json` once `[chart] closed_day_settle_seconds` have passed after
+  its extended close, and only if the day has bars (minute bars are unadjusted, so a settled day
+  never changes). Before that, a day without bars, the session in progress, and the daily series
+  while the day's session is not over are read again after `[chart] live_ttl_seconds`; after the
+  session the daily series is kept until the next pre-market opens.
+- Known gap: nothing prunes the disk cache yet; it grows by one file per symbol and settled day
+  charted (about 100 KB each at most). Delete the folder by hand if it gets large; it is rebuilt
+  on demand.
 - Budget: the chart has its own request budget, `[chart] requests_per_minute` per 60 s, never the
   bot's. When it is spent the answer is `429 rate_limited` with `Retry-After` (seconds); nothing is
   queued or retried. A 1d range costs at most one request per uncached session, a daily range one.

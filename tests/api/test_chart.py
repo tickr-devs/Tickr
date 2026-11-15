@@ -42,6 +42,7 @@ MONDAY = date(2026, 11, 16)
 FRIDAY = date(2026, 11, 13)
 HALF_DAY = date(2026, 11, 27)
 TTL = timedelta(seconds=30)
+SETTLE = timedelta(minutes=5)
 IV, R = ChartInterval, ChartRange
 
 
@@ -75,6 +76,7 @@ def daily(day: date, o: str, h: str, lo: str, c: str, v: str = "1000") -> Sessio
 
 def settings(tmp_path: Path, **overrides) -> ChartSettings:
     base = ChartSettings(webull_enabled=False, bars_per_request=1200, live_ttl=TTL,
+                         closed_day_settle=SETTLE,
                          cache_dir=tmp_path / "chart", calendar_dir=CALENDAR_DIR,
                          session_lookback_days=14)
     return replace(base, **overrides)
@@ -215,6 +217,77 @@ def test_live_day_is_read_again_only_after_the_ttl(tmp_path):
     chart.answer("ABCD", IV.M1, R.D1, now + TTL)
     assert len(fake.calls) == 2
     assert not (tmp_path / "chart").exists()  # an unfinished day is never written to disk
+
+
+def test_a_day_is_written_only_after_it_settles(tmp_path):
+    """A read just after the close may miss the last minute: it stays in memory and is read
+    again; only a read after close + settle goes to disk."""
+    fake = FakeMarketData("fake")
+    fake.add_history_bars(BarSpan.M1, [m1(MONDAY, "10:00", "RTH")])
+    chart = Chart(settings(tmp_path), fake)
+    path = tmp_path / "chart" / "ABCD" / f"{MONDAY.isoformat()}.json"
+    just_closed = ny(MONDAY, "20:00") + timedelta(seconds=5)
+    first = chart.answer("ABCD", IV.M1, R.D1, just_closed)
+    assert len(first.bars) == 1 and not path.exists()
+    fake.add_history_bars(BarSpan.M1, [m1(MONDAY, "19:59", "ATH")])  # finalized late
+    assert chart.answer("ABCD", IV.M1, R.D1, just_closed + TTL - timedelta(seconds=1)).bars \
+        == first.bars  # memory, within the TTL
+    settled = ny(MONDAY, "20:00") + SETTLE
+    later = chart.answer("ABCD", IV.M1, R.D1, settled)
+    assert len(later.bars) == 2 and path.exists() and len(fake.calls) == 2
+    again = Chart(settings(tmp_path), fake).answer("ABCD", IV.M1, R.D1, settled + SETTLE)
+    assert again.bars == later.bars and len(fake.calls) == 2  # from disk
+
+
+def test_a_day_without_bars_is_never_written(tmp_path):
+    fake = FakeMarketData("fake")
+    chart = Chart(settings(tmp_path), fake)
+    now = ny(MONDAY, "21:00")  # settled
+    assert chart.answer("ABCD", IV.M1, R.D1, now).bars == ()
+    assert not (tmp_path / "chart").exists()
+    chart.answer("ABCD", IV.M1, R.D1, now + TTL - timedelta(seconds=1))
+    assert len(fake.calls) == 1  # kept in memory for the TTL only
+    fake.add_history_bars(BarSpan.M1, [m1(MONDAY, "10:00", "RTH")])
+    assert len(chart.answer("ABCD", IV.M1, R.D1, now + TTL).bars) == 1
+    assert len(fake.calls) == 2 and (tmp_path / "chart" / "ABCD").exists()
+
+
+class Blocking(FakeMarketData):
+    """A source whose reads of one symbol wait until released."""
+
+    def __init__(self, held: str) -> None:
+        super().__init__("fake")
+        self.held = held
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def history_bars(self, symbol, span, end, count):
+        if symbol == self.held:
+            self.entered.set()
+            assert self.release.wait(5)
+        return super().history_bars(symbol, span, end, count)
+
+
+def test_a_slow_read_holds_up_only_its_own_symbol(tmp_path):
+    source = Blocking("SLOW")
+    chart = Chart(settings(tmp_path), source)
+    now = ny(MONDAY, "12:00")
+    results: list = []
+
+    def ask(symbol: str) -> None:
+        results.append(chart.answer(symbol, IV.D1, R.M1, now))
+
+    slow = threading.Thread(target=ask, args=("SLOW",))
+    slow.start()
+    assert source.entered.wait(5)
+    ask("FAST")  # answered while SLOW's read is still in flight
+    second = threading.Thread(target=ask, args=("SLOW",))
+    second.start()  # waits for the first SLOW answer, then uses its cache
+    source.release.set()
+    slow.join(5)
+    second.join(5)
+    assert [r.symbol for r in results] == ["FAST", "SLOW", "SLOW"]
+    assert [c for c in source.calls if c[1][0] == "SLOW"] == [("history_bars", ("SLOW", "D"))]
 
 
 def test_five_days_skip_the_weekend_and_wait_for_the_pre_market(tmp_path):

@@ -389,9 +389,14 @@ bars_per_request = 1200
 # Seconds the M1 bars of a day still in progress, and the daily series while a session day is not over, are served from
 # memory before Webull is read again; closed days are kept on disk; read by the api server.
 live_ttl_seconds = 30
-# Chart cache folder relative to [run] data_dir; closed days' M1 bars go to <cache_dir>/<environment>/<symbol>/<NY
-# date>.json and are kept until deleted (minute bars are unadjusted, so a closed day never changes); read by the api
-# server.
+# Seconds after a session's extended close (20:00 ET, 17:00 on half days) before its M1 bars count as final and are
+# written to the disk cache; until then they are served from memory and read again after live_ttl_seconds (Webull
+# returns only finalized minutes, so a read just after the close can miss the last one); a day without bars is never
+# written; read by the api server.
+closed_day_settle_seconds = 300
+# Chart cache folder relative to [run] data_dir; settled days' M1 bars go to <cache_dir>/<environment>/<symbol>/<NY
+# date>.json and are kept until deleted by hand (minute bars are unadjusted, so a settled day never changes; nothing
+# prunes this folder yet); read by the api server.
 cache_dir = "chart"
 # Most calendar days walked back to find the sessions of a 1d or 5d chart range (weekends and holidays are skipped);
 # read by the api server.
