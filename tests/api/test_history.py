@@ -498,7 +498,7 @@ def test_days_join_trades_runs_and_capture_newest_first(paths):
     _trade(store, run, "loss", OPEN + timedelta(minutes=50), exit_="12.00")
     store.close()
     _bars_file(paths, PREVIOUS, [_bar("ABCD", 0)])
-    days = History(paths).days()
+    days = History(paths).days(DAY)
     assert [d.day for d in days.days] == [DAY, PREVIOUS]
     today, previous = days.days
     assert (today.trades, today.wins, today.losses) == (2, 1, 1)
@@ -508,7 +508,7 @@ def test_days_join_trades_runs_and_capture_newest_first(paths):
 
 def test_no_database_and_no_capture_is_an_empty_history(paths):
     history = History(paths)
-    assert history.days().days == ()
+    assert history.days(DAY).days == ()
     day = history.day(DAY, DAY)
     assert day.trades == () and day.bar_symbols == () and day.result_gross_usd == 0
 
@@ -530,13 +530,13 @@ def test_database_of_another_schema_version_is_refused(paths):
     db.commit()
     db.close()
     with pytest.raises(HistoryUnavailable, match="schema v1"):
-        History(paths).days()
+        History(paths).days(DAY)
 
 
 def test_history_never_writes_the_database(paths):
     _store(paths).close()
     before = paths.database.read_bytes()
-    History(paths).days()
+    History(paths).days(DAY)
     assert paths.database.read_bytes() == before
 
 

@@ -8,6 +8,7 @@ Account ids never enter the document: the broker rows carry none we copy.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from aperture.api import contract as api
@@ -19,21 +20,58 @@ from aperture.runtime.dayend import records_agree
 MISMATCH_FENCES = frozenset({Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER,
                              Fence.QUANTITY_MISMATCH, Fence.RESURRECTED, Fence.UNKNOWN_ORDER,
                              Fence.ORDER_MISSING, Fence.STATUS_UNKNOWN, Fence.OVER_PROTECTED})
+# Journal row after a successful reconciliation: `{matches_records, mismatch}` as in account-v1.
+# Written when the answer differs from the last such row, else at most once per
+# `[orders] reconcile_proof_seconds`; the durable record that the broker and the bot's records
+# agreed (or not) through the day, read by api.cleanday. Nothing in the bot reads it.
+RECONCILE_CHECKED = "reconcile-checked"
 NOT_AGREED = ("the broker's positions or open orders differ from what the bot's open trades "
               "and live orders expect")
+
+
+def mismatch_causes(engine: Engine) -> list[str] | None:
+    """Why the latest reconciliation does not match the records ([] when it matches), or None
+    when it did not read the broker."""
+    view = engine.broker_view
+    if view is None:
+        return None
+    causes = [f"{name}: {cause}" for name, cause, _ in engine.fence_rows()
+              if name.split(":", 1)[0] in MISMATCH_FENCES]
+    if not records_agree(engine, view) and not causes:
+        causes = [NOT_AGREED]
+    return causes
+
+
+def record_reconcile(engine: Engine) -> None:
+    """After a successful reconciliation: journal `reconcile-checked` when its answer
+    (matches or not) differs from the last such row, or that row is at least
+    `[orders] reconcile_proof_seconds` old by journal time (the store clock). Each change is
+    recorded at once; an unchanged answer at most once per interval."""
+    causes = mismatch_causes(engine)
+    if causes is None:
+        return
+    matches = not causes
+    store = engine.store
+    last = store.query("SELECT at_utc, body FROM journal WHERE kind = ? ORDER BY seq DESC "
+                       "LIMIT 1", (RECONCILE_CHECKED,))
+    if last and json.loads(last[0]["body"]).get("matches_records") is matches:
+        since = (datetime.fromisoformat(store.stamp())
+                 - datetime.fromisoformat(last[0]["at_utc"])).total_seconds()
+        if since < engine.config.orders.reconcile_proof_seconds:
+            return
+    with store.transaction():
+        store.append(RECONCILE_CHECKED, {"matches_records": matches,
+                                         "mismatch": "; ".join(causes) or None},
+                     run_id=engine.run_id)
 
 
 def account_document(engine: Engine, read_at: datetime) -> api.AccountV1 | None:
     """The document for the latest reconciliation, or None when it did not read the broker."""
     view = engine.broker_view
-    if view is None:
+    causes = mismatch_causes(engine)
+    if view is None or causes is None:
         return None
     ours = {o.client_order_id for o in engine.orders()}
-    causes = [f"{name}: {cause}" for name, cause, _ in engine.fence_rows()
-              if name.split(":", 1)[0] in MISMATCH_FENCES]
-    agree = records_agree(engine, view)
-    if not agree and not causes:
-        causes = [NOT_AGREED]
     return api.AccountV1(
         read_at=read_at,
         equity_usd=None,

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from aperture.api import contract as api
+from aperture.api.cleanday import clean_days
 from aperture.api.performance import performance
 from aperture.archive import existing
 from aperture.calendar import NEW_YORK, ny_date_of
@@ -452,9 +453,20 @@ class History:
     def _of_day(trades: Iterable[api.DayTrade], day: date) -> list[api.DayTrade]:
         return [t for t in trades if ny_date_of(t.closed_at) == day]
 
-    def days(self) -> api.DaysV1:
+    def _clean(self, dates: set[date], today: date) -> dict[date, api.CleanDay]:
+        store = self._open()
+        try:
+            return clean_days(store, self.paths.environment, dates, today)
+        except sqlite3.Error as exc:
+            raise HistoryUnavailable(f"database unreadable: {exc}") from exc
+        finally:
+            if store is not None:
+                store.close()
+
+    def days(self, today: date) -> api.DaysV1:
         trades, runs = self._read_db()
         dates = runs | self._capture_days() | {ny_date_of(t.closed_at) for t in trades}
+        clean = self._clean(dates, today)
         summaries = []
         for day in sorted(dates, reverse=True):
             of_day = self._of_day(trades, day)
@@ -463,7 +475,7 @@ class History:
                 wins=sum(1 for t in of_day if t.result_gross_usd > 0),
                 losses=sum(1 for t in of_day if t.result_gross_usd < 0),
                 result_gross_usd=sum((t.result_gross_usd for t in of_day), ZERO),
-                has_bars=existing(self._bars_file(day)) is not None))
+                has_bars=existing(self._bars_file(day)) is not None, clean=clean[day]))
         return api.DaysV1(environment=self.paths.environment, days=tuple(summaries))
 
     def day(self, day: date, today: date) -> api.DayV1:

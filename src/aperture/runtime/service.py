@@ -31,7 +31,7 @@ from aperture.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeR
 from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
 from aperture.runtime import stopmarker
-from aperture.runtime.account import account_document
+from aperture.runtime.account import account_document, record_reconcile
 from aperture.runtime.alerts import AlertKind
 from aperture.runtime.dayend import DayEnd
 from aperture.runtime.protection import LatencyLog, busy
@@ -667,6 +667,7 @@ class Service:
         if not reconcile:
             self.engine.step()
         elif ok:
+            record_reconcile(self.engine)
             self.write_account()
         if ok and not self._broker_read_failing():
             self.last_broker_read_at = self.now()
@@ -684,6 +685,7 @@ class Service:
         orders = self.config.orders
         self.write_status()
         self.engine.recover()
+        record_reconcile(self.engine)  # nothing when the startup reconcile did not read
         if not self._broker_read_failing():
             self.last_broker_read_at = self.now()
             self.write_account()

@@ -4,6 +4,7 @@ status carries the daily loss numbers and every tracked position."""
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal as D
 
 from aperture.api import contract as api
@@ -11,7 +12,7 @@ from aperture.broker.base import BrokerError
 from aperture.broker.fake import FakeBroker
 from aperture.engine.core import BrokerView, Fence, TradeState
 from aperture.runtime import entries, service
-from aperture.runtime.account import NOT_AGREED
+from aperture.runtime.account import NOT_AGREED, RECONCILE_CHECKED, record_reconcile
 from aperture.types import OrderDetail, OrderState, OrderType, Position, Side
 
 from .test_service import CFG, Bot, opened
@@ -131,3 +132,45 @@ def test_unknown_realized_loss_is_null_never_zero(tmp_path, monkeypatch):
     status = bot.service.status()
     assert (status.realized_loss_today_usd, status.daily_room_usd) == (None, None)
     assert status.open_reservations_usd == D(0)
+
+
+def _checked(bot: Bot) -> list[tuple[bool, str | None]]:
+    return [(r.body["matches_records"], r.body["mismatch"])
+            for r in bot.store.journal(RECONCILE_CHECKED)]
+
+
+def test_reconcile_rows_record_each_change_at_once_and_a_same_answer_once_per_interval(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())
+    interval = timedelta(seconds=float(CFG.orders.reconcile_proof_seconds))
+    bot.engine.recover()
+    record_reconcile(bot.engine)
+    assert _checked(bot) == [(True, None)]
+    bot.now += interval - timedelta(seconds=1)
+    assert bot.engine.reconcile()
+    record_reconcile(bot.engine)
+    assert len(_checked(bot)) == 1  # same answer, too soon
+    bot.engine.broker_view = BrokerView((Position("ABC", D(1), D(5)),), ())
+    record_reconcile(bot.engine)  # a change: recorded at once
+    assert _checked(bot)[-1] == (False, NOT_AGREED)
+    assert bot.engine.reconcile()
+    record_reconcile(bot.engine)
+    assert _checked(bot)[-1] == (True, None) and len(_checked(bot)) == 3
+    bot.now += interval
+    assert bot.engine.reconcile()
+    record_reconcile(bot.engine)
+    assert len(_checked(bot)) == 4  # same answer, the interval passed
+
+
+def test_the_loop_records_reconcile_rows_but_not_after_a_failed_read(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())
+    assert bot.run(3)
+    assert _checked(bot) == [(True, None)]  # at startup; the next ones are within the interval
+    broker = FakeBroker()
+
+    def fail():
+        raise BrokerError("down")
+
+    broker.open_orders = fail  # type: ignore[method-assign]
+    failing = Bot(tmp_path / "failing", broker=broker)
+    failing.run(3)
+    assert _checked(failing) == []
