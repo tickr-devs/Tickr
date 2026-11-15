@@ -44,7 +44,11 @@ struct SettingsView: View {
     .navigationTitle(Text(tab.title))
     .toolbar(removing: .title)
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { titleInset = $0 }
+    // Read once: the title bar's height does not change, and following it while the window
+    // resizes would feed the window's own resizing back into its size (a layout loop).
+    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { inset in
+      if titleInset == 0 { titleInset = inset }
+    }
     .task(id: model.baseURL) { await model.followJobs() }
   }
 
