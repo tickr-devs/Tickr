@@ -23,7 +23,6 @@ read failed (spec 9: keep the stop, send nothing, alert).
 
 from __future__ import annotations
 
-from dataclasses import replace
 from decimal import Decimal as D
 
 import pytest
@@ -36,6 +35,7 @@ from aperture.types import OrderState, OrderType
 
 from .test_chaos import Chaos
 from .test_engine import CFG, OPEN, POLL, Leg, enter, has, legs, make, run, working_stops
+from .test_reviewer_findings import TeardownWatch, assert_unreadable_stop_kept
 
 
 @pytest.fixture
@@ -45,23 +45,21 @@ def store():
     s.close()
 
 
-class StopDetailDies(FakeBroker):
+class StopDetailDies(TeardownWatch):
     """Detail of STOP_LOSS orders fails once `dead` is set; a cancel takes at once and, with
     `dies_on_cancel`, sets `dead` (the cancelled stop's Detail cannot be read)."""
 
     dead = False
     dies_on_cancel = False
 
-    def order_detail(self, client_order_id):
+    def read_detail(self, client_order_id):
         order = FakeBroker.order_detail(self, client_order_id)
         if self.dead and order.order_type is OrderType.STOP_LOSS:
             raise BrokerError("Detail body could not be read")
         return order
 
-    def cancel(self, client_order_id):
-        order = FakeBroker.order_detail(self, client_order_id)
-        self.orders[client_order_id] = replace(order, state=OrderState.CANCELLED,
-                                               raw_status="CANCELLED")
+    def take_cancel(self, client_order_id):
+        TeardownWatch.take_cancel(self, client_order_id)
         if self.dies_on_cancel:
             self.dead = True
 
@@ -136,10 +134,9 @@ def test_a_short_detail_outage_sets_no_fence(store):
     assert has(engine, Fence.DETAIL_UNREADABLE) and has(engine, Fence.UNPROTECTED)
 
 
-def test_held_shares_keep_a_stop_or_get_a_close(store):
+def test_held_shares_keep_the_stop_they_cannot_read(store):
     broker, engine = exit_with_unreadable_stop(store)
-    closes = [r for r in broker.sent if r.order_type is OrderType.MARKET]
-    assert working_stops(broker) >= 2 or closes
+    assert_unreadable_stop_kept(broker, engine, D(2))
 
 
 def test_chaos_with_unreadable_detail():

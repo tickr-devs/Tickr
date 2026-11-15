@@ -19,7 +19,8 @@ Invariants are checked against the broker's truth after every tick and at every 
   while fences are set `open_trade` refuses; with no fence and no open trade the broker is flat
   and no own order works;
 - shares the broker holds are covered by a working broker stop or a working close within a
-  few quiet ticks, or some entry-blocking fence explains why;
+  few quiet ticks, or an entry-blocking fence on the bot's own trade or orders (or a failed
+  broker read) explains why; a fence on something else (a foreign position) does not;
 - after the market calms down the run ends closed and flat, or holding under a working broker
   stop with entries fenced; and once an operator also clears operator fences (and cancels by
   hand an order the bot gave up cancelling), it ends closed and flat with no fence.
@@ -41,7 +42,14 @@ from aperture import config
 from aperture.broker.base import BrokerError, OutcomeUnknown, RateLimited, Refused
 from aperture.broker.fake import FakeBroker
 from aperture.config import GateResult
-from aperture.engine.core import OPERATOR_FENCES, Engine, EntryRefused, SendState, TradeState
+from aperture.engine.core import (
+    OPERATOR_FENCES,
+    Engine,
+    EntryRefused,
+    Fence,
+    SendState,
+    TradeState,
+)
 from aperture.store import Store
 from aperture.types import OrderDetail, OrderRequest, OrderState, OrderType, Side
 
@@ -58,6 +66,9 @@ CHAOS_TICKS = 45
 CALM_TICKS = 40
 QUIET_TICKS = 8  # ticks with no market event before held shares must be covered or fenced
 SEEDS = range(240)
+# Fences that explain a stop the engine cancelled with neither a close nor a new stop after it.
+BARE_EXPLAINED = frozenset({Fence.CANCEL_UNKNOWN, "detail-unreadable", Fence.UNPROTECTED,
+                            Fence.QUANTITY_MISMATCH})
 
 
 class Crash(BaseException):
@@ -211,10 +222,10 @@ class Chaos:
     def __init__(self, seed: int, *, full: bool = False) -> None:
         self.seed = seed
         # `full` adds persistent unreadable Detail of single orders and the check that a stop
-        # the engine cancelled is followed by a close or a new stop (tests/engine/
-        # test_bug_detail_unreadable.py). A stop whose Detail dies between its last answered
-        # read and its cancel can still end bare (fenced `detail-unreadable`, never guessed):
-        # some seeds past that test's range find exactly that.
+        # the engine cancelled is followed by a close or a new stop, or explained by a fence
+        # on this trade (tests/engine/test_bug_detail_unreadable.py). A stop whose Detail dies
+        # between its last answered read and its cancel can still end bare, fenced
+        # `detail-unreadable` and never guessed: that fence explains it.
         self.full = full
         self.bare_ticks = 0
         self.rng = random.Random(seed)
@@ -465,20 +476,39 @@ class Chaos:
             if b.holdings or own:
                 self.fail(f"no fence and no trade, but broker holds {b.holdings}, "
                           f"own working {[o.client_order_id for o in own]}")
-        # Shares held must be under a working stop or a working close, or fenced.
+        # Shares held must be under a working stop or a working close, or fenced for a reason
+        # about this trade (or a failed broker read).
+        own = {t.trade_id for t in e.trades(open_only=False)} | {r.client_order_id for r in rows}
+        explained = self.explaining(fences, own)
         stops = sum((o.quantity - o.filled_quantity for o in self.own_working("stop")), D(0))
         covered = stops >= held or bool(self.own_working("exit"))
-        self.uncovered_ticks = 0 if covered or fences else self.uncovered_ticks + 1
+        self.uncovered_ticks = 0 if covered or explained else self.uncovered_ticks + 1
         if self.unquiet >= QUIET_TICKS and self.uncovered_ticks >= QUIET_TICKS:
             self.fail(f"{held} held, stops cover {stops}, no close, no fence for "
                       f"{self.uncovered_ticks} ticks")
         # The engine cancelled a stop on held shares: a close or a new stop must follow
-        # (spec 9 teardown; hard rule 2), whatever fences say.
-        bare = b.cancelled_stop and held > 0 and not covered
+        # (spec 9 teardown; hard rule 2), unless a fence says why it cannot for this trade:
+        # spec 9 "Unknown cancel outcome: keep the stop, send nothing, alert" (cancel-unknown),
+        # an order whose state cannot be read, a known gap in protection or quantity, or a
+        # failed broker read. Any other fence (a foreign position) explains nothing here.
+        bare = b.cancelled_stop and held > 0 and not covered and not self.explaining(
+            fences, own, BARE_EXPLAINED)
         self.bare_ticks = self.bare_ticks + 1 if bare else 0
         if self.full and self.bare_ticks >= QUIET_TICKS:
             self.fail(f"engine cancelled the stop on {held} held; no close, no new stop for "
                       f"{self.bare_ticks} ticks")
+
+    @staticmethod
+    def explaining(fences: dict[str, str], own: set[str],
+                   kinds: frozenset[str] | None = None) -> list[str]:
+        """Fences that explain held shares of the bot's own trade: a failed broker read, or a
+        fence keyed to one of its trades or orders (of `kinds`, when given)."""
+        out = []
+        for name in fences:
+            kind, _, key = name.partition(":")
+            if kind == Fence.BROKER_READ or (key in own and (kinds is None or kind in kinds)):
+                out.append(name)
+        return out
 
     def final_check(self, *, strict: bool) -> None:
         b, e = self.broker, self.engine
