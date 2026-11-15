@@ -994,8 +994,6 @@ private struct Radar: View {
 private struct SafetyCard: View {
   @Environment(AppModel.self) private var model
 
-  /// How often the ages ("3 s ago") refresh, in seconds.
-  static let tick: TimeInterval = 1
   /// Fence names the bot raises for a position or an open order it did not place (engine
   /// Fence.FOREIGN_POSITION and FOREIGN_ORDER). A fence kind is the name, then ":" and a key
   /// when it has one, as in "foreign-position:ABCD".
@@ -1006,7 +1004,7 @@ private struct SafetyCard: View {
 
   var body: some View {
     Card(L10n.Safety.title) {
-      TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+      TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
         VStack(spacing: Tokens.Space.s) {
           ForEach(rows(now: model.botTime(context.date))) { row in
             HStack(spacing: Tokens.Space.s) {
