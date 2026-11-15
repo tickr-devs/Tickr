@@ -123,6 +123,20 @@ struct AppModelTests {
     #expect(model.accountError != nil)
   }
 
+  @Test("Today and ages follow the bot's clock (served_at), not this Mac's")
+  func botClock() async throws {
+    // The Mac says Sunday Nov 15; the bot (the fixture) serves Monday Nov 16, 10:00:02 New York.
+    let mac = try WireTime("2026-11-15T17:00:00.000Z").date
+    Container.shared.now.register { { mac } }
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    #expect(model.today == (try WireDate("2026-11-15")))
+    await model.refreshStatus()
+    #expect(model.today == (try WireDate("2026-11-16")))
+    let served = try WireTime("2026-11-16T15:00:02.123Z").date
+    #expect(abs(model.botNow.timeIntervalSince(served)) < 1)
+    #expect(model.isLive)
+  }
+
   @Test("The chart reads a symbol's decisions; a failed read clears them")
   func chartDecisions() async throws {
     let chart = ChartModel()
@@ -130,8 +144,9 @@ struct AppModelTests {
     RouteProtocol.routes.withLock { $0.bodies["/decisions"] = try? Data(contentsOf:
       fixturesDir.appendingPathComponent("decisions-v1.json")) }
     await chart.loadDecisions(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
-    #expect(chart.decisions?.decisions.map(\.action) == [.watch, .enter])
-    #expect(chart.decisions?.decisions.last?.observer == true)
+    #expect(chart.decisions?.decisions.map(\.action) == [.watch, .enter, .enter])
+    #expect(chart.decisions?.decisions[1].observer == true)
+    #expect(chart.decisions?.decisions.last?.admission == .refused)
     RouteProtocol.routes.withLock { $0.bodies["/decisions"] = nil }
     await chart.loadDecisions(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
     #expect(chart.decisions == nil)
