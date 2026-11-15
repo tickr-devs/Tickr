@@ -365,6 +365,37 @@ def chart_client(cfg: Config, config_path: Path, symbol: str, *, now: Clock, sle
     return verdict, folder
 
 
+def chart_client_gate(cfg: Config) -> str | None:
+    """Why the API may not build its own Webull chart client yet, or None once it may: the
+    newest `chart-client` run recorded for this environment must have passed. With
+    `[chart] webull_enabled` the API process is itself a second Webull client next to the bot
+    (C1), so it waits for the probe, which runs that experiment with the bot flat and watched.
+    A summary that cannot be read counts as a run that did not pass."""
+    how = ("run `python -m aperture.probes chart-client SYMBOL` next to the running bot, then "
+           "start the API again")
+    root = cfg.root / cfg.run.data_dir / cfg.probe.evidence_dir
+    newest: tuple[datetime, str] | None = None
+    for path in sorted(root.glob(f"*/chart-client-*/{SUMMARY_FILE}")):
+        try:
+            summary = json.loads(path.read_text("utf-8"))
+            if summary["environment"] != cfg.environment_name:
+                continue
+            run = (datetime.fromisoformat(summary["started_at"]), str(summary["verdict"]))
+            if run[0].tzinfo is None:
+                raise ValueError("started_at has no time zone")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return (f"chart probe C1: {path.parent.name}/{SUMMARY_FILE} cannot be read "
+                    f"({type(exc).__name__}); {how}")
+        if newest is None or run[0] > newest[0]:
+            newest = run
+    if newest is None:
+        return f"chart probe C1 is not recorded for {cfg.environment_name}; {how}"
+    if newest[1] != PASSED:
+        return (f"chart probe C1 last ended {newest[1]!r} for {cfg.environment_name} "
+                f"({newest[0].isoformat()}); {how}")
+    return None
+
+
 # --------------------------------------------------------------------------------------------
 # Command line
 # --------------------------------------------------------------------------------------------
