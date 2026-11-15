@@ -49,6 +49,7 @@ from aperture.api.contract import (
     FlowV1,
     ObserverDecisionV1,
     ObserversV1,
+    ObserverTradeV1,
     ObserverV1,
     PendingCommandsV1,
     PriceAfterV1,
@@ -203,12 +204,25 @@ def documents() -> dict[str, object]:
                 ObserverDecisionV1(T0.replace(microsecond=0), "ABCD", Verdict.WATCH,
                                    ("ask_above_trigger",)),
                 ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), "ABCD",
-                                   Verdict.ENTER, ())), Decimal("-12.4000"), None),
-            ObserverV1("price-action-v2", "1", (), None, "no decisions recorded that day"),
+                                   Verdict.ENTER, ()),
+                ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=4), "ABCD",
+                                   Verdict.ENTER, ())), Decimal("-12.4000"), None, (
+                ObserverTradeV1("ABCD", T0.replace(microsecond=0) + timedelta(minutes=1),
+                                T0.replace(microsecond=0) + timedelta(minutes=2),
+                                Decimal("10.0700"), T0.replace(microsecond=0) +
+                                timedelta(minutes=9), Decimal("9.9460"), Decimal(100),
+                                ExitReason.STOP, Decimal("-12.4000"), Decimal("-1.0333"), None),
+                ObserverTradeV1("ABCD", T0.replace(microsecond=0) + timedelta(minutes=4), None,
+                                None, None, None, None, None, None, None,
+                                "skipped_overlap: an earlier simulated trade of ABCD was still "
+                                "open")), None, False),
+            ObserverV1("price-action-v2", "1", (), None, "no decisions recorded that day", None,
+                       "no decisions recorded that day", False),
             ObserverV1("price-action-v2", "2", (
                 ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=2), "WXYZ",
                                    Verdict.ENTER, ()),), None,
-                "no captured bars for 2026-11-16"))),
+                "no captured bars for 2026-11-16", None, "no captured bars for 2026-11-16",
+                False))),
         "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
         "decisions-v1": DecisionsV1("ABCD", DAY, (
             DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,

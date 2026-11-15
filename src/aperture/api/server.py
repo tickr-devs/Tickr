@@ -113,6 +113,7 @@ class ApiSettings:
     account_path: Path  # the bot's account-v1 file, served at GET /account
     account_stale_seconds: Decimal
     simulation: SimulationPaths  # inputs of the observers' simulated day results
+    observer_trades_max_rows: int  # most simulated trades per observer at GET /observers
     universe: DiscoverySettings  # the universe filter GET /flow applies to captured passes
     watching_max_rows: int
     closeness_places: int  # decimal places of GET /watching closeness
@@ -146,6 +147,8 @@ def settings_from_config(cfg: Config) -> ApiSettings:
     if api.idempotency_key_ttl_seconds <= api.command_max_age_seconds:
         raise ConfigError("[api] idempotency_key_ttl_seconds must be above "
                           "command_max_age_seconds, so a repeat can never queue a command twice")
+    if api.observer_trades_max_rows <= 0:
+        raise ConfigError("[api] observer_trades_max_rows must be positive")
     if api.watching_max_rows <= 0:
         raise ConfigError("[api] watching_max_rows must be positive")
     if api.watching_closeness_decimal_places < 0 or api.flow_change_pct_decimal_places < 0:
@@ -184,6 +187,7 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         account_path=data / api.account_file,
         account_stale_seconds=api.account_stale_seconds,
         simulation=SimulationPaths.from_config(cfg),
+        observer_trades_max_rows=api.observer_trades_max_rows,
         universe=DiscoverySettings.from_config(cfg),
         watching_max_rows=api.watching_max_rows,
         closeness_places=api.watching_closeness_decimal_places,
@@ -236,7 +240,8 @@ class ApiServer(ThreadingHTTPServer):
         self.inbox_lock = inbox_lock or threading.Lock()
         self.page = (STATIC_DIR / "status.html").read_bytes()
         self.history = History(settings.history, settings.after)
-        self.observer_results = ObserverResults(settings.simulation)
+        self.observer_results = ObserverResults(settings.simulation,
+                                                settings.observer_trades_max_rows)
         self.skipped = SkippedAfter(settings.simulation, settings.after.minutes)
         # No source until one is attached (python -m aperture.api, or the demo's world).
         self.chart = Chart(settings.chart)

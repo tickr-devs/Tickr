@@ -7,6 +7,9 @@ same symbol skipped, gross USD (slippage in, commissions out) for the recorded q
 that day's decision records, its captured bars, `[api] replay_settings_file` and the session
 calendar with bot.toml `[session]`. Nothing here reads the broker or writes a file.
 
+Each observer also gets its simulated trades: every ENTER as the simulation replayed it (entry,
+exit, result in USD and R, or the cause it has none), oldest first, at most `max_trades`.
+
 A result that cannot be computed is None with one cause, never 0: no capture file, a refused
 capture file, unreadable settings or calendar, a refused simulation, an ENTER that could not be
 simulated, a simulated trade without a recorded whole quantity. An identity with no ENTER
@@ -30,7 +33,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from aperture.api.contract import ObserverResult
+from aperture.api.contract import ObserverResult, ObserverTradeV1
 from aperture.archive import existing
 from aperture.calendar import CalendarRefused, SessionCalendar
 from aperture.config import Config, SessionConfig
@@ -95,7 +98,7 @@ def _quantize(value: Decimal, places: int) -> Decimal:
     return value.quantize(Decimal(1).scaleb(-places))
 
 
-def _result(row: observer_report.IdentityReport, places: int) -> ObserverResult:
+def _gross(row: observer_report.IdentityReport, places: int) -> tuple[Decimal | None, str | None]:
     unsimulated = row.simulated.get(WhatIfOutcome.NOT_SIMULATED.value, 0)
     if unsimulated:
         return None, (f"{unsimulated} ENTER(s) could not be simulated: the decision bar is not "
@@ -106,11 +109,37 @@ def _result(row: observer_report.IdentityReport, places: int) -> ObserverResult:
     return _quantize(row.total_usd, places), None
 
 
+def _trade(enter: observer_report.SimulatedEnter, places: int) -> ObserverTradeV1:
+    record, trade = enter.record, enter.trade
+    if trade is None:
+        return ObserverTradeV1(record.symbol, record.bar_start, None, None, None, None, None,
+                               None, None, None, f"{enter.outcome}: {enter.cause}")
+    usd = None if enter.result_usd is None else _quantize(enter.result_usd, places)
+    quantity = None if usd is None else record.decision.quantity
+    return ObserverTradeV1(
+        record.symbol, record.bar_start, trade.entry_time, _quantize(trade.entry_price, places),
+        trade.exit_time, _quantize(trade.exit_price, places), quantity, trade.exit_reason, usd,
+        _quantize(trade.r_multiple, places),
+        None if usd is not None else "no recorded whole quantity: result in R only")
+
+
+def _result(row: observer_report.IdentityReport, enters: Sequence[observer_report.SimulatedEnter],
+            places: int, max_trades: int) -> ObserverResult:
+    gross, cause = _gross(row, places)
+    ordered = sorted(enters, key=lambda e: (e.record.bar_start, e.record.symbol))
+    try:
+        trades = tuple(_trade(e, places) for e in ordered[:max_trades])
+    except Exception as exc:  # noqa: BLE001 - display only: a cause, never a broken document
+        return ObserverResult(gross, cause, None, f"{type(exc).__name__}: {exc}")
+    return ObserverResult(gross, cause, trades, None, len(ordered) > max_trades)
+
+
 class ObserverResults:
     """Thread safe; remembers the last day it simulated."""
 
-    def __init__(self, paths: SimulationPaths) -> None:
+    def __init__(self, paths: SimulationPaths, max_trades: int) -> None:
         self.paths = paths
+        self.max_trades = max_trades  # [api] observer_trades_max_rows
         self._lock = threading.Lock()
         self._key: tuple[object, ...] | None = None
         self._value: dict[Identity, ObserverResult] = {}
@@ -142,7 +171,7 @@ class ObserverResults:
             if any(r.decision.verdict is Verdict.ENTER for r in group):
                 trading.append(identity)
             else:
-                out[identity] = (ZERO, None)
+                out[identity] = ObserverResult(ZERO, None)
         if not trading:
             return out, False
         try:
@@ -151,13 +180,19 @@ class ObserverResults:
             report = observer_report.report(
                 [r for i in trading for r in groups[i]], bars, settings, clock_for)
         except NoInputs as exc:
-            return out | {i: (None, str(exc)) for i in trading}, exc.transient
+            return out | {i: _failed(str(exc)) for i in trading}, exc.transient
         except (ReplayError, ResearchError) as exc:
             # A calendar refusal (date outside the calendar) may be fixed by a new file.
-            return out | {i: (None, f"simulation refused: {exc}") for i in trading}, True
+            return out | {i: _failed(f"simulation refused: {exc}") for i in trading}, True
         for row in report.identities:
-            out[(row.strategy, row.version)] = _result(row, settings.output_decimal_places)
+            enters = report.enters[(row.strategy, row.version, row.role)]
+            out[(row.strategy, row.version)] = _result(
+                row, enters, settings.output_decimal_places, self.max_trades)
         return out, False
+
+
+def _failed(cause: str) -> ObserverResult:
+    return ObserverResult(None, cause, None, cause)
 
 
 def bars_file(paths: SimulationPaths, day: date) -> Path:
