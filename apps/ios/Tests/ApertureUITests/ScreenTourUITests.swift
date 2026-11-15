@@ -19,11 +19,6 @@ final class ScreenTourUITests: XCTestCase {
   private static let wait: TimeInterval = 10
   /// Most extra screenshots taken while scrolling one screen down.
   private static let maxScrolls = 4
-  /// Where to tap to dismiss a popover that has no Cancel button (iOS 26 shows the bot-control
-  /// dialog as a popover and hides its cancel action): low on the screen, above the tab bar, as
-  /// fractions of the window.
-  private static let outsideX = 0.5
-  private static let outsideY = 0.8
   /// English labels the tour taps (the app's L10n default values).
   private enum Label {
     static let settings = "Settings"
@@ -66,7 +61,7 @@ final class ScreenTourUITests: XCTestCase {
   private func homeDetails() {
     if english, tap(app.buttons[Label.botControl]) {
       shot("tab0-bot-control")
-      dismiss()
+      guard dismiss() else { return }
     }
     // The Live flow card is one link whose label also carries its stages and values.
     let flow = NSPredicate(format: "label BEGINSWITH[c] %@", Label.liveFlow)
@@ -101,15 +96,33 @@ final class ScreenTourUITests: XCTestCase {
     return true
   }
 
-  /// Closes a dialog: its Cancel button when it has one, else a tap outside the popover.
-  private func dismiss() {
+  /// Closes the bot-control sheet with its own Cancel button, never with a tap elsewhere: the
+  /// sheet's other buttons send commands. At the medium height Cancel can sit below the fold, so
+  /// the sheet is scrolled (a swipe presses nothing) until Cancel can be tapped. Fails the step,
+  /// and leaves the remaining Home screens out, if Cancel cannot be reached or the sheet stays.
+  @discardableResult
+  private func dismiss() -> Bool {
     let cancel = app.buttons[Label.cancel].firstMatch
-    if cancel.exists, cancel.isHittable {
-      cancel.tap()
-    } else {
-      app.coordinate(withNormalizedOffset: CGVector(dx: Self.outsideX, dy: Self.outsideY)).tap()
+    guard cancel.waitForExistence(timeout: Self.wait) else {
+      XCTFail("the bot-control sheet has no Cancel button")
+      return false
     }
+    var scrolls = 0
+    while !cancel.isHittable && scrolls < Self.maxScrolls {
+      app.scrollViews.firstMatch.swipeUp()
+      scrolls += 1
+    }
+    guard cancel.isHittable else {
+      XCTFail("Cancel of the bot-control sheet cannot be reached")
+      return false
+    }
+    cancel.tap()
     sleep(Self.settle)
+    guard !cancel.exists else {
+      XCTFail("the bot-control sheet stayed open after Cancel")
+      return false
+    }
+    return true
   }
 
   private func back() {
