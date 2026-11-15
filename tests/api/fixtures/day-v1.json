@@ -60,7 +60,11 @@
       "prices_after_cause": null,
       "overshoot_usd": "0.24",
       "overshoot_r": "0.0960",
-      "overshoot_cause": null
+      "overshoot_cause": null,
+      "strategy": {
+        "name": "price-action-v1",
+        "version": "1"
+      }
     },
     {
       "trade_id": "t-0002",
@@ -120,7 +124,8 @@
       "prices_after_cause": null,
       "overshoot_usd": null,
       "overshoot_r": null,
-      "overshoot_cause": "the bars end at 2026-11-16T15:49:00.000Z, before 2026-11-16T16:48:00.000Z"
+      "overshoot_cause": "the bars end at 2026-11-16T15:49:00.000Z, before 2026-11-16T16:48:00.000Z",
+      "strategy": null
     }
   ],
   "result_gross_usd": "2.50",

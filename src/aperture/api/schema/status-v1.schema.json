@@ -471,6 +471,29 @@
                 "type": "null"
               }
             ]
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -485,7 +508,8 @@
           "planned_loss_usd",
           "stop_confirmed_after_seconds",
           "entry",
-          "entry_cause"
+          "entry_cause",
+          "strategy"
         ],
         "additionalProperties": false
       }

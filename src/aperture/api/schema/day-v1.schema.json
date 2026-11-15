@@ -307,6 +307,29 @@
                 "type": "null"
               }
             ]
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -330,7 +353,8 @@
           "prices_after_cause",
           "overshoot_usd",
           "overshoot_r",
-          "overshoot_cause"
+          "overshoot_cause",
+          "strategy"
         ],
         "additionalProperties": false
       }
