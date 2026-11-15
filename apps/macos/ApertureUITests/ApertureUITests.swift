@@ -34,6 +34,8 @@ final class ApertureUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = [Self.fixturesArgument] + Self.languageArguments
     app.launch()
+    XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: Self.timeout),
+      "no window after launch\n\(app.debugDescription)")
     return app
   }
 
