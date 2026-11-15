@@ -56,26 +56,38 @@ struct StudiesTests {
     #expect(near(values[4], 100 - 100 / 6.0))
   }
 
-  @Test("RSI is 100 when nothing fell, and undefined for too few closes")
+  @Test("RSI is 100 when nothing fell, 50 when nothing moved, and undefined for too few closes")
   func rsiEdges() {
     #expect(near(Studies.rsi([1, 2, 3, 4], period: 3)[3], 100))
+    #expect(near(Studies.rsi([5, 5, 5, 5], period: 3)[3], 50))
     #expect(Studies.rsi([1, 2, 3], period: 3).allSatisfy { $0 == nil })
   }
 
-  @Test("MACD is fast minus slow EMA with an EMA signal, defined from the slow period")
+  /// StockCharts' EMA worksheet closes (the classic 10-day example).
+  static let closes = [22.27, 22.19, 22.08, 22.17, 22.18, 22.13, 22.23, 22.43, 22.24, 22.29, 22.15, 22.39]
+
+  @Test("Charting EMA is SMA-seeded and matches StockCharts' worksheet")
+  func chartingEMA() {
+    let values = Studies.ema(Self.closes, period: 10)
+    #expect(values[8] == nil)
+    #expect(near(values[9], 22.221))
+    #expect(near(values[10], 22.20809090909091))
+    #expect(near(values[11], 22.241165289256198))
+    #expect(Studies.ema([1, 2], period: 3).allSatisfy { $0 == nil })
+  }
+
+  @Test("MACD uses SMA-seeded EMAs; the signal starts signal - 1 values after the MACD line")
   func macd() {
-    let closes: [Double] = [10, 11, 12, 13, 12, 14]
-    let points = Studies.macd(closes, fast: 2, slow: 3, signal: 2)
-    let fast = Indicators.ema(closes, period: 2)
-    let slow = Indicators.ema(closes, period: 3)
-    #expect(points[1] == nil)
-    let first = fast[2]! - slow[2]!
-    #expect(near(points[2]?.macd, first))
-    #expect(near(points[2]?.signal, first))
-    let second = fast[3]! - slow[3]!
-    #expect(near(points[3]?.macd, second))
-    #expect(near(points[3]?.signal, first + (second - first) * 2 / 3))
-    #expect(near(points[3]?.histogram, second - (first + (second - first) * 2 / 3)))
+    // Reference: MACD(3, 5, 3) computed with the standard definition (SMA-seeded EMAs).
+    let points = Studies.macd(Self.closes, fast: 3, slow: 5, signal: 3)
+    #expect(points[5] == nil)
+    #expect(near(points[6]?.macd, 0.0072083333, tolerance: 1e-9))
+    #expect(near(points[6]?.signal, -0.0005138889, tolerance: 1e-9))
+    #expect(near(points[7]?.macd, 0.0444930556, tolerance: 1e-9))
+    #expect(near(points[7]?.signal, 0.0219895833, tolerance: 1e-9))
+    #expect(near(points[11]?.macd, 0.0205525924, tolerance: 1e-9))
+    #expect(near(points[11]?.signal, 0.0114100893, tolerance: 1e-9))
+    #expect(near(points[11]?.histogram, 0.0205525924 - 0.0114100893, tolerance: 1e-9))
   }
 
   @Test("Slow stochastic smooths fast %K, and %D smooths slow %K")
