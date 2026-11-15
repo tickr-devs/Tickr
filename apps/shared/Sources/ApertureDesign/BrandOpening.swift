@@ -3,7 +3,8 @@ import SwiftUI
 /// The macOS app's opening (macOS has no launch screen): the first window of a launch opens on the
 /// plain background with the mark in its centre, the line draws itself, then the mark flies to the
 /// header's mark (`target`, on screen) over the still plain background; only then does the
-/// background fade and the screen show through, the mark giving way to the header's own. It starts
+/// background fade and the screen show through, the mark giving way to the header's own. The mark
+/// follows the header's mark wherever it moves until the opening is over, so it never lands beside it. It starts
 /// when the window is on screen and in front (key or active), or after `openingWaitSeconds` at the
 /// latest, so a window opened in the background is never left covered. Under Reduce Motion it only
 /// cross-fades. Design: the "Бренд Tickr" board, "macOS opening".
@@ -20,17 +21,15 @@ public struct BrandOpening: View {
   @State private var faded = false
   /// This view's origin on screen, to bring the target into its coordinates.
   @State private var origin = CGPoint.zero
-  /// Where the mark lands, in this view's coordinates: read once, as the flight starts.
-  @State private var landing: CGPoint?
-  /// The header mark's centre on screen when the flight starts; nil (not on screen) fades in place.
-  let target: () -> CGPoint?
+  /// The header mark's centre on screen; nil (not on screen yet) keeps the mark in the centre.
+  let target: CGPoint?
   /// The size the mark lands at.
   let targetSize: CGFloat
   /// Called when the opening is over and the overlay can go.
   let finished: () -> Void
 
   public init(
-    target: @escaping () -> CGPoint?,
+    target: CGPoint?,
     targetSize: CGFloat = Tokens.Size.logo,
     finished: @escaping () -> Void
   ) {
@@ -42,12 +41,15 @@ public struct BrandOpening: View {
   public var body: some View {
     GeometryReader { geometry in
       let centre = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+      let landing = target.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
       ZStack {
         if started {
           BrandMark(size: Tokens.Size.openingMark, live: false, tone: .brand,
             drawing: .easeOut(duration: Tokens.Motion.openingDrawSeconds).delay(Tokens.Motion.openingDelaySeconds))
             .scaleEffect(flown ? targetSize / Tokens.Size.openingMark : 1)
             .position(flown ? landing ?? centre : centre)
+            // The header settles while its data arrives: glide after it rather than jump.
+            .animation(Tokens.Motion.quick, value: landing)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,11 +84,6 @@ public struct BrandOpening: View {
   }
   #endif
 
-  /// Where the header mark is now, in this view's coordinates.
-  private func readLanding() -> CGPoint? {
-    target().map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
-  }
-
   private func play() async {
     started = true
     if reduceMotion {
@@ -94,17 +91,12 @@ public struct BrandOpening: View {
       return
     }
     try? await Task.sleep(for: .seconds(Tokens.Motion.openingDelaySeconds + Tokens.Motion.openingDrawSeconds))
-    landing = readLanding()
     withAnimation(Tokens.Motion.openingFly) { flown = true }
     try? await Task.sleep(for: .seconds(Tokens.Motion.openingFlySeconds))
-    // The header may have moved while its data arrived: settle exactly on it, then give way to it.
-    if let now = readLanding(), now != landing {
-      withAnimation(Tokens.Motion.quick) { landing = now }
-    }
     withAnimation(.easeOut(duration: Tokens.Motion.launchFadeSeconds)) { faded = true } completion: { finished() }
   }
 }
 
 #Preview {
-  Color.clear.overlay { BrandOpening(target: { nil }, finished: {}) }
+  Color.clear.overlay { BrandOpening(target: nil, finished: {}) }
 }
