@@ -576,7 +576,7 @@ struct CandleChart: View {
 
   /// Seconds of time on screen.
   var visibleLength: TimeInterval {
-    guard let visible = viewport.visible else { return lastEnd.timeIntervalSince(firstStart) }
+    guard let visible = viewport.shown(total: candles.count) else { return lastEnd.timeIntervalSince(firstStart) }
     return TimeInterval(visible) * series.timeframe.seconds
   }
 
@@ -591,7 +591,7 @@ struct CandleChart: View {
     guard zoomed else { return xDomain }
     return windowStart...windowStart.addingTimeInterval(visibleLength)
   }
-  var zoomed: Bool { viewport.visible != nil }
+  var zoomed: Bool { viewport.shown(total: candles.count) != nil }
 
   var scrollPosition: Binding<Date> {
     Binding(get: { windowStart }, set: { viewport.position = $0 })
@@ -657,7 +657,7 @@ struct CandleChart: View {
   private var pinch: some Gesture {
     MagnifyGesture()
       .onChanged { value in
-        let start = pinchStart ?? viewport.visible ?? candles.count
+        let start = pinchStart ?? viewport.shown(total: candles.count) ?? candles.count
         pinchStart = start
         viewport.show(Int((Double(start) / value.magnification).rounded()), total: candles.count)
       }

@@ -10,7 +10,7 @@ import TickrKit
 struct ChartView: View {
   @Environment(AppModel.self) private var model
   @Environment(ChartModel.self) private var chart
-  @State private var viewport = Viewport()
+  @State private var viewport = Viewport.opening
   /// The candle under the pointer: the chart, the header's readout and the explain card share it.
   @State private var pointer = ChartPointer()
   @AppStorage(Keys.symbol) private var picked = ""
@@ -156,7 +156,7 @@ struct ChartView: View {
   private func keepLoading() async {
     chart.clear()
     chart.hasSymbol = symbol != nil
-    viewport = Viewport()
+    viewport = Viewport.opening
     pointer.index = nil
     guard let symbol else { return }
     let baseURL = model.baseURL
@@ -392,7 +392,7 @@ struct ChartView: View {
       chip(Self.zoomOutSymbol, title: L10n.Chart.zoomOut) { viewport.zoomOut(total: candleCount) }
         .keyboardShortcut(Viewport.zoomOutKey, modifiers: .command)
         .help(Text(L10n.Chart.zoomOutHelp))
-        .disabled(viewport.visible == nil)
+        .disabled(viewport.shown(total: candleCount) == nil)
       chip(Self.zoomInSymbol, title: L10n.Chart.zoomIn) { viewport.zoomIn(total: candleCount) }
         .keyboardShortcut(Viewport.zoomInKey, modifiers: .command)
         .help(Text(L10n.Chart.zoomInHelp))
@@ -407,7 +407,7 @@ struct ChartView: View {
   /// candles (and disabled) while the whole range is shown.
   private var historyScroller: some View {
     let total = candleCount
-    let shown = viewport.visible ?? total
+    let shown = viewport.shown(total: total) ?? total
     let last = Double(max(total - shown, 0))
     return HStack(spacing: Tokens.Space.m) {
       Text(L10n.Chart.scrollHistory)
@@ -427,7 +427,7 @@ struct ChartView: View {
         in: 0...max(last, 1))
       .tint(Palette.highlight)
       .controlSize(.small)
-      .disabled(viewport.visible == nil)
+      .disabled(viewport.shown(total: total) == nil)
     }
     .help(Text(L10n.Chart.scrollHistoryHelp))
   }
@@ -556,6 +556,19 @@ struct Viewport: Equatable {
 
   /// The closest zoom still shows this many candles.
   static let minimumVisible = 12
+  /// Candles a chart opens on, the newest ones: at the design's candle width (about 9 points a
+  /// candle across the plot) bodies and wicks stay clear, where a whole day of one-minute
+  /// candles drew hairlines. Fit shows the whole range; the slider and the trackpad scroll back.
+  static let openingCandles = 90
+  /// The window a chart opens on: the newest `openingCandles`.
+  static let opening = Viewport(visible: openingCandles)
+
+  /// Candles on screen out of `total`; nil when the window holds them all (a range shorter than
+  /// the window shows whole).
+  func shown(total: Int) -> Int? {
+    guard let visible, visible < total else { return nil }
+    return visible
+  }
   /// Key equivalents of the zoom buttons (with ⌘), as in Apple's apps.
   static let zoomInKey: KeyEquivalent = "="
   static let zoomOutKey: KeyEquivalent = "-"
@@ -563,13 +576,16 @@ struct Viewport: Equatable {
 
   /// Shows fewer candles, down to `minimumVisible`.
   mutating func zoomIn(total: Int) {
-    let next = max(Self.minimumVisible, Int((Double(visible ?? total) / Tokens.Chart.zoomStep).rounded()))
+    let next = max(Self.minimumVisible, Int((Double(shown(total: total) ?? total) / Tokens.Chart.zoomStep).rounded()))
     visible = next >= total ? nil : next
   }
 
   /// Shows more candles, up to the whole day.
   mutating func zoomOut(total: Int) {
-    guard let visible else { return }
+    guard let visible = shown(total: total) else {
+      visible = nil
+      return
+    }
     let next = Int((Double(visible) * Tokens.Chart.zoomStep).rounded())
     self.visible = next >= total ? nil : next
   }
