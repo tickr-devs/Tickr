@@ -19,8 +19,11 @@ public struct BrandOpening: View {
   /// Called when the opening is over and the overlay can go.
   let finished: () -> Void
 
-  public init(target: @escaping () -> CGPoint?, targetSize: CGFloat = Tokens.Size.logo,
-    finished: @escaping () -> Void) {
+  public init(
+    target: @escaping () -> CGPoint?,
+    targetSize: CGFloat = Tokens.Size.logo,
+    finished: @escaping () -> Void
+  ) {
     self.target = target
     self.targetSize = targetSize
     self.finished = finished
@@ -60,5 +63,5 @@ public struct BrandOpening: View {
 }
 
 #Preview {
-  Color.clear.overlay { BrandOpening(target: { nil }) {} }
+  Color.clear.overlay { BrandOpening(target: { nil }, finished: {}) }
 }
