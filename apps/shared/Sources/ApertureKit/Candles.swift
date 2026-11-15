@@ -314,25 +314,67 @@ public enum Indicators {
 public enum ChartAxis {
   /// Months between labels on a year of monthly candles: one label a quarter.
   static let quarterMonths = 3
+  /// Months in a year (unit factor).
+  static let monthsPerYear = 12
+  /// Fewest labels a range's axis should carry: with fewer, the next finer period labels it
+  /// (a month of few candles labels its weeks, then its days).
+  static let leastLabels = 3
 
-  /// Indices of the candles that open a new session over five days, a new week over a month, a
-  /// new month over three months or a year (a new quarter for monthly candles), the first candle
-  /// included. `starts` are the candles' real opening times, oldest first.
+  /// What the labels of a range's time axis mark the start of.
+  public enum Period: Sendable, Equatable {
+    case day
+    case week
+    case month
+    case quarter
+  }
+
+  /// Periods that may label `range` in `timeframe`, coarsest first.
+  static func periods(range: ChartRange, timeframe: Timeframe) -> [Period] {
+    switch range {
+    case .oneDay, .fiveDays: [.day]
+    case .oneMonth: [.week, .day]
+    case .threeMonths, .oneYear: timeframe == .mo1 ? [.quarter, .month] : [.month, .week, .day]
+    }
+  }
+
+  /// The labelled period and the indices of the candles that open one, the first candle
+  /// included: sessions over five days, weeks over a month, months over three months or a year
+  /// (quarters for monthly candles), or a finer period when that gives fewer than `leastLabels`.
+  /// `starts` are the candles' real opening times, oldest first.
+  public static func labels(_ starts: [Date], range: ChartRange, timeframe: Timeframe) -> (period: Period, indices: [Int]) {
+    let candidates = periods(range: range, timeframe: timeframe)
+    var found = (period: Period.day, indices: [Int]())
+    for period in candidates {
+      found = (period, openings(starts, period: period))
+      if found.indices.count >= leastLabels { break }
+    }
+    return found
+  }
+
+  /// Indices of the candles that open a labelled period (see `labels`).
   public static func boundaries(_ starts: [Date], range: ChartRange, timeframe: Timeframe) -> [Int] {
+    labels(starts, range: range, timeframe: timeframe).indices
+  }
+
+  /// Indices of the candles that open a new `period` in New York, the first included.
+  static func openings(_ starts: [Date], period: Period) -> [Int] {
     let calendar = WireDate.newYork
-    func period(_ date: Date) -> Int {
-      switch range {
-      case .oneDay, .fiveDays: return calendar.ordinality(of: .day, in: .era, for: date) ?? 0
-      case .oneMonth: return calendar.component(.weekOfYear, from: date)
-      case .threeMonths, .oneYear:
-        let month = calendar.component(.month, from: date) - 1
-        return timeframe == .mo1 ? month / quarterMonths : month
+    func key(_ date: Date) -> Int {
+      switch period {
+      case .day: return calendar.ordinality(of: .day, in: .era, for: date) ?? 0
+      case .week:
+        // The week's Monday-or-Sunday start as a day number: one key per calendar week.
+        let week = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+        return calendar.ordinality(of: .day, in: .era, for: week) ?? 0
+      case .month, .quarter:
+        let months = calendar.component(.year, from: date) * monthsPerYear + calendar.component(.month, from: date) - 1
+        return period == .quarter ? months / quarterMonths : months
       }
     }
     var indices: [Int] = []
     var previous: Int?
     for (index, start) in starts.enumerated() {
-      let current = period(start)
+      let current = key(start)
       if current != previous { indices.append(index) }
       previous = current
     }
