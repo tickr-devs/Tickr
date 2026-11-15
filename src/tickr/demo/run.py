@@ -103,7 +103,7 @@ def demo_root(repo: Path, scenario: Scenario) -> Path:
 
 @contextlib.contextmanager
 def running_lock(repo: Path, scenario: Scenario) -> Iterator[None]:
-    """Held for the whole demo, taken before the folder is wiped: a second `aperture demo` on
+    """Held for the whole demo, taken before the folder is wiped: a second `tickr demo` on
     the same folder is refused while the first runs, and leaves its folder alone. The lock file
     sits beside the folder (the folder itself is deleted and rebuilt); the OS drops the lock
     when the process ends, however it ends."""
@@ -114,7 +114,7 @@ def running_lock(repo: Path, scenario: Scenario) -> Iterator[None]:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise DemoRefused(f"another `aperture demo` is running on {root}; "
+            raise DemoRefused(f"another `tickr demo` is running on {root}; "
                               "stop it first (its folder is left as it is)") from exc
         try:
             yield

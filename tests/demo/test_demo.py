@@ -163,7 +163,7 @@ def test_a_second_demo_on_the_same_folder_is_refused_before_touching_it(tmp_path
     folder = demo.build_folder(root, scenario).parents[1]
     (folder / "running.txt").write_text("the first demo's files")
     with demo.running_lock(root, scenario):  # the first demo
-        with pytest.raises(demo.DemoRefused, match="another `aperture demo` is running"):
+        with pytest.raises(demo.DemoRefused, match="another `tickr demo` is running"):
             demo.run_demo(root, scenario, SUNDAY, live=False, log=lambda line: None)
         assert (folder / "running.txt").exists()  # not wiped
     with demo.running_lock(root, scenario):  # released when the first one ends
