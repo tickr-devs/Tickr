@@ -1015,7 +1015,11 @@ enum L10n {
     }
     /// Tooltip of the decisions toggle.
     static var decisionsHelp: LocalizedStringResource {
-      LocalizedStringResource("chart.decisionsHelp", defaultValue: "Show why the strategies entered, watched or skipped this symbol (⌥⌘I)", bundle: L10n.bundle)
+      LocalizedStringResource("chart.decisionsHelp", defaultValue: "Show why the strategies entered, watched or skipped this symbol, and mark their entries and exits on the candles (⌥⌘I)", bundle: L10n.bundle)
+    }
+    /// Chart mark of an observer's (shadow strategy's) decision.
+    static func observerMark(_ action: String) -> LocalizedStringResource {
+      LocalizedStringResource("chart.observerMark", defaultValue: "\(action) · observer", bundle: L10n.bundle)
     }
     /// Decisions inspector is empty.
     static var noDecisions: LocalizedStringResource {

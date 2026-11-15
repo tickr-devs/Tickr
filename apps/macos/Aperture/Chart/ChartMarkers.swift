@@ -68,6 +68,18 @@ struct ChartLevel: Identifiable {
   }
 }
 
+/// A strategy's ENTER or EXIT decision, drawn as a diamond at its time: filled for the trading
+/// strategy, hollow for an observer (a shadow strategy that never trades).
+struct DecisionMark: Identifiable {
+  /// Position in the day's decision list.
+  let id: Int
+  let time: Date
+  let price: Double
+  let action: Verdict
+  let observer: Bool
+  let label: LocalizedStringResource
+}
+
 /// Builds the marks and levels the chart draws from the bot's trades and open position.
 enum ChartMarkers {
   /// An entry and an exit mark per closed trade.
@@ -105,6 +117,21 @@ enum ChartMarkers {
           label: verified ? L10n.Chart.stopLevel(Format.price(stop)) : L10n.Chart.stopUnverified(Format.price(stop))))
     }
     return levels
+  }
+
+  /// A mark per ENTER or EXIT decision. An ENTER sits at its planned entry; otherwise a mark
+  /// sits at the close of the candle it was made in. A decision outside every candle has no mark.
+  static func decisionMarks(decisions: [DecisionV1], candles: [Candle]) -> [DecisionMark] {
+    decisions.enumerated().compactMap { index, decision in
+      guard decision.action == .enter || decision.action == .exit else { return nil }
+      let at = decision.at.date
+      let candle = candles.last { $0.start <= at && at < $0.end }
+      guard let price = decision.entryPrice.map({ double($0.value) }) ?? candle?.close else { return nil }
+      let title = String(localized: decision.action.title)
+      return DecisionMark(
+        id: index, time: at, price: price, action: decision.action, observer: decision.observer,
+        label: decision.observer ? L10n.Chart.observerMark(title) : decision.action.title)
+    }
   }
 
   static func double(_ value: Decimal) -> Double {

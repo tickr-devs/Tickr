@@ -857,13 +857,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show why the strategies entered, watched or skipped this symbol (⌥⌘I)"
+            "value": "Show why the strategies entered, watched or skipped this symbol, and mark their entries and exits on the candles (⌥⌘I)"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Показать, почему стратегии вошли, наблюдали или пропустили тикер (⌥⌘I)"
+            "value": "Показать, почему стратегии вошли, наблюдали или пропустили тикер, и отметить их входы и выходы на свечах (⌥⌘I)"
           }
         }
       }
@@ -1119,6 +1119,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "За этот день у бота нет открытой позиции, записанных баров или сделок."
+          }
+        }
+      }
+    },
+    "chart.observerMark": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · observer"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · наблюдатель"
           }
         }
       }
