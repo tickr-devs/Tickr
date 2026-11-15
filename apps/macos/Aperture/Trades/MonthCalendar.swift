@@ -49,11 +49,10 @@ struct MonthCalendar: View {
 
   /// What the cells' corner dots mean.
   private var legend: some View {
-    HStack(spacing: Tokens.Space.s) {
-      dot(Palette.profit)
-      Text(L10n.Trades.cleanLegend)
-      dot(Palette.warning)
-      Text(L10n.Trades.needsLook)
+    // One line per dot, so a narrow column wraps the words instead of clipping them.
+    VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+      HStack(spacing: Tokens.Space.xs) { dot(Palette.profit); Text(L10n.Trades.cleanLegend) }
+      HStack(spacing: Tokens.Space.xs) { dot(Palette.warning); Text(L10n.Trades.needsLook) }
     }
     .font(Tokens.Typography.annotation)
     .foregroundStyle(Palette.textQuaternary)
