@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+import stat
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -45,7 +46,7 @@ from tickr.observers.errors import ObserverError
 from tickr.observers.loader import load_active
 from tickr.runtime import stopmarker
 from tickr.runtime.alerts import default_notifier, recipient_missing
-from tickr.runtime.launchd import check_timings
+from tickr.runtime.launchd import PRIVATE_MODE_MASK, check_timings
 from tickr.store import (
     DATABASE_FILE,
     MIGRATIONS,
@@ -78,6 +79,7 @@ class PreflightCause(StrEnum):
     ALERT_RECIPIENT_MISSING = "alert-recipient-missing"
     ALERT_CHANNEL_MISSING = "alert-channel-missing"
     TOKEN_DIR_MISSING = "token-dir-missing"
+    TOKEN_DIR_OPEN = "token-dir-open"
     TOKEN_UNUSABLE = "token-unusable"
     STRATEGY_REFUSED = "strategy-refused"
     STOPPED_BY_OPERATOR = "stopped-by-operator"
@@ -260,6 +262,12 @@ def _check_token_dir(cfg: config_module.Config) -> Check:
     if not token_dir.is_dir():
         return Check(CheckName.TOKEN_DIR, False, f"missing: {token_dir}",
                      PreflightCause.TOKEN_DIR_MISSING)
+    # The SDK writes its token file with the process umask (usually readable by everyone), so
+    # the folder itself must keep other accounts on this machine out of it.
+    if stat.S_IMODE(token_dir.stat().st_mode) & PRIVATE_MODE_MASK:
+        return Check(CheckName.TOKEN_DIR, False,
+                     f"readable by other accounts: {token_dir} (run: chmod 700 {token_dir})",
+                     PreflightCause.TOKEN_DIR_OPEN)
     return Check(CheckName.TOKEN_DIR, True, str(token_dir))
 
 

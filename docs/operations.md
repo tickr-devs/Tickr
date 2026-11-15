@@ -88,7 +88,9 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 6. The iMessage recipient variable named by `[alerts] imessage_recipient_variable` is set
    (cause `alert-recipient-missing`; blocks the start, because the phone is the alert channel
    that reaches you away from the Mac). Presence only, never the value.
-7. Broker token folder `<data_dir>/<token_dir>` exists.
+7. Broker token folder `<data_dir>/<token_dir>` exists (cause `token-dir-missing`) and is closed to
+   other accounts on the machine, no group or other permission bits (cause `token-dir-open`;
+   `chmod 700` it). The SDK writes its token file there with default permissions.
 7b. No operator stop marker (cause `stopped-by-operator`): a stop-bot command from the apps
    left `<data_dir>/<[runtime] stop_marker_file>`; `tickr clear-stop` removes it.
 7c. The database, when it exists, holds runs of this environment only (cause
@@ -128,7 +130,7 @@ All checks are reported; the first failure is the recorded cause.
    **Deadline:** `TICKR_IMESSAGE_TO` must be in this file before the first preflight run
    (08:30 Mac time on Monday with the default `[runtime] preflight_start_local`). Without it
    preflight fails with `alert-recipient-missing` and the bot job does not start the bot.
-3. Data and token folders: `mkdir -p data/webull-token-sandbox` (`[environments.sandbox]
+3. Data and token folders: `mkdir -p data && mkdir -m 700 data/webull-token-sandbox` (`[environments.sandbox]
    token_dir`; `data/webull-token-production` before Production).
 4. Alerts: sign in to iMessage in the Messages app on this Mac (Messages > Settings > iMessage)
    with an Apple ID, then, after loading the env file as above, run
@@ -162,6 +164,9 @@ for job in preflight bot watchdog api test-alert; do
   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.$job.plist
 done
 ```
+
+`render-launchd` refuses (exit 2) when the env file is missing or has any group or other
+permission bit: `chmod 600` it first.
 
 After changing `[runtime]` values, render again, then
 `launchctl bootout gui/$(id -u)/local.tickr.<job>` and `bootstrap` the changed jobs.
