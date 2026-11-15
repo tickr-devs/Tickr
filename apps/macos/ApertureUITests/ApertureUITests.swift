@@ -22,6 +22,9 @@ final class ApertureUITests: XCTestCase {
   static let cancel = "Cancel"
   static let matches = "MATCHES"
   static let observer = "price-action-v1"
+  /// English titles of the standard Window menu and its Zoom item.
+  static let windowMenu = "Window"
+  static let zoomItem = "Zoom"
   /// How long an element may take to appear, in seconds (the app polls every few seconds).
   static let timeout: TimeInterval = 10
 
@@ -37,6 +40,10 @@ final class ApertureUITests: XCTestCase {
     app.launchEnvironment[Self.fixturesKey] = Self.fixturesOn
     app.launch()
     XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: Self.timeout), "no window after launch")
+    // The first window size can be larger than a small display; Zoom fits it to the screen so
+    // every control is on screen and hittable.
+    app.menuBars.menuBarItems[Self.windowMenu].click()
+    app.menuItems[Self.zoomItem].click()
     return app
   }
 

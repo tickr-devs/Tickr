@@ -15,8 +15,9 @@ enum Defaults {
 @main
 @MainActor
 struct ApertureMacApp: App {
-  /// Smallest and first size of the main window, in points.
-  static let minWidth: CGFloat = 1080
+  /// Smallest and first size of the main window, in points. The smallest fits a 1024-point-wide
+  /// display (the CI runner's, where the UI tests zoom the window to the screen).
+  static let minWidth: CGFloat = 1000
   static let minHeight: CGFloat = 700
   static let defaultWidth: CGFloat = 1440
   static let defaultHeight: CGFloat = 920
