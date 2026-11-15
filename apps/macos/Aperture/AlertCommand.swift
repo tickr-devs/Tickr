@@ -43,7 +43,8 @@ struct AlertRequest: Equatable {
 enum AlertExit: Int32 {
   /// Handed to Notification Center.
   case shown = 0
-  /// Notifications for the app are off (System Settings > Notifications) or never allowed.
+  /// Notifications for the app are off or show nothing (System Settings > Notifications), or were
+  /// never allowed.
   case notAllowed = 2
   /// Notification Center refused the request.
   case failed = 3
@@ -67,7 +68,9 @@ struct AlertPoster {
   func post(_ request: AlertRequest) async -> AlertExit {
     guard Self.available else { return .notAllowed }
     let center = UNUserNotificationCenter.current()
-    guard await center.notificationSettings().authorizationStatus == .authorized else { return .notAllowed }
+    // Allowed but set to show nothing ("None") would exit 0 and show nothing: osascript instead.
+    let settings = await center.notificationSettings()
+    guard settings.authorizationStatus == .authorized, settings.alertSetting == .enabled else { return .notAllowed }
     let content = UNMutableNotificationContent()
     content.title = request.title
     content.body = request.text
