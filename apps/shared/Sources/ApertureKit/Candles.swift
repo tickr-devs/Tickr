@@ -132,8 +132,12 @@ public struct ChartSeries: Hashable, Sendable {
   /// New York day and is nil for daily, weekly and monthly candles (a VWAP across sessions means
   /// nothing), and the EMAs use the candles' closes.
   public init(chart: ChartV1) {
-    let interval = chart.interval
-    let candles = chart.bars.map { bar in
+    self.init(chartBars: chart.bars, interval: chart.interval)
+  }
+
+  /// Candles and lines of chart-v1 bars in `interval` (see `init(chart:)`).
+  init(chartBars: [ChartBarV1], interval: Timeframe) {
+    let candles = chartBars.map { bar in
       let start = bar.start.date
       return Candle(
         start: start, end: Candles.end(of: start, timeframe: interval), open: Candles.double(bar.open),
@@ -154,6 +158,14 @@ public struct ChartSeries: Hashable, Sendable {
     self.vwap = vwap
     self.fastEMA = fastEMA
     self.slowEMA = slowEMA
+  }
+
+  /// The candles and lines from index `first` on: a series computed over earlier candles too
+  /// (a warm-up), cut to the candles shown.
+  public func dropping(_ first: Int) -> ChartSeries {
+    ChartSeries(
+      timeframe: timeframe, candles: Array(candles.dropFirst(first)), vwap: Array(vwap.dropFirst(first)),
+      fastEMA: Array(fastEMA.dropFirst(first)), slowEMA: Array(slowEMA.dropFirst(first)))
   }
 
   /// The same candles back to back from the first one's start, one length each, every value
@@ -307,35 +319,5 @@ public enum Indicators {
       previous = next
       return next
     }
-  }
-}
-
-/// Where the time axis of a range beyond one day puts its labels.
-public enum ChartAxis {
-  /// Months between labels on a year of monthly candles: one label a quarter.
-  static let quarterMonths = 3
-
-  /// Indices of the candles that open a new session over five days, a new week over a month, a
-  /// new month over three months or a year (a new quarter for monthly candles), the first candle
-  /// included. `starts` are the candles' real opening times, oldest first.
-  public static func boundaries(_ starts: [Date], range: ChartRange, timeframe: Timeframe) -> [Int] {
-    let calendar = WireDate.newYork
-    func period(_ date: Date) -> Int {
-      switch range {
-      case .oneDay, .fiveDays: return calendar.ordinality(of: .day, in: .era, for: date) ?? 0
-      case .oneMonth: return calendar.component(.weekOfYear, from: date)
-      case .threeMonths, .oneYear:
-        let month = calendar.component(.month, from: date) - 1
-        return timeframe == .mo1 ? month / quarterMonths : month
-      }
-    }
-    var indices: [Int] = []
-    var previous: Int?
-    for (index, start) in starts.enumerated() {
-      let current = period(start)
-      if current != previous { indices.append(index) }
-      previous = current
-    }
-    return indices
   }
 }

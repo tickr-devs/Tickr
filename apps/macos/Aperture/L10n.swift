@@ -842,30 +842,62 @@ enum L10n {
     static func beforeClose(_ minutes: Int) -> LocalizedStringResource {
       LocalizedStringResource("settings.beforeClose", defaultValue: "\(minutes) min before close", bundle: L10n.bundle)
     }
-    static var alertPosition: LocalizedStringResource {
-      LocalizedStringResource("settings.alertPosition", defaultValue: "Position opened or closed", bundle: L10n.bundle)
+    static var botAlerts: LocalizedStringResource {
+      LocalizedStringResource("settings.botAlerts", defaultValue: "Alerts from the bot", bundle: L10n.bundle)
     }
-    static var alertStop: LocalizedStringResource {
-      LocalizedStringResource("settings.alertStop", defaultValue: "Broker stop not verified", bundle: L10n.bundle)
+    static var alertUnprotected: LocalizedStringResource {
+      LocalizedStringResource("settings.alertUnprotected", defaultValue: "Position without a working stop", bundle: L10n.bundle)
     }
-    static var alertFence: LocalizedStringResource {
-      LocalizedStringResource("settings.alertFence", defaultValue: "Reconciliation fence", bundle: L10n.bundle)
+    static var alertUnprotectedKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertUnprotectedKinds", defaultValue: "No verified broker stop, or the broker rejected it", bundle: L10n.bundle)
+    }
+    static var alertExit: LocalizedStringResource {
+      LocalizedStringResource("settings.alertExit", defaultValue: "A close failed", bundle: L10n.bundle)
+    }
+    static var alertExitKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertExitKinds", defaultValue: "Exit refused or not filled, flatten after the close, not flat after the flatten time", bundle: L10n.bundle)
+    }
+    static var alertBot: LocalizedStringResource {
+      LocalizedStringResource("settings.alertBot", defaultValue: "Bot down", bundle: L10n.bundle)
+    }
+    static var alertBotKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertBotKinds", defaultValue: "Crashed, did not start or stop, down with an open trade", bundle: L10n.bundle)
+    }
+    static var alertWatchdog: LocalizedStringResource {
+      LocalizedStringResource("settings.alertWatchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
+    }
+    static var alertWatchdogKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertWatchdogKinds", defaultValue: "Not flat after the close, could not check, restarted the bot or could not", bundle: L10n.bundle)
+    }
+    static var alertBroker: LocalizedStringResource {
+      LocalizedStringResource("settings.alertBroker", defaultValue: "Broker or quotes", bundle: L10n.bundle)
+    }
+    static var alertBrokerKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertBrokerKinds", defaultValue: "Unknown order status, foreign position, broker reads failing, quotes lost with a position", bundle: L10n.bundle)
     }
     static var alertLossLimit: LocalizedStringResource {
       LocalizedStringResource("settings.alertLossLimit", defaultValue: "Daily loss limit reached", bundle: L10n.bundle)
     }
-    static var alertBotDown: LocalizedStringResource {
-      LocalizedStringResource("settings.alertBotDown",
-        defaultValue: "Bot stopped or API unreachable",
-        bundle: L10n.bundle)
+    static var alertLossLimitKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertLossLimitKinds", defaultValue: "No new entries for the rest of the day", bundle: L10n.bundle)
     }
-    static var macNotifications: LocalizedStringResource {
-      LocalizedStringResource("settings.macNotifications", defaultValue: "macOS notifications", bundle: L10n.bundle)
+    static var alertMorning: LocalizedStringResource {
+      LocalizedStringResource("settings.alertMorning", defaultValue: "Morning checks", bundle: L10n.bundle)
     }
-    static var notificationsLater: LocalizedStringResource {
-      LocalizedStringResource("settings.notificationsLater",
-        defaultValue: "System notifications arrive in a later update. Until then the menu-bar icon shows the state.",
-        bundle: L10n.bundle)
+    static var alertMorningKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertMorningKinds", defaultValue: "Preflight failed, or the broker token needs confirming", bundle: L10n.bundle)
+    }
+    static var alertObservers: LocalizedStringResource {
+      LocalizedStringResource("settings.alertObservers", defaultValue: "Observers stopped", bundle: L10n.bundle)
+    }
+    static var alertObserversKinds: LocalizedStringResource {
+      LocalizedStringResource("settings.alertObserversKinds", defaultValue: "Too much to evaluate: observers are off for the run, trading goes on", bundle: L10n.bundle)
+    }
+    static var phonePush: LocalizedStringResource {
+      LocalizedStringResource("settings.phonePush", defaultValue: "Push to the phone", bundle: L10n.bundle)
+    }
+    static var alertsFooter: LocalizedStringResource {
+      LocalizedStringResource("settings.alertsFooter", defaultValue: "The bot decides and sends these itself: a Mac notification and, when a recipient is set in its env file, an iMessage. The same alert repeated within a short window is shown once.", bundle: L10n.bundle)
     }
     static var tradingGate: LocalizedStringResource {
       LocalizedStringResource("settings.tradingGate", defaultValue: "Trading gate", bundle: L10n.bundle)
@@ -1120,6 +1152,10 @@ enum L10n {
     static func atrWaiting(_ period: Int) -> LocalizedStringResource {
       LocalizedStringResource("chart.atrWaiting", defaultValue: "ATR \(period): not enough candles yet", bundle: L10n.bundle)
     }
+    /// A study pane (MACD, RSI, stochastic) before its line has a value.
+    static var studyWaiting: LocalizedStringResource {
+      LocalizedStringResource("chart.studyWaiting", defaultValue: "Not enough candles yet", bundle: L10n.bundle)
+    }
     /// Zoom-in button.
     static var zoomIn: LocalizedStringResource {
       LocalizedStringResource("chart.zoomIn", defaultValue: "Zoom In", bundle: L10n.bundle)
@@ -1239,6 +1275,10 @@ enum L10n {
     /// Decisions inspector is empty.
     static var noDecisions: LocalizedStringResource {
       LocalizedStringResource("chart.noDecisions", defaultValue: "No decisions were recorded for this symbol on this day.", bundle: L10n.bundle)
+    }
+    /// Decisions inspector over a range beyond one day.
+    static var decisionsDayOnly: LocalizedStringResource {
+      LocalizedStringResource("chart.decisionsDayOnly", defaultValue: "Decisions are recorded per day. Choose Day to see them.", bundle: L10n.bundle)
     }
     /// Why the decisions read failed.
     static func decisionsUnavailable(_ cause: String) -> LocalizedStringResource {
@@ -1450,9 +1490,101 @@ enum L10n {
     static func repeatRange(_ first: String, _ last: String, _ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("trades.repeatRange", defaultValue: "\(first)–\(last) · ×\(count)", bundle: L10n.bundle)
     }
+    /// Tooltip of a clean day's mark.
+    static var cleanDay: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanDay", defaultValue: "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended flat.", bundle: L10n.bundle)
+    }
+    /// Tooltip of a day that was not clean, with what made it so.
+    static func notCleanDay(_ causes: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.notCleanDay", defaultValue: "Not clean: \(causes)", bundle: L10n.bundle)
+    }
+    /// Tooltip of a day whose clean-day verdict is unknown.
+    static func cleanUnknown(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.cleanUnknown", defaultValue: "Verdict unknown: \(cause)", bundle: L10n.bundle)
+    }
+    /// Day header badge: the journal, the broker and the bot's records agreed.
+    static var cleanBadge: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day · broker and records agree", bundle: L10n.bundle)
+    }
+    /// Day header badge: the day was not clean.
+    static var needsLookBadge: LocalizedStringResource {
+      LocalizedStringResource("trades.needsLookBadge", defaultValue: "Needs a look", bundle: L10n.bundle)
+    }
+    /// Calendar legend of the green dot.
+    static var cleanLegend: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanLegend", defaultValue: "clean day: broker and records agree", bundle: L10n.bundle)
+    }
+    /// Calendar legend of the amber dot.
+    static var needsLook: LocalizedStringResource {
+      LocalizedStringResource("trades.needsLook", defaultValue: "needs a look", bundle: L10n.bundle)
+    }
     /// A refusal with the end of its window (a cooldown), New York time.
     static func refusedUntil(_ message: String, _ time: String) -> LocalizedStringResource {
       LocalizedStringResource("trades.refusedUntil", defaultValue: "\(message) · until \(time)", bundle: L10n.bundle)
+    }
+    /// Not taken row: what the bot's replay says the signal would have made, and how it ended.
+    static func whatIfResult(_ r: String, _ usd: String, _ exit: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfResult", defaultValue: "If entered: \(r) · \(usd) · \(exit)", bundle: L10n.bundle)
+    }
+    /// Not taken row: the replay could not run, with why.
+    static func whatIfNoResult(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfNoResult", defaultValue: "If entered: not replayed · \(cause)", bundle: L10n.bundle)
+    }
+    /// How a replay ended: the stop was hit.
+    static var exitStop: LocalizedStringResource {
+      LocalizedStringResource("trades.exitStop", defaultValue: "stop", bundle: L10n.bundle)
+    }
+    /// How a replay ended: the strategy's own exit.
+    static var exitStrategy: LocalizedStringResource {
+      LocalizedStringResource("trades.exitStrategy", defaultValue: "strategy exit", bundle: L10n.bundle)
+    }
+    /// How a replay ended: flattened before the market close.
+    static var exitFlatten: LocalizedStringResource {
+      LocalizedStringResource("trades.exitFlatten", defaultValue: "flattened before the close", bundle: L10n.bundle)
+    }
+    /// How a replay ended: the captured bars ran out with it still open.
+    static var exitEndOfData: LocalizedStringResource {
+      LocalizedStringResource("trades.exitEndOfData", defaultValue: "bars ran out", bundle: L10n.bundle)
+    }
+    /// Price change per share at set minutes after an exit or a skipped signal.
+    static func afterPrices(_ items: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.afterPrices", defaultValue: "Price after: \(items)", bundle: L10n.bundle)
+    }
+    /// One point of the price after: minutes and the change per share.
+    static func afterMinutes(_ minutes: Int, _ change: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.afterMinutes", defaultValue: "\(minutes) min \(change)", bundle: L10n.bundle)
+    }
+    /// What if card: label before the replays' sum in R and USD.
+    static var whatIfSummary: LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfSummary", defaultValue: "Each skipped setup entered once:", bundle: L10n.bundle)
+    }
+    /// What if card: replays that won, lost, or could not run.
+    static func whatIfCounts(_ wins: Int, _ losses: Int, _ unknown: Int) -> LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfCounts", defaultValue: "\(wins) W · \(losses) L · not replayed: \(unknown)", bundle: L10n.bundle)
+    }
+    /// What if card on a day without skipped signals.
+    static var whatIfNone: LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfNone", defaultValue: "Nothing was skipped on this day.", bundle: L10n.bundle)
+    }
+    /// Footnote of the What if card.
+    static var whatIfHelp: LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfHelp", defaultValue: "The bot replays each skipped setup on the captured bars from its first signal, with the strategy's stop and exits. Gross, before fees.", bundle: L10n.bundle)
+    }
+    /// Trade detail label: how far the price went on in the trade's favour after the exit.
+    static var overshoot: LocalizedStringResource {
+      LocalizedStringResource("trades.overshoot", defaultValue: "Went on after exit", bundle: L10n.bundle)
+    }
+    /// Tooltip of the overshoot row.
+    static var overshootHelp: LocalizedStringResource {
+      LocalizedStringResource("trades.overshootHelp", defaultValue: "How far the price went on in the trade's favour after the exit, from the captured bars.", bundle: L10n.bundle)
+    }
+    /// Overshoot in USD and in R.
+    static func overshootValue(_ usd: String, _ r: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.overshootValue", defaultValue: "\(usd) · \(r)", bundle: L10n.bundle)
+    }
+    /// Trade detail label: the price change at set minutes after the exit.
+    static var priceAfterExit: LocalizedStringResource {
+      LocalizedStringResource("trades.priceAfterExit", defaultValue: "Price after exit", bundle: L10n.bundle)
     }
     /// Stat card: average result in R.
     static var averageR: LocalizedStringResource {
@@ -1513,14 +1645,6 @@ enum L10n {
     /// Card title: what-if replays.
     static var whatIf: LocalizedStringResource {
       LocalizedStringResource("trades.whatIf", defaultValue: "What if", bundle: L10n.bundle)
-    }
-    /// What-if card text.
-    static var whatIfDetail: LocalizedStringResource {
-      LocalizedStringResource("trades.whatIfDetail", defaultValue: "Replay a skipped signal as if the bot had entered, or the day under another strategy.", bundle: L10n.bundle)
-    }
-    /// Planned button: replay a skipped signal.
-    static var whatIfEntered: LocalizedStringResource {
-      LocalizedStringResource("trades.whatIfEntered", defaultValue: "If We Had Entered…", bundle: L10n.bundle)
     }
     /// Planned button: replay with another strategy.
     static var whatIfStrategy: LocalizedStringResource {
@@ -1689,6 +1813,22 @@ enum L10n {
     /// Configured daily loss limit.
     static var dailyLoss: LocalizedStringResource {
       LocalizedStringResource("risk.dailyLoss", defaultValue: "Daily loss limit", bundle: L10n.bundle)
+    }
+    /// Accessibility label of the position slot tiles.
+    static var slots: LocalizedStringResource {
+      LocalizedStringResource("risk.slots", defaultValue: "Position slots", bundle: L10n.bundle)
+    }
+    /// A free position slot.
+    static var freeSlot: LocalizedStringResource {
+      LocalizedStringResource("risk.freeSlot", defaultValue: "free", bundle: L10n.bundle)
+    }
+    /// An open position's size in its slot: "10 @ 12.34".
+    static func slotSize(_ quantity: String, _ entry: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.slotSize", defaultValue: "\(quantity) @ \(entry)", bundle: L10n.bundle)
+    }
+    /// An open position's stop in its slot.
+    static func slotStop(_ price: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.slotStop", defaultValue: "stop \(price)", bundle: L10n.bundle)
     }
     /// Configured position count.
     static var openPositions: LocalizedStringResource {
@@ -1873,6 +2013,38 @@ enum L10n {
     /// What observers do.
     static var observersNote: LocalizedStringResource {
       LocalizedStringResource("lab.observersNote", defaultValue: "Shadow versions see the same data live and record their decisions without trading.", bundle: L10n.bundle)
+    }
+    /// Name of the Lab chart: each version's gross result through the day.
+    static var curves: LocalizedStringResource {
+      LocalizedStringResource("lab.curves", defaultValue: "Today if each version traded", bundle: L10n.bundle)
+    }
+    /// Footnote of the Lab chart.
+    static var curvesNote: LocalizedStringResource {
+      LocalizedStringResource("lab.curvesNote", defaultValue: "Gross USD by trade close · each line ends at the version's reported result · dashed: trade list incomplete · no line: the reason", bundle: L10n.bundle)
+    }
+    /// Legend row of the active strategy's line.
+    static func activeLine(_ name: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.activeLine", defaultValue: "\(name) · active", bundle: L10n.bundle)
+    }
+    /// Chart axis: time of day.
+    static var curveTime: LocalizedStringResource {
+      LocalizedStringResource("lab.curveTime", defaultValue: "Time", bundle: L10n.bundle)
+    }
+    /// Chart axis: gross result in USD.
+    static var curveResult: LocalizedStringResource {
+      LocalizedStringResource("lab.curveResult", defaultValue: "Result", bundle: L10n.bundle)
+    }
+    /// Chart series: a strategy version.
+    static var curveVersion: LocalizedStringResource {
+      LocalizedStringResource("lab.curveVersion", defaultValue: "Version", bundle: L10n.bundle)
+    }
+    /// Observer row: why its line is dashed.
+    static func tradesIncomplete(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.tradesIncomplete", defaultValue: "Trade list incomplete: \(cause)", bundle: L10n.bundle)
+    }
+    /// Cause of an incomplete trade list: the server cut it short.
+    static var tradesTruncated: LocalizedStringResource {
+      LocalizedStringResource("lab.tradesTruncated", defaultValue: "the bot listed only part of the trades", bundle: L10n.bundle)
     }
     /// Card title: replaying recorded days.
     static var replay: LocalizedStringResource {

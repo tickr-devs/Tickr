@@ -46,7 +46,9 @@ struct LatestEvent: View {
 
   private var line: Line? {
     if model.isLive {
-      guard let status = model.status, let event = Board.events(status).first else { return nil }
+      // A risk refusal is an event too: the latest of the two leads.
+      guard let status = model.status, let event = Board.latestEvent(status,
+        skipped: model.skipped?.day == model.today ? model.skipped : nil) else { return nil }
       return Line(time: event.time, tag: event.tag, text: event.text, color: event.tone.color)
     }
     guard let trade = model.shownTrades.max(by: { $0.closedAt.date < $1.closedAt.date }) else { return nil }
@@ -58,8 +60,9 @@ struct LatestEvent: View {
   @ViewBuilder var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.m) {
       if let line {
-        Text(verbatim: Format.marketTime(line.time)).foregroundStyle(Palette.textQuaternary)
-        Text(verbatim: line.tag).bold().textCase(.uppercase).foregroundStyle(line.color)
+        Text(L10n.Risk.clock(Format.marketTime(line.time))).foregroundStyle(Palette.textQuaternary)
+        // The tag says what happened: it never gives way; the text is cut instead.
+        Text(verbatim: line.tag).bold().textCase(.uppercase).foregroundStyle(line.color).fixedSize()
         Text(verbatim: line.text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
       } else {
         Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)

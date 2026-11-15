@@ -56,6 +56,7 @@ struct ActivityView: View {
             .symbolVariant(showsCalendar ? SymbolVariants.fill.circle : .none)
         }
         .accessibilityLabel(Text(L10n.Activity.calendar))
+        .accessibilityIdentifier(AccessibilityID.calendar)
       }
     }
     .animation(Tokens.Motion.standard, value: section)
@@ -384,8 +385,6 @@ private struct DayFigures: Equatable {
 private struct DayCard: View {
   /// Size of the day's result curve, in points.
   static let curveSize = CGSize(width: 120, height: 50)
-  /// Smallest scale the result and the counts may shrink to before they truncate.
-  static let minimumScale = 0.6
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The result as shown: counts up from zero to the day's result when the card appears.
@@ -394,9 +393,13 @@ private struct DayCard: View {
   let live: Bool
   let figures: DayFigures
 
+  @Environment(\.dynamicTypeSize) private var typeSize
+
   var body: some View {
-    // The curve goes under the figures at large text sizes, so the result stays whole.
-    RowStack(spacing: Tokens.Space.m) {
+    // At accessibility text sizes the curve goes under the figures, so the result keeps the width.
+    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: Tokens.Space.m))
+      : AnyLayout(HStackLayout(spacing: Tokens.Space.m))
+    layout {
       VStack(alignment: .leading, spacing: Tokens.Space.xs) {
         HStack(spacing: Tokens.Space.s) {
           if live { PulseDot(Palette.profit, size: Tokens.Size.dotSmall) }
@@ -407,15 +410,15 @@ private struct DayCard: View {
         Text(verbatim: Money.signedUSD(shown))
           .font(Tokens.Typography.metric)
           .foregroundStyle(Palette.result(figures.result))
-          .contentTransition(.numericText(value: NSDecimalNumber(decimal: shown).doubleValue))
           .lineLimit(1)
-          .minimumScaleFactor(Self.minimumScale)
+          .minimumScaleFactor(StatTile.minimumScale)
+          .contentTransition(.numericText(value: NSDecimalNumber(decimal: shown).doubleValue))
           .accessibilityLabel(Text(verbatim: Money.signedUSD(figures.result)))
         Text(figures.counts)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       }
-      Spacer()
+      Spacer(minLength: 0)
       // A day without closed trades has no curve; one point would draw as a lone ring.
       if figures.curve.count > 1 {
         DrawnSparkline(values: figures.curve, color: Palette.result(figures.result))
@@ -470,6 +473,8 @@ private struct TradeLine {
   /// held), when the bars were captured.
   let mae: Decimal?
   let mfe: Decimal?
+  /// Prices at set minutes after the exit, when the bot computed them.
+  let pricesAfter: [PriceAfterV1]
 
   /// A trade of today's status. MAE and MFE come from the session's record when it holds the same
   /// trade (symbol, opening and closing time); the status does not carry them.
@@ -490,6 +495,7 @@ private struct TradeLine {
     }
     mae = same?.maeUsd?.value
     mfe = same?.mfeUsd?.value
+    pricesAfter = same?.pricesAfter ?? []
   }
 
   init(_ trade: DayTrade) {
@@ -505,6 +511,7 @@ private struct TradeLine {
     stopAfter = trade.stopConfirmedAfterSeconds?.value
     mae = trade.maeUsd?.value
     mfe = trade.mfeUsd?.value
+    pricesAfter = trade.pricesAfter
   }
 
   /// "stop confirmed in 1.4 s · MAE −12.00 · MFE +30.00 (at least)", or nil with neither: what
@@ -568,7 +575,7 @@ private struct TradesList: View {
           tagSymbol: Board.exitReasonSymbol(trade.exitReason),
           tone: Tone.result(trade.result),
           result: Money.signed(trade.result),
-          figures: figures(trade), metrics: metrics(trade), metricsText: trade.metrics)
+          figures: figures(trade), metrics: metrics(trade), metricsText: trade.metrics, after: trade.pricesAfter)
           .rise(step: ActivityView.Order.list.rawValue + index)
       }
       if trades.isEmpty && positions.isEmpty {
@@ -609,27 +616,61 @@ private struct TradesList: View {
     return list
   }
 
+  private func headerText(_ symbol: String) -> some View {
+    Text(verbatim: symbol)
+      .font(Tokens.Typography.calloutMono.bold())
+      .lineLimit(1)
+      .minimumScaleFactor(StatTile.minimumScale)
+  }
+
+  private func timeText(_ time: String) -> some View {
+    Text(verbatim: time)
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(Palette.textQuaternary)
+      .lineLimit(1)
+      .minimumScaleFactor(StatTile.minimumScale)
+  }
+
+  private func resultText(_ result: String, tone: Tone) -> some View {
+    Text(verbatim: result)
+      .font(Tokens.Typography.calloutMono.bold())
+      .foregroundStyle(tone.text)
+      .lineLimit(1)
+      .minimumScaleFactor(StatTile.minimumScale)
+  }
+
   private func row(symbol: String, time: String, tag: String, tagSymbol: String, tone: Tone, result: String,
-    figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil) -> some View {
+    figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil,
+    after: [PriceAfterV1] = []) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      // Symbol and time, then the tag and the result; at large text sizes the second pair goes
-      // under the first, so the symbol and the figures stay whole.
-      RowStack(spacing: Tokens.Space.s) {
+      // One line while it fits; at large text sizes the symbol and result keep a line of their own
+      // and the time and tag wrap below, so no figure breaks in the middle or falls into letters.
+      ViewThatFits(in: .horizontal) {
         HStack(spacing: Tokens.Space.s) {
-          Text(verbatim: symbol).font(Tokens.Typography.calloutMono.bold())
-            .lineLimit(1)
-            .fixedSize()
-          Text(verbatim: time).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
-            .lineLimit(1)
-            .minimumScaleFactor(DayCard.minimumScale)
+          headerText(symbol)
+          timeText(time)
+          Spacer(minLength: Tokens.Space.s)
+          StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
+          resultText(result, tone: tone)
         }
-        Spacer(minLength: 0)
-        // The tag and the result side by side, or one under the other when a long tag at the
-        // largest text sizes leaves no room beside it.
-        ViewThatFits(in: .horizontal) {
-          HStack(spacing: Tokens.Space.s) { tagAndResult(tag: tag, tagSymbol: tagSymbol, tone: tone, result: result) }
-          VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-            tagAndResult(tag: tag, tagSymbol: tagSymbol, tone: tone, result: result)
+        VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+          HStack(spacing: Tokens.Space.s) {
+            headerText(symbol)
+            Spacer(minLength: Tokens.Space.s)
+            resultText(result, tone: tone)
+          }
+          ChipFlow {
+            timeText(time)
+            StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
+          }
+        }
+        // The largest sizes: the result ("53 @ 24.69") gets a line of its own too.
+        VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+          headerText(symbol)
+          resultText(result, tone: tone)
+          ChipFlow {
+            timeText(time)
+            StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
           }
         }
       }
@@ -648,21 +689,13 @@ private struct TradesList: View {
           .accessibilityElement(children: .ignore)
           .accessibilityLabel(Text(verbatim: metricsText ?? ""))
       }
+      // Where the price went after the exit, per share.
+      AfterLine(prices: after)
     }
     .padding(.horizontal, Tokens.Space.m)
     .padding(.vertical, Tokens.Space.m)
     .apertureCard(radius: Tokens.Radius.card)
     .accessibilityElement(children: .combine)
-  }
-
-  @ViewBuilder
-  private func tagAndResult(tag: String, tagSymbol: String, tone: Tone, result: String) -> some View {
-    StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
-    Text(verbatim: result)
-      .font(Tokens.Typography.calloutMono.bold())
-      .foregroundStyle(tone.text)
-      .lineLimit(1)
-      .fixedSize()
   }
 
   /// A row of figure chips that wraps on a narrow screen.
@@ -736,27 +769,51 @@ private struct SkippedRow: View {
       + String(localized: L10n.Activity.repeats(group.count))
   }
 
+  private func symbolText(_ symbol: String) -> some View {
+    Text(verbatim: symbol)
+      .font(Tokens.Typography.bodyMono.bold())
+      .foregroundStyle(Palette.textPrimary)
+      .lineLimit(1)
+      .minimumScaleFactor(StatTile.minimumScale)
+  }
+
+  private var tagPill: some View {
+    StatusPill(refused ? L10n.Activity.refusedTag : L10n.Activity.tooLateTag,
+      systemImage: refused ? Self.refusedSymbol : Self.tooLateSymbol, tone: refused ? .warning : .neutral)
+  }
+
+  private var whenLabel: some View {
+    Label { Text(verbatim: when) } icon: { Image(systemName: Self.whenSymbol) }
+      .labelStyle(ControlLabelStyle())
+      .font(Tokens.Typography.captionMono)
+      .foregroundStyle(Palette.textTertiary)
+      // It may wrap (between words) rather than lose the repeat count at its end.
+      .fixedSize(horizontal: false, vertical: true)
+      .hint(L10n.Activity.hintWhen)
+  }
+
   var body: some View {
     let signal = group.latest
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-        Text(verbatim: signal.symbol)
-          .font(Tokens.Typography.bodyMono.bold())
-          .foregroundStyle(Palette.textPrimary)
-        StatusPill(refused ? L10n.Activity.refusedTag : L10n.Activity.tooLateTag,
-          systemImage: refused ? Self.refusedSymbol : Self.tooLateSymbol, tone: refused ? .warning : .neutral)
-        Spacer()
-        Label { Text(verbatim: when) } icon: { Image(systemName: Self.whenSymbol) }
-          .labelStyle(ControlLabelStyle())
-          .font(Tokens.Typography.captionMono)
-          .foregroundStyle(Palette.textTertiary)
-          .hint(L10n.Activity.hintWhen)
+      // One line while it fits, else the symbol, tag and time wrap as chips.
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+          symbolText(signal.symbol)
+          tagPill
+          Spacer(minLength: Tokens.Space.s)
+          whenLabel
+        }
+        ChipFlow {
+          symbolText(signal.symbol)
+          tagPill
+          whenLabel
+        }
       }
       if let cause = group.cause {
         CauseText(cause: cause)
       }
       ChipFlow {
-        Badge(L10n.Activity.whatIfTag, tone: .highlight, planned: true)
+        Badge(L10n.Activity.whatIfTag, tone: .highlight)
         IconMetric(TradesList.entrySymbol, label: L10n.Activity.hintWhatIfEntry,
           value: signal.entryPrice.map { Money.price($0.value) } ?? Format.missing, compact: true)
         IconMetric(TradesList.stopSymbol, label: L10n.Activity.hintWhatIfStop,
@@ -766,11 +823,43 @@ private struct SkippedRow: View {
       .accessibilityLabel(Text(L10n.Activity.whatIf(signal.entryPrice.map { Money.price($0.value) } ?? Format.missing,
         signal.stopPrice.map { Money.price($0.value) } ?? Format.missing)))
       ReplayLine(whatIf: signal.whatIf)
+      AfterLine(prices: signal.pricesAfter)
     }
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
     .apertureCard()
     .accessibilityElement(children: .combine)
+  }
+}
+
+/// Where the price went after a signal or an exit, per share: "after 1m +0.12 · 5m −0.30 ·
+/// 15m —". Each change in its direction's colour; a minute with no captured bar shows a dash.
+/// Nothing when the bot sent no prices.
+private struct AfterLine: View {
+  let prices: [PriceAfterV1]
+
+  private var line: AttributedString {
+    var text = AttributedString(String(localized: L10n.Activity.after))
+    text.swiftUI.foregroundColor = Palette.textQuaternary
+    for (index, point) in prices.enumerated() {
+      let lead = (index == 0 ? ChartFormat.space : Format.separator)
+        + String(localized: L10n.Activity.minutesAfter(point.minutes)) + ChartFormat.space
+      var label = AttributedString(lead)
+      label.swiftUI.foregroundColor = Palette.textQuaternary
+      let change = point.changeUsd?.value
+      var value = AttributedString(change.map { Money.signed($0) } ?? Format.missing)
+      value.swiftUI.foregroundColor = change.map(Palette.result) ?? Palette.textQuaternary
+      text += label + value
+    }
+    return text
+  }
+
+  var body: some View {
+    if !prices.isEmpty {
+      Text(line)
+        .font(Tokens.Typography.captionMono)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 }
 
@@ -832,6 +921,9 @@ private struct CauseText: View {
           // A cause this app has no words for: the bot's own text, times made readable.
           Text(verbatim: cause.detail.isEmpty ? cause.code
             : cause.code + RefusalCause.separator + cause.readable(time: Format.time))
+        } else if let phrase = cause.phrase {
+          // The detail in the person's language, from the refusal's code and values.
+          Text(verbatim: phrase)
         } else if !cause.detail.isEmpty {
           Text(verbatim: cause.readable(time: Format.time))
         }
@@ -853,21 +945,38 @@ private struct Journal: View {
   /// Side of an event's dot, in points.
   static let dotSide: CGFloat = 7
 
+  @Environment(\.dynamicTypeSize) private var typeSize
   let events: [Board.Event]
 
   var body: some View {
     VStack(spacing: 0) {
       ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-          Text(verbatim: Format.clock(event.time))
-            .font(Tokens.Typography.annotation)
-            .foregroundStyle(Palette.textQuaternary)
-          Circle().fill(event.tone.color).frame(width: Self.dotSide, height: Self.dotSide)
-          VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-            Text(verbatim: event.tag).font(Tokens.Typography.annotationBold).foregroundStyle(event.tone.color)
-            Text(verbatim: event.text).font(.footnote).foregroundStyle(Palette.textSecondary)
+        Group {
+          if typeSize.isAccessibilitySize {
+            // The time column would leave the text a few letters per line: time and tag go on
+            // top, wrapping as chips, and the text takes the whole width below.
+            VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+              ChipFlow(spacing: Tokens.Space.s) {
+                HStack(spacing: Tokens.Space.s) {
+                  dot(event)
+                  time(event)
+                }
+                tag(event)
+              }
+              text(event)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+          } else {
+            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+              time(event)
+              dot(event)
+              VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+                tag(event)
+                text(event)
+              }
+              Spacer(minLength: 0)
+            }
           }
-          Spacer(minLength: 0)
         }
         .padding(.horizontal, Tokens.Space.m)
         .padding(.vertical, Tokens.Space.s)
@@ -883,5 +992,29 @@ private struct Journal: View {
     .padding(.vertical, Tokens.Space.s)
     .frame(maxWidth: .infinity, alignment: .leading)
     .apertureCard(radius: Tokens.Radius.card)
+  }
+
+  private func time(_ event: Board.Event) -> some View {
+    Text(verbatim: Format.clock(event.time))
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(Palette.textQuaternary)
+      .lineLimit(1)
+      .minimumScaleFactor(StatTile.minimumScale)
+  }
+
+  private func dot(_ event: Board.Event) -> some View {
+    Circle().fill(event.tone.color).frame(width: Self.dotSide, height: Self.dotSide)
+  }
+
+  private func tag(_ event: Board.Event) -> some View {
+    Text(verbatim: event.tag)
+      .font(Tokens.Typography.annotationBold)
+      .foregroundStyle(event.tone.color)
+      .lineLimit(1)
+      .minimumScaleFactor(StatTile.minimumScale)
+  }
+
+  private func text(_ event: Board.Event) -> some View {
+    Text(verbatim: event.text).font(.footnote).foregroundStyle(Palette.textSecondary)
   }
 }

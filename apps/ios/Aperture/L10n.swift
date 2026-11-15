@@ -289,6 +289,19 @@ enum L10n {
     static func strategy(_ name: String, _ version: String) -> LocalizedStringResource {
       LocalizedStringResource("home.strategy", defaultValue: "Strategy \(name) v\(version).", bundle: L10n.bundle)
     }
+    static var entriesAllowed: LocalizedStringResource {
+      LocalizedStringResource("home.entriesAllowed", defaultValue: "Entries allowed.", bundle: L10n.bundle)
+    }
+    static var entriesPaused: LocalizedStringResource {
+      LocalizedStringResource("home.entriesPaused", defaultValue: "Entries paused by you.", bundle: L10n.bundle)
+    }
+    /// Entries wait for an expected reason (outside the session, after the last entry time).
+    static func entriesNotNow(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("home.entriesNotNow", defaultValue: "No entries now: \(cause).", bundle: L10n.bundle)
+    }
+    static func entriesBlocked(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("home.entriesBlocked", defaultValue: "Entries blocked: \(cause).", bundle: L10n.bundle)
+    }
     static func gateClosed(_ cause: String) -> LocalizedStringResource {
       LocalizedStringResource("home.gateClosed", defaultValue: "Trading gate closed: \(cause).", bundle: L10n.bundle)
     }
@@ -310,6 +323,11 @@ enum L10n {
   }
 
   enum Flow {
+    /// The event line's tag for a signal risk refused: "REFUSED".
+    /// VoiceOver label of a stage's refused tray: "2 refused".
+    static func refusedCount(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.refusedCount", defaultValue: "\(count) refused", bundle: L10n.bundle)
+    }
     /// Card title on Home: the stages a setup passes through.
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title", defaultValue: "Live flow", bundle: L10n.bundle)
@@ -339,6 +357,10 @@ enum L10n {
     /// Verified broker stops of all open positions, under the stop stage: "2/3 ✓".
     static func stopsVerified(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.stopsVerified", defaultValue: "\(verified)/\(total) ✓", bundle: L10n.bundle)
+    }
+    /// The Stop stage while some stop is not verified: "0/1", without the check mark.
+    static func stopsCount(_ verified: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stopsCount", defaultValue: "\(verified)/\(total)", bundle: L10n.bundle)
     }
     /// Symbols at a live-flow stage beyond the dots shown: "+5".
     static func more(_ count: Int) -> LocalizedStringResource {
@@ -726,6 +748,14 @@ enum L10n {
       LocalizedStringResource("activity.excursion", defaultValue: "MAE \(mae) · MFE \(mfe) (at least)",
         bundle: L10n.bundle)
     }
+    /// Leads the prices after a signal: "after 1m +0.12 · 5m −0.30".
+    static var after: LocalizedStringResource {
+      LocalizedStringResource("activity.after", defaultValue: "after", bundle: L10n.bundle)
+    }
+    /// Minutes after a signal, short: "5m".
+    static func minutesAfter(_ minutes: Int) -> LocalizedStringResource {
+      LocalizedStringResource("activity.minutesAfter", defaultValue: "\(minutes)m", bundle: L10n.bundle)
+    }
     /// What a skipped signal would have made, from the bot's replay: "would have made +$12.30 · +0.8 R".
     static func wouldHaveMade(_ result: String) -> LocalizedStringResource {
       LocalizedStringResource("activity.wouldHaveMade", defaultValue: "would have made \(result)", bundle: L10n.bundle)
@@ -1015,6 +1045,48 @@ enum L10n {
   }
 
   enum Settings {
+    static var jobs: LocalizedStringResource {
+      LocalizedStringResource("settings.jobs", defaultValue: "Jobs on the Mac", bundle: L10n.bundle)
+    }
+    static var jobsFooter: LocalizedStringResource {
+      LocalizedStringResource("settings.jobsFooter",
+        defaultValue: "Launch times are in the Mac's local time; other times are New York time.", bundle: L10n.bundle)
+    }
+    static var botService: LocalizedStringResource {
+      LocalizedStringResource("settings.botService", defaultValue: "Bot service", bundle: L10n.bundle)
+    }
+    static var notRunning: LocalizedStringResource {
+      LocalizedStringResource("settings.notRunning", defaultValue: "Not running", bundle: L10n.bundle)
+    }
+    /// The bot's status is stale: its last reported state may no longer hold.
+    static var notReported: LocalizedStringResource {
+      LocalizedStringResource("settings.notReported", defaultValue: "Not reporting", bundle: L10n.bundle)
+    }
+    static var jobPreflight: LocalizedStringResource {
+      LocalizedStringResource("settings.job.preflight", defaultValue: "Preflight", bundle: L10n.bundle)
+    }
+    static var jobBot: LocalizedStringResource {
+      LocalizedStringResource("settings.job.bot", defaultValue: "Bot start", bundle: L10n.bundle)
+    }
+    static var jobWatchdog: LocalizedStringResource {
+      LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
+    }
+    static var reconcile: LocalizedStringResource {
+      LocalizedStringResource("settings.reconcile", defaultValue: "Reconcile", bundle: L10n.bundle)
+    }
+    /// Before the countdown to the next reconcile.
+    static var nextIn: LocalizedStringResource {
+      LocalizedStringResource("settings.nextIn", defaultValue: "in", bundle: L10n.bundle)
+    }
+    static func lastAt(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("settings.lastAt", defaultValue: "last \(time)", bundle: L10n.bundle)
+    }
+    static var backup: LocalizedStringResource {
+      LocalizedStringResource("settings.backup", defaultValue: "Backup", bundle: L10n.bundle)
+    }
+    static func backupFailed(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("settings.backupFailed", defaultValue: "Failed \(time)", bundle: L10n.bundle)
+    }
     static var environmentFooter: LocalizedStringResource {
       LocalizedStringResource("settings.environmentFooter",
         defaultValue: "Sandbox or Production is set in config/bot.toml on the Mac; Production also needs your authorization file there. The phone only shows it.",

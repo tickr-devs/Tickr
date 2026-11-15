@@ -50,6 +50,17 @@ texture_move = "1.3"
 texture_move_cap = "0.012"
 # Largest change of a minute's volume either way, of that volume (below 1).
 texture_volume = "0.45"
+# Chart-only daily history, so the apps' D charts (1M, 3M, 1Y) and indicators such as RSI 14 have
+# data: this many weekdays before the minute history ([market_data] history_sessions sessions)
+# each get one D bar, a seeded random walk ending at the symbol's `base`. Holidays are not
+# skipped. The feed serves them on D charts only; the bot never reads them. Count of days.
+chart_days = 250
+# Spread of a chart day's close against its open, of the price (below 1).
+chart_daily_move = "0.025"
+# Spread of a chart day's open against the previous close, of the price (below 1).
+chart_daily_gap = "0.008"
+# Largest high above and low below a chart day's body, of the price (below 1).
+chart_daily_wick = "0.015"
 
 [scenario]
 # Symbols of the demo day (today if it is a trading session, else the latest session before it).
@@ -86,6 +97,14 @@ today = [
 commands = [
   { at = "10:24", kind = "flatten", symbol = "VLNQ" },
 ]
+
+# Demo faults for QA, off by default (empty list). Each: New York time `at`, `kind` and a
+# `symbol` of today. Kind "stop-unverified": from then on the simulated exchange shows that
+# symbol's stops in a status the bot cannot map, not working, so the apps show the open position
+# unprotected; after [orders] max_unprotected_seconds the bot closes it, as it would live. Example
+# for the open position a minute after the demo goes live:
+# faults = [{ at = "14:31", kind = "stop-unverified", symbol = "MVLD" }]
+faults = []
 
 # Past sessions for the day picker, oldest first, each a list of symbols like `today`. They run
 # the whole session, so a position still open at the flatten time is closed by the bot.

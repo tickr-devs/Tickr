@@ -28,9 +28,9 @@ struct HomeView: View {
           .apertureCard()
           .rise(step: Order.positions.rawValue)
       } else if let status = model.status {
-        if let event = Board.events(status).first {
-          LatestEventLine(event: event)
-            .rise(step: Order.ticker.rawValue)
+        if let line = LatestEventLine.latest(status: status,
+          skipped: model.skipped?.day == model.today ? model.skipped : nil) {
+          line.rise(step: Order.ticker.rawValue)
         }
         ForEach(Array(Board.positions(status).enumerated()), id: \.element.symbol) { index, position in
           PositionRow(position: position, marks: prices.marks[position.symbol])
@@ -47,7 +47,8 @@ struct HomeView: View {
         }
         let todayFlow = model.flow?.day == model.today ? model.flow : nil
         LiveFlowCard(status: status, flow: todayFlow, flowPending: model.flowPending,
-          marks: FlowBoard.marks(flow: todayFlow, skipped: model.skipped?.day == model.today ? model.skipped : nil),
+          marks: FlowBoard.marks(flow: todayFlow, skipped: model.skipped?.day == model.today ? model.skipped : nil,
+            positions: status.positions),
           maxPositions: model.settings?.risk.maxOpenPositions,
           current: model.isFresh && WireDate(newYorkDateOf: status.writtenAt.date) == model.today)
           .rise(step: Order.flow.rawValue)
@@ -78,12 +79,14 @@ struct HomeView: View {
         }
         .disabled(!model.canCommand || dayModel.shown != nil)
         .accessibilityLabel(Text(L10n.Control.title))
+        .accessibilityIdentifier(AccessibilityID.botControl)
         NavigationLink {
           SettingsView()
         } label: {
           Image(systemName: "gearshape")
         }
         .accessibilityLabel(Text(L10n.Home.settings))
+        .accessibilityIdentifier(AccessibilityID.settings)
       }
     }
     .botControl(isPresented: $showControl)
@@ -169,9 +172,11 @@ private struct DayLine: View {
       Text(verbatim: Format.day(past.day.noonInNewYork))
         .foregroundStyle(Palette.highlightText)
     } else {
-      if isToday, model.response?.stale == false {
-        PulseDot(Palette.profit, size: Tokens.Size.dotSmall)
-      }
+      // The connection's own health: green while fresh statuses arrive, amber when the status is
+      // stale, red with no status or a failed read. Only a fresh status of today pulses, and only
+      // when the health changes, not on every status write.
+      PulseDot(freshness, size: Tokens.Size.dotSmall, pulsing: isToday && isFresh,
+        event: freshness)
       Text(isToday ? L10n.Common.today(Format.day(written)) : L10n.Activity.lastSession(Format.day(written)))
     }
   }
@@ -186,6 +191,13 @@ private struct DayLine: View {
         .contentTransition(.numericText())
     }
   }
+
+  private var isFresh: Bool { model.response?.stale == false && model.fetchError == nil }
+
+  private var freshness: Color {
+    guard let response = model.response, model.fetchError == nil else { return Palette.loss }
+    return response.stale ? Palette.warning : Palette.profit
+  }
 }
 
 /// The ring with the day's result next to the headline.
@@ -196,6 +208,11 @@ private struct Summary: View {
   static let minimumScale = 0.6
   /// Symbol of a closed trading gate.
   static let gateClosedSymbol = "lock.fill"
+  /// Symbols of the entries glyph: allowed, paused by the owner, calm "not now", blocked.
+  static let entriesAllowedSymbol = "lock.open.fill"
+  static let entriesPausedSymbol = "pause.fill"
+  static let entriesNotNowSymbol = "moon.fill"
+  static let entriesBlockedSymbol = "hand.raised.fill"
 
   @Environment(AppModel.self) private var model
   /// The ring grows with the text inside it.
@@ -241,7 +258,7 @@ private struct Summary: View {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
           PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false),
-            event: model.status?.writtenAt.date)
+            event: text)
           Text(verbatim: text)
             .font(.subheadline.bold())
             .foregroundStyle(tint)
@@ -257,12 +274,14 @@ private struct Summary: View {
           // Each position's protection and the gate as glyphs; the words are in their hints.
           HStack(spacing: Tokens.Space.xs) {
             ForEach(status.positions, id: \.symbol) { position in
-              StopGlyph(state: position.stop.state, symbol: position.symbol,
-                read: status.freshness.lastBrokerReadAt?.date)
+              StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
             }
             if !status.tradingGate.open {
               StateGlyph(Self.gateClosedSymbol, tone: .warning,
-                label: L10n.Home.gateClosed(status.tradingGate.cause), style: .compact)
+                label: L10n.Home.gateClosed(ApiText.gate(status.tradingGate)), style: .compact)
+            } else {
+              let entries = Self.entries(status)
+              StateGlyph(entries.symbol, tone: entries.tone, label: entries.label, style: .compact)
             }
             Badge(verbatim: status.strategy.version, tone: .highlight)
           }
@@ -274,6 +293,16 @@ private struct Summary: View {
     }
   }
 
+  /// Whether new entries can open, as on the board: allowed, paused by the owner, a calm
+  /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph. The
+  /// bot's own entry block decides, in its precedence: a stopped bot outranks the owner's pause.
+  static func entries(_ status: StatusV1) -> (symbol: String, tone: Tone, label: LocalizedStringResource) {
+    guard let block = status.entryBlock else { return (entriesAllowedSymbol, .profit, L10n.Home.entriesAllowed) }
+    if BlockCode(rawValue: block.cause) == .entryStop { return (entriesPausedSymbol, .warning, L10n.Home.entriesPaused) }
+    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(ApiText.entryBlock(block))) }
+    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(ApiText.entryBlock(block)))
+  }
+
   private func subline(_ status: StatusV1) -> String {
     var parts: [LocalizedStringResource] = []
     for position in status.positions {
@@ -282,7 +311,8 @@ private struct Summary: View {
         : L10n.Home.stopIs(position.symbol, Board.stopStateTitle(position.stop.state)))
     }
     parts.append(L10n.Home.strategy(status.strategy.name, status.strategy.version))
-    if !status.tradingGate.open { parts.append(L10n.Home.gateClosed(status.tradingGate.cause)) }
+    parts.append(status.tradingGate.open
+      ? Self.entries(status).label : L10n.Home.gateClosed(ApiText.gate(status.tradingGate)))
     return parts.map { String(localized: $0) }.joined(separator: " ")
   }
 }
@@ -308,8 +338,7 @@ private struct PositionRow: View {
         RowStack(spacing: Tokens.Space.m) {
           VStack(alignment: .leading, spacing: Tokens.Space.xs) {
             HStack(spacing: Tokens.Space.s) {
-              StopGlyph(state: position.stop.state, symbol: position.symbol,
-                read: model.status?.freshness.lastBrokerReadAt?.date)
+              StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
               Text(verbatim: position.symbol)
                 .font(.headline.monospaced())
                 .foregroundStyle(Palette.textPrimary)
@@ -429,6 +458,8 @@ private struct LiveFlowCard: View {
   }
 
   @Namespace private var board
+  /// The stage whose refused symbols are listed in a popover (a tap on its tray).
+  @State private var openTray: StageID?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -466,9 +497,9 @@ private struct LiveFlowCard: View {
     }
     // An open position waiting for its stop shows first; then the day's stops from the flow.
     let stops: String? = if verified < positions.count || flow?.stops.isEmpty != false {
-      positions.isEmpty ? nil : String(localized: L10n.Flow.stopsVerified(verified, positions.count))
+      positions.isEmpty ? nil : Self.stops(verified, of: positions.count)
     } else {
-      flow.map { String(localized: L10n.Flow.stopsVerified(flowVerified ?? 0, $0.stops.count)) }
+      flow.map { Self.stops(flowVerified ?? 0, of: $0.stops.count) }
     }
     // The day's count stays; an entry block shows under it, red when it needs the operator.
     let blocked = !status.entriesAllowed && !status.entriesCalm
@@ -493,16 +524,23 @@ private struct LiveFlowCard: View {
     ]
   }
 
+  /// "2/2 ✓" only when every stop is verified; otherwise the bare count, never a check mark.
+  private static func stops(_ verified: Int, of total: Int) -> String {
+    String(localized: verified == total ? L10n.Flow.stopsVerified(verified, total) : L10n.Flow.stopsCount(verified, total))
+  }
+
   /// How many symbols reached `stage` today; nil until the flow is read.
   private func count(_ stage: FlowStage) -> String? {
     flow?.stages.first { $0.stage == stage }.map { String($0.count) }
   }
 
   var body: some View {
-    NavigationLink {
-      RiskView()
-    } label: {
-      VStack(alignment: .leading, spacing: Tokens.Space.m) {
+    // Only the header opens Risk: a whole-card link would swallow the refused trays' taps and
+    // host their popovers inside its label.
+    VStack(alignment: .leading, spacing: Tokens.Space.m) {
+      NavigationLink {
+        RiskView()
+      } label: {
         HStack {
           CardLabel(L10n.Flow.title)
           Spacer()
@@ -515,51 +553,58 @@ private struct LiveFlowCard: View {
               .font(Tokens.Typography.annotation)
               .foregroundStyle(Palette.textQuaternary)
           }
+          Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Palette.textQuaternary)
         }
-        // Six equal columns, as in the design (a long value never widens its stage); at large text
-        // sizes one row per stage, so the names stay whole.
-        Group {
-          if typeSize.stacksRows {
-            VStack(alignment: .leading, spacing: Tokens.Space.s) {
-              ForEach(stages) { stage in row(stage) }
-            }
-          } else {
-            HStack(alignment: .top) {
-              ForEach(stages) { stage in
-                column(stage).frame(maxWidth: .infinity, alignment: .top)
-              }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier(AccessibilityID.risk)
+      // Six equal columns, as in the design (a long value never widens its stage); at large text
+      // sizes one row per stage, so the names stay whole.
+      Group {
+        if typeSize.stacksRows {
+          VStack(alignment: .leading, spacing: Tokens.Space.s) {
+            ForEach(stages) { stage in row(stage) }
+          }
+        } else {
+          HStack(alignment: .top) {
+            ForEach(stages) { stage in
+              column(stage).frame(maxWidth: .infinity, alignment: .top)
             }
           }
-        }
-        // Until the first /flow read answers, a placeholder instead of numbers that would jump.
-        .redacted(reason: current && flowPending ? .placeholder : [])
-        // A symbol's dot flies to its next stage only when a new read moves it.
-        .animation(reduceMotion ? nil : Tokens.Motion.standard, value: marks)
-        HStack(spacing: Tokens.Space.s) {
-          StateGlyph(Self.streamSymbol, tone: streamTone,
-            label: L10n.Flow.quotes(String(localized: status.freshness.stream.title)),
-            live: current && status.freshness.stream == .fresh, event: status.writtenAt.date, style: .compact)
-          Label {
-            Text(verbatim: Format.timeOrDash(status.freshness.lastBrokerReadAt))
-          } icon: {
-            Image(systemName: Self.brokerSymbol)
-          }
-          .labelStyle(ControlLabelStyle())
-          .foregroundStyle(current && status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
-          .accessibilityLabel(Text(L10n.Flow.brokerRead(Format.timeOrDash(status.freshness.lastBrokerReadAt))))
-        }
-        .font(Tokens.Typography.annotation)
-        ForEach(status.fences, id: \.kind) { fence in
-          Label { Text(verbatim: fence.text) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
-            .font(.caption)
-            .foregroundStyle(Palette.warningText)
         }
       }
-      .padding(.horizontal, Tokens.Space.l)
-      .padding(.vertical, Tokens.Space.m)
-      .apertureCard()
+      // Until the first /flow read answers, a placeholder instead of numbers that would jump.
+      .redacted(reason: current && flowPending ? .placeholder : [])
+      // A symbol's dot flies to its next stage only when a new read moves it.
+      .animation(reduceMotion ? nil : Tokens.Motion.standard, value: marks)
+      HStack(spacing: Tokens.Space.s) {
+        StateGlyph(Self.streamSymbol, tone: streamTone,
+          label: L10n.Flow.quotes(String(localized: status.freshness.stream.title)),
+          live: current && status.freshness.stream == .fresh, event: status.freshness.stream, style: .compact)
+        Label {
+          Text(verbatim: Format.timeOrDash(status.freshness.lastBrokerReadAt))
+        } icon: {
+          Image(systemName: Self.brokerSymbol)
+        }
+        .labelStyle(ControlLabelStyle())
+        .foregroundStyle(current && status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
+        .accessibilityLabel(Text(L10n.Flow.brokerRead(Format.timeOrDash(status.freshness.lastBrokerReadAt))))
+      }
+      .font(Tokens.Typography.annotation)
+      ForEach(status.fences, id: \.kind) { fence in
+        Label { Text(verbatim: Board.fenceText(fence, status: status)) } icon: {
+          Image(systemName: "exclamationmark.triangle.fill")
+        }
+          .font(.caption)
+          .foregroundStyle(Palette.warningText)
+      }
     }
-    .buttonStyle(.plain)
+    .padding(.horizontal, Tokens.Space.l)
+    .padding(.vertical, Tokens.Space.m)
+    .apertureCard()
   }
 
   /// Stage names, in `StageID` order.
@@ -607,7 +652,8 @@ private struct LiveFlowCard: View {
       .minimumScaleFactor(FlowDot.minimumScale)
       pool(stage)
     }
-    .accessibilityElement(children: .combine)
+    // .contain, not .combine: the refused tray inside stays a button VoiceOver can activate.
+    .accessibilityElement(children: .contain)
     .unredacted(when: stage.urgent)
   }
 
@@ -634,7 +680,8 @@ private struct LiveFlowCard: View {
       .minimumScaleFactor(FlowDot.minimumScale)
       pool(stage)
     }
-    .accessibilityElement(children: .combine)
+    // .contain, not .combine: the refused tray inside stays a button VoiceOver can activate.
+    .accessibilityElement(children: .contain)
     .unredacted(when: stage.urgent)
   }
 
@@ -646,26 +693,45 @@ private struct LiveFlowCard: View {
     let passed = here.filter { !$0.refused }
     let refused = here.filter(\.refused)
     VStack(spacing: Tokens.Space.xs) {
-      if !passed.isEmpty { dots(passed, color: stage.color) }
+      // A stop dot is green unless its own stop is waiting or unconfirmed: one unprotected
+      // position reddens the stage, never the day's other stops.
+      if !passed.isEmpty {
+        dots(passed, color: stage.id == .stop ? Palette.profit : stage.color).accessibilityHidden(true)
+      }
       if !refused.isEmpty {
-        dots(refused, color: Palette.loss)
-          .padding(Tokens.Space.xs)
-          .overlay {
-            RoundedRectangle(cornerRadius: Tokens.Radius.small)
-              .strokeBorder(Palette.separatorStrong,
-                style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
-          }
+        // No hover on a phone: a tap anywhere on the tray, a full touch target wide and tall,
+        // lists who was refused and why in a popover that stays until dismissed (HIG).
+        Button {
+          openTray = stage.id
+        } label: {
+          dots(refused, color: Palette.loss, hinted: false)
+            .padding(Tokens.Space.xs)
+            .overlay {
+              RoundedRectangle(cornerRadius: Tokens.Radius.small)
+                .strokeBorder(Palette.separatorStrong,
+                  style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
+            }
+            .frame(maxWidth: .infinity, minHeight: Tokens.Size.touchTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(L10n.Flow.refusedCount(refused.count)))
+        .popover(isPresented: Binding(get: { openTray == stage.id }, set: { if !$0 { openTray = nil } })) {
+          RefusedList(marks: refused)
+            .presentationCompactAdaptation(.popover)
+            .presentationBackground(Palette.surface)
+        }
       }
     }
-    .accessibilityHidden(true)
   }
 
-  private func dots(_ marks: [FlowMark], color: Color) -> some View {
+  /// `hinted`: each dot names itself on a long press; off inside the tray, whose tap lists them all.
+  private func dots(_ marks: [FlowMark], color: Color, hinted: Bool = true) -> some View {
     VStack(spacing: Tokens.Space.xxs) {
       LazyVGrid(columns: Array(repeating: GridItem(.fixed(Tokens.Size.dotSmall), spacing: Tokens.Space.xxs),
         count: Self.poolColumns), spacing: Tokens.Space.xxs) {
         ForEach(marks.prefix(Self.poolCap)) { mark in
-          SymbolDot(mark: mark, color: color)
+          SymbolDot(mark: mark, color: color, hinted: hinted)
             .matchedGeometryEffect(id: mark.id, in: board)
             .transition(.scale.combined(with: .opacity))
         }
@@ -679,17 +745,72 @@ private struct LiveFlowCard: View {
   }
 }
 
+/// The symbols a stage refused today, each with why: the tray's popover.
+private struct RefusedList: View {
+  let marks: [FlowMark]
+
+  var body: some View {
+    // Text at reading size, never the card's shrunk or redacted styles; a list too tall for
+    // the popover (large Dynamic Type) scrolls.
+    ViewThatFits(in: .vertical) {
+      list
+      ScrollView { list }
+    }
+    .frame(width: Tokens.Size.hintMaxWidth)
+    .lineLimit(nil)
+    .minimumScaleFactor(1)
+    .unredacted()
+  }
+
+  private var list: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.m) {
+      ForEach(marks) { mark in
+        VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+          Text(verbatim: mark.id)
+            .font(.headline.monospaced())
+            .foregroundStyle(Palette.textPrimary)
+          if let note = mark.note {
+            Text(verbatim: note)
+              .font(.subheadline)
+              .foregroundStyle(Palette.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+      }
+    }
+    .padding(Tokens.Space.l)
+  }
+}
+
 /// The bot's latest event on one still line, as in the design: its New York time, its tag in its
 /// tone and what happened. A new event replaces the line; nothing scrolls.
 private struct LatestEventLine: View {
-  let event: Board.Event
+  let time: Date
+  let tag: String
+  let text: String
+  let color: Color
+
+  /// Lines the event's text may take: a fence's symbol and what it says (how long, what next)
+  /// must not be cut off on a phone.
+  static let textLines = 3
+
+  /// The newest of the status's events and today's risk refusals (a refusal is an event too).
+  static func latest(status: StatusV1, skipped: SkippedV1?) -> LatestEventLine? {
+    Board.latestEvent(status, skipped: skipped).map {
+      LatestEventLine(time: $0.time, tag: $0.tag, text: $0.text, color: $0.tone.color)
+    }
+  }
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-      Text(L10n.Home.clockET(Format.clock(event.time)))
+      Text(L10n.Home.clockET(Format.clock(time)))
         .foregroundStyle(Palette.textQuaternary)
-      Text(verbatim: event.tag).bold().foregroundStyle(event.tone.color)
-      Text(verbatim: event.text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
+      // The tag is short and says what happened: it never gives way; the text wraps instead.
+      Text(verbatim: tag).bold().textCase(.uppercase).foregroundStyle(color).fixedSize()
+      Text(verbatim: text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
+        .lineLimit(Self.textLines)
       Spacer(minLength: 0)
     }
     .font(Tokens.Typography.annotation.monospaced())
@@ -715,17 +836,27 @@ private extension View {
 private struct SymbolDot: View {
   let mark: FlowMark
   let color: Color
+  /// Whether a long press names the dot; off where a tap on the whole tray lists the dots.
+  var hinted = true
 
   /// Joins the symbol and its note in the hint.
   static let separator = "\n"
 
-  var body: some View {
+  @ViewBuilder var body: some View {
+    if hinted {
+      dot.hint(verbatim: [mark.id, mark.note].compactMap { $0 }.joined(separator: Self.separator))
+    } else {
+      dot
+    }
+  }
+
+  private var dot: some View {
     let fill: Color = switch mark.tone {
     case .normal: color
     case .pending: Palette.warning
     case .alarm: Palette.loss
     }
-    Group {
+    return Group {
       if mark.refused {
         Circle().strokeBorder(Palette.loss, lineWidth: Tokens.Stroke.regular)
       } else {
@@ -733,7 +864,6 @@ private struct SymbolDot: View {
       }
     }
     .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
-    .hint(verbatim: [mark.id, mark.note].compactMap { $0 }.joined(separator: Self.separator))
   }
 }
 

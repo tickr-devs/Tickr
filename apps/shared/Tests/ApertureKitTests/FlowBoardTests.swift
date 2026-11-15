@@ -33,8 +33,19 @@ struct FlowBoardTests {
     let abcd = try #require(FlowBoard.marks(flow: trimmed, skipped: skipped).first { $0.id == "ABCD" })
     #expect(abcd.stage == .risk)
     #expect(abcd.refused)
-    #expect(abcd.note == "1 open position(s), limit 1")
+    // The refusal's detail in the reader's language, from its code and values.
+    #expect(abcd.note == RefusalReason.positionLimitReached.text(["open": "1", "limit": "1"]))
     #expect(FlowBoard.marks(flow: flow, skipped: nil).count == 4)
     #expect(FlowBoard.marks(flow: nil, skipped: skipped).isEmpty)
+  }
+
+  @Test("An open position's own stop state colours its mark, not the stage's")
+  func openPositionTone() throws {
+    let flow = try Wire.decoder().decode(FlowV1.self, from: fixture("flow-v1.json"))
+    let status = try #require(Wire.decoder().decode(StatusResponseV1.self, from: fixture("status-response-v1.json")).status)
+    // The flow still says ABCD's stop is pending; the status, newer, says it is verified.
+    let marks = FlowBoard.marks(flow: flow, skipped: nil, positions: status.positions)
+    #expect(marks.first { $0.id == "ABCD" }?.tone == .normal)
+    #expect(marks.first { $0.id == "EFGH" }?.tone == .alarm)
   }
 }

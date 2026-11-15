@@ -73,6 +73,10 @@ struct TradesView: View {
   /// replays.
   private var dayDetail: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.l) {
+      if let clean = model.days.first(where: { $0.day == model.shownDay })?.clean {
+        CleanBadge(clean: clean)
+          .rise(step: Order.stats.rawValue)
+      }
       DayStatsRow()
         .rise(step: Order.stats.rawValue)
       TradesTable(selection: $selection, showOnChart: showOnChart)
@@ -222,6 +226,7 @@ private struct DayRow: View {
           .foregroundStyle(Palette.textQuaternary)
       }
       Spacer(minLength: Tokens.Space.s)
+      CleanMark(clean: day.clean)
       if !day.hasBars {
         Image(systemName: "chart.bar.xaxis")
           .foregroundStyle(Palette.textQuaternary)
@@ -509,6 +514,26 @@ private struct TradeDetailCard: View {
               }
               excursion(L10n.Trades.maeAtLeast, trade.maeUsd)
               excursion(L10n.Trades.mfeAtLeast, trade.mfeUsd)
+              GridRow {
+                Text(L10n.Trades.overshoot).foregroundStyle(Palette.textSecondary)
+                  .help(Text(L10n.Trades.overshootHelp))
+                if let usd = trade.overshootUsd?.value {
+                  Text(L10n.Trades.overshootValue(Money.signedUSD(usd), trade.overshootR.map { Risk.text($0.value) }
+                    ?? Format.missing))
+                    .font(Tokens.Typography.bodyMono)
+                    .foregroundStyle(Palette.result(usd))
+                } else {
+                  Text(L10n.Trades.unknown).foregroundStyle(Palette.textQuaternary)
+                    .help(Text(verbatim: trade.overshootCause ?? Format.missing))
+                }
+              }
+            }
+            if let after = WhatIfText.after(trade.pricesAfter) {
+              Divider()
+              Text(verbatim: after)
+                .font(Tokens.Typography.captionMono)
+                .foregroundStyle(Palette.textTertiary)
+                .help(Text(L10n.Trades.priceAfterExit))
             }
             Footnote(L10n.Trades.excursionLowerBound)
           }
@@ -592,11 +617,23 @@ private struct SkippedRow: View {
           CauseText(cause: cause)
             .help(Text(verbatim: cause.code))
         }
-        if let entry = signal.entryPrice, let stop = signal.stopPrice {
+        // The what-if is the setup's first signal: a repeat would not have been a second trade.
+        let setup = group.first
+        if let entry = setup.entryPrice, let stop = setup.stopPrice {
           Text(L10n.Trades.whatIfLevels(Format.price(entry.value), Format.price(stop.value)))
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(Palette.textTertiary)
         }
+        let result = WhatIfText.result(setup.whatIf)
+        HStack(spacing: Tokens.Space.xs) {
+          Circle()
+            .fill(result.color)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+          Text(verbatim: result.text)
+            .font(Tokens.Typography.captionMono)
+            .foregroundStyle(result.color)
+        }
+        .help(Text(verbatim: WhatIfText.after(setup.pricesAfter) ?? setup.pricesAfterCause ?? Format.missing))
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(.rect)
@@ -632,6 +669,9 @@ private struct CauseText: View {
           // A cause this app has no words for: the bot's own text, times made readable.
           Text(verbatim: cause.detail.isEmpty ? cause.code
             : cause.code + RefusalCause.separator + cause.readable(time: Format.marketMinute))
+        } else if let phrase = cause.phrase {
+          Text(verbatim: phrase)
+            .help(Text(verbatim: cause.readable(time: Format.marketMinute)))
         } else if !cause.detail.isEmpty {
           Text(verbatim: cause.readable(time: Format.marketMinute))
         }
@@ -643,32 +683,42 @@ private struct CauseText: View {
   }
 }
 
-/// What-if replays of skipped signals and other strategies: planned, not built yet.
+/// What the day's skipped setups would have made had each been entered once, from the bot's
+/// replays; replaying the day under another strategy is still planned.
 private struct WhatIfCard: View {
+  @Environment(AppModel.self) private var model
+
   var body: some View {
-    Card(L10n.Trades.whatIf, trailing: { PlannedTag(.backlog) }) {
-      // One strip as on the board; the buttons drop below the note when the window is narrow.
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: Tokens.Space.m) {
-          Footnote(L10n.Trades.whatIfDetail)
-          Spacer(minLength: Tokens.Space.s)
-          buttons
+    Card(L10n.Trades.whatIf) {
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        if let signals = model.skipped?.signals {
+          if let summary = WhatIfSummary.make(SkippedGroup.make(signals)) {
+            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+              Text(L10n.Trades.whatIfSummary)
+                .font(Tokens.Typography.callout)
+                .foregroundStyle(Palette.textSecondary)
+              Text(verbatim: Risk.text(summary.resultR))
+                .font(Tokens.Typography.chipValue)
+                .foregroundStyle(Palette.result(summary.resultR))
+              Text(verbatim: Money.signedUSD(summary.resultUsd))
+                .font(Tokens.Typography.calloutMono)
+                .foregroundStyle(Palette.result(summary.resultUsd))
+            }
+            Text(L10n.Trades.whatIfCounts(summary.wins, summary.losses, summary.notReplayed))
+              .font(Tokens.Typography.captionMono)
+              .foregroundStyle(Palette.textTertiary)
+          } else {
+            Footnote(L10n.Trades.whatIfNone)
+          }
         }
-        VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          Footnote(L10n.Trades.whatIfDetail)
-          buttons
+        Footnote(L10n.Trades.whatIfHelp)
+        HStack(spacing: Tokens.Space.s) {
+          Button {} label: { Text(L10n.Trades.whatIfStrategy) }
+            .disabled(true)
+          PlannedTag(.backlog)
         }
       }
     }
-  }
-
-  private var buttons: some View {
-    HStack(spacing: Tokens.Space.s) {
-      Button {} label: { Text(L10n.Trades.whatIfEntered) }
-      Button {} label: { Text(L10n.Trades.whatIfStrategy) }
-    }
-    .fixedSize()
-    .disabled(true)
   }
 }
 

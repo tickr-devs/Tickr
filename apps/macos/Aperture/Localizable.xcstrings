@@ -1480,6 +1480,23 @@
         }
       }
     },
+    "chart.decisionsDayOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decisions are recorded per day. Choose Day to see them."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Решения записываются по дням. Выберите «День», чтобы их увидеть."
+          }
+        }
+      }
+    },
     "chart.decisionsHelp" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2343,6 +2360,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ v%2$@"
+          }
+        }
+      }
+    },
+    "chart.studyWaiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough candles yet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пока мало свечей"
           }
         }
       }
@@ -3726,6 +3760,23 @@
         }
       }
     },
+    "lab.activeLine" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · active"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · активная"
+          }
+        }
+      }
+    },
     "lab.activeStrategy" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3824,6 +3875,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сравнить"
+          }
+        }
+      }
+    },
+    "lab.curveResult" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Result"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Результат"
+          }
+        }
+      }
+    },
+    "lab.curves" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today if each version traded"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сегодня, если бы торговала каждая версия"
+          }
+        }
+      }
+    },
+    "lab.curvesNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gross USD by trade close · each line ends at the version's reported result · dashed: trade list incomplete · no line: the reason"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Брутто USD по закрытию сделок · линия заканчивается на результате, который сообщает версия · пунктир: список сделок неполный · без линии: причина"
+          }
+        }
+      }
+    },
+    "lab.curveTime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Время"
+          }
+        }
+      }
+    },
+    "lab.curveVersion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Версия"
           }
         }
       }
@@ -4142,6 +4278,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Стратегии — сменные модули: активная задаётся в конфиге бота и никогда не ослабляет риск платформы."
+          }
+        }
+      }
+    },
+    "lab.tradesIncomplete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trade list incomplete: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Список сделок неполный: %@"
+          }
+        }
+      }
+    },
+    "lab.tradesTruncated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the bot listed only part of the trades"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "бот перечислил только часть сделок"
           }
         }
       }
@@ -5365,6 +5535,23 @@
         }
       }
     },
+    "risk.freeSlot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "free"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "свободно"
+          }
+        }
+      }
+    },
     "risk.gateClosed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5854,6 +6041,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Настройки недоступны: API бота не ответил."
+          }
+        }
+      }
+    },
+    "risk.slots" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position slots"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слоты позиций"
+          }
+        }
+      }
+    },
+    "risk.slotSize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ @ %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ @ %2$@"
+          }
+        }
+      }
+    },
+    "risk.slotStop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stop %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "стоп %@"
           }
         }
       }
@@ -6572,36 +6810,104 @@
         }
       }
     },
-    "settings.alertBotDown" : {
+    "settings.alertBot" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bot stopped or API unreachable"
+            "value" : "Bot down"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Бот остановлен или API недоступен"
+            "value" : "Бот не работает"
           }
         }
       }
     },
-    "settings.alertFence" : {
+    "settings.alertBotKinds" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reconciliation fence"
+            "value" : "Crashed, did not start or stop, down with an open trade"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Блок сверки"
+            "value" : "Упал, не запустился или не остановился, остановлен с открытой сделкой"
+          }
+        }
+      }
+    },
+    "settings.alertBroker" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker or quotes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Брокер или котировки"
+          }
+        }
+      }
+    },
+    "settings.alertBrokerKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown order status, foreign position, broker reads failing, quotes lost with a position"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный статус ордера, чужая позиция, сбой чтения у брокера, нет котировок при открытой позиции"
+          }
+        }
+      }
+    },
+    "settings.alertExit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A close failed"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрытие не удалось"
+          }
+        }
+      }
+    },
+    "settings.alertExitKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exit refused or not filled, flatten after the close, not flat after the flatten time"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выход отклонён или не исполнен, закрытие после закрытия рынка, позиция осталась после времени закрытия"
           }
         }
       }
@@ -6623,36 +6929,172 @@
         }
       }
     },
-    "settings.alertPosition" : {
+    "settings.alertLossLimitKinds" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Position opened or closed"
+            "value" : "No new entries for the rest of the day"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Позиция открыта или закрыта"
+            "value" : "Новых входов до конца дня не будет"
           }
         }
       }
     },
-    "settings.alertStop" : {
+    "settings.alertMorning" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Broker stop not verified"
+            "value" : "Morning checks"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стоп у брокера не подтверждён"
+            "value" : "Утренние проверки"
+          }
+        }
+      }
+    },
+    "settings.alertMorningKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preflight failed, or the broker token needs confirming"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предстартовая проверка не прошла или токен брокера ждёт подтверждения"
+          }
+        }
+      }
+    },
+    "settings.alertObservers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Observers stopped"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наблюдатели остановлены"
+          }
+        }
+      }
+    },
+    "settings.alertObserversKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too much to evaluate: observers are off for the run, trading goes on"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слишком много работы: наблюдатели выключены до перезапуска, торговля продолжается"
+          }
+        }
+      }
+    },
+    "settings.alertsFooter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot decides and sends these itself: a Mac notification and, when a recipient is set in its env file, an iMessage. The same alert repeated within a short window is shown once."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот сам решает и отправляет оповещения: уведомление на Mac и, если получатель указан в его env-файле, iMessage. Одно и то же оповещение за короткое время показывается один раз."
+          }
+        }
+      }
+    },
+    "settings.alertUnprotected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position without a working stop"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позиция без рабочего стопа"
+          }
+        }
+      }
+    },
+    "settings.alertUnprotectedKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No verified broker stop, or the broker rejected it"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стоп у брокера не подтверждён или отклонён"
+          }
+        }
+      }
+    },
+    "settings.alertWatchdog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchdog"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сторож"
+          }
+        }
+      }
+    },
+    "settings.alertWatchdogKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not flat after the close, could not check, restarted the bot or could not"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не всё закрыто после закрытия, не смог проверить, перезапустил бота или не смог"
           }
         }
       }
@@ -6721,6 +7163,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "за %lld мин до закрытия"
+          }
+        }
+      }
+    },
+    "settings.botAlerts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alerts from the bot"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оповещения бота"
           }
         }
       }
@@ -7133,23 +7592,6 @@
         }
       }
     },
-    "settings.macNotifications" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS notifications"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Уведомления macOS"
-          }
-        }
-      }
-    },
     "settings.marketTimezone" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7252,23 +7694,6 @@
         }
       }
     },
-    "settings.notificationsLater" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System notifications arrive in a later update. Until then the menu-bar icon shows the state."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Системные уведомления появятся в одном из следующих обновлений. До тех пор состояние показывает значок в строке меню."
-          }
-        }
-      }
-    },
     "settings.notionalCap" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7350,6 +7775,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ОК"
+          }
+        }
+      }
+    },
+    "settings.phonePush" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Push to the phone"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пуш на телефон"
           }
         }
       }
@@ -7983,6 +8425,40 @@
         }
       }
     },
+    "trades.afterMinutes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld min %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld мин %2$@"
+          }
+        }
+      }
+    },
+    "trades.afterPrices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Price after: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цена после: %@"
+          }
+        }
+      }
+    },
     "trades.allDays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8030,6 +8506,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Лучшая · худшая"
+          }
+        }
+      }
+    },
+    "trades.cleanBadge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clean day · broker and records agree"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чистый день · брокер и записи сходятся"
+          }
+        }
+      }
+    },
+    "trades.cleanDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended flat."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чистый день: брокер и записи бота сходились, у каждой позиции был стоп, день закрыт без позиций."
+          }
+        }
+      }
+    },
+    "trades.cleanLegend" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clean day: broker and records agree"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "чистый день: брокер и записи сходятся"
+          }
+        }
+      }
+    },
+    "trades.cleanUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verdict unknown: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оценка неизвестна: %@"
           }
         }
       }
@@ -8204,6 +8748,74 @@
         }
       }
     },
+    "trades.exitEndOfData" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bars ran out"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "бары закончились"
+          }
+        }
+      }
+    },
+    "trades.exitFlatten" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "flattened before the close"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "закрыта перед закрытием рынка"
+          }
+        }
+      }
+    },
+    "trades.exitStop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stop"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "стоп"
+          }
+        }
+      }
+    },
+    "trades.exitStrategy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "strategy exit"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "выход стратегии"
+          }
+        }
+      }
+    },
     "trades.expectancy" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8285,6 +8897,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Лучший открытый результат (MFE), не меньше"
+          }
+        }
+      }
+    },
+    "trades.needsLook" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "needs a look"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "нужна проверка"
+          }
+        }
+      }
+    },
+    "trades.needsLookBadge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs a look"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужна проверка"
           }
         }
       }
@@ -8387,6 +9033,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Нет записей"
+          }
+        }
+      }
+    },
+    "trades.notCleanDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not clean: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не чистый: %@"
           }
         }
       }
@@ -8544,6 +9207,57 @@
         }
       }
     },
+    "trades.overshoot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Went on after exit"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ушла после выхода"
+          }
+        }
+      }
+    },
+    "trades.overshootHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How far the price went on in the trade's favour after the exit, from the captured bars."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Насколько цена ушла дальше в пользу сделки после выхода, по записанным барам."
+          }
+        }
+      }
+    },
+    "trades.overshootValue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "trades.percent" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8637,6 +9351,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Предыдущий месяц"
+          }
+        }
+      }
+    },
+    "trades.priceAfterExit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Price after exit"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цена после выхода"
           }
         }
       }
@@ -9015,36 +9746,36 @@
         }
       }
     },
-    "trades.whatIfDetail" : {
+    "trades.whatIfCounts" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Replay a skipped signal as if the bot had entered, or the day under another strategy."
+            "value" : "%1$lld W · %2$lld L · not replayed: %3$lld"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Проиграть пропущенный сигнал так, будто бот вошёл, или весь день с другой стратегией."
+            "value" : "%1$lld П · %2$lld У · без расчёта: %3$lld"
           }
         }
       }
     },
-    "trades.whatIfEntered" : {
+    "trades.whatIfHelp" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If We Had Entered…"
+            "value" : "The bot replays each skipped setup on the captured bars from its first signal, with the strategy's stop and exits. Gross, before fees."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Если бы вошли…"
+            "value" : "Бот проигрывает каждый пропущенный сетап на записанных барах с первого сигнала, со стопом и выходами стратегии. Брутто, без комиссий."
           }
         }
       }
@@ -9066,6 +9797,57 @@
         }
       }
     },
+    "trades.whatIfNone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing was skipped on this day."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В этот день ничего не пропущено."
+          }
+        }
+      }
+    },
+    "trades.whatIfNoResult" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If entered: not replayed · %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Если бы вошли: без расчёта · %@"
+          }
+        }
+      }
+    },
+    "trades.whatIfResult" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If entered: %1$@ · %2$@ · %3$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Если бы вошли: %1$@ · %2$@ · %3$@"
+          }
+        }
+      }
+    },
     "trades.whatIfStrategy" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9079,6 +9861,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Другая стратегия…"
+          }
+        }
+      }
+    },
+    "trades.whatIfSummary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each skipped setup entered once:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Каждый пропущенный сетап взят один раз:"
           }
         }
       }

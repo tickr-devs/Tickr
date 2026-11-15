@@ -21,6 +21,38 @@ import Testing
     #expect(Board.positions(try status("status-response-v1.minimal.json")).isEmpty)
   }
 
+  @Test("The event line shows the latest of the status's events and the risk refusals")
+  func latestEventIncludesRefusals() throws {
+    let status = try status("status-response-v1.json")
+    #expect(Board.latestEvent(status, skipped: nil) == Board.events(status).first)
+    // ZNTH was refused at 15:35, after everything the status lists (15:00); WXYZ, later still,
+    // was not evaluated, so it is no refusal.
+    let skipped = try Wire.decoder().decode(SkippedV1.self, from: fixture("skipped-v1.json"))
+    let latest = try #require(Board.latestEvent(status, skipped: skipped))
+    #expect(latest.tag == String(localized: L10n.tagRefused))
+    let znth = try #require(skipped.signals.first { $0.symbol == "ZNTH" })
+    #expect(latest.text == "ZNTH" + Board.refusalGap + (FlowBoard.note(znth) ?? ""))
+    #expect(latest.tone == .amber)
+  }
+
+  @Test("A fence keyed by a position's or today's trade's order names that symbol first")
+  func fenceSymbol() throws {
+    let status = try status("status-response-v1.json")
+    func fence(_ kind: String) throws -> Fence {
+      let json = #"{"kind":"\#(kind)","since":"2026-11-16T15:00:00.123Z","text":"t","code":"x","params":{}}"#
+      return try Wire.decoder().decode(Fence.self, from: Data(json.utf8))
+    }
+    #expect(Board.fenceSymbol(try fence("unprotected-timeout:0001"), status: status) == "ABCD")
+    #expect(Board.fenceSymbol(try fence("status-unknown:ap-0001-s"), status: status) == "ABCD")
+    #expect(Board.fenceSymbol(try fence("unprotected:0999"), status: status) == nil)
+    #expect(Board.fenceSymbol(try fence("startup-reconcile"), status: status) == nil)
+    #expect(Board.fenceText(try fence("unprotected-timeout:0001"), status: status)
+      .hasPrefix("ABCD" + ApiText.keySeparator))
+    #expect(!Board.fenceTitle(try fence("unprotected-timeout:0001"), status: status).contains("0001"))
+    // A closed trade of the day still names the fence after its position is gone.
+    #expect(Board.fenceSymbol(try fence("unprotected-timeout:0002"), status: status) == "WXYZ")
+  }
+
   /// The fixture's status with a second open position, EFGH, whose stop is still pending.
   func twoPositions() throws -> StatusResponseV1 {
     var response = try #require(try JSONSerialization.jsonObject(with: fixture("status-response-v1.json")) as? [String: Any])

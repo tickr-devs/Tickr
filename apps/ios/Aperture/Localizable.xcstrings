@@ -86,6 +86,23 @@
         }
       }
     },
+    "activity.after" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "after"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "после"
+          }
+        }
+      }
+    },
     "activity.backToToday" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -422,6 +439,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Загружаю день…"
+          }
+        }
+      }
+    },
+    "activity.minutesAfter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldm"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld мин"
           }
         }
       }
@@ -3915,6 +3949,23 @@
         }
       }
     },
+    "flow.refusedCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld refused"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "отказов: %lld"
+          }
+        }
+      }
+    },
     "flow.risk" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3996,6 +4047,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "стоп"
+          }
+        }
+      }
+    },
+    "flow.stopsCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld"
           }
         }
       }
@@ -4149,6 +4217,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Результат дня %@, в плюс: %lld, в минус: %lld"
+          }
+        }
+      }
+    },
+    "home.entriesAllowed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entries allowed."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы разрешены."
+          }
+        }
+      }
+    },
+    "home.entriesBlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entries blocked: %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы заблокированы: %@."
+          }
+        }
+      }
+    },
+    "home.entriesNotNow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No entries now: %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сейчас без входов: %@."
+          }
+        }
+      }
+    },
+    "home.entriesPaused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entries paused by you."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы приостановлены вами."
           }
         }
       }
@@ -6552,6 +6688,40 @@
         }
       }
     },
+    "settings.backup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Резервная копия"
+          }
+        }
+      }
+    },
+    "settings.backupFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сбой %@"
+          }
+        }
+      }
+    },
     "settings.bot" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6582,6 +6752,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Бот на вашем Mac"
+          }
+        }
+      }
+    },
+    "settings.botService" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot service"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Служба бота"
           }
         }
       }
@@ -6909,6 +7096,108 @@
         }
       }
     },
+    "settings.job.bot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot start"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запуск бота"
+          }
+        }
+      }
+    },
+    "settings.job.preflight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preflight"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предстартовая проверка"
+          }
+        }
+      }
+    },
+    "settings.job.watchdog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchdog"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сторож"
+          }
+        }
+      }
+    },
+    "settings.jobs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jobs on the Mac"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Задачи на Mac"
+          }
+        }
+      }
+    },
+    "settings.jobsFooter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launch times are in the Mac's local time; other times are New York time."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Время запуска указано по часам Mac, остальное время нью-йоркское."
+          }
+        }
+      }
+    },
+    "settings.lastAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последняя %@"
+          }
+        }
+      }
+    },
     "settings.lockScreen" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6922,6 +7211,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Уведомления на экране блокировки"
+          }
+        }
+      }
+    },
+    "settings.nextIn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "in"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "через"
           }
         }
       }
@@ -7011,6 +7317,40 @@
         }
       }
     },
+    "settings.notReported" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not reporting"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет данных"
+          }
+        }
+      }
+    },
+    "settings.notRunning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not running"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не запущен"
+          }
+        }
+      }
+    },
     "settings.notYet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7058,6 +7398,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "премаркет"
+          }
+        }
+      }
+    },
+    "settings.reconcile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconcile"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сверка"
           }
         }
       }

@@ -26,11 +26,57 @@ public enum ApiText {
     return parts.count > 1 ? title + keySeparator + parts[1] : title
   }
 
-  /// The fence in words followed by the bot's own detail, which often says what to do ("close the
-  /// position in the Webull app") and stays visible until the bot sends it as codes.
+  /// What the fence says, in the person's language when the bot sent its cause as a code with
+  /// every value the sentence needs, else the bot's own words. It often says what to do ("close
+  /// the position in the Webull app"), so it stays visible.
+  public static func fenceDetail(_ fence: Fence) -> String {
+    FenceReason(rawValue: fence.code)?.text(fence.params) ?? fence.text
+  }
+
+  /// The fence in words followed by what it says.
   public static func fenceWithDetail(_ fence: Fence) -> String {
     let title = Self.fence(fence)
-    return fence.text.isEmpty ? title : title + detailSeparator + fence.text
+    let detail = fenceDetail(fence)
+    return detail.isEmpty ? title : title + detailSeparator + detail
+  }
+
+  /// The fence's title about `symbol`, when the apps know which position it concerns: the
+  /// symbol first, in place of the bot's internal key (a trade or order id). Without a symbol,
+  /// `fence(_:)`.
+  public static func fence(_ fence: Fence, symbol: String?) -> String {
+    guard let symbol else { return Self.fence(fence) }
+    let name = String(fence.kind.prefix { $0 != Fence.keySeparator })
+    let title = FenceKind(rawValue: name.replacing("-", with: "_")).map { String(localized: $0.title) } ?? name
+    return symbol + keySeparator + title
+  }
+
+  /// `fence(_:symbol:)` followed by what the fence says, so the symbol survives a cut line.
+  public static func fenceWithDetail(_ fence: Fence, symbol: String?) -> String {
+    let title = Self.fence(fence, symbol: symbol)
+    let detail = fenceDetail(fence)
+    return detail.isEmpty ? title : title + detailSeparator + detail
+  }
+
+  /// The trading gate's cause in the person's language, else the bot's own words.
+  public static func gate(_ gate: Gate) -> String {
+    GateReason(rawValue: gate.code)?.text(gate.params) ?? gate.cause
+  }
+
+  /// The gate's own reason code inside a GATE_CLOSED refusal's params.
+  static let gateKey = "gate"
+
+  /// A refused entry's detail in the person's language, from its code and values; nil when this
+  /// app has no sentence for it or the bot did not send every value (show the bot's words then).
+  public static func refusalDetail(code: String, params: [String: String]) -> String? {
+    if code == RefusalCode.gateClosed.rawValue {
+      return params[gateKey].flatMap(GateReason.init(rawValue:))?.text(params)
+    }
+    return RefusalReason(rawValue: code)?.text(params)
+  }
+
+  /// A structured refusal's detail: the sentence, else the bot's message.
+  public static func refusal(_ refusal: RefusalV1) -> String {
+    refusalDetail(code: refusal.code, params: refusal.params) ?? refusal.message
   }
 
   public static func orderSide(_ raw: String) -> String {

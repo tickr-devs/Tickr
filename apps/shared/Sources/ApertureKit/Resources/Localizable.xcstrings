@@ -1212,6 +1212,744 @@
         }
       }
     },
+    "kit.fenceReason.cancel_crashed" : {
+      "comment" : "A fence's cause (`Fence.code`). cancel_crashed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot stopped during a cancel"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот остановился во время отмены"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.cancel_failed" : {
+      "comment" : "A fence's cause (`Fence.code`). cancel_failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The order is still working after every cancel"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ордер всё ещё активен после всех отмен"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.cancel_not_sent" : {
+      "comment" : "A fence's cause (`Fence.code`). cancel_not_sent",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No cancel could be sent for {seconds} s (request budget)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отмену не удаётся отправить уже {seconds} с (лимит запросов)"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.cancel_outcome_unknown" : {
+      "comment" : "A fence's cause (`Fence.code`). cancel_outcome_unknown",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A cancel's outcome is unclear; waiting for the order's detail"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Исход отмены неясен; ждём детали ордера"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.close_not_sent" : {
+      "comment" : "A fence's cause (`Fence.code`). close_not_sent",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close of {quantity} of {expected} {symbol} not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next regular session and the bot sends the close"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрытие {quantity} из {expected} {symbol} не отправлено вне основной сессии; стоп остаётся. Закройте позицию в приложении Webull или снимите блокировку в следующей основной сессии, и бот отправит закрытие"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.crashed_during_send" : {
+      "comment" : "A fence's cause (`Fence.code`). crashed_during_send",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot stopped during a send"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот остановился во время отправки"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.detail_budget" : {
+      "comment" : "A fence's cause (`Fence.code`). detail_budget",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Order detail reads refused by the request budget"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтения деталей ордеров отклонены лимитом запросов"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.exit_not_filled" : {
+      "comment" : "A fence's cause (`Fence.code`). exit_not_filled",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Closing order {order} for {quantity} {symbol} not filled in {seconds} s (filled {filled}, {state}); nothing more is sent: check the Webull app (trading halt? no buyers?)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрывающий ордер {order} на {quantity} {symbol} не исполнен за {seconds} с (исполнено {filled}, {state}); больше ничего не отправляется: проверьте приложение Webull (торги остановлены? нет покупателей?)"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.exit_refused_no_stop" : {
+      "comment" : "A fence's cause (`Fence.code`). exit_refused_no_stop",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The close was refused and there is NO broker stop: close the position in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрытие отклонено, стопа у брокера НЕТ: закройте позицию в приложении Webull"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.exit_refused_stop_again" : {
+      "comment" : "A fence's cause (`Fence.code`). exit_refused_stop_again",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The close was refused; the stop is placed again, please look"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрытие отклонено; стоп выставлен снова, проверьте"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.foreign_order" : {
+      "comment" : "A fence's cause (`Fence.code`). foreign_order",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An open order not in the bot's records"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открытый ордер, которого нет в записях бота"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.foreign_position" : {
+      "comment" : "A fence's cause (`Fence.code`). foreign_position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A position this bot did not open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позиция, которую бот не открывал"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.given_up_order_filled" : {
+      "comment" : "A fence's cause (`Fence.code`). given_up_order_filled",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An order given up on turned out filled"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ордер, от которого бот отказался, оказался исполнен"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.held_after_replace" : {
+      "comment" : "A fence's cause (`Fence.code`). held_after_replace",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop and close on hold after an unconfirmed stop move: check the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стоп и закрытие приостановлены после неподтверждённого переноса стопа: проверьте приложение Webull"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.held_untracked_sell" : {
+      "comment" : "A fence's cause (`Fence.code`). held_untracked_sell",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop and close on hold: an untracked sell order {orders} rests in {symbol} after an unconfirmed stop move; resolve it in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стоп и закрытие приостановлены: по {symbol} висит неучтённый ордер на продажу {orders} после неподтверждённого переноса стопа; разберитесь в приложении Webull"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.open_orders_read_failed" : {
+      "comment" : "A fence's cause (`Fence.code`). open_orders_read_failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open orders read failed: {error}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтение открытых ордеров не удалось: {error}"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.operator_command" : {
+      "comment" : "A fence's cause (`Fence.code`). operator_command",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped by an operator command"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остановлено командой оператора"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.operator_emergency" : {
+      "comment" : "A fence's cause (`Fence.code`). operator_emergency",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped by an operator emergency command"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остановлено экстренной командой оператора"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.order_missing" : {
+      "comment" : "A fence's cause (`Fence.code`). order_missing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An accepted order is not found at the broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Принятый ордер не найден у брокера"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.positions_read_failed" : {
+      "comment" : "A fence's cause (`Fence.code`). positions_read_failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Positions read failed: {error}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтение позиций не удалось: {error}"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.quantity_mismatch" : {
+      "comment" : "A fence's cause (`Fence.code`). quantity_mismatch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The broker holds {held} shares, the order detail says {expected}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У брокера {held} акций, по деталям ордера {expected}"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.replace_unresolved" : {
+      "comment" : "A fence's cause (`Fence.code`). replace_unresolved",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop move to {stop_price} not confirmed: please look"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенос стопа на {stop_price} не подтверждён: проверьте"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.send_outcome_unknown" : {
+      "comment" : "A fence's cause (`Fence.code`). send_outcome_unknown",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The send's outcome is unknown"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Исход отправки неизвестен"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.shutting_down" : {
+      "comment" : "A fence's cause (`Fence.code`). shutting_down",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shutdown in progress"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Идёт завершение работы"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.startup_reconcile_pending" : {
+      "comment" : "A fence's cause (`Fence.code`). startup_reconcile_pending",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup reconciliation is still running"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сверка при запуске ещё идёт"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.status_unmapped" : {
+      "comment" : "A fence's cause (`Fence.code`). status_unmapped",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The broker reports an order status the bot does not know"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Брокер сообщает статус ордера, который бот не знает"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.stop_covers_part" : {
+      "comment" : "A fence's cause (`Fence.code`). stop_covers_part",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The verified stop covers {verified} of {expected} shares"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подтверждённый стоп покрывает {verified} из {expected} акций"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.stop_rejected_exiting" : {
+      "comment" : "A fence's cause (`Fence.code`). stop_rejected_exiting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The protective stop was refused after retries: closing the position"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Защитный стоп отклонён после повторных попыток: позиция закрывается"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.stops_over_position" : {
+      "comment" : "A fence's cause (`Fence.code`). stops_over_position",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stops cover {covered} shares, the broker holds {held}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стопы покрывают {covered} акций, у брокера {held}"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.unprotected_close_by_hand" : {
+      "comment" : "A fence's cause (`Fence.code`). unprotected_close_by_hand",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No verified stop for {seconds} s and the close was refused: close the position in the Webull app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подтверждённого стопа нет уже {seconds} с, закрытие отклонено: закройте позицию в приложении Webull"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.unprotected_exiting" : {
+      "comment" : "A fence's cause (`Fence.code`). unprotected_exiting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No verified stop for {seconds} s: closing the position"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подтверждённого стопа нет уже {seconds} с: позиция закрывается"
+          }
+        }
+      }
+    },
+    "kit.fenceReason.working_not_in_records" : {
+      "comment" : "A fence's cause (`Fence.code`). working_not_in_records",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An order works at the broker but not in the bot's records"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ордер активен у брокера, но не в записях бота"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_digest_mismatch" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_digest_mismatch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The owner authorization does not match the current configuration"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешение владельца не совпадает с текущей конфигурацией"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_file_missing" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_file_missing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Owner authorization file not found: {file}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файл разрешения владельца не найден: {file}"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_file_not_set" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_file_not_set",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Owner authorization required, but no authorization file is set"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужно разрешение владельца, но файл разрешения не задан"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_keys_wrong" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_keys_wrong",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The owner authorization file must have exactly: {keys}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В файле разрешения владельца должны быть ровно: {keys}"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_not_toml" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_not_toml",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The owner authorization file is not valid TOML"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файл разрешения владельца не является корректным TOML"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_other_environment" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_other_environment",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The owner authorization is for another environment"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешение владельца выдано для другого окружения"
+          }
+        }
+      }
+    },
+    "kit.gate.authorization_valid" : {
+      "comment" : "The trading gate's cause (`Gate.code`). authorization_valid",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Owner authorization valid"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешение владельца действует"
+          }
+        }
+      }
+    },
+    "kit.gate.trading_disabled" : {
+      "comment" : "The trading gate's cause (`Gate.code`). trading_disabled",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trading is disabled for {environment}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торговля отключена для {environment}"
+          }
+        }
+      }
+    },
+    "kit.gate.trading_enabled" : {
+      "comment" : "The trading gate's cause (`Gate.code`). trading_enabled",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trading enabled by configuration"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торговля включена конфигурацией"
+          }
+        }
+      }
+    },
     "kit.headline.allowed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1526,6 +2264,492 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Стоп-лосс"
+          }
+        }
+      }
+    },
+    "kit.refusal.AFTER_LAST_ENTRY" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. AFTER_LAST_ENTRY",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No new entries after {time}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новых входов после {time} нет"
+          }
+        }
+      }
+    },
+    "kit.refusal.BROKER_READ_STALE" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. BROKER_READ_STALE",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last broker read {age} s ago, limit {limit} s"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последнее чтение у брокера было {age} с назад, предел {limit} с"
+          }
+        }
+      }
+    },
+    "kit.refusal.CALENDAR_DAY_MISMATCH" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. CALENDAR_DAY_MISMATCH",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The calendar's day {calendar_day} is not today ({today})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "День календаря {calendar_day} не сегодняшний ({today})"
+          }
+        }
+      }
+    },
+    "kit.refusal.CLOCK_INVALID" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. CLOCK_INVALID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last broker read is {seconds} s in the future"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последнее чтение брокера на {seconds} с в будущем"
+          }
+        }
+      }
+    },
+    "kit.refusal.DAILY_CEILING" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DAILY_CEILING",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Room {room} USD is under the minimum {min_room} USD (limit {ceiling}, realized {realized}, reserved {reserved})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запас {room} USD меньше минимума {min_room} USD (лимит {ceiling}, реализовано {realized}, зарезервировано {reserved})"
+          }
+        }
+      }
+    },
+    "kit.refusal.DAILY_CEILING.total" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DAILY_CEILING total",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Realized {realized} + reserved {reserved} + this trade {new} = {total} USD, over the daily limit of {ceiling} USD"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Реализовано {realized} + зарезервировано {reserved} + эта сделка {new} = {total} USD, больше дневного лимита {ceiling} USD"
+          }
+        }
+      }
+    },
+    "kit.refusal.DECISION_INCOMPLETE" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DECISION_INCOMPLETE",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An entry without {fields}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход без {fields}"
+          }
+        }
+      }
+    },
+    "kit.refusal.DECISION_INVALID" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DECISION_INVALID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs 0 < stop {stop} < entry low {entry_low} ≤ entry high {entry_high}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужно 0 < стоп {stop} < низ входа {entry_low} ≤ верх входа {entry_high}"
+          }
+        }
+      }
+    },
+    "kit.refusal.DECISION_NOT_ACTIVE" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DECISION_NOT_ACTIVE",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decision from {strategy} {version}; the active strategy is {active}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Решение от {strategy} {version}; активная стратегия — {active}"
+          }
+        }
+      }
+    },
+    "kit.refusal.DECISION_NOT_ENTER" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DECISION_NOT_ENTER",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The decision was {verdict}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Решение: {verdict}"
+          }
+        }
+      }
+    },
+    "kit.refusal.HALF_DAY" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. HALF_DAY",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{day} is a half day"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{day} — сокращённый день"
+          }
+        }
+      }
+    },
+    "kit.refusal.NOTIONAL_OVER_CAP" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. NOTIONAL_OVER_CAP",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Value {notional} USD over the cap of {cap} USD"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сумма {notional} USD выше предела {cap} USD"
+          }
+        }
+      }
+    },
+    "kit.refusal.ORDER_PRICES_INVALID" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. ORDER_PRICES_INVALID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limit {limit} outside the window {entry_low}–{entry_high}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Лимит {limit} вне окна {entry_low}–{entry_high}"
+          }
+        }
+      }
+    },
+    "kit.refusal.ORDER_PRICES_INVALID.stop" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. ORDER_PRICES_INVALID stop",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs 0 < stop {stop} < limit {limit}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужно 0 < стоп {stop} < лимит {limit}"
+          }
+        }
+      }
+    },
+    "kit.refusal.OUTSIDE_REGULAR_SESSION" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. OUTSIDE_REGULAR_SESSION",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regular hours are {open}–{close} New York time"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Основная сессия {open}–{close} по Нью-Йорку"
+          }
+        }
+      }
+    },
+    "kit.refusal.OWN_ORDER_WORKING" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. OWN_ORDER_WORKING",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Own orders working: {count}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активных своих ордеров: {count}"
+          }
+        }
+      }
+    },
+    "kit.refusal.OWN_POSITION_OPEN" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. OWN_POSITION_OPEN",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Own positions open: {count}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыто своих позиций: {count}"
+          }
+        }
+      }
+    },
+    "kit.refusal.PLANNED_LOSS_OVER_LIMIT" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. PLANNED_LOSS_OVER_LIMIT",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planned loss {planned_loss} USD over the limit of {limit} USD"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Плановый убыток {planned_loss} USD выше предела {limit} USD"
+          }
+        }
+      }
+    },
+    "kit.refusal.POSITION_LIMIT_REACHED" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. POSITION_LIMIT_REACHED",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{open} open, limit {limit}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыто {open} при пределе {limit}"
+          }
+        }
+      }
+    },
+    "kit.refusal.PRICE_OUTSIDE_WINDOW" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. PRICE_OUTSIDE_WINDOW",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask {ask} outside the entry range {entry_low}–{limit}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аск {ask} вне диапазона входа {entry_low}–{limit}"
+          }
+        }
+      }
+    },
+    "kit.refusal.QUANTITY_BELOW_ONE" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. QUANTITY_BELOW_ONE",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quantity {quantity} is under 1 (platform maximum {maximum})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Количество {quantity} меньше 1 (максимум платформы {maximum})"
+          }
+        }
+      }
+    },
+    "kit.refusal.QUANTITY_NOT_WHOLE" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. QUANTITY_NOT_WHOLE",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quantity {quantity} is not a whole number of shares"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Количество {quantity} — не целое число акций"
+          }
+        }
+      }
+    },
+    "kit.refusal.QUOTE_INVALID" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. QUOTE_INVALID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bid {bid} / ask {ask} cannot be traded"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "По биду {bid} / аску {ask} торговать нельзя"
+          }
+        }
+      }
+    },
+    "kit.refusal.QUOTE_STALE" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. QUOTE_STALE",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quote {age} s old, limit {limit} s"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Котировка устарела: {age} с, предел {limit} с"
+          }
+        }
+      }
+    },
+    "kit.refusal.QUOTE_SYMBOL_MISMATCH" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. QUOTE_SYMBOL_MISMATCH",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quote for {quote_symbol}, decision for {symbol}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Котировка по {quote_symbol}, решение по {symbol}"
+          }
+        }
+      }
+    },
+    "kit.refusal.QUOTE_TIME_INVALID" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. QUOTE_TIME_INVALID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quote time {seconds} s ahead of the clock, limit {limit} s"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Время котировки на {seconds} с впереди часов, предел {limit} с"
+          }
+        }
+      }
+    },
+    "kit.refusal.SYMBOL_COOLDOWN" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. SYMBOL_COOLDOWN",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{symbol} closed at a loss; no entry before {until}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{symbol} закрыт в убыток; входа нет до {until}"
           }
         }
       }

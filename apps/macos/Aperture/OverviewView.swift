@@ -134,7 +134,7 @@ private struct Header: View {
             let open = status.tradingGate.open
             StateGlyph(open ? Self.gateOpenSymbol : Self.gateClosedSymbol, tone: open ? .profit : .warning,
               label: Text(verbatim: String(localized: open ? L10n.Overview.gateOpen : L10n.Overview.gateClosed)
-                + Format.lineSeparator + status.tradingGate.cause))
+                + Format.lineSeparator + ApiText.gate(status.tradingGate)))
           }
         }
         banner
@@ -272,7 +272,7 @@ private struct LiveFlowCard: View {
       // Live: a green dot and the New York time of the bot's last status write, as in the design.
       if model.isLive, let written = model.status?.writtenAt.date {
         HStack(spacing: Tokens.Space.xs) {
-          PulseDot(Palette.profit, size: Tokens.Size.dotSmall, event: written)
+          PulseDot(Palette.profit, size: Tokens.Size.dotSmall, event: model.status?.botState)
           Text(L10n.Risk.clock(Format.marketTime(written)))
         }
         .font(Tokens.Typography.captionMono)
@@ -284,7 +284,8 @@ private struct LiveFlowCard: View {
       }
     } content: {
       LatestEvent()
-      Pipeline(stages: stages, marks: FlowBoard.marks(flow: model.flow, skipped: model.skipped), moving: model.isLive)
+      Pipeline(stages: stages, marks: FlowBoard.marks(flow: model.flow, skipped: model.skipped,
+        positions: model.isLive ? model.status?.positions ?? [] : []), moving: model.isLive)
     }
   }
 
@@ -472,7 +473,10 @@ private struct Pipeline: View {
           .help(stage.note.map { Text(verbatim: $0) } ?? Text(L10n.Flow.notReported))
       }
       if let flowStage = stage.id.flowStage, !marks.isEmpty {
-        pool(marks.filter { $0.stage == flowStage && !$0.refused }, color: stage.color)
+        // A stop dot is green unless its own stop is waiting or unconfirmed: one unprotected
+        // position reddens the stage, never the day's other stops.
+        pool(marks.filter { $0.stage == flowStage && !$0.refused },
+          color: flowStage == .stop ? Palette.profit : stage.color)
         if flowStage == .universe || flowStage == .risk {
           tray(marks.filter { $0.stage == flowStage && $0.refused },
             title: flowStage == .universe ? L10n.Flow.trayExcluded : L10n.Flow.trayRefused)
@@ -688,7 +692,7 @@ private struct PositionDetail: View {
         .frame(minWidth: Self.chartMinWidth, minHeight: Self.chartMinHeight)
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.s) {
-          StopBadge(state: row.position.stop.state, read: model.status?.freshness.lastBrokerReadAt?.date)
+          StopBadge(state: row.position.stop.state, price: row.position.stop.price)
           Text(verbatim: row.position.symbol).font(Tokens.Typography.metric)
           Spacer()
           if let value = row.unrealized {
@@ -779,7 +783,7 @@ private struct PositionDetail: View {
   }
 
   /// The newest bar is too old to be the current price: shown greyed, as of its time.
-  private var isStale: Bool { row.lastBarClose == nil && row.latestClose != nil }
+  private var isStale: Bool { row.isStale }
 
   private var staleHelp: Text {
     guard isStale, let time = row.lastBarAt else { return Text(L10n.Position.lastBarClose) }
@@ -788,12 +792,12 @@ private struct PositionDetail: View {
 }
 
 /// A position's protection as a shield glyph: green when the broker stop is verified, red otherwise,
-/// pulsing once per broker read that still finds it unprotected; the state's words are its hint.
+/// pulsing once each time its state or price changes while unprotected; the state's words are its hint.
 struct StopBadge: View {
   let state: StopState
   var compact = false
-  /// The bot's last broker read: an unprotected stop pulses once per read that still finds it so.
-  var read: Date?
+  /// The stop's price: a moved stop is a change too.
+  var price: DecimalString?
 
   /// Symbols of the stop states.
   static let verifiedSymbol = "checkmark.shield.fill"
@@ -803,7 +807,7 @@ struct StopBadge: View {
 
   var body: some View {
     StateGlyph(symbol, tone: state == .verified ? .profit : state == .pending ? .warning : .loss,
-      label: Text(verbatim: state.title), live: state != .verified, event: read, style: compact ? .compact : .tile)
+      label: Text(verbatim: state.title), live: state != .verified, event: [AnyHashable(state), AnyHashable(price)], style: compact ? .compact : .tile)
   }
 
   private var symbol: String {
@@ -1103,7 +1107,7 @@ private struct BotCard: View {
         let isCurrent = model.isLive && model.fetchError == nil && model.response?.stale == false
         StatusPill(verbatim: status.entryStop ? String(localized: L10n.Common.entriesPaused) : status.botState.title,
           tone: status.entryStop ? .warning : running ? .accent : .neutral,
-          live: running && isCurrent, event: status.writtenAt.date)
+          live: running && isCurrent, event: [AnyHashable(status.botState), AnyHashable(status.entryStop)])
       }
     } content: {
       BotControls()

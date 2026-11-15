@@ -49,6 +49,7 @@ public enum Board {
   static let positionID = "position-"
   static let fenceID = "fence-"
   static let commandID = "command-"
+  static let refusalID = "refusal-"
   static let enterID = "-enter"
   static let exitID = "-exit"
   static let openID = "-open"
@@ -84,7 +85,7 @@ public enum Board {
     for fence in status.fences {
       events.append(Event(
         id: "\(fenceID)\(fence.kind)", time: fence.since.date, tag: String(localized: L10n.tagFence),
-        text: ApiText.fenceWithDetail(fence), tone: .amber))
+        text: fenceText(fence, status: status), tone: .amber))
     }
     for record in status.recentCommands {
       events.append(Event(
@@ -94,6 +95,57 @@ public enum Board {
         tone: record.outcome == .done ? .blue : .red))
     }
     return events.sorted { $0.time == $1.time ? $0.id > $1.id : $0.time > $1.time }
+  }
+
+  /// Joins the parts of a client order id ("<prefix><run>-<trade>-<leg><n>",
+  /// src/aperture/engine/core.py `_client_order_id`), so a fence keyed by a trade id finds the
+  /// position whose order carries it.
+  static let orderIDSeparator = "-"
+
+  /// The symbol a fence is about: the open position, or else today's closed trade, whose entry
+  /// or stop order id is the fence's key or carries it as its trade id. A fence raised while a
+  /// position was unprotected still names it after the exit. Nil when nothing matches (never
+  /// guessed).
+  public static func fenceSymbol(_ fence: Fence, status: StatusV1) -> String? {
+    let parts = fence.kind.split(separator: Fence.keySeparator, maxSplits: 1)
+    guard parts.count > 1 else { return nil }
+    let key = String(parts[1])
+    let trade = orderIDSeparator + key + orderIDSeparator
+    func matches(_ ids: [String?]) -> Bool {
+      let ids = ids.compactMap { $0 }
+      return ids.contains(key) || ids.contains { $0.contains(trade) }
+    }
+    if let open = status.positions.first(where: { matches([$0.entry.clientOrderId, $0.stop.clientOrderId]) }) {
+      return open.symbol
+    }
+    return status.tradesToday.first { matches([$0.entry.clientOrderId]) }?.symbol
+  }
+
+  /// A fence's title for a person: the symbol it is about in place of the bot's key, when known.
+  public static func fenceTitle(_ fence: Fence, status: StatusV1) -> String {
+    ApiText.fence(fence, symbol: fenceSymbol(fence, status: status))
+  }
+
+  /// A fence in words for the event line and the flow card: the symbol it is about first when
+  /// known, then what it is and what it says.
+  public static func fenceText(_ fence: Fence, status: StatusV1) -> String {
+    ApiText.fenceWithDetail(fence, symbol: fenceSymbol(fence, status: status))
+  }
+
+  /// Between a refused symbol and why it was refused.
+  public static let refusalGap = " "
+
+  /// The newest thing that happened today, for the event line: the first of `events(status)` or
+  /// the latest risk refusal in `skipped`, whichever came later. The status does not list
+  /// refusals, but a refused entry is an event too.
+  public static func latestEvent(_ status: StatusV1, skipped: SkippedV1?) -> Event? {
+    let event = events(status).first
+    let refusal = skipped?.signals.filter { $0.admission == .refused }.max { $0.at.date < $1.at.date }.map {
+      Event(id: "\(refusalID)\($0.symbol)", time: $0.at.date, tag: String(localized: L10n.tagRefused),
+        text: [$0.symbol, FlowBoard.note($0)].compactMap { $0 }.joined(separator: refusalGap), tone: .amber)
+    }
+    guard let event, let refusal else { return event ?? refusal }
+    return refusal.time > event.time ? refusal : event
   }
 
   public static func stopTag(_ state: StopState) -> String {
