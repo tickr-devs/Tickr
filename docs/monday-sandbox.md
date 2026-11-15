@@ -71,9 +71,19 @@ limit of 30 requests per 60 s per route that the bot uses.
 
 - **Quotes real time or delayed** (right after 09:30): manual-trade.md, "Step 0"
   (`aperture check-quote SYM`).
-- **Quotes for all subscribed symbols** (stream, webull-facts.md M3, second half): while the bot
-  runs, note in the apps whether the stream is healthy and whether quote ages stay low for the
-  symbols being watched. A stream that reconnects or goes silent is the finding.
+- **Quotes for all subscribed symbols** (stream, webull-facts.md M3, second half): no extra
+  reads. While the bot runs, note in the apps whether the stream is healthy and whether quote
+  ages stay low for the symbols being watched; a stream that reconnects or goes silent is the
+  finding. After the close, count the day's captured quotes per symbol and the stream's drop
+  counters (research.md, "latency"):
+  ```sh
+  python -m aperture.research latency \
+    --quotes data/capture/sandbox/2026-11-16/quotes.jsonl \
+    --notices data/capture/sandbox/2026-11-16/notices.jsonl \
+    --settings config/research.toml --out out/latency
+  ```
+  The bot does not record which symbols it subscribed, so a symbol missing from the report
+  was either never subscribed or silent: compare with the symbols the apps showed as watched.
 - **Chart C2** (is the bars limit shared between processes): with the bot stopped, at the
   latest 10 minutes before its 09:00 Mac time start, or after it has stopped:
   `python -m aperture.probes chart-limit SYM`. It takes about 90 s, starts two processes that
