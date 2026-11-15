@@ -187,7 +187,11 @@ configured environment, bucketed by the New York date of their journal time. Dis
   journals `reconcile-checked` `{matches_records, mismatch}` (the same test and text as
   account-v1) when the answer differs from the last such row, and otherwise at most once per
   `[orders] reconcile_proof_seconds` (300). A failed read writes none. Dates before this row
-  existed have none.
+  existed have none. A disagreement is recorded only once confirmed: a mismatch fence is set,
+  or the records disagree on two successful reconciliations in a row (a failed read in between
+  starts the count again). One pass alone can disagree for a moment: reconcile reads open
+  orders, then its step places the stop for a fill it just saw, so the stop is live in the
+  records but not in that read; such a pass writes no row.
 - `not_clean` when any of these rows exists; `causes` has one entry per kind, `journal_seqs`
   the rows (`journal.seq`) that prove it:
   - `reconcile_mismatch`: a `reconcile-checked` row with `matches_records` false that date (a
@@ -208,12 +212,16 @@ configured environment, bucketed by the New York date of their journal time. Dis
 - Otherwise `unknown` with one `cause`, checked in this order: the date is today or later
   (`the day is not over`, even with faults already recorded), no `reconcile-checked` row that
   date (`not recorded: ...`), no `day-end` row (the bot was not running after the flatten
-  time), the day-end row has `day_clean` null (no broker reads). A journal row of these kinds
-  that cannot be read makes every date `unknown` with `journal unreadable: ...`.
+  time), the day-end row has `day_clean` null (no broker reads), the session calendar cannot be
+  read or has no session that date (`calendar: ...`), or a gap in the regular session longer
+  than `[orders] reconcile_max_gap_seconds` (900; the bot down, or hours of failed reads):
+  `no reconcile-checked row from <time> to <time> (...)`. The gaps measured are between the last
+  row at or before the regular open (else the open itself), every row inside the session, and
+  the first row at or after the regular close (else the close; the early close on a half day).
+  A journal row of these kinds that cannot be read makes every date `unknown` with `journal
+  unreadable: ...`.
 - Otherwise `clean`. `reconcile_rows`, `first_reconcile_at`, `last_reconcile_at` and
-  `day_end_seq` are the evidence, shown for every verdict. The verdict does not check that the
-  reconcile rows cover the whole session evenly; a gap shows as the times of the first and last
-  row.
+  `day_end_seq` are the evidence, shown for every verdict.
 
 #### Per-trade metrics
 

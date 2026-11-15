@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,7 +12,7 @@ import pytest
 from aperture.api import cleanday
 from aperture.api import contract as api
 from aperture.api.cleanday import clean_days
-from aperture.calendar import NEW_YORK
+from aperture.calendar import NEW_YORK, SessionCalendar
 from aperture.engine.core import Fence
 from aperture.runtime import account, dayend, market, service, watch
 from aperture.runtime.alerts import AlertKind
@@ -21,6 +23,10 @@ NEXT = date(2026, 11, 17)
 TODAY = date(2026, 11, 20)
 OPEN = datetime(2026, 11, 16, 9, 30, tzinfo=NEW_YORK)
 Kind = api.CleanCauseKind
+CALENDAR_DIR = Path(__file__).resolve().parents[2] / "config" / "calendar"
+CALENDAR = SessionCalendar.load(CALENDAR_DIR)
+MAX_GAP = Decimal(900)
+EVERY = timedelta(minutes=5)
 
 
 class Journal:
@@ -49,14 +55,23 @@ class Journal:
                                          "agree": day_clean, "open_trades": 0,
                                          "day_clean": day_clean}, key=day.isoformat())
 
-    def verdict(self, day: date = DAY, today: date = TODAY) -> api.CleanDay:
-        return clean_days(self.store, "sandbox", [day], today)[day]
+    def session(self, day: date = DAY, skip: tuple[time, time] | None = None) -> None:
+        """Agreeing rows every 5 minutes from 09:20 to 16:05 New York, as the bot writes them
+        ([orders] reconcile_proof_seconds 300), none inside `skip`."""
+        at = datetime.combine(day, time(9, 20), NEW_YORK)
+        while at <= datetime.combine(day, time(16, 5), NEW_YORK):
+            if skip is None or not skip[0] <= at.time() < skip[1]:
+                self.at(at).reconcile()
+            at += EVERY
+
+    def verdict(self, day: date = DAY, today: date = TODAY,
+                calendar: SessionCalendar | None = CALENDAR) -> api.CleanDay:
+        return clean_days(self.store, "sandbox", [day], today, calendar, MAX_GAP)[day]
 
 
 def _clean_day(tmp_path) -> Journal:
     journal = Journal(tmp_path)
-    journal.reconcile()
-    journal.at(OPEN + timedelta(hours=3)).reconcile()
+    journal.session()
     journal.day_end()
     return journal
 
@@ -75,9 +90,9 @@ def test_agreeing_reconcile_rows_and_a_clean_day_end_are_clean(tmp_path):
     journal = _clean_day(tmp_path)
     verdict = journal.verdict()
     assert (verdict.verdict, verdict.cause, verdict.causes) == (api.CleanVerdict.CLEAN, None, ())
-    assert verdict.reconcile_rows == 2
-    assert verdict.first_reconcile_at == OPEN
-    assert verdict.last_reconcile_at == OPEN + timedelta(hours=3)
+    assert verdict.reconcile_rows == 82
+    assert verdict.first_reconcile_at == OPEN - timedelta(minutes=10)
+    assert verdict.last_reconcile_at == datetime(2026, 11, 16, 16, 5, tzinfo=NEW_YORK)
     assert verdict.day_end_seq == journal.store.journal(dayend.DAY_END)[0].seq
 
 
@@ -137,12 +152,12 @@ def test_an_unknown_outcome_counts_only_while_unresolved_at_the_end_of_the_day(t
     assert [(c.kind, c.journal_seqs) for c in found.causes] == [
         (Kind.UNKNOWN_ORDER_OUTCOME, (later,))]
     # Still set on the next day: that day is not clean either, until it is cleared.
-    journal.at(datetime(2026, 11, 17, 9, 30, tzinfo=NEW_YORK)).reconcile()
+    journal.session(NEXT)
     journal.day_end(NEXT)
     assert journal.verdict(NEXT).causes[0].journal_seqs == (later,)
     journal.at(datetime(2026, 11, 18, 9, 30, tzinfo=NEW_YORK)).row("fence-cleared", {}, key)
     assert journal.verdict(NEXT).verdict is api.CleanVerdict.NOT_CLEAN
-    journal.at(datetime(2026, 11, 18, 9, 31, tzinfo=NEW_YORK)).reconcile()
+    journal.session(date(2026, 11, 18))
     journal.day_end(date(2026, 11, 18))
     assert journal.verdict(date(2026, 11, 18)).verdict is api.CleanVerdict.CLEAN
 
@@ -195,7 +210,7 @@ def test_an_unreadable_row_makes_every_day_unknown(tmp_path):
 
 
 def test_no_database_is_unknown(tmp_path):
-    found = clean_days(None, "sandbox", [DAY, TODAY], TODAY)
+    found = clean_days(None, "sandbox", [DAY, TODAY], TODAY, CALENDAR, MAX_GAP)
     assert found[DAY].cause == cleanday.NOT_RECORDED and found[TODAY].cause == cleanday.NOT_OVER
 
 
@@ -204,7 +219,42 @@ def test_days_carry_the_verdict(tmp_path):
 
     journal = _clean_day(tmp_path)
     journal.store.close()
-    paths = HistoryPaths("sandbox", tmp_path / "db.sqlite3", tmp_path / "capture")
+    paths = HistoryPaths("sandbox", tmp_path / "db.sqlite3", tmp_path / "capture", CALENDAR_DIR,
+                         MAX_GAP)
     (summary,) = History(paths).days(TODAY).days
     assert summary.day == DAY and summary.clean.verdict is api.CleanVerdict.CLEAN
     assert api.loads(api.DaysV1, api.dumps(History(paths).days(TODAY))).days == (summary,)
+
+
+@pytest.mark.parametrize(("skip", "gap"), [
+    ((time(11, 0), time(13, 0)), ("15:55:00", "18:00:00")),  # hours of failed reads
+    ((time(9, 0), time(10, 0)), ("14:30:00", "15:00:00")),  # no row near the open
+    ((time(15, 30), time(17, 0)), ("20:25:00", "21:00:00")),  # none near the close
+])
+def test_a_long_gap_between_reconcile_rows_in_the_session_is_unknown(tmp_path, skip, gap):
+    journal = Journal(tmp_path)
+    journal.session(skip=skip)
+    journal.day_end()
+    found = journal.verdict()
+    assert found.verdict is api.CleanVerdict.UNKNOWN
+    assert found.cause is not None and found.cause.startswith(
+        f"no reconcile-checked row from 2026-11-16T{gap[0]}.000Z to 2026-11-16T{gap[1]}.000Z")
+    assert "reconcile_max_gap_seconds 900" in found.cause
+
+
+def test_a_gap_up_to_the_largest_allowed_and_one_outside_the_session_stay_clean(tmp_path):
+    journal = Journal(tmp_path)
+    # 10:00 -> 10:15 is exactly 900 s; 16:05 -> 19:00 is after the close.
+    journal.session(skip=(time(10, 1), time(10, 15)))
+    journal.at(datetime(2026, 11, 16, 19, 0, tzinfo=NEW_YORK)).reconcile()
+    journal.day_end()
+    assert journal.verdict().verdict is api.CleanVerdict.CLEAN
+
+
+def test_without_a_calendar_no_day_is_clean(tmp_path):
+    journal = _clean_day(tmp_path)
+    assert journal.verdict(calendar=None).cause == cleanday.NO_CALENDAR
+    weekend = date(2026, 11, 14)
+    journal.session(weekend)
+    journal.day_end(weekend)
+    assert journal.verdict(weekend).cause.startswith("calendar: ")

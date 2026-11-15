@@ -15,7 +15,7 @@ from aperture.runtime import entries, service
 from aperture.runtime.account import NOT_AGREED, RECONCILE_CHECKED, record_reconcile
 from aperture.types import OrderDetail, OrderState, OrderType, Position, Side
 
-from .test_service import CFG, Bot, opened
+from .test_service import CFG, ROOT, Bot, opened
 
 
 def with_account(bot: Bot, tmp_path) -> Bot:
@@ -143,22 +143,69 @@ def test_reconcile_rows_record_each_change_at_once_and_a_same_answer_once_per_in
     bot = Bot(tmp_path, broker=FakeBroker())
     interval = timedelta(seconds=float(CFG.orders.reconcile_proof_seconds))
     bot.engine.recover()
-    record_reconcile(bot.engine)
+    assert record_reconcile(bot.engine, False) is False
     assert _checked(bot) == [(True, None)]
     bot.now += interval - timedelta(seconds=1)
     assert bot.engine.reconcile()
-    record_reconcile(bot.engine)
+    record_reconcile(bot.engine, False)
     assert len(_checked(bot)) == 1  # same answer, too soon
-    bot.engine.broker_view = BrokerView((Position("ABC", D(1), D(5)),), ())
-    record_reconcile(bot.engine)  # a change: recorded at once
-    assert _checked(bot)[-1] == (False, NOT_AGREED)
+    # A fence is a confirmed mismatch: recorded at once.
+    with bot.store.transaction():
+        bot.engine._fence_row(Fence.FOREIGN_ORDER, "m1", "open order not in our records")
+    assert record_reconcile(bot.engine, False) is False
+    assert _checked(bot)[-1] == (False, f"{Fence.FOREIGN_ORDER}:m1: open order not in our records")
+    with bot.store.transaction():
+        bot.store.execute("DELETE FROM fences")
     assert bot.engine.reconcile()
-    record_reconcile(bot.engine)
+    record_reconcile(bot.engine, False)
     assert _checked(bot)[-1] == (True, None) and len(_checked(bot)) == 3
     bot.now += interval
     assert bot.engine.reconcile()
-    record_reconcile(bot.engine)
+    record_reconcile(bot.engine, False)
     assert len(_checked(bot)) == 4  # same answer, the interval passed
+
+
+def test_a_disagreement_without_a_fence_is_recorded_once_two_passes_in_a_row_show_it(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())
+    bot.engine.recover()
+    disagreed = record_reconcile(bot.engine, False)
+    bot.engine.broker_view = BrokerView((Position("ABC", D(1), D(5)),), ())
+    disagreed = record_reconcile(bot.engine, disagreed)
+    assert disagreed and _checked(bot) == [(True, None)]  # one pass alone: not recorded
+    disagreed = record_reconcile(bot.engine, disagreed)  # still there on the next pass
+    assert _checked(bot) == [(True, None), (False, NOT_AGREED)]
+
+
+def test_a_fill_seen_inside_a_reconcile_pass_never_records_a_mismatch(tmp_path):
+    """Reconcile reads open orders, then its step sees the entry fill and places the stop: the
+    stop is live in the records but not in that read, for one pass only."""
+    from aperture.api import cleanday
+    from aperture.calendar import SessionCalendar
+
+    bot = Bot(tmp_path, broker=FakeBroker())
+    bot.engine.recover()
+    disagreed = record_reconcile(bot.engine, False)
+    t = bot.engine.open_trade("ABC", D(2), D(10), D("9.80"), D(1))
+    bot.broker.fill(bot.engine.orders(t)[0].client_order_id, D(2), D(10))
+    seen = []
+    for _ in range(4):
+        bot.now += timedelta(seconds=float(CFG.orders.reconcile_proof_seconds))
+        assert bot.engine.reconcile()
+        disagreed = record_reconcile(bot.engine, disagreed)
+        seen.append(disagreed)
+    assert seen[0] is True and not any(seen[1:])  # the transient pass happened
+    assert {matches for matches, _ in _checked(bot)} == {True}
+    with bot.store.transaction():  # the engine's run, as the bot's start would record it
+        bot.store.execute(
+            "INSERT INTO runs(run_id, started_at, environment, config_digest, strategy, "
+            "strategy_version, code_version) VALUES (?, ?, ?, 'd', 's', '1', 'c')",
+            (bot.engine.run_id, bot.store.stamp(), CFG.environment_name))
+    day = bot.now.date()
+    calendar = SessionCalendar.load((ROOT / CFG.session.calendar_file).parent)
+    verdict = cleanday.clean_days(bot.store, CFG.environment_name, [day], day, calendar,
+                                  CFG.orders.reconcile_max_gap_seconds)[day]
+    # The startup row and three of the four passes: the transient one wrote nothing.
+    assert verdict.causes == () and verdict.reconcile_rows == 4
 
 
 def test_the_loop_records_reconcile_rows_but_not_after_a_failed_read(tmp_path):

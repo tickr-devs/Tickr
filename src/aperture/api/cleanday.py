@@ -7,8 +7,9 @@ and no emergency command ran, and the day-end check found the broker flat and ag
 
 Refuse, never guess: a fault proven by a row makes the date `not_clean` (each cause names its
 rows); otherwise anything the journal does not prove makes it `unknown` with one cause (the day
-is not over, no `reconcile-checked` row that date, no day-end row, unknown day-end reads, a row
-that cannot be read). Read-only and display only: nothing in the bot reads it.
+is not over, no `reconcile-checked` row that date, no day-end row, unknown day-end reads, a gap
+between reconcile rows in the regular session longer than `[orders] reconcile_max_gap_seconds`,
+a row that cannot be read). Read-only and display only: nothing in the bot reads it.
 
 The journal kinds read here are written by the runtime; `tests/api/test_cleanday.py` checks
 that these names equal the writers' own constants.
@@ -20,10 +21,11 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
 
 from aperture.api import contract as api
-from aperture.calendar import NEW_YORK, ny_date_of
+from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar, ny_date_of
 from aperture.engine.core import Fence
 from aperture.store import Store
 
@@ -55,6 +57,7 @@ NOT_RECORDED = ("not recorded: no reconcile-checked row that date (the bot recor
                 "[orders] reconcile_proof_seconds was added)")
 NO_DAY_END = "no day-end row that date (the bot was not running after the flatten time)"
 DAY_END_UNKNOWN = "the day-end check had no broker reads (day_clean null)"
+NO_CALENDAR = "the session calendar cannot be read"
 
 
 class _Unreadable(ValueError):
@@ -135,8 +138,34 @@ def _collect(store: Store, environment: str,
     return days, stretches
 
 
+def _gap(day: date, times: list[datetime], calendar: SessionCalendar | None,
+         max_gap: Decimal) -> str | None:
+    """Why the reconcile rows do not cover the regular session, or None when they do: every
+    gap between the last row before the open (else the open), the rows inside the session and
+    the first row after the close (else the close) is at most `max_gap` seconds."""
+    if calendar is None:
+        return NO_CALENDAR
+    try:
+        session = calendar.day(day)
+    except CalendarRefused as exc:
+        return f"calendar: {exc}"
+    start, end = session.regular_open, session.regular_close
+    before = [t for t in times if t <= start]
+    after = [t for t in times if t >= end]
+    points = [max(before, default=start), *sorted(t for t in times if start < t < end),
+              min(after, default=end)]
+    for earlier, later in zip(points, points[1:], strict=False):
+        seconds = (later - earlier).total_seconds()
+        if seconds > max_gap:
+            return (f"no reconcile-checked row from {api.format_time(earlier)} to "
+                    f"{api.format_time(later)} ({seconds:.0f} s, more than [orders] "
+                    f"reconcile_max_gap_seconds {max_gap})")
+    return None
+
+
 def _verdict(day: date, today: date, found: _Day,
-             stretches: dict[str, list[tuple[int, datetime, datetime | None]]]) -> api.CleanDay:
+             stretches: dict[str, list[tuple[int, datetime, datetime | None]]],
+             calendar: SessionCalendar | None, max_gap: Decimal) -> api.CleanDay:
     end = _end_of(day)
     for key, spans in sorted(stretches.items()):
         for seq, since, cleared in spans:
@@ -159,7 +188,7 @@ def _verdict(day: date, today: date, found: _Day,
              else NOT_RECORDED if not times
              else NO_DAY_END if found.day_end is None
              else DAY_END_UNKNOWN if found.day_end[1].get("day_clean") is not True
-             else None)
+             else _gap(day, times, calendar, max_gap))
     verdict = (api.CleanVerdict.UNKNOWN if cause is not None
                else api.CleanVerdict.NOT_CLEAN if causes else api.CleanVerdict.CLEAN)
     return api.CleanDay(verdict, cause, causes if verdict is api.CleanVerdict.NOT_CLEAN else (),
@@ -171,10 +200,13 @@ def unknown(day_cause: str) -> api.CleanDay:
     return api.CleanDay(api.CleanVerdict.UNKNOWN, day_cause, (), 0, None, None, None)
 
 
-def clean_days(store: Store | None, environment: str, days: Iterable[date],
-               today: date) -> dict[date, api.CleanDay]:
+def clean_days(store: Store | None, environment: str, days: Iterable[date], today: date,
+               calendar: SessionCalendar | None, max_gap: Decimal,
+               ) -> dict[date, api.CleanDay]:
     """The verdict of each date. `store` None (no database yet): every date is unknown. A
-    journal row that cannot be read makes every date unknown with that cause."""
+    journal row that cannot be read makes every date unknown with that cause. `calendar` (None:
+    it cannot be read) gives the regular session the reconcile rows must cover with no gap
+    longer than `max_gap` seconds ([orders] reconcile_max_gap_seconds)."""
     wanted = list(days)
     if store is None:
         return {d: unknown(NOT_OVER if d >= today else NOT_RECORDED) for d in wanted}
@@ -182,4 +214,5 @@ def clean_days(store: Store | None, environment: str, days: Iterable[date],
         found, stretches = _collect(store, environment)
     except _Unreadable as exc:
         return {d: unknown(f"journal unreadable: {exc}") for d in wanted}
-    return {d: _verdict(d, today, found.get(d, _Day()), stretches) for d in wanted}
+    return {d: _verdict(d, today, found.get(d, _Day()), stretches, calendar, max_gap)
+            for d in wanted}

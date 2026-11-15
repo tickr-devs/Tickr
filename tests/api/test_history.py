@@ -7,6 +7,7 @@ import sqlite3
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,7 @@ from .test_server import api, doc, request, schema, settings  # noqa: F401 - pyt
 DAY = date(2026, 11, 16)
 OPEN = datetime(2026, 11, 16, 15, 0, tzinfo=UTC)  # 10:00 New York
 PREVIOUS = date(2026, 11, 13)
+CALENDAR_DIR = Path(__file__).resolve().parents[2] / "config" / "calendar"
 
 
 def _store(paths: HistoryPaths) -> Store:
@@ -85,7 +87,8 @@ def _bar(symbol: str, minute: int, close: str = "12.40", end: str = "\n") -> str
 
 @pytest.fixture
 def paths(tmp_path) -> HistoryPaths:
-    return HistoryPaths("sandbox", tmp_path / "aperture.sqlite3", tmp_path / "capture" / "sandbox")
+    return HistoryPaths("sandbox", tmp_path / "aperture.sqlite3",
+                        tmp_path / "capture" / "sandbox", CALENDAR_DIR, Decimal(900))
 
 
 # ---------------------------------------------------------------- closed trades

@@ -80,6 +80,7 @@ class OrdersConfig:
     unknown_absent_reads: int
     stop_held_proof_seconds: Decimal
     reconcile_proof_seconds: Decimal
+    reconcile_max_gap_seconds: Decimal
 
 
 @dataclass(frozen=True)
@@ -416,6 +417,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[orders] stop_held_proof_seconds must be above 0")
     if built["orders"].reconcile_proof_seconds <= 0:
         raise ConfigError("[orders] reconcile_proof_seconds must be above 0")
+    if not built["orders"].reconcile_max_gap_seconds > built["orders"].reconcile_proof_seconds:
+        raise ConfigError("[orders] reconcile_max_gap_seconds must be above "
+                          "reconcile_proof_seconds")
     if built["api"].account_stale_seconds <= built["orders"].reconcile_interval_seconds:
         raise ConfigError("[api] account_stale_seconds must be above [orders] "
                           "reconcile_interval_seconds (the account file is written per reconcile)")

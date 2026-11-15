@@ -22,7 +22,7 @@ from aperture.api import contract as api
 from aperture.api.cleanday import clean_days
 from aperture.api.performance import performance
 from aperture.archive import existing
-from aperture.calendar import NEW_YORK, ny_date_of
+from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar, ny_date_of
 from aperture.config import Config
 from aperture.data.capture import BARS_FILE, CaptureError, read_captured_bars
 from aperture.engine.core import (
@@ -302,12 +302,16 @@ class HistoryPaths:
     environment: str
     database: Path
     capture: Path  # <capture_dir>/<environment>
+    calendar: Path  # the session calendar's folder (clean-day verdicts)
+    reconcile_max_gap_seconds: Decimal  # [orders]: clean-day verdicts
 
     @classmethod
     def from_config(cls, config: Config) -> HistoryPaths:
         data = config.root / config.run.data_dir
         return cls(config.environment_name, data / DATABASE_FILE,
-                   data / config.market_data.capture_dir / config.environment_name)
+                   data / config.market_data.capture_dir / config.environment_name,
+                   (config.root / config.session.calendar_file).parent,
+                   config.orders.reconcile_max_gap_seconds)
 
 
 class History:
@@ -319,6 +323,7 @@ class History:
         self._lock = threading.Lock()
         self._bars_key: tuple[str, int, int, bool] | None = None
         self._bars: dict[str, list[api.BarV1]] = {}
+        self._session_calendar: SessionCalendar | None = None
 
     # ------------------------------------------------------------ sources
 
@@ -453,10 +458,23 @@ class History:
     def _of_day(trades: Iterable[api.DayTrade], day: date) -> list[api.DayTrade]:
         return [t for t in trades if ny_date_of(t.closed_at) == day]
 
+    def _calendar(self) -> SessionCalendar | None:
+        """The session calendar, loaded once; None when it cannot be read (no day is clean
+        then: the verdict says why)."""
+        with self._lock:
+            if self._session_calendar is None:
+                try:
+                    self._session_calendar = SessionCalendar.load(self.paths.calendar)
+                except (CalendarRefused, OSError):
+                    return None
+            return self._session_calendar
+
     def _clean(self, dates: set[date], today: date) -> dict[date, api.CleanDay]:
+        calendar = self._calendar()
         store = self._open()
         try:
-            return clean_days(store, self.paths.environment, dates, today)
+            return clean_days(store, self.paths.environment, dates, today, calendar,
+                              self.paths.reconcile_max_gap_seconds)
         except sqlite3.Error as exc:
             raise HistoryUnavailable(f"database unreadable: {exc}") from exc
         finally:
