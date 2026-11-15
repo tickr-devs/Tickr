@@ -14,6 +14,8 @@ Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `conf
   sends `Origin`, it must be `http://<name>:<port>`. Otherwise `403`. No CORS headers are ever sent.
 - Commands require `Content-Type: application/json` and a `Content-Length` within
   `[api] max_request_body_bytes`.
+- Both ports close a connection that sends nothing for `[api] request_timeout_seconds` (request
+  line, headers or body), so an idle or slow client cannot hold a server thread.
 
 ## Remote access (the phone)
 
