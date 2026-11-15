@@ -51,8 +51,14 @@ struct MonthCalendar: View {
   private var legend: some View {
     // One line per dot, so a narrow column wraps the words instead of clipping them.
     VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-      HStack(spacing: Tokens.Space.xs) { dot(Palette.profit); Text(L10n.Trades.cleanLegend) }
-      HStack(spacing: Tokens.Space.xs) { dot(Palette.warning); Text(L10n.Trades.needsLook) }
+      HStack(spacing: Tokens.Space.xs) {
+        dot(Palette.profit)
+        Text(L10n.Trades.cleanLegend)
+      }
+      HStack(spacing: Tokens.Space.xs) {
+        dot(Palette.warning)
+        Text(L10n.Trades.needsLook)
+      }
     }
     .font(Tokens.Typography.annotation)
     .foregroundStyle(Palette.textQuaternary)
