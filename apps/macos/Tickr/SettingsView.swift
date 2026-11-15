@@ -20,10 +20,6 @@ struct SettingsView: View {
   /// Tallest the pane area grows to its content before it scrolls, in points.
   static let maxPaneHeight: CGFloat = 600
 
-  /// The pane's height: its content up to the cap (more than the title bar, so never empty).
-  private var paneHeight: CGFloat {
-    max(min(contentHeight, Self.maxPaneHeight), titleInset + 1)
-  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -34,13 +30,13 @@ struct SettingsView: View {
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
       }
       .scrollBounceBehavior(.basedOnSize)
-      // The window adds the title bar's height to what the view asks for (the pane less that
-      // height); the pane then grows by exactly that much into the window, so the window follows
-      // the content and no empty band is left at the bottom.
-      .frame(minHeight: paneHeight - titleInset, idealHeight: paneHeight - titleInset, maxHeight: paneHeight)
+      .frame(height: min(max(contentHeight, 1), Self.maxPaneHeight))
     }
     .frame(width: Self.width)
     .background(Palette.background)
+    // The window still adds the title bar's height below a view drawn up into it; the view asks
+    // for that much less, so the window ends where the pane does, with no empty band.
+    .padding(.bottom, -titleInset)
     // No title bar of its own: the tab strip sits in it, level with the window buttons (the strip
     // is centred and narrow enough to clear them), and the chosen tab says which pane this is.
     // The window keeps the pane's name for the Window menu.
