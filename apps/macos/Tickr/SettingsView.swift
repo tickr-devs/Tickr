@@ -20,9 +20,9 @@ struct SettingsView: View {
   /// Tallest the pane area grows to its content before it scrolls, in points.
   static let maxPaneHeight: CGFloat = 600
 
-  /// The pane's height: its content up to the cap, less the title bar it is drawn under.
+  /// The pane's height: its content up to the cap (more than the title bar, so never empty).
   private var paneHeight: CGFloat {
-    max(min(max(contentHeight, 1), Self.maxPaneHeight) - titleInset, 1)
+    max(min(contentHeight, Self.maxPaneHeight), titleInset + 1)
   }
 
   var body: some View {
@@ -34,9 +34,10 @@ struct SettingsView: View {
           .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
       }
       .scrollBounceBehavior(.basedOnSize)
-      // The window adds the title bar's height to what the view asks for; the view then grows
-      // into it, so no empty band is left at the bottom.
-      .frame(idealHeight: paneHeight, maxHeight: .infinity)
+      // The window adds the title bar's height to what the view asks for (the pane less that
+      // height); the pane then grows by exactly that much into the window, so the window follows
+      // the content and no empty band is left at the bottom.
+      .frame(minHeight: paneHeight - titleInset, idealHeight: paneHeight - titleInset, maxHeight: paneHeight)
     }
     .frame(width: Self.width)
     .background(Palette.background)
