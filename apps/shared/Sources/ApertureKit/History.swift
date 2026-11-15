@@ -58,6 +58,11 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
     WireDate.newYork.date(from: DateComponents(year: year, month: month, day: day, hour: Self.anchorHour))!
   }
 
+  /// The New York date `days` calendar days later (earlier when negative).
+  public func adding(days: Int) -> WireDate {
+    WireDate(newYorkDateOf: WireDate.newYork.date(byAdding: .day, value: days, to: noonInNewYork)!)
+  }
+
   public var description: String { text }
   public static func < (a: WireDate, b: WireDate) -> Bool { a.text < b.text }
 

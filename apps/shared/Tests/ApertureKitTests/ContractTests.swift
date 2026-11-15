@@ -67,6 +67,11 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "observers-v1", "decisions-v1", "skipped-v1", "performance-v1", "account-v1", "account-response-v1"])
   }
 
+  @Test func wireDateArithmetic() throws {
+    #expect(try WireDate("2026-11-16").adding(days: -29) == WireDate("2026-10-18"))
+    #expect(try WireDate("2026-03-08").adding(days: 1) == WireDate("2026-03-09"))
+  }
+
   @Test func performanceFiguresAndCauses() throws {
     let performance = try Wire.decoder().decode(PerformanceV1.self, from: fixture("performance-v1.json"))
     #expect(performance.winRate.value?.value == Decimal(string: "0.4"))
