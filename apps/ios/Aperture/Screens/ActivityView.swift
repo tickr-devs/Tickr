@@ -762,23 +762,23 @@ private struct ReplayLine: View {
     }
   }
 
+  /// "would have made +$12.30" in the result's colour (neutral at zero), then R and the ending.
+  private func line(_ result: Decimal) -> AttributedString {
+    var text = AttributedString(localized: L10n.Activity.wouldHaveMade(Money.signedUSD(result)))
+    text.swiftUI.foregroundColor = Palette.result(result)
+    var rest = whatIf.resultR.map { Format.separator + Risk.text($0.value) } ?? ""
+    if let ending { rest += Format.separator + String(localized: ending) }
+    var tail = AttributedString(rest)
+    tail.swiftUI.foregroundColor = Palette.textTertiary
+    return text + tail
+  }
+
   var body: some View {
     if let result = whatIf.resultGrossUsd?.value {
-      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
-        Text(L10n.Activity.wouldHaveMade(Money.signedUSD(result)))
-          .foregroundStyle(result < 0 ? Palette.lossText : Palette.profitText)
-        if let r = whatIf.resultR?.value {
-          Text(verbatim: Format.separator + Risk.text(r))
-            .foregroundStyle(Palette.textTertiary)
-        }
-        if let ending {
-          Text(verbatim: Format.separator)
-            .foregroundStyle(Palette.textTertiary)
-          Text(ending)
-            .foregroundStyle(Palette.textTertiary)
-        }
-      }
-      .font(Tokens.Typography.captionMono)
+      // One text, so it wraps as a whole at large Dynamic Type instead of clipping a row of parts.
+      Text(line(result))
+        .font(Tokens.Typography.captionMono)
+        .fixedSize(horizontal: false, vertical: true)
     } else if let cause = whatIf.cause {
       Text(L10n.Activity.noReplay(cause))
         .font(Tokens.Typography.captionMono)
