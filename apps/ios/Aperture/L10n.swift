@@ -1045,6 +1045,19 @@ enum L10n {
     static var notRunning: LocalizedStringResource {
       LocalizedStringResource("settings.notRunning", defaultValue: "Not running", bundle: L10n.bundle)
     }
+    /// The bot's status is stale: its last reported state may no longer hold.
+    static var notReported: LocalizedStringResource {
+      LocalizedStringResource("settings.notReported", defaultValue: "Not reporting", bundle: L10n.bundle)
+    }
+    static var jobPreflight: LocalizedStringResource {
+      LocalizedStringResource("settings.job.preflight", defaultValue: "Preflight", bundle: L10n.bundle)
+    }
+    static var jobBot: LocalizedStringResource {
+      LocalizedStringResource("settings.job.bot", defaultValue: "Bot start", bundle: L10n.bundle)
+    }
+    static var jobWatchdog: LocalizedStringResource {
+      LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
+    }
     static var reconcile: LocalizedStringResource {
       LocalizedStringResource("settings.reconcile", defaultValue: "Reconcile", bundle: L10n.bundle)
     }

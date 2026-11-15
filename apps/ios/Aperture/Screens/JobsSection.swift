@@ -28,7 +28,7 @@ struct JobsSection: View {
             Text(verbatim: job.localTime + Format.separator + Self.days(job.weekdays))
               .font(.body.monospaced())
           } label: {
-            Label { Text(verbatim: job.name) } icon: { SettingsIcon(Self.launchdSymbol, tone: .info) }
+            Label { Text(verbatim: Self.title(job.name)) } icon: { SettingsIcon(Self.launchdSymbol, tone: .info) }
           }
         }
       } else if let error = model.jobsError {
@@ -43,12 +43,30 @@ struct JobsSection: View {
     }
   }
 
+  /// The bot's state as its status reports it; a stale status proves nothing about the bot now, so
+  /// it says so instead of repeating the last state.
   private func service(_ jobs: JobsV1) -> some View {
-    let running = jobs.botState == .running
-    return SettingsRow(L10n.Settings.botService, systemImage: Self.serviceSymbol, tone: running ? .accent : .neutral) {
-      StatusPill(jobs.botState?.title ?? L10n.Settings.notRunning, tone: running ? .accent : .neutral,
-        live: running && !jobs.statusStale, event: jobs.botState)
+    let running = jobs.botState == .running && !jobs.statusStale
+    let tone: Tone = jobs.statusStale ? .warning : running ? .accent : .neutral
+    let title = jobs.statusStale ? L10n.Settings.notReported : jobs.botState?.title ?? L10n.Settings.notRunning
+    return SettingsRow(L10n.Settings.botService, systemImage: Self.serviceSymbol, tone: tone) {
+      StatusPill(title, tone: tone, live: running, event: running)
     }
+  }
+
+  /// A launchd job's name in the person's language; a job this app does not know reads as named.
+  static func title(_ name: String) -> String {
+    guard let job = LaunchdJob(rawValue: name) else { return name }
+    switch job {
+    case .preflight: return String(localized: L10n.Settings.jobPreflight)
+    case .bot: return String(localized: L10n.Settings.jobBot)
+    case .watchdog: return String(localized: L10n.Settings.jobWatchdog)
+    }
+  }
+
+  /// The launchd jobs the bot installs on the Mac, by their wire names in jobs-v1.
+  enum LaunchdJob: String {
+    case preflight, bot, watchdog
   }
 
   /// The next reconcile counting down while the bot runs, else when it last ran.
