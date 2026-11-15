@@ -6,7 +6,7 @@ import SwiftUI
 /// open position's entry and stop. Live days refresh as new M1 bars arrive.
 struct ChartView: View {
   @Environment(AppModel.self) private var model
-  @State private var chart = ChartModel()
+  @Environment(ChartModel.self) private var chart
   @State private var viewport = Viewport()
   @AppStorage(Keys.symbol) private var picked = ""
   @AppStorage(Keys.timeframe) private var timeframe: Timeframe = .m1
@@ -61,9 +61,6 @@ struct ChartView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .padding(Tokens.Space.xl)
-    .inspector(isPresented: $showDecisions) {
-      DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: symbol != nil)
-    }
     .task(id: LoadKey(baseURL: model.baseURL, symbol: symbol, day: model.shownDay, live: model.isLive)) {
       await keepLoading()
     }
@@ -85,6 +82,7 @@ struct ChartView: View {
 
   private func keepLoading() async {
     chart.clear()
+    chart.hasSymbol = symbol != nil
     viewport = Viewport()
     guard let symbol else { return }
     let baseURL = model.baseURL
@@ -305,6 +303,7 @@ struct Viewport: Equatable {
 #Preview {
   ChartView()
     .environment(PreviewAPI.model())
+    .environment(ChartModel())
     .frame(width: PreviewAPI.windowWidth, height: PreviewAPI.windowHeight)
 }
 #endif

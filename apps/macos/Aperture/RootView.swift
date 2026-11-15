@@ -44,6 +44,8 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct RootView: View {
   @Environment(AppModel.self) private var model
+  @Environment(ChartModel.self) private var chart
+  @AppStorage(ChartView.Keys.decisions) private var showDecisions = false
 
   /// Sidebar width: least, preferred and most, in points.
   static let sidebarMin: CGFloat = 200
@@ -60,18 +62,20 @@ struct RootView: View {
     } detail: {
       ZStack(alignment: .bottom) {
         ApertureBackground()
-        detail
-          .safeAreaInset(edge: .top, spacing: 0) {
-            if section != .overview { EventStrip() }
-          }
-          // One container element per screen, so its id holds even when the screen's root is a
-          // split (the Chart's inspector) rather than a single view.
-          .accessibilityElement(children: .contain)
-          .accessibilityIdentifier(section.screenID)
-          // A new section replaces the screen at once, as a sidebar does in Apple's apps; the
-          // screen's own cards then rise in. Sliding whole screens in and out kept two of them
-          // (one maybe the chart) laid out and animating together, and stuttered.
-          .id(section)
+        // The strip stacked above the screen rather than a top safe-area inset whose content
+        // comes and goes, which made the screen's safe area change during layout.
+        VStack(spacing: 0) {
+          if section != .overview { EventStrip() }
+          detail
+            // One container element per screen.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(section.screenID)
+            // A new section replaces the screen at once, as a sidebar does in Apple's apps; the
+            // screen's own cards then rise in. Sliding whole screens in and out kept two of them
+            // (one maybe the chart) laid out and animating together, and stuttered.
+            .id(section)
+            .frame(maxHeight: .infinity)
+        }
         if let unattended = model.unattendedPositions {
           UnattendedBanner(unattended: unattended)
             .padding(Tokens.Space.l)
@@ -90,6 +94,17 @@ struct RootView: View {
       .navigationSubtitle(Text(verbatim: subtitle))
       .toolbar { DayToolbar() }
     }
+    // The Chart's decisions inspector is a column of the window itself, as in Apple's apps, not
+    // a split view nested in the Chart screen: on macOS 27 the nested split's columns resized
+    // each other's safe area inside the window's layout pass until AppKit threw ("needs another
+    // Update Constraints in Window pass"). Shown on the Chart only; the setting stays for it.
+    .inspector(isPresented: decisionsShown) {
+      DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: chart.hasSymbol)
+    }
+  }
+
+  private var decisionsShown: Binding<Bool> {
+    Binding(get: { showDecisions && section == .chart }, set: { showDecisions = $0 })
   }
 
   @ViewBuilder private var detail: some View {
@@ -365,6 +380,7 @@ struct CommandToast: View {
 #Preview {
   RootView()
     .environment(PreviewAPI.model())
+    .environment(ChartModel())
     .frame(width: PreviewAPI.windowWidth, height: PreviewAPI.windowHeight)
 }
 #endif
