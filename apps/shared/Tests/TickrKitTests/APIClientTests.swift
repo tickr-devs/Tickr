@@ -160,6 +160,15 @@ final class StubProtocol: URLProtocol {
     #expect(StubProtocol.seen.first?.url?.absoluteString == "http://127.0.0.1:8766/journal")
   }
 
+  @Test func advisorRead() async throws {
+    StubProtocol.answer = try (200, fixture("advisor-runs-v1.json"))
+    let advisor = try await client.advisor()
+    #expect(advisor.runs.map(\.status) == [.proposed, .idea, .refused])
+    #expect(advisor.runs.filter(\.awaitingReview).count == advisor.awaitingReview)
+    #expect(advisor.runs.first?.judges.first?.verdict == .noEvidence)
+    #expect(StubProtocol.seen.first?.url?.absoluteString == "http://127.0.0.1:8766/advisor")
+  }
+
   @Test func labReplayReadsAndStarts() async throws {
     StubProtocol.answer = try (200, fixture("lab-replay-v1.json"))
     let done = try await client.labReplay()

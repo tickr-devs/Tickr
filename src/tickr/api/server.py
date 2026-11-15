@@ -38,6 +38,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from tickr.api import contract, flow
+from tickr.api.advisor import advisor_document
 from tickr.api.after import AfterSettings, SkippedAfter
 from tickr.api.chart import Chart, ChartRefused, ChartSettings, parse_query
 from tickr.api.contract import (
@@ -120,6 +121,8 @@ class ApiSettings:
     observer_trades_max_rows: int  # most simulated trades per observer at GET /observers
     universe: DiscoverySettings  # the universe filter GET /flow applies to captured passes
     journal_rows: int  # GET /journal: latest journal rows served
+    advisor_dir: Path  # [advisor] proposals_dir: one folder per AI advisor run, GET /advisor
+    advisor_runs: int  # GET /advisor: newest runs served
     watching_max_rows: int
     closeness_places: int  # decimal places of GET /watching closeness
     check_places: int  # decimal places of check values in every document that shows checks
@@ -164,6 +167,8 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         raise ConfigError("[api] watching_max_rows must be positive")
     if api.journal_rows <= 0:
         raise ConfigError("[api] journal_rows must be positive")
+    if api.advisor_runs <= 0:
+        raise ConfigError("[api] advisor_runs must be positive")
     if min(api.watching_closeness_decimal_places, api.flow_change_pct_decimal_places,
            api.check_decimal_places) < 0:
         raise ConfigError("[api] decimal places must not be negative")
@@ -218,6 +223,8 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         universe=DiscoverySettings.from_config(cfg),
         watching_max_rows=api.watching_max_rows,
         journal_rows=api.journal_rows,
+        advisor_dir=data / cfg.advisor.proposals_dir,
+        advisor_runs=api.advisor_runs,
         closeness_places=api.watching_closeness_decimal_places,
         check_places=api.check_decimal_places,
         change_pct_places=api.flow_change_pct_decimal_places,
@@ -413,7 +420,7 @@ _ERROR_CODES = {
 }
 GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", "/settings",
               "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
-              "/watching", "/performance", "/chart", "/jobs", "/journal")
+              "/watching", "/performance", "/chart", "/jobs", "/journal", "/advisor")
 MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
 LAB_REPLAY = "/lab/replay"  # GET reads, POST starts: outside the command inbox
 DAY_PREFIX = "/days/"
@@ -569,6 +576,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/journal":
                 self._json(200, journal_document(self.server.settings.jobs.database,
                                                  self.server.settings.journal_rows))
+            elif path == "/advisor":
+                self._json(200, advisor_document(self.server.settings.advisor_dir,
+                                                 self.server.settings.advisor_runs))
             elif path == LAB_REPLAY:
                 self._json(200, self.server.lab.state())
             elif path == "/explain":
