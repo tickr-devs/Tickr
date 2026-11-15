@@ -782,8 +782,9 @@ private struct SafetyCard: View {
 
   /// How often the ages ("3 s ago") refresh, in seconds.
   static let tick: TimeInterval = 1
-  /// Fence kind the bot raises for positions it did not open (protocol value).
-  static let foreignExposureKind = "foreign_exposure"
+  /// Start of the fence kind the bot raises for a position it did not open; the kind goes on
+  /// with ":" and the symbol, as in "foreign-position:ABCD" (engine Fence.FOREIGN_POSITION).
+  static let foreignPositionPrefix = "foreign-position"
 
   var body: some View {
     Card(L10n.Safety.title) {
@@ -822,7 +823,7 @@ private struct SafetyCard: View {
     }
     let positions = Board.positions(status)
     let verified = positions.filter { $0.stop.state == .verified }.count
-    let foreign = status.fences.contains { $0.kind == Self.foreignExposureKind }
+    let foreign = status.fences.contains { $0.kind.hasPrefix(Self.foreignPositionPrefix) }
     let stream = status.freshness.stream
     let entries = positions.map { (symbol: $0.symbol, entry: $0.entry) }
       + status.tradesToday.map { (symbol: $0.symbol, entry: $0.entry) }
@@ -841,7 +842,8 @@ private struct SafetyCard: View {
       Row(id: .stream, label: L10n.Safety.quoteStream, value: stream.title,
         color: stream == .fresh ? Palette.profitText : stream == .off ? Palette.textQuaternary : Palette.warningText),
       Row(id: .read, label: L10n.Safety.lastBrokerRead,
-        value: Format.age(since: status.freshness.lastBrokerReadAt?.date, now: now), color: Palette.profitText),
+        value: Format.age(since: status.freshness.lastBrokerReadAt?.date, now: now),
+        color: BrokerReadAge.color(since: status.freshness.lastBrokerReadAt?.date, now: now)),
       Row(id: .foreign, label: L10n.Safety.foreignPositions,
         value: String(localized: foreign ? L10n.Safety.present : L10n.Common.none),
         color: foreign ? Palette.lossText : Palette.profitText),
