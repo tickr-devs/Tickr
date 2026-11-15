@@ -1,6 +1,6 @@
-import TickrKit
 import Foundation
 import Observation
+import TickrKit
 
 /// The AI advisor's runs (GET /advisor), read when the Lab opens and on refresh, and the owner's
 /// Accept or Reject (POST /advisor/decision). A decision is a note: the bot deploys nothing from it.

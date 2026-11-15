@@ -1,6 +1,6 @@
+import SwiftUI
 import TickrDesign
 import TickrKit
-import SwiftUI
 
 /// What the iOS advisor screens share: symbols, tones and the rows they build from a run.
 enum AdvisorLook {

@@ -1,6 +1,6 @@
-import TickrKit
 import Foundation
 import Observation
+import TickrKit
 
 /// The AI advisor's runs (GET /advisor) for the Lab's advisor card and page and the Overview's
 /// advisor row, and the owner's Accept or Reject (POST /advisor/decision). A decision is a note:

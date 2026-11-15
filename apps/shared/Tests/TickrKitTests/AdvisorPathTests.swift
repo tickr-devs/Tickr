@@ -1,6 +1,6 @@
-@testable import TickrKit
 import Foundation
 import Testing
+@testable import TickrKit
 
 @Suite("Advisor proposal path, change directions and hold-out scale")
 struct AdvisorPathTests {
