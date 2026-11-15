@@ -94,9 +94,11 @@ public enum FlowBoard {
     return String(localized: UniverseCause(rawValue: cause.code)?.text(cause.detail) ?? L10n.universeOther)
   }
 
-  /// A time inside a recorded cause, as hours and minutes in New York.
+  /// A time inside a recorded cause: "11:26" in New York, 24-hour, as the apps write market times.
   static func newYorkMinute(_ date: Date) -> String {
-    date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: WireDate.newYork.timeZone))
+    date.formatted(Date.VerbatimFormatStyle(
+      format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)",
+      timeZone: WireDate.newYork.timeZone, calendar: WireDate.newYork))
   }
 
   /// How an open position's stop colours its mark: verified, waiting, or missing or unknown.
@@ -121,7 +123,7 @@ public enum FlowBoard {
 /// Why the universe filter left a symbol out: the code that starts `FlowChipV1.excludedCause`
 /// (src/aperture/data/discovery.py `Cause`, `merge` and `universe_cause`). An unknown code has
 /// no case.
-public enum UniverseCause: String, CaseIterable, Sendable {
+public enum UniverseCause: String, Sendable {
   case conflictingRows = "CONFLICTING_ROWS"
   case exchangeNotAllowed = "EXCHANGE_NOT_ALLOWED"
   case currencyNotAllowed = "CURRENCY_NOT_ALLOWED"

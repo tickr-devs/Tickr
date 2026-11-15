@@ -4301,7 +4301,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Исключён фильтром вселенной"
+            "value" : "Не прошёл отбор"
           }
         }
       }

@@ -28,11 +28,12 @@ struct FlowBoardTests {
   }
 
   @Test("A refusal recorded as text reads without its code, its times in New York")
-  func recordedRefusals() {
+  func recordedRefusals() throws {
     let cooldown = "SYMBOL_COOLDOWN: MVLD closed at a loss at 2026-11-13T16:26:30+00:00"
-    let time = try? Date("2026-11-13T16:26:30Z", strategy: .iso8601)
-    let expected = "MVLD closed at a loss at " + (time.map(FlowBoard.newYorkMinute) ?? "")
-    #expect(FlowBoard.recordedRefusal(cooldown) == String(localized: L10n.refusedByRiskDetail(expected)))
+    let time = try #require(try? Date("2026-11-13T16:26:30Z", strategy: .iso8601))
+    #expect(FlowBoard.newYorkMinute(time) == "11:26")
+    #expect(FlowBoard.recordedRefusal(cooldown)
+      == String(localized: L10n.refusedByRiskDetail("MVLD closed at a loss at 11:26")))
     #expect(FlowBoard.recordedRefusal("NEW_RULE") == String(localized: L10n.refusedByRisk))
     #expect(FlowBoard.recordedRefusal("setup no longer valid") == "setup no longer valid")
   }
