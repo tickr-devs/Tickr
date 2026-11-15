@@ -414,6 +414,7 @@ def test_old_check_places_key_loads_with_a_warning(tmp_path):
     with pytest.warns(config.RenamedKeyWarning, match="watching_check_decimal_places"):
         cfg = config.load(_copy(tmp_path, text))
     assert cfg.api.check_decimal_places == 3
+    assert cfg.renamed_keys == ("[api] watching_check_decimal_places -> check_decimal_places",)
 
 
 def test_old_and_new_check_places_keys_together_are_refused(tmp_path):
@@ -427,4 +428,4 @@ def test_current_bot_toml_uses_no_old_key_names():
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("error", config.RenamedKeyWarning)
-        config.load(BOT)
+        assert config.load(BOT).renamed_keys == ()

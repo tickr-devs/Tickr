@@ -40,10 +40,23 @@ RENAMED_KEYS: dict[tuple[str, str], str] = {
 }
 
 
-def apply_renamed_keys(name: str, table: Any) -> Any:
-    """Return `table` with old key names moved to their new names, warning once per key."""
+def apply_renamed_keys(name: str, table: Any, found: list[str]) -> Any:
+    """Return `table` with old key names moved to their new names. Each rename is appended to
+    `found` as `[section] old -> new` and warned about; giving both names is refused."""
     if not isinstance(table, dict):
         return table
+    table = dict(table)
+    for (section, old), new in RENAMED_KEYS.items():
+        if section != name or old not in table:
+            continue
+        if new in table:
+            raise ConfigError(f"[{name}] has both {old} (old name) and {new}; keep only {new}")
+        rename = f"[{name}] {old} -> {new}"
+        warnings.warn(f"old config key name {rename}: rename it in config/bot.toml",
+                      RenamedKeyWarning, stacklevel=2)
+        found.append(rename)
+        table[new] = table.pop(old)
+    return table
     table = dict(table)
     for (section, old), new in RENAMED_KEYS.items():
         if section != name or old not in table:
@@ -325,6 +338,8 @@ class Config:
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
+    # Old key names read under their new names (`[section] old -> new`); preflight reports them.
+    renamed_keys: tuple[str, ...] = ()
 
     @property
     def environment_name(self) -> str:
@@ -435,7 +450,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if missing:
         raise ConfigError(f"missing sections: {', '.join(missing)}")
 
-    built = {name: build_section(name, apply_renamed_keys(name, data[name]), cls)
+    renamed: list[str] = []
+    built = {name: build_section(name, apply_renamed_keys(name, data[name], renamed), cls)
              for name, cls in _SECTIONS.items()}
 
     envs_raw = data["environments"]
@@ -510,6 +526,7 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         environments=environments,
         root=Path(root) if root is not None else path.resolve().parent.parent,
         digest=hashlib.sha256(raw_bytes).hexdigest(),
+        renamed_keys=tuple(renamed),
     )
 
 
