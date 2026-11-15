@@ -135,14 +135,13 @@ struct ChartView: View {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
           HStack(spacing: Tokens.Space.m) {
             symbolPicker
-            timeframePicker
             Spacer(minLength: Tokens.Space.m)
+            zoomButtons
             decisionsToggle
           }
           HStack(spacing: Tokens.Space.m) {
+            timeframePicker
             stylePicker
-            Spacer(minLength: Tokens.Space.m)
-            zoomButtons
           }
         }
       }
