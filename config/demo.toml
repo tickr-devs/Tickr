@@ -1,12 +1,12 @@
-# `aperture demo`: a made-up trading day for looking at the apps with full data. The real bot runs
-# on a simulated exchange (aperture.demo.world) inside its own folder; it never talks to Webull and
+# `tickr demo`: a made-up trading day for looking at the apps with full data. The real bot runs
+# on a simulated exchange (tickr.demo.world) inside its own folder; it never talks to Webull and
 # never reads or writes the real data_dir. Every key has a comment: what it is, its unit, who reads it.
 # Tickers are invented. Times are New York wall times "HH:MM"; prices are USD strings; volumes are
-# shares per minute. Read by aperture.demo.
+# shares per minute. Read by tickr.demo.
 
 [demo]
 # Folder the demo builds, relative to the repo root: its own copy of config/ and strategies/ plus its
-# data/; deleted and rebuilt by every `aperture demo` (only when it holds the demo marker file).
+# data/; deleted and rebuilt by every `tickr demo` (only when it holds the demo marker file).
 root_dir = "demo"
 # Environment name the demo copy of bot.toml runs as (a copy of the first environment whose trading
 # gate is open without an owner authorization); the apps show it, so it says this is a demo.
@@ -50,6 +50,17 @@ texture_move = "1.3"
 texture_move_cap = "0.012"
 # Largest change of a minute's volume either way, of that volume (below 1).
 texture_volume = "0.45"
+# Chart-only daily history, so the apps' D charts (1M, 3M, 1Y) and indicators such as RSI 14 have
+# data: this many weekdays before the minute history ([market_data] history_sessions sessions)
+# each get one D bar, a seeded random walk ending at the symbol's `base`. Holidays are not
+# skipped. The feed serves them on D charts only; the bot never reads them. Count of days.
+chart_days = 250
+# Spread of a chart day's close against its open, of the price (below 1).
+chart_daily_move = "0.025"
+# Spread of a chart day's open against the previous close, of the price (below 1).
+chart_daily_gap = "0.008"
+# Largest high above and low below a chart day's body, of the price (below 1).
+chart_daily_wick = "0.015"
 
 [scenario]
 # Symbols of the demo day (today if it is a trading session, else the latest session before it).
@@ -74,6 +85,9 @@ today = [
   { symbol = "HLQN", base = "11.00", volume = "9000", screener = "GAINERS", legs = [["13:20", "13:35", "14.20", "60000"], ["13:45", "13:47", "10.00", "60000"]] },
   # The open position: bought on the breakout into the room left, drifting up while the demo runs.
   { symbol = "MVLD", base = "24.00", volume = "9000", screener = "GAINERS", legs = [["13:55", "14:10", "28.50", "40000"], ["14:10", "15:30", "29.60", "9000"]] },
+  # Breaks out while MVLD is held: risk refuses it (one position at a time), so the live flow's
+  # refused tray has a symbol in it.
+  { symbol = "QRTZ", base = "18.00", volume = "5000", screener = "GAINERS", legs = [["14:12", "14:24", "21.60", "40000"]] },
   # On the losers list all day: the strategy sees it and never finds a setup.
   { symbol = "BXVR", base = "36.00", volume = "5000", screener = "LOSERS", legs = [["09:30", "11:00", "31.50", "9000"], ["11:00", "15:30", "30.80", "5000"]] },
 ]
@@ -83,6 +97,14 @@ today = [
 commands = [
   { at = "10:24", kind = "flatten", symbol = "VLNQ" },
 ]
+
+# Demo faults for QA, off by default (empty list). Each: New York time `at`, `kind` and a
+# `symbol` of today. Kind "stop-unverified": from then on the simulated exchange shows that
+# symbol's stops in a status the bot cannot map, not working, so the apps show the open position
+# unprotected; after [orders] max_unprotected_seconds the bot closes it, as it would live. Example
+# for the open position a minute after the demo goes live:
+# faults = [{ at = "14:31", kind = "stop-unverified", symbol = "MVLD" }]
+faults = []
 
 # Past sessions for the day picker, oldest first, each a list of symbols like `today`. They run
 # the whole session, so a position still open at the flatten time is closed by the bot.

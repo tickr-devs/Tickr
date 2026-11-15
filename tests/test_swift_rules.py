@@ -31,7 +31,7 @@ def test_flags_words_in_ui_code(tmp_path):
     source = (
         'Text("Overview")\n'
         'Button("Quit") {}\n'
-        'Text(verbatim: "Aperture")\n'
+        'Text(verbatim: "Tickr")\n'
         'var title: String { return "Flatten All" }\n'
         'let s = String(localized: "Pause entries?")\n'
     )
@@ -79,6 +79,15 @@ def test_l10n_file_holds_only_localized_entries(tmp_path):
     )
     found = load().text_violations(write(tmp_path, source, "L10n.swift"))
     assert found == [(1, "Quit"), (2, "Quit now"), (3, "Flatten every position")]
+
+
+def test_l10n_part_files_beside_an_l10n_file_hold_words_too(tmp_path):
+    source = 'static let quit = LocalizedStringResource("app.quit", defaultValue: "Quit")\n'
+    part = write(tmp_path, source, "L10n+Codes.swift")
+    # Without an L10n.swift beside it, a file named like a part is ordinary code.
+    assert load().text_violations(part) == [(1, "app.quit"), (1, "Quit")]
+    write(tmp_path, "", "L10n.swift")
+    assert load().text_violations(part) == []
 
 
 def test_words_cannot_hide_in_constants_raw_values_or_symbol_shapes(tmp_path):
@@ -199,14 +208,14 @@ def test_current_apple_apis_pass(tmp_path):
 
 
 def test_ui_tests_may_use_xctest(tmp_path):
-    folder = tmp_path / "ApertureUITests"
+    folder = tmp_path / "TickrUITests"
     folder.mkdir()
     assert load().legacy_violations(write(folder, "import XCTest\n", "LaunchTests.swift")) == []
 
 
 def test_ui_test_targets_get_only_the_legacy_rule(tmp_path, monkeypatch):
     module = load()
-    folder = tmp_path / "ApertureUITests"
+    folder = tmp_path / "TickrUITests"
     folder.mkdir()
     write(folder, 'import XCTest\nlet cancel = button("Cancel")\n', "FlowTests.swift")
     monkeypatch.setattr(module, "REPO", tmp_path)
@@ -234,7 +243,7 @@ def test_every_form_of_an_outdated_import_fails(tmp_path):
         "import class Combine.AnyCancellable\n"
         "@preconcurrency internal import Combine\n"
         "import Testing\n"
-        "@testable import ApertureKit\n"
+        "@testable import TickrKit\n"
     )
     found = load().legacy_violations(write(tmp_path, source))
     assert [line for line, _ in found] == [1, 2, 3, 4, 5]
@@ -291,6 +300,44 @@ def test_current_forms_of_those_calls_pass(tmp_path):
     assert load().legacy_violations(write(tmp_path, source)) == []
 
 
+def test_more_deprecated_swiftui_and_uikit_calls_fail(tmp_path):
+    source = (
+        "image.accessibility(label: Text(title))\n"
+        "row.accessibility(hidden: true)\n"
+        "view.actionSheet(isPresented: $shown) { sheet }\n"
+        "view.alert(isPresented: $shown) { Alert(title: Text(title)) }\n"
+        "list.navigationBarItems(trailing: button)\n"
+        "list.navigationBarHidden(true)\n"
+        "stack.navigationViewStyle(.stack)\n"
+        "view.statusBar(hidden: true)\n"
+        "field.disableAutocorrection(true)\n"
+        "TextField(title, text: $text, onEditingChanged: edit, onCommit: send)\n"
+        "card.overlay(Circle(), alignment: .topTrailing)\n"
+        "card.background(Color.clear, alignment: .top)\n"
+        "let window = UIApplication.shared.windows.first\n"
+    )
+    found = load().legacy_violations(write(tmp_path, source))
+    assert [line for line, _ in found] == list(range(1, 14))
+
+
+def test_current_forms_of_the_newer_checks_pass(tmp_path):
+    source = (
+        "image.accessibilityLabel(Text(title))\n"
+        "row.accessibilityHidden(true)\n"
+        "view.confirmationDialog(title, isPresented: $shown) { actions }\n"
+        "view.alert(title, isPresented: $shown) { actions } message: { message }\n"
+        "list.toolbarVisibility(.hidden, for: .navigationBar)\n"
+        "view.statusBarHidden()\n"
+        "field.autocorrectionDisabled()\n"
+        "TextField(title, text: $text).onSubmit(send)\n"
+        "card.overlay(alignment: .topTrailing) { Circle() }\n"
+        "card.overlay(Text(title).frame(maxWidth: .infinity, alignment: .leading))\n"
+        "card.background(alignment: .top) { Color.clear.frame(height: h, alignment: .top) }\n"
+        "card.overlay(Capsule().strokeBorder(color, lineWidth: width))\n"
+    )
+    assert load().legacy_violations(write(tmp_path, source)) == []
+
+
 def test_on_change_with_perform_over_several_lines_fails(tmp_path):
     source = (
         "view.onChange(\n"
@@ -324,6 +371,16 @@ def test_settings_below_swift_6_or_os_26_fail(tmp_path):
     )
     found = load().settings_violations(write(tmp_path, package, "Package.swift"))
     assert [line for line, _ in found] == [1, 2]
+    modes = (
+        'platforms: [.macOS("15.0")],\n'
+        "swiftLanguageModes: [.v5],\n"
+        "swiftSettings: [.swiftLanguageMode(.v5)],\n"
+        "swiftLanguageVersions: [.v5],\n"
+        'platforms: [.macOS("26.0")],\n'
+        "swiftLanguageModes: [.v6],\n"
+    )
+    found = load().settings_violations(write(tmp_path, modes, "Package.swift"))
+    assert [line for line, _ in found] == [1, 2, 3, 4]
     project = (
         "SWIFT_VERSION = 5.0;\n"
         "MACOSX_DEPLOYMENT_TARGET = 14.0;\n"
@@ -357,9 +414,11 @@ def test_settings_that_weaken_strict_concurrency_fail(tmp_path):
         '    SWIFT_STRICT_CONCURRENCY: "targeted"\n'
         "SWIFT_STRICT_CONCURRENCY = complete;\n"
         "// unsafeFlags are not allowed\n"
+        'OTHER_SWIFT_FLAGS = "-swift-version 5";\n'
+        'OTHER_SWIFT_FLAGS = "-swift-version 6";\n'
     )
     found = load().settings_violations(write(tmp_path, source, "project.pbxproj"))
-    assert [line for line, _ in found] == [1, 2, 3]
+    assert [line for line, _ in found] == [1, 2, 3, 6]
 
 
 def test_catalogs_must_be_in_xcode_form(tmp_path):

@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from aperture import config
-from aperture.broker.base import OutcomeUnknown, RateLimited
-from aperture.broker.fake import FakeBroker
-from aperture.config import GateResult
-from aperture.engine.core import Engine, EntryRefused, Fence, Leg, SendState, TradeState
-from aperture.store import Store
-from aperture.types import OrderRequest, OrderState, OrderType, Position, Side, TimeInForce
-from aperture.types import TradingSession as Session
+from tickr import config
+from tickr.broker.base import OutcomeUnknown, RateLimited
+from tickr.broker.fake import FakeBroker
+from tickr.config import GateResult
+from tickr.engine.core import Engine, EntryRefused, Fence, Leg, SendState, TradeState
+from tickr.store import Store
+from tickr.types import OrderRequest, OrderState, OrderType, Position, Side, TimeInForce
+from tickr.types import TradingSession as Session
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
@@ -275,15 +275,51 @@ def test_f1_positions_lag_after_stop_fill_sends_nothing(store):
     assert_single_sends(b)
 
 
-def test_f2_exit_with_persistent_mismatch_keeps_a_working_stop(store):
+def test_f2_exit_with_foreign_shares_sells_exactly_the_detail_quantity(store):
+    # Owner decision 2026-11-15: more held than Detail explains -> close our own shares only.
     b, e, t = opened(store)
     b.add_foreign_position("ABC", D(1), D(10))  # manual buy of the same symbol
+    run(e, 3)
+    assert working_stops(b) == D(2)  # the stop stays on the Detail quantity
+    assert has(e, Fence.QUANTITY_MISMATCH)
+    e.request_exit(t, "x")
+    run(e, 10)
+    (close,) = legs(e, t, Leg.EXIT)
+    assert close.quantity == D(2) and close.order_type is OrderType.MARKET
+    b.fill(close.client_order_id, D(2), D(10))
+    run(e, 3)
+    assert b.holdings["ABC"].quantity == D(1)  # the foreign share is never touched
+    assert [x.client_order_id for x in legs(e, t, Leg.EXIT)] == [close.client_order_id]
+    assert e.expected_quantity(e.orders(t)) == 0
+    assert has(e, Fence.QUANTITY_MISMATCH)  # entries stay blocked until explained
+    assert_single_sends(b)
+
+
+def test_f2_exit_with_fewer_shares_than_detail_sends_nothing(store):
+    b, e, t = opened(store)
+    b.holdings["ABC"] = Position("ABC", D(1), D(10))  # the broker holds less than Detail
     e.request_exit(t, "x")
     run(e, 10)
     assert e.trade(t).state is TradeState.EXITING
     assert working_stops(b) == D(2)  # the Detail quantity stays protected
-    assert legs(e, t, Leg.EXIT) == []  # never sell on a disagreeing quantity
+    assert legs(e, t, Leg.EXIT) == []  # never sell shares that may not be there
     assert has(e, Fence.QUANTITY_MISMATCH)
+
+
+def test_f2_extra_shares_with_an_entry_still_working_send_nothing(store):
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e, "4")
+    entry = legs(e, t, Leg.ENTRY)[0].client_order_id
+    b.fill(entry, D(2), D(10))  # partial fill
+    run(e, 3)
+    b.cancel = lambda cid: None if cid == entry else FakeBroker.cancel(b, cid)
+    b.add_foreign_position("ABC", D(1), D(10))  # could be the entry's fill Detail lacks
+    e.request_exit(t, "x")
+    run(e, 60)
+    assert has(e, Fence.CANCEL_FAILED)
+    assert legs(e, t, Leg.EXIT) == []
+    assert working_stops(b) == D(2)
 
 
 def test_f2_entry_cancelled_before_stops_late_fill_is_protected(store):
@@ -342,7 +378,7 @@ def test_f3_absent_requires_open_orders_and_late_fill_is_resurrected(store):
 def test_f3_absent_not_decided_while_order_is_in_open_orders(store):
     class DetailBlind(FakeBroker):
         def order_detail(self, client_order_id):
-            from aperture.broker.base import OrderNotFound
+            from tickr.broker.base import OrderNotFound
             raise OrderNotFound(client_order_id)
 
     b = DetailBlind()
@@ -501,7 +537,7 @@ def test_exit_refused_restores_protection_and_blocks_repeat_requests(store):
 
 
 def test_r1_a_stop_with_unreadable_detail_cannot_starve_the_entry(store):
-    from aperture.broker.base import BrokerError
+    from tickr.broker.base import BrokerError
 
     class StuckStopDetail(FakeBroker):
         stuck: set = set()
@@ -531,7 +567,7 @@ class StuckStop(FakeBroker):
     stuck: set = set()
 
     def order_detail(self, cid):
-        from aperture.broker.base import BrokerError
+        from tickr.broker.base import BrokerError
 
         if cid in self.stuck:
             raise BrokerError("DETAIL_NOT_VISIBLE")

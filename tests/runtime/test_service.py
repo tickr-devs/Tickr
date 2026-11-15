@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from aperture import cli, config
-from aperture.api import contract as api
-from aperture.broker.base import RateLimited
-from aperture.broker.fake import FakeBroker
-from aperture.calendar import NEW_YORK, SessionCalendar
-from aperture.config import GateResult
-from aperture.data.base import FakeMarketData
-from aperture.engine.core import Engine, Fence, TradeState
-from aperture.runtime import service, stopmarker
-from aperture.store import Store
+from tickr import cli, config
+from tickr.api import contract as api
+from tickr.broker.base import RateLimited
+from tickr.broker.fake import FakeBroker
+from tickr.calendar import NEW_YORK, SessionCalendar
+from tickr.config import GateResult
+from tickr.data.base import FakeMarketData
+from tickr.engine.core import Engine, Fence, TradeState
+from tickr.runtime import service, stopmarker
+from tickr.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
@@ -94,7 +94,9 @@ def test_entries_not_wired_is_the_block_reason_while_running(tmp_path):
     gate = config.trading_gate(CFG)
     assert block == (service.NOT_WIRED if gate.open
                      else api.EntryBlock("trading_gate_closed",
-                                         f"Trading gate closed: {gate.cause}."))
+                                         f"Trading gate closed: {gate.cause}.",
+                                         params={"gate": "trading_disabled",
+                                                 "environment": CFG.environment_name}))
 
 
 class StubEvaluator:
@@ -108,7 +110,7 @@ class StubEvaluator:
 
 class StubMarket:
     def __init__(self) -> None:
-        from aperture.runtime.market import StreamInbox
+        from tickr.runtime.market import StreamInbox
 
         self.inbox = StreamInbox()
         self.watch: set[str] = set()
@@ -125,7 +127,7 @@ class StubMarket:
 
 
 def test_with_an_evaluator_the_loop_runs_the_strategy_and_entries_are_open(tmp_path):
-    from aperture.runtime.market import DiscoveryState
+    from tickr.runtime.market import DiscoveryState
 
     bot = Bot(tmp_path)
     market, evaluator = StubMarket(), StubEvaluator()
@@ -489,6 +491,8 @@ def test_status_blocks_entries_when_the_daily_room_is_below_one_trade(tmp_path):
     assert bot.engine.trades() == []
     block = bot.service.status().entry_block
     assert block is not None and block.cause == "daily_ceiling"
+    assert block.params == {"limit_usd": str(CFG.risk.max_daily_loss_usd),
+                            "min_room_usd": str(CFG.risk.min_daily_room_usd)}
 
 
 # ---------------------------------------------------------------- flatten one symbol
@@ -620,7 +624,7 @@ def test_cli_run_obeys_stop_bot_then_refuses_until_cleared(tmp_path, monkeypatch
     store.close()
     assert api.read_status(paths.status).bot_state is api.BotState.STOPPED
     assert cli.main(["--config", str(bot_toml), "run"]) == 3
-    assert "aperture clear-stop" in capsys.readouterr().err
+    assert "tickr clear-stop" in capsys.readouterr().err
     store = Store.open(database, busy_timeout_seconds=0)
     assert store.run_count() == runs  # refused before any run was recorded
     store.close()
@@ -889,15 +893,21 @@ def test_cli_run_refuses_a_database_of_another_environment(tmp_path, monkeypatch
     store.close()
 
 
-@pytest.mark.parametrize("now, cause", [
-    (MONDAY_11, None),
-    (datetime(2026, 11, 16, 8, 0, tzinfo=NEW_YORK), "outside_regular_session"),
-    (datetime(2026, 11, 16, 15, 59, tzinfo=NEW_YORK), "after_last_entry"),
-    (datetime(2026, 11, 16, 20, 0, tzinfo=NEW_YORK), "outside_regular_session"),
-    (datetime(2026, 11, 14, 11, 0, tzinfo=NEW_YORK), "no_session_today"),   # Saturday
-    (datetime(2026, 11, 26, 11, 0, tzinfo=NEW_YORK), "no_session_today"),   # Thanksgiving
+SESSION = {"open": "09:30", "close": "16:00"}
+
+
+@pytest.mark.parametrize("now, cause, params", [
+    (MONDAY_11, None, None),
+    (datetime(2026, 11, 16, 8, 0, tzinfo=NEW_YORK), "outside_regular_session", SESSION),
+    (datetime(2026, 11, 16, 15, 59, tzinfo=NEW_YORK), "after_last_entry", None),
+    (datetime(2026, 11, 16, 20, 0, tzinfo=NEW_YORK), "outside_regular_session", SESSION),
+    (datetime(2026, 11, 14, 11, 0, tzinfo=NEW_YORK), "no_session_today",   # Saturday
+     {"day": "weekend"}),
+    (datetime(2026, 11, 26, 11, 0, tzinfo=NEW_YORK), "no_session_today",   # Thanksgiving
+     {"day": "holiday"}),
 ])
-def test_status_names_the_ordinary_reasons_admission_refuses_entries(tmp_path, now, cause):
+def test_status_names_the_ordinary_reasons_admission_refuses_entries(tmp_path, now, cause,
+                                                                     params):
     """The apps read `entry_block`: without these they say "entries allowed" at night."""
     bot = Bot(tmp_path, now=now)
     bot.service.market, bot.service.evaluator = StubMarket(), StubEvaluator()  # type: ignore[assignment]
@@ -906,6 +916,10 @@ def test_status_names_the_ordinary_reasons_admission_refuses_entries(tmp_path, n
     block = bot.service._ordinary_block()
     assert (None if block is None else (block.cause, block.attention)) == (
         None if cause is None else (cause, False))
+    if params is not None:
+        assert block is not None and block.params == params
+    if cause == "after_last_entry":
+        assert block is not None and set(block.params) == {"time"}
     if config.trading_gate(CFG).open:
         assert bot.service.status().entry_block == block
 

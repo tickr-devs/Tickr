@@ -5,7 +5,10 @@ local API. The API process is separate from the bot and never talks to the broke
 account routes: it serves the status and account files the bot writes and drops operator commands
 into an inbox the bot reads. Its one market-data read, `GET /chart`, is off by default (below).
 
-Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `config/bot.toml` `[api]`.
+Planned additions for the backlog screens (advisor, trailing stop, Production gate, notifications)
+are in `docs/api-planned.md`.
+
+Run it: `python -m tickr.api --config config/bot.toml`. Settings are in `config/bot.toml` `[api]`.
 
 ## Transport and safety
 
@@ -14,6 +17,8 @@ Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `conf
   sends `Origin`, it must be `http://<name>:<port>`. Otherwise `403`. No CORS headers are ever sent.
 - Commands require `Content-Type: application/json` and a `Content-Length` within
   `[api] max_request_body_bytes`.
+- Both ports close a connection that sends nothing for `[api] request_timeout_seconds` (request
+  line, headers or body), so an idle or slow client cannot hold a server thread.
 
 ## Remote access (the phone)
 
@@ -22,7 +27,8 @@ The API still binds loopback only. The iPhone reaches it through an HTTPS proxy 
 owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
 tailnet name. The proxy points at a second loopback port, `[api] remote_port`, opened only when
 `[api] remote_hosts` is set. Every request on that port must carry the paired token, whatever its
-`Host` header says; the local port never accepts the remote name. Whether a token is needed is
+`Host` header says, except `POST /pair`, which redeems a one-time pairing code for that token; the
+local port never accepts the remote name. Whether a token is needed is
 decided by the port a request arrives on, never by a header the caller chooses.
 
 1. Install Tailscale on the Mac and the iPhone, sign in to the same account, enable MagicDNS and
@@ -31,19 +37,29 @@ decided by the port a request arrives on, never by a header the caller chooses.
    never the `[api] port`). `tailscale serve status` shows the address, e.g.
    `https://mac.tailnet-name.ts.net`.
 3. In `config/bot.toml` set `[api] remote_hosts = ["mac.tailnet-name.ts.net"]` and restart the API.
-4. `python -m aperture.api --config config/bot.toml pair` makes a new token and leaves the pairing
-   link in a file readable by you only (`[api] remote_pairing_file` under `data_dir`); the token is
-   never printed. AirDrop that file to the iPhone (not Notes or Messages, which sync to iCloud),
-   then in the iOS app: Settings › Pair with Mac, paste the link. The API deletes the file when the
-   phone first connects with the token. The Mac keeps only the token's SHA-256
-   (`[api] remote_token_hash_file`); pairing again revokes the previous token.
+4. `python -m tickr.api --config config/bot.toml pair` revokes the current phone token at once and
+   leaves a pairing link with a one-time code in a file readable by you only
+   (`[api] remote_pairing_file` under `data_dir`); nothing secret is printed. With the API running,
+   AirDrop that file to the iPhone and open it, or paste the link in Settings › Pair with Mac,
+   within `[api] remote_pairing_code_ttl_seconds`. The phone redeems the code once at `POST /pair`
+   for its token; the API then deletes the link file. A copy of the link left anywhere (Files,
+   iCloud Drive, a clipboard) is worthless after that or after expiry. The Mac keeps only SHA-256
+   digests: of the waiting code (`[api] remote_pairing_code_file`, with its expiry) and of the
+   token (`[api] remote_token_hash_file`).
 
 Rules on the remote port: `Host` must be one of `remote_hosts` (no port when 443, else
 `name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
 `401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
 An unreadable token hash file answers `503 unavailable`. The local port (the Mac app, the status
-page) needs no token, as before: any process on this Mac can use it. Until the phone first connects,
-the pairing file holds the token in clear (0600); delete it if you abandon a pairing. `remote_hosts = []` (the shipped value) turns remote access off.
+page) needs no token, as before: any process on this Mac can use it.
+
+`POST /pair` (remote port only; the local port answers `404`): the same `Host` and `Origin` rules,
+no token, body exactly `{"code": "<code from the link>"}`. `200` with `paired-v1`
+(`{"token": "...", "api_version": 1}`) once: the code is burnt, a new token's SHA-256 replaces the
+stored one, and the link file is deleted. `401 unauthorized` when no pairing is waiting, the code
+is wrong (nothing changes) or it has expired (the code and the link file are deleted); `400` for
+any other body; `503` when the code file is unreadable. Neither the code nor the token appears in
+an error or the log. `remote_hosts = []` (the shipped value) turns remote access off.
 
 The phone keeps the token in its Keychain (this device only) together with the address it was
 paired with, and sends it only over HTTPS to exactly that address; changing the address by hand
@@ -59,9 +75,9 @@ drops the token.
 - Version 1 never removes or renames a key or changes a type. Such a change is version 2 and
   gets new paths and schema files; version 1 keeps working until clients move.
 
-JSON Schemas (draft 2020-12) are committed in `src/aperture/api/schema/` and served at
-`GET /schema`. They are generated from the dataclasses in `src/aperture/api/contract.py`
-(`python -m aperture.api.contract`); a test fails if code and committed schemas differ.
+JSON Schemas (draft 2020-12) are committed in `src/tickr/api/schema/` and served at
+`GET /schema`. They are generated from the dataclasses in `src/tickr/api/contract.py`
+(`python -m tickr.api.contract`); a test fails if code and committed schemas differ.
 Example documents for every schema are in `tests/api/fixtures/` (generated by
 `tests/api/test_fixtures.py`). The shared Swift package of the apps (`apps/shared/`) decodes and re-encodes each of them
 in its Swift tests, so a contract change it does not model fails its CI job.
@@ -81,6 +97,10 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. |
+| GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
+| GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
+| GET | `/lab/replay` | `200` `lab-replay-v1`: the Lab's latest SIMULATED replay of the active strategy over the last sessions of fetched data (see Lab replay below). |
+| POST | `/lab/replay` | Body `{}`. Starts that replay: `202` `lab-replay-v1` (state `running`), or `409 conflict` with the cause it cannot start now. Not a bot command: nothing goes to the inbox. |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
 | GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first, its simulated day result and simulated trades. |
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
@@ -98,7 +118,8 @@ Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1}`:
 `unauthorized` 401 (remote request without the paired token),
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
 `too_many_pending` 429, `rate_limited` 429 (GET /chart: its request budget is spent; `Retry-After`),
-`conflict` 409 (an `Idempotency-Key` already used for another command),
+`conflict` 409 (an `Idempotency-Key` already used for another command; a Lab replay that cannot
+start now),
 `internal` 500, `unavailable` 503 (history cannot be read now: database of another schema
 version, unreadable capture file).
 
@@ -120,6 +141,77 @@ loaded, `calendar_unknown`). `attention: false` is an ordinary state that passes
 `unprotected:<trade>`): match the part before the colon.
 `attention` was added after version 1 shipped: a reader takes a document without it as
 `attention: true`; the bot always writes it.
+
+Reason codes, so clients can say these in the reader's language (the English text stays the
+fallback). Each `params` is an object of plain-text values: numbers as written, times `HH:MM`
+New York, days `YYYY-MM-DD`. Codes are read from the bot's own texts against the exact shapes
+it writes (`api/reasons.py`); a text of any other shape is code `unrecognized` with `{}`, and
+clients show the text.
+- `entry_block.params`: `outside_regular_session` `{open, close}`; `after_last_entry` `{time}`;
+  `daily_ceiling` `{limit_usd, min_room_usd}`; `no_session_today` `{day}` (`weekend`,
+  `holiday`, `half_day`); `calendar_unknown` `{calendar}` (`not_loaded`, or the calendar or
+  admission cause in lower case, e.g. `out_of_coverage`); `trading_gate_closed` `{gate, ...}`
+  (the gate's `code` and its params); a fence block `{fence, ...}` (the fence's `code` and its
+  params). Every other cause: `{}`.
+- `trading_gate.code` / `params`: `trading_enabled`, `authorization_valid`, `trading_disabled`
+  `{environment}`, `authorization_file_not_set`, `authorization_file_missing` `{file}`,
+  `authorization_not_toml`, `authorization_keys_wrong` `{keys}`,
+  `authorization_other_environment`, `authorization_digest_mismatch`.
+- `fences[].code` / `params`, by kind: `startup_reconcile_pending`; `positions_read_failed` /
+  `open_orders_read_failed` `{error}` (an exception type name); `detail_budget`;
+  `send_outcome_unknown`, `crashed_during_send`; `order_missing`; `status_unmapped` `{status}`;
+  `detail_unreadable` / `stop_cancel_unconfirmed` `{seconds}`;
+  `stop_covers_part` `{verified, expected}`; `stops_over_position` `{covered, held}`;
+  `unprotected_exiting` / `unprotected_close_by_hand` / `unprotected_stop_unreadable`
+  `{seconds}`; `stop_rejected_exiting`;
+  `exit_refused_no_stop`, `exit_refused_stop_again`; `cancel_outcome_unknown` `{outcome}`,
+  `cancel_crashed`;
+  `cancel_failed`; `cancel_not_sent` `{seconds}`; `given_up_order_filled`,
+  `working_not_in_records`; `foreign_position`; `foreign_order`; `quantity_mismatch`
+  `{held, expected}`; `shutting_down`; `operator_command`, `operator_emergency`;
+  `replace_unresolved` `{stop_price}`; `held_after_replace`, `held_untracked_sell`
+  `{orders, symbol}`; `exit_not_filled` `{order, quantity, symbol, seconds, filled, state}`;
+  `close_not_sent` `{quantity, expected, symbol}` plus why the close was not due: `{session}`
+  (no session, the calendar's text), `{open}` (before the open) or `{cutoff, cutoff_seconds,
+  close, day}` (at or after the last close time; `cutoff` is `HH:MM:SS`).
+- `code` and `params` were added after version 1 shipped: a reader takes a document without
+  them as `unrecorded` and `{}`.
+
+The API's own causes carry their codes in a sibling `<field>_codes`: a list of `{code, params}`,
+empty when the cause is `null`, one entry for a cause that reads as one, else one per `; `-joined
+part (an entry send's missing rows, a clean day's faults). The bot computes it from the cause on
+every build, so the two always agree; a reader of a document without it rebuilds it the same
+way. Siblings: `entry_cause_codes` (positions, `trades_today`, day-v1 `trades`),
+`prices_after_cause_codes`, `overshoot_cause_codes` (day-v1 trades, skipped signals),
+`cause_codes` (each `prices_after` point, `what_if`, observer `trades`, `clean`, performance
+`exclusions`), `text_codes` (`clean.causes[]`), `result_cause_codes` / `trades_cause_codes`
+(observers), `closeness_cause_codes` / `quote_age_cause_codes` (watching), and one per
+performance `<name>_cause`. Codes (params in braces; wire times become `HH:MM` New York):
+- entry send: `entry_orders_count` {count}, `no_intent_row`, `never_attempted`, `no_fill_row`,
+  `journal_unreadable` {detail}, `not_read`, `not_computed`;
+- prices after and overshoot: `session_ended` {time}, `no_bars_for_symbol` {symbol}, `bars_end`
+  {time}, `bars_end_before` {time, until}, `no_bar_for_minute` {time}, `no_reference_price`,
+  `calendar_refuses` {day, detail}, `no_minute_before_close` {time}, `no_bar_after_exit`
+  {until}, `planned_loss_not_positive` {planned_loss};
+- simulations: `simulation_refused` {detail}, `simulation_outcome` {outcome, detail},
+  `skipped_overlap` {symbol}, `skipped_same_signal` {setup, trigger, symbol}, `no_decisions`,
+  `no_captured_bars` {day}, `capture_refused` {detail}, `replay_settings_unreadable` {detail},
+  `calendar_unreadable` {detail}, `enters_not_simulated` {count}, `trades_without_quantity`
+  {count}, `result_in_r_only`;
+- clean day: `day_not_over`, `reconcile_not_recorded`, `no_day_end`, `day_end_unknown`,
+  `no_calendar`, `calendar_error` {detail}, `reconcile_gap` {since, until, seconds, max_gap},
+  `reconcile_mismatch` {detail}, `fence` {fence, fence_code, ...} (a fence's cause, with the
+  fence codes above), `fence_still_set` {fence}, `day_end_not_clean` {broker_flat, agree,
+  open_trades}, `unprotected_alert` {detail}, `safety_exit` {exit, trade}, `emergency_command`
+  {outcome};
+- watching: `all_checks_passed`, `quote_age_not_recorded`, `yes_no_check` {rule},
+  `needs_positive_threshold` {rule}, `needs_positive_measured` {rule}, `no_direction` {rule,
+  operator}, `check_contradicts_record` {rule};
+- performance: `planned_loss_not_positive_r`, `no_trades`, `no_wins`, `no_losses`;
+- any of them: `display_failed` {error, detail} (a display part failed unexpectedly).
+`{detail}` is untranslated text (an error message, a calendar's own words). A check's `note` is
+the strategy's own fixed text per rule and has no code: translate it by `rule` and the exact
+text, or show it as is.
 
 Daily loss money (spec 7, check 6), exactly as the bot's admission computes it; `null` means
 unknown (a trade closed today has fills without a known price), never zero:
@@ -179,7 +271,7 @@ Query strings take exactly the documented parameters, each once; anything else i
 #### Clean day
 
 Every `days-v1` entry has `clean`: did the broker and the bot's records agree all that New York
-date? Built only from the bot's journal (`src/aperture/api/cleanday.py`), rows of runs of the
+date? Built only from the bot's journal (`src/tickr/api/cleanday.py`), rows of runs of the
 configured environment, bucketed by the New York date of their journal time. Display only.
 
 ```json
@@ -299,7 +391,7 @@ Display only (`day-v1` trades and `skipped-v1` rows): computed by the API from t
 bars (`bars.jsonl` or its `.gz`) and the session calendar; never read by the bot, the risk
 checks or the daily-loss path (`closed_trades` fills them with `prices_after: []` and the
 cause `not read on this path`). `null` means unknown, never zero; every `null` has a cause.
-Code: `src/aperture/api/after.py`.
+Code: `src/tickr/api/after.py`.
 
 - `prices_after` (trades and skipped rows): one `{minutes, at, price, change_usd, cause}` per
   `[api] price_after_minutes` (1, 5, 15, 60). `at` = anchor + `minutes`; `price` is the
@@ -403,10 +495,74 @@ unreadable: <error>`; in the bot it is journaled once per trade (`entry-send-fai
 step goes on. The bot reads it again on every status write while the trade is open, and keeps
 it once the trade is closed (or a row is unreadable). `/days/<date>` computes it the same way.
 
+### GET /jobs (read-only)
+
+When the bot's scheduled work last ran and runs next. Code: `src/tickr/api/jobs.py`. Sources,
+none written by this request: the status file, the database opened read-only, `[runtime]`,
+`[orders] reconcile_interval_seconds`, and the session calendar with `[session]` cutoffs. The bot
+reads and writes nothing for it.
+
+- `bot_state` and `status_stale`: as in GET /status (`bot_state` null without a valid status file).
+  `bot_started_at`: when the status's run started (database `runs`), or null.
+- `reconcile`: `interval_seconds`, `last_at` (the status's `freshness.last_broker_read_at`), and
+  `next_at` = `last_at + interval_seconds` only while the bot runs (state `running`, status not
+  stale); otherwise null.
+- `backup`: the verified daily database backup, which the bot makes on its first loop pass of each
+  New York date. `last_at` is the newest `backup` journal row. `last_failed_at` and
+  `last_failed_error` (the error's type name, never its text) are set only when a `backup-failed`
+  row is newer than that. `cause` says why `last_at` is null (no database yet, no backup yet).
+- `launchd`: the preflight, bot and watchdog jobs as configured: `local_time` "HH:MM" in the Mac's
+  own time zone and launchd `weekdays` (1 = Monday ... 5 = Friday). No next time is computed: the
+  API does not guess the Mac's time zone rules, and the session calendar still decides each day.
+- `session`: today's New York date with `regular_open`, `last_entry_at`, `flatten_at` and
+  `regular_close`, or null with `session_cause` (a weekend, a closure, a half day with
+  `half_days_enabled = false`, a calendar that does not cover today).
+- `nightly_fetch`: the nightly backtest-data refresh's last outcome, from its `nightly.json`
+  (docs/backtest.md, "Nightly"): `finished_at`, `last_day` (where the Lab's data now ends),
+  `new_sessions` added (0 = already up to date) and `cause` when it was refused or stopped (the
+  data then stays as it was). All null with `cause` when it never ran or the file is unreadable.
+  `launchd` lists it as `nightly-fetch`.
+
+### GET /journal (read-only)
+
+The Overview's journal card and its "line #N". Code: `src/tickr/api/journal.py`. Reads the
+database opened read-only; the bot reads and writes nothing for it. `rows`: the latest
+`[api] journal_rows` journal rows, oldest first, each with `seq` (the journal's own row number,
+one more per row, never reused), `at`, `kind` (the bot's event name, such as `order-intent`,
+`trade-opened`, `stop-from-fill`, `reconcile-checked`: clients map kinds to their own tags and
+words) and `symbol` (when the row's body names one). The body itself is not served.
+`last_seq` is the newest row's number; it and the rows are empty with `cause` when there is no
+database yet, it cannot be read, or the journal has no rows yet.
+### GET and POST /lab/replay (simulated, never the bot)
+
+The Lab's "replay the last days": the active strategy (`[strategy] active`, its module from
+`[observers] strategy_modules`) replayed by the backtest (`docs/backtest.md`) over the last
+`[api] lab_replay_sessions` sessions of the data already fetched into `[api] lab_replay_data_dir`,
+ending at its last pool day. It never fetches: `summary.last_day` is where the data ends, and the
+app shows it. Code: `src/tickr/api/lab_replay.py`.
+
+POST starts `python -m tickr.backtest run --last-sessions N` as a child process of the API
+under `nice -n [api] lab_replay_niceness`, writing into `[api] lab_replay_results_dir`; the bot
+reads nothing of it. One run at a time, shared by both listeners; each start deletes the previous
+run. It is refused (`409 conflict`, one cause) while a run is going, during the regular session
+of a trading day when `[api] lab_replay_outside_session_only = true`, without fetched data
+(`pool.csv`), without a module for the strategy, or when the API was started without its config
+file path (the demo).
+
+- `state`: `idle` (no run yet), `running`, `done` (with `summary`) or `failed` (with `cause`:
+  the backtest's own refusal, paths relative to the repo).
+- `strategy`, `version`: what was replayed; `sessions`: the number asked for.
+- `summary`: the window (`first_day` ... `last_day`, `sessions_without_replayed_days`: no gainer
+  or incomplete data that day), every signal (`trades`, `win_rate_percent`, `mean_r`, `total_r`,
+  `profit_factor`, the day-resampled `mean_r_interval_low`/`high` at `confidence_percent`, null
+  when too few days, `max_drawdown_r`) and what the bot's risk limits would have taken
+  (`bot_trades`, `bot_total_usd`, `bot_max_drawdown_usd`). Twenty sessions are few: the interval
+  is wide by construction.
+
 ### GET /chart (read-only, market data)
 
 Candles of any US stock for the apps' chart, read from market data by the API process itself (not
-from the bot's capture). Code: `src/aperture/api/chart.py`; settings: `[chart]` in bot.toml.
+from the bot's capture). Code: `src/tickr/api/chart.py`; settings: `[chart]` in bot.toml.
 
 - Query: exactly `symbol` (upper-case ticker, letters and digits with one optional `.` or `-`
   class suffix, e.g. `BRK.B`), `interval` and `range`. Served pairs: `1m`, `5m`, `30m`, `1h` with
@@ -436,7 +592,7 @@ from the bot's capture). Code: `src/aperture/api/chart.py`; settings: `[chart]` 
   while the day's session is not over are read again after `[chart] live_ttl_seconds`; after the
   session the daily series is kept until the next pre-market opens.
 - Pruning: the disk cache grows by one file per symbol and settled day charted (about 100 KB each
-  at most); `aperture maintain --apply` deletes day files older than `[chart] cache_max_age_days`
+  at most); `tickr maintain --apply` deletes day files older than `[chart] cache_max_age_days`
   (docs/operations.md). A pruned day is read from Webull again when charted.
 - Budget: the chart has its own request budget, `[chart] requests_per_minute` per 60 s, never the
   bot's. When it is spent the answer is `429 rate_limited` with `Retry-After` (seconds); nothing is
@@ -445,16 +601,16 @@ from the bot's capture). Code: `src/aperture/api/chart.py`; settings: `[chart]` 
   two processes together never pass one route limit (docs/webull-facts.md, section C).
 - Off by default: `[chart] webull_enabled = false` answers every chart `503 unavailable` with that
   cause. Turned on, the API first looks for the chart probe C1: until the newest
-  `python -m aperture.probes chart-client` run recorded for the environment (`summary.json`
+  `python -m tickr.probes chart-client` run recorded for the environment (`summary.json`
   under `<data_dir>/<[probe] evidence_dir>/`) says `passed`, it builds no Webull client and every
   chart is `503 unavailable` with that cause; it looks once, when it starts. After that,
-  `python -m aperture.api` builds its own Webull market-data client in a
+  `python -m tickr.api` builds its own Webull market-data client in a
   background thread once it serves (status and commands never wait for it, even while the token
   awaits confirmation): it needs the app key and secret in its environment (the launchd job and
   the container do not load them for the API today) and uses the environment's token folder; it
   never reads the account id and refuses any non-market-data route. Until the client is ready
   `/chart` answers `503` "starting"; if it cannot be built, `503` with the cause. The gate for
-  turning it on is in docs/webull-facts.md, section C (C1 and C2, C1 in that environment). `aperture demo` serves its simulated world here (regular session only).
+  turning it on is in docs/webull-facts.md, section C (C1 and C2, C1 in that environment). `tickr demo` serves its simulated world here (regular session only).
 - Delayed data (`delay_minutes` not 0), a failed read or a calendar refusal is `503 unavailable`
   with the cause.
 
@@ -516,7 +672,7 @@ when it was the cause it appears in `refusal_cause`.
 No record for the symbol today is `404 not_found` (cause names the symbol and date); a malformed
 line for the symbol in the decision file is `503 unavailable` (lines of other symbols are not
 parsed); a missing, repeated, extra or non-ticker parameter is
-`400 bad_request`. The command line has the same read: `aperture explain SYMBOL` (exit 0 found,
+`400 bad_request`. The command line has the same read: `tickr explain SYMBOL` (exit 0 found,
 1 none or unreadable).
 
 ### GET /observers, GET /decisions and GET /skipped (read-only)
@@ -539,7 +695,7 @@ its current `strategy.toml` and an empty list. Entries are in configuration orde
 version (numeric versions numerically). `reasons` are the rules of the checks that failed,
 in the order evaluated (empty when every check passed); the full checks are in `/decisions`.
 `result_gross_usd` is the observer's simulated gross day result in USD: exactly the simulation
-of the offline report `python -m aperture.research observers` (every ENTER replayed alone like
+of the offline report `python -m tickr.research observers` (every ENTER replayed alone like
 `whatif`, an ENTER inside an earlier simulated trade of the same symbol skipped, slippage in,
 commissions out, for the recorded quantity), run on that day's captured bars
 (`bars.jsonl`, or its archived `.gz`) with `[api] replay_settings_file` and the session
@@ -609,8 +765,8 @@ and observer records are left out. A date without a decision file answers with a
 Every refused minute is its own row: consecutive refusals are not merged.
 
 `refusal` (in `/skipped` and `/decisions`) is `null` unless admission is `refused`; then it is
-`{code, message, since, until}`, read from the recorded `CODE: detail` at the API (the decision
-file keeps the text):
+`{code, message, since, until, params}`, read from the recorded `CODE: detail` at the API (the
+decision file keeps the text):
 - `code`: the admission cause (`risk/causes.py`, in spec order: `GATE_CLOSED` ...
   `STOP_BUDGET_UNAVAILABLE`), `ENGINE_REFUSED` when admission passed but the engine refused to
   open the trade, or `UNKNOWN` (see below). The schema lists the closed set.
@@ -622,6 +778,24 @@ file keeps the text):
   the losing trade closed and `until` when the cooldown ends (no entry in that symbol before it).
   `AFTER_LAST_ENTRY`: `since` is the session's last entry time, `until` is `null`. Every other
   code: both `null`.
+- `params`: the values in the detail, for a translated sentence (`{}` when the code has none or
+  the detail is in no known shape; then show `message`): `POSITION_LIMIT_REACHED` `{open,
+  limit}`; `OWN_POSITION_OPEN` / `OWN_ORDER_WORKING` `{count}`; `BROKER_READ_STALE` and
+  `QUOTE_STALE` `{age, limit}`; `CLOCK_INVALID` `{seconds}` (a broker read in the future);
+  `QUOTE_TIME_INVALID` `{seconds, limit}`; `CALENDAR_UNKNOWN` `{calendar}`;
+  `CALENDAR_DAY_MISMATCH` `{calendar_day, today}`; `HALF_DAY` `{day}`;
+  `OUTSIDE_REGULAR_SESSION` `{open, close}`; `AFTER_LAST_ENTRY` `{time}`; `SYMBOL_COOLDOWN`
+  `{symbol, until}` (`until` as `HH:MM`); `DECISION_NOT_ENTER` `{verdict}`;
+  `DECISION_NOT_ACTIVE` `{strategy, version, active}`; `DECISION_INCOMPLETE` `{fields}`;
+  `DECISION_INVALID` `{stop, entry_low, entry_high}`; `ORDER_PRICES_INVALID` `{limit, entry_low,
+  entry_high}` or `{stop, limit}`; `QUOTE_SYMBOL_MISMATCH` `{quote_symbol, symbol}`;
+  `QUOTE_INVALID` `{bid, ask}`; `PRICE_OUTSIDE_WINDOW` `{ask, entry_low, limit}`;
+  `QUANTITY_NOT_WHOLE` `{quantity}`; `QUANTITY_BELOW_ONE` `{quantity, maximum}`;
+  `NOTIONAL_OVER_CAP` `{notional, cap}`; `PLANNED_LOSS_OVER_LIMIT` `{planned_loss, limit}`;
+  `DAILY_MONEY_UNKNOWN` `{missing}`; `DAILY_CEILING` `{room, ceiling, realized, reserved,
+  min_room}` (room below the minimum) or `{realized, reserved, new, total, ceiling}` (the new
+  trade would cross the ceiling); `GATE_CLOSED` `{gate, ...}` (the gate's code and params, as
+  `trading_gate` above). Every other code: `{}`.
 - A cause that is not exactly one of the shapes admission and the entry path write (no `: `,
   an unknown code, a detail of a timed code that does not match, or a detail of any other code
   that holds an ISO time) is `code` `UNKNOWN` with the recorded text as `message`, never a guess.
@@ -719,6 +893,19 @@ the strategy saw.
 Rows are closest first (`null` closeness last), then by symbol, at most
 `[api] watching_max_rows`; `total` counts every row before the cap.
 
+`latest_size` is the Overview's "next size · binding" line: the size the active strategy gave its
+newest sized decision that day (any verdict, entering included), read from the record, never
+recomputed. The strategy sizes each signal itself (owner decision 2026-11-14); the platform only
+verifies that quantity on admission, so there is no size before a signal. Fields: `symbol`, `at`,
+`strategy`, `verdict`, `quantity` (the measured value of the recorded `quantity` check: whole
+shares, below 1 means too small to enter), and `binding`: `daily_room` only when the record
+proves it: a `daily_loss_budget_usd` check (the planned loss was lowered to the room the daily
+loss ceiling leaves) and floor(that room / the recorded `sizing_risk_per_share`) equal to the
+quantity. The room check alone proves nothing: the notional cap can still cut below it.
+Otherwise `binding` is `null` with `binding_cause`. It is the last size given, not a forecast of
+the next one (that depends on the next signal's price and stop). `latest_size` is `null` when no
+decision that day reached sizing.
+
 ### Commands
 
 `202` means queued, not executed. The command's result appears later in
@@ -763,9 +950,9 @@ preconditions to every command.
   calendar start (`[runtime] bot_start_local` on `launch_weekdays`) would start it the next
   trading day. The marker stops that: while it exists preflight fails with cause
   `stopped-by-operator` (the bot job alerts `bot-did-not-start`, the morning preflight job
-  `preflight-failed`), `aperture run` refuses (exit 3) and `aperture status` says so. To trade
-  again: `aperture clear-stop`, then wait for the next scheduled start or
-  `launchctl kickstart gui/$(id -u)/local.aperture.bot`. `aperture resume` and `aperture exit`
+  `preflight-failed`), `tickr run` refuses (exit 3) and `tickr status` says so. To trade
+  again: `tickr clear-stop`, then wait for the next scheduled start or
+  `launchctl kickstart gui/$(id -u)/local.tickr.bot`. `tickr resume` and `tickr exit`
   still work while the marker exists.
 - **emergency**: three steps in this order, each the existing handler and each journaled as a
   `command-step` row: entry-stop on (the same fence as `/commands/entry-stop`, survives

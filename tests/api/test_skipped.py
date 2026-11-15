@@ -10,19 +10,19 @@ from decimal import Decimal
 
 import pytest
 
-from aperture import config
-from aperture.api import contract
-from aperture.api.observer_results import ObserverResults, SimulationPaths
-from aperture.api.server import settings_from_config
-from aperture.archive import compress
-from aperture.calendar import SessionCalendar
-from aperture.data.capture import BARS_FILE, read_captured_bars
-from aperture.observers.log import DecisionLog
-from aperture.replay.clock import calendar_clock
-from aperture.replay.settings import load_settings
-from aperture.research import observer_report
-from aperture.research.records import Admission, DecisionRecord
-from aperture.strategy.base import Check, Decision, Role, Verdict
+from tickr import config
+from tickr.api import contract
+from tickr.api.observer_results import ObserverResults, SimulationPaths
+from tickr.api.server import settings_from_config
+from tickr.archive import compress
+from tickr.calendar import SessionCalendar
+from tickr.data.capture import BARS_FILE, read_captured_bars
+from tickr.observers.log import DecisionLog
+from tickr.replay.clock import calendar_clock
+from tickr.replay.settings import load_settings
+from tickr.research import observer_report
+from tickr.research.records import Admission, DecisionRecord
+from tickr.strategy.base import Check, Decision, Role, Verdict
 
 from .schema_check import errors
 from .test_decisions import (
@@ -121,11 +121,12 @@ def _research_total(cfg, records, path):
 
 
 NO_BARS = "no captured bars for 2026-11-16"
+NO_BARS_CODES = [{"code": "no_captured_bars", "params": {"day": "2026-11-16"}}]
 
 
 def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
     refused = _enter(ACTIVE, Role.ACTIVE, minute=7, admission=Admission.REFUSED,
-                     cause="POSITION_LIMIT_REACHED: 1 open position, limit 1")
+                     cause="POSITION_LIMIT_REACHED: 1 open position(s), limit 1")
     late = _enter(ACTIVE, Role.ACTIVE, minute=2, admission=Admission.NOT_EVALUATED,
                   symbol="WXYZ")
     taken = _enter(ACTIVE, Role.ACTIVE, minute=1, admission=Admission.TAKEN)
@@ -143,19 +144,21 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
                      "threshold": "1.5", "passed": True, "note": ""}],
          "prices_after": [], "prices_after_cause": NO_BARS,
          "what_if": {"result_gross_usd": None, "result_r": None, "exit_reason": None,
-                     "cause": NO_BARS}},
+                     "cause": NO_BARS, "cause_codes": NO_BARS_CODES},
+         "prices_after_cause_codes": NO_BARS_CODES},
         {"at": "2026-11-16T15:07:00.000Z", "symbol": "ABCD",
          "strategy": {"name": "price-action-v1", "version": "1"},
          "admission": "refused",
-         "refusal_cause": "POSITION_LIMIT_REACHED: 1 open position, limit 1",
-         "refusal": {"code": "POSITION_LIMIT_REACHED", "message": "1 open position, limit 1",
-                     "since": None, "until": None},
+         "refusal_cause": "POSITION_LIMIT_REACHED: 1 open position(s), limit 1",
+         "refusal": {"code": "POSITION_LIMIT_REACHED", "message": "1 open position(s), limit 1",
+                     "since": None, "until": None, "params": {"open": "1", "limit": "1"}},
          "entry_price": "12.10", "stop_price": "11.80",
          "checks": [{"rule": "relative_volume", "measured": "2.4", "operator": ">=",
                      "threshold": "1.5", "passed": True, "note": ""}],
          "prices_after": [], "prices_after_cause": NO_BARS,
          "what_if": {"result_gross_usd": None, "result_r": None, "exit_reason": None,
-                     "cause": NO_BARS}},
+                     "cause": NO_BARS, "cause_codes": NO_BARS_CODES},
+         "prices_after_cause_codes": NO_BARS_CODES},
     ]
     # /decisions carries the same admission and cause
     decisions = _get(api, "/decisions?symbol=ABCD&date=2026-11-16", "decisions-v1")
@@ -163,7 +166,7 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
             for d in decisions["decisions"]] == [
         ("15:01", "taken", None), ("15:03", "not_applicable", None),
         ("15:04", "not_evaluated", None),
-        ("15:07", "refused", "POSITION_LIMIT_REACHED: 1 open position, limit 1")]
+        ("15:07", "refused", "POSITION_LIMIT_REACHED: 1 open position(s), limit 1")]
     assert [d["refusal"] for d in decisions["decisions"]][:3] == [None, None, None]
     assert decisions["decisions"][3]["refusal"] == body["signals"][1]["refusal"]
 
@@ -179,7 +182,7 @@ def test_skipped_archived_day_and_empty_day(api, cfg):
         ("ABCD", "SYMBOL_COOLDOWN: ABCD")]
     # not the shape admission writes for a cooldown: read as UNKNOWN, never guessed
     assert body["signals"][0]["refusal"] == {"code": "UNKNOWN", "message": "SYMBOL_COOLDOWN: ABCD",
-                                             "since": None, "until": None}
+                                             "since": None, "until": None, "params": {}}
     assert _get(api, "/skipped?date=2026-11-10", "skipped-v1")["signals"] == []
 
 
@@ -193,7 +196,8 @@ def test_cooldown_refusal_is_served_with_its_times(api, cfg):
     assert signal["refusal"] == {
         "code": "SYMBOL_COOLDOWN",
         "message": "ABCD closed at a loss; no new entry in it during the cooldown",
-        "since": "2026-11-16T14:51:30.123Z", "until": "2026-11-16T15:21:30.123Z"}
+        "since": "2026-11-16T14:51:30.123Z", "until": "2026-11-16T15:21:30.123Z",
+        "params": {"symbol": "ABCD", "until": "10:21"}}
 
 
 ENGINE_CAUSES = ["trading gate closed: disabled", "entries fenced: entry-stop",
@@ -203,7 +207,8 @@ ENGINE_CAUSES = ["trading gate closed: disabled", "entries fenced: entry-stop",
 @pytest.mark.parametrize("detail", ENGINE_CAUSES)
 def test_engine_refusal_after_admission_is_read(detail):
     refusal = contract.refusal_of(f"ENGINE_REFUSED: {detail}")
-    assert refusal == contract.RefusalV1(contract.RefusalCode.ENGINE_REFUSED, detail, None, None)
+    assert refusal == contract.RefusalV1(contract.RefusalCode.ENGINE_REFUSED, detail, None, None,
+                                         {})
 
 
 @pytest.mark.parametrize("cause", [
@@ -230,7 +235,7 @@ def test_engine_refusal_after_admission_is_read(detail):
 ])
 def test_unreadable_cause_is_unknown_with_the_recorded_text(cause):
     assert contract.refusal_of(cause) == contract.RefusalV1(
-        contract.RefusalCode.UNKNOWN, cause, None, None)
+        contract.RefusalCode.UNKNOWN, cause, None, None, {})
 
 
 def test_no_cause_is_no_refusal():
@@ -439,11 +444,12 @@ def test_observer_trades_are_the_simulated_enters(api, cfg):
          "closed_at": contract.format_time(trade.exit_time),
          "exit_price": str(trade.exit_price.quantize(q)), "quantity": "10",
          "exit_reason": "stop", "result_gross_usd": str(filled.result_usd.quantize(q)),
-         "result_r": str(trade.r_multiple.quantize(q)), "cause": None},
+         "result_r": str(trade.r_multiple.quantize(q)), "cause": None, "cause_codes": []},
         {"symbol": "ABCD", "at": "2026-11-16T15:07:00.000Z", "opened_at": None,
          "entry_price": None, "closed_at": None, "exit_price": None, "quantity": None,
          "exit_reason": None, "result_gross_usd": None, "result_r": None,
-         "cause": "skipped_overlap: an earlier simulated trade of ABCD was still open"}]
+         "cause": "skipped_overlap: an earlier simulated trade of ABCD was still open",
+         "cause_codes": [{"code": "skipped_overlap", "params": {"symbol": "ABCD"}}]}]
     assert overlap.trade is None and Decimal(trades[0]["result_r"]) < 0
 
 

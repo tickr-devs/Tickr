@@ -1,4 +1,4 @@
-# Demo day (`aperture demo`)
+# Demo day (`tickr demo`)
 
 A made-up trading day, so every screen of the macOS and iOS apps can be looked at with full data
 (open position with its stop, wins and losses, daily room near the ceiling, decisions and their
@@ -8,7 +8,7 @@ with their simulated day results, account, past days for the day picker, perform
 the demo sessions, minute bars).
 
 ```
-.venv/bin/aperture demo          # or: python -m aperture.cli demo
+.venv/bin/tickr demo          # or: python -m tickr.cli demo
 ```
 
 What it does:
@@ -17,7 +17,7 @@ What it does:
   `bot.toml` runs as environment `demo`, serves the API on `[demo] api_port` (8776) and runs the
   observers listed in `config/demo.toml`. The demo's `data/` is inside that folder; the real
   `data/` is never read or written. A `demo/` folder it did not make is refused, never deleted.
-- Runs the real bot (`aperture run`) on a simulated exchange (`src/aperture/demo/world.py`):
+- Runs the real bot (`tickr run`) on a simulated exchange (`src/tickr/demo/world.py`):
   only the broker, market data, clock, `sleep` and alerts are replaced. Webull is never
   contacted, alerts go to the terminal. So the database, status, account, capture and decision
   files have exactly the format of a real day. The per-trade metrics of `docs/api.md`
@@ -30,14 +30,40 @@ What it does:
   or drifts, a close never sits above its planned close and every high reaches it, so noise
   alone never closes above the recent highs: the breakouts, stop-outs and refusals stay where
   the legs put them.
+- Gives each symbol `[market] chart_days` older days (250) of chart-only D bars before its minute
+  history, a seeded random walk ending at its `base`, so the 1M, 3M and 1Y charts and RSI 14
+  have data. They are weekdays (holidays are not skipped) and are served on D charts only. The
+  bot never reads them: its history reads are minute bars.
 - Plays the past sessions in `config/demo.toml` fast, then the demo day (today if it is a session,
   otherwise the latest session before it) fast up to `[demo] clock`, then in real time with the
   local API listening, until Ctrl-C. About two to three minutes before the API is up.
 
 Point the apps at it: macOS Settings, API address `http://127.0.0.1:8776` (or
-`defaults write local.aperture.operator apiBaseURL http://127.0.0.1:8776`). The API's clock is the demo
+`defaults write local.tickr.operator apiBaseURL http://127.0.0.1:8776`). The API's clock is the demo
 day's clock, so "today" in the apps is the demo day.
 
 The bot holds one position at a time in v1 (admission refuses a second), so the demo has one open
 position; the day's other trades come one after another. Everything the day contains is in
 `config/demo.toml`, each key commented.
+
+## An unprotected position, for checking the apps
+
+`[scenario] faults` in `config/demo.toml` is empty by default. To see the open position without a
+verified stop, add:
+
+```toml
+faults = [{ at = "14:31", kind = "stop-unverified", symbol = "MVLD" }]
+```
+
+From that New York time on, the simulated exchange shows that symbol's stops in a status the
+adapter cannot map (`DEMO_UNVERIFIED`, so `OrderState.UNKNOWN`). The stops are not working and
+never fill. The real bot reacts as it would live:
+
+- the position's stop is no longer `verified`;
+- the `unprotected` and `status-unknown` fences are set and new entries are blocked;
+- the unprotected-position alert goes to the terminal.
+
+After `[orders] max_unprotected_seconds`, the bot cancels the stop and closes the
+position (`unprotected-too-long`), so the apps then show that exit and its fence. Put `at`
+inside the live part of the day (after `[demo] clock`), so that wait happens in real time. Only
+the demo's exchange changes: `broker/fake.py` and the live path are untouched.

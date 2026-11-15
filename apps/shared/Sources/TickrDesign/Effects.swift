@@ -1,0 +1,359 @@
+import SwiftUI
+
+// Small animated pieces shared by the operator apps. Motion is part of the design on every screen;
+// each piece falls back to a still version when the person has Reduce Motion on.
+
+/// A status dot. While `pulsing`, a ring expands and fades out once each time `event` changes (a new
+/// status read, a fill, a state change): motion only on real events, never a loop. With no event it
+/// stays still.
+public struct PulseDot: View {
+  let color: Color
+  let size: CGFloat
+  let pulsing: Bool
+  let event: AnyHashable?
+
+  public init(_ color: Color, size: CGFloat = Tokens.Size.dot, pulsing: Bool = true, event: AnyHashable? = nil) {
+    self.color = color
+    self.size = size
+    self.pulsing = pulsing
+    self.event = event
+  }
+
+  public var body: some View {
+    Circle()
+      .fill(color)
+      .frame(width: size, height: size)
+      .eventPulse(Circle(), color: color, scale: Tokens.Motion.pulseScale, event: pulsing ? event : nil)
+      .accessibilityHidden(true)
+  }
+}
+
+/// Draws `shape`'s outline around the view and plays one expanding, fading pulse each time `event`
+/// changes (Core Animation plays it; see PulseLayer). Nothing moves without a new event or with
+/// Reduce Motion on.
+struct EventPulse<S: Shape>: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let shape: S
+  let color: Color
+  let scale: CGFloat
+  let event: AnyHashable?
+
+  func body(content: Content) -> some View {
+    content.overlay {
+      if let event, !reduceMotion {
+        PulseLayer(shape: shape, color: color, scale: scale, event: event)
+          .allowsHitTesting(false)
+      }
+    }
+  }
+}
+
+extension View {
+  /// One pulse of `shape`'s outline per change of `event`; still without one.
+  public func eventPulse<S: Shape>(_ shape: S, color: Color, scale: CGFloat, event: AnyHashable?) -> some View {
+    modifier(EventPulse(shape: shape, color: color, scale: scale, event: event))
+  }
+}
+
+/// Fades a view in while it rises a few points, after `delay`; staggered delays make a screen
+/// assemble itself on appear.
+public struct Rise: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var shown = false
+  let delay: Double
+
+  public func body(content: Content) -> some View {
+    let isShown = shown
+    let still = reduceMotion
+    // Applied when drawing, not in layout: animated as plain opacity and offset, each frame of the
+    // entrance laid out the whole screen again (Risk's six cards: 19 to 27 hitches on the first
+    // open, Instruments 2026-11-15).
+    content
+      .visualEffect { effect, _ in
+        effect
+          .opacity(isShown ? 1 : 0)
+          .offset(y: isShown || still ? 0 : Tokens.Size.riseOffset)
+      }
+      .onAppear {
+        withAnimation(Tokens.Motion.entrance.delay(delay)) { shown = true }
+      }
+  }
+}
+
+public extension View {
+  /// Rises in as the `step`-th card of a screen: 0 first, then `Tokens.Motion.stagger` apart.
+  func rise(step: Int) -> some View { modifier(Rise(delay: Double(step) * Tokens.Motion.stagger)) }
+
+  /// Rises in after `delay` seconds. Prefer `rise(step:)`, which keeps one rhythm on every screen.
+  func rise(_ delay: Double = 0) -> some View { modifier(Rise(delay: delay)) }
+}
+
+/// A ring that fills to `fraction` (0...1) with a soft halo behind it. When the fraction changes the
+/// ring animates to it and the halo swells once; nothing moves between changes.
+public struct ResultRing<Center: View>: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var drawn = false
+  let fraction: Double
+  let color: Color
+  let lineWidth: CGFloat
+  let center: Center
+
+  public init(fraction: Double, color: Color, lineWidth: CGFloat = Tokens.Stroke.ring, @ViewBuilder center: () -> Center) {
+    self.fraction = min(max(fraction, 0), 1)
+    self.color = color
+    self.lineWidth = lineWidth
+    self.center = center()
+  }
+
+  public var body: some View {
+    ZStack {
+      Circle()
+        .fill(RadialGradient(colors: [color.opacity(Tokens.Opacity.border), .clear], center: .center,
+          startRadius: 0, endRadius: Tokens.Size.ringHalo))
+        .padding(lineWidth)
+        .phaseAnimator([false, true], trigger: reduceMotion ? 0 : fraction) { halo, swelled in
+          halo
+            .scaleEffect(swelled ? Tokens.Motion.breatheScale : 1)
+            .opacity(swelled ? Tokens.Opacity.overlay : Tokens.Opacity.faint)
+        } animation: { _ in
+          .easeInOut(duration: Tokens.Motion.breatheSeconds)
+        }
+      Circle().stroke(Palette.separator, lineWidth: lineWidth)
+      Circle()
+        .trim(from: 0, to: drawn ? fraction : 0)
+        .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+        .rotationEffect(RingGeometry.startAngle)
+        .animation(Tokens.Motion.fill, value: fraction)
+      center
+    }
+    .padding(lineWidth / 2)
+    .onAppear {
+      withAnimation(reduceMotion ? nil : Tokens.Motion.fill) { drawn = true }
+    }
+  }
+}
+
+/// Fixed geometry of `ResultRing` (kept outside the generic type, which cannot hold statics).
+enum RingGeometry {
+  /// The ring starts at twelve o'clock.
+  static let startAngle = Angle.degrees(-90)
+}
+
+/// A line through `values`, scaled to fill its frame. Animates when the values change.
+public struct Sparkline: Shape {
+  public var values: [Double]
+
+  public init(_ values: [Double]) { self.values = values }
+
+  public func path(in rect: CGRect) -> Path {
+    var path = Path()
+    guard values.count > 1, let low = values.min(), let high = values.max() else {
+      path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+      path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+      return path
+    }
+    let span = high - low == 0 ? 1 : high - low
+    for (index, value) in values.enumerated() {
+      let point = CGPoint(
+        x: rect.minX + rect.width * CGFloat(index) / CGFloat(values.count - 1),
+        y: rect.maxY - rect.height * CGFloat((value - low) / span))
+      if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+    }
+    return path
+  }
+}
+
+/// One entry of the scrolling event ticker.
+public struct TickerItem: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let tag: String
+  public let text: String
+  public let tone: Tone
+
+  public enum Tone: Sendable { case teal, green, blue, amber, violet, red, muted }
+
+  public init(id: String, tag: String, text: String, tone: Tone) {
+    self.id = id
+    self.tag = tag
+    self.text = text
+    self.tone = tone
+  }
+}
+
+extension TickerItem.Tone {
+  var color: Color {
+    switch self {
+    case .teal: return Palette.accentText
+    case .green: return Palette.profitText
+    case .blue: return Palette.infoText
+    case .amber: return Palette.warningText
+    case .violet: return Palette.highlightText
+    case .red: return Palette.lossText
+    case .muted: return Palette.textTertiary
+    }
+  }
+}
+
+/// A slowly scrolling strip of recent events (a marquee), paused when `moving` is false or Reduce
+/// Motion is on; then it is an ordinary horizontal scroll view.
+public struct Ticker: View {
+  let items: [TickerItem]
+  let moving: Bool
+  /// Points per second.
+  let speed: Double
+
+  public init(_ items: [TickerItem], moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed) {
+    self.items = items
+    self.moving = moving
+    self.speed = speed
+  }
+
+  public var body: some View {
+    Marquee(moving: moving && !items.isEmpty, content: items, speed: speed) { row }
+  }
+
+  private var row: some View {
+    HStack(spacing: Tokens.Space.xl) {
+      ForEach(items) { item in
+        HStack(spacing: Tokens.Space.s) {
+          Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
+          Text(item.text).foregroundStyle(Palette.textTertiary)
+        }
+        .font(Tokens.Typography.annotation)
+        .lineLimit(1)
+        .fixedSize()
+      }
+    }
+    .padding(.trailing, Tokens.Space.xl)
+  }
+
+}
+
+/// A row that scrolls slowly to the left in a loop, faded at both ends, paused when `moving` is
+/// false or Reduce Motion is on; then it is an ordinary horizontal scroll view.
+///
+/// The row is drawn into a picture once per change of `content` (or of appearance) and Core
+/// Animation scrolls it (`MarqueeLayer`), so the scroll costs the app nothing per frame. Hover
+/// help on the scrolling row is not shown; VoiceOver reads the live row.
+public struct Marquee<Row: View>: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.displayScale) private var displayScale
+  @Environment(\.locale) private var locale
+  @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.colorSchemeContrast) private var contrast
+  @State private var picture: [CGImage] = []
+  /// Width of the live row, in points: what the picture's tiles cover.
+  @State private var rowWidth: CGFloat = 0
+  let moving: Bool
+  /// What the row shows; a change draws the picture again.
+  let content: AnyHashable
+  /// Points per second.
+  let speed: Double
+  let row: Row
+
+  public init(
+    moving: Bool = true, content: AnyHashable, speed: Double = Tokens.Motion.tickerSpeed, @ViewBuilder row: () -> Row
+  ) {
+    self.moving = moving
+    self.content = content
+    self.speed = speed
+    self.row = row()
+  }
+
+  /// Everything the picture depends on.
+  private struct PictureKey: Hashable {
+    let content: AnyHashable
+    let scheme: ColorScheme
+    let scale: CGFloat
+    let locale: Locale
+    let typeSize: DynamicTypeSize
+    let contrast: ColorSchemeContrast
+    let width: CGFloat
+  }
+
+  public var body: some View {
+    Group {
+      if moving && !reduceMotion {
+        ZStack(alignment: .leading) {
+          // The live row, invisible: it gives the strip its height and the picture its width.
+          row.fixedSize().hidden()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+          if !picture.isEmpty {
+            MarqueeLayer(tiles: picture, scale: displayScale, speed: speed)
+              .accessibilityRepresentation { row }
+          }
+        }
+        // minWidth 0: the strip takes the width it is offered, never the width of its row
+        // (else it widens the whole screen and pushes everything else off the sides).
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .task(id: pictureKey) { draw() }
+      } else {
+        ScrollView(.horizontal, showsIndicators: false) { row }
+      }
+    }
+    .mask(LinearGradient(
+      stops: [.init(color: .clear, location: 0), .init(color: .black, location: MarqueeLayout.fadeEdge),
+        .init(color: .black, location: 1 - MarqueeLayout.fadeEdge), .init(color: .clear, location: 1)],
+      startPoint: .leading, endPoint: .trailing))
+    .accessibilityElement(children: .combine)
+  }
+
+  private var pictureKey: PictureKey {
+    PictureKey(
+      content: content, scheme: colorScheme, scale: displayScale, locale: locale, typeSize: typeSize,
+      contrast: contrast, width: rowWidth)
+  }
+
+  /// Draws the row into the picture the layer scrolls. A renderer does not inherit the screen's
+  /// environment, so what the row's look depends on is passed in. Increased contrast cannot be
+  /// set on a view (it is read-only), so a change of it only redraws; the palette has one value
+  /// per appearance.
+  private func draw() {
+    picture = MarqueeTiles.render(
+      row.environment(\.colorScheme, colorScheme)
+        .environment(\.locale, locale)
+        .environment(\.dynamicTypeSize, typeSize),
+      width: rowWidth, scale: displayScale)
+  }
+}
+
+/// A long row drawn as several pictures side by side. A renderer draws a picture wider than its
+/// largest texture as blank (an iPhone's ticker at @3x passed 8,192 pixels and showed nothing,
+/// 2026-11-15), so no tile is wider than `maxPixels`.
+enum MarqueeTiles {
+  /// Widest tile, in pixels: well under the 8,192-pixel texture limit a renderer met on iPhone.
+  static let maxPixels: CGFloat = 4096
+
+  /// Where each tile starts in the row and how wide it is, in points. Every tile but the last is
+  /// a whole number of points, so the tiles meet on pixel edges at any whole display scale.
+  static func spans(width: CGFloat, scale: CGFloat) -> [(x: CGFloat, width: CGFloat)] {
+    guard width > 0, scale > 0 else { return [] }
+    let step = max(1, (maxPixels / scale).rounded(.down))
+    return stride(from: 0, to: width, by: step).map { x in (x: x, width: min(step, width - x)) }
+  }
+
+  /// The row (laid out at its ideal size) as tiles at `scale` pixels per point, left to right.
+  /// Empty when the row has no width yet or a tile could not be drawn.
+  @MainActor
+  static func render(_ row: some View, width: CGFloat, scale: CGFloat) -> [CGImage] {
+    var tiles: [CGImage] = []
+    for span in spans(width: width, scale: scale) {
+      let renderer = ImageRenderer(
+        content: row.fixedSize()
+          .offset(x: -span.x)
+          .frame(width: span.width, alignment: .leading)
+          .clipped())
+      renderer.scale = scale
+      guard let tile = renderer.cgImage else { return [] }
+      tiles.append(tile)
+    }
+    return tiles
+  }
+}
+
+private enum MarqueeLayout {
+  /// Share of a marquee's width that fades out at each end.
+  static let fadeEdge = 0.06
+}

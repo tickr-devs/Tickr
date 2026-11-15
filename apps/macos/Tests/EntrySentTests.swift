@@ -1,8 +1,8 @@
-@testable import ApertureKit
-@testable import ApertureMac
-import ApertureDesign
 import Foundation
 import Testing
+import TickrDesign
+@testable import TickrKit
+@testable import TickrMac
 
 @Suite("One send per decision, as the app shows it")
 struct EntrySentTests {
@@ -22,6 +22,7 @@ struct EntrySentTests {
     #expect(once.text == String(localized: L10n.EntrySent.withOutcome(String(localized: L10n.EntrySent.once),
       String(localized: L10n.EntrySent.acknowledged))))
     #expect(once.color != Palette.lossText)
+    #expect(once.help == nil)
     #expect(EntrySent.line(try entry(sends: 2), cause: nil).color == Palette.lossText)
     let missing = EntrySent.line(try entry(sends: nil), cause: "journal unreadable")
     #expect(missing.text == String(localized: L10n.EntrySent.notRecorded))

@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from aperture import config
-from aperture.api import contract
-from aperture.api.server import make_server, settings_from_config
-from aperture.archive import compress
-from aperture.observers.log import DecisionLog
-from aperture.research.records import Admission, DecisionRecord
-from aperture.strategy.base import Check, Decision, Role, Verdict
+from tickr import config
+from tickr.api import contract
+from tickr.api.server import make_server, settings_from_config
+from tickr.archive import compress
+from tickr.observers.log import DecisionLog
+from tickr.research.records import Admission, DecisionRecord
+from tickr.strategy.base import Check, Decision, Role, Verdict
 
 from .samples import T0
 from .schema_check import errors
@@ -121,6 +121,9 @@ def test_action_is_the_explain_verdict_enum():
 # ---------------------------------------------------------------- GET /observers
 
 
+NO_BARS_CODES = [{"code": "no_captured_bars", "params": {"day": "2026-11-16"}}]
+
+
 def test_observers_today(api, cfg):
     log = DecisionLog.from_config(cfg)
     late = _observer(minute=5, verdict=Verdict.ENTER, checks=(PASS,),
@@ -139,7 +142,8 @@ def test_observers_today(api, cfg):
             {"at": "2026-11-16T15:05:00.000Z", "symbol": "ABCD", "action": "ENTER",
              "reasons": []},
         ], "result_cause": "no captured bars for 2026-11-16", "trades": None,
-        "trades_cause": "no captured bars for 2026-11-16", "trades_truncated": False}]
+        "trades_cause": "no captured bars for 2026-11-16", "trades_truncated": False,
+        "result_cause_codes": NO_BARS_CODES, "trades_cause_codes": NO_BARS_CODES}]
 
 
 def test_observer_without_decisions_and_no_observers(api, cfg, tmp_path_factory):

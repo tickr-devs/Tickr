@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from aperture import config
-from aperture.cli import main
-from aperture.risk.admission import AdmissionLimits
+from tickr import config
+from tickr.api.reasons import gate_reason
+from tickr.cli import main
+from tickr.risk.admission import AdmissionLimits
 
 ROOT = Path(__file__).resolve().parent.parent
 BOT = ROOT / "config" / "bot.toml"
@@ -120,6 +121,14 @@ def test_stop_held_proof_interval_must_be_positive(tmp_path, value):
         config.load(_copy(tmp_path, text))
 
 
+@pytest.mark.parametrize("value", ["0", "-5"])
+def test_detail_unreadable_wait_must_be_positive(tmp_path, value):
+    text = re.sub(r"(?m)^detail_unreadable_seconds = \S+", f"detail_unreadable_seconds = {value}",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="detail_unreadable_seconds"):
+        config.load(_copy(tmp_path, text))
+
+
 def test_account_stale_must_exceed_the_reconcile_interval(tmp_path):
     text = re.sub(r"(?m)^account_stale_seconds = \S+", "account_stale_seconds = 10",
                   BOT.read_text("utf-8"))
@@ -161,6 +170,7 @@ def test_gate_open_for_environment_without_authorization(tmp_path):
     cfg = config.load(BOT)
     loaded = config.load(_with_environment(tmp_path, _open_name(cfg)))
     assert config.trading_gate(loaded).open
+    assert gate_reason(config.trading_gate(loaded).cause).code == "trading_enabled"
 
 
 def test_gate_closed_when_trading_disabled(tmp_path):
@@ -169,6 +179,7 @@ def test_gate_closed_when_trading_disabled(tmp_path):
     gate = config.trading_gate(loaded)
     assert not gate.open
     assert "disabled" in gate.cause
+    assert gate_reason(gate.cause).params == {"environment": loaded.environment_name}
 
 
 def _enabled_gated(tmp_path: Path) -> config.Config:
@@ -196,12 +207,14 @@ def test_gate_requires_authorization_file(tmp_path):
     cfg = _enabled_gated(tmp_path)
     gate = config.trading_gate(cfg)
     assert not gate.open and "not found" in gate.cause
+    assert gate_reason(gate.cause).params == {"file": cfg.environment.authorization_file}
 
 
 def test_gate_opens_with_matching_authorization(tmp_path):
     cfg = _enabled_gated(tmp_path)
     _authorize(cfg)
     assert config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).code == "authorization_valid"
 
 
 def test_gate_refuses_stale_digest(tmp_path):
@@ -209,12 +222,14 @@ def test_gate_refuses_stale_digest(tmp_path):
     _authorize(cfg, config_digest="0" * 64)
     gate = config.trading_gate(cfg)
     assert not gate.open and "digest" in gate.cause
+    assert gate_reason(gate.cause).code == "authorization_digest_mismatch"
 
 
 def test_gate_refuses_other_environment(tmp_path):
     cfg = _enabled_gated(tmp_path)
     _authorize(cfg, environment="elsewhere")
     assert not config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).code == "authorization_other_environment"
 
 
 def test_gate_refuses_extra_fields(tmp_path):
@@ -223,6 +238,8 @@ def test_gate_refuses_extra_fields(tmp_path):
     _authorize(cfg)
     path.write_text(path.read_text("utf-8") + 'extra = "x"\n', "utf-8")
     assert not config.trading_gate(cfg).open
+    assert gate_reason(config.trading_gate(cfg).cause).params == {
+        "keys": "approved_on, config_digest, environment, statement"}
 
 
 def test_source_never_names_environments():
@@ -242,7 +259,7 @@ def test_every_config_field_has_a_reader():
                      if p.name != "config.py")
     # Readers inside config.py too (the gate, helpers); a declaration `name: type` never
     # matches `.name`.
-    own = (ROOT / "src" / "aperture" / "config.py").read_text("utf-8")
+    own = (ROOT / "src" / "tickr" / "config.py").read_text("utf-8")
     unread = [f"{cls.__name__}.{field.name}"
               for _, cls in inspect.getmembers(config, dataclasses.is_dataclass)
               if cls.__module__ == config.__name__
@@ -253,7 +270,7 @@ def test_every_config_field_has_a_reader():
 
 def test_only_webull_adapter_imports_sdk():
     pattern = re.compile(r"^\s*(from|import)\s+webull", re.MULTILINE)
-    allowed = ROOT / "src" / "aperture" / "broker" / "webull.py"
+    allowed = ROOT / "src" / "tickr" / "broker" / "webull.py"
     offenders = [str(p.relative_to(ROOT)) for p in (ROOT / "src").rglob("*.py")
                  if p != allowed and pattern.search(p.read_text("utf-8"))]
     assert offenders == []
@@ -285,8 +302,8 @@ def test_cli_status_without_database(tmp_path, capsys):
 
 
 def test_cli_status_with_run(tmp_path, capsys):
-    from aperture.cli import data_paths
-    from aperture.store import Store
+    from tickr.cli import data_paths
+    from tickr.store import Store
     path = _copy(tmp_path)
     cfg = config.load(path)
     database, _ = data_paths(cfg)
@@ -314,9 +331,9 @@ def test_bad_route_limit_refused(tmp_path, bad):
 
 
 def test_cli_status_is_read_only(tmp_path, capsys):
-    from aperture.cli import data_paths
-    from aperture.lock import SingleInstanceLock
-    from aperture.store import Store
+    from tickr.cli import data_paths
+    from tickr.lock import SingleInstanceLock
+    from tickr.store import Store
     path = _copy(tmp_path)
     cfg = config.load(path)
     database, lock_path = data_paths(cfg)
@@ -331,7 +348,7 @@ def test_cli_status_is_read_only(tmp_path, capsys):
 def test_cli_status_refuses_schema_mismatch(tmp_path, capsys):
     import sqlite3
 
-    from aperture.cli import data_paths
+    from tickr.cli import data_paths
     path = _copy(tmp_path)
     database, _ = data_paths(config.load(path))
     database.parent.mkdir(parents=True)
@@ -359,6 +376,27 @@ def test_observer_watching_seconds_must_be_positive(tmp_path):
     path = _copy(tmp_path, text)
     with pytest.raises(config.ConfigError, match="watching_seconds"):
         config.load(path)
+
+
+def _observers(tmp_path: Path, names: str) -> Path:
+    text = re.sub(r"(?m)^observers = \[.*\]", f"observers = [{names}]", BOT.read_text("utf-8"))
+    return _copy(tmp_path, text)
+
+
+def test_an_observer_listed_twice_is_refused(tmp_path):
+    with pytest.raises(config.ConfigError, match="observers lists price-action-v2 more than once"):
+        config.load(_observers(tmp_path, '"price-action-v2", "noise-band-v1", "price-action-v2"'))
+
+
+def test_the_active_strategy_as_an_observer_is_refused(tmp_path):
+    active = config.load(BOT).strategy.active
+    with pytest.raises(config.ConfigError, match="cannot also be an observer"):
+        config.load(_observers(tmp_path, f'"{active}"'))
+
+
+def test_distinct_observers_load(tmp_path):
+    cfg = config.load(_observers(tmp_path, '"price-action-v2", "noise-band-v1"'))
+    assert cfg.strategy.observers == ("price-action-v2", "noise-band-v1")
 
 
 def _copy_in(tmp_path: Path, name: str, text: str) -> Path:
@@ -390,7 +428,7 @@ def test_chart_slice_is_checked_when_the_config_loads(tmp_path):
 
 
 def test_bars_route_constant_is_the_adapter_route():
-    from aperture.broker.webull import Route
+    from tickr.broker.webull import Route
     assert Route.BARS.path == config.BARS_ROUTE
 
 

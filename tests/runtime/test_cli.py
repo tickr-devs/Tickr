@@ -3,10 +3,18 @@ from __future__ import annotations
 import json
 import sys
 
-from aperture import config as config_module
-from aperture.runtime import __main__ as runtime_main
-from aperture.runtime.__main__ import main
-from aperture.runtime.preflight import Check, CheckName, PreflightCause, PreflightResult
+import pytest
+
+from tickr import config as config_module
+from tickr.runtime import __main__ as runtime_main
+from tickr.runtime.__main__ import main
+from tickr.runtime.preflight import (
+    Check,
+    CheckName,
+    ExitCode,
+    PreflightCause,
+    PreflightResult,
+)
 
 
 def _records(out: str) -> list[dict]:
@@ -92,15 +100,43 @@ def test_alert_command(config_path, capsys):
     assert record["kind"] == "bot-crashed" and record["text"] == "test"
 
 
+def _env_file(tmp_path, mode):
+    env = tmp_path / "env"
+    env.touch()
+    env.chmod(mode)
+    return env
+
+
+def _render(config_path, env, out):
+    return main(["--config", str(config_path), "render-launchd", "--python", "/x/python",
+                 "--env-file", str(env), "--log-dir", "/x/logs", "--out", str(out)])
+
+
 def test_render_launchd(config_path, repo, tmp_path, capsys):
     out = tmp_path / "plists"
-    assert main(["--config", str(config_path), "render-launchd", "--python", "/x/python",
-                 "--env-file", "/x/env", "--log-dir", "/x/logs", "--out", str(out)]) == 0
-    assert len(list(out.glob("*.plist"))) == 5
+    assert _render(config_path, _env_file(tmp_path, 0o600), out) == 0
+    assert len(list(out.glob("*.plist"))) == 6  # the six jobs
+
+
+@pytest.mark.parametrize("mode", [0o640, 0o604, 0o644])
+def test_render_launchd_refuses_an_env_file_others_can_read(config_path, repo, tmp_path, capsys,
+                                                             mode):
+    out = tmp_path / "plists"
+    env = _env_file(tmp_path, mode)
+    assert _render(config_path, env, out) == ExitCode.CONFIG_INVALID
+    assert f"chmod 600 {env}" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_render_launchd_refuses_a_missing_env_file(config_path, repo, tmp_path, capsys):
+    out = tmp_path / "plists"
+    assert _render(config_path, tmp_path / "absent", out) == ExitCode.CONFIG_INVALID
+    assert "chmod 600" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_token_probe_alerts_when_the_token_waits_for_the_owner(config_path, monkeypatch, capsys):
-    from aperture.broker import webull
+    from tickr.broker import webull
 
     cfg = config_module.load(config_path)
     monkeypatch.setattr(webull, "check_token", lambda cfg, on_token_pending: on_token_pending())
@@ -111,7 +147,7 @@ def test_token_probe_alerts_when_the_token_waits_for_the_owner(config_path, monk
 
 
 def test_token_probe_returns_the_refusal_cause(config_path, monkeypatch, capsys):
-    from aperture.broker import webull
+    from tickr.broker import webull
 
     def refuse(cfg, on_token_pending):
         raise webull.AdapterConfigError("token initialisation failed: token create failed")

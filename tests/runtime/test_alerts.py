@@ -9,8 +9,8 @@ from decimal import Decimal
 
 import pytest
 
-from aperture.config import AlertsConfig
-from aperture.runtime.alerts import (
+from tickr.config import AlertsConfig
+from tickr.runtime.alerts import (
     APP_ALERT_FLAG,
     IMESSAGE,
     MACOS,
@@ -31,7 +31,7 @@ from aperture.runtime.alerts import (
 
 CONFIG = AlertsConfig(dedupe_window_seconds=Decimal(600), notification_timeout_seconds=Decimal(5),
                       fence_alert_after_seconds=Decimal(30),
-                      imessage_recipient_variable="APERTURE_TEST_TO", mac_app="",
+                      imessage_recipient_variable="TICKR_TEST_TO", mac_app="",
                       mac_app_timeout_seconds=Decimal(2))
 T0 = datetime(2026, 11, 16, 14, 30, tzinfo=UTC)
 
@@ -69,10 +69,10 @@ def test_kinds_cover_spec_section_11():
 
 def test_repeat_within_window_is_suppressed_then_shown_again():
     clock, notifier = Clock(), Recorder()
-    alerter = Alerter(CONFIG, "Aperture x", notifier, clock)
+    alerter = Alerter(CONFIG, "Tickr x", notifier, clock)
     first = alerter.alert(AlertKind.STOP_REJECTED, "ABC stop rejected")
     assert first.delivery is Delivery.SHOWN
-    assert notifier.shown == [("Aperture x: stop-rejected", "ABC stop rejected")]
+    assert notifier.shown == [("Tickr x: stop-rejected", "ABC stop rejected")]
     clock.now = T0 + timedelta(seconds=599)
     assert alerter.alert(AlertKind.STOP_REJECTED, "ABC stop rejected").delivery is (
         Delivery.SUPPRESSED_REPEAT)
@@ -121,6 +121,32 @@ def test_osascript_gets_text_as_arguments_not_script():
     assert kwargs["timeout"] == 5.0 and kwargs["check"] is False
 
 
+def test_imessage_script_variables_do_not_shadow_messages_terms():
+    # AppleScript is case-insensitive: `set imessage to ...` collided with the iMessage
+    # service type and failed with -10003 on every send.
+    import re
+
+    from tickr.runtime.alerts import _IMESSAGE_SCRIPT
+
+    terms = {"imessage", "sms", "rcs", "account", "participant", "chat", "service", "buddy"}
+    names = {m.group(1).lower() for line in _IMESSAGE_SCRIPT
+             for m in [re.match(r"set (\w+) to ", line)] if m}
+    assert names and not names & terms
+
+
+def test_osascript_error_keeps_only_the_applescript_number():
+    secret = "+15550000000"
+
+    def runner(argv, **kwargs):
+        stderr = f"184:196: execution error: {secret} not allowed. (-10003)\n".encode()
+        return subprocess.CompletedProcess(argv, 1, stderr=stderr)
+
+    with pytest.raises(NotifyError) as caught:
+        MacNotifier(Decimal(5), runner).notify("t", "x")
+    assert str(caught.value) == "osascript exited with code 1 (AppleScript error -10003)"
+    assert secret not in str(caught.value)
+
+
 @pytest.mark.parametrize("effect", ["exit", "timeout", "missing"])
 def test_osascript_failures_become_notify_error(effect):
     def runner(argv, **kwargs):
@@ -161,7 +187,7 @@ def test_alert_never_waits_for_the_mac_notification_and_one_send_runs_at_a_time(
     """With every channel in the background, alert() returns at once, and the same alert
     raised again while its send is still running is a repeat: one send, not one per pass."""
     mac, phone = Blocking(), Blocking()
-    alerter = Alerter(CONFIG, "Aperture", Channels((), ((MACOS, mac), (IMESSAGE, phone))),
+    alerter = Alerter(CONFIG, "Tickr", Channels((), ((MACOS, mac), (IMESSAGE, phone))),
                       Clock())
     first = alerter.alert(AlertKind.UNPROTECTED_POSITION, "ABC")
     assert first.delivery is Delivery.SENDING and first.pending == (MACOS, IMESSAGE)
@@ -185,7 +211,7 @@ def test_alert_never_waits_for_the_mac_notification_and_one_send_runs_at_a_time(
 
 def test_an_alert_no_channel_delivered_is_sent_again_once_its_sends_have_ended():
     mac, phone = Blocking(fail=True), Blocking(fail=True)
-    alerter = Alerter(CONFIG, "Aperture", Channels((), ((MACOS, mac), (IMESSAGE, phone))),
+    alerter = Alerter(CONFIG, "Tickr", Channels((), ((MACOS, mac), (IMESSAGE, phone))),
                       Clock())
     assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SENDING
     mac.release.set()
@@ -213,7 +239,7 @@ def test_an_alert_whose_thread_cannot_start_is_reported_and_sent_again_next_time
         return thread
 
     mac, phone = Recorder(fail=True), Recorder(fail=True)
-    alerter = Alerter(CONFIG, "Aperture",
+    alerter = Alerter(CONFIG, "Tickr",
                       Channels((), ((MACOS, mac), (IMESSAGE, phone)), spawn=spawn), Clock())
     # The bot's loop gets an outcome, never the exception; the other channel still runs.
     assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SENDING
@@ -233,7 +259,7 @@ def test_a_send_that_raises_leaves_no_alert_marked_as_sending():
         def send(self, title, text, done):
             raise RuntimeError("boom")
 
-    alerter = Alerter(CONFIG, "Aperture", Broken((), ((MACOS, Recorder()),)), Clock())
+    alerter = Alerter(CONFIG, "Tickr", Broken((), ((MACOS, Recorder()),)), Clock())
     for _ in range(2):  # the second call reaches send again instead of being suppressed
         with pytest.raises(RuntimeError):
             alerter.alert(AlertKind.BOT_CRASHED, "x")
@@ -255,10 +281,10 @@ def _capture(code: int = 0):
 def test_imessage_passes_the_variable_name_and_text_as_argv_never_the_recipient():
     calls, runner = _capture()
     text = 'quote " and \\ end tell'
-    IMessageNotifier(CONFIG, {"APERTURE_TEST_TO": RECIPIENT}, runner).notify("Title", text)
+    IMessageNotifier(CONFIG, {"TICKR_TEST_TO": RECIPIENT}, runner).notify("Title", text)
     (argv,) = calls
     assert argv[0] == OSASCRIPT
-    assert argv[-2:] == ["APERTURE_TEST_TO", f"Title\n{text}"]
+    assert argv[-2:] == ["TICKR_TEST_TO", f"Title\n{text}"]
     assert all(text not in part for part in argv[:-1])
     assert RECIPIENT not in " ".join(argv)
     assert "system attribute (item 1 of argv)" in " ".join(argv)
@@ -266,16 +292,16 @@ def test_imessage_passes_the_variable_name_and_text_as_argv_never_the_recipient(
 
 def test_imessage_refuses_without_the_recipient_variable():
     calls, runner = _capture()
-    for environ in ({}, {"APERTURE_TEST_TO": ""}):
-        with pytest.raises(NotifyError, match="alert-recipient-missing: APERTURE_TEST_TO"):
+    for environ in ({}, {"TICKR_TEST_TO": ""}):
+        with pytest.raises(NotifyError, match="alert-recipient-missing: TICKR_TEST_TO"):
             IMessageNotifier(CONFIG, environ, runner).notify("t", "x")
     assert calls == []
-    assert recipient_missing(CONFIG, {}) == "APERTURE_TEST_TO"
-    assert recipient_missing(CONFIG, {"APERTURE_TEST_TO": RECIPIENT}) is None
+    assert recipient_missing(CONFIG, {}) == "TICKR_TEST_TO"
+    assert recipient_missing(CONFIG, {"TICKR_TEST_TO": RECIPIENT}) is None
 
 
 def _phone(runner):
-    return IMessageNotifier(CONFIG, {"APERTURE_TEST_TO": RECIPIENT}, runner)
+    return IMessageNotifier(CONFIG, {"TICKR_TEST_TO": RECIPIENT}, runner)
 
 
 def _channels(mac_code: int, phone_runner) -> tuple[list, Channels]:
@@ -293,7 +319,7 @@ def test_alert_returns_while_imessage_blocks_and_its_outcome_is_recorded_later()
         return subprocess.CompletedProcess(argv, 0)
 
     mac, channels = _channels(0, blocking)
-    alerter = Alerter(CONFIG, "Aperture", channels, Clock())
+    alerter = Alerter(CONFIG, "Tickr", channels, Clock())
     outcome = alerter.alert(AlertKind.BOT_CRASHED, "x")  # returns with Messages still "busy"
     assert entered.wait(5) and not release.is_set()
     assert outcome.delivery is Delivery.SHOWN and outcome.pending == (IMESSAGE,)
@@ -309,7 +335,7 @@ def test_failing_imessage_is_recorded_once_and_mac_success_holds_dedupe():
     phone, phone_runner = _capture(code=1)
     mac, channels = _channels(0, phone_runner)
     clock = Clock()
-    alerter = Alerter(CONFIG, "Aperture", channels, clock)
+    alerter = Alerter(CONFIG, "Tickr", channels, clock)
     assert alerter.alert(AlertKind.BOT_CRASHED, "x").delivery is Delivery.SHOWN
     (failed,) = alerter.flush()
     assert failed.delivery is Delivery.FAILED and failed.channel == IMESSAGE
@@ -326,7 +352,7 @@ def test_mac_failing_still_sends_imessage_and_its_success_holds_dedupe():
     phone, phone_runner = _capture()
     mac, channels = _channels(1, phone_runner)
     clock = Clock()
-    alerter = Alerter(CONFIG, "Aperture", channels, clock)
+    alerter = Alerter(CONFIG, "Tickr", channels, clock)
     first = alerter.alert(AlertKind.BOT_CRASHED, "x")
     assert first.delivery is Delivery.FAILED
     assert first.error == "macos: osascript exited with code 1"

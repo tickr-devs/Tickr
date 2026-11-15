@@ -4,32 +4,32 @@ A checklist for the owner at the Mac. Details are in [operations.md](operations.
 [manual-trade.md](manual-trade.md) and [webull-facts.md](webull-facts.md); this page only gives
 the order. Times are New York (ET) unless marked "Mac time". Nothing here touches Production.
 
-**One choice first.** The bot and the manual probe trades (`aperture trade`,
-`probe-replace-stop`) share one lock and one database, so they cannot run at the same time.
-Either the bot runs the whole session (this page), or you follow "Probe day" in manual-trade.md
-with the bot job disabled. Both on one day: do the manual probes first, finish flat, then start
-the bot (step 9).
+**The order of the day (owner decision 2026-11-15): manual probes first, then the bot.** The
+bot and the manual probe trades (`tickr trade`, `probe-replace-stop`) share one lock and one
+database, so they cannot run at the same time. The bot job is kept from starting at 09:00
+(step 7), the probes of "Probe day" in manual-trade.md run from 09:30, and once they end flat
+the bot is started by hand (steps 11 and 12) and runs to the close.
 
 ## Sunday evening, or Monday before 08:30 Mac time
 
 1. Update the code, flat and with the bot not running:
    ```sh
-   cd ~/Development/Aperture && git status --short && git pull
+   cd ~/Development/Tickr && git status --short && git pull
    .venv/bin/pip install -q -e ".[webull]"
    ```
    If `git status --short` lists `config/bot.toml` (you changed a setting), the pull stops with
    "local changes would be overwritten". Then: `git stash`, `git pull`, `git stash pop`, and
    step 3 tells you whether the merged file is valid.
    The API job runs all the time and keeps the old code until it is started again: after a
-   pull, `launchctl kickstart -k gui/$(id -u)/local.aperture.api`.
-   If the pull brought `ops/migrate-from-aperture.sh` (the rename to Tickr), stop here and run
+   pull, `launchctl kickstart -k gui/$(id -u)/local.tickr.api`.
+   If the pull brought `ops/migrate-from-tickr.sh` (the rename to Tickr), stop here and run
    that script in the same sitting (dry run first, then `--apply`): after such a pull the old
    launchd jobs no longer start and nothing alerts. Every command below then says `tickr`
-   where this page says `aperture`.
+   where this page says `tickr`.
 2. Load the environment in the Terminal you will use: `source .venv/bin/activate`, then
-   `set -a; . ~/.config/aperture/env; set +a`.
-3. `aperture check-config`: the environment is `sandbox`, the gate is as you expect.
-4. `python -m aperture.runtime preflight; echo $?`: every check has `"passed": true`. On Monday
+   `set -a; . ~/.config/tickr/env; set +a`.
+3. `tickr check-config`: the environment is `sandbox`, the gate is as you expect.
+4. `python -m tickr.runtime preflight; echo $?`: every check has `"passed": true`. On Monday
    the exit code is 0. On Sunday it is 3 with `"session_today": false` and the calendar check
    saying `no session ...: WEEKEND`; that is correct, and the Webull token is then not checked
    (it is checked by the 08:30 run on Monday). Exit code 1 names its cause; a
@@ -37,17 +37,49 @@ the bot (step 9).
    anything else.
 5. If `ops/launchd/` changed in the pull, render and load the jobs again (operations.md,
    "Install the jobs"). Then send yourself a test alert:
-   `launchctl kickstart gui/$(id -u)/local.aperture.test-alert`. The Mac notification and the
+   `launchctl kickstart gui/$(id -u)/local.tickr.test-alert`. The Mac notification and the
    iMessage must both arrive.
 6. The Mac stays on power, awake and logged in all day. Messages is signed in.
+7. Keep the bot job from starting by itself at 09:00 (manual-trade.md, "Before the open",
+   step 1). Leave the watchdog job alone.
+   ```sh
+   launchctl disable gui/$(id -u)/local.tickr.bot
+   launchctl bootout gui/$(id -u)/local.tickr.bot
+   launchctl print-disabled gui/$(id -u) | grep tickr.bot   # shows it disabled
+   ```
 
-## Monday morning
+## Monday
 
-7. 08:30 Mac time: the preflight job runs by itself. No alert means it passed
-   (`launchctl print gui/$(id -u)/local.aperture.preflight | grep "last exit"` shows 0).
-8. 09:00 Mac time: the bot job starts by itself; 09:05 the watchdog.
-   `aperture status` shows `bot: pid ... recorded`. `tail -f ~/Library/Logs/Aperture/bot.log`.
-9. Starting later by hand (after manual probes): `launchctl kickstart gui/$(id -u)/local.aperture.bot`.
+8. 08:30 Mac time: the preflight job runs by itself. No alert means it passed
+   (`launchctl print gui/$(id -u)/local.tickr.preflight | grep "last exit"` shows 0).
+9. 09:00 Mac time: the bot does not start, as intended: `tickr status` shows
+   `bot: not running`. The watchdog starts at 09:05; while a manual trade is open it alerts
+   `bot-down-with-open-trade`, which is expected on a probe day.
+10. Before 09:30: the chart C2 probe (below). From 09:30: "Probe day" in manual-trade.md from
+    top to bottom (step 0 and step 1 right after 09:30, steps 2 and 3 from 10:00). Manual
+    trades are accepted until 15:30; ending by midday leaves the bot a useful afternoon.
+    **If Webull's answers cannot be read:** the step 2 trade must close by itself about 90 s
+    after its stop appears. If it does not, goes silent, or prints `needs the operator` or
+    `fence`: close the position and cancel the orders by hand in the Webull app, confirm the
+    app is empty, and do not start the bot on Monday. Paste the probe files into the project
+    chat.
+11. **Go or no-go for the bot.** Start the bot only if the step 2 trade printed
+    `closed (hold-elapsed)` by itself, with no `fence` and no `needs the operator` line, and
+    nobody touched it in the Webull app. That one result proves the fill was read, the stop
+    was verified, non-empty positions were read, and the stop cancel and the MARKET SELL work.
+    A fence cleared by hand after closing in the app does not count: the bot would meet the
+    same unreadable answer. Otherwise the bot does not start on Monday; skip step 12.
+    If it is a go, end the probes flat (manual-trade.md, step 4): the last `tickr exit`
+    printed no `fence ...` line, `tickr status` shows `bot: not running`, the Webull app
+    shows no position and no working order.
+12. Only after a go in step 11, enable and start the bot:
+    ```sh
+    launchctl enable gui/$(id -u)/local.tickr.bot
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.bot.plist
+    launchctl kickstart gui/$(id -u)/local.tickr.bot
+    ```
+    `tickr status` shows `bot: pid ... recorded`. `tail -f ~/Library/Logs/Tickr/bot.log`.
+    The job stays enabled: from Tuesday the bot starts by itself at 09:00 Mac time.
 
 ## What to watch
 
@@ -71,6 +103,10 @@ In the apps (they read the bot's local API):
 
 In the Webull app, a few times in the day: positions and working orders match what the apps show.
 
+**Never buy or sell by hand a symbol the bot holds.** If foreign shares turn up in the bot's
+symbol, the bot does not close its own position at the 15:55 flatten either: close it by hand
+in the Webull app and confirm no position and no working order is left.
+
 ## Probes (read-only unless said)
 
 Only with a command written in the docs. If a step has no ready command, ask in the project
@@ -78,14 +114,14 @@ chat for a script instead of improvising: every extra read counts against the sa
 limit of 30 requests per 60 s per route that the bot uses.
 
 - **Quotes real time or delayed** (right after 09:30): manual-trade.md, "Step 0"
-  (`aperture check-quote SYM`).
+  (`tickr check-quote SYM`).
 - **Quotes for all subscribed symbols** (stream, webull-facts.md M3, second half): no extra
   reads. While the bot runs, note in the apps whether the stream is healthy and whether quote
   ages stay low for the symbols being watched; a stream that reconnects or goes silent is the
   finding. After the close, count the day's captured quotes per symbol and the stream's drop
   counters (research.md, "latency"):
   ```sh
-  python -m aperture.research latency \
+  python -m tickr.research latency \
     --quotes data/capture/sandbox/2026-11-16/quotes.jsonl \
     --notices data/capture/sandbox/2026-11-16/notices.jsonl \
     --settings config/research.toml --out data/probe-2026-11-16/latency
@@ -94,9 +130,9 @@ limit of 30 requests per 60 s per route that the bot uses.
   out: the command refuses a file that is missing.
   The bot does not record which symbols it subscribed, so a symbol missing from the report
   was either never subscribed or silent: compare with the symbols the apps showed as watched.
-- **Chart C2** (is the bars limit shared between processes): with the bot stopped, at the
-  latest 10 minutes before its 09:00 Mac time start, or after it has stopped:
-  `python -m aperture.probes chart-limit SYM`. It takes about 90 s, starts two processes that
+- **Chart C2** (is the bars limit shared between processes): with the bot stopped and outside
+  the regular session; on Monday the bot is off in the morning, so before 09:30:
+  `python -m tickr.probes chart-limit SYM`. It takes about 90 s, starts two processes that
   send 20 bars requests each, and prints `shared`, `not-shared` or `inconclusive`. It refuses
   while a bot process is recorded in the lock, and during the regular session (09:30 to 16:00)
   even with the bot stopped. A `shared` answer means Webull answered 429
@@ -110,14 +146,15 @@ limit of 30 requests per 60 s per route that the bot uses.
   is not given the Webull keys anyway. If that 503 names an unfinished run or a summary it
   cannot read, run the probe again; for an unreadable one, first delete that run's folder
   under `data/probes/`. Then, any time the bot
-  runs: `python -m aperture.probes chart-client SYM`. It reads one bar every 30 s for 10
+  runs: `python -m tickr.probes chart-client SYM`. It reads one bar every 30 s for 10
   minutes, watches that the bot keeps reading the broker and that the token folder does not
   change, and prints `passed` or `failed`. Do not open charts in the apps while it runs: they
   share the same four requests a minute. It refuses without a running bot, with the chart off,
   when the config changed after the bot started, and while the bot has a position or a working
   order (run it while the bot is flat: if the second client breaks the bot's broker access,
   nothing is then open). That check is made once, at the start, so the best time is outside
-  the entry window: before 09:30 or after the last entry at 15:45.
+  the entry window. On Monday the bot starts after the manual probes, so: after the last
+  entry at 15:45.
 - Both write their evidence to `data/probes/<date>/`: paste `summary.json` into the project
   chat. Until both are recorded for an environment, `[chart] webull_enabled` goes back to
   `false` there after the probe.
@@ -133,11 +170,11 @@ that nothing in them identifies the account.
   check; once the apps and the Webull app show no position and no working order, stop the bot
   from Terminal as below.
 - Stop entries only, keep protecting: the entry-stop command in the apps.
-- Close everything now: the flatten command in the apps, or `aperture exit` in Terminal when the
+- Close everything now: the flatten command in the apps, or `tickr exit` in Terminal when the
   bot is not running. Wait until the apps and the Webull app both show no position.
 - Stop the bot: when flat, `stop-bot` in the apps (it is refused while a position or an entry is
-  open). Starts stay refused until `aperture clear-stop`. From Terminal:
-  `launchctl kill TERM gui/$(id -u)/local.aperture.bot`, then wait for the
+  open). Starts stay refused until `tickr clear-stop`. From Terminal:
+  `launchctl kill TERM gui/$(id -u)/local.tickr.bot`, then wait for the
   `"record": "bot-exit"` line with `"clean": true` in the log. A SIGTERM leaves an open
   position under its broker stop and nothing flattens it while the bot is down.
 - Never log out, restart or close the lid while a position or a working order exists.
