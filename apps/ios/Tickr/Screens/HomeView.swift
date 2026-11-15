@@ -191,9 +191,35 @@ private struct DayLine: View {
 
   private var isFresh: Bool { model.response?.stale == false && model.fetchError == nil }
 
-  private var freshness: Color {
-    guard let response = model.response, model.fetchError == nil else { return Palette.loss }
+  private var freshness: Color { ConnectionFreshness.color(response: model.response, fetchError: model.fetchError) }
+}
+
+/// The colour of Home's connection dot.
+enum ConnectionFreshness {
+  /// Red without an answer or after a failed read, amber while the status is stale, green while it
+  /// is current.
+  static func color(response: StatusResponseV1?, fetchError: String?) -> Color {
+    guard let response, fetchError == nil else { return Palette.loss }
     return response.stale ? Palette.warning : Palette.profit
+  }
+}
+
+/// The Home glyph for whether new entries can open.
+enum EntriesGlyph {
+  /// Symbols of the entries glyph: allowed, paused by the owner, calm "not now", blocked.
+  static let entriesAllowedSymbol = "lock.open.fill"
+  static let entriesPausedSymbol = "pause.fill"
+  static let entriesNotNowSymbol = "moon.fill"
+  static let entriesBlockedSymbol = "hand.raised.fill"
+
+  /// Whether new entries can open, as on the board: allowed, paused by the owner, a calm
+  /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph. The
+  /// bot's own entry block decides, in its precedence: a stopped bot outranks the owner's pause.
+  static func make(_ status: StatusV1) -> (symbol: String, tone: Tone, label: LocalizedStringResource) {
+    guard let block = status.entryBlock else { return (entriesAllowedSymbol, .profit, L10n.Home.entriesAllowed) }
+    if BlockCode(rawValue: block.cause) == .entryStop { return (entriesPausedSymbol, .warning, L10n.Home.entriesPaused) }
+    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(ApiText.entryBlock(block))) }
+    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(ApiText.entryBlock(block)))
   }
 }
 
@@ -201,13 +227,10 @@ private struct DayLine: View {
 private struct Summary: View {
   /// Side of the result ring, in points.
   static let ringSide: CGFloat = 136
+  /// Lines the wins and losses may take inside the ring ("1 в плюс · 5 в минусе" wraps in Russian).
+  static let winsLossesLines = 2
   /// Symbol of a closed trading gate.
   static let gateClosedSymbol = "lock.fill"
-  /// Symbols of the entries glyph: allowed, paused by the owner, calm "not now", blocked.
-  static let entriesAllowedSymbol = "lock.open.fill"
-  static let entriesPausedSymbol = "pause.fill"
-  static let entriesNotNowSymbol = "moon.fill"
-  static let entriesBlockedSymbol = "hand.raised.fill"
 
   @Environment(AppModel.self) private var model
   /// The ring grows with the text inside it.
@@ -243,7 +266,8 @@ private struct Summary: View {
           }
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-          .lineLimit(1)
+          .multilineTextAlignment(.center)
+          .lineLimit(Self.winsLossesLines)
           .minimumScaleFactor(Tokens.Shrink.tight)
         }
         .padding(Tokens.Space.l)
@@ -277,7 +301,7 @@ private struct Summary: View {
               StateGlyph(Self.gateClosedSymbol, tone: .warning,
                 label: L10n.Home.gateClosed(ApiText.gate(status.tradingGate)), style: .compact)
             } else {
-              let entries = Self.entries(status)
+              let entries = EntriesGlyph.make(status)
               StateGlyph(entries.symbol, tone: entries.tone, label: entries.label, style: .compact)
             }
             Badge(verbatim: status.strategy.version, tone: .highlight)
@@ -290,16 +314,6 @@ private struct Summary: View {
     }
   }
 
-  /// Whether new entries can open, as on the board: allowed, paused by the owner, a calm
-  /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph. The
-  /// bot's own entry block decides, in its precedence: a stopped bot outranks the owner's pause.
-  static func entries(_ status: StatusV1) -> (symbol: String, tone: Tone, label: LocalizedStringResource) {
-    guard let block = status.entryBlock else { return (entriesAllowedSymbol, .profit, L10n.Home.entriesAllowed) }
-    if BlockCode(rawValue: block.cause) == .entryStop { return (entriesPausedSymbol, .warning, L10n.Home.entriesPaused) }
-    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(ApiText.entryBlock(block))) }
-    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(ApiText.entryBlock(block)))
-  }
-
   private func subline(_ status: StatusV1) -> String {
     var parts: [LocalizedStringResource] = []
     for position in status.positions {
@@ -309,7 +323,7 @@ private struct Summary: View {
     }
     parts.append(L10n.Home.strategy(status.strategy.name, status.strategy.version))
     parts.append(status.tradingGate.open
-      ? Self.entries(status).label : L10n.Home.gateClosed(ApiText.gate(status.tradingGate)))
+      ? EntriesGlyph.make(status).label : L10n.Home.gateClosed(ApiText.gate(status.tradingGate)))
     return parts.map { String(localized: $0) }.joined(separator: " ")
   }
 }
@@ -538,7 +552,8 @@ private struct LiveFlowCard: View {
       NavigationLink {
         RiskView()
       } label: {
-        HStack {
+        // The label, then its note; the note goes under it at large text sizes.
+        RowStack {
           CardLabel(L10n.Flow.title)
           Spacer()
           if !current {
@@ -801,9 +816,11 @@ private struct LatestEventLine: View {
   }
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+    // At large text sizes the time, the tag and the text each take a line, so none is cut short.
+    RowStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       Text(L10n.Home.clockET(Format.clock(time)))
         .foregroundStyle(Palette.textQuaternary)
+        .fixedSize()
       // The tag is short and says what happened: it never gives way; the text wraps instead.
       Text(verbatim: tag).bold().textCase(.uppercase).foregroundStyle(color).fixedSize()
       Text(verbatim: text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
@@ -896,10 +913,11 @@ private struct CleanLine: View {
         Text(L10n.Home.cleanDay)
           .foregroundStyle(Palette.profitText)
       case .notClean:
-        Text(L10n.Home.notClean(clean.causes.first?.text ?? Format.missing, clean.causes.count))
+        Text(L10n.Home.notClean(clean.causes.first.map { ApiText.prose($0.textCodes, text: $0.text) } ?? Format.missing,
+          clean.causes.count))
           .foregroundStyle(Palette.warningText)
       case .unknown:
-        Text(L10n.Home.cleanUnknown(clean.cause ?? Format.missing))
+        Text(L10n.Home.cleanUnknown(ApiText.prose(clean.causeCodes, text: clean.cause) ?? Format.missing))
           .foregroundStyle(Palette.textQuaternary)
       }
     }
