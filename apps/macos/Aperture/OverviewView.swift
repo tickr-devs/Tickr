@@ -82,8 +82,6 @@ struct OverviewView: View {
 private struct Header: View {
   @Environment(AppModel.self) private var model
 
-  /// Lines the banner's detail may wrap to.
-  static let detailLines = 2
   /// Symbols of the trading gate, open and closed.
   static let gateOpenSymbol = "lock.open.fill"
   static let gateClosedSymbol = "lock.fill"
@@ -127,8 +125,12 @@ private struct Header: View {
     return HStack(spacing: Tokens.Space.m) {
       PulseDot(content.color, pulsing: model.isLive)
       Text(verbatim: content.title).font(Tokens.Typography.button).foregroundStyle(content.color)
+        .lineLimit(1)
+        .fixedSize()
       if let detail = content.detail {
-        Text(verbatim: detail).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary).lineLimit(Self.detailLines)
+        // Wraps to as many lines as it needs: a narrow window cut the cause of a block mid-sentence.
+        Text(verbatim: detail).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
     .padding(Tokens.Space.m)
