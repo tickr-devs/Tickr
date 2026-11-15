@@ -5,6 +5,28 @@ import SwiftUI
 // The Overview's parts read from GET /flow and GET /watching: the screener chips under the
 // pipeline, and the symbols the strategy is watching closely.
 
+/// Values of the pipeline stages that combine the live status with the day's flow.
+enum FlowStages {
+  /// The reconcile stage: its value, or nil with why (a missing value never reads as fine).
+  struct Reconcile: Equatable {
+    let value: String?
+    let note: String?
+  }
+
+  /// Live fences come first (they come from the status, newer than any reconciliation), then the
+  /// latest reconciliation's mismatch or match; without one, unknown with the bot's cause.
+  static func reconcile(liveFences: [Fence]?, latest: FlowReconcileV1?) -> Reconcile {
+    if let fences = liveFences, !fences.isEmpty {
+      return Reconcile(value: String(localized: L10n.Common.fences(fences.count)), note: nil)
+    }
+    switch latest?.agreement {
+    case .mismatch: return Reconcile(value: String(localized: L10n.Screener.mismatch), note: nil)
+    case .match: return Reconcile(value: String(localized: L10n.Flow.match), note: nil)
+    case nil: return Reconcile(value: nil, note: latest?.agreementCause)
+    }
+  }
+}
+
 /// The day's screener symbols as chips: change from the previous close, coloured by sign; a
 /// symbol the universe left out is struck through, with the cause as its tooltip.
 struct ScreenerChips: View {
@@ -83,7 +105,7 @@ extension ScreenerSource {
 struct WatchingCard: View {
   @Environment(AppModel.self) private var model
 
-  /// Rows shown; the card says how many there are in all.
+  /// Display cap on the rows shown (not an API limit); the card says how many there are in all.
   static let shown = 6
   /// Width of a closeness bar, in points.
   static let barWidth: CGFloat = 120

@@ -298,7 +298,7 @@ private struct LiveFlowCard: View {
         value: position.map { $0.stop.state.title } ?? stopsVerified
           ?? status.map { _ in String(localized: L10n.Common.noPosition) },
         symbol: Self.stopSymbol, color: stopColor, text: stopText),
-      .init(id: .reconcile, name: L10n.Flow.reconcile, value: reconcile(status),
+      .init(id: .reconcile, name: L10n.Flow.reconcile, value: reconcile.value, note: reconcile.note,
         symbol: Self.reconcileSymbol, color: Palette.info, text: Palette.infoText),
     ]
   }
@@ -316,16 +316,8 @@ extension LiveFlowCard {
     return String(localized: L10n.Screener.stopsVerified(stops.filter { $0.state == .verified }.count, stops.count))
   }
 
-  /// The latest reconciliation from the flow; live without one, the status's fences.
-  fileprivate func reconcile(_ status: StatusV1?) -> String? {
-    switch model.flow?.reconcile.agreement {
-    case .match: return String(localized: L10n.Flow.match)
-    case .mismatch: return String(localized: L10n.Screener.mismatch)
-    case nil:
-      return status.map {
-        $0.fences.isEmpty ? String(localized: L10n.Flow.match) : String(localized: L10n.Common.fences($0.fences.count))
-      }
-    }
+  fileprivate var reconcile: FlowStages.Reconcile {
+    FlowStages.reconcile(liveFences: model.isLive ? model.status?.fences : nil, latest: model.flow?.reconcile)
   }
 }
 
@@ -365,6 +357,8 @@ private struct Pipeline: View {
     let name: LocalizedStringResource
     /// nil = the API does not report this stage yet.
     let value: String?
+    /// Why the value is missing, shown as its tooltip; nil = the API does not report it.
+    var note: String?
     let symbol: String
     /// Fill colour of the stage (ring, glow) and the colour of its name.
     let color: Color
@@ -462,7 +456,7 @@ private struct Pipeline: View {
         Text(verbatim: Format.missing)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-          .help(Text(L10n.Flow.notReported))
+          .help(stage.note.map { Text(verbatim: $0) } ?? Text(L10n.Flow.notReported))
       }
     }
     .frame(maxWidth: .infinity)
