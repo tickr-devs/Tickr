@@ -77,7 +77,7 @@ struct SkippedGroupsTests {
       {"at": "2026-11-13T16:\(String(format: "%02d", minute)):00.000Z", "symbol": "\(symbol)",
        "strategy": {"name": "price-action", "version": "2"}, "admission": "refused",
        "refusal_cause": null,
-       "refusal": {"code": "\(code)", "message": "m\(minute)", "since": null, "until": null},
+       "refusal": {"code": "\(code)", "message": "m\(minute)", "since": null, "until": null, "params": {}},
        "entry_price": null, "stop_price": null, "checks": [],
        "prices_after": [], "prices_after_cause": "none",
        "what_if": {"result_gross_usd": null, "result_r": null, "exit_reason": null, "cause": "none"}}
