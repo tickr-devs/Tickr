@@ -150,7 +150,7 @@ final class LabModel {
       || now.timeIntervalSince(refused.at) >= replaySeconds
   }
 
-    /// Read the replay until cancelled, more often while it runs; used while the Lab is open.
+  /// Read the replay until cancelled, more often while it runs; used while the Lab is open.
   func followReplay(_ url: URL) async {
     while !Task.isCancelled {
       await refreshReplay(url)
