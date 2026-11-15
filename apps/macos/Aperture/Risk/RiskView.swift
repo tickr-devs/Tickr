@@ -235,7 +235,11 @@ private struct FencesCard: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
             VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
               Text(verbatim: ApiText.fence(fence)).foregroundStyle(Palette.textPrimary)
-                .help(Text(verbatim: fence.text))
+              // The bot's detail often says what to do; it stays visible until it comes as codes.
+              Text(verbatim: fence.text)
+                .font(Tokens.Typography.callout)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
               Text(L10n.Risk.fenceSince(Format.marketTime(fence.since.date)))
                 .font(Tokens.Typography.captionMono)
                 .foregroundStyle(Palette.textQuaternary)

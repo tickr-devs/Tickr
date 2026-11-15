@@ -6,6 +6,8 @@ import Foundation
 public enum ApiText {
   /// Joins a fence's kind and its key ("Foreign position · EFGH").
   static let keySeparator = " · "
+  /// Between a fence's title and the bot's detail.
+  static let detailSeparator = ": "
 
   /// Why entries are blocked.
   public static func entryBlock(_ block: EntryBlock) -> String {
@@ -22,6 +24,13 @@ public enum ApiText {
     }
     let title = String(localized: kind.title)
     return parts.count > 1 ? title + keySeparator + parts[1] : title
+  }
+
+  /// The fence in words followed by the bot's own detail, which often says what to do ("close the
+  /// position in the Webull app") and stays visible until the bot sends it as codes.
+  public static func fenceWithDetail(_ fence: Fence) -> String {
+    let title = Self.fence(fence)
+    return fence.text.isEmpty ? title : title + detailSeparator + fence.text
   }
 
   public static func orderSide(_ raw: String) -> String {

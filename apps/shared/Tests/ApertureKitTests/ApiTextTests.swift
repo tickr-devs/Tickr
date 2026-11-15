@@ -29,6 +29,12 @@ struct ApiTextTests {
     #expect(ApiText.fence(try fence("new-kind:X")) == "new-kind:X")
   }
 
+  @Test("The bot's detail stays readable after the fence's title")
+  func fenceDetail() throws {
+    #expect(ApiText.fenceWithDetail(try fence("entry-stop"))
+      == String(localized: L10n.fenceEntryStop) + ApiText.detailSeparator + "detail")
+  }
+
   @Test("Order values and check rules translate; unknown ones stay as sent")
   func values() {
     #expect(ApiText.orderSide("SELL") == String(localized: L10n.orderSideSell))
