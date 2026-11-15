@@ -69,6 +69,7 @@ private struct DaysColumn: View {
           }
         }
       } else {
+        MonthCalendar()
         DayBars(days: Array(model.days.prefix(Self.shownDays).reversed()), shown: model.shownDay)
           .frame(height: Self.barsHeight)
         ScrollView {
@@ -400,10 +401,11 @@ private struct SkippedRow: View {
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(Palette.textTertiary)
         }
-        if let cause = signal.refusalCause {
-          Text(verbatim: cause)
+        if let reason = RefusalText.text(signal.refusal, cause: signal.refusalCause) {
+          Text(verbatim: reason)
             .font(Tokens.Typography.caption)
             .foregroundStyle(Palette.textSecondary)
+            .help(Text(verbatim: signal.refusal?.code ?? reason))
         }
         if let entry = signal.entryPrice, let stop = signal.stopPrice {
           Text(L10n.Trades.whatIfLevels(Format.price(entry.value), Format.price(stop.value)))
