@@ -54,6 +54,7 @@ from aperture.api.contract import (
 )
 from aperture.api.history import SYMBOL_PATTERN, History, HistoryPaths, HistoryUnavailable
 from aperture.api.jobs import JobsSettings, jobs_document
+from aperture.api.lab_replay import LabReplay, LabReplayRefused, LabReplaySettings
 from aperture.api.observer_results import ObserverResults, SimulationPaths
 from aperture.calendar import ny_date_of
 from aperture.config import Config, ConfigError
@@ -125,9 +126,11 @@ class ApiSettings:
     chart: ChartSettings  # GET /chart: source switch, cache and calendar
     after: AfterSettings  # prices after, overshoot (day-v1) and what-if (skipped-v1)
     jobs: JobsSettings  # GET /jobs: schedule, database and calendar
+    lab: LabReplaySettings  # GET and POST /lab/replay: the Lab's simulated replay
 
 
-def settings_from_config(cfg: Config) -> ApiSettings:
+def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSettings:
+    """`config_path` is the file `cfg` was loaded from; without it POST /lab/replay refuses."""
     api = cfg.api
     try:
         loopback = ipaddress.ip_address(api.host).is_loopback
@@ -166,6 +169,14 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         raise ConfigError("[api] price_after_minutes must be strictly increasing minutes > 0")
     if api.after_r_decimal_places < 0:
         raise ConfigError("[api] after_r_decimal_places must not be negative")
+    if api.lab_replay_sessions <= 0:
+        raise ConfigError("[api] lab_replay_sessions must be positive")
+    if not 0 <= api.lab_replay_niceness <= MAX_NICENESS:
+        raise ConfigError(f"[api] lab_replay_niceness must be 0-{MAX_NICENESS}")
+    if not api.lab_replay_data_dir or not api.lab_replay_results_dir \
+            or api.lab_replay_data_dir == api.lab_replay_results_dir:
+        raise ConfigError("[api] lab_replay_data_dir and lab_replay_results_dir must be "
+                          "two different folders")
     data = cfg.root / cfg.run.data_dir
     return ApiSettings(
         host=api.host,
@@ -203,6 +214,7 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         after=AfterSettings(minutes, api.after_r_decimal_places,
                             (cfg.root / cfg.session.calendar_file).parent),
         jobs=JobsSettings.from_config(cfg),
+        lab=LabReplaySettings.from_config(cfg, config_path),
     )
 
 
@@ -240,12 +252,15 @@ class ApiServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, settings: ApiSettings, clock: Callable[[], datetime] = _now, *,
-                 remote: bool = False, inbox_lock: threading.Lock | None = None) -> None:
+                 remote: bool = False, inbox_lock: threading.Lock | None = None,
+                 lab: LabReplay | None = None) -> None:
         self.settings = settings
         self.clock = clock
         self.remote = remote
         # Shared with the other listener so both count the inbox under one lock.
         self.inbox_lock = inbox_lock or threading.Lock()
+        # Shared too, so one replay at a time whichever listener started it.
+        self.lab = lab or LabReplay(settings.lab, clock)
         self.page = (STATIC_DIR / "status.html").read_bytes()
         self.history = History(settings.history, settings.after)
         self.observer_results = ObserverResults(settings.simulation,
@@ -386,6 +401,8 @@ _ERROR_CODES = {
 GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", "/settings",
               "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
               "/watching", "/performance", "/chart", "/jobs")
+MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
+LAB_REPLAY = "/lab/replay"  # GET reads, POST starts: outside the command inbox
 DAY_PREFIX = "/days/"
 
 
@@ -530,6 +547,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/jobs":
                 self._json(200, jobs_document(self.server.settings.jobs,
                                               self.server.status_response()))
+            elif path == LAB_REPLAY:
+                self._json(200, self.server.lab.state())
             elif path == "/explain":
                 self._explain()
             elif path in ("/observers", "/decisions", "/skipped", "/flow", "/watching"):
@@ -552,6 +571,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             path = self._path()
+            if path == LAB_REPLAY:
+                self._start_lab_replay()
+                return
             if path not in COMMAND_ROUTES:
                 if path in GET_ROUTES or path.startswith(DAY_PREFIX):
                     self._error("method_not_allowed", "use GET", {"Allow": "GET"})
@@ -594,6 +616,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(202, result)
         except Exception as exc:  # noqa: BLE001 - one typed answer instead of a dropped socket
             self._error("internal", type(exc).__name__)
+
+    def _start_lab_replay(self) -> None:
+        """POST /lab/replay with {}: start the simulated replay, 202 with its state, or 409
+        with the single cause it cannot start now."""
+        body = self._read_json_body()
+        if body is None:
+            return
+        if body:
+            self._error("bad_request", "body must be an empty JSON object {}")
+            return
+        try:
+            self._json(202, self.server.lab.start())
+        except LabReplayRefused as exc:
+            self._error("conflict", str(exc))
 
     def _history(self, path: str) -> None:
         """GET /days, /days/<YYYY-MM-DD>, /bars?symbol=&date=, /performance?from=&to=:
@@ -793,7 +829,8 @@ def make_server(settings: ApiSettings, clock: Callable[[], datetime] = _now) -> 
 
 def make_remote_server(local: ApiServer) -> ApiServer:
     """The phone-facing listener next to `local`, sharing its settings, clock and inbox lock."""
-    return ApiServer(local.settings, local.clock, remote=True, inbox_lock=local.inbox_lock)
+    return ApiServer(local.settings, local.clock, remote=True, inbox_lock=local.inbox_lock,
+                     lab=local.lab)
 
 
 def _write_private(path: Path, text: str) -> None:
