@@ -429,7 +429,8 @@ RULES = {
     "catalog": (catalog_violations, "text without a Russian translation in a String Catalog"),
     "legacy": (legacy_violations, "outdated API: use the current Apple stack (CLAUDE.md)"),
     "loop": (loop_violations,
-      "motion on its own clock; move only on a real data change, or mark it `// decorative: <why>`"),
+      "motion on its own clock; move only on a real data change, "
+      "or mark it `// decorative: <why>`"),
 }
 
 
