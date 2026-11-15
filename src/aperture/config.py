@@ -102,6 +102,12 @@ class ProbeConfig:
     hold_seconds: int
     replace_max_move_usd: Decimal
     replace_observe_seconds: int
+    evidence_dir: str
+    chart_limit_processes: int
+    chart_limit_requests: int
+    chart_limit_start_delay_seconds: int
+    chart_client_reads: int
+    chart_client_interval_seconds: int
 
 
 @dataclass(frozen=True)
@@ -126,12 +132,15 @@ class ApiConfig:
     status_recent_commands: int
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
+    observer_trades_max_rows: int
     watching_max_rows: int
     watching_closeness_decimal_places: int
     watching_check_decimal_places: int
     flow_change_pct_decimal_places: int
     performance_max_range_days: int
     performance_decimal_places: int
+    price_after_minutes: tuple[int, ...]
+    after_r_decimal_places: int
 
 
 @dataclass(frozen=True)
@@ -421,6 +430,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             "[market_data] candidate_subscriptions plus observer_subscriptions must leave "
             "stream_reserved_symbols free within stream_max_symbols"
         )
+    if built["observers"].watching_seconds <= 0:
+        raise ConfigError("[observers] watching_seconds must be above 0")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "

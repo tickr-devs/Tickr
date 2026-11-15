@@ -140,6 +140,18 @@ hold_seconds = 60
 replace_max_move_usd = 0.50
 # Seconds Detail of the stop is polled after a probe-replace-stop request, one read per detail_poll_seconds; read by the probe-replace-stop command.
 replace_observe_seconds = 15
+# Folder for the evidence of `python -m aperture.probes` (one sub-folder per New York date and run), relative to [run] data_dir; read by the probes.
+evidence_dir = "probes"
+# Processes `probes chart-limit` starts at once, count; each has its own Webull client and its own request budget; read by the probes.
+chart_limit_processes = 2
+# Bars requests each chart-limit process sends inside one bars route window, count; must be within the route limit, and all processes together must pass it (docs/webull-facts.md C2: 20 each against a limit of 30); read by the probes.
+chart_limit_requests = 20
+# Seconds between starting the chart-limit processes and their first request, so every process has built its Webull client by then; read by the probes.
+chart_limit_start_delay_seconds = 20
+# Bars reads `probes chart-client` makes next to the running bot, count; with chart_client_interval_seconds this is how long the bot is watched (20 x 30 s = 10 minutes, docs/webull-facts.md C1); read by the probes.
+chart_client_reads = 20
+# Seconds between two chart-client reads; keep 60 / this at or below half of [chart] requests_per_minute, so the API's own charts still fit in the chart's slice; read by the probes.
+chart_client_interval_seconds = 30
 
 [api]
 # Local API bind address; loopback only; read by the api server.
@@ -183,6 +195,8 @@ status_recent_commands = 10
 idempotency_key_ttl_seconds = 86400
 # Replay settings file (fill model) the API uses to simulate each observer's day result at GET /observers, the same simulation as `python -m aperture.research observers`, relative to the repo root; read by the api server.
 replay_settings_file = "config/replay.toml"
+# Most simulated trades (ENTERs, oldest first) GET /observers lists per observer; more = cut, with `trades_truncated` true; read by the api server (api/observer_results.py).
+observer_trades_max_rows = 100
 # Most rows GET /watching returns (the closest first; the answer's `total` counts them all); read by the api server.
 watching_max_rows = 8
 # Decimal places of GET /watching `closeness` (0..1, rounded down); read by the api server.
@@ -196,6 +210,10 @@ flow_change_pct_decimal_places = 2
 performance_max_range_days = 366
 # Decimal places of GET /performance numbers that come from a division (R values, win rate, averages, profit factor), rounded half-even; read by the api server.
 performance_decimal_places = 4
+# Minutes after a closed trade's exit (day-v1) and after a skipped signal (skipped-v1) at which the API shows the price, the close of the M1 bar covering that moment; strictly increasing, each > 0; the last one also bounds the window of a trade's overshoot; read by the api server (api/after.py).
+price_after_minutes = [1, 5, 15, 60]
+# Decimal places of the R quotients the API computes for display, overshoot_r in day-v1, rounded half-even; read by the api server (api/after.py).
+after_r_decimal_places = 4
 
 [market_data]
 # Seconds between discovery passes in the regular session; read by runtime (discovery scheduler).
@@ -264,9 +282,9 @@ observer_subscriptions = 20
 # candidates need its slots), so observers cost at most one subscribe and one unsubscribe request per period on routes
 # shared with the active strategy's subscribes; read by runtime.market.
 observer_resync_seconds = 60
-# Subscribe (and unsubscribe) requests per budget window an observer-tier request must leave free for the position,
-# WATCH symbols and candidates, count; below the route limit (requests_per_route_per_minute, route_limits) the observer
-# tier waits. Read by runtime.market for broker.webull StreamSession.subscribe_optional.
+# Subscribe (and unsubscribe) requests per budget window a candidate or observer request must leave free for the
+# position, entry and WATCH symbols, count; below the route limit (requests_per_route_per_minute, route_limits) those
+# tiers wait. Read by runtime.market for broker.webull StreamSession.subscribe_optional.
 stream_reserved_subscribe_requests = 10
 # Seconds candidates, or observer symbols, stay off the stream after their subscribe was refused (the position and
 # WATCH symbols are never affected); read by runtime.market.
