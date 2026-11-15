@@ -96,9 +96,29 @@ public enum ApiText {
     OrderStatus(rawValue: raw).map { String(localized: $0.title) } ?? raw
   }
 
+  /// Where the bot trades (`environment` of status and settings) in words; an environment this
+  /// app does not know reads as "Unknown environment", never as the bot's config key.
+  public static func environment(_ raw: String) -> String {
+    String(localized: BotEnvironment(rawValue: raw)?.title ?? L10n.environmentUnknown)
+  }
+
   /// A strategy check's rule; a rule this app does not know (a newer strategy) reads as named.
   public static func rule(_ raw: String) -> String {
     CheckRule(rawValue: raw).map { String(localized: $0.title) } ?? raw
+  }
+}
+
+/// The environments the bot names in `environment`: the tables under [environments] in
+/// config/bot.toml. Only for display; nothing in the apps behaves differently by environment.
+public enum BotEnvironment: String, CaseIterable, Sendable {
+  case sandbox
+  case production
+
+  public var title: LocalizedStringResource {
+    switch self {
+    case .sandbox: L10n.environmentSandbox
+    case .production: L10n.environmentProduction
+    }
   }
 }
 

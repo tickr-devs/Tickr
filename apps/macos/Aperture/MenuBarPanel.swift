@@ -316,7 +316,7 @@ private struct MenuFooter: View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       HStack {
         if let environment = model.status?.environment {
-          Badge(verbatim: environment, color: Palette.accentText)
+          Badge(verbatim: ApiText.environment(environment), color: Palette.accentText)
         }
         Spacer()
         TimelineView(.periodic(from: .now, by: MenuBarPanel.tick)) { context in

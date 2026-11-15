@@ -21,6 +21,13 @@ struct ApiTextTests {
     #expect(ApiText.entryBlock(try block("brand_new_cause", "As the bot says")) == "As the bot says")
   }
 
+  @Test("An environment reads as its name; an unknown one never shows the bot's config key")
+  func environments() {
+    #expect(ApiText.environment("sandbox") == String(localized: L10n.environmentSandbox))
+    #expect(ApiText.environment("production") == String(localized: L10n.environmentProduction))
+    #expect(ApiText.environment("paper_v2") == String(localized: L10n.environmentUnknown))
+  }
+
   @Test("A fence reads as its kind and key")
   func fences() throws {
     #expect(ApiText.fence(try fence("foreign-position:EFGH"))
