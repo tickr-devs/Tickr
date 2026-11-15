@@ -204,13 +204,15 @@ private struct DayResult: View {
 
   /// Width of the result's sparkline, in points.
   static let sparklineWidth: CGFloat = 200
+  /// Smallest scale a long result shrinks to before it truncates.
+  static let minimumScale = 0.7
 
   var body: some View {
     VStack(alignment: .trailing, spacing: Tokens.Space.xs) {
       CardLabel(L10n.Overview.dayResult)
       MoneyText(value: counted, usd: true, font: Tokens.Typography.display)
         .lineLimit(1)
-        .minimumScaleFactor(BotControls.titleMinimumScale)
+        .minimumScaleFactor(Self.minimumScale)
       Text(verbatim: subtitle).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
       DrawnSparkline(values: model.cumulativeResults, color: Palette.result(model.shownResult))
         .frame(width: Self.sparklineWidth, height: Tokens.Size.sparkline)
@@ -284,8 +286,10 @@ private struct LiveFlowCard: View {
 
   private var stages: [Pipeline.Stage] {
     let status = model.isLive ? model.status : nil
-    let position = status.flatMap { Board.positions($0).first }
-    let stopVerified = position.map { $0.stop.state == .verified } ?? true
+    let positions = status.map(Board.positions) ?? []
+    let position = positions.first { $0.stop.state != .verified } ?? positions.first
+    // Green only while every open position's stop is verified at the broker.
+    let stopVerified = positions.allSatisfy { $0.stop.state == .verified }
     let stopColor = stopVerified ? Palette.profit : Palette.loss
     let stopText = stopVerified ? Palette.profitText : Palette.lossText
     return [
