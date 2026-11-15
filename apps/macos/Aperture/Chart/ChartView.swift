@@ -15,6 +15,7 @@ struct ChartView: View {
   @AppStorage(Keys.slowEMA) private var showSlowEMA = true
   @AppStorage(Keys.volume) private var showVolume = true
   @AppStorage(Keys.atr) private var showATR = false
+  @AppStorage(Keys.decisions) private var showDecisions = false
 
   /// Settings keys of the chart's choices; Trades sets `symbol` for "Show on Chart".
   enum Keys {
@@ -32,12 +33,18 @@ struct ChartView: View {
     static let volume = "chart.volume"
     /// Whether the ATR pane is shown.
     static let atr = "chart.atr"
+    /// Whether the decisions inspector is shown.
+    static let decisions = "chart.decisions"
   }
 
   /// Width of the symbol picker, in points.
   static let pickerWidth: CGFloat = 150
   /// Height of the separators between control groups, in points.
   static let separatorHeight: CGFloat = 18
+  /// Key equivalent of the decisions inspector (with ⌥⌘), as for inspectors in Apple's apps.
+  static let decisionsKey: KeyEquivalent = "i"
+  /// Accessibility id of the decisions toggle, for the UI tests.
+  static let decisionsToggleID = "chart-decisions"
 
   /// What a read depends on: a change starts a new read and forgets the old bars.
   private struct LoadKey: Equatable {
@@ -54,6 +61,9 @@ struct ChartView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .padding(Tokens.Space.xl)
+    .inspector(isPresented: $showDecisions) {
+      DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: symbol != nil)
+    }
     .task(id: LoadKey(baseURL: model.baseURL, symbol: symbol, day: model.shownDay, live: model.isLive)) {
       await keepLoading()
     }
@@ -82,6 +92,7 @@ struct ChartView: View {
     let live = model.isLive
     repeat {
       await chart.load(baseURL: baseURL, symbol: symbol, day: day)
+      await chart.loadDecisions(baseURL: baseURL, symbol: symbol, day: day)
       guard live else { return }
       try? await Task.sleep(for: .seconds(Pace.barsSeconds))
     } while !Task.isCancelled
@@ -146,6 +157,15 @@ struct ChartView: View {
       }
       .labelStyle(.iconOnly)
       .disabled(candleCount == 0)
+
+      Toggle(isOn: $showDecisions) {
+        Label { Text(L10n.Chart.decisions) } icon: { Image(systemName: "sidebar.trailing") }
+      }
+      .toggleStyle(.button)
+      .labelStyle(.iconOnly)
+      .keyboardShortcut(Self.decisionsKey, modifiers: [.command, .option])
+      .help(Text(L10n.Chart.decisionsHelp))
+      .accessibilityIdentifier(Self.decisionsToggleID)
     }
     .animation(Tokens.Motion.quick, value: symbols)
   }
