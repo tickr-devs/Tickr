@@ -60,6 +60,6 @@ never fill. The real bot reacts as it would live:
 - the unprotected-position alert goes to the terminal.
 
 After `[orders] max_unprotected_seconds` (30 s), the bot cancels the stop and closes the
-position (`unprotected-too-long`). For a longer look, raise that key in the demo copy
-`demo/config/bot.toml` and restart the bot only. Running `aperture demo` again rebuilds that
-folder. Only the demo's exchange changes: `broker/fake.py` and the live path are untouched.
+position (`unprotected-too-long`), so the apps then show that exit and its fence. Put `at`
+inside the live part of the day (after `[demo] clock`), so the 30 s happen in real time. Only
+the demo's exchange changes: `broker/fake.py` and the live path are untouched.
