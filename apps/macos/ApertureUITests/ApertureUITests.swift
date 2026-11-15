@@ -56,6 +56,8 @@ final class ApertureUITests: XCTestCase {
   /// Most scroll steps taken to bring an element into view, and the size of one, in points.
   static let scrollSteps = 8
   static let scrollStep: CGFloat = 120
+  /// How far above the window's bottom edge a scrolled-to element must be, in points.
+  static let scrollMargin: CGFloat = 160
   /// Chart settings (ChartView.Keys) passed as launch arguments: the decisions inspector open
   /// with every study, the set that once crashed the app in an endless layout loop.
   static let everyStudyWithInspector = ["-chart.decisions", "YES", "-chart.movingAverages", "YES",
@@ -82,11 +84,15 @@ final class ApertureUITests: XCTestCase {
   @MainActor
   private func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
     // The sign of a scroll delta follows the Mac's scroll direction setting: try one way, then the other.
+    // Hittable is not enough: a row near the bottom edge is hittable while its table is partly off
+    // screen, and the click then fails to scroll the table. Bring it a margin above the edge.
+    let window = app.windows.firstMatch
+    func shown() -> Bool { element.isHittable && element.frame.maxY < window.frame.maxY - Self.scrollMargin }
     for direction: CGFloat in [-1, 1] {
-      for _ in 0..<Self.scrollSteps where !element.isHittable {
+      for _ in 0..<Self.scrollSteps where !shown() {
         // Scrolled at the window's middle, over the screen's own scroll view: the first scroll
         // view in the tree can be a small inner one (the table's) with no point to scroll at.
-        app.windows.firstMatch.scroll(byDeltaX: 0, deltaY: direction * Self.scrollStep)
+        window.scroll(byDeltaX: 0, deltaY: direction * Self.scrollStep)
       }
     }
   }
