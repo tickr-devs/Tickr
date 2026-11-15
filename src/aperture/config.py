@@ -110,6 +110,7 @@ class ApiConfig:
     account_stale_seconds: Decimal
     commands_dir: str
     status_stale_seconds: Decimal
+    broker_read_warn_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
     max_pending_commands: int
@@ -425,6 +426,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.live_ttl_seconds <= 0 or chart.session_lookback_days < 1:
         raise ConfigError("[chart] live_ttl_seconds must be above 0 and session_lookback_days "
                           "at least 1")
+    orders, api = built["orders"], built["api"]
+    if not orders.reconcile_interval_seconds < api.broker_read_warn_seconds \
+            < orders.broker_read_max_age_seconds:
+        raise ConfigError("[api] broker_read_warn_seconds must be above [orders] "
+                          "reconcile_interval_seconds and below [orders] "
+                          "broker_read_max_age_seconds")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
