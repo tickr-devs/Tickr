@@ -407,6 +407,9 @@ private struct LiveFlowCard: View {
     /// nil = the API does not report this stage yet.
     let value: String?
     let color: Color
+    /// A blocked entry or an unprotected position from the status: shown at once, never under
+    /// the placeholder that waits for the first /flow read.
+    var urgent = false
   }
 
   private var stages: [Stage] {
@@ -444,11 +447,11 @@ private struct LiveFlowCard: View {
           : riskCount ?? (status.entriesAllowed ? RiskFormat.amount(status.dailyRoomUsd?.value)
             : String(localized: L10n.Risk.notNow)),
         color: blocked ? Palette.loss
-          : status.entriesAllowed || riskCount != nil ? Palette.warning : Palette.textQuaternary),
+          : status.entriesAllowed || riskCount != nil ? Palette.warning : Palette.textQuaternary, urgent: blocked),
       Stage(id: .order, name: L10n.Flow.order,
         value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: Palette.info),
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
-        color: allProtected ? Palette.profit : Palette.loss),
+        color: allProtected ? Palette.profit : Palette.loss, urgent: verified < positions.count),
     ]
   }
 
@@ -545,6 +548,7 @@ private struct LiveFlowCard: View {
       pool(stage)
     }
     .accessibilityElement(children: .combine)
+    .unredacted(when: stage.urgent)
   }
 
   /// Today's symbols at this stage as small dots (left-out ones as outlines), "+N" past the cap.
@@ -569,6 +573,13 @@ private struct LiveFlowCard: View {
       }
       .accessibilityHidden(true)
     }
+  }
+}
+
+private extension View {
+  /// Shows the view even under a placeholder redaction when `urgent`.
+  @ViewBuilder func unredacted(when urgent: Bool) -> some View {
+    if urgent { unredacted() } else { self }
   }
 }
 
