@@ -14,7 +14,9 @@ struct SkippedGroupsTests {
        "strategy": {"name": "price-action", "version": "2"}, "admission": "\(admission)",
        "refusal_cause": \(cause.map { "\"\($0)\"" } ?? "null"),
        "refusal": null,
-       "entry_price": "12.345678901234567890123456789", "stop_price": null, "checks": []}
+       "entry_price": "12.345678901234567890123456789", "stop_price": null, "checks": [],
+       "prices_after": [], "prices_after_cause": "none",
+       "what_if": {"result_gross_usd": null, "result_r": null, "exit_reason": null, "cause": "none"}}
       """
     return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
   }
