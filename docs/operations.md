@@ -135,7 +135,7 @@ All checks are reported; the first failure is the recorded cause.
    put it there under that name). Open it once and allow notifications when it asks. When the
    app is missing, notifications for it are off, or it fails, the same notification comes from
    `osascript` instead, under "Script Editor" (allow those in System Settings > Notifications
-   too), so an alert is never lost; a slow app can at worst show it twice. The first iMessage send asks to let Terminal control Messages: allow it. This only
+   too), so an alert is never lost; a slow app can at worst show it twice. The bot waits at most `[alerts] mac_app_timeout_seconds` for the app. The first iMessage send asks to let Terminal control Messages: allow it. This only
    covers Terminal; the launchd jobs need their own permission (see "Alerts from launchd"
    below). The first JSON line is the Mac notification (`"delivery": "shown"`,
    `"pending": ["imessage"]`); a second line with `"channel": "imessage"` follows with the

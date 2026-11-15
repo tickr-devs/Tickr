@@ -213,7 +213,7 @@ def mac_notifier(config: AlertsConfig, runner: Runner = subprocess.run) -> Notif
     script = MacNotifier(config.notification_timeout_seconds, runner)
     if not config.mac_app:
         return script
-    app = AppNotifier(config.mac_app, config.notification_timeout_seconds, runner)
+    app = AppNotifier(config.mac_app, config.mac_app_timeout_seconds, runner)
     return FirstOf((app, script))
 
 

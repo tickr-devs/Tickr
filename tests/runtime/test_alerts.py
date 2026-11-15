@@ -31,7 +31,8 @@ from aperture.runtime.alerts import (
 
 CONFIG = AlertsConfig(dedupe_window_seconds=Decimal(600), notification_timeout_seconds=Decimal(5),
                       fence_alert_after_seconds=Decimal(30),
-                      imessage_recipient_variable="APERTURE_TEST_TO", mac_app="")
+                      imessage_recipient_variable="APERTURE_TEST_TO", mac_app="",
+                      mac_app_timeout_seconds=Decimal(2))
 T0 = datetime(2026, 11, 16, 14, 30, tzinfo=UTC)
 
 
@@ -305,6 +306,19 @@ def test_mac_notifier_is_the_app_then_osascript_or_osascript_alone(tmp_path):
     assert isinstance(mac_notifier(CONFIG), MacNotifier)
     chained = mac_notifier(replace(CONFIG, mac_app=str(tmp_path / "Tickr.app")))
     assert isinstance(chained, FirstOf)
+
+
+def test_the_app_gets_its_own_short_timeout_and_osascript_keeps_its_own(tmp_path):
+    timeouts = []
+
+    def runner(argv, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        if len(timeouts) == 1:
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        return subprocess.CompletedProcess(argv, 0)
+
+    mac_notifier(replace(CONFIG, mac_app=str(_app(tmp_path))), runner).notify("t", "x")
+    assert timeouts == [2.0, 5.0]
 
 
 def test_missing_app_falls_back_to_osascript_end_to_end(tmp_path):
