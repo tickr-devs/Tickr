@@ -70,6 +70,7 @@ SHARED = "shared"
 NOT_SHARED = "not-shared"
 INCONCLUSIVE = "inconclusive"
 PASSED = "passed"
+UNFINISHED = "unfinished"
 FAILED = "failed"
 
 SUMMARY_FILE = "summary.json"
@@ -370,12 +371,25 @@ def chart_client_gate(cfg: Config) -> str | None:
     newest `chart-client` run recorded for this environment must have passed. With
     `[chart] webull_enabled` the API process is itself a second Webull client next to the bot
     (C1), so it waits for the probe, which runs that experiment with the bot flat and watched.
-    A summary that cannot be read counts as a run that did not pass."""
+    A summary that cannot be read counts as a run that did not pass. A run folder without a
+    summary (the probe crashed or is still running) is a run of unknown environment that did
+    not pass, as new as the newest file in it."""
     how = ("run `python -m aperture.probes chart-client SYMBOL` next to the running bot, then "
            "start the API again")
     root = cfg.root / cfg.run.data_dir / cfg.probe.evidence_dir
     newest: tuple[datetime, str] | None = None
-    for path in sorted(root.glob(f"*/chart-client-*/{SUMMARY_FILE}")):
+    for folder in sorted(root.glob("*/chart-client-*")):
+        path = folder / SUMMARY_FILE
+        if not path.exists():
+            try:
+                changed = max(item.stat().st_mtime for item in (folder, *folder.iterdir()))
+            except OSError as exc:
+                return (f"chart probe C1: {folder.name} cannot be read "
+                        f"({type(exc).__name__}); {how}")
+            run = (datetime.fromtimestamp(changed, UTC), UNFINISHED)
+            if newest is None or run[0] > newest[0]:
+                newest = run
+            continue
         try:
             summary = json.loads(path.read_text("utf-8"))
             if summary["environment"] != cfg.environment_name:

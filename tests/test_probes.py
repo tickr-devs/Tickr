@@ -313,6 +313,29 @@ def test_the_chart_gate_opens_only_on_a_newest_run_that_passed(tmp_path):
     assert "last ended 'failed' for sandbox" in probes.chart_client_gate(cfg)
 
 
+def test_the_chart_gate_shuts_on_a_newer_run_that_left_no_summary(tmp_path):
+    cfg = cfg_in(tmp_path, chart_on=True)
+    passed_at = datetime(2026, 11, 16, 15, 0, tzinfo=UTC)
+    summary_file(cfg, "2026-11-16", "chart-client-150000", verdict=probes.PASSED,
+                 started_at=passed_at.isoformat())
+    crashed = summary_file(cfg, "2026-11-16", "chart-client-140000").parent
+    (crashed / probes.SUMMARY_FILE).unlink()
+    reads = crashed / "reads.jsonl"
+    reads.write_text("{}\n")
+
+    def touch(at: datetime) -> None:
+        for path in (reads, crashed):
+            os.utime(path, (at.timestamp(), at.timestamp()))
+
+    touch(passed_at - timedelta(hours=1))  # it crashed before the run that passed
+    assert probes.chart_client_gate(cfg) is None
+    touch(passed_at + timedelta(hours=1))  # it crashed after it, or is still running
+    assert "last ended 'unfinished' for sandbox" in probes.chart_client_gate(cfg)
+    summary_file(cfg, "2026-11-16", "chart-client-170000", verdict=probes.PASSED,
+                 started_at=(passed_at + timedelta(hours=2)).isoformat())
+    assert probes.chart_client_gate(cfg) is None
+
+
 @pytest.mark.parametrize("text", ["{", "[]", '{"environment": "sandbox"}',
                                   '{"environment": "sandbox", "verdict": "passed", '
                                   '"started_at": "2026-11-16T15:00:00"}'])
