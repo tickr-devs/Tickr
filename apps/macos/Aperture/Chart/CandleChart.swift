@@ -676,6 +676,13 @@ private struct ChartReadout: View {
       .font(Tokens.Typography.annotation)
       .monospacedDigit()
       .contentTransition(.numericText())
+      .lineLimit(1)
+      .fixedSize()
+      // One line each, cut at the edge when the window is narrow: values that wrapped made the
+      // readout's height (and with it the window's least size) change on every pointed candle,
+      // and AppKit re-laid the window inside its own layout pass until it threw.
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+      .clipped()
     }
   }
 
