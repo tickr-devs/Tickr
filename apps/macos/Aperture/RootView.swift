@@ -60,18 +60,21 @@ struct RootView: View {
     } detail: {
       ZStack(alignment: .bottom) {
         ApertureBackground()
-        detail
-          .safeAreaInset(edge: .top, spacing: 0) {
-            if section != .overview { EventStrip() }
-          }
-          // One container element per screen, so its id holds even when the screen's root is a
-          // split (the Chart's inspector) rather than a single view.
-          .accessibilityElement(children: .contain)
-          .accessibilityIdentifier(section.screenID)
-          // A new section replaces the screen at once, as a sidebar does in Apple's apps; the
-          // screen's own cards then rise in. Sliding whole screens in and out kept two of them
-          // (one maybe the chart) laid out and animating together, and stuttered.
-          .id(section)
+        // The strip stacked above the screen rather than a top safe-area inset: the Chart's
+        // inspector split ignores an inset, and the strip covered its controls.
+        VStack(spacing: 0) {
+          if section != .overview { EventStrip() }
+          detail
+            // One container element per screen, so its id holds even when the screen's root is
+            // a split (the Chart's inspector) rather than a single view.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(section.screenID)
+            // A new section replaces the screen at once, as a sidebar does in Apple's apps; the
+            // screen's own cards then rise in. Sliding whole screens in and out kept two of them
+            // (one maybe the chart) laid out and animating together, and stuttered.
+            .id(section)
+            .frame(maxHeight: .infinity)
+        }
         if let unattended = model.unattendedPositions {
           UnattendedBanner(unattended: unattended)
             .padding(Tokens.Space.l)
