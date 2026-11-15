@@ -216,6 +216,9 @@ def test_a_trade_closed_before_its_stop_was_seen_working_is_recorded_as_such(tmp
     body = rig.latency()
     assert body["closed_before_verified"] is True and body["stop_verified_at"] is None
     assert body["stop_sent_at"] is not None and body["observed_to_verified_seconds"] is None
+    (trade,) = service.trades_today(engine, rig.now)
+    assert trade.stop_confirmed_after_seconds is None  # never confirmed: unknown, not zero
+    assert trade.planned_loss_usd == D(1)
 
 
 def test_a_trade_never_filled_has_no_latency_row(tmp_path):
@@ -256,3 +259,28 @@ def test_a_failing_measurement_never_ends_the_loop(tmp_path):
     (failed,) = rig.store.journal(service.LATENCY_FAILED)
     assert failed.body["error"] == "KeyError"
     assert rig.evaluator.calls == [1, 3, 4, 5]  # protection and the strategy went on
+
+
+def test_status_trade_carries_planned_loss_and_stop_confirmation_time(tmp_path):
+    """status-v1 trades_today: 1 R as recorded at entry, and the same fill-observed -> stop
+    working time the protection-latency row records, from the journal of a fake-broker trade."""
+    rig = Rig(tmp_path)
+    engine, log = rig.engine, LatencyLog(rig.engine)
+    engine.recover()
+    engine.open_trade("ABC", D(2), D(10), D("9.80"), D("0.40"))
+    rig.broker.fill(rig.entry(), D(2), D(10))
+    rig.advance(1)
+    engine.step()  # fill observed, stop sent
+    rig.advance(POLL)
+    engine.step()  # stop seen working
+    log.record()
+    (stop,) = [o for o in rig.broker.open_orders() if o.order_type == "STOP_LOSS"]
+    rig.broker.fill(stop.client_order_id, D(2), D("9.80"))
+    for _ in range(3):
+        rig.advance(POLL)
+        engine.step()
+    (trade,) = service.trades_today(engine, rig.now)
+    assert trade.exit_reason and trade.planned_loss_usd == D("0.40")
+    assert trade.stop_confirmed_after_seconds == D(str(POLL)).quantize(D("0.001"))
+    assert float(trade.stop_confirmed_after_seconds) == (
+        rig.latency()["observed_to_verified_seconds"])

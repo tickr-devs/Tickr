@@ -99,6 +99,14 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         assert status.positions[0].stop.state is api.StopState.VERIFIED
         assert [(t.symbol, t.exit_reason) for t in status.trades_today] == [
             ("AAA", "stopped-out")]
+        (closed,) = status.trades_today
+        assert closed.planned_loss_usd > 0
+        assert closed.stop_confirmed_after_seconds is not None
+        (day_trade,) = server.history.day(FRIDAY, FRIDAY).trades
+        assert day_trade.stop_confirmed_after_seconds == closed.stop_confirmed_after_seconds
+        assert day_trade.planned_loss_usd == closed.planned_loss_usd
+        assert day_trade.mae_usd is not None and day_trade.mfe_usd is not None
+        assert day_trade.mae_usd < 0 < day_trade.mfe_usd  # rose a little, then stopped out
         room = status.daily_room_usd
         assert room is not None and room < cfg.risk.max_daily_loss_usd
         assert [c.kind for c in status.recent_commands] == [

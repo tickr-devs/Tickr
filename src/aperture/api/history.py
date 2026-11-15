@@ -7,10 +7,11 @@ trades of runs in the configured environment, capture files under its folder.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import threading
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -23,6 +24,7 @@ from aperture.config import Config
 from aperture.data.capture import BARS_FILE, CaptureError, read_captured_bars
 from aperture.engine.core import Leg, OrderRow, order_from_row
 from aperture.store import DATABASE_FILE, MIGRATIONS, Store
+from aperture.types import OrderState
 
 ZERO = Decimal(0)
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9./-]*$")
@@ -41,14 +43,79 @@ def average_fill_price(orders: list[OrderRow]) -> Decimal | None:
     return sum((o.filled_quantity * o.average_fill_price for o in filled), ZERO) / quantity
 
 
+# The journal row that confirms a stop: a Detail read (`order-observed`) of one of the trade's
+# stop orders showing it working at the broker. The same row `protection-latency` records as
+# `stop_verified_at` (runtime/protection.py); the engine calls such a stop "verified".
+OBSERVED = "order-observed"
+_WORKING = (str(OrderState.ACCEPTED), str(OrderState.PARTIALLY_FILLED))
+
+BarSource = Callable[[str, date], Sequence[api.BarV1]]
+
+
+@dataclass(frozen=True)
+class FillTimes:
+    """Journal times of one trade. Webull Detail has no fill time, so a fill's time is when a
+    Detail read first showed it (`order-observed`)."""
+
+    first_fill: datetime | None  # first entry read showing filled quantity > 0
+    stop_confirmed: datetime | None  # first stop read showing it working, after first_fill
+    last_exit_fill: datetime | None  # last sell read (stop or exit) showing more filled
+
+
+def fill_times(store: Store, orders: list[OrderRow]) -> FillTimes:
+    legs = {o.client_order_id: o.leg for o in orders}
+    rows = store.query(
+        f"SELECT at_utc, key, body FROM journal WHERE kind = ? AND key IN "
+        f"({', '.join('?' for _ in legs)}) ORDER BY seq", (OBSERVED, *legs)) if legs else []
+    first = stop = last = None
+    filled: dict[str, Decimal] = {}
+    for row in rows:
+        body, at, cid = json.loads(row["body"]), datetime.fromisoformat(row["at_utc"]), row["key"]
+        quantity = Decimal(str(body["filled_quantity"]))
+        more = quantity > filled.get(cid, ZERO)
+        filled[cid] = quantity
+        if legs[cid] is Leg.ENTRY:
+            if first is None and quantity > 0:
+                first = at
+            continue
+        if legs[cid] is Leg.STOP and first is not None and stop is None \
+                and body["state"] in _WORKING:
+            stop = at
+        if more:
+            last = at
+    return FillTimes(first, stop, last)
+
+
+def _minute(at: datetime) -> datetime:
+    return at.replace(second=0, microsecond=0)
+
+
+def excursions(bars: Sequence[api.BarV1], entry: Decimal, quantity: Decimal,
+               start: datetime | None, end: datetime | None,
+               ) -> tuple[Decimal | None, Decimal | None]:
+    """(MAE, MFE) in USD from the M1 bars of every minute from `start` to `end`, both minutes
+    included whole (partial minutes: the first bar may hold prices from before the fill, the
+    last from after the exit). (None, None) without both of those bars."""
+    if start is None or end is None:
+        return None, None
+    first, last = _minute(start), _minute(end)
+    inside = [b for b in bars if first <= b.start <= last]
+    if not {first, last} <= {b.start for b in inside}:
+        return None, None
+    low, high = min(b.low for b in inside), max(b.high for b in inside)
+    return (low - entry) * quantity, (high - entry) * quantity
+
+
 def closed_trades(store: Store, environment: str | None = None,
-                  closed_on: date | None = None) -> list[api.DayTrade]:
+                  closed_on: date | None = None,
+                  bars: BarSource | None = None) -> list[api.DayTrade]:
     """Closed trades that had fills, oldest close first, with their gross result.
 
     `environment` limits them to runs of that environment; None takes every run (the bot's own
     database view). `closed_on` keeps only trades closed that New York date (checked before
     their orders are read, so the bot's per-step call stays cheap). Quantity is what was
-    sold; prices are fill-weighted averages."""
+    sold; prices are fill-weighted averages. `bars` gives the captured M1 bars of a symbol on
+    a New York date; without it MAE and MFE are null."""
     if environment is None:
         rows = store.query("SELECT * FROM trades WHERE closed_at IS NOT NULL "
                            "ORDER BY closed_at, trade_id")
@@ -58,8 +125,8 @@ def closed_trades(store: Store, environment: str | None = None,
                            "ORDER BY t.closed_at, t.trade_id", (environment,))
     result = []
     for row in rows:
-        if closed_on is not None and ny_date_of(
-                datetime.fromisoformat(row["closed_at"])) != closed_on:
+        closed_at = datetime.fromisoformat(row["closed_at"])
+        if closed_on is not None and ny_date_of(closed_at) != closed_on:
             continue
         orders = [order_from_row(o) for o in store.query(
             "SELECT * FROM orders WHERE trade_id = ? ORDER BY rowid", (row["trade_id"],))]
@@ -70,14 +137,20 @@ def closed_trades(store: Store, environment: str | None = None,
         if entry_price is None or exit_price is None or quantity == 0:
             continue  # never filled: not a trade
         stops = [o.stop_price for o in orders if o.leg is Leg.STOP and o.stop_price is not None]
+        times = fill_times(store, orders)
+        confirmed = (None if times.first_fill is None or times.stop_confirmed is None
+                     else api.seconds_between(times.first_fill, times.stop_confirmed))
+        mae, mfe = (None, None) if bars is None else excursions(
+            bars(row["symbol"], ny_date_of(closed_at)), entry_price, quantity,
+            times.first_fill, times.last_exit_fill)
         result.append(api.DayTrade(
             trade_id=row["trade_id"], symbol=row["symbol"], quantity=quantity,
             entry_price=entry_price, exit_price=exit_price,
-            opened_at=datetime.fromisoformat(row["opened_at"]),
-            closed_at=datetime.fromisoformat(row["closed_at"]),
+            opened_at=datetime.fromisoformat(row["opened_at"]), closed_at=closed_at,
             exit_reason=row["close_cause"], stop_price=stops[0] if stops else None,
             planned_loss_usd=Decimal(row["planned_loss_usd"]),
-            result_gross_usd=(exit_price - entry_price) * quantity))
+            result_gross_usd=(exit_price - entry_price) * quantity,
+            stop_confirmed_after_seconds=confirmed, mae_usd=mae, mfe_usd=mfe))
     return result
 
 
@@ -105,7 +178,7 @@ class History:
 
     # ------------------------------------------------------------ sources
 
-    def _read_db(self) -> tuple[list[api.DayTrade], set[date]]:
+    def _read_db(self, bars: BarSource | None = None) -> tuple[list[api.DayTrade], set[date]]:
         """Closed trades and New York dates of bot runs; none while no database exists."""
         if not self.paths.database.exists():
             return [], set()
@@ -118,7 +191,7 @@ class History:
             if version != len(MIGRATIONS):
                 raise HistoryUnavailable(
                     f"database schema v{version}, this API reads v{len(MIGRATIONS)}")
-            trades = closed_trades(store, self.paths.environment)
+            trades = closed_trades(store, self.paths.environment, bars=bars)
             runs = {ny_date_of(datetime.fromisoformat(r["started_at"])) for r in store.query(
                 "SELECT started_at FROM runs WHERE environment = ?", (self.paths.environment,))}
             return trades, runs
@@ -179,7 +252,11 @@ class History:
         return api.DaysV1(environment=self.paths.environment, days=tuple(summaries))
 
     def day(self, day: date, today: date) -> api.DayV1:
-        trades, _ = self._read_db()
+        def bars(symbol: str, closed_on: date) -> list[api.BarV1]:
+            # Only the asked day's file is read; a trade of another day is not listed anyway.
+            return self._bars_by_symbol(day, today).get(symbol, []) if closed_on == day else []
+
+        trades, _ = self._read_db(bars)
         of_day = self._of_day(trades, day)
         symbols = tuple(sorted(self._bars_by_symbol(day, today)))
         return api.DayV1(environment=self.paths.environment, day=day, trades=tuple(of_day),

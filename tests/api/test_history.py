@@ -121,6 +121,123 @@ def test_trades_of_another_environment_are_left_out(paths):
     assert len(closed_trades(store)) == 2
 
 
+# ---------------------------------------------------------------- stop timing, MAE / MFE
+
+LATER = DAY + timedelta(days=1)  # "today" for History: the DAY file is complete
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = OPEN
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def _timed_store(paths: HistoryPaths) -> tuple[Store, Clock]:
+    clock = Clock()
+    return Store.open(paths.database, busy_timeout_seconds=1, now=clock), clock
+
+
+def _observed(store: Store, clock: Clock, cid: str, seconds: float, state: str,
+              filled: str) -> None:
+    """The engine's `order-observed` row for one Detail read, `seconds` after OPEN."""
+    clock.now = OPEN + timedelta(seconds=seconds)
+    with store.transaction():
+        store.append("order-observed", {"state": state, "raw_status": state,
+                                        "filled_quantity": Decimal(filled),
+                                        "average_fill_price": None}, key=cid)
+
+
+def _range_bar(minute: int, low: str, high: str) -> str:
+    start = OPEN + timedelta(minutes=minute)
+    return json.dumps({"symbol": "ABCD", "start": start.isoformat(), "open": "12.34",
+                       "high": high, "low": low, "close": "12.34", "volume": "1000",
+                       "provider": "webull", "receipt_time": start.isoformat()}) + "\n"
+
+
+def _journaled_trade(paths: HistoryPaths) -> None:
+    """Entry fill observed at 0:40.5, stop working at 0:42.75, exit filled at 3:10."""
+    store, clock = _timed_store(paths)
+    _trade(store, _run(store), "t1", OPEN + timedelta(minutes=30))
+    _observed(store, clock, "t1-entry", 10, "ACCEPTED", "0")
+    _observed(store, clock, "t1-entry", 40.5, "FILLED", "10")
+    _observed(store, clock, "t1-stop", 42.75, "ACCEPTED", "0")
+    _observed(store, clock, "t1-exit", 189, "ACCEPTED", "0")
+    _observed(store, clock, "t1-exit", 190, "FILLED", "10")
+    _observed(store, clock, "t1-stop", 191, "CANCELLED", "0")
+    store.close()
+
+
+BARS = [_range_bar(-1, "11.00", "12.40"),  # before the fill's minute: left out
+        _range_bar(0, "12.10", "12.40"),  # the fill's minute, whole (partial minute)
+        _range_bar(1, "12.30", "12.60"),
+        _range_bar(3, "12.20", "12.90"),  # the exit's minute, whole; minute 2 had no bar
+        _range_bar(4, "10.00", "20.00")]  # after the exit's minute: left out
+
+
+def test_stop_confirmation_time_and_excursions_from_journal_and_capture(paths):
+    _journaled_trade(paths)
+    _bars_file(paths, DAY, BARS)
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert trade.stop_confirmed_after_seconds == Decimal("2.250")
+    assert trade.planned_loss_usd == Decimal("50")
+    assert trade.mae_usd == (Decimal("12.10") - Decimal("12.34")) * 10  # -2.40
+    assert trade.mfe_usd == (Decimal("12.90") - Decimal("12.34")) * 10  # 5.60
+
+
+def test_the_bot_view_has_stop_timing_but_never_reads_capture(paths):
+    _journaled_trade(paths)
+    _bars_file(paths, DAY, BARS)
+    store = Store.open_readonly(paths.database)
+    (trade,) = closed_trades(store, closed_on=DAY)
+    store.close()
+    assert trade.stop_confirmed_after_seconds == Decimal("2.250")
+    assert (trade.mae_usd, trade.mfe_usd) == (None, None)
+
+
+@pytest.mark.parametrize("lines", [None, BARS[:3] + BARS[4:], BARS[2:]],
+                         ids=["no-capture", "no-exit-minute", "no-fill-minute"])
+def test_excursions_are_null_without_capture_of_both_edge_minutes(paths, lines):
+    _journaled_trade(paths)
+    if lines is not None:
+        _bars_file(paths, DAY, lines)
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert (trade.mae_usd, trade.mfe_usd) == (None, None)
+    assert trade.stop_confirmed_after_seconds == Decimal("2.250")
+
+
+def test_window_ends_at_the_read_that_showed_the_last_shares_sold(paths):
+    store, clock = _timed_store(paths)
+    _trade(store, _run(store), "t1", OPEN + timedelta(minutes=30))
+    _observed(store, clock, "t1-entry", 5, "FILLED", "10")
+    _observed(store, clock, "t1-stop", 6, "ACCEPTED", "0")
+    _observed(store, clock, "t1-stop", 70, "PARTIALLY_FILLED", "4")
+    _observed(store, clock, "t1-exit", 100, "FILLED", "6")  # the last shares: minute 1
+    _observed(store, clock, "t1-stop", 250, "CANCELLED", "4")  # no more sold: not the end
+    store.close()
+    _bars_file(paths, DAY, BARS)
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert trade.stop_confirmed_after_seconds == Decimal("1.000")
+    assert trade.mfe_usd == (Decimal("12.60") - Decimal("12.34")) * 10  # minutes 0-1 only
+
+
+@pytest.mark.parametrize("rows", [
+    [("t1-entry", 5, "FILLED", "10"), ("t1-stop", 6, "REJECTED", "0")],
+    [("t1-entry", 5, "FILLED", "10")],
+    [("t1-stop", 3, "ACCEPTED", "0"), ("t1-entry", 5, "FILLED", "10")],
+    [("t1-stop", 6, "ACCEPTED", "0")],
+], ids=["stop-rejected", "stop-never-read", "working-before-fill", "fill-never-observed"])
+def test_stop_never_confirmed_after_a_fill_is_null(paths, rows):
+    store, clock = _timed_store(paths)
+    _trade(store, _run(store), "t1", OPEN + timedelta(minutes=30))
+    for cid, seconds, state, filled in rows:
+        _observed(store, clock, cid, seconds, state, filled)
+    store.close()
+    (trade,) = History(paths).day(DAY, LATER).trades
+    assert trade.stop_confirmed_after_seconds is None
+
+
 # ---------------------------------------------------------------- History
 
 

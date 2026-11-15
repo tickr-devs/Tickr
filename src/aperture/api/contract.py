@@ -155,6 +155,9 @@ class Trade:
     closed_at: datetime
     exit_reason: str
     result_gross_usd: Decimal
+    planned_loss_usd: Decimal  # 1 R, as recorded when the trade was opened
+    # First entry fill observed -> first stop seen working at the broker; null = never.
+    stop_confirmed_after_seconds: Decimal | None
 
 
 @dataclass(frozen=True)
@@ -315,7 +318,9 @@ class ErrorV1:
 @dataclass(frozen=True)
 class DayTrade:
     """A closed trade with fills. `stop_price` is the first protective stop sent (null if none
-    was); 1 R = `planned_loss_usd`."""
+    was); 1 R = `planned_loss_usd`. `stop_confirmed_after_seconds` as in `Trade`. `mae_usd` /
+    `mfe_usd`: (lowest low - entry) x quantity and (highest high - entry) x quantity over the
+    captured M1 bars of the minutes the trade was open; null without that capture."""
 
     trade_id: str
     symbol: str
@@ -328,6 +333,9 @@ class DayTrade:
     stop_price: Decimal | None
     planned_loss_usd: Decimal
     result_gross_usd: Decimal
+    stop_confirmed_after_seconds: Decimal | None
+    mae_usd: Decimal | None
+    mfe_usd: Decimal | None
 
 
 @dataclass(frozen=True)

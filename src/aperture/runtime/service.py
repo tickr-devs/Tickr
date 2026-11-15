@@ -96,7 +96,8 @@ def trades_today(engine: Engine, now: datetime) -> tuple[api.Trade, ...]:
     """Trades closed today (New York date) that had fills, with gross result."""
     today = now.astimezone(NEW_YORK).date()
     return tuple(api.Trade(t.symbol, t.quantity, t.entry_price, t.exit_price, t.opened_at,
-                           t.closed_at, t.exit_reason, t.result_gross_usd)
+                           t.closed_at, t.exit_reason, t.result_gross_usd, t.planned_loss_usd,
+                           t.stop_confirmed_after_seconds)
                  for t in closed_trades(engine.store, closed_on=today))
 
 
