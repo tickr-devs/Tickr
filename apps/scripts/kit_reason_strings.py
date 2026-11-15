@@ -309,10 +309,6 @@ def reason_swift():
     for name in names:
         out.append(f"  case {camel(name)}" + (f' = "{name}"' if camel(name) != name else ""))
     out += [
-        "",
-        "  /// Around a value's name in a sentence: {name}.",
-        '  static let open = "{"',
-        '  static let close = "}"',
         "}",
         "",
     ]
@@ -349,13 +345,7 @@ def reason_swift():
             "",
             "  /// The sentence with the values the bot sent; nil when one of them is missing.",
             "  public func text(_ params: [String: String]) -> String? {",
-            "    var text = String(localized: template)",
-            "    for name in names {",
-            "      guard let value = params[name.rawValue] else { return nil }",
-            "      let token = ReasonParam.open + name.rawValue + ReasonParam.close",
-            "      text = text.replacing(token, with: value)",
-            "    }",
-            "    return text",
+            "    ReasonParam.fill(String(localized: template), names: names, params: params)",
             "  }",
             "}",
             "",

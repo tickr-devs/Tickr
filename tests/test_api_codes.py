@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
+import re
 from pathlib import Path
 
 from aperture.api import reasons
@@ -16,6 +18,7 @@ from aperture.engine.core import Fence
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "apps" / "scripts" / "kit_api_strings.py"
 REASONS_SCRIPT = ROOT / "apps" / "scripts" / "kit_reason_strings.py"
+KIT_CATALOG = ROOT / "apps/shared/Sources/ApertureKit/Resources/Localizable.xcstrings"
 SERVICE = ROOT / "src" / "aperture" / "runtime" / "service.py"
 
 
@@ -99,3 +102,13 @@ def test_every_gate_and_fence_reason_has_a_sentence_naming_only_values_the_bot_s
         assert set(sentences) == set(sent)
         for code, names in sentences.items():
             assert names <= sent[code], code
+
+
+def test_every_translation_names_the_same_values_as_the_english():
+    strings = json.loads(KIT_CATALOG.read_text(encoding="utf-8"))["strings"]
+    token = re.compile(r"\{\w+\}")
+    for key, entry in strings.items():
+        if not key.startswith(("kit.gate.", "kit.fenceReason.")):
+            continue
+        units = {lang: entry["localizations"][lang]["stringUnit"]["value"] for lang in ("en", "ru")}
+        assert set(token.findall(units["en"])) == set(token.findall(units["ru"])), key

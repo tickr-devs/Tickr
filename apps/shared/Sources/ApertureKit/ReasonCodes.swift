@@ -21,10 +21,6 @@ public enum ReasonParam: String, CaseIterable, Sendable {
   case stopPrice = "stop_price"
   case symbol
   case verified
-
-  /// Around a value's name in a sentence: {name}.
-  static let open = "{"
-  static let close = "}"
 }
 
 /// The trading gate's cause (`Gate.code`). An unknown code has no case; show the bot's own text then.
@@ -71,13 +67,7 @@ public enum GateReason: String, CaseIterable, Sendable {
 
   /// The sentence with the values the bot sent; nil when one of them is missing.
   public func text(_ params: [String: String]) -> String? {
-    var text = String(localized: template)
-    for name in names {
-      guard let value = params[name.rawValue] else { return nil }
-      let token = ReasonParam.open + name.rawValue + ReasonParam.close
-      text = text.replacing(token, with: value)
-    }
-    return text
+    ReasonParam.fill(String(localized: template), names: names, params: params)
   }
 }
 
@@ -194,12 +184,6 @@ public enum FenceReason: String, CaseIterable, Sendable {
 
   /// The sentence with the values the bot sent; nil when one of them is missing.
   public func text(_ params: [String: String]) -> String? {
-    var text = String(localized: template)
-    for name in names {
-      guard let value = params[name.rawValue] else { return nil }
-      let token = ReasonParam.open + name.rawValue + ReasonParam.close
-      text = text.replacing(token, with: value)
-    }
-    return text
+    ReasonParam.fill(String(localized: template), names: names, params: params)
   }
 }

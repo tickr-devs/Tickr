@@ -55,6 +55,15 @@ struct ApiTextTests {
       == String(localized: L10n.gateReasonTradingDisabled).replacing("{environment}", with: "production"))
   }
 
+  @Test("Values fill a sentence in one pass; braces inside a value or unnamed stay as written")
+  func fill() {
+    let names: [ReasonParam] = [.symbol, .state]
+    #expect(ReasonParam.fill("{symbol} is {state}", names: names, params: ["symbol": "{state}", "state": "x"])
+      == "{state} is x")
+    #expect(ReasonParam.fill("{symbol} and {other}", names: [.symbol], params: ["symbol": "AB"]) == "AB and {other}")
+    #expect(ReasonParam.fill("{symbol} is {state}", names: names, params: ["symbol": "AB"]) == nil)
+  }
+
   @Test("Order values and check rules translate; unknown ones stay as sent")
   func values() {
     #expect(ApiText.orderSide("SELL") == String(localized: L10n.orderSideSell))
