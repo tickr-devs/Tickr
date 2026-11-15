@@ -16,7 +16,7 @@ enum Defaults {
 @MainActor
 struct ApertureMacApp: App {
   /// Smallest and first size of the main window, in points.
-  static let minWidth: CGFloat = 1000
+  static let minWidth: CGFloat = 1080
   static let minHeight: CGFloat = 700
   static let defaultWidth: CGFloat = 1440
   static let defaultHeight: CGFloat = 920
@@ -49,6 +49,8 @@ struct ApertureMacApp: App {
         .frame(minWidth: Self.minWidth, minHeight: Self.minHeight)
     }
     .defaultSize(width: Self.defaultWidth, height: Self.defaultHeight)
+    // The main window opens at every launch, also when the system would otherwise restore none.
+    .defaultLaunchBehavior(.presented)
     .commands { AppCommands(model: model) }
 
     Settings {
