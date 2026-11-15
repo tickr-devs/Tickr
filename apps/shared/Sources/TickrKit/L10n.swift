@@ -116,14 +116,6 @@ enum L10n {
   static var commandResumeEntries: LocalizedStringResource {
     LocalizedStringResource("kit.command.resumeEntries", defaultValue: "Resume entries", bundle: bundle)
   }
-  /// Operator command as recorded: the entry stop was switched on.
-  static var commandEntryStopOn: LocalizedStringResource {
-    LocalizedStringResource("kit.command.entryStopOn", defaultValue: "Entry stop on", bundle: bundle)
-  }
-  /// Operator command as recorded: the entry stop was switched off.
-  static var commandEntryStopOff: LocalizedStringResource {
-    LocalizedStringResource("kit.command.entryStopOff", defaultValue: "Entry stop off", bundle: bundle)
-  }
   /// Operator command: cancel every open order the bot placed.
   static var commandCancelOwnOrders: LocalizedStringResource {
     LocalizedStringResource("kit.command.cancelOwnOrders", defaultValue: "Cancel own orders", bundle: bundle)
@@ -190,6 +182,10 @@ enum L10n {
   static func apiUnreachable(_ detail: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.api.unreachable", defaultValue: "Local API not reachable: \(detail)",
       bundle: bundle)
+  }
+  /// An error that brings no description of its own.
+  static var unexpectedError: LocalizedStringResource {
+    LocalizedStringResource("kit.error.unexpected", defaultValue: "unexpected error in the app", bundle: bundle)
   }
   /// Contract error detail.
   static var apiNotHTTP: LocalizedStringResource {
@@ -269,6 +265,13 @@ enum L10n {
   static func unsupportedVersion(_ key: String, _ value: Int, _ expected: Int) -> LocalizedStringResource {
     LocalizedStringResource("kit.wire.unsupportedVersion",
       defaultValue: "unsupported \(key) \(value), this app reads \(expected)", bundle: bundle)
+  }
+
+  // MARK: Fences (ApiText.fenceTitle)
+
+  /// A fence of a kind this app does not know; the bot's detail follows it.
+  static var fenceOther: LocalizedStringResource {
+    LocalizedStringResource("kit.fenceKind.other", defaultValue: "Other block", bundle: bundle)
   }
 
   // MARK: Codes this app does not know (ApiText)

@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from decimal import Decimal as D
 
-from tickr.api import contract as api
 from rehearsal.harness import DAY, Rehearsal, history
 from rehearsal.world import build_day
+from tickr.api import contract as api
 
 HOT = D(30000)  # shares per minute while a symbol moves: ten times its prior sessions
 
