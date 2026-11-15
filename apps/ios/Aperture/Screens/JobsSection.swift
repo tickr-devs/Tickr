@@ -90,10 +90,20 @@ struct JobsSection: View {
   }
 
   /// The last good backup, or the failure when it is newer; the error and any cause below.
+  /// Green only when a good backup exists and no newer failure; no backup yet is neutral,
+  /// or a warning when the bot gives a cause.
+  static func backupTone(_ job: BackupJobV1) -> Tone {
+    let failed = job.lastFailedAt.map { failure in job.lastAt.map { failure.date > $0.date } ?? true } ?? false
+    if failed { return .loss }
+    if job.lastAt != nil { return .profit }
+    return job.cause == nil ? .neutral : .warning
+  }
+
   @ViewBuilder
   private func backup(_ job: BackupJobV1) -> some View {
-    let failed = job.lastFailedAt.map { failure in job.lastAt.map { failure.date > $0.date } ?? true } ?? false
-    SettingsRow(L10n.Settings.backup, systemImage: Self.backupSymbol, tone: failed ? .loss : .profit) {
+    let tone = Self.backupTone(job)
+    let failed = tone == .loss
+    SettingsRow(L10n.Settings.backup, systemImage: Self.backupSymbol, tone: tone) {
       if failed, let at = job.lastFailedAt {
         StatusPill(L10n.Settings.backupFailed(Format.time(at.date)), tone: .loss)
       } else if let at = job.lastAt {
