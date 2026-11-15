@@ -20,6 +20,8 @@ budget (api/chart.py), off unless `[chart] webull_enabled`.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import hmac
 import ipaddress
@@ -30,7 +32,7 @@ import re
 import secrets
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -55,6 +57,7 @@ from tickr.api.contract import (
     SettingsV1,
     StatusResponseV1,
 )
+from tickr.api.decision_cache import DecisionCache
 from tickr.api.history import SYMBOL_PATTERN, History, HistoryPaths, HistoryUnavailable
 from tickr.api.jobs import JobsSettings, jobs_document
 from tickr.api.journal import journal_document
@@ -92,6 +95,8 @@ IDEMPOTENCY = "idempotency"  # folder under <commands_dir> holding one file per 
 _LABEL = r"[a-z0-9]([a-z0-9-]*[a-z0-9])?"
 REMOTE_HOST = re.compile(rf"^{_LABEL}(\.{_LABEL})+(:[0-9]+)?$")
 BEARER = "Bearer "
+PRIVATE_FILE_MODE = 0o600  # owner read and write only (POSIX mode bits)
+LOCK_SUFFIX = ".lock"  # the pairing lock file: next to the code file, never holds data
 PAIR_ROUTE = "/pair"  # POST on the remote port only: redeem the one-time pairing code
 # Fewest random bytes in a token or pairing code: 128 bits, the usual floor for a bearer secret.
 MIN_SECRET_BYTES = 16
@@ -290,8 +295,11 @@ class ApiServer(ThreadingHTTPServer):
         self.lab = lab or LabReplay(settings.lab, clock)
         self.page = (STATIC_DIR / "status.html").read_bytes()
         self.history = History(settings.history, settings.after)
+        # Today's decision records, parsed once and read on as the bot appends.
+        self.decisions = DecisionCache(DecisionLog(settings.decisions))
         self.observer_results = ObserverResults(settings.simulation,
                                                 settings.observer_trades_max_rows)
+        self.screener_chips = flow.ScreenerChips(settings.universe, settings.change_pct_places)
         self.skipped = SkippedAfter(settings.simulation, settings.after.minutes,
                                     settings.check_places)
         # No source until one is attached (python -m tickr.api, or the demo's world).
@@ -668,7 +676,7 @@ class Handler(BaseHTTPRequestHandler):
             self._error("bad_request", 'body must be exactly {"code": "<pairing code>"}')
             return
         settings = self.server.settings
-        with self.server.pair_lock:
+        with self.server.pair_lock, _pairing_lock(settings):
             try:
                 waiting = json.loads(settings.pairing_code_path.read_text("ascii"))
                 digest = waiting["sha256"]
@@ -792,7 +800,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         day = ny_date_of(self.server.clock())
         try:
-            record = DecisionLog(self.server.settings.decisions).latest_active(day, symbol)
+            found = [r for r in self.server.decisions.records(day, day, symbol=symbol)
+                     if r.role is Role.ACTIVE]  # as DecisionLog.latest_active filters
+            record = found[-1] if found else None
         except (RecordFileError, OSError) as exc:
             self._error("unavailable", f"decision file unreadable: {exc}")
             return
@@ -821,12 +831,13 @@ class Handler(BaseHTTPRequestHandler):
         except BadQuery as exc:
             self._error("bad_request", str(exc))
             return
-        log = DecisionLog(settings.decisions)
+        cache = self.server.decisions
+        log = cache.log
         try:
             if path == "/observers":
                 identities = tuple(read_identity(settings.strategies_root, folder)
                                    for folder in settings.shown.observers)
-                records = log.records(day, role=Role.OBSERVER)
+                records = cache.records(day, today, role=Role.OBSERVER)
                 configured = {name for name, _ in identities}
                 results = self.server.observer_results.results(
                     day, today, [r for r in records if r.decision.strategy in configured],
@@ -834,17 +845,17 @@ class Handler(BaseHTTPRequestHandler):
                 document: Any = contract.observers_document(day, identities, records, results)
             elif path == "/skipped":
                 document = self.server.skipped.document(
-                    day, today, log.records(day, role=Role.ACTIVE), log.path(day))
+                    day, today, cache.records(day, today, role=Role.ACTIVE), log.path(day))
             elif path == "/watching":
                 document = contract.watching_document(
-                    day, log.records(day, role=Role.ACTIVE), settings.watching_max_rows,
+                    day, cache.records(day, today, role=Role.ACTIVE), settings.watching_max_rows,
                     settings.closeness_places, settings.check_places)
             elif path == "/flow":
-                document = self._flow(day, today, log.records(day, role=Role.ACTIVE))
+                document = self._flow(day, today, cache.records(day, today, role=Role.ACTIVE))
             else:
                 symbol = params["symbol"]
                 document = contract.decisions_document(symbol, day,
-                                                       log.records(day, symbol=symbol),
+                                                       cache.records(day, today, symbol=symbol),
                                                        settings.check_places)
         except ObserverError as exc:
             self._error("unavailable", f"observer strategy unreadable: {exc}")
@@ -864,13 +875,9 @@ class Handler(BaseHTTPRequestHandler):
               records: tuple[DecisionRecord, ...]) -> contract.FlowV1:
         settings = self.server.settings
         path = flow.screener_path(settings.history.capture, day)
-        try:
-            passes = [] if path is None else flow.read_passes(path, open_tail=day == today)
-        except OSError as exc:
-            raise CaptureError(str(exc)) from exc
         return flow.flow_document(
             settings.history.environment, day,
-            flow.chips(passes, settings.universe, settings.change_pct_places), records,
+            self.server.screener_chips.chips(path, open_tail=day == today), records,
             self.server.history.entries(day, today),
             flow.reconcile(day, today, settings.status_path, settings.account_path))
 
@@ -921,9 +928,9 @@ def _write_private(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.unlink(missing_ok=True)  # a leftover from a crash could carry wider permissions
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE_MODE)
     with os.fdopen(fd, "w", encoding="ascii") as handle:
-        os.fchmod(handle.fileno(), 0o600)
+        os.fchmod(handle.fileno(), PRIVATE_FILE_MODE)
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
@@ -932,6 +939,21 @@ def _write_private(path: Path, text: str) -> None:
 
 def pairing_link(address: str, code: str) -> str:
     return "tickr://pair?" + urlencode({"url": address, "code": code})
+
+
+@contextlib.contextmanager
+def _pairing_lock(settings: ApiSettings) -> Iterator[None]:
+    """Exclusive across processes: `pair` (the CLI) and POST /pair (the API) never interleave,
+    so a redemption of an old code in flight cannot burn the new code or leave its own token
+    after a new pairing began. The lock file sits next to the code file and holds nothing."""
+    lock = settings.pairing_code_path.with_name(settings.pairing_code_path.name + LOCK_SUFFIX)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, PRIVATE_FILE_MODE)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # closing releases the lock
 
 
 def pair(settings: ApiSettings, now: datetime | None = None) -> Path:
@@ -945,12 +967,13 @@ def pair(settings: ApiSettings, now: datetime | None = None) -> Path:
     if not settings.remote_hosts:
         raise ConfigError("[api] remote_hosts is empty: set the Tailscale name of this Mac first")
     now = now or _now()
-    settings.token_hash_path.unlink(missing_ok=True)
     code = secrets.token_urlsafe(settings.token_bytes)
     expires_at = now + timedelta(seconds=settings.pairing_code_ttl_seconds)
-    _write_private(settings.pairing_code_path, json.dumps({
-        "sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
-        "expires_at": contract.format_time(expires_at)}) + "\n")
     address = f"https://{settings.remote_hosts[0]}"
-    _write_private(settings.pairing_path, pairing_link(address, code) + "\n")
+    with _pairing_lock(settings):
+        settings.token_hash_path.unlink(missing_ok=True)
+        _write_private(settings.pairing_code_path, json.dumps({
+            "sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
+            "expires_at": contract.format_time(expires_at)}) + "\n")
+        _write_private(settings.pairing_path, pairing_link(address, code) + "\n")
     return settings.pairing_path

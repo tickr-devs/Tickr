@@ -225,6 +225,7 @@ def _render(args: argparse.Namespace) -> int:
     cfg = config_module.load(args.config)
     launchd.check_timings(cfg)
     launchd.check_env_file(args.env_file)
+    launchd.check_lab_folder(cfg)
     paths = launchd.Paths(
         repo=cfg.root, python=args.python, config=args.config.resolve(),
         env_file=args.env_file, log_dir=args.log_dir)
