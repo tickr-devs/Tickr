@@ -68,7 +68,9 @@ final class ScreenTourUITests: XCTestCase {
       FileManager.default.temporaryDirectory.appending(path: $0, directoryHint: .isDirectory)
     }
     let appearance = environment["TOUR_APPEARANCE"] ?? Self.defaultAppearance
-    app.launchArguments = ["-apiBaseURL", api, "-AppleInterfaceStyle", appearance,
+    // Defaults.appearance of the app: `-AppleInterfaceStyle Light` is not a value macOS knows,
+    // so on a Mac in dark mode it would still be dark.
+    app.launchArguments = ["-apiBaseURL", api, "-appearance", appearance.lowercased(),
                            "-AppleLanguages", "(\(Self.language))", "-ApplePersistenceIgnoreState", "YES"]
     app.launch()
     XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: Self.wait), "no window")
