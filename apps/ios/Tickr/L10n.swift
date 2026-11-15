@@ -165,6 +165,16 @@ enum L10n {
     static var noCause: LocalizedStringResource {
       LocalizedStringResource("notice.noCause", defaultValue: "no cause given", bundle: L10n.bundle)
     }
+    static var startRequested: LocalizedStringResource {
+      LocalizedStringResource("notice.startRequested",
+        defaultValue: "Start requested: the bot runs its preflight first.",
+        bundle: L10n.bundle)
+    }
+    static var startRequestedCleared: LocalizedStringResource {
+      LocalizedStringResource("notice.startRequestedCleared",
+        defaultValue: "Start requested; your earlier Stop was cleared, so scheduled starts run again.",
+        bundle: L10n.bundle)
+    }
   }
 
   enum Control {
@@ -176,7 +186,7 @@ enum L10n {
     static var stopWarning: LocalizedStringResource {
       LocalizedStringResource("control.stopWarning",
         // swiftlint:disable:next line_length
-        defaultValue: "The bot ends gracefully: entry orders are cancelled and broker stops stay. Open positions stay open under DAY stops, and nothing closes them at the session's end. The phone cannot start the bot again: start it on the Mac.",
+        defaultValue: "The bot ends gracefully: entry orders are cancelled and broker stops stay. Open positions stay open under DAY stops, and nothing closes them at the session's end. Start it again from Settings.",
         bundle: L10n.bundle)
     }
     static var emergencyTitle: LocalizedStringResource {
@@ -230,6 +240,18 @@ enum L10n {
     }
     static var title: LocalizedStringResource {
       LocalizedStringResource("control.title", defaultValue: "Bot control", bundle: L10n.bundle)
+    }
+    static var startBot: LocalizedStringResource {
+      LocalizedStringResource("control.startBot", defaultValue: "Start the Bot", bundle: L10n.bundle)
+    }
+    static var startTitle: LocalizedStringResource {
+      LocalizedStringResource("control.startTitle", defaultValue: "Start the bot?", bundle: L10n.bundle)
+    }
+    static var startWarning: LocalizedStringResource {
+      LocalizedStringResource("control.startWarning",
+        // swiftlint:disable:next line_length
+        defaultValue: "The Mac starts the bot job through launchd, as on a scheduled morning: preflight first, then trading if every check passes. An earlier Stop is cleared, so scheduled starts run again.",
+        bundle: L10n.bundle)
     }
   }
 
@@ -1333,6 +1355,42 @@ enum L10n {
     }
     static var connected: LocalizedStringResource {
       LocalizedStringResource("settings.connected", defaultValue: "Connected", bundle: L10n.bundle)
+    }
+    static var startStopFooter: LocalizedStringResource {
+      LocalizedStringResource("settings.startStopFooter",
+        // swiftlint:disable:next line_length
+        defaultValue: "Start goes through launchd on the Mac, never inside an app. Both ask for Face ID. Stop is refused while a trade is open or entering: flatten first. A stopped bot stays stopped, also on the next trading day, until you start it.",
+        bundle: L10n.bundle)
+    }
+    static var configuration: LocalizedStringResource {
+      LocalizedStringResource("settings.configuration", defaultValue: "Configuration", bundle: L10n.bundle)
+    }
+    static var configValid: LocalizedStringResource {
+      LocalizedStringResource("settings.configValid", defaultValue: "Loads", bundle: L10n.bundle)
+    }
+    static var configInvalid: LocalizedStringResource {
+      LocalizedStringResource("settings.configInvalid", defaultValue: "Does not load", bundle: L10n.bundle)
+    }
+    static var configChanged: LocalizedStringResource {
+      LocalizedStringResource("settings.configChanged", defaultValue: "Changed", bundle: L10n.bundle)
+    }
+    static var configChangedHint: LocalizedStringResource {
+      LocalizedStringResource("settings.configChangedHint",
+        // swiftlint:disable:next line_length
+        defaultValue: "The file differs from the one the bot's API loaded: running processes keep the old values until they restart.",
+        bundle: L10n.bundle)
+    }
+    static var configTop: LocalizedStringResource {
+      LocalizedStringResource("settings.configTop", defaultValue: "Top level", bundle: L10n.bundle)
+    }
+    static var configFooter: LocalizedStringResource {
+      LocalizedStringResource("settings.configFooter",
+        // swiftlint:disable:next line_length
+        defaultValue: "Read-only, as the file is on disk now. Every key with its comment. Credentials appear only as variable names.",
+        bundle: L10n.bundle)
+    }
+    static var configEdit: LocalizedStringResource {
+      LocalizedStringResource("settings.configEdit", defaultValue: "Edit", bundle: L10n.bundle)
     }
   }
 }

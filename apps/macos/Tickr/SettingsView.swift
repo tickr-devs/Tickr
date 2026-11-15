@@ -287,12 +287,172 @@ private struct AdvancedSettings: View {
       } footer: {
         ConfigFootnote()
       }
-      Section(String(localized: L10n.Settings.notAvailableYet)) {
-        HStack { Text(L10n.Settings.startStop); Spacer(); PlannedTag(.needsAPI) }
-        HStack { Text(L10n.Settings.editConfig); Spacer(); PlannedTag() }
-      }
+      BotServiceSection()
+      ConfigSection()
     }
     .formStyle(.grouped)
+    .task(id: model.baseURL) { await model.refreshConfig() }
+  }
+}
+
+/// Start and stop the bot job (design: Settings > Advanced, Bot service). Start asks the API to
+/// start the launchd job; Stop is the stop-bot command, refused by the bot while a trade is open.
+private struct BotServiceSection: View {
+  @Environment(AppModel.self) private var model
+  @State private var confirming: BotAction?
+  @State private var confirmingStart = false
+
+  /// Symbols of the row and the buttons.
+  static let serviceSymbol = "power"
+  static let startSymbol = "play.fill"
+
+  var body: some View {
+    Section {
+      LabeledContent {
+        StatusPill(verbatim: stateTitle, tone: tone, live: running, event: model.status?.botState)
+      } label: {
+        Label {
+          Text(L10n.Settings.botService)
+        } icon: {
+          StateGlyph(Self.serviceSymbol, tone: tone, label: L10n.Settings.botService, style: .compact)
+        }
+      }
+      HStack(spacing: Tokens.Space.s) {
+        Spacer()
+        Button { confirmingStart = true } label: {
+          Label { Text(L10n.Settings.startBotAction) } icon: { Image(systemName: Self.startSymbol) }
+        }
+        .buttonStyle(.action(.primary, size: .compact))
+        .disabled(!model.canStartBot)
+        .hint(L10n.Settings.startBotHint)
+        Button(role: .destructive) { confirming = .stopBot } label: {
+          Label { Text(L10n.Settings.stopBotAction) } icon: { Image(systemName: BotAction.stopSymbol) }
+        }
+        .buttonStyle(.action(.destructive, size: .compact))
+        .disabled(!model.canStopBot)
+        .hint(verbatim: BotAction.stopBot.explanation)
+      }
+      if let outcome = model.botStart {
+        switch outcome {
+        case .accepted(let cleared):
+          Text(cleared ? L10n.Settings.startAcceptedCleared : L10n.Settings.startAccepted)
+            .foregroundStyle(Palette.profitText)
+        case .refused(let cause):
+          Text(L10n.Settings.startRefused(cause)).foregroundStyle(Palette.lossText)
+        }
+      }
+    } header: {
+      Text(L10n.Settings.botService)
+    } footer: {
+      Text(L10n.Settings.startStopFooter)
+        .font(Tokens.Typography.caption).foregroundStyle(.secondary)
+    }
+    .alert(Text(L10n.Settings.startQuestion), isPresented: $confirmingStart) {
+      Button { Task { await model.startBot() } } label: { Text(L10n.Settings.startBotAction) }
+      Button(String(localized: L10n.Common.cancel), role: .cancel) {}
+    } message: {
+      Text(L10n.Settings.startExplanation)
+    }
+    .alert(Text(verbatim: confirming?.question ?? ""), isPresented: Binding(get: { confirming != nil },
+      set: { if !$0 { confirming = nil } }), presenting: confirming) { action in
+      Button(role: .destructive) {
+        Task { await model.send(action.command, title: action.title) }
+      } label: { Text(verbatim: action.title) }
+      Button(String(localized: L10n.Common.cancel), role: .cancel) {}
+    } message: { action in
+      Text(verbatim: action.explanation)
+    }
+    .onChange(of: model.canStopBot) { _, enabled in
+      if !enabled { confirming = nil }
+    }
+    .onChange(of: model.canStartBot) { _, enabled in
+      if !enabled { confirmingStart = false }
+    }
+  }
+
+  private var running: Bool { model.status?.botState == .running && model.response?.stale == false }
+
+  private var tone: Tone {
+    if model.response?.stale == true { return .warning }
+    return running ? .accent : .neutral
+  }
+
+  /// A stale status proves nothing about the bot now, so it says so instead of the last state.
+  private var stateTitle: String {
+    if model.response?.stale == true { return String(localized: L10n.Settings.notReported) }
+    return model.status?.botState.title ?? String(localized: L10n.Settings.notRunning)
+  }
+}
+
+/// The bot's configuration file, read-only (GET /config): whether it loads now, whether it
+/// differs from what runs, and every key with its value and comment, one group per table.
+private struct ConfigSection: View {
+  @Environment(AppModel.self) private var model
+
+  /// Symbols of the file states.
+  static let validSymbol = "checkmark.seal.fill"
+  static let invalidSymbol = "xmark.octagon.fill"
+  static let changedSymbol = "arrow.triangle.2.circlepath"
+
+  var body: some View {
+    Section {
+      if let config = model.config {
+        HStack(spacing: Tokens.Space.s) {
+          Text(verbatim: config.file).font(Tokens.Typography.bodyMono)
+          Spacer(minLength: Tokens.Space.s)
+          if config.valid {
+            StatusPill(L10n.Settings.configValid, systemImage: Self.validSymbol, tone: .profit)
+          } else {
+            StatusPill(L10n.Settings.configInvalid, systemImage: Self.invalidSymbol, tone: .loss)
+          }
+          if config.changedSinceStart {
+            StatusPill(L10n.Settings.configChanged, systemImage: Self.changedSymbol, tone: .warning)
+              .hint(L10n.Settings.configChangedHint)
+          }
+        }
+        if let error = config.error {
+          Text(verbatim: error).foregroundStyle(Palette.lossText)
+        }
+        ForEach(config.sections, id: \.name) { section in
+          DisclosureGroup {
+            ForEach(section.keys, id: \.key) { key in
+              VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+                  Text(verbatim: key.key).font(Tokens.Typography.bodyMono)
+                  Spacer(minLength: Tokens.Space.s)
+                  Text(verbatim: key.value).font(Tokens.Typography.bodyMono)
+                    .foregroundStyle(Palette.warningText)
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+                }
+                if !key.comment.isEmpty {
+                  Text(verbatim: key.comment)
+                    .font(Tokens.Typography.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+              }
+            }
+          } label: {
+            Text(verbatim: section.name.isEmpty ? String(localized: L10n.Settings.configTop) : section.name)
+              .font(Tokens.Typography.bodyMono)
+          }
+        }
+        HStack {
+          Text(L10n.Settings.editConfig)
+          Spacer()
+          PlannedTag()
+        }
+      } else if let error = model.configError {
+        Text(verbatim: error).foregroundStyle(Palette.warningText)
+      } else {
+        ProgressView().controlSize(.small)
+      }
+    } header: {
+      Text(L10n.Settings.configuration)
+    } footer: {
+      Text(L10n.Settings.configFooter)
+        .font(Tokens.Typography.caption).foregroundStyle(.secondary)
+    }
   }
 }
 

@@ -247,3 +247,62 @@ struct PreflightSection: View {
     }
   }
 }
+
+/// Start and stop the bot job on the Mac, and its configuration file. Start asks the Mac's launchd
+/// (POST /commands/start-bot); Stop is the stop-bot command behind Face ID, which the bot refuses
+/// while a trade is open.
+struct BotServiceSection: View {
+  /// Symbols of the rows' icons.
+  static let startSymbol = "play.fill"
+  static let stopSymbol = "stop.fill"
+  static let configSymbol = "doc.badge.gearshape"
+
+  @Environment(AppModel.self) private var model
+  @State private var confirmStart = false
+  @State private var confirmStop = false
+
+  var body: some View {
+    Section {
+      Button { confirmStart = true } label: {
+        Label { Text(L10n.Control.startBot) } icon: { SettingsIcon(Self.startSymbol, tone: .profit) }
+      }
+      .disabled(!model.canStartBot)
+      Button(role: .destructive) { confirmStop = true } label: {
+        Label { Text(L10n.Control.stopBot) } icon: { SettingsIcon(Self.stopSymbol, tone: .loss) }
+      }
+      .disabled(!model.canCommand || model.status?.botState != .running)
+      NavigationLink {
+        ConfigView()
+      } label: {
+        Label { Text(L10n.Settings.configuration) } icon: { SettingsIcon(Self.configSymbol, tone: .info) }
+      }
+    } header: {
+      Text(L10n.Settings.botService)
+    } footer: {
+      Text(L10n.Settings.startStopFooter)
+    }
+    .alert(Text(L10n.Control.startTitle), isPresented: $confirmStart) {
+      Button {
+        Task {
+          let reason = String(localized: L10n.Control.reason(String(localized: L10n.Control.startBot)))
+          await model.startBot(confirmOwner: { await Biometrics.confirm(reason) })
+        }
+      } label: {
+        Text(L10n.Control.startBot)
+      }
+      Button(role: .cancel) {} label: { Text(L10n.Common.cancel) }
+    } message: {
+      Text(L10n.Control.startWarning)
+    }
+    .alert(Text(L10n.Control.stopTitle), isPresented: $confirmStop) {
+      Button(role: .destructive) {
+        Task { await BotControl.confirmAndSend(.stopBot, model: model) }
+      } label: {
+        Text(L10n.Control.stopBot)
+      }
+      Button(role: .cancel) {} label: { Text(L10n.Common.cancel) }
+    } message: {
+      Text(L10n.Control.stopWarning)
+    }
+  }
+}

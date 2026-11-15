@@ -83,6 +83,9 @@ struct SettingsView: View {
         }
       }
 
+      if model.isConfigured {
+        BotServiceSection()
+      }
       if let status = model.status {
         EnvironmentSection(status: status)
       }
