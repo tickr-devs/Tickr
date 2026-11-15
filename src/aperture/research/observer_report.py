@@ -8,8 +8,10 @@ Per strategy identity (name + version + role):
 - every ENTER simulated through the replay engine exactly like `whatif` (docs/research.md),
   taken or not, so all identities are measured the same way. Per symbol, an ENTER that arrives
   while an earlier simulated trade of the same identity is still open is `skipped_overlap`
-  (one position per symbol, as live). R per trade; USD only for ENTERs with a recorded whole
-  quantity (gross: slippage in, commissions out);
+  (one position per symbol, as live), and an ENTER repeating a signal (same symbol, setup and
+  trigger) that already made a simulated trade is `skipped_same_signal` (live, the symbol pause
+  after a loss or the flat position stops it). R per trade; USD only for ENTERs with a
+  recorded whole quantity (gross: slippage in, commissions out);
 - for observers, a bar-by-bar diff against the active decisions (aperture.research.compare)
   and how many ENTER bars it shares with the active strategy.
 """
@@ -75,12 +77,19 @@ def _simulate(
     settings: ReplaySettings,
     clock_for: ClockFor,
 ) -> None:
-    outcomes = {o.value: 0 for o in WhatIfOutcome} | {"skipped_overlap": 0}
+    outcomes = {o.value: 0 for o in WhatIfOutcome} | {"skipped_overlap": 0,
+                                                      "skipped_same_signal": 0}
     busy_until: dict[str, datetime] = {}
+    traded: set[tuple[str, str | None, Decimal]] = set()
     r_values: list[Decimal] = []
     for record in sorted(enters, key=lambda r: (r.symbol, r.bar_start)):
         if record.bar_start < busy_until.get(record.symbol, record.bar_start):
             outcomes["skipped_overlap"] += 1
+            continue
+        trigger = record.decision.trigger
+        signal = None if trigger is None else (record.symbol, record.decision.setup, trigger)
+        if signal in traded:
+            outcomes["skipped_same_signal"] += 1
             continue
         bars = bars_by_symbol.get(record.symbol)
         if not bars:
@@ -94,6 +103,8 @@ def _simulate(
         if trade is None:
             continue
         busy_until[record.symbol] = trade.exit_time
+        if signal is not None:
+            traded.add(signal)
         r_values.append(trade.r_multiple)
         if has_usd and result.result_usd is not None:
             row.total_usd += result.result_usd

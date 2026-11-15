@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import time, timedelta
 from decimal import ROUND_FLOOR, Decimal
 from itertools import pairwise
 from typing import Any
@@ -23,7 +24,8 @@ ZERO = v1.ZERO
 ONE = v1.ONE
 TWO = v1.TWO
 PERCENT = v1.PERCENT
-REGULAR_OPEN = (9, 30)  # New York hour and minute of the regular session's first bar
+REGULAR_OPEN = time(9, 30)  # New York start of the regular session's first bar
+M1 = timedelta(minutes=1)
 
 Schema = dict[str, dict[str, Callable[[Any], Any]]]
 
@@ -70,7 +72,7 @@ def parse(values: Mapping[str, Any], schema: Schema, name: str) -> dict[str, Any
         for key, convert in keys.items():
             try:
                 flat[key] = convert(table[key])
-            except ValueError as exc:
+            except (ValueError, ArithmeticError) as exc:  # Decimal('nan') comparisons raise
                 raise ValueError(f"[{section}] {key} {exc}") from None
     for key, value in flat.items():
         if isinstance(value, Decimal) and not value.is_finite():
@@ -104,24 +106,35 @@ def session_from_open(session: Sequence[Bar]) -> Check:
     """The session's bars must start with the 09:30 bar, so "first signal of the session" and
     the session open are decided over the whole session (bars_per_symbol covers it)."""
     t = ind.ny_time(session[0])
-    return v1._flag("session_from_open", (t.hour, t.minute) == REGULAR_OPEN,
+    return v1._flag("session_from_open", (t.hour, t.minute) == (REGULAR_OPEN.hour,
+                                                                REGULAR_OPEN.minute),
                     f"first session bar starts {t.isoformat()}")
 
 
 def first_signal(session: Sequence[Bar], fires: Callable[[int], bool],
                  valid_bars: int) -> tuple[Check, int | None]:
     """The first bar of the session where the signal fired, decided from the bars alone so a
-    restart changes nothing, and still valid: at most `valid_bars` - 1 bars before the last.
-    That leaves time for the platform to subscribe the quote of a WATCH symbol; the entry
-    window around the signal close keeps a late entry from chasing. Returns the check and the
-    signal bar's index (None when there is no valid signal)."""
+    restart changes nothing, and still valid: it started at most `valid_bars` - 1 minutes
+    before the last bar (minutes, not bars, so a halt or data gap does not stretch it). The
+    validity window gives a quote that arrives a little after the signal bar a chance; the
+    entry window around the signal close keeps a late entry from chasing. Returns the check
+    and the signal bar's index (None when there is no valid signal)."""
     first = next((i for i in range(len(session)) if fires(i)), None)
     if first is None:
         return v1._flag("signal", False, "no signal bar this session"), None
-    age = len(session) - 1 - first
-    check = v1._check("signal_age_bars", Decimal(age), "<", Decimal(valid_bars),
+    age = (session[-1].start - session[first].start) // M1
+    check = v1._check("signal_age_minutes", Decimal(age), "<", Decimal(valid_bars),
                       f"first signal on bar {first} of the session")
     return check, (first if check.passed else None)
+
+
+def not_invalidated(session: Sequence[Bar], first: int, stop_level: Decimal) -> Check:
+    """No bar after the signal bar traded below the signal's stop level: a signal that has
+    already failed is not entered late."""
+    later = session[first + 1:]
+    lowest = min((b.low for b in later), default=None)
+    return v1._flag("signal_not_invalidated", lowest is None or lowest >= stop_level,
+                    f"lowest low after the signal {lowest}, stop level {stop_level}")
 
 
 def decide(strategy: Any, context: SymbolContext, verdict: Verdict, checks: Sequence[Check],
@@ -136,8 +149,8 @@ def enter(strategy: Any, c: Common, context: SymbolContext, checks: list[Check],
     signal close (entry_window_percent below and above it), the spread is acceptable and
     the stop sizes to at least one share. The stop is the lowest of `stop_level` and the
     minimum stop distance below both the window's floor and the bid, so stop < entry_low
-    always holds (the platform's admission shape) and the bid is never at the stop. The
-    recorded invalidation is `stop_level`, which can be above the stop used."""
+    and stop < bid always hold (the platform's admission shape). The recorded invalidation
+    is `stop_level`, which can be above the stop used."""
     window = c.entry_window_percent / PERCENT
     entry_low, entry_high = signal_close * (ONE - window), signal_close * (ONE + window)
     levels = {"setup": setup, "trigger": signal_close, "invalidation": stop_level}
@@ -164,9 +177,6 @@ def enter(strategy: Any, c: Common, context: SymbolContext, checks: list[Check],
         return ignore()
     distance = ONE - c.minimum_stop_percent / PERCENT
     stop = min(stop_level, entry_low * distance, quote.bid * distance)
-    checks.append(v1._check("stop_below_bid", stop, "<", quote.bid))
-    if not checks[-1].passed:
-        return ignore()
     risk = entry_high - stop + spread
     planned_loss = c.planned_loss_usd
     if context.loss_budget_usd is not None and context.loss_budget_usd < planned_loss:

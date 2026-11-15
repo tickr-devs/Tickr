@@ -41,7 +41,8 @@ def today(count, jump_at=None, open_=20.0):
     bars = []
     for i in range(count):
         c = open_ * 1.02 if jump_at is not None and i >= jump_at else open_
-        bars.append(bar(TODAY, i, open_, round(c + 0.05, 2), open_ - 0.05, round(c, 2), 5_000))
+        low = open_ - 0.05 if c == open_ else round(c - 0.05, 2)  # never back under the band
+        bars.append(bar(TODAY, i, open_, round(c + 0.05, 2), low, round(c, 2), 5_000))
     return bars
 
 
@@ -106,7 +107,7 @@ def test_the_first_signal_stays_valid_for_signal_valid_bars_then_expires():
     assert still.verdict is Verdict.WATCH and still.trigger == d("20.4")
     expired = make().evaluate(ctx(today(46, jump_at=40)))
     assert expired.verdict is Verdict.IGNORE
-    assert rules(expired)[-1] == ("signal_age_bars", False)
+    assert rules(expired)[-1] == ("signal_age_minutes", False)
 
 
 def test_no_look_ahead_over_every_prefix():
@@ -180,3 +181,11 @@ def test_loads_as_an_observer_from_the_repo_config():
     loaded = load_strategy(ROOT, "noise-band-v1", modules)
     assert (loaded.strategy.name, loaded.strategy.version) == ("noise-band-v1", "1")
     check_history(loaded, cfg.market_data.history_sessions)
+
+
+def test_a_signal_whose_band_level_was_broken_is_not_entered():
+    bars = today(42, jump_at=40)
+    bars[41] = bar(TODAY, 41, 20.4, 20.45, 20.1, 20.4, 5_000)
+    decision = make().evaluate(ctx(bars, quote("20.39", "20.41")))
+    assert decision.verdict is Verdict.IGNORE
+    assert rules(decision)[-1] == ("signal_not_invalidated", False)

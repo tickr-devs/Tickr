@@ -27,7 +27,7 @@ close_location_min = 0.75
 entry_window_percent = 0.5
 # Minimum stop distance below both the entry window's floor and the bid, percent; a higher signal stop level is replaced by it. Read by strategy.simple.
 minimum_stop_percent = 0.5
-# Bars the first signal stays valid, counting the signal bar (5 = the signal bar and the next 4), so a WATCH symbol can get its quote subscribed; the window above keeps the entry from chasing. Read by strategy.simple.
+# Minutes the first signal stays valid, counting the signal bar's minute (5 = that minute and the next 4), while no later bar trades below its stop level; gives a quote arriving a little late a chance, and the window above keeps the entry from chasing. Read by strategy.simple.
 signal_valid_bars = 5
 
 [liquidity]

@@ -14,8 +14,8 @@ Values come from `strategies/noise-band-v1/strategy.toml`. On the last completed
 4. This is the first bar of the session where 1-3 hold. An earlier bar whose band is unknown
    (a prior session lacks that minute) counts as not fired.
 
-The first signal stays valid for `signal_valid_bars` bars ([entry]), so the platform can
-subscribe the quote of the WATCH symbol; after that the session is spent. Then ENTER with
+The first signal stays valid for `signal_valid_bars` minutes ([entry]) while no later bar
+trades below its stop level; after that the session is spent. Then ENTER with
 the stop at the higher of the band level and the session VWAP (VWAP only while it is below
 the close), or lower, at the minimum stop distance below the entry window and the bid, and the
 exit left to the platform's session flatten. A half day among the prior sessions has no bar
@@ -28,7 +28,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import time
 from decimal import Decimal
 from typing import Any
 
@@ -40,7 +39,7 @@ from aperture.types import Bar
 
 NAME = "noise-band-v1"
 SETUP = "noise_band"
-REGULAR_OPEN = time(9, 30)
+REGULAR_OPEN = simple.REGULAR_OPEN
 MINUTES_PER_HOUR = 60
 REGULAR_SESSION_MINUTES = 390  # 09:30 to 16:00, minute bars 0..389
 
@@ -147,6 +146,9 @@ class NoiseBandV1:
         vwap = ind.vwap_series(session[:first + 1])[-1]
         # VWAP raises the stop only while it is below the close; above it, it is no support.
         stop_level = level if vwap is None or vwap >= last.close else max(level, vwap)
+        checks.append(simple.not_invalidated(session, first, stop_level))
+        if not checks[-1].passed:
+            return ignore()
         return simple.enter(self, c, context, checks, SETUP, last.close, stop_level)
 
 
