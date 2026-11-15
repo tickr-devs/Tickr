@@ -69,6 +69,8 @@ struct ChartTab: View {
             CandleChart(series: series, atr: chart.atr, trades: chart.trades, lines: lines)
             ChartControls(chart: chart, lines: $lines)
             DayTrades(trades: chart.trades)
+            DecisionsCard(decisions: chart.decisions?.symbol == chart.symbol ? chart.decisions : nil,
+              failure: chart.decisionsFailure)
           } else {
             ContentUnavailableView {
               Label { Text(ChartText.noBarsTitle) } icon: { Image(systemName: "chart.bar.xaxis") }
