@@ -61,6 +61,7 @@ private struct StatusBanner: View {
         .font(Tokens.Typography.body.weight(.semibold))
         .foregroundStyle(tone.text)
         .lineLimit(MenuBarPanel.headlineLines)
+        .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
     }
     .padding(.horizontal, Tokens.Space.m)
@@ -245,9 +246,9 @@ private struct StopTargetBar: View {
   /// The position is as of an older bar: greyed like its figure.
   var muted = false
 
-  /// Diameter of the knob, and the width of the accent ring around it, in points.
+  /// Diameter of the knob, and of the knob with its 4-point accent ring, in points.
   static let knob: CGFloat = 15
-  static let knobRing: CGFloat = 4
+  static let knobWithRing: CGFloat = 23
 
   var body: some View {
     GeometryReader { proxy in
@@ -266,7 +267,7 @@ private struct StopTargetBar: View {
             .frame(width: Self.knob, height: Self.knob)
             .background(Circle()
               .fill(Palette.accent.opacity(Tokens.Opacity.faint))
-              .frame(width: Self.knob + Self.knobRing * 2, height: Self.knob + Self.knobRing * 2))
+              .frame(width: Self.knobWithRing, height: Self.knobWithRing))
             .offset(x: filled - Self.knob / 2)
         }
       }
@@ -274,7 +275,7 @@ private struct StopTargetBar: View {
       .saturation(muted ? 0 : 1)
       .opacity(muted ? Tokens.Opacity.medium : 1)
     }
-    .frame(height: Self.knob + Self.knobRing * 2)
+    .frame(height: Self.knobWithRing)
     .animation(Tokens.Motion.fill, value: progress)
   }
 }
@@ -385,7 +386,7 @@ private struct MenuFooter: View {
     .buttonStyle(.action(.primary, size: .medium))
   }
 
-  /// The environment chip; a demo-day marker belongs beside it, in the same chip style.
+  /// The environment chip (the demo day's own warning stands above the panel's banner).
   private var badges: some View {
     HStack(spacing: Tokens.Space.xs) {
       if let environment = model.status?.environment {
