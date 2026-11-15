@@ -254,6 +254,9 @@ class Trade:
     stop_confirmed_after_seconds: Decimal | None
     entry: EntrySend
     entry_cause: str | None  # why a field of `entry` is null; null when none is
+    # The strategy whose decision opened the trade; null for a manual trade or one opened
+    # before the bot journaled it. Added after version 1 shipped.
+    strategy: StrategyId | None = _added_later(None)
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
@@ -386,6 +389,15 @@ class AccountResponseV1:
 
 
 @dataclass(frozen=True)
+class PairedV1:
+    """POST /pair on the remote port: the bearer token the phone keeps from now on. Answered
+    once per pairing code; the server keeps only the token's SHA-256."""
+
+    token: str
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
 class CommandAcceptedV1:
     """POST /commands/*: the command is queued for the bot, not yet executed."""
 
@@ -474,6 +486,9 @@ class DayTrade:
     overshoot_usd: Decimal | None
     overshoot_r: Decimal | None
     overshoot_cause: str | None
+    # As in `Trade`: the strategy whose decision opened it, null when not journaled. Always
+    # written; the default only spares paths that never show it (the daily-loss check).
+    strategy: StrategyId | None = None
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
     prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
@@ -650,6 +665,40 @@ class SessionSettings:
 
 
 @dataclass(frozen=True)
+class ConfigKeyV1:
+    """One key of the configuration file: its value as written (TOML text) and its comment."""
+
+    key: str
+    value: str
+    comment: str
+
+
+@dataclass(frozen=True)
+class ConfigSectionV1:
+    """One table of the configuration file, keys in file order. `name` is the table's dotted
+    path as its header is written (`environments.<name>`); "" holds keys before the first
+    header. Values are TOML text as tomllib read them; a sub-table is its own section."""
+
+    name: str
+    keys: tuple[ConfigKeyV1, ...]
+
+
+@dataclass(frozen=True)
+class ConfigV1:
+    """GET /config: the bot's configuration file as it is on disk, read-only (api/configview.py).
+    `valid`/`error`: whether it loads now, as the next start would. `changed_since_start`: the
+    file is not the one this API loaded (running processes use the old one until restarted)."""
+
+    file: str
+    digest: str
+    changed_since_start: bool
+    valid: bool
+    error: str | None
+    sections: tuple[ConfigSectionV1, ...]
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
 class SettingsV1:
     """GET /settings: the numbers from config/bot.toml that clients show (limits, session
     times). Read-only, as the API process loaded them at its start; changing them means editing
@@ -679,7 +728,7 @@ class LaunchdJobV1:
     the Mac's own time zone) on `weekdays` (launchd numbering: 1 = Monday ... 5 = Friday,
     0 and 7 = Sunday). The session calendar still decides whether the day trades."""
 
-    name: str  # preflight, bot or watchdog
+    name: str  # preflight, bot, watchdog or nightly-fetch
     local_time: str
     weekdays: tuple[int, ...]
 
@@ -741,6 +790,19 @@ class JournalV1:
 
 
 @dataclass(frozen=True)
+class NightlyFetchJobV1:
+    """The nightly backtest-data refresh's last outcome (its `nightly.json`): `finished_at`;
+    `last_day`, where the Lab's data now ends; `new_sessions` added that night (0 = already up to
+    date); `cause` when it was refused or stopped (the data stays as it was). All null with
+    `cause` when it never ran or its file cannot be read."""
+
+    finished_at: datetime | None
+    last_day: date | None
+    new_sessions: int | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
 class JobsV1:
     """GET /jobs: when the bot's scheduled work last ran and runs next, for the Settings jobs
     strip. Read-only: from the status file, the database (read-only), config and calendar.
@@ -756,6 +818,7 @@ class JobsV1:
     launchd: tuple[LaunchdJobV1, ...]
     session: SessionTimesV1 | None
     session_cause: str | None
+    nightly_fetch: NightlyFetchJobV1
     api_version: int = _const(API_VERSION)
 
 
@@ -1520,6 +1583,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "command-v1": CommandV1,
     "status-response-v1": StatusResponseV1,
     "command-accepted-v1": CommandAcceptedV1,
+    "paired-v1": PairedV1,
     "pending-commands-v1": PendingCommandsV1,
     "error-v1": ErrorV1,
     "days-v1": DaysV1,
@@ -1527,6 +1591,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "bars-v1": BarsV1,
     "chart-v1": ChartV1,
     "settings-v1": SettingsV1,
+    "config-v1": ConfigV1,
     "jobs-v1": JobsV1,
     "journal-v1": JournalV1,
     "lab-replay-v1": LabReplayV1,

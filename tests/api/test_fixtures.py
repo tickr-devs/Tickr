@@ -36,6 +36,9 @@ from tickr.api.contract import (
     CommandAcceptedV1,
     CommandKind,
     CommandV1,
+    ConfigKeyV1,
+    ConfigSectionV1,
+    ConfigV1,
     DaySummary,
     DaysV1,
     DayTrade,
@@ -61,10 +64,12 @@ from tickr.api.contract import (
     LabReplayV1,
     LatestSizeV1,
     LaunchdJobV1,
+    NightlyFetchJobV1,
     ObserverDecisionV1,
     ObserversV1,
     ObserverTradeV1,
     ObserverV1,
+    PairedV1,
     PendingCommandsV1,
     PriceAfterV1,
     ReconcileJobV1,
@@ -131,6 +136,8 @@ def documents() -> dict[str, object]:
         "status-response-v1.unavailable": _response(
             None, None, False, "the bot has not written a status file"),
         "command-accepted-v1": CommandAcceptedV1(command=command, warning=None),
+        # An example only: real tokens never leave the phone's Keychain and the Mac's memory.
+        "paired-v1": PairedV1(token="example-token-not-a-secret_0123456789-abcdef"),
         "command-accepted-v1.warning": CommandAcceptedV1(
             command=command, warning="the bot does not look alive; the command runs only if "
                                      "the bot reads it before it expires"),
@@ -175,7 +182,8 @@ def documents() -> dict[str, object]:
                                       "no bar recorded for the minute 2026-11-16T15:22:00.000Z"),
                          PriceAfterV1(60, T0 + timedelta(minutes=67), Decimal("5.21"),
                                       Decimal("0.19"), None)),
-                     None, Decimal("0.24"), Decimal("0.0960"), None),
+                     None, Decimal("0.24"), Decimal("0.0960"), None,
+                     StrategyId("price-action-v1", "1")),
             DayTrade("t-0002", "ABCD", Decimal("10"), Decimal("12.34"), Decimal("12.75"),
                      T0 + timedelta(minutes=20), T0 + timedelta(minutes=48), "strategy_exit",
                      None, Decimal("50"), Decimal("4.10"), None, None, None,
@@ -193,6 +201,26 @@ def documents() -> dict[str, object]:
                      None, None, None,
                      "the bars end at 2026-11-16T15:49:00.000Z, before 2026-11-16T16:48:00.000Z")),
             Decimal("2.50"), ("ABCD", "WXYZ")),
+        # Settings > Configuration: the file as on disk, loads, same as the running processes.
+        "config-v1": ConfigV1("config/bot.toml", "9" * 64, False, True, None, (
+            ConfigSectionV1("run", (
+                ConfigKeyV1("environment", '"sandbox"', "Active environment; must be a table "
+                            "under [environments]; read by config.load and the trading gate."),
+                ConfigKeyV1("maintain_keep_sessions", "20", "Closed sessions whose capture and "
+                            "decision folders `tickr maintain` leaves uncompressed; read by "
+                            "maintain."))),
+            ConfigSectionV1("environments.sandbox", (
+                ConfigKeyV1("app_key_variable", '"WEBULL_SANDBOX_APP_KEY"', "Name of the "
+                            "variable holding the app key (never the value)."),
+                ConfigKeyV1("route_limits", "{}", "Route-specific limits; empty = every route "
+                            "uses requests_per_route_per_minute."))))),
+        # An edit that no longer loads: shown with its error, differs from what runs.
+        "config-v1.invalid": ConfigV1("config/bot.toml", "a" * 64, True, False,
+                                      "[run] maintain_keep_sessions must be at least 1 (today "
+                                      "is always kept)", (
+            ConfigSectionV1("run", (
+                ConfigKeyV1("maintain_keep_sessions", "0", "Closed sessions kept "
+                            "uncompressed."),)),)),
         "settings-v1": SettingsV1(
             "sandbox", "price-action-v1", ("price-action-v1-lookback8",),
             RiskSettings(Decimal("50"), Decimal("2500"), Decimal("300"), 1, Decimal("5"),
@@ -209,14 +237,22 @@ def documents() -> dict[str, object]:
                 DAY, datetime(2026, 11, 16, 14, 30, tzinfo=UTC),
                 datetime(2026, 11, 16, 20, 45, tzinfo=UTC),
                 datetime(2026, 11, 16, 20, 55, tzinfo=UTC),
-                datetime(2026, 11, 16, 21, 0, tzinfo=UTC)), None),
+                datetime(2026, 11, 16, 21, 0, tzinfo=UTC)), None,
+            # Last night added Friday 2026-11-13 to the Lab's data.
+            NightlyFetchJobV1(datetime(2026, 11, 14, 1, 42, 7, tzinfo=UTC), DAY - timedelta(days=3),
+                              1, None)),
         # A Saturday with the bot stopped: no session, the last backup failed after Friday's.
         "jobs-v1.weekend": JobsV1(
             T0 + timedelta(days=5), BotState.STOPPED, True, None,
             ReconcileJobV1(Decimal("10"), T0 + timedelta(days=4, hours=6), None),
             BackupJobV1(T0 + timedelta(days=4), T0 + timedelta(days=4, hours=7),
                         "OperationalError", None),
-            _LAUNCHD, None, "2026-11-21 is a weekend"),
+            _LAUNCHD, None, "2026-11-21 is a weekend",
+            # Friday night stopped before the 429 window cleared: the data still ends Thursday.
+            NightlyFetchJobV1(T0 + timedelta(days=4, hours=21), None, 0,
+                              "stopped at 2026-11-23T12:30:00+00:00, before the next session "
+                              "([backtest] nightly_stop_minutes_before_open); current is "
+                              "unchanged")),
         # The Overview's journal card: the latest rows, oldest first; "line #731".
         "journal-v1": JournalV1(731, (
             JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),
@@ -433,7 +469,8 @@ def _closed(trade_id: str, day_offset: int, result: str, planned_loss: str) -> D
 
 _LAUNCHD = (LaunchdJobV1("preflight", "08:30", (1, 2, 3, 4, 5)),
             LaunchdJobV1("bot", "09:00", (1, 2, 3, 4, 5)),
-            LaunchdJobV1("watchdog", "09:05", (1, 2, 3, 4, 5)))
+            LaunchdJobV1("watchdog", "09:05", (1, 2, 3, 4, 5)),
+            LaunchdJobV1("nightly-fetch", "19:00", (1, 2, 3, 4, 5)))
 
 
 def _text(document: object) -> str:

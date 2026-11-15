@@ -34,12 +34,14 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "status-response-v1": { try roundTrip(StatusResponseV1.self, $0) },
       "command-v1": { try roundTrip(CommandV1.self, $0) },
       "command-accepted-v1": { try roundTrip(CommandAcceptedV1.self, $0) },
+      "paired-v1": { try roundTrip(PairedV1.self, $0) },
       "pending-commands-v1": { try roundTrip(PendingCommandsV1.self, $0) },
       "error-v1": { try roundTrip(ErrorV1.self, $0) },
       "days-v1": { try roundTrip(DaysV1.self, $0) },
       "day-v1": { try roundTrip(DayV1.self, $0) },
       "bars-v1": { try roundTrip(BarsV1.self, $0) },
       "settings-v1": { try roundTrip(SettingsV1.self, $0) },
+      "config-v1": { try roundTrip(ConfigV1.self, $0) },
       "explain-v1": { try roundTrip(ExplainV1.self, $0) },
       "observers-v1": { try roundTrip(ObserversV1.self, $0) },
       "decisions-v1": { try roundTrip(DecisionsV1.self, $0) },
@@ -68,11 +70,11 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       .filter { $0.hasSuffix(".schema.json") }
       .map { String($0.dropLast(".schema.json".count)) }
     #expect(Set(names) == ["status-v1", "command-v1", "status-response-v1",
-      "command-accepted-v1", "pending-commands-v1", "error-v1",
+      "command-accepted-v1", "paired-v1", "pending-commands-v1", "error-v1",
       "days-v1", "day-v1", "bars-v1", "settings-v1", "explain-v1",
       "observers-v1", "decisions-v1", "skipped-v1", "performance-v1",
       "flow-v1", "watching-v1", "account-v1", "account-response-v1",
-      "chart-v1", "jobs-v1", "journal-v1", "lab-replay-v1"])
+      "chart-v1", "jobs-v1", "journal-v1", "lab-replay-v1", "config-v1"])
   }
 
   @Test func flowStagesChipsAndCauses() throws {

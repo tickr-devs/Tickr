@@ -17,6 +17,9 @@ on:
 concurrency:
   group: ios-app-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+# The workflow only reads the repository: its token can change nothing.
+permissions:
+  contents: read
 jobs:
   build:
     # Drafts skip the macOS runner (the bottleneck); run it on a draft through workflow_dispatch.
@@ -39,6 +42,8 @@ jobs:
       - name: Install XcodeGen 2.46.0
         run: |
           curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          # The release asset's SHA-256: a replaced download fails here instead of running.
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
       # The committed Tickr.xcodeproj must be exactly what project.yml generates. git status
@@ -68,3 +73,20 @@ jobs:
           fi
           grep -E "warning:" build.log | grep -v "/SourcePackages/" || true
           tail -n 3 build.log
+      # The screens' logic (Tests/TickrTests) on an iPhone of the newest iOS runtime.
+      - name: Unit tests on the iOS Simulator
+        run: |
+          device=$(python3 - <<'PY'
+          import json, re, subprocess
+          data = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))
+          runtimes = [r for r in data["devices"] if ".iOS-" in r and data["devices"][r]]
+          newest = max(runtimes, key=lambda r: [int(x) for x in re.findall(r"\d+", r.split("iOS-")[1])])
+          print(next(d["udid"] for d in data["devices"][newest] if d["name"].startswith("iPhone")))
+          PY
+          )
+          if ! xcodebuild test -project Tickr.xcodeproj -scheme 'Tickr iOS Tests' \
+              -destination "id=$device" CODE_SIGNING_ALLOWED=NO > test.log 2>&1; then
+            grep -E "error:|failed|✘" test.log | tail -n 60 || tail -n 80 test.log
+            exit 1
+          fi
+          grep -E "✔|passed" test.log | tail -n 5
