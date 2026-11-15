@@ -46,9 +46,9 @@ from tickr.backtest.universe import (
 )
 from tickr.calendar import NEW_YORK, MarketDay, SessionCalendar, ny_date_of
 from tickr.config import Config
-from tickr.runtime.launchd import NIGHTLY_OUTCOME_FILE
+from tickr.runtime.launchd import NIGHTLY_CURRENT, NIGHTLY_OUTCOME_FILE
 
-CURRENT = "current"
+CURRENT = NIGHTLY_CURRENT
 STAGING = "staging"
 PREVIOUS = "previous"
 RAW = "raw"

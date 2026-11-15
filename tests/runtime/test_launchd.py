@@ -71,10 +71,11 @@ def test_lab_must_replay_the_nightly_folder(config_path):
     from dataclasses import replace
 
     cfg = config_module.load(config_path)
-    launchd.check_timings(cfg)
+    launchd.check_lab_folder(cfg)
     other = replace(cfg, api=replace(cfg.api, lab_replay_data_dir="backtest"))
     with pytest.raises(config_module.ConfigError, match="lab_replay_data_dir"):
-        launchd.check_timings(other)
+        launchd.check_lab_folder(other)
+    launchd.check_timings(other)  # the bot's preflight never refuses over a Lab setting
 
 
 def test_templates_contain_no_numbers_or_paths_of_their_own(repo):

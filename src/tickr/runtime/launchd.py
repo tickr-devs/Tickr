@@ -18,6 +18,8 @@ TEMPLATE_SUFFIX = ".plist.template"
 # The nightly fetch writes its outcome here, in [runtime] nightly_fetch_out (backtest/nightly.py);
 # GET /jobs reads it.
 NIGHTLY_OUTCOME_FILE = "nightly.json"
+# The nightly fetch's last good data, in [runtime] nightly_fetch_out; the Lab replays it.
+NIGHTLY_CURRENT = "current"
 _PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
 _HHMM = re.compile(r"^(\d{2}):(\d{2})$")
 # launchd calendar units (protocol constants): hours 0-23, minutes 0-59, weekdays 0-7 where
@@ -83,6 +85,18 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
                     weekdays=tuple(days))
 
 
+def check_lab_folder(config: Config) -> None:
+    """Refuse unless the Lab replays the nightly job's current/ folder, so its data is refreshed.
+    Only render-launchd and check-config call this: a Lab setting never stops the bot's preflight.
+    """
+    lab = (config.root / config.run.data_dir / config.api.lab_replay_data_dir).resolve()
+    nightly = (config.root / config.runtime.nightly_fetch_out / NIGHTLY_CURRENT).resolve()
+    if lab != nightly:
+        raise ConfigError(f"[api] lab_replay_data_dir must be the nightly job's "
+                          f"{NIGHTLY_CURRENT}/ folder ([runtime] nightly_fetch_out), or the Lab "
+                          "replays data never refreshed")
+
+
 def check_timings(config: Config) -> None:
     """Refuse unless the engine drain ends before the supervisor alert, which ends before SIGKILL:
     0 < [orders] shutdown_deadline_seconds < [runtime] stop_alert_after_seconds
@@ -100,11 +114,6 @@ def check_timings(config: Config) -> None:
     and unless the session flatten can still send its close:
     0 <= [session] close_order_cutoff_seconds < flatten_minutes_before_close (in seconds)."""
     schedule(config.runtime)
-    lab = (config.root / config.run.data_dir / config.api.lab_replay_data_dir).resolve()
-    nightly = (config.root / config.runtime.nightly_fetch_out / "current").resolve()
-    if lab != nightly:
-        raise ConfigError("[api] lab_replay_data_dir must be the nightly job's current/ folder "
-                          "([runtime] nightly_fetch_out), or the Lab replays data never refreshed")
     drain = config.orders.shutdown_deadline_seconds
     alert_after = config.runtime.stop_alert_after_seconds
     if not 0 < drain < alert_after:

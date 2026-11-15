@@ -158,10 +158,23 @@ mkdir -p ~/Library/Logs/Tickr
     --log-dir ~/Library/Logs/Tickr \
     --out data/launchd
 # Read the six files in data/launchd, then:
-for job in preflight bot watchdog api test-alert nightly-fetch; do
+for job in preflight bot watchdog api test-alert; do
   cp data/launchd/local.tickr.$job.plist ~/Library/LaunchAgents/
   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.$job.plist
 done
+```
+
+The nightly fetch is loaded on its own, and only when no other history fetch is running on the
+Mac: both draw on the same Webull request budget. Its first run seeds `nightly/current/` from a
+finished `data/backtest` folder; until then the Lab replay refuses (its folder does not exist).
+Run the seed once by hand, outside market hours, then load the job:
+
+```sh
+set -a; . ~/.config/tickr/env; set +a
+.venv/bin/python -m tickr.backtest --config config/bot.toml nightly \
+    --out data/nightly --seed data/backtest
+cp data/launchd/local.tickr.nightly-fetch.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.nightly-fetch.plist
 ```
 
 After changing `[runtime]` values, render again, then
