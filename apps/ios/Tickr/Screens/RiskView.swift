@@ -62,15 +62,18 @@ private struct RiskLine: View {
   var color: Color = Palette.textPrimary
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline) {
+    // At large text sizes the value goes under its label, so neither breaks mid-word.
+    RowStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xxs) {
       Text(label)
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textTertiary)
+        .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Tokens.Space.s)
       Text(verbatim: value)
         .font(Tokens.Typography.calloutMono)
         .foregroundStyle(color)
         .contentTransition(.numericText())
+        .fixedSize(horizontal: false, vertical: true)
     }
     .accessibilityElement(children: .combine)
   }
@@ -80,12 +83,11 @@ private struct RiskLine: View {
 private struct RoomCard: View {
   /// Side of the ring, in points.
   static let ringSide: CGFloat = 180
-  /// Room left below this share of the limit turns the ring amber, below `alarm` red.
-  static let calm = 0.5
-  static let alarm = 0.2
 
   let status: StatusV1
   let risk: RiskSettings?
+  /// The ring grows with the figure inside it, up to the card's width.
+  @ScaledMetric(relativeTo: .title2) private var ringSide = RoomCard.ringSide
 
   private var room: Decimal? { status.dailyRoomUsd?.value }
   private var limit: Decimal? { risk?.maxDailyLossUsd.value }
@@ -97,8 +99,8 @@ private struct RoomCard: View {
 
   private var color: Color {
     guard room != nil, limit != nil else { return Palette.textQuaternary }
-    if share < Self.alarm { return Palette.loss }
-    if share < Self.calm { return Palette.warning }
+    if share < Tokens.Room.alarm { return Palette.loss }
+    if share < Tokens.Room.calm { return Palette.warning }
     return Palette.profit
   }
 
@@ -110,10 +112,16 @@ private struct RoomCard: View {
             .font(Tokens.Typography.metric)
             .foregroundStyle(Palette.textPrimary)
             .contentTransition(.numericText())
+            .lineLimit(1)
+            .minimumScaleFactor(Tokens.Shrink.tight)
           CardLabel(L10n.Risk.left)
+            .lineLimit(1)
+            .minimumScaleFactor(Tokens.Shrink.tight)
         }
+        .padding(Tokens.Space.l)
       }
-      .frame(width: Self.ringSide, height: Self.ringSide)
+      .aspectRatio(1, contentMode: .fit)
+      .frame(maxWidth: ringSide)
       .frame(maxWidth: .infinity)
       .padding(.vertical, Tokens.Space.s)
       .accessibilityElement(children: .combine)
@@ -245,14 +253,11 @@ private struct LimitsCard: View {
 
 /// The trading session in New York time: the clock, the last entry and the flatten time.
 private struct SessionCard: View {
-  /// How often the clock ticks, in seconds.
-  static let tick: TimeInterval = 1
-
   let session: SessionSettings?
 
   var body: some View {
     RiskCard(title: L10n.Risk.session) {
-      TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+      TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
         Text(context.date, format: .dateTime.hour().minute().second())
           .environment(\.timeZone, WireDate.newYork.timeZone)
           .font(Tokens.Typography.metric)

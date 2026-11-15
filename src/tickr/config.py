@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import tomllib
 import warnings
@@ -150,7 +151,7 @@ class ApiConfig:
     host: str
     port: int
     allowed_hosts: tuple[str, ...]
-    remote_hosts: tuple[str, ...]
+    remote_hosts_file: str
     remote_port: int
     remote_token_hash_file: str
     remote_token_bytes: int
@@ -186,6 +187,7 @@ class ApiConfig:
     lab_replay_results_dir: str
     lab_replay_niceness: int
     lab_replay_outside_session_only: bool
+    trade_whatif_outside_session_only: bool
 
 
 @dataclass(frozen=True)
@@ -197,8 +199,6 @@ class MarketDataConfig:
     screener_category: str
     allowed_security_types: tuple[str, ...]
     profile_symbols_per_request: int
-    max_spread_ratio: Decimal
-    min_session_dollar_volume_usd: Decimal
     gainers_losers_rank_type: str
     top_actives_rank_type: str
     snapshot_symbols_per_request: int
@@ -384,8 +384,9 @@ def _coerce(where: str, value: Any, target: Any) -> Any:
             raise ConfigError(f"{where}: expected an integer, got {value!r}")
         return value
     if target is Decimal:
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ConfigError(f"{where}: expected a number, got {value!r}")
+        if (isinstance(value, bool) or not isinstance(value, int | float)
+                or not math.isfinite(value)):
+            raise ConfigError(f"{where}: expected a finite number, got {value!r}")
         return Decimal(str(value))
     if target is str:
         if not isinstance(value, str):
@@ -398,8 +399,10 @@ def _coerce(where: str, value: Any, target: Any) -> Any:
         return tuple(value)
     if target == tuple[Decimal, ...]:
         if not isinstance(value, list) or not value or not all(
-                isinstance(v, int | float) and not isinstance(v, bool) for v in value):
-            raise ConfigError(f"{where}: expected a non-empty list of numbers, got {value!r}")
+                isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(v)
+                for v in value):
+            raise ConfigError(f"{where}: expected a non-empty list of finite numbers, got "
+                              f"{value!r}")
         numbers = tuple(Decimal(str(v)) for v in value)
         if any(b <= a for a, b in zip(numbers, numbers[1:], strict=False)):
             raise ConfigError(f"{where}: expected strictly increasing numbers, got {value!r}")

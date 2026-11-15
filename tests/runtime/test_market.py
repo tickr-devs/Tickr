@@ -10,14 +10,17 @@ from tickr.broker.fake import FakeBroker
 from tickr.broker.webull import MalformedResponse
 from tickr.calendar import NEW_YORK, SessionCalendar
 from tickr.config import GateResult
-from tickr.data.base import FakeMarketData
+from tickr.data.base import FakeMarketData, ScreenerKind, ScreenerRow
+from tickr.data.discovery import NoStrategy
 from tickr.data.health import StreamHealth
 from tickr.engine.core import Engine
+from tickr.observers.loader import load_active
 from tickr.runtime.market import (
     DISCOVERY,
     DISCOVERY_FAILED,
     STREAM_ERROR,
     STREAM_LOST_EXIT,
+    STREAM_SUBSCRIPTIONS,
     STREAM_TRANSPORT,
     MarketRuntime,
     StreamInbox,
@@ -49,6 +52,7 @@ class Rig:
                                     health=StreamHealth.from_config(CFG), inbox=self.inbox,
                                     capture=None, calendar=CALENDAR, now=lambda: self.now,
                                     monotonic=lambda: self.clock)
+        self.market.screen = load_active(CFG).strategy  # set by the caller once loaded
 
     def advance(self, seconds: float) -> None:
         self.clock += seconds
@@ -149,6 +153,18 @@ def test_discovery_waits_while_protection_needs_the_loop(tmp_path):
     assert rig.source.calls == [] and rig.store.journal(DISCOVERY) == []
     rig.market.tick()  # due at once once allowed again
     assert len(rig.store.journal(DISCOVERY)) == 1
+
+
+def test_without_a_strategy_discovery_captures_but_keeps_no_candidate(tmp_path):
+    rig = Rig(tmp_path)
+    rig.market.screen = NoStrategy()  # the active strategy did not load: no entries
+    rig.source.set_screener(ScreenerKind.GAINERS, [ScreenerRow(
+        ScreenerKind.GAINERS, 1, "id-ABC", "ABC", "NSQ", "USD", "COMMON_STOCK", {})])
+    rig.source.set_quote(quote(rig.now))
+    rig.market.tick()
+    assert any(c[0] == "screener" for c in rig.source.calls)
+    assert rig.market.discovery is not None and rig.market.discovery.candidates == ()
+    assert not any(c[0] == "bars" for c in rig.source.calls)
 
 
 def test_discovery_never_runs_outside_the_session(tmp_path):
@@ -620,3 +636,41 @@ def test_no_unsubscribe_failure_reconnects_with_a_position_open(tmp_path):
     rig.advance(LOST_AFTER.total_seconds() * 2)
     rig.market.tick(discover=False)
     assert rig.engine.trade(t).exit_requested is None and reconnects == []
+
+
+def test_every_change_of_the_subscribed_set_is_journaled_once(tmp_path):
+    rig = tiered(tmp_path, candidate_subscriptions=1, observer_subscriptions=1)
+    rig.market.watch = {"WAT"}
+    rig.market.observer_watch = {"OB1"}
+    rig.market.tick()
+    rig.market.tick()  # nothing changed: no second record
+    (first,) = rig.store.journal(STREAM_SUBSCRIPTIONS)
+    assert first.body == {"added": ["WAT"], "removed": [], "subscribed": ["WAT"],
+                          "optional": []}
+    assert first.run_id == rig.engine.run_id
+    rig.source.transport(True, rig.now, "up")
+    rig.advance(RESYNC)
+    rig.market.tick()
+    assert rig.store.journal(STREAM_SUBSCRIPTIONS)[-1].body == {
+        "added": ["AAA", "OB1"], "removed": [], "subscribed": ["AAA", "OB1", "WAT"],
+        "optional": ["AAA", "OB1"]}
+    rig.market.watch = set()
+    rig.market.discovery = None
+    rig.market.tick()
+    assert rig.store.journal(STREAM_SUBSCRIPTIONS)[-1].body == {
+        "added": [], "removed": ["AAA", "WAT"], "subscribed": ["OB1"], "optional": ["OB1"]}
+    assert len(rig.store.journal(STREAM_SUBSCRIPTIONS)) == 3
+
+
+def test_a_refused_subscribe_is_not_journaled_as_subscribed(tmp_path):
+    class Refusing(FakeMarketData):
+        def subscribe(self, symbols, listener):
+            if symbols:
+                raise RuntimeError("refused")
+            super().subscribe(symbols, listener)
+
+    rig = Rig(tmp_path, now=SATURDAY, source=Refusing())
+    rig.market.watch = {"WAT"}
+    rig.market.tick()
+    assert rig.market.subscribed == set()
+    assert rig.store.journal(STREAM_SUBSCRIPTIONS) == []

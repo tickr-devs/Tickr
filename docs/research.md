@@ -13,6 +13,10 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `latency` | How late do captured quotes arrive, by symbol and hour? What do stream notices say? | (measured) |
 | `refusals` | Per day and setup: which check refused first, which platform causes, how many entries? | (counts) |
 
+Live observers see only the symbols discovery kept, and discovery applies the active strategy's
+liquidity rules, so observer results are comparable only while the active strategy (and its
+`[liquidity]` values) stays the same.
+
 Outcomes are price moves, never called profit. What-if results are simulated with the replay's
 conservative fill model and prove nothing about real fills.
 
@@ -153,6 +157,10 @@ Latency = `receipt_time` minus `provider_time` in milliseconds, for quotes of `-
   interval or since connect, and whether `rtt` is milliseconds, is not known yet, so both sum
   and max are shown and nothing is converted. A malformed notice is not captured: the stream
   journals it as a `stream-error` (`where` = `notice`) and carries on.
+- Which symbols the bot was subscribed to, and when, is in the bot's journal: one
+  `stream-subscriptions` event per change, with `added`, `removed`, the whole `subscribed` set
+  and its `optional` part (candidates and observer symbols). A symbol with few quotes in
+  `latency.csv` can be read against how long it was subscribed.
 - `latency_summary.json`: quote, symbol and hour counts, `clock_skew_quotes`, `min_latency_ms`,
   notice count and `partial_last_lines`.
 

@@ -26,7 +26,7 @@ The API still binds loopback only. The iPhone reaches it through an HTTPS proxy 
 [Tailscale](https://tailscale.com) `serve`, which is reachable only from devices signed in to the
 owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
 tailnet name. The proxy points at a second loopback port, `[api] remote_port`, opened only when
-`[api] remote_hosts` is set. Every request on that port must carry the paired token, whatever its
+`[api] remote_hosts_file` names a host. Every request on that port must carry the paired token, whatever its
 `Host` header says, except `POST /pair`, which redeems a one-time pairing code for that token; the
 local port never accepts the remote name. Whether a token is needed is
 decided by the port a request arrives on, never by a header the caller chooses.
@@ -36,7 +36,9 @@ decided by the port a request arrives on, never by a header the caller chooses.
 2. On the Mac: `tailscale serve --bg --https=443 http://127.0.0.1:8767` (the `[api] remote_port`,
    never the `[api] port`). `tailscale serve status` shows the address, e.g.
    `https://mac.tailnet-name.ts.net`.
-3. In `config/bot.toml` set `[api] remote_hosts = ["mac.tailnet-name.ts.net"]` and restart the API.
+3. Write that name, one per line, into this Mac's `[api] remote_hosts_file` under `data_dir`
+   (`echo mac.tailnet-name.ts.net > data/remote-hosts.txt`) and restart the API. The name belongs
+   to this machine, so it lives with its data, never in the shared `config/bot.toml`.
 4. `python -m tickr.api --config config/bot.toml pair` revokes the current phone token at once and
    leaves a pairing link with a one-time code in a file readable by you only
    (`[api] remote_pairing_file` under `data_dir`); nothing secret is printed. With the API running,
@@ -47,7 +49,7 @@ decided by the port a request arrives on, never by a header the caller chooses.
    digests: of the waiting code (`[api] remote_pairing_code_file`, with its expiry) and of the
    token (`[api] remote_token_hash_file`).
 
-Rules on the remote port: `Host` must be one of `remote_hosts` (no port when 443, else
+Rules on the remote port: `Host` must be one of the names in `remote_hosts_file` (no port when 443, else
 `name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
 `401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
 An unreadable token hash file answers `503 unavailable`. The local port (the Mac app, the status
@@ -59,7 +61,8 @@ no token, body exactly `{"code": "<code from the link>"}`. `200` with `paired-v1
 stored one, and the link file is deleted. `401 unauthorized` when no pairing is waiting, the code
 is wrong (nothing changes) or it has expired (the code and the link file are deleted); `400` for
 any other body; `503` when the code file is unreadable. Neither the code nor the token appears in
-an error or the log. `remote_hosts = []` (the shipped value) turns remote access off.
+an error or the log. A missing or empty `remote_hosts_file` (the default) turns remote access off; an unreadable
+one, or a name in it that is not a lowercase DNS name, stops the API at start.
 
 The phone keeps the token in its Keychain (this device only) together with the address it was
 paired with, and sends it only over HTTPS to exactly that address; changing the address by hand
@@ -97,10 +100,12 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. |
+| GET | `/config` | `200` `config-v1`: the configuration file the API was started with, as it is on disk now, read-only. Every `[section]` in file order, each key with its value as written (TOML text) and the comment above it. `valid`/`error`: whether the file loads now, as the next start would. `changed_since_start`: the file differs from the one this API loaded (running processes keep the old values until restarted). The file holds credential variable names only, never values. `503 unavailable` when the API was started without a file path (the demo) or the file is unreadable. |
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
 | GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
-| GET | `/lab/replay` | `200` `lab-replay-v1`: the Lab's latest SIMULATED replay of the active strategy over the last sessions of fetched data (see Lab replay below). |
-| POST | `/lab/replay` | Body `{}`. Starts that replay: `202` `lab-replay-v1` (state `running`), or `409 conflict` with the cause it cannot start now. Not a bot command: nothing goes to the inbox. |
+| GET | `/lab/replay` | `200` `lab-replay-v1`: the Lab's latest SIMULATED replay of a strategy version (and the one compared with it) over the last sessions of fetched data or one day, plus the versions and days a run may ask for (see Lab replay below). |
+| POST | `/lab/replay` | Body `{}` or `{"version", "compare", "day"}` (any of them). Starts that replay: `202` `lab-replay-v1` (state `running`), or `409 conflict` with the cause it cannot start now. Not a bot command: nothing goes to the inbox. |
+| GET | `/trades/whatif?date=<YYYY-MM-DD>&symbol=<ticker>&version=<folder>` | `200` `trade-whatif-v1`: what strategy folder `version` would have done on that symbol and day, SIMULATED from the captured bars (see Another version on one trade below). `409 conflict` during the regular session. |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
 | GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first, its simulated day result and simulated trades. |
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
@@ -224,6 +229,10 @@ tracks; `position` is its first element or `null`, kept for older clients.
 Each `trades_today` entry also has `planned_loss_usd` (1 R as recorded when the trade was opened)
 and `stop_confirmed_after_seconds` (see "Per-trade metrics" below). MAE and MFE are only in
 `day-v1`: the bot does not read capture files to write its status.
+`strategy` (in `trades_today` and in `day-v1` `trades`) is `{name, version}` of the strategy whose
+decision opened the trade, as journaled in its `trade-opened` row; `null` for a manual trade, a
+trade opened before the bot journaled it, or a row it cannot read (display only, never guessed).
+In status it was added after version 1 shipped: a reader takes an entry without it as `null`.
 
 Every `positions` element (so also `position`) and every `trades_today` entry has `entry` and
 `entry_cause`, the first link of the protection chain (see "Entry send" below).
@@ -535,29 +544,75 @@ words) and `symbol` (when the row's body names one). The body itself is not serv
 database yet, it cannot be read, or the journal has no rows yet.
 ### GET and POST /lab/replay (simulated, never the bot)
 
-The Lab's "replay the last days": the active strategy (`[strategy] active`, its module from
+The Lab's "replay the last days", "compare with another version" and "replay one day": a strategy
+version (a folder under `strategies/`, the active one unless asked; its module from
 `[observers] strategy_modules`) replayed by the backtest (`docs/backtest.md`) over the last
 `[api] lab_replay_sessions` sessions of the data already fetched into `[api] lab_replay_data_dir`,
-ending at its last pool day. It never fetches: `summary.last_day` is where the data ends, and the
-app shows it. Code: `src/tickr/api/lab_replay.py`.
+ending at its last pool day, or over one pool day; optionally a second version over the same
+window. It never fetches: `summary.last_day` is where the data ends, and the app shows it. Code:
+`src/tickr/api/lab_replay.py`.
 
-POST starts `python -m tickr.backtest run --last-sessions N` as a child process of the API
-under `nice -n [api] lab_replay_niceness`, writing into `[api] lab_replay_results_dir`; the bot
-reads nothing of it. One run at a time, shared by both listeners; each start deletes the previous
-run. It is refused (`409 conflict`, one cause) while a run is going, during the regular session
-of a trading day when `[api] lab_replay_outside_session_only = true`, without fetched data
-(`pool.csv`), without a module for the strategy, or when the API was started without its config
-file path (the demo).
+POST body: `{}`, or any of `version` (folder to replay, default the active one), `compare` (a
+second folder, replayed after the first) and `day` (`YYYY-MM-DD`, one of `days`: replay that
+session only). It starts `python -m tickr.backtest run --last-sessions N` (`--last-sessions 1
+--end-day D` for one day) as a child process of the API under `nice -n [api] lab_replay_niceness`,
+writing into `[api] lab_replay_results_dir`; a comparison starts the second child when the first
+ends, never both at once. The bot reads nothing of it. One run at a time, shared by both
+listeners; each start deletes the previous run. It is refused (`409 conflict`, one cause) while a
+run is going, during the regular session of a trading day when
+`[api] lab_replay_outside_session_only = true`, without fetched data (`pool.csv`), for a day that
+is not in it, for a folder that is missing, unreadable or has no module, when `compare` names the
+first version again, or when the API was started without its config file path (the demo). Any
+other key or a non-string value is `400 bad_request`.
 
 - `state`: `idle` (no run yet), `running`, `done` (with `summary`) or `failed` (with `cause`:
   the backtest's own refusal, paths relative to the repo).
-- `strategy`, `version`: what was replayed; `sessions`: the number asked for.
+- `strategy`, `version`, `folder`: the first version replayed; `sessions`: the number asked for
+  (1 for one day); `day`: the one day replayed, null for the last sessions.
+- `compare`: null, or the second version (`folder`, `strategy`, `version`, its own `state`,
+  `cause` and `summary`). It is `running` while the first one runs, and `failed` with a cause if
+  the API stopped before it started. The run's `state` is `running` until both ended (the first
+  version's `summary` and `cause` stay null until then); otherwise it is the first version's.
+  An unreadable `current.json` reads as `failed` with that cause, and the next start replaces it.
+- `versions`: every folder under `strategies/` a run may name, the active one first, then the
+  observers, then the others: `folder`, `strategy` and `version` as its strategy.toml says (null
+  when unreadable), `role` (`active`, `observer`, `candidate`) and `cause` (null when it can be
+  replayed). `days`: the latest `[api] lab_replay_sessions` session dates of the fetched pool,
+  newest first (empty without data): the days "replay one day" offers.
+- `folder`, `day`, `compare`, `versions` and `days` were added after version 1 shipped: a reader
+  takes a document without them as null or empty.
 - `summary`: the window (`first_day` ... `last_day`, `sessions_without_replayed_days`: no gainer
   or incomplete data that day), every signal (`trades`, `win_rate_percent`, `mean_r`, `total_r`,
   `profit_factor`, the day-resampled `mean_r_interval_low`/`high` at `confidence_percent`, null
   when too few days, `max_drawdown_r`) and what the bot's risk limits would have taken
   (`bot_trades`, `bot_total_usd`, `bot_max_drawdown_usd`). Twenty sessions are few: the interval
   is wide by construction.
+
+### GET /trades/whatif (another version on one trade, simulated)
+
+The Trades screen's "Another strategy…": strategy folder `version` (under `strategies/`, its
+module from `[observers] strategy_modules`) replayed by the replay engine (`docs/replay.md`, the
+same fill and exit rules and `[api] replay_settings_file`) on `symbol`'s captured M1 bars of
+`date`, with the prior sessions the bot cached for that symbol that day
+(`<history_dir>/<environment>/<date>/<symbol>-<[market_data] history_sessions>.jsonl`) as its
+history. Offline and read-only: nothing is fetched or written, the bot reads nothing of it.
+Code: `src/tickr/api/trade_whatif.py`.
+
+- All three query parameters are required; `symbol` is a ticker without `/`, `version` a single
+  folder name. Anything else is `400 bad_request`.
+- Refused (`409 conflict`) during the regular session of a trading day when
+  `[api] trade_whatif_outside_session_only = true`.
+- `signals`: what the simulation did with each ENTER of that day (`filled`, `missed`,
+  `rejected`, `ignored`). `trades`: each simulated trade of that day (`signal_at`, `opened_at`,
+  `entry_price`, `stop`, `closed_at`, `exit_price`, `exit_reason`, `result_r` per share, and the
+  version's own `quantity` with `result_gross_usd` when it chose one). `result_r`,
+  `result_gross_usd`: their sums; USD is null when a trade has no quantity. Gross: slippage in,
+  commissions and fees out.
+- When it cannot be computed (unreadable or unknown folder, no module, a version that needs more
+  history than the bot caches, replay.toml `history_sessions` differing from
+  `[market_data] history_sessions`, no captured bars for the symbol that day, no or empty cached
+  prior sessions, a refused simulation, a version that raises) `cause` says why, `signals` and the sums are null and `trades`
+  is empty. Paths in a cause are relative to the repo.
 
 ### GET /chart (read-only, market data)
 
@@ -827,8 +882,8 @@ recently listed first (within a discovery pass: gainers, losers, top actives, ea
   journals only each pass's totals, so the API applies the discovery code's own `merge` and
   `universe_cause` again to every captured pass (the rows of one screener read share a receipt
   time; a pass reads gainers, losers, top actives in that order), with the allowed lists of
-  `[market_data]` as the API loaded them. Liquidity refusals (spread, dollar volume) and
-  halts are not recorded per symbol and are not shown.
+  `[market_data]` as the API loaded them. The active strategy's liquidity refusals at discovery
+  (spread, dollar volume) and halts are not recorded per symbol and are not shown.
 
 `stages`: always six, in this order, each `{stage, count, symbols}` (distinct symbols, sorted):
 - `screeners`: every chip; `universe`: the chips with `excluded_cause` `null`;

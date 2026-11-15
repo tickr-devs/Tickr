@@ -103,6 +103,9 @@ struct ChartTab: View {
             CandleChart(series: series, times: chart.times, studies: chart.studies, atr: chart.atr,
               trades: oneDay ? chart.trades : [], position: oneDay ? chart.openPosition : nil,
               events: oneDay ? chart.events : [], lines: lines, fitsAll: !oneDay, viewport: $viewport)
+              // Its panes have a fixed height: past this size the scale's tags and legends would
+              // cover each other and the candles.
+              .dynamicTypeSize(...CandleChart.largestText)
             DayTrades(trades: chart.trades)
             DecisionsCard(decisions: chart.shownDecisions, failure: chart.shownDecisionsFailure)
           } else if chart.range != .oneDay {
@@ -448,10 +451,10 @@ private struct ChartControls: View {
           .labelStyle(.iconOnly)
           .fixedSize()
           Group {
-            Button { zoom(by: ChartViewport.zoomStep) } label: { Image(systemName: "minus") }
+            Button { zoom(by: Tokens.Chart.zoomStep) } label: { Image(systemName: "minus") }
               .disabled(!viewport.canZoomOut(series))
               .accessibilityLabel(Text(ChartText.zoomOut))
-            Button { zoom(by: 1 / ChartViewport.zoomStep) } label: { Image(systemName: "plus") }
+            Button { zoom(by: 1 / Tokens.Chart.zoomStep) } label: { Image(systemName: "plus") }
               .disabled(!viewport.canZoomIn)
               .accessibilityLabel(Text(ChartText.zoomIn))
           }

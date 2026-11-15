@@ -13,7 +13,7 @@ the approved design canvas. Code follows it one to one:
    - `apps/scripts/check_swift_rules.py` (rule `numbers`, using `check_swift_literals.py`) fails CI on a number other than 0 and 1 unless it is a documented `static let` constant, an enum raw value, a subscript index or a halving `/ 2`.
    - SwiftLint (`.swiftlint.yml`) fails CI on a colour made outside `Palette.swift`, a hue name instead of a role, and a font size outside `Tokens.Typography`.
    - A screen may define its own documented constant only for a value no other screen uses (a chart's padding ratio, say); anything shared belongs in `Tokens`.
-   - The rules check covers `apps/shared`, `apps/macos` and `apps/ios` in the `swift-rules` workflow on every pull request. It has no baseline: every violation fails. The `test` job also runs the check (`tests/test_swift_rules.py`). SwiftLint runs in the same workflow and covers `apps/shared` and `apps/ios` (macOS joins next); an app's own `.swiftlint.yml` may relax SwiftLint's size limits only, until its long files are split.
+   - The rules check covers `apps/shared`, `apps/macos` and `apps/ios` in the `swift-rules` workflow on every pull request. It has no baseline: every violation fails. The `test` job also runs the check (`tests/test_swift_rules.py`). SwiftLint runs in the same workflow and covers `apps/shared`, `apps/macos` and `apps/ios`; an app's own `.swiftlint.yml` may relax SwiftLint's size limits only, until its long files are split.
 2. **No user-facing text in code.** Every string a person reads is defined once, in the target's `L10n.swift`, as `LocalizedStringResource("key", defaultValue: "English")`, and translated in the String Catalog (`Localizable.xcstrings`) beside it. A catalog is committed exactly as Xcode writes it (`apps/scripts/format_xcstrings.py` rewrites it so), and a key's `table:` is a string literal or left out: Xcode's extraction cannot follow a constant, so it would copy the keys into `Localizable.xcstrings` on every build.
    - Views use `L10n` entries. `Text("…")`, `Button("…")`, `Text(verbatim: "…")` and computed properties returning English all fail CI (rule `text`). Other string literals may only be SF Symbol names, documented `static let` identifiers and enum raw values; the one capitalised protocol token allowed in a documented constant is the HTTP scheme `Bearer`.
    - CI fails when an `L10n` key has no Russian translation in the catalog (rule `catalog`).
@@ -23,7 +23,7 @@ the approved design canvas. Code follows it one to one:
 4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
 5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop (the brand mark's spark, the empty-positions radar, the ticker's scroll), marked `// decorative: <why>` in code; the `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
 6. **Formatting: Swift uses 2-space indentation.**
-   - `.editorconfig`, SwiftLint's `indentation_width` (shared package, iOS) and the rules check (rule `indent`, every app) enforce it.
+   - `.editorconfig`, SwiftLint's `indentation_width` (every app) and the rules check (rule `indent`, every app) enforce it.
    - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
 7. **Current Apple stack only.** macOS and iOS 26, Swift 6 with strict concurrency, Swift Testing, Observation, dependencies through Factory, async/await, NavigationStack/SplitView, Swift Charts, String Catalogs, `#Preview`; no deprecated API. The rules check (rule `legacy`, tests included) rejects the old ones; the full list is in CLAUDE.md.
 
@@ -39,6 +39,9 @@ contrast on `surface` in both appearances.
 | `surfaceSunken` | Inset areas in a card: charts, wells | `#F6F8FD` | `#0A0F20` |
 | `separator` | Card borders, grid lines, tracks | `#E3E8F2` | `#1E2644` |
 | `separatorStrong` | Zero lines, radar rings | `#CFD7E8` | `#2A3459` |
+| `titleBar` | Mac title bar above the sidebar and the screen | `#F3F6FC` | `#0B1022` |
+| `sidebar` | Mac sidebar column | `#F1F4FB` | `#0A0E1E` |
+| `selection` | Selected sidebar row (with a `separatorStrong` hairline) | `#E3EBFF` | `#172046` |
 | `textPrimary` | Headlines, primary values | `#0E1430` | `#E7EAF6` |
 | `textSecondary` | Body text in rows and lists | `#262F52` | `#C9CFE6` |
 | `textTertiary` | Labels next to values, explanations | `#475174` | `#A9B2D3` |
@@ -197,6 +200,25 @@ a step; it does not define its own factor.
 | `pressScale` | ×0.97 | Buttons and chips while pressed |
 | `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event |
 | `hintDelay` | 0.45 s | Hover before a hint appears (Mac) |
+| `clockTickSeconds` | 1 s | Redraw of clocks, ages ("3 s ago") and the session bar's cursor |
+
+## Loss-room ring (`Tokens.Room`)
+
+| Token | Share of the daily limit | Use |
+|---|---|---|
+| `calm` | 0.5 | Room below it turns the ring amber |
+| `alarm` | 0.2 | Room below it turns the ring red |
+
+## Candle charts (`Tokens.Chart`)
+
+| Token | Value | Use |
+|---|---|---|
+| `pricePadding` | 0.08 | Space above and below the visible prices, share of their range |
+| `volumeShare` | 0.22 | Height of the volume bars, share of the price range |
+| `zoomStep` | ×1.5 | Candles shown per zoom step |
+
+Statistics on the Lab and performance cards use `StatDigits` (`Formatting.swift`): mean R and
+profit factor with 2 decimals, win rate and confidence in whole percents.
 
 ## Components
 
@@ -267,9 +289,10 @@ breaks upward, with a spark at its end.
   `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`).
 - macOS opening (`BrandOpening`, macOS has no launch screen): the first window of a launch opens
   on the background with the mark (`openingMark`) in its centre, the line draws itself
-  (`openingDrawSeconds`, once the window is on screen and key), then the mark flies into
-  Overview's header mark (`openingFly`) over the still plain background, and only then does the
-  background fade. Once per launch (`AppModel.openingPlayed`), not on reopening the window.
+  (`openingDrawSeconds`, once the window is on screen and key or active), then the mark flies
+  into Overview's header mark (`openingFly`) while the background fades and the screen shows
+  through. The header's own mark stays hidden until the flying one lands on it, so two marks are
+  never seen. About 1 s in all. Once per launch (`AppModel.openingPlayed`), not on reopening the window.
   Reduce Motion: the same cross-fade.
 - Empty screens (nothing yet, no trades, bot unreachable) use `BrandMark.empty()` as the
   `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors

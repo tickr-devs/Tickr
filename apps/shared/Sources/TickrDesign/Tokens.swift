@@ -270,13 +270,13 @@ public enum Tokens {
     /// starts (a spring still trails points behind its target then, and fades beside it).
     public static let launchFly = Animation.easeInOut(duration: launchFlySeconds)
     /// Seconds the window shows the plain background before the mark starts drawing.
-    public static let openingDelaySeconds = 0.15
+    public static let openingDelaySeconds = 0.1
     /// Seconds the opening waits for its window to come to the front; then it plays anyway, so a
     /// window opened in the background is never left covered.
     public static let openingWaitSeconds = 1.0
     /// macOS opening (BrandOpening): seconds for the centred mark to draw itself, then its flight
     /// into the Overview header.
-    public static let openingDrawSeconds = 0.6
+    public static let openingDrawSeconds = 0.45
     public static let openingFlySeconds = 0.45
     /// A timing curve for the same reason as `launchFly`.
     public static let openingFly = Animation.easeInOut(duration: openingFlySeconds)
@@ -286,5 +286,26 @@ public enum Tokens {
     public static let rotationSeconds = 4.0
     /// Points per second of the event ticker.
     public static let tickerSpeed = 22.0
+    /// Seconds between redraws of a clock or an age ("3 s ago"), and of the session bar's cursor.
+    public static let clockTickSeconds: TimeInterval = 1
+  }
+
+  /// The loss-room ring (Risk on both apps), as shares of the daily loss limit.
+  public enum Room {
+    /// Room left below this share turns the ring amber.
+    public static let calm = 0.5
+    /// Room left below this share turns the ring red.
+    public static let alarm = 0.2
+  }
+
+  /// Candle charts on both apps.
+  public enum Chart {
+    /// Space above and below the visible prices, as a share of their range.
+    public static let pricePadding = 0.08
+    /// Height of the volume bars along the bottom of the price pane, as a share of the price
+    /// range.
+    public static let volumeShare = 0.22
+    /// Each zoom step shows this many times fewer (or more) candles.
+    public static let zoomStep = 1.5
   }
 }

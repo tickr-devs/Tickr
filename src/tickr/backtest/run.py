@@ -49,7 +49,6 @@ class Task:
     strategy_module: str
     values: dict
     change_percent: Decimal
-    dollar_volume_floor: Decimal
     calendar_dir: Path
     cfg: Config
     settings: ReplaySettings
@@ -81,8 +80,7 @@ def run_symbol(task: Task) -> tuple[ReplayResult | None, list[dict[str, str]]]:
 
     def one(days: tuple[date, ...], series: tuple) -> ReplayResult:
         pool = [(task.symbol, d) for d in days]
-        return replay(lambda: GainerGate(create(), pool, task.change_percent,
-                                         task.dollar_volume_floor),
+        return replay(lambda: GainerGate(create(), pool, task.change_percent),
                       {task.symbol: series}, task.settings, clock)
 
     try:
@@ -170,15 +168,19 @@ def _last_closes(path: Path) -> dict[date, Decimal]:
 
 
 def last_sessions(calendar: SessionCalendar, pool: list[PoolEntry], count: int,
-                  max_lookback_days: int) -> tuple[list[PoolEntry], list[date]]:
-    """The pool cut to the `count` latest open sessions that end at its last day, and those
-    sessions (oldest first). Sessions without a pool day stay counted: the window is calendar
-    sessions, not days that happened to have gainers."""
+                  max_lookback_days: int, end: date | None = None,
+                  ) -> tuple[list[PoolEntry], list[date]]:
+    """The pool cut to the `count` latest open sessions that end at its last day (or at `end`,
+    which must be a pool day), and those sessions (oldest first). Sessions without a pool day
+    stay counted: the window is calendar sessions, not days that happened to have gainers."""
     if count <= 0:
         raise BacktestError(f"--last-sessions must be positive, got {count}")
     if not pool:
         raise BacktestError("the pool is empty")
-    last = max(e.session_date for e in pool)
+    days = {e.session_date for e in pool}
+    if end is not None and end not in days:
+        raise BacktestError(f"--end-day {end.isoformat()} is not a pool day")
+    last = max(days) if end is None else end
     before = sessions_before(calendar, last, count - 1, max_lookback_days) if count > 1 else []
     sessions = [d.ny_date for d in before] + [last]
     kept = set(sessions)
@@ -187,7 +189,7 @@ def last_sessions(calendar: SessionCalendar, pool: list[PoolEntry], count: int,
 
 def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: ReplaySettings,
                  out: Path, results: Path, strategy_module: str, values_path: Path,
-                 last_session_count: int | None = None) -> None:
+                 last_session_count: int | None = None, end_day: date | None = None) -> None:
     calendar_dir = (cfg.root / cfg.session.calendar_file).parent
     calendar = SessionCalendar.load(calendar_dir)
     with open(values_path, "rb") as handle:
@@ -195,17 +197,18 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
     factory(strategy_module, values)  # refuse bad values before any work
     pool = read_pool(out / POOL_FILE)
     window: list[date] | None = None
+    if end_day is not None and last_session_count is None:
+        raise BacktestError("--end-day needs --last-sessions")
     if last_session_count is not None:
         pool, window = last_sessions(calendar, pool, last_session_count,
-                                     cfg.market_data.history_max_lookback_days)
+                                     cfg.market_data.history_max_lookback_days, end_day)
     days, skipped = tradable_days(cfg, calendar, pool, out, replay_settings.history_sessions,
                                   settings.split_tolerance_percent)
     caps = read_caps(out / CAP_FILE)
     if window is not None:
         caps = [c for c in caps if c.session_date in set(window)]
-    floor = cfg.market_data.min_session_dollar_volume_usd
     tasks = [Task(symbol, out / fetch.MINUTES_DIR / f"{symbol}.jsonl", tuple(sorted(d)),
-                  strategy_module, values, settings.gainer_change_percent, floor, calendar_dir,
+                  strategy_module, values, settings.gainer_change_percent, calendar_dir,
                   cfg, replay_settings) for symbol, d in sorted(days.items())]
     if not tasks:
         raise BacktestError("no pool day has complete history")

@@ -21,15 +21,17 @@ from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import Config
 from tickr.data.base import MarketData, MarketDataError, QuoteListener, StreamNotice
 from tickr.data.capture import CaptureWriter
-from tickr.data.discovery import Candidate, DiscoverySettings, discover
+from tickr.data.discovery import Candidate, DiscoverySettings, NoStrategy, discover
 from tickr.data.health import FanOut, StreamHealth, StreamState
 from tickr.engine.core import Engine, Leg
+from tickr.strategy.base import Liquidity
 from tickr.types import Quote
 
 STREAM_TRANSPORT = "stream-transport"
 STREAM_ERROR = "stream-error"
 DISCOVERY = "discovery"
 DISCOVERY_FAILED = "discovery-failed"
+STREAM_SUBSCRIPTIONS = "stream-subscriptions"
 STREAM_LOST_EXIT = "stream-lost"
 
 
@@ -116,6 +118,9 @@ class MarketRuntime:
         # Observers' WATCH and ENTER symbols, set by the service; lowest priority on the stream
         self.observer_watch: set[str] = set()
         self.discovery: DiscoveryState | None = None
+        # The active strategy's liquidity rules, set by the caller once the strategy is loaded;
+        # until then discovery still captures screeners and quotes but keeps no candidate.
+        self.screen: Liquidity = NoStrategy()
         self._candidates_retry_at = monotonic()  # candidates off until then after a refusal
         self._observers_retry_at = monotonic()  # observer symbols off until then after one
         self._observers_next_sync = monotonic()  # observer tier changes at most once until then
@@ -208,6 +213,27 @@ class MarketRuntime:
         return set(self._observers_applied)
 
     def _sync_subscriptions(self) -> None:
+        """One pass of `_apply_subscriptions`; a change of the bot's subscribed set is
+        journaled as `stream-subscriptions`: the symbols `added` and `removed` by this pass,
+        then the whole set (`subscribed`) and the part of it on the optional path
+        (`optional`). It is the bot's own record of what it asked for and was not refused,
+        so a day's quotes and latency can be read against what was subscribed when; the
+        symbols a failed unsubscribe may have left on the connection are not in it."""
+        before = set(self.subscribed)
+        try:
+            self._apply_subscriptions()
+        finally:
+            if self.subscribed != before:
+                store = self.engine.store
+                with store.transaction():
+                    store.append(STREAM_SUBSCRIPTIONS, {
+                        "added": sorted(self.subscribed - before),
+                        "removed": sorted(before - self.subscribed),
+                        "subscribed": sorted(self.subscribed),
+                        "optional": sorted(self._optional & self.subscribed)},
+                        run_id=self.engine.run_id)
+
+    def _apply_subscriptions(self) -> None:
         """L1 for the open position and the strategy's WATCH symbols (spec 6), then the best
         discovery candidates, so a quote is there the first minute the strategy says ENTER,
         then the observers' WATCH symbols so their results are not limited to the active
@@ -313,8 +339,8 @@ class MarketRuntime:
         self._next_discovery = (self.monotonic()
                                 + float(self.config.market_data.discovery_interval_seconds))
         try:
-            result = discover(self.source, self.settings, session_open, self.now,
-                              self.capture)
+            result = discover(self.source, self.settings, self.screen, session_open,
+                              self.now, self.capture)
         except (MarketDataError, BrokerError) as exc:  # MalformedResponse is a BrokerError
             with self.engine.store.transaction():
                 self.engine.store.append(DISCOVERY_FAILED, {"error": type(exc).__name__},

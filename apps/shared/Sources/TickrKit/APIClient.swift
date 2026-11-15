@@ -106,12 +106,20 @@ public struct APIClient: Sendable {
   static let statusPath = "/status"
   static let pendingPath = "/commands/pending"
   static let settingsPath = "/settings"
+  static let configPath = "/config"
   static let daysPath = "/days"
   static let barsPath = "/bars"
   static let accountPath = "/account"
   static let jobsPath = "/jobs"
   static let journalPath = "/journal"
   static let labReplayPath = "/lab/replay"
+  /// Body keys of a Lab replay start: the folder to replay, the one to compare it with, the day.
+  static let labVersionKey = "version"
+  static let labCompareKey = "compare"
+  static let labDayKey = "day"
+  static let tradeWhatIfPath = "/trades/whatif"
+  /// Query item name of the strategy folder another-version reads replay.
+  static let versionQuery = "version"
   /// Remote port only: redeem a pairing link's one-time code for the bearer token.
   static let pairPath = "/pair"
   /// Body key of the pairing code.
@@ -226,10 +234,18 @@ public struct APIClient: Sendable {
     try await perform(request(path: Self.labReplayPath, body: nil), expect: Self.ok)
   }
 
-  /// Start a Lab replay. Accepted (202) answers the replay as it now stands; the API refuses a
-  /// start while one runs with 409 `conflict`, thrown as `APIError.refused`.
-  public func startLabReplay() async throws -> LabReplayV1 {
-    let body = try JSONSerialization.data(withJSONObject: [String: String]())
+  /// Start a Lab replay of strategy folder `version` (the active one when nil), then of
+  /// `compare` over the same window, over the last sessions or over `day` only. Accepted (202)
+  /// answers the replay as it now stands; the API refuses a start while one runs, or a choice it
+  /// does not offer, with 409 `conflict`, thrown as `APIError.refused`.
+  public func startLabReplay(
+    version: String? = nil, compare: String? = nil, day: WireDate? = nil
+  ) async throws -> LabReplayV1 {
+    var fields: [String: String] = [:]
+    fields[Self.labVersionKey] = version
+    fields[Self.labCompareKey] = compare
+    fields[Self.labDayKey] = day?.text
+    let body = try JSONSerialization.data(withJSONObject: fields)
     return try await perform(request(path: Self.labReplayPath, body: body), expect: Self.accepted)
   }
 
@@ -246,6 +262,11 @@ public struct APIClient: Sendable {
     try await perform(request(path: Self.settingsPath, body: nil), expect: Self.ok)
   }
 
+  /// The bot's configuration file as it is on disk now, read-only, and whether it loads.
+  public func config() async throws -> ConfigV1 {
+    try await perform(request(path: Self.configPath, body: nil), expect: Self.ok)
+  }
+
   /// Every New York date with records, newest first.
   public func days() async throws -> DaysV1 {
     try await perform(request(path: Self.daysPath, body: nil), expect: Self.ok)
@@ -254,6 +275,17 @@ public struct APIClient: Sendable {
   /// Trades closed on `day` and the symbols with captured bars.
   public func day(_ day: WireDate) async throws -> DayV1 {
     try await perform(request(path: "\(Self.daysPath)/\(day.text)", body: nil), expect: Self.ok)
+  }
+
+  /// What strategy folder `version` would have done on `symbol`'s day (simulated, read-only).
+  /// The API refuses it during the regular session with 409 `conflict`, thrown as
+  /// `APIError.refused`.
+  public func tradeWhatIf(symbol: String, day: WireDate, version: String) async throws -> TradeWhatIfV1 {
+    try await perform(
+      request(path: Self.tradeWhatIfPath,
+        query: [(Self.dateQuery, day.text), (Self.symbolQuery, symbol), (Self.versionQuery, version)],
+        body: nil),
+      expect: Self.ok)
   }
 
   /// Captured M1 bars of `symbol` on `day`, oldest first.
