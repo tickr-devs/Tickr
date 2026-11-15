@@ -328,9 +328,6 @@ enum L10n {
   }
 
   enum Root {
-    static func run(_ id: String) -> LocalizedStringResource {
-      LocalizedStringResource("root.run", defaultValue: "run \(id)", bundle: L10n.bundle)
-    }
     static var apiUnreachable: LocalizedStringResource {
       LocalizedStringResource("root.apiUnreachable", defaultValue: "API unreachable", bundle: L10n.bundle)
     }
@@ -958,6 +955,10 @@ enum L10n {
     static var jobWatchdog: LocalizedStringResource {
       LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
     }
+    /// A launchd job this app does not know by name.
+    static var jobOther: LocalizedStringResource {
+      LocalizedStringResource("settings.job.other", defaultValue: "Other job", bundle: L10n.bundle)
+    }
     static func lastAt(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.lastAt", defaultValue: "last \(time)", bundle: L10n.bundle)
     }
@@ -1012,9 +1013,6 @@ enum L10n {
     }
     static var staleAfter: LocalizedStringResource {
       LocalizedStringResource("settings.staleAfter", defaultValue: "Status stale after", bundle: L10n.bundle)
-    }
-    static var run: LocalizedStringResource {
-      LocalizedStringResource("settings.run", defaultValue: "Run", bundle: L10n.bundle)
     }
     static var notAvailableYet: LocalizedStringResource {
       LocalizedStringResource("settings.notAvailableYet", defaultValue: "Not available yet", bundle: L10n.bundle)
@@ -1763,6 +1761,10 @@ enum L10n {
   }
   /// A refused entry in words: the rule behind its code, and the detail of a pause after a loss.
   enum Cause {
+    /// Title of a refusal whose code this app has no words for; the bot's detail follows it.
+    static var other: LocalizedStringResource {
+      LocalizedStringResource("cause.other", defaultValue: "Other reason", bundle: L10n.bundle)
+    }
     /// What the rule behind `code` is.
     static func title(_ code: RefusalCode) -> LocalizedStringResource {
       switch code {

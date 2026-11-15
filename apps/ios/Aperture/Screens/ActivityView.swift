@@ -484,8 +484,8 @@ private struct TradeLine {
     closedAt = trade.closedAt.date
     exitReason = trade.exitReason
     quantity = trade.quantity.text
-    entryPrice = trade.entryPrice.text
-    exitPrice = trade.exitPrice.text
+    entryPrice = Money.price(trade.entryPrice.value)
+    exitPrice = Money.price(trade.exitPrice.value)
     result = trade.resultGrossUsd.value
     let planned = trade.plannedLossUsd.value
     resultR = planned == 0 ? nil : trade.resultGrossUsd.value / planned
@@ -504,8 +504,8 @@ private struct TradeLine {
     closedAt = trade.closedAt.date
     exitReason = trade.exitReason
     quantity = trade.quantity.text
-    entryPrice = trade.entryPrice.text
-    exitPrice = trade.exitPrice.text
+    entryPrice = Money.price(trade.entryPrice.value)
+    exitPrice = Money.price(trade.exitPrice.value)
     result = trade.resultGrossUsd.value
     resultR = trade.resultR
     stopAfter = trade.stopConfirmedAfterSeconds?.value
@@ -560,10 +560,10 @@ private struct TradesList: View {
         let state = position.stop.state
         row(symbol: position.symbol, time: String(localized: L10n.Activity.openSince(Format.time(position.openedAt.date))),
           tag: String(localized: L10n.Activity.openTag), tagSymbol: Self.openSymbol, tone: .accent,
-          result: String(localized: L10n.Common.quantityAt(position.quantity.text, position.entryPrice.text)),
+          result: String(localized: L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value))),
           figures: [
             Figure(symbol: StopGlyph.stateSymbol(state), label: L10n.Activity.hintStop,
-              value: position.stop.price?.text ?? Format.missing, tone: StopGlyph.stateTone(state)),
+              value: position.stop.price.map { Money.price($0.value) } ?? Format.missing, tone: StopGlyph.stateTone(state)),
           ],
           stopState: state)
           .rise(step: ActivityView.Order.list.rawValue)
@@ -911,18 +911,27 @@ private struct CauseText: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-      if let code = cause.known {
-        Text(L10n.Cause.title(code))
-          .font(Tokens.Typography.callout)
-          .foregroundStyle(Palette.textSecondary)
+      Group {
+        if let code = cause.known {
+          Text(L10n.Cause.title(code))
+        } else if cause.hasCode {
+          // A code this app has no words for is never shown; its detail follows.
+          Text(L10n.Cause.other)
+        }
       }
+      .font(Tokens.Typography.callout)
+      .foregroundStyle(Palette.textSecondary)
       Group {
         if let cooldown = cause.cooldown {
           Text(L10n.Cause.cooldownDetail(Format.time(cooldown.loss), Format.time(cooldown.until)))
-        } else if cause.known == nil {
-          // A cause this app has no words for: the bot's own text, times made readable.
+        } else if cause.known == nil, !cause.hasCode {
+          // Prose the bot wrote without a code: as written, times made readable.
           Text(verbatim: cause.detail.isEmpty ? cause.code
             : cause.code + RefusalCause.separator + cause.readable(time: Format.time))
+        } else if cause.known == nil {
+          if !cause.detail.isEmpty {
+            Text(verbatim: cause.readable(time: Format.time))
+          }
         } else if let phrase = cause.phrase {
           // The detail in the person's language, from the refusal's code and values.
           Text(verbatim: phrase)
