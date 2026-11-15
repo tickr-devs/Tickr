@@ -68,7 +68,12 @@ struct ActivityView: View {
     }
     .task(id: skippedKey) {
       guard let url = model.connection.url, let day = skippedKey.day else { return }
-      await activity.loadSkipped(url, day: day)
+      // Today's refusals keep coming without a trade closing: read them again while today shows.
+      repeat {
+        await activity.loadSkipped(url, day: day)
+        guard activity.selectedDay == nil, day == activity.today else { return }
+        try? await Task.sleep(for: .seconds(ChartModel.liveReloadSeconds))
+      } while !Task.isCancelled
     }
     .task(id: sessionKey) {
       guard let url = model.connection.url, let status = model.status else { return }
@@ -79,6 +84,7 @@ struct ActivityView: View {
       guard let url = model.connection.url else { return }
       await activity.loadDays(url)
       if let selected = activity.selectedDay { await activity.show(selected, from: url) }
+      if let day = skippedKey.day { await activity.loadSkipped(url, day: day) }
     }
   }
 
@@ -637,7 +643,7 @@ private struct SkippedRow: View {
           .foregroundStyle(refused ? Palette.warningText : Palette.textTertiary)
           .background((refused ? Palette.warning : Palette.textTertiary).opacity(Tokens.Opacity.wash), in: Capsule())
         Spacer()
-        Text(verbatim: Format.time(signal.at.date))
+        Text(verbatim: Format.clock(signal.at.date))
           .font(Tokens.Typography.captionMono)
           .foregroundStyle(Palette.textTertiary)
       }
