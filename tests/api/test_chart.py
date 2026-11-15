@@ -26,6 +26,7 @@ from aperture.api.chart import (
 )
 from aperture.api.contract import ChartInterval, ChartRange
 from aperture.api.server import make_server, settings_from_config
+from aperture.broker.base import BrokerError
 from aperture.broker.budget import RequestBudget, RouteLimit
 from aperture.broker.webull import Route, WebullMarketData, WireResponse
 from aperture.calendar import NEW_YORK, SessionCalendar
@@ -504,16 +505,25 @@ def test_status_and_commands_answer_while_the_chart_client_builds(served, tmp_pa
     assert resp.status == 200 and doc(payload)["source"] == "fake"
 
 
-def test_a_failed_chart_client_build_is_503_with_its_cause(served, tmp_path):
+@pytest.mark.parametrize("error, shown, hidden", [
+    (BrokerError("token not confirmed in time"), "BrokerError: token not confirmed in time", None),
+    (RuntimeError("secret-ish"), "client build failed (RuntimeError)", "secret-ish"),
+])
+def test_a_failed_chart_client_build_is_503_with_its_cause(served, tmp_path, capsys, error,
+                                                           shown, hidden):
+    """Our own errors show their text; anything else (SDK text could carry a key or a token)
+    shows only its type, in the answer and on stderr."""
     def failing_build(cfg: config.Config) -> FakeMarketData:
-        raise RuntimeError("token not confirmed in time")
+        raise error
 
     builder = attach_chart_source(served, chart_on(tmp_path), failing_build)
     assert builder is not None
     builder.join(5)
     resp, payload = request(served, "GET", "/chart?symbol=ABCD&interval=5m&range=1d")
     assert resp.status == 503 and doc(payload)["error"] == "unavailable"
-    assert "RuntimeError: token not confirmed in time" in doc(payload)["cause"]
+    assert shown in doc(payload)["cause"]
+    if hidden is not None:
+        assert hidden not in payload.decode() and hidden not in capsys.readouterr().err
     resp, _ = request(served, "POST", "/commands/stop-bot", {})
     assert resp.status == 202
 

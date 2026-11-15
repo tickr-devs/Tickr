@@ -378,6 +378,13 @@ def test_bars_route_constant_is_the_adapter_route():
     assert Route.BARS.path == config.BARS_ROUTE
 
 
+@pytest.mark.parametrize("bad", ["/tmp/chart", "../chart", "a/b", "..", ".", "", "a\\\\b"])
+def test_chart_cache_dir_must_be_one_plain_folder(tmp_path, bad):
+    text = BOT.read_text("utf-8").replace('cache_dir = "chart"', f'cache_dir = "{bad}"', 1)
+    with pytest.raises(config.ConfigError, match="cache_dir must be one plain folder"):
+        config.load(_copy(tmp_path, text))
+
+
 def test_chart_cache_must_outlive_the_session_lookback(tmp_path):
     text = BOT.read_text("utf-8").replace("cache_max_age_days = 30", "cache_max_age_days = 13", 1)
     with pytest.raises(config.ConfigError, match="cache_max_age_days"):

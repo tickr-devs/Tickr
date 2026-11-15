@@ -20,6 +20,8 @@ from typing import Any, get_type_hints
 # request slice is carved from this route's limit, which must be counted per 60 s.
 BARS_ROUTE = "/market-data/stocks/bars/list"
 SECONDS_PER_MINUTE = 60
+# One folder name: no separator, no "..", never absolute (keeps a cache inside [run] data_dir).
+PLAIN_FOLDER = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class ConfigError(ValueError):
@@ -430,6 +432,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.live_ttl_seconds <= 0 or chart.session_lookback_days < 1:
         raise ConfigError("[chart] live_ttl_seconds must be above 0 and session_lookback_days "
                           "at least 1")
+    if not PLAIN_FOLDER.match(chart.cache_dir):
+        raise ConfigError("[chart] cache_dir must be one plain folder name under [run] data_dir "
+                          f"(letters, digits, '_' and '-'), not {chart.cache_dir!r}")
     if chart.cache_max_age_days < chart.session_lookback_days:
         raise ConfigError("[chart] cache_max_age_days must be at least session_lookback_days (a "
                           "pruned day a 1d or 5d range still reads is read again from Webull)")

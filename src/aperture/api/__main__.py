@@ -28,6 +28,7 @@ from aperture.api.server import (
     pair,
     settings_from_config,
 )
+from aperture.broker.base import BrokerError
 from aperture.data.base import MarketData
 
 CHART_STARTING = "chart market data is starting: its Webull client is still being built"
@@ -53,8 +54,13 @@ def attach_chart_source(
     def build_source() -> None:
         try:
             source = build(cfg)
-        except Exception as exc:  # AdapterConfigError (credentials, token) or anything else
+        except (BrokerError, config_module.ConfigError) as exc:  # our own texts: no secrets
             cause = f"chart market data unavailable: {type(exc).__name__}: {exc}"
+            server.chart.use(None, cause)
+            print(f"aperture api: GET /chart is off: {cause}", file=sys.stderr)
+            return
+        except Exception as exc:  # noqa: BLE001 - SDK text may carry a key or token: type only
+            cause = f"chart market data unavailable: client build failed ({type(exc).__name__})"
             server.chart.use(None, cause)
             print(f"aperture api: GET /chart is off: {cause}", file=sys.stderr)
             return
