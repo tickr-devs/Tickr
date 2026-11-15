@@ -24,13 +24,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aperture"
+            "value" : "Tickr"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aperture"
+            "value" : "Tickr"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Aperture"
+            "value" : "Open Tickr"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Открыть Aperture"
+            "value" : "Открыть Tickr"
           }
         }
       }
@@ -3135,13 +3135,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Chart"
+            "value" : "Open chart →"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Открыть график"
+            "value" : "Открыть график →"
           }
         }
       }
@@ -3516,6 +3516,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Покупательная способность"
+          }
+        }
+      }
+    },
+    "risk.clock" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ET"
           }
         }
       }
@@ -4172,13 +4189,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details"
+            "value" : "Details →"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подробнее"
+            "value" : "Подробнее →"
           }
         }
       }
@@ -5634,13 +5651,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Aperture in the menu bar"
+            "value" : "Show Tickr in the menu bar"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показывать Aperture в строке меню"
+            "value" : "Показывать Tickr в строке меню"
           }
         }
       }
@@ -6359,6 +6376,23 @@
         }
       }
     },
+    "trades.notEvaluated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not evaluated"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не проверен"
+          }
+        }
+      }
+    },
     "trades.noTrades" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6393,6 +6427,57 @@
         }
       }
     },
+    "trades.notTaken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Taken"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не взято"
+          }
+        }
+      }
+    },
+    "trades.notTakenEmpty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every entry signal of this day became a position."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все сигналы входа за этот день стали позициями."
+          }
+        }
+      }
+    },
+    "trades.notTakenUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot's API did not return the skipped signals: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API бота не вернул пропущенные сигналы: %@"
+          }
+        }
+      }
+    },
     "trades.quantity" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6423,6 +6508,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Причина"
+          }
+        }
+      }
+    },
+    "trades.refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refused"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отклонён"
           }
         }
       }
@@ -6610,6 +6712,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Если бы вошли…"
+          }
+        }
+      }
+    },
+    "trades.whatIfLevels" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What-if entry %1$@ · stop %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход был бы %1$@ · стоп %2$@"
           }
         }
       }

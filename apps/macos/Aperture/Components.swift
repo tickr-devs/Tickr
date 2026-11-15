@@ -50,7 +50,7 @@ struct PlannedTag: View {
   }
 }
 
-/// A capsule badge with a mono label in a role colour.
+/// A badge: a mono label in a role colour on a tinted, outlined tag.
 struct Badge: View {
   let text: Text
   let color: Color
@@ -74,8 +74,10 @@ struct Badge: View {
       .padding(.horizontal, Tokens.Space.s)
       .padding(.vertical, Tokens.Space.xs)
       .foregroundStyle(color)
-      .background(color.opacity(Tokens.Opacity.wash), in: Capsule())
-      .overlay(Capsule().strokeBorder(color.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.thin))
+      .background(color.opacity(Tokens.Opacity.wash), in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
+      .overlay(
+        RoundedRectangle(cornerRadius: Tokens.Radius.small)
+          .strokeBorder(color.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.thin))
   }
 }
 
@@ -138,8 +140,31 @@ struct StatLine: View {
   }
 }
 
+extension EnvironmentValues {
+  /// Whether cards grow to the height they are offered (cards sharing a grid row), instead of
+  /// hugging their content.
+  @Entry var cardFills = false
+}
+
+extension View {
+  /// Cards in this view grow to the height they are offered, so a grid row's cards line up.
+  func filling() -> some View {
+    environment(\.cardFills, true)
+  }
+}
+
+extension View {
+  /// A cell of a screen's card grid: grows with the window but asks for only a column's least
+  /// width, so a long line (a journal entry) cannot make the grid look too wide to fit.
+  func gridColumn() -> some View {
+    frame(minWidth: Tokens.Size.gridColumnMin, idealWidth: Tokens.Size.gridColumnMin, maxWidth: .infinity,
+      maxHeight: .infinity, alignment: .top)
+  }
+}
+
 /// A card: section label on top, optional trailing accessory, then the content.
 struct Card<Trailing: View, Content: View>: View {
+  @Environment(\.cardFills) private var fills
   let title: Text
   var tint: Color?
   let trailing: Trailing
@@ -168,14 +193,43 @@ struct Card<Trailing: View, Content: View>: View {
       content
     }
     .padding(Tokens.Space.l)
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-    .apertureCard(tint: tint)
+    .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
+    .apertureCard(radius: Tokens.Radius.large, tint: tint)
   }
 }
 
 extension Card where Trailing == EmptyView {
   init(_ title: LocalizedStringResource, tint: Color? = nil, @ViewBuilder content: () -> Content) {
     self.init(title, tint: tint, trailing: { EmptyView() }, content: content)
+  }
+}
+
+/// The design's command button: an outlined, softly filled rounded rectangle; a destructive one
+/// is drawn in the loss colour. Used for the bot controls on Overview and in the menu bar.
+struct CommandButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+  var destructive = false
+  var compact = false
+
+  /// How much a button shrinks while pressed.
+  static let pressedScale = 0.97
+
+  func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
+    let color = destructive ? Palette.lossText : Palette.textPrimary
+    configuration.label
+      .font(Tokens.Typography.button)
+      .foregroundStyle(color)
+      .padding(.horizontal, Tokens.Space.m)
+      .padding(.vertical, compact ? Tokens.Space.s : Tokens.Space.m)
+      .background(destructive ? Palette.loss.opacity(Tokens.Opacity.wash) : Palette.surfaceSunken, in: shape)
+      .overlay(
+        shape.strokeBorder(destructive ? Palette.loss.opacity(Tokens.Opacity.border) : Palette.separatorStrong,
+          lineWidth: Tokens.Stroke.thin))
+      .contentShape(shape)
+      .opacity(enabled ? 1 : Tokens.Opacity.faint)
+      .scaleEffect(configuration.isPressed ? Self.pressedScale : 1)
+      .animation(Tokens.Motion.quick, value: configuration.isPressed)
   }
 }
 
@@ -200,57 +254,6 @@ struct Footnote: View {
   }
 }
 
-/// The aperture mark: six blades turning slowly inside a ring.
-struct ApertureLogo: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  var size: CGFloat = Tokens.Size.logo
-
-  /// Number of blades.
-  static let blades = 6
-  /// Seconds for one full turn of the blades (slower than other rotating marks: it is decoration).
-  static let turnSeconds = 24.0
-  /// Blade start and end as a share of the radius, and the angle each blade spans, in radians.
-  static let bladeOuter = 0.75
-  static let bladeInner = 0.5
-  static let bladeSweep = 1.2
-  /// Radius of the centre dot as a share of the radius.
-  static let core = 0.22
-
-  var body: some View {
-    TimelineView(.animation(paused: reduceMotion)) { context in
-      let turn = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
-        .truncatingRemainder(dividingBy: Self.turnSeconds) / Self.turnSeconds
-      Canvas { graphics, canvas in
-        draw(in: graphics, size: canvas, turn: turn)
-      }
-    }
-    .frame(width: size, height: size)
-    .accessibilityHidden(true)
-  }
-
-  private func draw(in graphics: GraphicsContext, size canvas: CGSize, turn: Double) {
-    let radius = min(canvas.width, canvas.height) / 2
-    let center = CGPoint(x: canvas.width / 2, y: canvas.height / 2)
-    let ring = CGRect(origin: .zero, size: canvas).insetBy(dx: Tokens.Stroke.thin, dy: Tokens.Stroke.thin)
-    graphics.stroke(Path(ellipseIn: ring), with: .color(Palette.highlight), lineWidth: Tokens.Stroke.bold)
-    let full = Geometry.fullTurn
-    for blade in 0..<Self.blades {
-      let angle = (turn + Double(blade) / Double(Self.blades)) * full
-      var path = Path()
-      path.move(to: point(center, radius * Self.bladeOuter, angle))
-      path.addLine(to: point(center, radius * Self.bladeInner, angle + Self.bladeSweep))
-      graphics.stroke(path, with: .color(Palette.accent), style: StrokeStyle(lineWidth: Tokens.Stroke.bold, lineCap: .round))
-    }
-    let coreRadius = radius * Self.core
-    let core = CGRect(origin: center, size: .zero).insetBy(dx: -coreRadius, dy: -coreRadius)
-    graphics.fill(Path(ellipseIn: core), with: .color(Palette.highlight.opacity(Tokens.Opacity.overlay)))
-  }
-
-  private func point(_ center: CGPoint, _ distance: Double, _ angle: Double) -> CGPoint {
-    CGPoint(x: center.x + distance * cos(angle), y: center.y + distance * sin(angle))
-  }
-}
-
 /// Dates, times and numbers as the app shows them. Times are market time (New York); words come
 /// from the String Catalog.
 enum Format {
@@ -263,12 +266,14 @@ enum Format {
   /// Seconds in a minute.
   static let secondsPerMinute = 60
 
-  /// "10:42:08" in New York time (market time).
+  /// "14:42:08" in New York time (market time), 24-hour whatever the Mac's clock setting.
   static func marketTime(_ date: Date?) -> String {
     guard let date else { return missing }
-    var style = Date.FormatStyle(date: .omitted, time: .standard)
-    style.timeZone = newYork
-    return date.formatted(style)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = newYork
+    return date.formatted(Date.VerbatimFormatStyle(
+      format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
+      timeZone: newYork, calendar: calendar))
   }
 
   /// "14:42" in New York time, 24-hour (`.twoDigits(amPM: .omitted)` would show 02:42).
@@ -312,6 +317,11 @@ enum Format {
 
   /// "Momentum v3": a strategy and its version.
   static func strategy(_ strategy: StrategyId) -> String {
+    String(localized: L10n.Common.strategyVersion(strategy.name, strategy.version))
+  }
+
+  /// The same for a strategy named in a decision record.
+  static func strategy(_ strategy: StrategyRefV1) -> String {
     String(localized: L10n.Common.strategyVersion(strategy.name, strategy.version))
   }
 

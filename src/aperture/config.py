@@ -119,6 +119,8 @@ class ApiConfig:
     watching_max_rows: int
     watching_closeness_decimal_places: int
     flow_change_pct_decimal_places: int
+    performance_max_range_days: int
+    performance_decimal_places: int
 
 
 @dataclass(frozen=True)

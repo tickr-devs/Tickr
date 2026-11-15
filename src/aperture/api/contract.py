@@ -823,6 +823,62 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: 
     return WatchingV1(day=day, total=len(rows), rows=tuple(rows[:max_rows]))
 
 
+# ---------------------------------------------------------------- performance (read-only)
+
+
+@dataclass(frozen=True)
+class ExclusionV1:
+    """Closed trades left out of every performance number, counted by their single cause."""
+
+    cause: str
+    trades: int
+
+
+@dataclass(frozen=True)
+class PerformanceDayV1:
+    """One New York date with counted trades: its gross result and the running R total."""
+
+    day: date
+    trades: int
+    result_gross_r: Decimal
+    result_gross_usd: Decimal
+    cumulative_gross_r: Decimal  # from the first counted trade of the range to this day's end
+
+
+@dataclass(frozen=True)
+class PerformanceV1:
+    """GET /performance?from=&to=: gross (no fees) results of the trades closed in a range of
+    New York dates, in R (result / planned loss) and USD (docs/api.md). Each nullable number
+    has a `<name>_cause` that is null exactly when the number is not."""
+
+    environment: str
+    from_day: date
+    to_day: date
+    trades: int  # counted trades: closed in range, with a positive planned loss
+    wins: int
+    losses: int
+    scratches: int  # result exactly 0
+    exclusions: tuple[ExclusionV1, ...]
+    win_rate: Decimal | None  # wins / trades
+    win_rate_cause: str | None
+    expectancy_gross_r: Decimal | None
+    expectancy_gross_r_cause: str | None
+    expectancy_gross_usd: Decimal | None
+    expectancy_gross_usd_cause: str | None
+    average_win_gross_r: Decimal | None
+    average_win_gross_r_cause: str | None
+    average_loss_gross_r: Decimal | None  # negative
+    average_loss_gross_r_cause: str | None
+    profit_factor_gross: Decimal | None  # USD won / USD lost
+    profit_factor_gross_cause: str | None
+    max_drawdown_gross_r: Decimal  # largest fall from a running peak (start = 0), >= 0
+    max_drawdown_gross_usd: Decimal
+    result_gross_r: Decimal
+    result_gross_usd: Decimal
+    days: tuple[PerformanceDayV1, ...]
+    api_version: int = _const(API_VERSION)
+
+
 SCHEMA_TYPES: dict[str, type] = {
     "status-v1": StatusV1,
     "command-v1": CommandV1,
@@ -840,6 +896,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "skipped-v1": SkippedV1,
     "flow-v1": FlowV1,
     "watching-v1": WatchingV1,
+    "performance-v1": PerformanceV1,
     "account-v1": AccountV1,
     "account-response-v1": AccountResponseV1,
 }

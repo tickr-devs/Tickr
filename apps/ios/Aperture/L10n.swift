@@ -11,7 +11,7 @@ enum L10n {
 
   enum App {
     static var name: LocalizedStringResource {
-      LocalizedStringResource("app.name", defaultValue: "Aperture", bundle: L10n.bundle)
+      LocalizedStringResource("app.name", defaultValue: "Tickr", bundle: L10n.bundle)
     }
     static var home: LocalizedStringResource {
       LocalizedStringResource("app.home", defaultValue: "Home", bundle: L10n.bundle)
@@ -584,9 +584,34 @@ enum L10n {
     static var notTakenTitle: LocalizedStringResource {
       LocalizedStringResource("activity.notTakenTitle", defaultValue: "Signals not taken", bundle: L10n.bundle)
     }
-    static var notTakenBody: LocalizedStringResource {
-      LocalizedStringResource("activity.notTakenBody",
-        defaultValue: "Refused signals with their cause and a what-if result appear here once the bot's API publishes them.",
+    static var notTakenNone: LocalizedStringResource {
+      LocalizedStringResource("activity.notTakenNone",
+        defaultValue: "Every entry the strategy signalled that day was taken, or it signalled none.",
+        bundle: L10n.bundle)
+    }
+    static var notTakenFailed: LocalizedStringResource {
+      LocalizedStringResource("activity.notTakenFailed", defaultValue: "Couldn't read the skipped signals",
+        bundle: L10n.bundle)
+    }
+    static var refusedTag: LocalizedStringResource {
+      LocalizedStringResource("activity.refusedTag", defaultValue: "REFUSED", bundle: L10n.bundle)
+    }
+    static var tooLateTag: LocalizedStringResource {
+      LocalizedStringResource("activity.tooLateTag", defaultValue: "TOO LATE", bundle: L10n.bundle)
+    }
+    static func notTakenStale(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("activity.notTakenStale", defaultValue: "Last read shown; refresh failed: \(cause)",
+        bundle: L10n.bundle)
+    }
+    static func stopAfter(_ seconds: String) -> LocalizedStringResource {
+      LocalizedStringResource("activity.stopAfter", defaultValue: "stop confirmed in \(seconds) s", bundle: L10n.bundle)
+    }
+    static func excursion(_ mae: String, _ mfe: String) -> LocalizedStringResource {
+      LocalizedStringResource("activity.excursion", defaultValue: "MAE \(mae) · MFE \(mfe) (at least)",
+        bundle: L10n.bundle)
+    }
+    static func whatIf(_ entry: String, _ stop: String) -> LocalizedStringResource {
+      LocalizedStringResource("activity.whatIf", defaultValue: "what-if entry \(entry) · stop \(stop)",
         bundle: L10n.bundle)
     }
     static var nothingYet: LocalizedStringResource {
@@ -604,13 +629,29 @@ enum L10n {
     static var trades: LocalizedStringResource {
       LocalizedStringResource("lab.trades", defaultValue: "trades", bundle: L10n.bundle)
     }
-    static var observers: LocalizedStringResource {
-      LocalizedStringResource("lab.observers", defaultValue: "Observers and replays", bundle: L10n.bundle)
+    static var board: LocalizedStringResource {
+      LocalizedStringResource("lab.board", defaultValue: "Observers · never trade", bundle: L10n.bundle)
     }
-    static var observersBody: LocalizedStringResource {
-      LocalizedStringResource("lab.observersBody",
-        defaultValue: "How each observer version would have traded today, replays of past days and why signals were refused appear here once the bot's API publishes them. Approving a new version stays on the Mac.",
+    static var noObservers: LocalizedStringResource {
+      LocalizedStringResource("lab.noObservers", defaultValue: "No observers configured.", bundle: L10n.bundle)
+    }
+    static var noEntries: LocalizedStringResource {
+      LocalizedStringResource("lab.noEntries", defaultValue: "would not have entered", bundle: L10n.bundle)
+    }
+    static var noResult: LocalizedStringResource {
+      LocalizedStringResource("lab.noResult", defaultValue: "no simulated P&L", bundle: L10n.bundle)
+    }
+    static var later: LocalizedStringResource {
+      LocalizedStringResource("lab.later",
+        defaultValue: "Results are simulated from the captured bars; observers never trade. Approving a new version stays on the Mac.",
         bundle: L10n.bundle)
+    }
+    static func agreement(_ shared: Int, _ entered: Int, _ symbols: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.agreement",
+        defaultValue: "bot also traded \(shared) of \(entered): \(symbols)", bundle: L10n.bundle)
+    }
+    static func failed(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.failed", defaultValue: "Couldn't read the observers: \(cause)", bundle: L10n.bundle)
     }
   }
 
@@ -651,7 +692,7 @@ enum L10n {
     }
     static var notALink: LocalizedStringResource {
       LocalizedStringResource("pair.notALink",
-        defaultValue: "That link is not an Aperture pairing link.",
+        defaultValue: "That link is not a Tickr pairing link.",
         bundle: L10n.bundle)
     }
     static var notSaved: LocalizedStringResource {
