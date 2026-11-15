@@ -84,9 +84,7 @@ private struct GeneralSettings: View {
         SettingsCard(L10n.Settings.menuBar, footnote: Text(L10n.Settings.menuBarNote)) {
           SwitchRow(L10n.Settings.showInMenuBar, isOn: $showMenuBarExtra)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
         ThemeCard()
-          .frame(maxHeight: .infinity, alignment: .top)
       }
       .fixedSize(horizontal: false, vertical: true)
       JobsSection()
@@ -102,7 +100,6 @@ private struct GeneralSettings: View {
   /// The design's "Bot connection": the address in a mono field with Use Default and Connect, the
   /// connection's state under it with a dot, and what the address may be.
   private var connection: some View {
-    let unchanged = draft == model.baseURL.absoluteString
     let reachable = model.fetchError == nil
     return SettingsCard(L10n.Settings.botConnection,
       footnote: Text(L10n.Settings.addressFootnote(APIClient.defaultBaseURL.absoluteString))) {
@@ -122,10 +119,10 @@ private struct GeneralSettings: View {
           apply()
         }
         .buttonStyle(.action(.secondary, size: .compact))
+        // Connect with the same address reads the bot again at once, so it is never off.
         Button(String(localized: L10n.Settings.connect), action: apply)
-          .buttonStyle(.action(unchanged ? .secondary : .primary, size: .compact))
+          .buttonStyle(.action(.primary, size: .compact))
           .keyboardShortcut(.defaultAction)
-          .disabled(unchanged)
       }
       HStack(spacing: Tokens.Space.s) {
         PulseDot(reachable ? Palette.profit : Palette.loss, pulsing: reachable,
@@ -221,7 +218,6 @@ private struct TradingSettings: View {
             }
           }
         }
-        .frame(maxHeight: .infinity, alignment: .top)
         SettingsCard(L10n.Common.risk) {
           SettingsRow(L10n.Settings.plannedLoss, value: Format.usd(settings.risk.plannedLossUsd.value))
           SettingsRow(L10n.Settings.notionalCap, value: Format.usd(settings.risk.positionNotionalCapUsd.value))
@@ -229,7 +225,6 @@ private struct TradingSettings: View {
           SettingsRow(L10n.Settings.maxOpenPositions, value: "\(settings.risk.maxOpenPositions)")
           SettingsRow(L10n.Settings.maxQuoteAge, value: Format.seconds(settings.risk.maxQuoteAgeSeconds.value))
         }
-        .frame(maxHeight: .infinity, alignment: .top)
         SettingsCard(L10n.Settings.session) {
           SettingsRow(L10n.Settings.marketTimezone, value: settings.session.timezone)
           SettingsRow(L10n.Settings.lastEntry, value: Self.beforeClose(settings.session.lastEntryMinutesBeforeClose))
@@ -238,7 +233,6 @@ private struct TradingSettings: View {
             Text(settings.session.halfDaysEnabled ? L10n.Settings.traded : L10n.Settings.notTraded)
           }
         }
-        .frame(maxHeight: .infinity, alignment: .top)
       }
       .fixedSize(horizontal: false, vertical: true)
       Text(L10n.Settings.configFootnote)
@@ -334,7 +328,7 @@ private struct NotificationSettings: View {
               .font(Tokens.Typography.callout)
               .foregroundStyle(Palette.textSecondary)
             Text(group.kinds)
-              .font(Tokens.Typography.annotation)
+              .font(Tokens.Typography.captionMono)
               .foregroundStyle(Palette.textQuaternary)
           }
           .lineLimit(1)
@@ -733,12 +727,14 @@ private struct SessionStrip: View {
   /// A label at `x` (its leading edge, or its trailing edge when `trailing`), `y` from the top.
   private func mark(_ text: LocalizedStringResource, color: Color, x: CGFloat, y: CGFloat = 0,
     trailing: Bool = false) -> some View {
+    // A trailing label ends at `x`: it sits at the end of a frame that reaches from the strip's
+    // leading edge to `x` (an alignment guide would move the whole strip instead).
     Text(text)
       .font(Tokens.Typography.annotation)
       .foregroundStyle(color)
       .fixedSize()
-      .alignmentGuide(.leading) { trailing ? $0[.trailing] : $0[.leading] }
-      .offset(x: x - (trailing ? Tokens.Space.xs : 0), y: y)
+      .frame(width: trailing ? max(x - Tokens.Space.xs, 0) : nil, alignment: .trailing)
+      .offset(x: trailing ? 0 : x, y: y)
   }
 
   /// A planned stretch: the highlight's dashed outline over a light wash.

@@ -136,7 +136,8 @@ struct SettingsCard<Content: View, Trailing: View>: View {
           .padding(.top, Tokens.Space.xxs)
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    // Fills the height it is offered, so cards side by side in a row end level.
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .padding(Tokens.Space.l)
     .tickrCard(radius: Tokens.Radius.large)
   }
@@ -150,7 +151,7 @@ extension SettingsCard where Trailing == EmptyView {
 }
 
 /// A row of a Settings card: the label in the secondary text colour, the value at the trailing
-/// edge in small muted monospace (the design's "v1 · off", "on").
+/// edge in monospace (the board's key–value rows).
 struct SettingsRow<Value: View>: View {
   let label: Text
   let value: Value
@@ -166,15 +167,18 @@ struct SettingsRow<Value: View>: View {
   }
 
   var body: some View {
+    // The value keeps one line; a long label wraps instead, as on the board.
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       label
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Tokens.Space.m)
       value
         .font(Tokens.Typography.calloutMono)
-        .foregroundStyle(Palette.textQuaternary)
-        .multilineTextAlignment(.trailing)
+        .foregroundStyle(Palette.textPrimary)
+        .lineLimit(1)
+        .fixedSize()
     }
     .accessibilityElement(children: .combine)
   }
@@ -221,14 +225,18 @@ struct SwitchRow: View {
   }
 
   var body: some View {
-    Toggle(isOn: $isOn) {
+    // The switch first, then its title, as on the board.
+    HStack(spacing: Tokens.Space.m) {
+      Toggle(isOn: $isOn) { Text(title) }
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .tint(Palette.accent)
       Text(title)
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
+        .accessibilityHidden(true)
     }
-    .toggleStyle(.switch)
-    .controlSize(.small)
-    .tint(Palette.accent)
   }
 }
 
@@ -312,7 +320,7 @@ struct StatTile: View {
       } else {
         VStack(alignment: .leading, spacing: Tokens.Space.xs) {
           Text(verbatim: value)
-            .font(Tokens.Typography.chipValue)
+            .font(Tokens.Typography.metric)
             .foregroundStyle(Palette.textPrimary)
             .lineLimit(1)
             .minimumScaleFactor(Tokens.Shrink.standard)
