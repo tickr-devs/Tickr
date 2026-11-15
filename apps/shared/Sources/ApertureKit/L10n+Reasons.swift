@@ -287,6 +287,11 @@ extension L10n {
     LocalizedStringResource("kit.refusal.ORDER_PRICES_INVALID",
       defaultValue: "Limit {limit} outside the window {entry_low}–{entry_high}", bundle: bundle)
   }
+  /// A refused entry's detail (`refusal.params`), after the rule's title. ORDER_PRICES_INVALID stop (values: stop, limit)
+  static var refusalReasonOrderPricesInvalidStop: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.ORDER_PRICES_INVALID.stop",
+      defaultValue: "Needs 0 < stop {stop} < limit {limit}", bundle: bundle)
+  }
   /// A refused entry's detail (`refusal.params`), after the rule's title. QUOTE_SYMBOL_MISMATCH (values: quote_symbol, symbol)
   static var refusalReasonQuoteSymbolMismatch: LocalizedStringResource {
     LocalizedStringResource("kit.refusal.QUOTE_SYMBOL_MISMATCH",
@@ -310,7 +315,7 @@ extension L10n {
   /// A refused entry's detail (`refusal.params`), after the rule's title. PRICE_OUTSIDE_WINDOW (values: ask, entry_low, limit)
   static var refusalReasonPriceOutsideWindow: LocalizedStringResource {
     LocalizedStringResource("kit.refusal.PRICE_OUTSIDE_WINDOW",
-      defaultValue: "Ask {ask} outside {entry_low}–{limit}", bundle: bundle)
+      defaultValue: "Ask {ask} outside the entry range {entry_low}–{limit}", bundle: bundle)
   }
   /// A refused entry's detail (`refusal.params`), after the rule's title. QUANTITY_NOT_WHOLE (values: quantity)
   static var refusalReasonQuantityNotWhole: LocalizedStringResource {
@@ -337,5 +342,11 @@ extension L10n {
     LocalizedStringResource("kit.refusal.DAILY_CEILING",
       // swiftlint:disable:next line_length
       defaultValue: "Room {room} USD is under the minimum {min_room} USD (limit {ceiling}, realized {realized}, reserved {reserved})", bundle: bundle)
+  }
+  /// A refused entry's detail (`refusal.params`), after the rule's title. DAILY_CEILING total (values: realized, reserved, new, total, ceiling)
+  static var refusalReasonDailyCeilingTotal: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.DAILY_CEILING.total",
+      // swiftlint:disable:next line_length
+      defaultValue: "Realized {realized} + reserved {reserved} + this trade {new} = {total} USD, over the daily limit of {ceiling} USD", bundle: bundle)
   }
 }

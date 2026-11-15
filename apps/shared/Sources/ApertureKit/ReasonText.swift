@@ -26,3 +26,20 @@ extension ReasonParam {
     return result + rest
   }
 }
+
+/// One way the bot words a reason code (api/reasons.py shapes): the sentence, naming each value
+/// of `names` as {name}.
+public struct ReasonSentence: Sendable {
+  public let template: LocalizedStringResource
+  public let names: [ReasonParam]
+
+  public init(_ template: LocalizedStringResource, _ names: [ReasonParam]) {
+    self.template = template
+    self.names = names
+  }
+
+  /// The sentence with the values the bot sent; nil when one of them is missing.
+  public func text(_ params: [String: String]) -> String? {
+    ReasonParam.fill(String(localized: template), names: names, params: params)
+  }
+}

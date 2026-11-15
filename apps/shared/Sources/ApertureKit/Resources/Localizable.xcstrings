@@ -2299,7 +2299,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Последнее чтение брокера {age} с назад, предел {limit} с"
+            "value" : "Последнее чтение у брокера было {age} с назад, предел {limit} с"
           }
         }
       }
@@ -2354,6 +2354,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запас {room} USD меньше минимума {min_room} USD (лимит {ceiling}, реализовано {realized}, зарезервировано {reserved})"
+          }
+        }
+      }
+    },
+    "kit.refusal.DAILY_CEILING.total" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. DAILY_CEILING total",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Realized {realized} + reserved {reserved} + this trade {new} = {total} USD, over the daily limit of {ceiling} USD"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Реализовано {realized} + зарезервировано {reserved} + эта сделка {new} = {total} USD, больше дневного лимита {ceiling} USD"
           }
         }
       }
@@ -2484,6 +2502,24 @@
         }
       }
     },
+    "kit.refusal.ORDER_PRICES_INVALID.stop" : {
+      "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. ORDER_PRICES_INVALID stop",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs 0 < stop {stop} < limit {limit}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужно 0 < стоп {stop} < лимит {limit}"
+          }
+        }
+      }
+    },
     "kit.refusal.OUTSIDE_REGULAR_SESSION" : {
       "comment" : "A refused entry's detail (`refusal.params`), after the rule's title. OUTSIDE_REGULAR_SESSION",
       "extractionState" : "manual",
@@ -2581,13 +2617,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ask {ask} outside {entry_low}–{limit}"
+            "value" : "Ask {ask} outside the entry range {entry_low}–{limit}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Аск {ask} вне {entry_low}–{limit}"
+            "value" : "Аск {ask} вне диапазона входа {entry_low}–{limit}"
           }
         }
       }
@@ -2659,7 +2695,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Котировке {age} с, предел {limit} с"
+            "value" : "Котировка устарела: {age} с, предел {limit} с"
           }
         }
       }

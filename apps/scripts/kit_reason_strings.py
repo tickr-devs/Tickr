@@ -256,7 +256,7 @@ GROUPS = [
             (
                 "BROKER_READ_STALE",
                 "Last broker read {age} s ago, limit {limit} s",
-                "Последнее чтение брокера {age} с назад, предел {limit} с",
+                "Последнее чтение у брокера было {age} с назад, предел {limit} с",
             ),
             (
                 "CALENDAR_DAY_MISMATCH",
@@ -300,6 +300,12 @@ GROUPS = [
                 "Лимит {limit} вне окна {entry_low}–{entry_high}",
             ),
             (
+                "ORDER_PRICES_INVALID",
+                "Needs 0 < stop {stop} < limit {limit}",
+                "Нужно 0 < стоп {stop} < лимит {limit}",
+                "stop",
+            ),
+            (
                 "QUOTE_SYMBOL_MISMATCH",
                 "Quote for {quote_symbol}, decision for {symbol}",
                 "Котировка по {quote_symbol}, решение по {symbol}",
@@ -317,12 +323,12 @@ GROUPS = [
             (
                 "QUOTE_STALE",
                 "Quote {age} s old, limit {limit} s",
-                "Котировке {age} с, предел {limit} с",
+                "Котировка устарела: {age} с, предел {limit} с",
             ),
             (
                 "PRICE_OUTSIDE_WINDOW",
-                "Ask {ask} outside {entry_low}–{limit}",
-                "Аск {ask} вне {entry_low}–{limit}",
+                "Ask {ask} outside the entry range {entry_low}–{limit}",
+                "Аск {ask} вне диапазона входа {entry_low}–{limit}",
             ),
             (
                 "QUANTITY_NOT_WHOLE",
@@ -350,6 +356,14 @@ GROUPS = [
                 "(limit {ceiling}, realized {realized}, reserved {reserved})",
                 "Запас {room} USD меньше минимума {min_room} USD "
                 "(лимит {ceiling}, реализовано {realized}, зарезервировано {reserved})",
+            ),
+            (
+                "DAILY_CEILING",
+                "Realized {realized} + reserved {reserved} + this trade {new} = {total} USD, "
+                "over the daily limit of {ceiling} USD",
+                "Реализовано {realized} + зарезервировано {reserved} + эта сделка {new} = "
+                "{total} USD, больше дневного лимита {ceiling} USD",
+                "total",
             ),
         ],
     ),
@@ -381,24 +395,31 @@ def line_length_exemption(line):
 
 
 def entries():
-    """(enum, key, code, names, english, russian, doc) for every sentence."""
+    """(enum, key, code, variant, names, english, russian, doc) for every sentence. A code with
+    several shapes (api/reasons.py) has a sentence per shape, told apart by `variant`."""
     for enum, prefix, doc, items in GROUPS:
-        for code, en, ru in items:
+        for code, en, ru, *rest in items:
+            variant = rest[0] if rest else ""
             names = params(en)
             assert set(params(ru)) == set(names), code
-            yield enum, prefix + code, code, names, en, ru, f"{doc} {code}"
+            key = prefix + code + (f".{variant}" if variant else "")
+            yield enum, key, code, variant, names, en, ru, f"{doc} {code} {variant}".rstrip()
 
 
-def l10n_name(enum, code):
-    return f"{enum[:1].lower()}{enum[1:]}{pascal(code)}"
+def swift_names(names):
+    return ", ".join(f".{camel(n)}" for n in names)
+
+
+def l10n_name(enum, code, variant=""):
+    return f"{enum[:1].lower()}{enum[1:]}{pascal(code)}{pascal(variant)}"
 
 
 def l10n_swift():
     out = [HEADER, "", "import Foundation", "", "extension L10n {"]
-    for enum, key, code, names, en, _ru, doc in entries():
+    for enum, key, code, variant, names, en, _ru, doc in entries():
         out += [
             f"  /// {doc}" + (f" (values: {', '.join(names)})" if names else ""),
-            f"  static var {l10n_name(enum, code)}: LocalizedStringResource {{",
+            f"  static var {l10n_name(enum, code, variant)}: LocalizedStringResource {{",
             f'    LocalizedStringResource("{key}",',
             *line_length_exemption(f'      defaultValue: "{en}", bundle: bundle)'),
             "  }",
@@ -408,7 +429,7 @@ def l10n_swift():
 
 
 def reason_swift():
-    names = sorted({n for _e, _k, _c, ns, *_ in entries() for n in ns})
+    names = sorted({n for _e, _k, _c, _v, ns, *_ in entries() for n in ns})
     out = [
         HEADER,
         "",
@@ -428,35 +449,34 @@ def reason_swift():
             f"/// {doc} An unknown code has no case; show the bot's own text then.",
             f"public enum {enum}: String, CaseIterable, Sendable {{",
         ]
-        for code, *_ in items:
+        codes = list(dict.fromkeys(code for code, *_ in items))
+        for code in codes:
             out.append(f'  case {camel(code)} = "{code}"')
         out += [
             "",
-            "  /// The sentence, naming each value of `names` as {name}.",
-            "  public var template: LocalizedStringResource {",
+            "  /// The code's sentences (one per shape the bot writes it in), each with the",
+            "  /// values it names.",
+            "  public var sentences: [ReasonSentence] {",
             "    switch self {",
         ]
-        for code, *_ in items:
-            out.append(f"    case .{camel(code)}: L10n.{l10n_name(enum, code)}")
+        for code in codes:
+            parts = [
+                f"ReasonSentence(L10n.{l10n_name(enum, c, v)}, [{swift_names(ns)}])"
+                for e, _k, c, v, ns, *_ in entries()
+                if e == enum and c == code
+            ]
+            line = f"    case .{camel(code)}: [{', '.join(parts)}]"
+            if len(line) > LINE:
+                line = f"    case .{camel(code)}: [\n      " + ",\n      ".join(parts) + ",\n    ]"
+            out.append(line)
         out += [
             "    }",
             "  }",
             "",
-            "  /// The values the sentence names.",
-            "  public var names: [ReasonParam] {",
-            "    switch self {",
-        ]
-        for e, _key, code, ns, *_ in entries():
-            if e == enum:
-                listed = ", ".join(f".{camel(n)}" for n in ns)
-                out.append(f"    case .{camel(code)}: [{listed}]")
-        out += [
-            "    }",
-            "  }",
-            "",
-            "  /// The sentence with the values the bot sent; nil when one of them is missing.",
+            "  /// The first sentence whose values the bot all sent, filled in; nil when none",
+            "  /// fits.",
             "  public func text(_ params: [String: String]) -> String? {",
-            "    ReasonParam.fill(String(localized: template), names: names, params: params)",
+            "    sentences.lazy.compactMap { $0.text(params) }.first",
             "  }",
             "}",
             "",
@@ -476,8 +496,12 @@ def catalog_entry(en, ru, names, doc):
 
 
 def codes(enum):
-    """The codes of one group, with the values each sentence names."""
-    return {code: set(ns) for e, _k, code, ns, *_ in entries() if e == enum}
+    """The codes of one group, with the values each of its sentences names."""
+    found = {}
+    for e, _k, code, _v, ns, *_ in entries():
+        if e == enum:
+            found.setdefault(code, []).append(set(ns))
+    return found
 
 
 def check():
@@ -488,7 +512,7 @@ def check():
     if (KIT / "L10n+Reasons.swift").read_text() != l10n_swift():
         problems.append("L10n+Reasons.swift differs from the generator")
     strings = json.loads((KIT / "Resources/Localizable.xcstrings").read_text())["strings"]
-    for _enum, key, _code, names, en, ru, doc in entries():
+    for _enum, key, _code, _variant, names, en, ru, doc in entries():
         if strings.get(key) != catalog_entry(en, ru, names, doc):
             problems.append(f"catalog entry {key} differs from the generator")
     return problems
@@ -499,7 +523,7 @@ def write():
     (KIT / "L10n+Reasons.swift").write_text(l10n_swift())
     path = KIT / "Resources/Localizable.xcstrings"
     catalog = json.loads(path.read_text())
-    for _enum, key, _code, names, en, ru, doc in entries():
+    for _enum, key, _code, _variant, names, en, ru, doc in entries():
         catalog["strings"][key] = catalog_entry(en, ru, names, doc)
     catalog["strings"] = dict(sorted(catalog["strings"].items()))
     path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
