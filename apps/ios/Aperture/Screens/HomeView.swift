@@ -240,7 +240,7 @@ private struct Summary: View {
             }
             if !status.tradingGate.open {
               StateGlyph(Self.gateClosedSymbol, tone: .warning,
-                label: L10n.Home.gateClosed(status.tradingGate.cause), style: .compact)
+                label: L10n.Home.gateClosed(ApiText.gate(status.tradingGate)), style: .compact)
             }
             Badge(verbatim: status.strategy.version, tone: .highlight)
           }
@@ -260,7 +260,7 @@ private struct Summary: View {
         : L10n.Home.stopIs(position.symbol, Board.stopStateTitle(position.stop.state)))
     }
     parts.append(L10n.Home.strategy(status.strategy.name, status.strategy.version))
-    if !status.tradingGate.open { parts.append(L10n.Home.gateClosed(status.tradingGate.cause)) }
+    if !status.tradingGate.open { parts.append(L10n.Home.gateClosed(ApiText.gate(status.tradingGate))) }
     return parts.map { String(localized: $0) }.joined(separator: " ")
   }
 }

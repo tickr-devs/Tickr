@@ -172,7 +172,7 @@ private struct GateCard: View {
         value: String(localized: status.tradingGate.open ? L10n.Risk.gateOpen : L10n.Risk.gateClosed),
         color: status.tradingGate.open ? Palette.profitText : Palette.warningText)
       if !status.tradingGate.open {
-        Text(verbatim: status.tradingGate.cause)
+        Text(verbatim: ApiText.gate(status.tradingGate))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       }
