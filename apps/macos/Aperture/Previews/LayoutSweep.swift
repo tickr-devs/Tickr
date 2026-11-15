@@ -4,7 +4,7 @@ import ApertureKit
 import SwiftUI
 
 /// Layout sweep: with `sweepKey` set (and the fixtures, `PreviewAPI.fixturesKey`), the app walks
-/// every screen at each window size in `sizes`, with the Chart's inspector closed and open, keeps
+/// every screen at each window size in `sizes`, with the Chart's inspector and every study off and on, keeps
 /// a picture of the whole window (title bar and toolbar included) for each, then drags the window
 /// through every size between the largest and the smallest on every screen, and exits 0. A layout
 /// that cannot settle (AppKit's "Update Constraints in Window" loop) crashes the app instead, so
@@ -72,7 +72,7 @@ enum LayoutSweep {
       resize(window, to: size)
       for section in AppSection.allCases {
         for inspector in section == .chart ? [false, true] : [false] {
-          UserDefaults.standard.set(inspector, forKey: ChartView.Keys.decisions)
+          fullChart(inspector)
           model.section = section
           try? await Task.sleep(for: .seconds(settleSeconds))
           var parts = [sizeName, section.rawValue]
@@ -82,16 +82,16 @@ enum LayoutSweep {
         }
       }
     }
-    UserDefaults.standard.set(false, forKey: ChartView.Keys.decisions)
+    fullChart(false)
     let largest = named.map(\.1).max { $0.width * $0.height < $1.width * $1.height } ?? window.frame.size
     for section in AppSection.allCases {
       for inspector in section == .chart ? [false, true] : [false] {
-        UserDefaults.standard.set(inspector, forKey: ChartView.Keys.decisions)
+        fullChart(inspector)
         model.section = section
         await drag(window, from: largest)
       }
     }
-    UserDefaults.standard.set(false, forKey: ChartView.Keys.decisions)
+    fullChart(false)
   }
 
   /// Shrinks the window step by step from `largest` to the app's smallest size and back.
@@ -106,6 +106,18 @@ enum LayoutSweep {
       resize(window, to: size)
       try? await Task.sleep(for: .seconds(dragStepSeconds))
     }
+  }
+
+  /// The Chart's settings the sweep turns on together with the inspector: every study pane and
+  /// line, the state that once looped AppKit's layout until the app crashed.
+  static let fullChartKeys = [
+    ChartView.Keys.decisions, ChartView.Keys.movingAverages, ChartView.Keys.bollinger,
+    ChartView.Keys.macd, ChartView.Keys.rsi, ChartView.Keys.stochastic, ChartView.Keys.atr,
+  ]
+
+  /// The inspector with every study (`on`), or the inspector and the studies off.
+  private static func fullChart(_ on: Bool) {
+    for key in fullChartKeys { UserDefaults.standard.set(on, forKey: key) }
   }
 
   /// The main window (the SwiftUI scene `WindowID.main`).
