@@ -8,7 +8,7 @@ import XCTest
 /// The app reads the contract fixtures; every confirmation is cancelled.
 final class OverviewCommandsUITests: XCTestCase {
   /// Environment variable of the fixture API (PreviewAPI.fixturesKey in the app), and the value
-  /// that turns it and `smallestKey` on.
+  /// that turns it, `smallestKey` and `safetyFirstKey` on.
   static let fixturesKey = "TICKR_FIXTURES"
   static let fixturesOn = "1"
   /// Launch arguments of each language, without restoring windows saved by an earlier run.
@@ -27,13 +27,10 @@ final class OverviewCommandsUITests: XCTestCase {
   static let minWidth: CGFloat = 1000
   /// Environment variable that opens the window at its least size (LayoutSweep.smallestKey).
   static let smallestKey = "TICKR_SMALLEST_WINDOW"
-  /// Points between the window's top and the card once it is scrolled into view (the title bar
-  /// and some room), and how far in from the screen's left edge the scroll is aimed: in its
-  /// padding, beside the cards, so no card's own scroll view takes the wheel.
-  static let topRoom: CGFloat = 96
-  static let gutter: CGFloat = 4
-  /// Most turns of the wheel that bring the card into view.
-  static let scrollTurns = 4
+  /// Environment variable that opens Overview with the Safety · bot card at its top
+  /// (LayoutSweep.safetyFirstKey): every command is clicked where it stands, never after a
+  /// scroll, and away from the screen's bottom edge.
+  static let safetyFirstKey = "TICKR_OVERVIEW_SAFETY_FIRST"
   /// How long an element may take to appear, and how long a moving element must keep still
   /// before it is read or clicked, polled every `settlePoll`, in seconds.
   static let timeout: TimeInterval = 10
@@ -60,6 +57,7 @@ final class OverviewCommandsUITests: XCTestCase {
     app.launchArguments = arguments
     app.launchEnvironment[Self.fixturesKey] = Self.fixturesOn
     app.launchEnvironment[Self.smallestKey] = Self.fixturesOn
+    app.launchEnvironment[Self.safetyFirstKey] = Self.fixturesOn
     app.launch()
     let window = app.windows.firstMatch
     XCTAssertTrue(window.waitForExistence(timeout: Self.timeout), "no window after launch")
@@ -73,18 +71,7 @@ final class OverviewCommandsUITests: XCTestCase {
     XCTAssertTrue(screen.waitForExistence(timeout: Self.timeout), "overview screen")
     let card = app.descendants(matching: .any)[Self.safetyCard].firstMatch
     waitUntilStill(card, "safety card", in: app)
-    // Bring the card to the top of the window, clear of the Dock that can cover a window's foot
-    // on a small display (the least window is taller than the space above the Dock there).
-    // The wheel moves the page by up to its own distance per turn (the first turn after launch
-    // can move it less), so turn it until the card is there, at most `scrollTurns` times.
-    for _ in 0..<Self.scrollTurns {
-      let below = card.frame.minY - window.frame.minY - Self.topRoom
-      guard below > 0, card.frame.maxY > window.frame.maxY - Self.topRoom else { break }
-      screen.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: Self.gutter, dy: 0))
-        .scroll(byDeltaX: 0, deltaY: -below)
-      waitUntilStill(card, "safety card", in: app)
-    }
-    XCTAssertLessThanOrEqual(card.frame.maxY, window.frame.maxY, "the card is still below the window")
+    XCTAssertTrue(window.frame.contains(card.frame), "the card \(card.frame) is not wholly in the window \(window.frame)")
 
     let pause = card.buttons[Self.pause].firstMatch
     XCTAssertTrue(pause.waitForExistence(timeout: Self.timeout), "pause\n\(app.debugDescription)")
@@ -92,6 +79,7 @@ final class OverviewCommandsUITests: XCTestCase {
     for id in Self.confirmed {
       let button = card.buttons[id].firstMatch
       XCTAssertTrue(button.waitForExistence(timeout: Self.timeout), "\(id)\n\(app.debugDescription)")
+      waitUntilStill(button, id, in: app)
       assertInside(button, card, id)
       XCTAssertTrue(button.isEnabled, "\(id) is off")
       button.click()

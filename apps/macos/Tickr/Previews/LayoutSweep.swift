@@ -53,6 +53,11 @@ enum LayoutSweep {
   /// visible area: the UI tests of the narrowest window (OverviewCommandsUITests), where dragging
   /// a window's edge is unreliable.
   static let smallestKey = "TICKR_SMALLEST_WINDOW"
+  /// Environment variable that opens Overview scrolled so the Safety · bot card is at its top:
+  /// UI tests click its commands there, never after a scroll, and away from the screen's bottom
+  /// edge (where a hidden Dock rises over a click).
+  static let safetyFirstKey = "TICKR_OVERVIEW_SAFETY_FIRST"
+  static var safetyFirst: Bool { ProcessInfo.processInfo.environment[safetyFirstKey] != nil }
   /// Seconds between looks for the main window while it opens.
   static let windowPollSeconds = 0.1
 
