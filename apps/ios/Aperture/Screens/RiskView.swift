@@ -142,7 +142,7 @@ private struct GateCard: View {
   var body: some View {
     RiskCard(title: L10n.Risk.entries, tint: allowed ? nil : Palette.warning) {
       HStack(spacing: Tokens.Space.s) {
-        PulseDot(allowed ? Palette.profit : Palette.warning, pulsing: !allowed)
+        PulseDot(allowed ? Palette.profit : Palette.warning, event: allowed)
         Text(allowed ? L10n.Risk.allowed : L10n.Risk.blocked)
           .font(Tokens.Typography.body.bold())
           .foregroundStyle(allowed ? Palette.profitText : Palette.warningText)

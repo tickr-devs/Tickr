@@ -136,6 +136,7 @@ public struct BrandMark: View {
   }
 
   private func pulse() {
+    // decorative: the brand mark's spark is an ornament (owner, 2026-11-15).
     withAnimation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
       breathing = true
     }

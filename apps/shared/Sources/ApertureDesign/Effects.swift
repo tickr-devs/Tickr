@@ -62,7 +62,7 @@ struct EventPulse<S: Shape>: ViewModifier {
 
 extension View {
   /// One pulse of `shape`'s outline per change of `event`; still without one.
-  func eventPulse<S: Shape>(_ shape: S, color: Color, scale: CGFloat, event: AnyHashable?) -> some View {
+  public func eventPulse<S: Shape>(_ shape: S, color: Color, scale: CGFloat, event: AnyHashable?) -> some View {
     modifier(EventPulse(shape: shape, color: color, scale: scale, event: event))
   }
 }
@@ -252,6 +252,7 @@ public struct Marquee<Row: View>: View {
   public var body: some View {
     Group {
       if moving && !reduceMotion {
+        // decorative: the ticker scrolls as an ornament; its items change only on real events (owner, 2026-11-15).
         TimelineView(.animation) { context in
           let t = context.date.timeIntervalSinceReferenceDate
           let offset = contentWidth > 0 ? -CGFloat((t * speed).truncatingRemainder(dividingBy: Double(contentWidth))) : 0
