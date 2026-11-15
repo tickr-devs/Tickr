@@ -13,6 +13,7 @@ from tickr.config import GateResult
 from tickr.data.base import FakeMarketData
 from tickr.data.health import StreamHealth
 from tickr.engine.core import Engine
+from tickr.observers.loader import load_active
 from tickr.runtime.market import (
     DISCOVERY,
     DISCOVERY_FAILED,
@@ -49,6 +50,7 @@ class Rig:
                                     health=StreamHealth.from_config(CFG), inbox=self.inbox,
                                     capture=None, calendar=CALENDAR, now=lambda: self.now,
                                     monotonic=lambda: self.clock)
+        self.market.screen = load_active(CFG).strategy  # set by the caller once loaded
 
     def advance(self, seconds: float) -> None:
         self.clock += seconds
@@ -149,6 +151,13 @@ def test_discovery_waits_while_protection_needs_the_loop(tmp_path):
     assert rig.source.calls == [] and rig.store.journal(DISCOVERY) == []
     rig.market.tick()  # due at once once allowed again
     assert len(rig.store.journal(DISCOVERY)) == 1
+
+
+def test_discovery_needs_the_strategy_liquidity_rules(tmp_path):
+    rig = Rig(tmp_path)
+    rig.market.screen = None  # the active strategy did not load: no entries, no discovery
+    rig.market.tick()
+    assert rig.source.calls == [] and rig.market.discovery is None
 
 
 def test_discovery_never_runs_outside_the_session(tmp_path):
