@@ -57,13 +57,13 @@ Not started until the current work is finished: Monday Sandbox probes, the 5 cle
 Owner requirement (2026-11-15): every setting has exactly one source of truth. No value is written in two places, between platform and strategy or anywhere else; whoever needs a value reads it from its owner.
 
 ### A. One source of truth (remove today's duplicates)
-1. **Planned loss per trade** (50 USD) is in `config/bot.toml` `[risk] planned_loss_usd` and in `[sizing] planned_loss_usd` of all four strategies. Keep it on the platform only; the strategy receives it with its input and keeps only its sizing formula.
+1. **Planned loss per trade** (50 USD) is in `config/bot.toml` `[risk] planned_loss_usd` and in `[sizing] planned_loss_usd` of all four strategies. Keep it on the platform only (owner 2026-11-15); the strategy receives it with its input and keeps only its sizing formula.
 2. **Position notional cap** (2,500 USD) is in `[risk] position_notional_cap_usd` and in `[sizing] max_position_notional_usd` of all four strategies. Same fix as item 1.
 3. **Spread ceiling** (1.5%) is in `[market_data] max_spread_ratio` and in `[liquidity] max_spread_ratio` of all four strategies; **session dollar volume** (5M USD) is in `[market_data] min_session_dollar_volume_usd` and in `[liquidity] min_dollar_volume_usd` of price-action-v1 and v2. Strategy only (owner decision 2026-11-15; pull request in progress, merge after Monday). So that discovery does not load bars for every symbol, the strategy declares its pre-filter as data and the platform applies the union of the active strategy's and the observers' filters before loading bars.
 4. **History sessions** (5) is in `[market_data] history_sessions`, in `config/replay.toml` and implied by `relative_volume_sessions` / `prior_sessions` in the strategies. The strategy declares what it needs (`prior_sessions_needed` exists); the bot and the replay load the largest declared need.
 5. **`price-action-v2`** repeats all 23 values of `price-action-v1` and adds 3. A variant stores only its differences from the strategy it extends.
 6. **Smaller repeats**: `atr_period` in `config/research.toml`, `output_decimal_places` in `research.toml` and `replay.toml`.
-7. **Test**: a key that means the same thing may not exist at two levels; `tests/test_config.py` enforces it. The Sandbox and Production tables repeat nine equal values on purpose (spec section 4: Production inherits nothing from Sandbox); the owner decides whether that exception stays.
+7. **Test**: a key that means the same thing may not exist at two levels; `tests/test_config.py` enforces it. The Sandbox and Production tables repeat nine equal values on purpose (spec section 4: Production inherits nothing from Sandbox); that exception stays (owner 2026-11-15).
 
 ### B. Platform checks before real money
 8. **Tradability and halts**: the item "Tradability check before entry" above, plus a probe of how a trading halt and the LULD band show in Webull data, no entry into a halted symbol, and the open owner question about a position held through a halt.
