@@ -111,7 +111,7 @@ cannot be trusted. Clients should poll every `poll_seconds`.
 code and `attention` says how to show it. `attention: true` is a real block (trading gate,
 operator pause, a fence: the code is the fence name with `_`, a daily ceiling, strategy not
 loaded, `calendar_unknown`). `attention: false` is an ordinary state that passes on its own:
-`no_session_today`, `outside_regular_session`, `after_last_entry`, `open_position_limit`.
+`no_session_today`, `outside_regular_session`, `after_last_entry`, `own_trade_open`.
 `fences[].kind` is the bot's fence name, with its key after a colon when it has one
 (`foreign-position:ABCD`, `foreign-order:<client order id>`, `broker-read-failed:open-orders`,
 `unprotected:<trade>`): match the part before the colon.

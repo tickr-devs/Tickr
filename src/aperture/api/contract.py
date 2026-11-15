@@ -23,7 +23,7 @@ import re
 import types
 import uuid
 from collections.abc import Mapping
-from dataclasses import MISSING, dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from enum import StrEnum
@@ -61,6 +61,16 @@ class ContractError(ValueError):
 
 def _const(value: int) -> Any:
     return field(default=value, metadata={"const": value})
+
+
+ADDED_AFTER_V1 = "added_after_v1"
+
+
+def _added_later(default: Any) -> Any:
+    """A key added to version 1 after it shipped: a reader takes a document without it as
+    `default`; writers always write it. Every other key stays required on read, whatever
+    default its dataclass field has."""
+    return field(default=default, metadata={ADDED_AFTER_V1: True})
 
 
 # ---------------------------------------------------------------- enums
@@ -137,7 +147,7 @@ class EntryBlock:
 
     cause: str
     text: str
-    attention: bool = True
+    attention: bool = _added_later(True)
 
 
 @dataclass(frozen=True)
@@ -1162,15 +1172,16 @@ def _decode(where: str, raw: Any, hint: Any, meta: Any = None) -> Any:
 
 
 def from_jsonable(cls: type, raw: Any, where: str = "$") -> Any:
-    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys. A key added
-    to version 1 later has a default and may be absent, so a document written by an older bot
-    (a status file left on disk across an update) still reads; writers always write it."""
+    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys. Only a key
+    marked `_added_later` may be absent, so a document written by an older bot (a status file
+    left on disk across an update) still reads; a field's plain default never makes its key
+    optional (a flatten command without `symbol` is refused, not read as "everything")."""
     if not isinstance(raw, dict):
         raise ContractError(f"{where}: expected an object, got {type(raw).__name__}")
     hints = get_type_hints(cls)
     expected = [f.name for f in fields(cls)]
     unknown = sorted(set(raw) - set(expected))
-    optional = {f.name for f in fields(cls) if f.default is not MISSING and not f.metadata}
+    optional = {f.name for f in fields(cls) if f.metadata.get(ADDED_AFTER_V1)}
     missing = [name for name in expected if name not in raw and name not in optional]
     if unknown:
         raise ContractError(f"{where}: unknown keys: {', '.join(unknown)}")

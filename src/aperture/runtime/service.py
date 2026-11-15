@@ -508,7 +508,7 @@ class Service:
 
     def _ordinary_block(self) -> api.EntryBlock | None:
         """Why admission refuses every entry right now although nothing is wrong: no session,
-        outside the entry window, or the position limit is used. Reported with
+        outside the entry window, or a trade of our own is already open. Reported with
         `attention = False` so the apps can say "not now" without a warning. A calendar that
         cannot answer is a real block."""
         now = self.now()
@@ -539,12 +539,21 @@ class Service:
                 f"Past the last entry time ({times.last_entry.astimezone(NEW_YORK):%H:%M} "
                 "New York).",
                 attention=False)
-        limit = self.config.risk.max_open_positions
-        if len(self.engine.trades()) >= limit:
-            return api.EntryBlock("open_position_limit",
-                                  f"A position is already open (limit {limit}).",
+        if self._own_exposure():
+            return api.EntryBlock("own_trade_open", "The bot already has a trade open.",
                                   attention=False)
         return None
+
+    def _own_exposure(self) -> bool:
+        """What admission counts as our own position or working order: it refuses on either
+        before it looks at the position limit."""
+        for trade in self.engine.trades():
+            orders = self.engine.orders(trade.trade_id)
+            if self.engine.expected_quantity(orders) > 0:
+                return True
+            if any(o.live and o.leg is not Leg.STOP for o in orders):
+                return True
+        return False
 
     def _daily_money_block(self) -> api.EntryBlock | None:
         """Entries the daily ceiling refuses anyway: the room left is below

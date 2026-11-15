@@ -917,7 +917,7 @@ def test_status_says_calmly_that_the_position_limit_is_used(tmp_path):
     bot.service.state = api.BotState.RUNNING
     bot.engine.open_trade("ABC", D(2), D("10.00"), D("9.80"), D(1))
     block = bot.service._ordinary_block()
-    assert block is not None and (block.cause, block.attention) == ("open_position_limit", False)
+    assert block is not None and (block.cause, block.attention) == ("own_trade_open", False)
 
 
 def test_a_missing_calendar_is_a_real_block(tmp_path):

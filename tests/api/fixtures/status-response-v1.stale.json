@@ -15,8 +15,8 @@
     },
     "entry_stop": false,
     "entry_block": {
-      "cause": "open_position_limit",
-      "text": "One position is already open (limit 1).",
+      "cause": "own_trade_open",
+      "text": "The bot already has a trade open.",
       "attention": false
     },
     "fences": [
