@@ -53,22 +53,6 @@ private struct WatchingRow: View {
     row.closeness.map { NSDecimalNumber(decimal: $0.value).doubleValue }
   }
 
-  /// A compared value at a price's precision: the bot sends full-precision ratios.
-  static func measure(_ value: DecimalString?) -> String {
-    value.map { Money.measure($0.value) } ?? Format.missing
-  }
-
-  /// Measured, operator and threshold of a failed check. Where rounding would make two different
-  /// values look equal (a check that seems to pass), both show as the bot sent them.
-  static func compared(_ check: CheckV1) -> [String] {
-    let measured = measure(check.measured)
-    let threshold = measure(check.threshold)
-    if measured == threshold, let raw = check.measured, let limit = check.threshold, raw.value != limit.value {
-      return [raw.text, check.operator, limit.text]
-    }
-    return [measured, check.operator, threshold]
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
@@ -84,8 +68,8 @@ private struct WatchingRow: View {
           .foregroundStyle(Palette.textQuaternary)
       }
       if let check = row.decisiveCheck {
-        Text(verbatim: ([check.rule] + Self.compared(check))
-          .joined(separator: ChartFormat.space))
+        Text(verbatim: [check.rule, check.measured?.text ?? Format.missing, check.operator,
+          check.threshold?.text ?? Format.missing].joined(separator: ChartFormat.space))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textTertiary)
           .lineLimit(1)

@@ -23,14 +23,6 @@ func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale(identif
     #expect(Money.plain(d("0.125"), fractionDigits: 2) == "0.13")
   }
 
-  @Test("A measured value shows at a price's precision and keeps its sign")
-  func measure() {
-    #expect(Money.measure(d("17.365502714792463425")) == "17.37")
-    #expect(Money.measure(d("2.0")) == "2.00")
-    #expect(Money.measure(d("-0.041234")) == "\u{2212}0.0412")
-    #expect(Money.measure(d("-0.00001")) == "0.0000")
-  }
-
   @Test("A computed price shows at its tick, cents from a dollar and four decimals below")
   func price() {
     #expect(Money.price(d("12.345678901234567890123456789")) == "12.35")
