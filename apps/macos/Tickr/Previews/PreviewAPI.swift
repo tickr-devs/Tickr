@@ -95,6 +95,8 @@ final class FixtureProtocol: URLProtocol {
   static let labReplayFile = "lab-replay-v1.json"
   static let advisorPath = "/advisor"
   static let advisorFile = "advisor-runs-v1.json"
+  static let tradeWhatIfPath = "/trades/whatif"
+  static let tradeWhatIfFile = "trade-whatif-v1.json"
   /// HTTP status codes, version and the JSON content type of an answer.
   static let ok = 200
   static let notFound = 404
@@ -127,6 +129,7 @@ final class FixtureProtocol: URLProtocol {
     case jobsPath: return jobsFile
     case labReplayPath: return labReplayFile
     case advisorPath: return advisorFile
+    case tradeWhatIfPath: return tradeWhatIfFile
     default: return path.hasPrefix(daysPath + "/") ? dayFile : nil
     }
   }
