@@ -2,20 +2,26 @@ import XCTest
 
 /// Walks every screen of the app against a running bot API (for example `aperture demo`) and
 /// keeps a screenshot of the window on each, for comparing the app with the design. It sends no
-/// command: a confirmation is opened and cancelled. Skipped unless TOUR_API is set, so CI (which
-/// has no bot) never runs it.
+/// command: a confirmation is opened and cancelled. Runs only against `aperture demo`: skipped
+/// unless TOUR_API is set (so CI, which has no bot, never runs it) and its GET /status names the
+/// demo environment, so a wrong port can never point the tour at a real bot.
 ///
 /// Run on the Mac, once per appearance:
 ///   TEST_RUNNER_TOUR_API=http://127.0.0.1:8776 TEST_RUNNER_TOUR_APPEARANCE=Dark \
 ///   xcodebuild test -workspace Aperture.xcworkspace -scheme "Aperture macOS" \
 ///     -only-testing:"Aperture macOS UITests/ScreenTourUITests" -resultBundlePath tour.xcresult
 ///   xcrun xcresulttool export attachments --path tour.xcresult --output-path tour
-/// Environment: TOUR_API (the bot's API), TOUR_APPEARANCE (Light or Dark, default Light) and
-/// TOUR_LANGUAGE (default en).
+/// Environment: TOUR_API (the demo's API) and TOUR_APPEARANCE (Light or Dark, default Light).
+/// The app runs in English: the tour finds the standard menus and Cancel by their English titles.
 @MainActor
 final class ScreenTourUITests: XCTestCase {
   private static let defaultAppearance = "Light"
-  private static let defaultLanguage = "en"
+  /// The only language the tour runs the app in (its labels below are English).
+  private static let language = "en"
+  /// The environment `aperture demo` runs as (config/demo.toml [demo] environment).
+  private static let demoEnvironment = "demo"
+  /// GET path of the bot status (APIClient.statusPath).
+  private static let statusPath = "status"
   /// Seconds the screens get to load and finish their entrance animations.
   private static let settle: UInt32 = 3
   /// Seconds to wait for an element to appear.
@@ -44,10 +50,12 @@ final class ScreenTourUITests: XCTestCase {
     guard let api = environment["TOUR_API"] else {
       throw XCTSkip("TOUR_API is not set: the screen tour needs a running bot API")
     }
+    guard try await Self.environment(of: api) == Self.demoEnvironment else {
+      throw XCTSkip("TOUR_API \(api) is not `aperture demo`: the tour runs only on the demo")
+    }
     let appearance = environment["TOUR_APPEARANCE"] ?? Self.defaultAppearance
-    let language = environment["TOUR_LANGUAGE"] ?? Self.defaultLanguage
     app.launchArguments = ["-apiBaseURL", api, "-AppleInterfaceStyle", appearance,
-                           "-AppleLanguages", "(\(language))", "-ApplePersistenceIgnoreState", "YES"]
+                           "-AppleLanguages", "(\(Self.language))", "-ApplePersistenceIgnoreState", "YES"]
     app.launch()
     XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: Self.wait), "no window")
     app.menuBars.menuBarItems[Label.windowMenu].click()
@@ -127,6 +135,15 @@ final class ScreenTourUITests: XCTestCase {
   }
 
   // MARK: - helpers
+
+  /// The environment the bot behind `api` reports in GET /status (`status.environment`).
+  private static func environment(of api: String) async throws -> String? {
+    guard let url = URL(string: api)?.appending(path: statusPath) else { return nil }
+    let (data, _) = try await URLSession.shared.data(from: url)
+    let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    let status = body?["status"] as? [String: Any]
+    return status?["environment"] as? String
+  }
 
   private func shot(_ name: String, of element: XCUIElement? = nil) {
     let screenshot = (element ?? app.windows.firstMatch).screenshot()
