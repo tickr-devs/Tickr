@@ -40,7 +40,7 @@ private struct StatusBanner: View {
   var body: some View {
     let color = model.headline.severity.color
     HStack(spacing: Tokens.Space.s) {
-      PulseDot(color, event: model.headline.text)
+      PulseDot(color, event: model.headline.pulse)
       Text(verbatim: model.headline.text)
         .font(Tokens.Typography.callout.weight(.semibold))
         .foregroundStyle(color)
@@ -51,7 +51,7 @@ private struct StatusBanner: View {
     .padding(.vertical, Tokens.Space.s)
     .background(color.opacity(Tokens.Opacity.wash), in: .rect(cornerRadius: Tokens.Radius.medium))
     .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(color.opacity(Tokens.Opacity.border)))
-    .animation(Tokens.Motion.standard, value: model.headline)
+    .animation(Tokens.Motion.standard, value: model.headline.pulse)
   }
 }
 
