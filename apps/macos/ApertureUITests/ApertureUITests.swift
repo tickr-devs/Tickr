@@ -40,7 +40,8 @@ final class ApertureUITests: XCTestCase {
   @MainActor
   private func open(_ section: String, in app: XCUIApplication) {
     let row = app.descendants(matching: .any)[Self.rowPrefix + section].firstMatch
-    XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "sidebar row \(section)")
+    // On a miss the message carries the app's accessibility tree, so CI logs show what was there.
+    XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "sidebar row \(section)\n\(app.debugDescription)")
     row.click()
     let screen = app.descendants(matching: .any)[Self.screenPrefix + section].firstMatch
     XCTAssertTrue(screen.waitForExistence(timeout: Self.timeout), "screen \(section)")
