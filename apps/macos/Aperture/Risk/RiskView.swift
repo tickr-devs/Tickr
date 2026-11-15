@@ -377,7 +377,6 @@ private struct PositionSlots: View {
 private struct SessionCard: View {
   @Environment(AppModel.self) private var model
 
-
   var body: some View {
     Card(L10n.Risk.session) {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {

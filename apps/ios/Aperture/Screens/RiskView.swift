@@ -242,7 +242,6 @@ private struct LimitsCard: View {
 
 /// The trading session in New York time: the clock, the last entry and the flatten time.
 private struct SessionCard: View {
-
   let session: SessionSettings?
 
   var body: some View {
