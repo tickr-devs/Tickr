@@ -436,6 +436,33 @@ enum L10n {
   }
 
   enum Flow {
+    static func seen(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.seen", defaultValue: "\(count) seen", bundle: L10n.bundle)
+    }
+    static func stocks(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stocks", defaultValue: "\(count) stocks", bundle: L10n.bundle)
+    }
+    static func decided(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.decided", defaultValue: "\(count) decided", bundle: L10n.bundle)
+    }
+    static func passed(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.passed", defaultValue: "\(count) passed", bundle: L10n.bundle)
+    }
+    static func filled(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.filled", defaultValue: "\(count) filled", bundle: L10n.bundle)
+    }
+    static var chipGainers: LocalizedStringResource {
+      LocalizedStringResource("flow.chipGainers", defaultValue: "gainers", bundle: L10n.bundle)
+    }
+    static var chipLosers: LocalizedStringResource {
+      LocalizedStringResource("flow.chipLosers", defaultValue: "losers", bundle: L10n.bundle)
+    }
+    static var chipActives: LocalizedStringResource {
+      LocalizedStringResource("flow.chipActives", defaultValue: "actives", bundle: L10n.bundle)
+    }
+    static var chipSkipped: LocalizedStringResource {
+      LocalizedStringResource("flow.chipSkipped", defaultValue: "skipped", bundle: L10n.bundle)
+    }
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title",
         defaultValue: "Live flow · screeners → strategy → risk → order → broker stop",
@@ -1243,6 +1270,10 @@ enum L10n {
     static var noRecords: LocalizedStringResource {
       LocalizedStringResource("trades.noRecords", defaultValue: "No records", bundle: L10n.bundle)
     }
+    /// A refusal with the end of its window (a cooldown), New York time.
+    static func refusedUntil(_ message: String, _ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.refusedUntil", defaultValue: "\(message) · until \(time)", bundle: L10n.bundle)
+    }
     /// Stat card: average result in R.
     static var averageR: LocalizedStringResource {
       LocalizedStringResource("trades.averageR", defaultValue: "Average R", bundle: L10n.bundle)
@@ -1640,9 +1671,6 @@ enum L10n {
   }
   enum Screener {
     /// Pipeline stage value: symbols that reached the stage on the day.
-    static func symbols(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("screener.symbols", defaultValue: "\(count) symbols", bundle: L10n.bundle)
-    }
     /// Pipeline stop stage: trades whose broker-side stop the broker confirmed.
     static func stopsVerified(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("screener.stopsVerified", defaultValue: "\(verified) of \(total) verified", bundle: L10n.bundle)

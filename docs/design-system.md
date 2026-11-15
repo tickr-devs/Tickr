@@ -108,6 +108,11 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `chipValue` | `.headline` bold mono | Figures of metric chips, icon metrics, large delta tags |
 | `chevron` | `.caption2` bold | Chevrons and direction triangles |
 
+Sizes above are the Mac's (macOS has no Dynamic Type). On iOS every role follows a text style, so
+Dynamic Type scales it: `label`, `badge`, `annotation` → `.caption2`; `metric` → `.title2`; `hero`
+and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` → `.subheadline`;
+`stageSymbol` → `.title3`. At the default text size these match the design within a point or two.
+
 ## Lines (`Tokens.Stroke`)
 
 | Token | Value | Use |
@@ -146,6 +151,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `sparkline` | 34 | Sparkline height |
 | `bar` | 8 | Progress bar height |
 | `ticker` | 22 | Ticker strip height |
+| `flowChip` | 96 | Least width of a live-flow symbol chip |
 | `sideColumn` | 320 | Side column of cards |
 | `contentMaxWidth` | 1500 | Content stops growing and centres |
 | `shadowRadius` / `shadowOffset` | 10 / 6 | Light card shadow |
@@ -188,6 +194,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | Stat row | label … value | label `callout` `textTertiary`, value `bodyMono` |
 | Badge | `Badge` (ApertureDesign) | A fact (exit reason, environment, version): `Typography.badge`, tone text colour, `Opacity.wash` fill, `Opacity.border` stroke, `Radius.small`; `planned:` draws it dashed |
 | Command button | bot controls | `ActionButtonStyle` below |
+| Live-flow chips (Mac) | `Marquee` | The screeners' symbols scroll across the top of the live flow: symbol in `chip`, below it the screener and change % in `annotation`, coloured by screener (gainers `profitText`, top actives `infoText`, losers `seriesATRText`; left out of the universe `textQuaternary`, struck through); `surfaceSunken` fill, `separator` hairline, `Radius.medium`. The event ticker runs under the chips, alone while there are none |
 | Live-flow stage | pipeline | `Size.stage` circle, `Stroke.bold` ring and a soft glow in the stage colour; name in the stage's text colour |
 | Accent | `.tint` | `info` for links, selection and system controls on both apps, never the system blue |
 | Planned tag | BACKLOG / NEEDS API | `highlightText`, dashed `dashFine` outline, `Radius.small` |

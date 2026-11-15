@@ -91,6 +91,10 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 7. Broker token folder `<data_dir>/<token_dir>` exists.
 7b. No operator stop marker (cause `stopped-by-operator`): a stop-bot command from the apps
    left `<data_dir>/<[runtime] stop_marker_file>`; `aperture clear-stop` removes it.
+7c. The database, when it exists, holds runs of this environment only (cause
+   `database-other-environment`; `database-unreadable` when it cannot be opened). After
+   changing `[run] environment`, move `data/aperture.sqlite3` aside and keep it: the apps then
+   no longer show the other environment's days.
 8. The active strategy builds and `[market_data] history_sessions` covers its history need. A
    failure is reported, but the bot still starts with entries off so it can protect positions.
 9. Broker token usable (only when no earlier check blocks the start and today has a session):
@@ -129,9 +133,13 @@ All checks are reported; the first failure is the recorded cause.
 4. Alerts: sign in to iMessage in the Messages app on this Mac (Messages > Settings > iMessage)
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m aperture.runtime alert preflight-failed "test"` once. You should get a
-   notification on the Mac and an iMessage on the phone. macOS shows notifications from
-   `osascript` under "Script Editor"; allow them in System Settings > Notifications if nothing
-   appears. The first iMessage send asks to let Terminal control Messages: allow it. This only
+   notification on the Mac and an iMessage on the phone. The Mac notification comes from the
+   Tickr app, with its icon, when the app is at `[alerts] mac_app` (default
+   `/Applications/Tickr.app`: in Xcode, Product > Archive, then Distribute App > Copy App, and
+   put it there under that name). Open it once and allow notifications when it asks. When the
+   app is missing, notifications for it are off, or it fails, the same notification comes from
+   `osascript` instead, under "Script Editor" (allow those in System Settings > Notifications
+   too), so an alert is never lost; a slow app can at worst show it twice. The bot waits at most `[alerts] mac_app_timeout_seconds` for the app. The first iMessage send asks to let Terminal control Messages: allow it. This only
    covers Terminal; the launchd jobs need their own permission (see "Alerts from launchd"
    below). The first JSON line is the Mac notification (`"delivery": "shown"`,
    `"pending": ["imessage"]`); a second line with `"channel": "imessage"` follows with the
@@ -256,6 +264,26 @@ result is journaled as its own `alert` record (`"channel": "imessage"`) once kno
 counts as shown, for repeat suppression, when either channel delivered it.
 The same kind and text inside `[alerts] dedupe_window_seconds` is shown once; every occurrence is
 still recorded (in the bot's journal, the watchdog's journal, or the job log for these commands).
+
+### `broker-reads-failing`
+
+Entries are refused while a positions or open-orders read fails (`broker-read-failed`, or
+`broker-read-failed:open-orders`, which only a successful reconciliation clears). The bot
+still reads order Detail and keeps the stops; it closes no trade and sends no closing order
+until positions can be read again.
+
+### `unknown-order-status` on a closing order or stop
+
+A sell whose send outcome is unknown is not given up on while the account holds fewer shares
+than the bot's orders explain: it may have filled. If the alert stays, look in the Webull app.
+If the shares were sold there by hand and the bot's order never arrived, the bot keeps waiting
+for it and the rest of the position may have no stop: close it in the Webull app.
+
+### `refused: the database holds runs of environment ...`
+
+One database belongs to one environment (spec section 10). After changing `[run] environment`,
+move `data/aperture.sqlite3` aside (keep it) or point `[run] data_dir` at another folder; the
+bot and the manual commands refuse to start on another environment's records.
 
 ## Fill to stop
 
