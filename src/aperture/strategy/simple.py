@@ -1,4 +1,4 @@
-"""Shared pieces for simple bar-signal strategies (volume-shock-v1, noise-band-v1).
+"""Shared pieces for simple bar-signal strategies (volume-shock-v1).
 
 A simple strategy decides on the last completed M1 bar whether its signal fires for the first
 time this session, and then turns it into an ENTER with one stop through `enter`. Exits are
@@ -91,8 +91,9 @@ def previous_close(context: SymbolContext) -> Decimal | None:
 
 
 def first_signal(session: Sequence[Bar], fires: Callable[[int], bool]) -> Check:
-    """The signal must fire on the last bar and on no earlier bar of the session (one entry
-    per symbol and session, decided from the bars alone, so a restart changes nothing)."""
+    """The signal must fire on the last bar and on no earlier bar of the session, decided from
+    the bars alone so a restart changes nothing. This is one signal bar per symbol and
+    session: if the quote does not allow an entry during that minute, the session is spent."""
     last = len(session) - 1
     earlier = next((i for i in range(last) if fires(i)), None)
     if earlier is not None:
@@ -111,8 +112,9 @@ def enter(strategy: Any, c: Common, context: SymbolContext, checks: list[Check],
           setup: str, signal_close: Decimal, stop_level: Decimal) -> Decision:
     """WATCH without a quote; otherwise ENTER when the ask is inside the window around the
     signal close (entry_window_percent below and above it), the spread is acceptable and
-    the stop (the lower of `stop_level` and the minimum distance below the ask) sizes to at
-    least one share."""
+    the stop sizes to at least one share. The stop is the lower of `stop_level` and the
+    minimum stop distance below the window's floor, so stop < entry_low always holds (the
+    platform's admission shape)."""
     window = c.entry_window_percent / PERCENT
     entry_low, entry_high = signal_close * (ONE - window), signal_close * (ONE + window)
     levels = {"setup": setup, "trigger": signal_close, "invalidation": stop_level}
@@ -137,7 +139,7 @@ def enter(strategy: Any, c: Common, context: SymbolContext, checks: list[Check],
         checks.append(v1._check("ask_not_below_price_window", quote.ask, ">=", entry_low))
     if not checks[-1].passed:
         return ignore()
-    stop = min(stop_level, quote.ask * (ONE - c.minimum_stop_percent / PERCENT))
+    stop = min(stop_level, entry_low * (ONE - c.minimum_stop_percent / PERCENT))
     checks.append(v1._check("stop_below_bid", stop, "<", quote.bid))
     if not checks[-1].passed:
         return ignore()

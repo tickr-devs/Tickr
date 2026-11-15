@@ -1,4 +1,4 @@
-"""Strategy volume-shock-v1: buy an early volume shock in a stock that is up a little (an
+"""Strategy volume-shock-v1: buy a volume shock in a stock that is up a little (an
 observer candidate from docs/strategy-ledger.md L4, never the active strategy unless the owner
 selects it).
 
@@ -7,12 +7,17 @@ Values come from `strategies/volume-shock-v1/strategy.toml`. On the last complet
 1. The previous session's last close is at least `min_previous_close_usd`, and the bar's
    close is between `change_min_percent` and `change_max_percent` above it.
 2. The volume of the last `volume_window_bars` bars is at least `volume_shock_multiple` times
-   the median volume of the same New York minutes over the `prior_sessions` prior sessions
-   (every one of them must be present).
+   the median volume of the same New York minutes over the `prior_sessions` prior sessions.
+   Every prior session must hold every one of those minutes; a missing minute (half day,
+   halt, data gap) means no signal on that bar, and on the last bar a failed
+   `prior_window_complete` check. Today's window must be consecutive minutes too.
 3. The bar closes in the top of its range: (close - low) / (high - low) >= `close_location_min`.
-4. This is the first bar of the session where 1-3 hold (one entry per symbol and session).
+4. This is the first bar of the session where 1-3 hold. That is one signal bar per symbol and
+   session: if the quote does not allow an entry during that minute, the session is spent.
 
-Then ENTER with the stop at the signal bar's low (or lower, at the minimum stop distance) and
+There is no time-of-day limit (the history test had none); the platform's last-entry time
+applies. Then ENTER with the stop at the signal bar's low (or lower, at the minimum stop
+distance below the entry window) and
 the exit left to the platform's session flatten. The history test (L4) is positive only on days
 that later became gainers, which is look-ahead; this module exists to test it live, where the
 universe is the bot's own and nothing can look ahead.
@@ -59,8 +64,8 @@ class Signal:
     close_location_min: Decimal
 
 
-def _window_volume(bars: Sequence[Bar], first: time, last: time) -> Decimal:
-    return sum((b.volume for b in bars if first <= ind.ny_time(b) <= last), simple.ZERO)
+def _volume_by_minute(bars: Sequence[Bar]) -> dict[time, Decimal]:
+    return {ind.ny_time(b): b.volume for b in bars}
 
 
 class VolumeShockV1:
@@ -95,24 +100,42 @@ class VolumeShockV1:
         low = previous * (simple.ONE + s.change_min_percent / simple.PERCENT)
         high = previous * (simple.ONE + s.change_max_percent / simple.PERCENT)
 
+        window = s.volume_window_bars
+        minutes = [ind.ny_time(b) for b in session]
+        prior_volume = [_volume_by_minute(p) for p in prior]
+
+        def normal(i: int) -> Decimal | None:
+            """Median prior volume of the window ending at bar i; None if any minute is
+            missing in any prior session."""
+            span = minutes[i + 1 - window:i + 1]
+            totals = []
+            for volumes in prior_volume:
+                if any(m not in volumes for m in span):
+                    return None
+                totals.append(sum((volumes[m] for m in span), simple.ZERO))
+            return median(totals)
+
         def fires(i: int) -> bool:
-            if i + 1 < s.volume_window_bars:
+            if i + 1 < window:
                 return False
             bar = session[i]
             if not low <= bar.close <= high or bar.high <= bar.low:
                 return False
             if (bar.close - bar.low) / (bar.high - bar.low) < s.close_location_min:
                 return False
-            last = ind.ny_time(bar)
-            first = ind.ny_time(session[i + 1 - s.volume_window_bars])
-            if (bar.start - session[i + 1 - s.volume_window_bars].start) != (
-                    s.volume_window_bars - 1) * M1:
-                return False  # a missing minute: the window is not the same minutes
-            normal = median(_window_volume(p, first, last) for p in prior)
-            mine = sum((b.volume for b in session[i + 1 - s.volume_window_bars:i + 1]),
-                       simple.ZERO)
-            return mine >= s.volume_shock_multiple * max(normal, simple.ONE)
+            if bar.start - session[i + 1 - window].start != (window - 1) * M1:
+                return False  # a missing minute today: the window is not the same minutes
+            usual = normal(i)
+            if usual is None or usual <= simple.ZERO:
+                return False
+            mine = sum((b.volume for b in session[i + 1 - window:i + 1]), simple.ZERO)
+            return mine >= s.volume_shock_multiple * usual
 
+        last_index = len(session) - 1
+        if last_index + 1 >= window and normal(last_index) is None:
+            checks.append(v1._flag("prior_window_complete", False,
+                                   "a prior session lacks a minute of the volume window"))
+            return ignore()
         checks.append(simple.first_signal(session, fires))
         if not checks[-1].passed:
             return ignore()
@@ -124,6 +147,8 @@ def create(values: Mapping[str, Any]) -> VolumeShockV1:
     """Build the strategy from parsed strategy.toml values (ValueError on any key problem)."""
     flat = simple.parse(values, _SIGNAL, NAME)
     signal = Signal(**{k: flat[k] for k in Signal.__dataclass_fields__})
+    if signal.close_location_min > simple.ONE:
+        raise ValueError("[signal] close_location_min must be at most 1")
     if signal.change_min_percent >= signal.change_max_percent:
         raise ValueError("[signal] change_min_percent must be below change_max_percent")
     return VolumeShockV1(simple.common(flat), signal)

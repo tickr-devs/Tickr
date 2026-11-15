@@ -58,22 +58,38 @@ def test_shock_without_quote_is_watch_with_levels():
     assert all(c.passed for c in decision.checks)
 
 
-def test_shock_with_quote_enters_with_stop_at_the_signal_bar_low():
+def admissible_shape(decision):
+    """The platform's admission shape: 0 < stop < entry_low <= entry_high."""
+    return d(0) < decision.stop < decision.entry_low <= decision.entry_high
+
+
+def test_shock_with_quote_enters_below_the_window_floor():
     decision = make().evaluate(ctx(shock(), quote("20.40", "20.42")))
     assert decision.verdict is Verdict.ENTER
-    assert decision.stop == d("20.3")
-    assert decision.entry_low < d("20.42") <= decision.entry_high
-    # planned loss 50 / (entry_high 20.502 - 20.3 + 0.02) = 225; notional 2500 / 20.502 = 121
+    assert admissible_shape(decision)
+    # the signal-bar low 20.3 is above entry_low 20.298 x 0.995, so the minimum distance wins
+    assert decision.entry_low == d("20.4") * d("0.995")
+    assert decision.stop == decision.entry_low * d("0.995")
+    assert decision.entry_low <= d("20.42") <= decision.entry_high
+    # notional cap 2500 / entry_high 20.502 = 121 is below the loss sizing
     assert decision.quantity == 121
 
 
-def test_a_close_low_is_replaced_by_the_minimum_stop_distance():
+def test_a_low_far_below_is_the_stop():
     bars = shock()
-    last = bars[-1]
-    bars[-1] = bar(TODAY, len(bars) - 1, 20.38, 20.4, 20.38, 20.4, 80_000)
+    bars[-1] = bar(TODAY, len(bars) - 1, 20.0, 20.4, 19.9, 20.4, 80_000)
     decision = make().evaluate(ctx(bars, quote("20.40", "20.42")))
     assert decision.verdict is Verdict.ENTER
-    assert decision.stop == d("20.42") * d("0.995") < last.low + d("0.1")
+    assert decision.stop == d("19.9") and admissible_shape(decision)
+
+
+def test_loss_budget_sizes_down():
+    bars = shock()
+    q = quote("20.40", "20.42")
+    full = make().evaluate(ctx(bars, q))
+    small = make().evaluate(SymbolContext(SYMBOL, bars, prior_sessions(), q, None, d("5")))
+    assert small.verdict is Verdict.ENTER and small.quantity < full.quantity
+    assert ("daily_loss_budget_usd", True) in rules(small)
 
 
 def test_only_the_first_signal_of_the_session_counts():
@@ -121,16 +137,26 @@ def test_open_position_is_held():
     assert make().evaluate(ctx(shock(), position=position)).verdict is Verdict.HOLD
 
 
-def test_no_look_ahead_appending_bars_never_changes_an_earlier_decision():
-    bars = shock(count=12, at=7)
-    before = make().evaluate(ctx(bars[:10]))
-    after_more = make().evaluate(ctx(bars[:10] + quiet(14)[12:]))
-    assert before == make().evaluate(ctx(bars[:10]))
-    assert after_more.verdict is not Verdict.ENTER or before.verdict is Verdict.WATCH
+def test_no_look_ahead_the_signal_fires_only_on_its_bar_and_later_bars_change_nothing():
+    bars = shock(count=14, at=8)
+    verdicts = [make().evaluate(ctx(bars[:k])).verdict for k in range(1, len(bars) + 1)]
+    assert verdicts.index(Verdict.WATCH) == 8 and verdicts.count(Verdict.WATCH) == 1
+    altered = bars[:9] + [bar(TODAY, i, 30, 31, 29, 30, 500_000) for i in range(9, 14)]
+    assert make().evaluate(ctx(altered[:9])) == make().evaluate(ctx(bars[:9]))
+    assert rules(make().evaluate(ctx(altered)))[-1] == ("first_signal_of_session", False)
+
+
+def test_a_minute_missing_in_a_prior_session_is_refused_not_zero():
+    prior = prior_sessions()
+    prior[2] = prior[2][:7] + prior[2][8:]  # minute 7 missing on one prior day
+    decision = make().evaluate(ctx(shock(count=10, at=9), prior=prior))
+    assert decision.verdict is Verdict.IGNORE
+    assert rules(decision)[-1] == ("prior_window_complete", False)
 
 
 @pytest.mark.parametrize("section,key,value", [
     ("signal", "change_min_percent", 3.0),
+    ("signal", "close_location_min", 1.5),
     ("signal", "volume_window_bars", 0),
     ("signal", "extra", 1),
 ])
