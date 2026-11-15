@@ -19,6 +19,12 @@ struct DecisionsInspector: View {
 
   var body: some View {
     content
+      // A fixed least and largest size, whatever the content: the inspector column reported the
+      // size of its rows (wrapped texts, a spinner, then the list), the split view resized the
+      // column inside its own layout pass, the new width changed that size again, and on
+      // macOS 27 AppKit threw ("needs another Update Constraints in Window pass") on opening
+      // the Chart with the inspector shown.
+      .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
       .accessibilityIdentifier(Self.contentID)
       .inspectorColumnWidth(min: Self.minWidth, ideal: Self.idealWidth, max: Self.maxWidth)
   }
