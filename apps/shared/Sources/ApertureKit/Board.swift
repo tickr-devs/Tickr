@@ -49,6 +49,7 @@ public enum Board {
   static let positionID = "position-"
   static let fenceID = "fence-"
   static let commandID = "command-"
+  static let refusalID = "refusal-"
   static let enterID = "-enter"
   static let exitID = "-exit"
   static let openID = "-open"
@@ -94,6 +95,22 @@ public enum Board {
         tone: record.outcome == .done ? .blue : .red))
     }
     return events.sorted { $0.time == $1.time ? $0.id > $1.id : $0.time > $1.time }
+  }
+
+  /// Between a refused symbol and why it was refused.
+  public static let refusalGap = " "
+
+  /// The newest thing that happened today, for the event line: the first of `events(status)` or
+  /// the latest risk refusal in `skipped`, whichever came later. The status does not list
+  /// refusals, but a refused entry is an event too.
+  public static func latestEvent(_ status: StatusV1, skipped: SkippedV1?) -> Event? {
+    let event = events(status).first
+    let refusal = skipped?.signals.filter { $0.admission == .refused }.max { $0.at.date < $1.at.date }.map {
+      Event(id: "\(refusalID)\($0.symbol)", time: $0.at.date, tag: String(localized: L10n.tagRefused),
+        text: [$0.symbol, FlowBoard.note($0)].compactMap { $0 }.joined(separator: refusalGap), tone: .amber)
+    }
+    guard let event, let refusal else { return event ?? refusal }
+    return refusal.time > event.time ? refusal : event
   }
 
   public static func stopTag(_ state: StopState) -> String {

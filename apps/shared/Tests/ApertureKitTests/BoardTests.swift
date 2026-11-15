@@ -21,6 +21,19 @@ import Testing
     #expect(Board.positions(try status("status-response-v1.minimal.json")).isEmpty)
   }
 
+  @Test("The event line shows the latest of the status's events and the risk refusals")
+  func latestEventIncludesRefusals() throws {
+    let status = try status("status-response-v1.json")
+    #expect(Board.latestEvent(status, skipped: nil) == Board.events(status).first)
+    // ZNTH was refused at 15:35, after everything the status lists (15:00); WXYZ, later still,
+    // was not evaluated, so it is no refusal.
+    let skipped = try Wire.decoder().decode(SkippedV1.self, from: fixture("skipped-v1.json"))
+    let latest = try #require(Board.latestEvent(status, skipped: skipped))
+    #expect(latest.tag == String(localized: L10n.tagRefused))
+    #expect(latest.text == "ZNTH" + Board.refusalGap + "ZNTH closed at a loss; no new entry in it during the cooldown")
+    #expect(latest.tone == .amber)
+  }
+
   /// The fixture's status with a second open position, EFGH, whose stop is still pending.
   func twoPositions() throws -> StatusResponseV1 {
     var response = try #require(try JSONSerialization.jsonObject(with: fixture("status-response-v1.json")) as? [String: Any])

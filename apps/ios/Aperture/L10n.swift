@@ -311,9 +311,6 @@ enum L10n {
 
   enum Flow {
     /// The event line's tag for a signal risk refused: "REFUSED".
-    static var refusedTag: LocalizedStringResource {
-      LocalizedStringResource("flow.refusedTag", defaultValue: "refused", bundle: L10n.bundle)
-    }
     /// VoiceOver label of a stage's refused tray: "2 refused".
     static func refusedCount(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.refusedCount", defaultValue: "\(count) refused", bundle: L10n.bundle)

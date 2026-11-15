@@ -3932,23 +3932,6 @@
         }
       }
     },
-    "flow.refusedTag" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "refused"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "отказ"
-          }
-        }
-      }
-    },
     "flow.risk" : {
       "extractionState" : "manual",
       "localizations" : {
