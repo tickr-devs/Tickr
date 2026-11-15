@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from aperture.api import contract as api
 from aperture.archive import existing
@@ -47,52 +48,82 @@ def average_fill_price(orders: list[OrderRow]) -> Decimal | None:
 # stop orders showing it working at the broker. The same row `protection-latency` records as
 # `stop_verified_at` (runtime/protection.py); the engine calls such a stop "verified".
 OBSERVED = "order-observed"
+INTENT = "order-intent"  # written before an order is sent
 _WORKING = (str(OrderState.ACCEPTED), str(OrderState.PARTIALLY_FILLED))
 
 
 class MalformedJournal(ValueError):
-    """An `order-observed` row lacks what the metrics read; the message is the cause."""
+    """A journal row lacks what the metrics read; the message is the cause."""
 
 
 @dataclass(frozen=True)
 class FillTimes:
-    """Journal times of one trade. Webull Detail has no fill time, so a fill's time is when a
-    Detail read first showed it (`order-observed`)."""
+    """Journal times of one trade. Webull Detail has no fill time and `order-observed` is
+    written only when a read shows a change, so every time here is when the journal proves
+    something, which may be later than the event itself."""
 
     first_fill: datetime | None  # first entry read showing filled quantity > 0
+    first_fill_quantity: Decimal  # the filled quantity that read showed (0 without one)
     stop_confirmed: datetime | None  # first stop read showing it working, after first_fill
     last_exit_fill: datetime | None  # last sell read (stop or exit) showing more filled
+    # Latest moment the journal proves no share had been sold yet: the earliest, over the sell
+    # orders that sold shares, of a close's send intent or a stop's last read showing it
+    # unfilled. None when a sell order that sold has no such row.
+    held_until: datetime | None
+
+
+def _parsed(row: Any) -> tuple[datetime, dict[str, Any]]:
+    try:
+        return datetime.fromisoformat(row["at_utc"]), json.loads(row["body"])
+    except (ValueError, TypeError) as exc:
+        raise MalformedJournal(f"journal row {row['seq']} ({row['kind']} {row['key']}): "
+                               f"{type(exc).__name__}: {exc}") from exc
+
+
+def _observed(row: Any, body: dict[str, Any]) -> tuple[Decimal, str]:
+    try:
+        return Decimal(str(body["filled_quantity"])), str(body["state"])
+    except (KeyError, ArithmeticError) as exc:
+        raise MalformedJournal(f"journal row {row['seq']} ({OBSERVED} {row['key']}): "
+                               f"{type(exc).__name__}: {exc}") from exc
 
 
 def fill_times(store: Store, orders: list[OrderRow]) -> FillTimes:
     """Raises MalformedJournal for a row it cannot read; callers show null instead."""
     legs = {o.client_order_id: o.leg for o in orders}
     rows = store.query(
-        f"SELECT seq, at_utc, key, body FROM journal WHERE kind = ? AND key IN "
-        f"({', '.join('?' for _ in legs)}) ORDER BY seq", (OBSERVED, *legs)) if legs else []
+        f"SELECT seq, at_utc, kind, key, body FROM journal WHERE kind IN (?, ?) AND key IN "
+        f"({', '.join('?' for _ in legs)}) ORDER BY seq", (OBSERVED, INTENT, *legs)
+    ) if legs else []
     first = stop = last = None
+    first_quantity = ZERO
     filled: dict[str, Decimal] = {}
+    intent: dict[str, datetime] = {}
+    unfilled: dict[str, datetime] = {}  # a stop's last read still showing nothing filled
     for row in rows:
         cid = row["key"]
-        try:
-            body = json.loads(row["body"])
-            at = datetime.fromisoformat(row["at_utc"])
-            quantity = Decimal(str(body["filled_quantity"]))
-            state = str(body["state"])
-        except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
-            raise MalformedJournal(f"journal row {row['seq']} ({OBSERVED} {cid}): "
-                                   f"{type(exc).__name__}: {exc}") from exc
+        at, body = _parsed(row)
+        if row["kind"] == INTENT:
+            intent.setdefault(cid, at)
+            continue
+        quantity, state = _observed(row, body)
         more = quantity > filled.get(cid, ZERO)
         filled[cid] = quantity
         if legs[cid] is Leg.ENTRY:
             if first is None and quantity > 0:
-                first = at
+                first, first_quantity = at, quantity
             continue
         if legs[cid] is Leg.STOP and first is not None and stop is None and state in _WORKING:
             stop = at
+        if quantity == 0 and legs[cid] is Leg.STOP:
+            unfilled[cid] = at
         if more:
             last = at
-    return FillTimes(first, stop, last)
+    proofs = [unfilled.get(o.client_order_id) if o.leg is Leg.STOP
+              else intent.get(o.client_order_id)
+              for o in orders if o.leg is not Leg.ENTRY and o.filled_quantity > 0]
+    held = None if not proofs or None in proofs else min(p for p in proofs if p is not None)
+    return FillTimes(first, first_quantity, stop, last, held)
 
 
 def _minute(at: datetime) -> datetime:
@@ -102,22 +133,25 @@ def _minute(at: datetime) -> datetime:
 def excursions(bars: Sequence[api.BarV1], entry: Decimal, quantity: Decimal,
                exits: Sequence[Decimal], times: FillTimes,
                ) -> tuple[Decimal | None, Decimal | None]:
-    """(MAE, MFE) in USD as a lower bound: only prices certainly traded while the trade was
-    open count, namely the entry fill price, the exit fill prices and the M1 bars strictly
-    between the minute of the first entry fill read and the minute of the last exit fill
-    read. The two edge bars are partial minutes (they may hold prices from before the fill or
-    after the exit), so their prices are left out; they must still be captured, as proof that
-    the capture covered the window: (None, None) without them."""
+    """(MAE, MFE) in USD as a lower bound (docs/api.md, "Per-trade metrics"): prices certainly
+    traded while shares were held, times a quantity certainly held. Prices: the entry fill
+    price, the exit fill prices, and the M1 bars that start after the minute of the first
+    entry fill read and end by the minute of `held_until` (none when that is unknown).
+    Quantity: the smaller of the first entry fill read's quantity and `quantity` (what was
+    sold). The bars of the first fill read's minute and of the last exit fill read's minute
+    must be captured, as proof the capture covered the trade: (None, None) without them."""
     start, end = times.first_fill, times.last_exit_fill
-    if start is None or end is None or not exits:
+    if start is None or end is None or not exits or times.first_fill_quantity <= 0:
         return None, None
     first, last = _minute(start), _minute(end)
     if not {first, last} <= {b.start for b in bars}:
         return None, None
-    inner = [b for b in bars if first < b.start < last]
+    bound = first if times.held_until is None else _minute(times.held_until)
+    inner = [b for b in bars if first < b.start < bound]
+    held = min(times.first_fill_quantity, quantity)
     low = min([entry, *exits, *(b.low for b in inner)])
     high = max([entry, *exits, *(b.high for b in inner)])
-    return (low - entry) * quantity, (high - entry) * quantity
+    return (low - entry) * held, (high - entry) * held
 
 
 def trade_metrics(store: Store, trade: api.DayTrade,
