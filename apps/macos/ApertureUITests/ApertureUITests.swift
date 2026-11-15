@@ -30,6 +30,9 @@ final class ApertureUITests: XCTestCase {
   static let connectionItem = "toolbar-connection"
   /// The start of the refusal cause in skipped-v1.json.
   static let refusalCause = "POSITION_LIMIT_REACHED"
+  /// The selected trade's detail card and a label it shows only for a selected trade.
+  static let tradeDetail = "trades-detail"
+  static let stopConfirmedAfter = "Stop confirmed after"
   /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "ask_above_trigger"
@@ -140,6 +143,18 @@ final class ApertureUITests: XCTestCase {
     // A skipped row is one button, so the cause is part of its longer label.
     let cause = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Self.refusalCause))
     XCTAssertTrue(cause.firstMatch.waitForExistence(timeout: Self.timeout), "refusal cause\n\(app.debugDescription)")
+  }
+
+  @MainActor
+  func testTradesShowTheSelectedTradeDetail() {
+    let app = launch()
+    open(Self.sections[2], in: app)
+    let row = app.tables.firstMatch.tableRows.firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
+    row.click()
+    let detail = app.descendants(matching: .any)[Self.tradeDetail].firstMatch
+    XCTAssertTrue(detail.staticTexts[Self.stopConfirmedAfter].waitForExistence(timeout: Self.timeout),
+      "trade detail\n\(app.debugDescription)")
   }
 
   @MainActor

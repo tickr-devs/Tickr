@@ -6308,6 +6308,23 @@
         }
       }
     },
+    "trades.excursionLowerBound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MAE and MFE count only prices proven to come while the shares were held, so the real excursion can be larger."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MAE и MFE учитывают только цены, которые точно были, пока акции держались, поэтому настоящий ход цены может быть больше."
+          }
+        }
+      }
+    },
     "trades.exit" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6321,6 +6338,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Выход"
+          }
+        }
+      }
+    },
+    "trades.maeAtLeast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Worst open result (MAE), at least"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Худший открытый результат (MAE), не меньше"
+          }
+        }
+      }
+    },
+    "trades.mfeAtLeast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Best open result (MFE), at least"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Лучший открытый результат (MFE), не меньше"
           }
         }
       }
@@ -6410,6 +6461,23 @@
         }
       }
     },
+    "trades.notRecorded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not recorded"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не записано"
+          }
+        }
+      }
+    },
     "trades.notTaken" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6457,6 +6525,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API бота не вернул пропущенные сигналы: %@"
+          }
+        }
+      }
+    },
+    "trades.oneR" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 R · planned loss"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 R · плановый убыток"
           }
         }
       }
@@ -6563,6 +6648,40 @@
         }
       }
     },
+    "trades.selectedTrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected Trade"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбранная сделка"
+          }
+        }
+      }
+    },
+    "trades.selectTrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a trade to see its risk, price excursion and how fast its stop was confirmed."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите сделку, чтобы увидеть её риск, ход цены и как быстро подтвердился стоп."
+          }
+        }
+      }
+    },
     "trades.showOnChart" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6597,6 +6716,23 @@
         }
       }
     },
+    "trades.stopConfirmedAfter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop confirmed after"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стоп подтверждён через"
+          }
+        }
+      }
+    },
     "trades.symbol" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6610,6 +6746,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Тикер"
+          }
+        }
+      }
+    },
+    "trades.tradeDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trade %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделка %@"
           }
         }
       }
