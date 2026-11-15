@@ -238,6 +238,7 @@ public struct Chevron: View {
   }
 }
 
+/// Icon buttons grouped on one sunken capsule, like a toolbar: the bot's commands.
 public struct IconToolbar<Content: View>: View {
   let content: Content
 
@@ -246,8 +247,8 @@ public struct IconToolbar<Content: View>: View {
   }
 
   public var body: some View {
-    HStack(spacing: Tokens.Space.xs + Tokens.Space.xxs) { content }
-      .padding(Tokens.Space.xs + Tokens.Space.xxs / 2)
+    HStack(spacing: Tokens.Space.xs) { content }
+      .padding(Tokens.Space.xs)
       .background(Capsule().fill(Palette.surfaceSunken))
       .overlay(Capsule().strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
   }

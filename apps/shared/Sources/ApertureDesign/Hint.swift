@@ -3,8 +3,10 @@ import SwiftUI
 // MARK: - hints
 
 /// The apps' own tooltip: a short explanation in a small styled bubble. On the Mac it appears
-/// above the view after the pointer rests on it; on the phone a long press opens it as a popover.
+/// above the view after the pointer rests on it; on the phone a long press shows it in a context
+/// menu, which never fires the button it explains.
 public struct Hint: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var shown = false
   @State private var waiting: Task<Void, Never>?
   let text: Text
@@ -25,23 +27,27 @@ public struct Hint: ViewModifier {
           shown = false
         }
       }
+      .onDisappear {
+        waiting?.cancel()
+        shown = false
+      }
       .overlay(alignment: .top) {
         if shown {
           HintBubble(text: text)
             .alignmentGuide(.top) { $0[.bottom] + Tokens.Space.xs }
-            .transition(.opacity.combined(with: .scale(scale: Tokens.Motion.pressScale, anchor: .bottom)))
+            .transition(reduceMotion ? .opacity
+              : .opacity.combined(with: .scale(scale: Tokens.Motion.pressScale, anchor: .bottom)))
             .allowsHitTesting(false)
         }
       }
       .zIndex(shown ? 1 : 0)
       .animation(Tokens.Motion.quick, value: shown)
     #else
+    // A context menu, not a long-press gesture: the system cancels the tap of a button it opens
+    // on, so reading what a button does (flatten, stop) never presses it.
     content
-      .simultaneousGesture(LongPressGesture().onEnded { _ in shown = true })
-      .popover(isPresented: $shown) {
-        HintBubble(text: text)
-          .padding(Tokens.Space.xs)
-          .presentationCompactAdaptation(.popover)
+      .contextMenu {
+        text
       }
     #endif
   }
@@ -59,8 +65,8 @@ struct HintBubble: View {
       .multilineTextAlignment(.leading)
       .frame(maxWidth: Tokens.Size.hintMaxWidth, alignment: .leading)
       .fixedSize(horizontal: false, vertical: true)
-      .padding(.horizontal, Tokens.Space.s + Tokens.Space.xxs)
-      .padding(.vertical, Tokens.Space.s - Tokens.Space.xxs)
+      .padding(.horizontal, Tokens.Space.m)
+      .padding(.vertical, Tokens.Space.s)
       .background(Palette.surface, in: shape)
       .overlay(shape.strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
       .shadow(color: Palette.shadow.opacity(Tokens.Opacity.faint), radius: Tokens.Size.shadowRadius,

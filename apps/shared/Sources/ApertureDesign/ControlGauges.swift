@@ -1,6 +1,9 @@
 import SwiftUI
 
+/// A horizontal gauge: a track and a glowing fill up to `fraction` (0...1), with optional figures
+/// under its start, middle and end ("129.80 · 132.46 · 134.10").
 public struct MeterBar: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn = false
   let fraction: Double
   let tone: Tone
@@ -38,8 +41,8 @@ public struct MeterBar: View {
         }
       }
     }
-    .animation(Tokens.Motion.fill, value: fraction)
-    .onAppear { withAnimation(Tokens.Motion.fill) { drawn = true } }
+    .animation(reduceMotion ? nil : Tokens.Motion.fill, value: fraction)
+    .onAppear { withAnimation(reduceMotion ? nil : Tokens.Motion.fill) { drawn = true } }
   }
 }
 
@@ -56,6 +59,7 @@ public struct MeterMark: Hashable, Sendable {
 
 /// A small ring filled to `fraction` (0...1) with a short figure inside: room used, progress.
 public struct MiniRing: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn = false
   let fraction: Double
   let tone: Tone
@@ -84,9 +88,7 @@ public struct MiniRing: View {
     }
     .padding(Tokens.Stroke.gauge / 2)
     .frame(width: Tokens.Size.miniRing, height: Tokens.Size.miniRing)
-    .animation(Tokens.Motion.fill, value: fraction)
-    .onAppear { withAnimation(Tokens.Motion.fill) { drawn = true } }
+    .animation(reduceMotion ? nil : Tokens.Motion.fill, value: fraction)
+    .onAppear { withAnimation(reduceMotion ? nil : Tokens.Motion.fill) { drawn = true } }
   }
 }
-
-/// Icon buttons grouped on one sunken capsule, like a toolbar: the bot's commands.

@@ -97,7 +97,7 @@ public struct SectionHeader<Trailing: View>: View {
         Text(verbatim: count)
           .font(Tokens.Typography.badge)
           .foregroundStyle(Palette.textTertiary)
-          .padding(.horizontal, Tokens.Space.s - Tokens.Space.xxs)
+          .padding(.horizontal, Tokens.Space.xs)
           .padding(.vertical, Tokens.Space.xxs)
           .background(Capsule().fill(Palette.surfaceSunken))
           .overlay(Capsule().strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))

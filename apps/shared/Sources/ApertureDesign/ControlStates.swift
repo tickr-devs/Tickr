@@ -34,8 +34,7 @@ public struct StatusPill: View {
         .lineLimit(1)
     }
     .foregroundStyle(tone.text)
-    .padding(.leading, Tokens.Space.s)
-    .padding(.trailing, Tokens.Space.s + Tokens.Space.xxs)
+    .padding(.horizontal, Tokens.Space.s)
     .padding(.vertical, Tokens.Space.xs)
     .background(Capsule().fill(tone.fill.opacity(Tokens.Opacity.wash)))
     .overlay(Capsule().strokeBorder(tone.fill.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.thin))
@@ -152,6 +151,3 @@ public struct StateGlyph: View {
       .accessibilityLabel(label)
   }
 }
-
-/// A figure with a symbol in front instead of a label: "→| 131.42", "⛨ 129.80". The label is the
-/// tooltip and what VoiceOver reads.

@@ -119,6 +119,8 @@ public extension ValueRow where Value == Text {
   }
 }
 
+/// A figure with a symbol in front instead of a label: "→| 131.42", "⛨ 129.80". The label is the
+/// tooltip and what VoiceOver reads.
 public struct IconMetric: View {
   let systemImage: String
   let label: Text
@@ -149,11 +151,11 @@ public struct IconMetric: View {
         .contentTransition(.numericText())
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, Tokens.Space.m - Tokens.Space.xxs)
+    .padding(.horizontal, Tokens.Space.s)
     .padding(.vertical, Tokens.Space.s)
     .background(Palette.surfaceSunken, in: shape)
     .overlay(shape.strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
-    .help(label)
+    .hint(label)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(label)
     .accessibilityValue(Text(verbatim: value))
@@ -180,7 +182,7 @@ public struct DeltaTag: View {
 
   public var body: some View {
     let tone = Tone.result(value)
-    HStack(spacing: Tokens.Space.xxs + Tokens.Space.xxs) {
+    HStack(spacing: Tokens.Space.xs) {
       if value != 0 {
         Image(systemName: value > 0 ? Self.upSymbol : Self.downSymbol)
           .font(Tokens.Typography.chevron)
@@ -198,6 +200,3 @@ public struct DeltaTag: View {
     .animation(Tokens.Motion.quick, value: value)
   }
 }
-
-/// A horizontal gauge: a track and a glowing fill up to `fraction` (0...1), with optional figures
-/// under its start, middle and end ("129.80 · 132.46 · 134.10").
