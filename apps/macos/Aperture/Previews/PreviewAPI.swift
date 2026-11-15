@@ -1,5 +1,6 @@
 #if DEBUG
 import ApertureKit
+import AppKit
 import Foundation
 
 /// Xcode previews of the screens with realistic data and no running bot: the API client's
@@ -17,7 +18,22 @@ enum PreviewAPI {
   static func serveFixturesIfAsked() {
     guard ProcessInfo.processInfo.arguments.contains(fixturesArgument) else { return }
     Container.shared.urlSession.register { FixtureProtocol.session() }
+    // TEMPORARY diagnostic for CI: where are the app's windows?
+    if let path = ProcessInfo.processInfo.environment[diagnosticsKey] {
+      Task { @MainActor in
+        try? await Task.sleep(for: .seconds(diagnosticsDelay))
+        let lines = NSApplication.shared.windows.map {
+          "\(type(of: $0)) title=\($0.title) visible=\($0.isVisible) frame=\($0.frame) level=\($0.level.rawValue)"
+        }
+        let text = (["windows=\(lines.count)", "active=\(NSApplication.shared.isActive)",
+          "policy=\(NSApplication.shared.activationPolicy().rawValue)"] + lines).joined(separator: "\n")
+        try? text.write(toFile: path, atomically: true, encoding: .utf8)
+      }
+    }
   }
+  /// TEMPORARY: environment key of the diagnostics file path, and when to write it (seconds).
+  static let diagnosticsKey = "APERTURE_UI_DIAGNOSTICS"
+  static let diagnosticsDelay: Double = 3
 
   /// The app model as the screens see it, reading the fixtures.
   @MainActor

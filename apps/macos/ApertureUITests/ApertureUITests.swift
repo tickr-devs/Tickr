@@ -33,9 +33,12 @@ final class ApertureUITests: XCTestCase {
   private func launch() -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = [Self.fixturesArgument] + Self.languageArguments
+    let diagnostics = NSTemporaryDirectory() + "aperture-ui-diagnostics.txt"
+    app.launchEnvironment["APERTURE_UI_DIAGNOSTICS"] = diagnostics
     app.launch()
-    XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: Self.timeout),
-      "no window after launch\n\(app.debugDescription)")
+    let window = app.windows.firstMatch.waitForExistence(timeout: Self.timeout)
+    print("DIAG>>> " + ((try? String(contentsOfFile: diagnostics, encoding: .utf8)) ?? "no diagnostics file"))
+    XCTAssertTrue(window, "no window after launch")
     return app
   }
 
