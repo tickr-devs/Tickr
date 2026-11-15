@@ -220,3 +220,17 @@ def test_close_allowed_inside_the_session_and_without_a_calendar():
     assert close_refusal(CFG, CALENDAR, MONDAY) is None
     assert close_refusal(CFG, CALENDAR, MONDAY_CLOSE - CUTOFF - timedelta(seconds=1)) is None
     assert close_refusal(CFG, None, MONDAY_CLOSE + timedelta(hours=1)) is None
+
+
+def test_flatten_while_market_closed_is_set_names_that_cause(tmp_path):
+    bot, t = late_start(tmp_path, MONDAY, MONDAY_CLOSE + timedelta(minutes=5))
+    bot.run(3)
+    assert f"{Fence.MARKET_CLOSED}:{t}" in bot.engine.fences()
+    bot.now = datetime(2026, 11, 17, 10, 0, tzinfo=NEW_YORK)  # in session: only the fence
+    cmd = bot.command(api.CommandKind.FLATTEN)
+    bot.service.process_commands()
+    (rec,) = bot.store.journal(service.COMMAND, cmd.command_id)
+    assert rec.body["outcome"] == api.CommandOutcome.REFUSED
+    assert rec.body["cause"].startswith(f"a close of {t} was due outside the regular session")
+    assert "refused before" not in rec.body["cause"]
+    assert bot.markets() == [] and len(bot.stops()) == 1

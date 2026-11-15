@@ -227,13 +227,17 @@ class Service:
         if symbol is not None and not trades:
             return api.CommandOutcome.REFUSED, f"no open position in {symbol}"
         fences = engine.fences()
-        refused = [t.trade_id for t in trades
-                   if any(f"{f}:{t.trade_id}" in fences
-                          for f in (Fence.EXIT_REFUSED, Fence.MARKET_CLOSED))]
+        refused = [t.trade_id for t in trades if f"{Fence.EXIT_REFUSED}:{t.trade_id}" in fences]
         if refused:
             return api.CommandOutcome.REFUSED, (
                 f"closing order refused before for {', '.join(refused)}: look in the Webull "
                 "app, then clear the fence")
+        held = [t.trade_id for t in trades if f"{Fence.MARKET_CLOSED}:{t.trade_id}" in fences]
+        if held:
+            return api.CommandOutcome.REFUSED, (
+                f"a close of {', '.join(held)} was due outside the regular session and was not "
+                "sent (fence market-closed); the stop stays: close it in the Webull app, or "
+                "clear the fence in the regular session")
         closed = engine.close_refusal() if trades else None
         if closed is not None:
             return api.CommandOutcome.REFUSED, (

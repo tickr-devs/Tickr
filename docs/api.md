@@ -222,7 +222,9 @@ preconditions to every command.
 - **flatten**: every open trade, or only the trades of `symbol`, gets an exit request through
   the normal exit path. Refused when `symbol` has no open position ("no open position in
   XYZ"), while a closing order of a chosen trade was refused before (fence
-  `exit-refused:<trade>` or `market-closed:<trade>`: look in the Webull app first), and with a
+  `exit-refused:<trade>`: look in the Webull app first), while a chosen trade holds the fence
+  `market-closed:<trade>` ("a close of <trade> was due outside the regular session and was not
+  sent ..."), and with a
   trade to close outside the regular session ("no closing order is sent now: at or after
   15:59:00 ET, ...": no MARKET order is sent from `[session] close_order_cutoff_seconds`
   before the regular close until the next open; the stops stay; close in the Webull app).
