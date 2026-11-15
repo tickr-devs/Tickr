@@ -144,13 +144,33 @@ def test_observers_today(api, cfg):
 def test_observer_without_decisions_and_no_observers(api, cfg, tmp_path_factory):
     _write(DecisionLog.from_config(cfg), _record())
     body = _get(api, "/observers?date=2026-11-16", "observers-v1")
-    assert [(o["name"], o["decisions"]) for o in body["observers"]] == [("price-action-v2", [])]
+    assert [(o["name"], o["version"], o["decisions"]) for o in body["observers"]] == [
+        ("price-action-v2", "2", [])]  # the current strategy.toml version
     none = _serve(_cfg(tmp_path_factory.mktemp("bare"), "[]"))
     try:
         assert _get(none, "/observers", "observers-v1")["observers"] == []
     finally:
         none.shutdown()
         none.server_close()
+
+
+def test_observer_versions_recorded_that_day(api, cfg):
+    """A bump from 1 to 2 (and a later 10) mid-day: each recorded version keeps its records,
+    in version order, even the ones strategy.toml no longer declares."""
+    old = ("price-action-v2", "1")
+    _write(DecisionLog.from_config(cfg),
+           _record(("price-action-v2", "10"), role=Role.OBSERVER, minute=6),
+           _record(old, role=Role.OBSERVER, minute=0),
+           _observer(minute=4, verdict=Verdict.ENTER, checks=(PASS,),
+                     admission=Admission.NOT_EVALUATED),
+           _record(old, role=Role.OBSERVER, symbol="WXYZ", minute=2))
+    body = _get(api, "/observers", "observers-v1")
+    assert [(o["name"], o["version"], [(d["at"][11:16], d["symbol"]) for d in o["decisions"]])
+            for o in body["observers"]] == [
+        ("price-action-v2", "1", [("15:00", "ABCD"), ("15:02", "WXYZ")]),
+        ("price-action-v2", "2", [("15:04", "ABCD")]),
+        ("price-action-v2", "10", [("15:06", "ABCD")]),
+    ]
 
 
 def test_observers_archived_day(api, cfg):

@@ -144,12 +144,13 @@ the same enum as explain-v1 `verdict`: `IGNORE` `WATCH` `ENTER` `HOLD` `EXIT`. A
 date without a decision file answers with empty lists; a last line still being written is not
 read yet.
 
-`/observers?date=` (date optional, default today in New York) lists every folder in
-`[strategy] observers`, in configuration order, as the `name` and `version` its `strategy.toml`
-declares, with only the observer records of that identity (`role` `observer`); an observer
-without decisions that day has an empty list. Each observer's `name` and `version` come from its
-current `strategy.toml` at request time, not from the records: after a version bump a past date
-lists the new identity, and the old version's records of that date do not appear. `reasons` are the rules of the checks that failed,
+`/observers?date=` (date optional, default today in New York) lists the observers of
+`[strategy] observers`, matched by the strategy `name` their `strategy.toml` declares, with
+only observer records (`role` `observer`). There is one entry per (name, version) recorded that
+day, with the recorded version, so records made before a version bump stay listed under their
+old version. A configured observer with no records that day gets one entry with the version of
+its current `strategy.toml` and an empty list. Entries are in configuration order, then by
+version (numeric versions numerically). `reasons` are the rules of the checks that failed,
 in the order evaluated (empty when every check passed); the full checks are in `/decisions`.
 `result_gross_usd` is the observer's simulated day result once one is recorded; the bot records
 none yet, so it is always `null` (the offline report `python -m aperture.research observers`

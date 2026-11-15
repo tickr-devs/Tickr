@@ -441,8 +441,8 @@ class ObserverV1:
 
 @dataclass(frozen=True)
 class ObserversV1:
-    """GET /observers?date=: every observer configured in [strategy] observers with its
-    recorded decisions of one New York date, oldest first."""
+    """GET /observers?date=: the observers configured in [strategy] observers, one entry per
+    (name, version) recorded on one New York date, with its decisions oldest first."""
 
     day: date
     observers: tuple[ObserverV1, ...]
@@ -481,14 +481,30 @@ def _oldest_first(records: tuple[DecisionRecord, ...]) -> list[DecisionRecord]:
 
 def observers_document(day: date, identities: tuple[tuple[str, str], ...],
                        records: tuple[DecisionRecord, ...]) -> ObserversV1:
-    """`identities` (name, version) in configuration order; `records` observer records only."""
+    """`identities`: (name, current version) of each configured observer, in configuration
+    order; `records`: observer records only. Observers are matched by name: one entry per
+    version recorded that day (config order, then version), or, when a name has no records,
+    one empty entry per current version, so a version bump never hides earlier records."""
     ordered = _oldest_first(records)
-    return ObserversV1(day=day, observers=tuple(
-        ObserverV1(name=name, version=version, result_gross_usd=None, decisions=tuple(
-            ObserverDecisionV1(r.bar_start, r.symbol, r.decision.verdict,
-                               tuple(c.rule for c in r.decision.checks if not c.passed))
-            for r in ordered if (r.decision.strategy, r.decision.version) == (name, version)))
-        for name, version in identities))
+    names = list(dict.fromkeys(name for name, _ in identities))
+    entries: list[ObserverV1] = []
+    for name in names:
+        recorded = {r.decision.version for r in ordered if r.decision.strategy == name}
+        current = [v for n, v in identities if n == name]
+        for version in sorted(recorded or set(current), key=_version_order):
+            entries.append(ObserverV1(name=name, version=version, result_gross_usd=None,
+                                      decisions=tuple(
+                ObserverDecisionV1(r.bar_start, r.symbol, r.decision.verdict,
+                                   tuple(c.rule for c in r.decision.checks if not c.passed))
+                for r in ordered
+                if (r.decision.strategy, r.decision.version) == (name, version))))
+    return ObserversV1(day=day, observers=tuple(entries))
+
+
+def _version_order(version: str) -> tuple[bool, int, str]:
+    """Numeric versions in numeric order ("2" before "10"), then any other text."""
+    numeric = version.isdigit()
+    return (not numeric, int(version) if numeric else 0, version)
 
 
 _SKIPPED = (Admission.REFUSED, Admission.NOT_EVALUATED)
