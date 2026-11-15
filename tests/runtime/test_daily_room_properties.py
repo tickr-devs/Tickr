@@ -89,7 +89,8 @@ class Rig:
         self.broker = FakeBroker()
         self.store = Store.open(path / "db.sqlite3", busy_timeout_seconds=0, now=self.clock)
         self.engine = Engine(self.store, self.broker, CFG, "prop0001",
-                             lambda: GateResult(True, "t"))
+                             lambda: GateResult(True, "t"),
+                             clock=lambda: self.clock().timestamp())  # the rig's time, never wall
         self.engine.recover()
         self.desk = EntryDesk(self.engine, CFG, calendar=CALENDAR, last_broker_read_at=self.clock,
                               log=DecisionLog(path / "decisions"))

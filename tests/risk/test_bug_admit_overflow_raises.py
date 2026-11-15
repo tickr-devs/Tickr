@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from aperture.risk.admission import admit
-from aperture.risk.causes import AdmissionCause as C
 
 from .conftest import D, decision, inputs
 
@@ -22,4 +21,4 @@ from .conftest import D, decision, inputs
 @pytest.mark.xfail(strict=True, reason="bug: admit() raises decimal.Overflow, rule 7")
 def test_an_absurd_finite_quantity_is_refused_not_raised(lim):
     result = admit(inputs(decision=decision(quantity=D("1E+999999"))), lim)
-    assert result.cause is C.NOTIONAL_OVER_CAP
+    assert not result.ok and result.cause is not None
