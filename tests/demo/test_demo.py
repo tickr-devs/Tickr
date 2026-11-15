@@ -107,6 +107,7 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
 
     cfg = config.load(root / scenario.root_dir / "config" / "bot.toml")
     server = make_server(replace(settings_from_config(cfg), port=0))
+    serving = None
     try:
         status = server.status_response().status
         assert status is not None and status.environment == scenario.environment
@@ -127,7 +128,8 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         assert [p.symbol for p in account.account.positions] == ["BBB"]
         # The apps' "Not taken" list and the observers' simulated results are not empty.
         server.clock = lambda: status.written_at
-        threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
+        serving = threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True)
+        serving.start()
         skipped = _get(server, "/skipped")
         assert skipped["day"] == FRIDAY.isoformat()
         assert skipped["signals"] and {(s["symbol"], s["admission"])
@@ -138,8 +140,9 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
             ("price-action-v2", None)]
         assert any(d["action"] == "ENTER" for d in observers[0]["decisions"])
         assert D(observers[0]["result_gross_usd"]) != 0
-        server.shutdown()
     finally:
+        if serving is not None:
+            server.shutdown()
         server.server_close()
     decisions = (cfg.root / cfg.run.data_dir / cfg.observers.decisions_dir
                  / scenario.environment / FRIDAY.isoformat() / "decisions.jsonl")

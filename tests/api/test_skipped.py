@@ -253,6 +253,45 @@ def test_observer_result_is_recomputed_only_when_its_files_change(cfg):
     assert second[OBSERVER][0] is not None and second[OBSERVER][1] is None
 
 
+def test_changed_replay_settings_trigger_a_recompute(cfg):
+    log = DecisionLog.from_config(cfg)
+    _write(log, _enter())
+    _capture(cfg)
+    results = ObserverResults(SimulationPaths.from_config(cfg))
+    records = log.records(DAY, role=Role.OBSERVER)
+    first = results.results(DAY, DAY, records, log.path(DAY))
+    assert results.results(DAY, DAY, records, log.path(DAY)) is first
+    settings = cfg.root / cfg.api.replay_settings_file
+    text = settings.read_text("utf-8")
+    assert text.count("slippage_min_usd = 0.01\n") == 1
+    settings.write_text(text.replace("slippage_min_usd = 0.01\n", "slippage_min_usd = 0.05\n"),
+                        "utf-8")
+    second = results.results(DAY, DAY, records, log.path(DAY))
+    assert second is not first
+    assert second[OBSERVER][0] < first[OBSERVER][0]  # more slippage, a worse result
+    # the same day seen as a past day is a different key too
+    assert results.results(DAY, DAY + timedelta(days=1), records, log.path(DAY)) is not second
+
+
+def test_transient_failure_is_not_remembered(cfg):
+    log = DecisionLog.from_config(cfg)
+    _write(log, _enter())
+    _capture(cfg)
+    paths = SimulationPaths.from_config(cfg)
+    results = ObserverResults(replace(paths, calendar=paths.calendar.parent / "missing"))
+    records = log.records(DAY, role=Role.OBSERVER)
+    failed = results.results(DAY, DAY, records, log.path(DAY))
+    assert failed[OBSERVER][1].startswith("session calendar unreadable: ")
+    results.paths = paths  # the calendar is back, no data file changed
+    assert results.results(DAY, DAY, records, log.path(DAY))[OBSERVER][1] is None
+
+
+def test_a_recorded_observer_without_result_is_refused():
+    record = _enter()
+    with pytest.raises(contract.ContractError, match="no simulated result"):
+        contract.observers_document(DAY, (OBSERVER,), (record,), {})
+
+
 def test_observer_result_never_writes(api, cfg):
     _write(DecisionLog.from_config(cfg), _enter())
     _capture(cfg)

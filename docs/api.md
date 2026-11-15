@@ -206,9 +206,11 @@ simulates no trade: `"0"`. When it cannot be computed it is `null` and `result_c
 the captured bars), `N simulated trade(s) have no recorded whole quantity`. Today's result is
 provisional: it uses the bars captured so far, and a simulated trade still open ends at the last
 bar's close. The API simulates on request and keeps the last answer in memory, keyed by the
-date and the size and modification time of the decision and capture files, so polling the same
-day re-simulates only after the bot wrote more (a demo day of about 40 ENTERs takes well under
-a second). Nothing is written to disk. An observer folder whose `strategy.toml` cannot be read
+date, whether it is today, and the size and modification time of the decision file, the capture
+file, the replay settings file and the calendar files, so polling the same day re-simulates only
+after one of them changed (a demo day of about 40 ENTERs takes well under a second). An answer
+decided by a failure that can pass without a file changing (an OSError, a calendar or
+simulation refusal) is never kept. Nothing is written to disk. An observer folder whose `strategy.toml` cannot be read
 is `503 unavailable`.
 
 `/decisions?symbol=&date=` (both required) lists the active strategy's and the observers'

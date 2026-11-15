@@ -12,9 +12,11 @@ capture file, unreadable settings or calendar, a refused simulation, an ENTER th
 simulated, a simulated trade without a recorded whole quantity. An identity with no ENTER
 simulates no trade: its result is 0.
 
-Each answer is kept in memory for the day it was computed with the size and modification time of
-its decision and capture files, so a client polling the same day re-simulates only after the bot
-wrote more data. Today's result is provisional: a simulated trade still open ends at the last
+Each answer is kept in memory with the day, whether it was today, and the size and modification
+time of its decision file, capture file, replay settings file and calendar files, so a client
+polling the same day re-simulates only after one of them changed. An answer decided by a
+failure that can pass without a file changing (an OSError, a calendar or simulation refusal) is
+not kept. Today's result is provisional: a simulated trade still open ends at the last
 captured bar's close.
 """
 
@@ -49,7 +51,13 @@ _Stamp = tuple[str, int, int] | None
 
 
 class _NoInputs(Exception):
-    """A simulation input is missing or refused; the message is the single cause."""
+    """A simulation input is missing or refused; the message is the single cause. `transient`:
+    the failure may pass without any file changing (an OSError, a calendar refusal), so its
+    answer is not remembered."""
+
+    def __init__(self, cause: str, transient: bool = False) -> None:
+        super().__init__(cause)
+        self.transient = transient
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,14 @@ def _stamp(path: Path) -> _Stamp:
     return (str(found), stat.st_mtime_ns, stat.st_size)
 
 
+def _folder_stamp(folder: Path) -> tuple[_Stamp, ...] | None:
+    """Stamps of every file in `folder` (the calendar), or None when it cannot be listed."""
+    try:
+        return tuple(_stamp(p) for p in sorted(folder.iterdir()) if p.is_file())
+    except OSError:
+        return None
+
+
 def _quantize(value: Decimal, places: int) -> Decimal:
     return value.quantize(Decimal(1).scaleb(-places))
 
@@ -96,27 +112,31 @@ class ObserverResults:
     def __init__(self, paths: SimulationPaths) -> None:
         self.paths = paths
         self._lock = threading.Lock()
-        self._key: tuple[date, _Stamp, _Stamp] | None = None
+        self._key: tuple[object, ...] | None = None
         self._value: dict[Identity, ObserverResult] = {}
 
     def results(self, day: date, today: date, records: Sequence[DecisionRecord],
                 decision_file: Path) -> dict[Identity, ObserverResult]:
         """The result of every identity in `records` (observer records of `day`, read from
-        `decision_file`)."""
-        key = (day, _stamp(decision_file), _stamp(self._bars_file(day)))
+        `decision_file`). Remembered until any input file changes; an answer with a transient
+        failure is never remembered."""
+        key = (day, day == today, _stamp(decision_file), _stamp(self._bars_file(day)),
+               _stamp(self.paths.replay_settings), _folder_stamp(self.paths.calendar))
         with self._lock:
             if key == self._key:
                 return self._value
-        value = self._compute(day, today, records)
-        with self._lock:
-            self._key, self._value = key, value
+        value, transient = self._compute(day, today, records)
+        if not transient:
+            with self._lock:
+                self._key, self._value = key, value
         return value
 
     def _bars_file(self, day: date) -> Path:
         return self.paths.capture / day.isoformat() / BARS_FILE
 
-    def _compute(self, day: date, today: date,
-                 records: Sequence[DecisionRecord]) -> dict[Identity, ObserverResult]:
+    def _compute(self, day: date, today: date, records: Sequence[DecisionRecord],
+                 ) -> tuple[dict[Identity, ObserverResult], bool]:
+        """(result per identity, True when a transient failure decided it)."""
         groups: dict[Identity, list[DecisionRecord]] = defaultdict(list)
         for record in records:
             groups[(record.decision.strategy, record.decision.version)].append(record)
@@ -128,29 +148,32 @@ class ObserverResults:
             else:
                 out[identity] = (ZERO, None)
         if not trading:
-            return out
+            return out, False
         try:
             bars = self._bars(day, today)
             settings, clock_for = self._settings()
             report = observer_report.report(
                 [r for i in trading for r in groups[i]], bars, settings, clock_for)
         except _NoInputs as exc:
-            return out | {i: (None, str(exc)) for i in trading}
+            return out | {i: (None, str(exc)) for i in trading}, exc.transient
         except (ReplayError, ResearchError) as exc:
-            return out | {i: (None, f"simulation refused: {exc}") for i in trading}
+            # A calendar refusal (date outside the calendar) may be fixed by a new file.
+            return out | {i: (None, f"simulation refused: {exc}") for i in trading}, True
         for row in report.identities:
             out[(row.strategy, row.version)] = _result(row, settings.output_decimal_places)
-        return out
+        return out, False
 
     def _settings(self) -> tuple[ReplaySettings, ClockFor]:
         try:
             settings = load_settings(self.paths.replay_settings)
-        except (ReplayError, OSError) as exc:
+        except ReplayError as exc:
             raise _NoInputs(f"replay settings unreadable: {exc}") from exc
+        except OSError as exc:
+            raise _NoInputs(f"replay settings unreadable: {exc}", transient=True) from exc
         try:
             calendar = SessionCalendar.load(self.paths.calendar)
         except (CalendarRefused, OSError) as exc:
-            raise _NoInputs(f"session calendar unreadable: {exc}") from exc
+            raise _NoInputs(f"session calendar unreadable: {exc}", transient=True) from exc
         return settings, calendar_clock(calendar, self.paths.session)
 
     def _bars(self, day: date, today: date) -> dict[str, tuple[Bar, ...]]:
@@ -160,8 +183,10 @@ class ObserverResults:
         try:
             # Today's file may be half way through a line the bot is writing.
             read = read_captured_bars(path, open_tail=day == today)
-        except (CaptureError, OSError) as exc:
+        except CaptureError as exc:
             raise _NoInputs(f"capture file refused: {exc}") from exc
+        except OSError as exc:
+            raise _NoInputs(f"capture file refused: {exc}", transient=True) from exc
         by_symbol: dict[str, list[Bar]] = defaultdict(list)
         for (symbol, _), bar in sorted(read.bars.items()):
             by_symbol[symbol].append(bar)

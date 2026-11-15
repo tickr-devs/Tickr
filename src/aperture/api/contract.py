@@ -561,8 +561,8 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
     order; `records`: observer records only. Observers are matched by name: one entry per
     version recorded that day (config order, then version), or, when a name has no records,
     one empty entry per current version, so a version bump never hides earlier records.
-    `results`: the simulated result per (name, version) recorded that day; an identity without
-    records has none."""
+    `results`: the simulated result of every (name, version) recorded that day; an entry
+    without records gets null with the cause NO_DECISIONS."""
     ordered = _oldest_first(records)
     names = list(dict.fromkeys(name for name, _ in identities))
     entries: list[ObserverV1] = []
@@ -570,7 +570,12 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
         recorded = {r.decision.version for r in ordered if r.decision.strategy == name}
         current = [v for n, v in identities if n == name]
         for version in sorted(recorded or set(current), key=_version_order):
-            gross, cause = results.get((name, version), (None, NO_DECISIONS))
+            if (name, version) in results:
+                gross, cause = results[(name, version)]
+            elif version in recorded:  # a caller bug: refuse rather than mislabel it
+                raise ContractError(f"no simulated result for observer {name} v{version}")
+            else:
+                gross, cause = None, NO_DECISIONS
             entries.append(ObserverV1(name=name, version=version, result_gross_usd=gross,
                                       result_cause=cause, decisions=tuple(
                 ObserverDecisionV1(r.bar_start, r.symbol, r.decision.verdict,
