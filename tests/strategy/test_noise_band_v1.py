@@ -156,14 +156,10 @@ def test_open_position_is_held():
 
 def test_a_full_day_evaluates_well_inside_the_observer_time_limit():
     bars = today(380)
-    strategy, context = make(), ctx(bars)
-    spent = []
-    for _ in range(3):  # the fastest of three: the strategy's cost, not a scheduler pause
-        started = time.perf_counter()
-        strategy.evaluate(context)
-        spent.append(time.perf_counter() - started)
+    started = time.perf_counter()
+    make().evaluate(ctx(bars))
     cfg = config.load(ROOT / "config" / "bot.toml")
-    assert min(spent) < float(cfg.observers.max_evaluation_seconds) / 10
+    assert time.perf_counter() - started < float(cfg.observers.max_evaluation_seconds) / 10
 
 
 @pytest.mark.parametrize("section,key,value", [

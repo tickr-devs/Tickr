@@ -147,6 +147,8 @@ class MarketDataConfig:
     history_sessions: int
     candidate_subscriptions: int
     observer_subscriptions: int
+    observer_resync_seconds: Decimal
+    stream_reserved_subscribe_requests: int
     candidate_retry_seconds: Decimal
     history_dir: str
     stream_reconnect_delay_seconds: Decimal

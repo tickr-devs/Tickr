@@ -431,7 +431,8 @@ class Service:
         self.market.watch = set(self.evaluator.watch)
         self._feed_observers()
         observers = self.observers
-        self.market.observer_watch = set() if observers is None else set(observers.watching())
+        self.market.observer_watch = (set() if observers is None
+                                      else set(observers.watching(self.now())))
 
     def _feed_observers(self) -> None:
         """The contexts the active strategy just saw go to the observers, after all broker

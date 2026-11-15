@@ -39,6 +39,9 @@ from aperture.types import Quote
 
 ALL_OBSERVERS = "all observers"
 _STOP = object()
+# A WATCH counts while its bar started within this many minutes: the completed bar (1), the
+# one before it while the worker is mid-bar (2), plus one for the pass timing. Structural.
+WATCHING_BARS = 3
 
 
 @dataclass(frozen=True)
@@ -115,9 +118,8 @@ class ObserverSet:
         self._enabled = list(observers)
         self._lock = threading.Lock()
         self._failures: list[ObserverFailure] = []
-        # observer folder -> symbol -> bar of its latest WATCH/ENTER; newest bar evaluated
+        # observer folder -> symbol -> bar of its latest WATCH/ENTER
         self._watching: dict[str, dict[str, datetime]] = {}
-        self._newest_bar: datetime | None = None
         self._queue: queue.Queue[object] = queue.Queue(maxsize=queue_size)
         self._idle = threading.Condition()
         self._pending = 0
@@ -166,15 +168,14 @@ class ObserverSet:
             self._failures.clear()
         return taken
 
-    def watching(self) -> frozenset[str]:
-        """Symbols whose latest decision by an enabled observer was WATCH or ENTER on the
-        newest evaluated bar or the one before (the worker may be mid-bar): the observers' own
-        quote wishes, so the platform can subscribe them below the active strategy's. A
-        symbol no longer evaluated drops out after a bar."""
+    def watching(self, now: datetime) -> frozenset[str]:
+        """Symbols whose latest decision by an enabled observer was WATCH or ENTER on a bar
+        that started at most WATCHING_BARS minutes before `now` (the latest completed bar or
+        the one before, while the worker is mid-bar): the observers' own quote wishes, so the
+        platform can subscribe them below the active strategy's. A symbol no longer evaluated,
+        or every symbol once evaluation stops (after the close), drops out."""
+        since = now - WATCHING_BARS * M1
         with self._lock:
-            if self._newest_bar is None:
-                return frozenset()
-            since = self._newest_bar - M1
             enabled = {o.folder for o in self._enabled}
             return frozenset(s for folder, symbols in self._watching.items()
                              if folder in enabled
@@ -243,8 +244,6 @@ class ObserverSet:
                     symbols[context.symbol] = bar_start
                 else:
                     symbols.pop(context.symbol, None)
-                if self._newest_bar is None or bar_start > self._newest_bar:
-                    self._newest_bar = bar_start
             record = DecisionRecord(
                 time=at,
                 bar_start=bar_start,

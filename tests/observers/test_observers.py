@@ -371,13 +371,13 @@ def test_observer_set_hands_observers_neither_budget_nor_stale_quote(tmp_path):
 def test_watching_follows_each_observers_latest_decision(tmp_path):
     watcher, ignorer = Fake(name="w"), Fake(name="i", verdict=Verdict.IGNORE)
     observers, _ = observer_set(tmp_path, watcher, ignorer)
-    assert observers.watching() == frozenset()
+    assert observers.watching(START + 3 * M1) == frozenset()
     observers.on_evaluation(context(), START + 3 * M1)
     assert settle(observers) == ()
-    assert observers.watching() == {"ABC"}
+    assert observers.watching(START + 3 * M1) == {"ABC"}
     watcher.verdict = Verdict.IGNORE
     observers.on_evaluation(context(4), START + 4 * M1)
-    assert settle(observers) == () and observers.watching() == frozenset()
+    assert settle(observers) == () and observers.watching(START + 4 * M1) == frozenset()
     assert observers.close(5)
 
 
@@ -388,7 +388,8 @@ def test_watching_drops_a_symbol_no_longer_evaluated(tmp_path):
     other = SymbolContext("XYZ", bars(5, "XYZ"))
     observers.on_evaluation(other, START + 5 * M1)  # two bars later, ABC not evaluated
     assert settle(observers) == ()
-    assert observers.watching() == {"XYZ"}
+    # ABC's bar started at START + 2, more than three minutes before START + 6
+    assert observers.watching(START + 6 * M1) == {"XYZ"}
     assert observers.close(5)
 
 
@@ -398,5 +399,14 @@ def test_watching_ignores_a_switched_off_observer(tmp_path):
     observers, _ = observer_set(tmp_path, good, bad)
     observers.on_evaluation(context(), START + 3 * M1)
     settle(observers)
-    assert observers.watching() == frozenset()
+    assert observers.watching(START + 3 * M1) == frozenset()
+    assert observers.close(5)
+
+
+def test_watching_empties_once_evaluation_stops(tmp_path):
+    observers, _ = observer_set(tmp_path, Fake())
+    observers.on_evaluation(context(), START + 3 * M1)
+    assert settle(observers) == ()
+    assert observers.watching(START + 3 * M1) == {"ABC"}
+    assert observers.watching(START + 10 * M1) == frozenset()  # after the close, no new bars
     assert observers.close(5)
