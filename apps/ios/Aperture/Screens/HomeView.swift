@@ -79,10 +79,15 @@ struct HomeView: View {
 
 extension HomeView {
   /// Changes when the address, the session or the open positions change, restarting the reads.
-  fileprivate var followKey: [String] {
-    [model.connection.url?.absoluteString ?? Format.missing]
-      + (model.status.map { [WireDate(newYorkDateOf: $0.writtenAt.date).text] } ?? [])
-      + (model.status?.positions.map(\.symbol) ?? [])
+  fileprivate var followKey: FollowKey {
+    FollowKey(url: model.connection.url, day: model.status.map { WireDate(newYorkDateOf: $0.writtenAt.date) },
+      positions: model.status?.positions ?? [])
+  }
+
+  fileprivate struct FollowKey: Hashable {
+    let url: URL?
+    let day: WireDate?
+    let positions: [Position]
   }
 }
 
