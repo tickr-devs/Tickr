@@ -36,6 +36,11 @@ public struct BrandMark: View {
   static let lineWidth = 0.084
   public static let sparkDiameter = 0.09
   static let areaBottom = 0.86
+  /// The live ring: its diameter as a multiple of the spark's at the start, and how far it grows.
+  static let ringStart: CGFloat = 1.6
+  static let ringGrowth: CGFloat = 2.4
+  /// Radius of the soft glow behind the line, as a share of the side (the canvas header's glow).
+  static let glowRadius = 0.18
 
   public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand) {
     self.size = size
@@ -67,9 +72,9 @@ public struct BrandMark: View {
           style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
       if live && settled && !reduceMotion {
         Circle()
-          .fill(lineColor.opacity(Tokens.Opacity.faint))
-          .frame(width: diameter, height: diameter)
-          .scaleEffect(breathing ? Tokens.Motion.pulseScale : 1)
+          .fill(lineColor.opacity(Tokens.Opacity.medium))
+          .frame(width: diameter * Self.ringStart, height: diameter * Self.ringStart)
+          .scaleEffect(breathing ? Self.ringGrowth : 1)
           .opacity(breathing ? 0 : 1)
           .position(x: spark.x * size, y: spark.y * size)
           .onAppear(perform: pulse)
@@ -82,6 +87,7 @@ public struct BrandMark: View {
         .position(x: spark.x * size, y: spark.y * size)
     }
     .frame(width: size, height: size)
+    .shadow(color: tone == .brand ? lineColor.opacity(Tokens.Opacity.faint) : .clear, radius: size * Self.glowRadius)
     .onAppear(perform: appear)
     .accessibilityHidden(true)
   }
