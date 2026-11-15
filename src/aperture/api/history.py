@@ -239,21 +239,61 @@ class History:
 
     # ------------------------------------------------------------ sources
 
+    def _open(self) -> Store | None:
+        """The database read-only, None while none exists; the caller closes it."""
+        if not self.paths.database.exists():
+            return None
+        try:
+            store = Store.open_readonly(self.paths.database)
+            version = store.schema_version
+        except sqlite3.Error as exc:
+            raise HistoryUnavailable(f"database unreadable: {exc}") from exc
+        if version != len(MIGRATIONS):
+            store.close()
+            raise HistoryUnavailable(
+                f"database schema v{version}, this API reads v{len(MIGRATIONS)}")
+        return store
+
+    def entries(self, day: date) -> tuple[api.FlowStopV1, ...]:
+        """Trades of this environment opened on `day` whose entry filled, oldest first, each
+        with its stop as the journal proves it (`fill_times`, the same rows as
+        `stop_confirmed_after_seconds`)."""
+        store = self._open()
+        if store is None:
+            return ()
+        try:
+            found = []
+            for row in store.query("SELECT t.trade_id, t.symbol, t.opened_at FROM trades t "
+                                   "JOIN runs r ON r.run_id = t.run_id WHERE r.environment = ? "
+                                   "ORDER BY t.opened_at, t.trade_id",
+                                   (self.paths.environment,)):
+                if ny_date_of(datetime.fromisoformat(row["opened_at"])) != day:
+                    continue
+                orders = [order_from_row(o) for o in store.query(
+                    "SELECT * FROM orders WHERE trade_id = ? ORDER BY rowid", (row["trade_id"],))]
+                if not any(o.leg is Leg.ENTRY and o.filled_quantity > 0 for o in orders):
+                    continue
+                try:
+                    times = fill_times(store, orders)
+                    state = (api.StopState.PENDING if times.stop_confirmed is None
+                             else api.StopState.VERIFIED)
+                except MalformedJournal:
+                    state = api.StopState.UNKNOWN
+                found.append(api.FlowStopV1(row["trade_id"], row["symbol"], state))
+            return tuple(found)
+        except sqlite3.Error as exc:
+            raise HistoryUnavailable(f"database unreadable: {exc}") from exc
+        finally:
+            store.close()
+
     def _read_db(self, metrics_of: tuple[date, date] | None = None,
                  ) -> tuple[list[api.DayTrade], set[date]]:
         """Closed trades and New York dates of bot runs; none while no database exists.
         `metrics_of` (day, today): the trades closed that day get their display metrics."""
-        if not self.paths.database.exists():
+        store = self._open()
+        if store is None:
             return [], set()
         try:
-            store = Store.open_readonly(self.paths.database)
-        except sqlite3.Error as exc:
-            raise HistoryUnavailable(f"database unreadable: {exc}") from exc
-        try:
-            version = store.schema_version
-            if version != len(MIGRATIONS):
-                raise HistoryUnavailable(
-                    f"database schema v{version}, this API reads v{len(MIGRATIONS)}")
             trades = closed_trades(store, self.paths.environment)
             if metrics_of is not None:
                 trades = [self._with_metrics(store, t, *metrics_of) for t in trades]

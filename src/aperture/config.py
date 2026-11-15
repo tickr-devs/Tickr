@@ -116,6 +116,9 @@ class ApiConfig:
     status_recent_commands: int
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
+    watching_max_rows: int
+    watching_closeness_decimal_places: int
+    flow_change_pct_decimal_places: int
 
 
 @dataclass(frozen=True)
