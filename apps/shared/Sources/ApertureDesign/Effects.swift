@@ -301,4 +301,3 @@ private enum MarqueeLayout {
   /// Share of a marquee's width that fades out at each end.
   static let fadeEdge = 0.06
 }
-
