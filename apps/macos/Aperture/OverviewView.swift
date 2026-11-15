@@ -1181,8 +1181,8 @@ private struct RiskRoomCard: View {
     }
   }
 
-  /// The room left, then the open reservations that will come out of it if their stops are hit,
-  /// as in the design: the room in the accent colour, the reservations in amber after it.
+  /// The room left (the bot's own, already net of the open reservations), then the reservations
+  /// themselves, as in the design: the room in the accent colour, the reservations in amber after it.
   private func bar(room: Double, reserved: Double) -> some View {
     GeometryReader { proxy in
       HStack(spacing: 0) {
@@ -1196,17 +1196,22 @@ private struct RiskRoomCard: View {
     .frame(height: Tokens.Size.bar)
     .onAppear {
       withAnimation(Tokens.Motion.fill) {
-        shown = room
-        shownReserved = Self.clamped(reserved, after: room)
+        shown = Self.share(room)
+        shownReserved = Self.clamped(reserved, after: Self.share(room))
       }
     }
     .onChange(of: [room, reserved]) { _, values in
       withAnimation(Tokens.Motion.fill) {
-        shown = values[0]
-        shownReserved = Self.clamped(values[1], after: values[0])
+        shown = Self.share(values[0])
+        shownReserved = Self.clamped(values[1], after: Self.share(values[0]))
       }
     }
     .accessibilityHidden(true)
+  }
+
+  /// A share of the bar, 0...1: the bot's room may be negative after a gap through a stop.
+  static func share(_ value: Double) -> Double {
+    min(max(value, 0), 1)
   }
 
   /// The reservations' share, never past the end of the bar.
