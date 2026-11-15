@@ -86,7 +86,7 @@ private struct Header: View {
 
   var body: some View {
     HStack(alignment: .center, spacing: Tokens.Space.l) {
-      ApertureLogo()
+      BrandMark(live: model.isLive)
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.m) {
           HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {

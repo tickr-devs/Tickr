@@ -619,13 +619,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aperture"
+            "value" : "Tickr"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aperture"
+            "value" : "Tickr"
           }
         }
       }
@@ -2483,36 +2483,121 @@
         }
       }
     },
-    "lab.observers" : {
+    "lab.agreement" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Observers and replays"
+            "value" : "bot also traded %1$lld of %2$lld: %3$@"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Наблюдатели и повторы"
+            "value" : "бот тоже торговал %1$lld из %2$lld: %3$@"
           }
         }
       }
     },
-    "lab.observersBody" : {
+    "lab.board" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "How each observer version would have traded today, replays of past days and why signals were refused appear here once the bot's API publishes them. Approving a new version stays on the Mac."
+            "value" : "Observers · never trade"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Как торговала бы сегодня каждая версия-наблюдатель, повторы прошлых дней и причины отказов по сигналам появятся здесь, когда API бота начнёт их публиковать. Одобрение новой версии остаётся на Mac."
+            "value" : "Наблюдатели · не торгуют"
+          }
+        }
+      }
+    },
+    "lab.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read the observers: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось прочитать наблюдателей: %@"
+          }
+        }
+      }
+    },
+    "lab.later" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Results are simulated from the captured bars; observers never trade. Approving a new version stays on the Mac."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Результаты рассчитаны по записанным барам; наблюдатели не торгуют. Одобрение новой версии остаётся на Mac."
+          }
+        }
+      }
+    },
+    "lab.noEntries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "would not have entered"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не вошёл бы"
+          }
+        }
+      }
+    },
+    "lab.noObservers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No observers configured."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наблюдатели не настроены."
+          }
+        }
+      }
+    },
+    "lab.noResult" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no simulated P&L"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "нет расчётного P&L"
           }
         }
       }
@@ -2863,13 +2948,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "That link is not an Aperture pairing link."
+            "value" : "That link is not a Tickr pairing link."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Это не ссылка для связи с Aperture."
+            "value" : "Это не ссылка для связи с Tickr."
           }
         }
       }
@@ -3027,6 +3112,23 @@
         }
       }
     },
+    "positions.asOf" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "as of %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "на %@"
+          }
+        }
+      }
+    },
     "positions.chain" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3074,6 +3176,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "вход %@"
+          }
+        }
+      }
+    },
+    "positions.excursion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MAE / MFE"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MAE / MFE"
           }
         }
       }
@@ -3163,6 +3282,40 @@
         }
       }
     },
+    "positions.last" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последняя %@"
+          }
+        }
+      }
+    },
+    "positions.lastAndR" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last %@ · %@ now"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последняя %@ · сейчас %@"
+          }
+        }
+      }
+    },
     "positions.levels" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3214,23 +3367,6 @@
         }
       }
     },
-    "positions.priceLineLater" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "price line comes with chart data"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "линия цены появится с данными графика"
-          }
-        }
-      }
-    },
     "positions.protected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3244,6 +3380,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "под защитой"
+          }
+        }
+      }
+    },
+    "positions.reconciled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconciled with broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сверено с брокером"
           }
         }
       }
@@ -3295,23 +3448,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "занято слотов: %lld из %lld"
-          }
-        }
-      }
-    },
-    "positions.stop" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "stop"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "стоп"
           }
         }
       }
@@ -3380,6 +3516,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "до стопа"
+          }
+        }
+      }
+    },
+    "positions.waitingForBars" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "price line waits for bars"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "линия цены ждёт баров"
           }
         }
       }

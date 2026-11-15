@@ -17,7 +17,7 @@ enum L10n {
 
   enum App {
     static var name: LocalizedStringResource {
-      LocalizedStringResource("app.name", defaultValue: "Aperture", bundle: L10n.bundle)
+      LocalizedStringResource("app.name", defaultValue: "Tickr", bundle: L10n.bundle)
     }
     static var dayMenu: LocalizedStringResource {
       LocalizedStringResource("app.dayMenu", defaultValue: "Day", bundle: L10n.bundle)
@@ -29,7 +29,7 @@ enum L10n {
       LocalizedStringResource("app.nextTradingDay", defaultValue: "Next Trading Day", bundle: L10n.bundle)
     }
     static var openApp: LocalizedStringResource {
-      LocalizedStringResource("app.openApp", defaultValue: "Open Aperture", bundle: L10n.bundle)
+      LocalizedStringResource("app.openApp", defaultValue: "Open Tickr", bundle: L10n.bundle)
     }
     static var settings: LocalizedStringResource {
       LocalizedStringResource("app.settings", defaultValue: "Settings…", bundle: L10n.bundle)
@@ -329,6 +329,14 @@ enum L10n {
   }
 
   enum Toolbar {
+    /// The window subtitle's count of open positions.
+    static func positions(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("toolbar.positions", defaultValue: "positions: \(count)", bundle: L10n.bundle)
+    }
+    /// The bot's address and the age of its status ("127.0.0.1 · 3 s ago").
+    static func connection(_ host: String, _ age: String) -> LocalizedStringResource {
+      LocalizedStringResource("toolbar.connection", defaultValue: "\(host) · \(age)", bundle: L10n.bundle)
+    }
     static var previousDay: LocalizedStringResource {
       LocalizedStringResource("toolbar.previousDay", defaultValue: "Previous Day", bundle: L10n.bundle)
     }
@@ -702,7 +710,7 @@ enum L10n {
     }
     static var showInMenuBar: LocalizedStringResource {
       LocalizedStringResource("settings.showInMenuBar",
-        defaultValue: "Show Aperture in the menu bar",
+        defaultValue: "Show Tickr in the menu bar",
         bundle: L10n.bundle)
     }
     static var appearance: LocalizedStringResource {
