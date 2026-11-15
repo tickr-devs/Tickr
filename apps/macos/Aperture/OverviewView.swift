@@ -91,7 +91,7 @@ private struct Header: View {
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.m) {
           HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-            Text(verbatim: AppInfo.name).font(Tokens.Typography.title).foregroundStyle(Palette.infoText)
+            Text(L10n.App.name).font(Tokens.Typography.title).foregroundStyle(Palette.infoText)
             Text(L10n.Common.operatorTitle).font(Tokens.Typography.subtitle).foregroundStyle(Palette.textPrimary)
           }
           #if DEBUG
