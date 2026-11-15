@@ -57,6 +57,12 @@ struct RootView: View {
         detail
           .id(section)
           .transition(.opacity.combined(with: .move(edge: .bottom)))
+        if let count = model.stoppedWithOpenPositions {
+          StoppedBanner(count: count)
+            .padding(Tokens.Space.l)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
         if let toast = model.toast {
           CommandToast(command: toast)
             .padding(.bottom, Tokens.Space.xl)
@@ -65,16 +71,10 @@ struct RootView: View {
       }
       .animation(Tokens.Motion.standard, value: section)
       .animation(Tokens.Motion.standard, value: model.toast)
+      .animation(Tokens.Motion.standard, value: model.stoppedWithOpenPositions)
       .navigationTitle(Text(section.title))
       .navigationSubtitle(Text(verbatim: subtitle))
       .toolbar { DayToolbar() }
-    }
-    .alert(Text(L10n.Bot.stoppedTitle), isPresented: Binding(get: { model.stopNotice != nil },
-      set: { if !$0 { model.dismissStopNotice() } }),
-      presenting: model.stopNotice) { _ in
-      Button { model.dismissStopNotice() } label: { Text(L10n.Settings.ok) }
-    } message: { cause in
-      Text(L10n.Bot.stoppedOpen(cause))
     }
   }
 
@@ -211,6 +211,35 @@ private struct DayToolbar: ToolbarContent {
         Button(String(localized: L10n.Common.today)) { model.showToday() }.help(Text(L10n.Toolbar.todayHelp))
       }
     }
+  }
+}
+
+/// The bot is down while it holds positions: shown above every screen for as long as the status
+/// says so, since nothing closes these positions at the session's end.
+struct StoppedBanner: View {
+  let count: Int
+
+  /// SF Symbol of the banner.
+  static let symbol = "exclamationmark.octagon.fill"
+
+  var body: some View {
+    HStack(alignment: .top, spacing: Tokens.Space.m) {
+      Image(systemName: Self.symbol)
+        .font(Tokens.Typography.symbol)
+        .foregroundStyle(Palette.loss)
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        Text(L10n.Bot.stoppedTitle).font(Tokens.Typography.callout.weight(.semibold))
+        Text(L10n.Bot.stoppedOpen(count))
+          .font(Tokens.Typography.caption)
+          .foregroundStyle(Palette.textSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(Tokens.Space.m)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium))
+    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(Palette.loss.opacity(Tokens.Opacity.border)))
+    .accessibilityElement(children: .combine)
   }
 }
 

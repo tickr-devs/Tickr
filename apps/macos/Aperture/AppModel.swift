@@ -89,9 +89,6 @@ public final class AppModel {
   public private(set) var sending = false
   public private(set) var sent: [SentCommand] = []
   public private(set) var toast: SentCommand?
-  /// The bot's record of an obeyed stop-bot that left positions open ("N position(s) left open
-  /// under their broker stop"); shown until the operator dismisses it.
-  public private(set) var stopNotice: String?
 
   private var tasks: [Task<Void, Never>] = []
 
@@ -123,6 +120,14 @@ public final class AppModel {
       return PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
         closes: bars.map(\.close.value))
     }
+  }
+
+  /// How many positions the bot left open when it stopped, however it was stopped (stop-bot from
+  /// any device, the session end, a crash); nil while it runs or holds nothing. Shown until the
+  /// status says otherwise, because nothing closes these positions at the session's end.
+  public var stoppedWithOpenPositions: Int? {
+    guard let status, status.botState == .stopped, !status.positions.isEmpty else { return nil }
+    return status.positions.count
   }
 
   /// What is left of today's daily loss limit after realized losses and open reservations, as
@@ -380,15 +385,10 @@ public final class AppModel {
       if let record = records.first(where: { $0.commandId == sent[index].id }) {
         sent[index].outcome = record.outcome
         sent[index].cause = record.cause
-        if record.kind == .stopBot, record.outcome == .done, let cause = record.cause {
-          stopNotice = cause
-        }
         show(sent[index])
       }
     }
   }
-
-  public func dismissStopNotice() { stopNotice = nil }
 
   private func show(_ command: SentCommand) {
     toast = command
