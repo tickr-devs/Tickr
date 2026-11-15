@@ -311,7 +311,8 @@ private struct LevelsCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      HStack {
+      // The label, then its note; the note goes under it at large text sizes.
+      RowStack {
         CardLabel(L10n.Positions.riskBand)
         Spacer()
         if marks == nil {

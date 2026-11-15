@@ -24,7 +24,8 @@ struct LabView: View {
       ConnectionPrompt()
       if let status = model.status {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          HStack {
+          // The label, then its note; the note goes under it at large text sizes.
+          RowStack {
             CardLabel(L10n.Lab.active)
             Spacer()
             StatusPill(L10n.Lab.trades, systemImage: Self.tradesSymbol, tone: .accent)

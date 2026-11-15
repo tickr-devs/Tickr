@@ -30,7 +30,8 @@ struct VersionsCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      HStack {
+      // The label, then its note; the note goes under it at large text sizes.
+      RowStack {
         CardLabel(L10n.Lab.versions)
         Spacer()
         Text(L10n.Lab.noOrders)
