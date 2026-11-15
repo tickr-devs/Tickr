@@ -118,34 +118,38 @@ struct ChartView: View {
 
   // MARK: Controls
 
-  /// One row of controls when the chart is wide; two when it is narrow (a small window, or the
-  /// decisions inspector open), so the controls never push the window past the screen.
+  /// The symbol, interval, chart type, zoom and inspector on top; the indicator chips under them
+  /// in a row that scrolls sideways when the window is narrow, so the chips never widen the
+  /// window and push the sidebar or the inspector off screen.
   private var controls: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: Tokens.Space.m) {
-        symbolPicker
-        timeframePicker
-        stylePicker
-        Divider().frame(height: Self.separatorHeight)
-        indicatorToggles
-        Spacer(minLength: Tokens.Space.m)
-        zoomButtons
-        decisionsToggle
-      }
-      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+    VStack(alignment: .leading, spacing: Tokens.Space.s) {
+      ViewThatFits(in: .horizontal) {
         HStack(spacing: Tokens.Space.m) {
           symbolPicker
           timeframePicker
           stylePicker
           Spacer(minLength: Tokens.Space.m)
+          zoomButtons
           decisionsToggle
         }
-        HStack(spacing: Tokens.Space.m) {
-          indicatorToggles
-          Spacer(minLength: Tokens.Space.m)
-          zoomButtons
+        VStack(alignment: .leading, spacing: Tokens.Space.s) {
+          HStack(spacing: Tokens.Space.m) {
+            symbolPicker
+            timeframePicker
+            Spacer(minLength: Tokens.Space.m)
+            decisionsToggle
+          }
+          HStack(spacing: Tokens.Space.m) {
+            stylePicker
+            Spacer(minLength: Tokens.Space.m)
+            zoomButtons
+          }
         }
       }
+      ScrollView(.horizontal) {
+        indicatorToggles
+      }
+      .scrollIndicators(.never)
     }
     .animation(Tokens.Motion.quick, value: symbols)
   }
