@@ -2,10 +2,16 @@ import SwiftUI
 
 /// The macOS app's opening (macOS has no launch screen): the first window of a launch opens on the
 /// plain background with the mark in its centre, the line draws itself, then the mark flies to the
-/// header's mark (`target`, on screen) while the background fades and the screen shows through.
-/// Under Reduce Motion it only cross-fades. Design: the "Бренд Tickr" board, "macOS opening".
+/// header's mark (`target`, on screen) over the still plain background; only then does the
+/// background fade and the screen show through, the mark giving way to the header's own. It starts
+/// when the window is on screen and key, not before. Under Reduce Motion it only cross-fades. Design: the "Бренд Tickr" board, "macOS opening".
 public struct BrandOpening: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  #if os(macOS)
+  @Environment(\.controlActiveState) private var activeState
+  #endif
+  /// The mark is on stage (and starts drawing): the window is on screen.
+  @State private var started = false
   @State private var flown = false
   @State private var faded = false
   /// This view's origin on screen, to bring the target into its coordinates.
@@ -32,18 +38,39 @@ public struct BrandOpening: View {
   public var body: some View {
     GeometryReader { geometry in
       let centre = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-      BrandMark(size: Tokens.Size.openingMark, live: false, tone: .brand,
-        drawing: .easeOut(duration: Tokens.Motion.openingDrawSeconds).delay(BrandMark.drawDelay))
-        .scaleEffect(flown ? targetSize / Tokens.Size.openingMark : 1)
-        .position(flown ? landing ?? centre : centre)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background { Palette.background.opacity(flown ? 0 : 1) }
-        .opacity(faded ? 0 : 1)
+      ZStack {
+        if started {
+          BrandMark(size: Tokens.Size.openingMark, live: false, tone: .brand,
+            drawing: .easeOut(duration: Tokens.Motion.openingDrawSeconds).delay(Tokens.Motion.openingDelaySeconds))
+            .scaleEffect(flown ? targetSize / Tokens.Size.openingMark : 1)
+            .position(flown ? landing ?? centre : centre)
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Palette.background)
+      .opacity(faded ? 0 : 1)
     }
     .onGeometryChange(for: CGPoint.self) { $0.frame(in: .global).origin } action: { origin = $0 }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
-    .task { await play() }
+    .task(id: windowShown) {
+      guard windowShown, !started else { return }
+      await play()
+    }
+  }
+
+  /// The window is on screen and in front, so the opening is seen from its first frame.
+  private var windowShown: Bool {
+    #if os(macOS)
+    activeState == .key
+    #else
+    true
+    #endif
+  }
+
+  /// Where the header mark is now, in this view's coordinates.
+  private func readLanding() -> CGPoint? {
+    target().map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
   }
 
   private func play() async {
@@ -51,14 +78,16 @@ public struct BrandOpening: View {
       withAnimation(.easeOut(duration: Tokens.Motion.launchFadeSeconds)) { faded = true } completion: { finished() }
       return
     }
-    try? await Task.sleep(for: .seconds(BrandMark.drawDelay + Tokens.Motion.openingDrawSeconds))
-    if let mark = target() {
-      landing = CGPoint(x: mark.x - origin.x, y: mark.y - origin.y)
-    }
+    started = true
+    try? await Task.sleep(for: .seconds(Tokens.Motion.openingDelaySeconds + Tokens.Motion.openingDrawSeconds))
+    landing = readLanding()
     withAnimation(Tokens.Motion.openingFly) { flown = true }
-    // The mark lands on the header's own mark, then gives way to it.
     try? await Task.sleep(for: .seconds(Tokens.Motion.openingFlySeconds))
-    withAnimation(Tokens.Motion.quick) { faded = true } completion: { finished() }
+    // The header may have moved while its data arrived: settle exactly on it, then give way to it.
+    if let now = readLanding(), now != landing {
+      withAnimation(Tokens.Motion.quick) { landing = now }
+    }
+    withAnimation(.easeOut(duration: Tokens.Motion.launchFadeSeconds)) { faded = true } completion: { finished() }
   }
 }
 

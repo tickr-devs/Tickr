@@ -253,6 +253,8 @@ public enum Tokens {
     public static let launchFly = Animation.smooth(duration: launchFlySeconds)
     /// macOS opening (BrandOpening): seconds for the centred mark to draw itself, then its flight
     /// into the Overview header.
+    /// Seconds the window shows the plain background before the mark starts drawing.
+    public static let openingDelaySeconds = 0.15
     public static let openingDrawSeconds = 0.6
     public static let openingFlySeconds = 0.45
     public static let openingFly = Animation.smooth(duration: openingFlySeconds)
