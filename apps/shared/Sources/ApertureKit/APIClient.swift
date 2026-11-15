@@ -73,7 +73,6 @@ public struct APIClient: Sendable {
   static let statusPath = "/status"
   static let pendingPath = "/commands/pending"
   static let settingsPath = "/settings"
-  static let accountPath = "/account"
   static let daysPath = "/days"
   static let barsPath = "/bars"
   /// Query item names of the bars read.
@@ -112,11 +111,6 @@ public struct APIClient: Sendable {
   /// Risk limits and session times from the bot's config, as the API loaded them.
   public func settings() async throws -> SettingsV1 {
     try await perform(request(path: Self.settingsPath, body: nil), expect: Self.ok)
-  }
-
-  /// The bot's last broker read: positions, open orders and whether they matched its records.
-  public func account() async throws -> AccountResponseV1 {
-    try await perform(request(path: Self.accountPath, body: nil), expect: Self.ok)
   }
 
   /// Every New York date with records, newest first.

@@ -137,7 +137,11 @@ final class AppModel {
     } catch is CancellationError {
       return
     } catch {
-      if connection.url == url { accountError = Self.describe(error) }
+      // An old snapshot proves nothing about the broker now.
+      if connection.url == url {
+        account = nil
+        accountError = Self.describe(error)
+      }
     }
   }
 

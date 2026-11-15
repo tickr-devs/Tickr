@@ -27,15 +27,17 @@ public enum Preflight {
     public var id: Check { check }
   }
 
-  /// Every check, in `Check.allCases` order.
-  public static func run(status response: StatusResponseV1?, account: AccountResponseV1?) -> [Result] {
-    // Checks about the bot's state are only as good as a current status.
-    let current = response.flatMap { $0.stale ? nil : $0.status }
+  /// Every check, in `Check.allCases` order. `readFailed` is true when the latest read of the
+  /// status failed: an older response then proves nothing about now.
+  public static func run(status response: StatusResponseV1?, readFailed: Bool, account: AccountResponseV1?)
+    -> [Result] {
+    // Checks about the bot's state are only as good as a current status from the latest read.
+    let current = readFailed ? nil : response.flatMap { $0.stale ? nil : $0.status }
     return Check.allCases.map { check in
       let outcome: Outcome
       switch check {
       case .statusCurrent:
-        outcome = response == nil ? .unknown : (current == nil ? .failed : .passed)
+        outcome = response == nil && !readFailed ? .unknown : (current == nil ? .failed : .passed)
       case .botRunning:
         outcome = verdict(current.map { $0.botState == .running })
       case .streamFresh:

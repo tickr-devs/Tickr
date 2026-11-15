@@ -154,7 +154,7 @@ struct PreflightSection: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    let results = Preflight.run(status: model.response, account: model.account)
+    let results = Preflight.run(status: model.response, readFailed: model.fetchError != nil, account: model.account)
     Section {
       ForEach(results) { result in
         HStack(spacing: Tokens.Space.m) {
