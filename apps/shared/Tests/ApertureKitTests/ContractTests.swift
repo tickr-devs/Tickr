@@ -104,6 +104,19 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(empty.cause != nil)
   }
 
+  @Test func pricesAfterAndWhatIf() throws {
+    let day = try Wire.decoder().decode(DayV1.self, from: fixture("day-v1.json"))
+    let trade = try #require(day.trades.first)
+    #expect(trade.pricesAfter.map(\.minutes) == [1, 5, 15, 60])
+    #expect(trade.pricesAfter[2].price == nil)
+    #expect(trade.pricesAfter[2].cause != nil)
+    #expect(trade.overshootUsd?.text == "0.24")
+    let skipped = try Wire.decoder().decode(SkippedV1.self, from: fixture("skipped-v1.json"))
+    #expect(skipped.signals.map(\.whatIf.exitReason) == [.stop, .flatten, nil])
+    #expect(skipped.signals.last?.whatIf.cause != nil)
+    #expect(skipped.signals.last?.pricesAfter.isEmpty == true)
+  }
+
   @Test func wireDateArithmetic() throws {
     #expect(try WireDate("2026-11-16").adding(days: -29) == WireDate("2026-10-18"))
     #expect(try WireDate("2026-03-08").adding(days: 1) == WireDate("2026-03-09"))

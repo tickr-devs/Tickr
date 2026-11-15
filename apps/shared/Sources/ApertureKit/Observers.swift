@@ -206,6 +206,11 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
   public let entryPrice: DecimalString?
   public let stopPrice: DecimalString?
   public let checks: [CheckV1]
+  /// Prices at set minutes after the signal, oldest first; empty with `pricesAfterCause` when none.
+  public let pricesAfter: [PriceAfterV1]
+  public let pricesAfterCause: String?
+  /// What the signal would have made had it been taken.
+  public let whatIf: WhatIfV1
 
   enum CodingKeys: String, CodingKey {
     case at, symbol, strategy, admission, checks
@@ -213,6 +218,9 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
     case refusal
     case entryPrice = "entry_price"
     case stopPrice = "stop_price"
+    case pricesAfter = "prices_after"
+    case pricesAfterCause = "prices_after_cause"
+    case whatIf = "what_if"
   }
 
   public init(from decoder: Decoder) throws {
@@ -226,6 +234,9 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
     entryPrice = try c.decodeNullable(DecimalString.self, forKey: .entryPrice)
     stopPrice = try c.decodeNullable(DecimalString.self, forKey: .stopPrice)
     checks = try c.decode([CheckV1].self, forKey: .checks)
+    pricesAfter = try c.decode([PriceAfterV1].self, forKey: .pricesAfter)
+    pricesAfterCause = try c.decodeNullable(String.self, forKey: .pricesAfterCause)
+    whatIf = try c.decode(WhatIfV1.self, forKey: .whatIf)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -239,6 +250,9 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
     try c.encodeNullable(entryPrice, forKey: .entryPrice)
     try c.encodeNullable(stopPrice, forKey: .stopPrice)
     try c.encode(checks, forKey: .checks)
+    try c.encode(pricesAfter, forKey: .pricesAfter)
+    try c.encodeNullable(pricesAfterCause, forKey: .pricesAfterCause)
+    try c.encode(whatIf, forKey: .whatIf)
   }
 }
 
