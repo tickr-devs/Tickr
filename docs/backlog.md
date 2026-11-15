@@ -47,3 +47,54 @@ Operator and app:
 - Quote capture retention days and disk allocation (decide after one measured day).
 - Missing relative-volume history for a new listing: refuse (recommended) or pass.
 - Phone alert before the iOS app: is a simple push channel needed before unattended trading days, or are macOS notifications enough until then (old #147, product-spec Q7)?
+
+---
+
+## Later: path to product (after the current work)
+
+Not started until the current work is finished: Monday Sandbox probes, the 5 clean Sandbox days of spec section 1, the open pull requests, and a strategy that shows an edge. Source: the 2026-11-15 report "Tickr: strategies, settings and the path to product" and the product assessment of the same day. Steps are in order; a later step does not start before the earlier ones.
+
+Owner requirement (2026-11-15): every setting has exactly one source of truth. No value is written in two places, between platform and strategy or anywhere else; whoever needs a value reads it from its owner.
+
+### A. One source of truth (remove today's duplicates)
+1. **Planned loss per trade** (50 USD) is in `config/bot.toml` `[risk] planned_loss_usd` and in `[sizing] planned_loss_usd` of all four strategies. Keep it on the platform only; the strategy receives it with its input and keeps only its sizing formula.
+2. **Position notional cap** (2,500 USD) is in `[risk] position_notional_cap_usd` and in `[sizing] max_position_notional_usd` of all four strategies. Same fix as item 1.
+3. **Spread ceiling** (1.5%) is in `[market_data] max_spread_ratio` and in `[liquidity] max_spread_ratio` of all four strategies; **session dollar volume** (5M USD) is in `[market_data] min_session_dollar_volume_usd` and in `[liquidity] min_dollar_volume_usd` of price-action-v1 and v2. Strategy only (owner decision 2026-11-15; pull request in progress, merge after Monday). So that discovery does not load bars for every symbol, the strategy declares its pre-filter as data and the platform applies the union of the active strategy's and the observers' filters before loading bars.
+4. **History sessions** (5) is in `[market_data] history_sessions`, in `config/replay.toml` and implied by `relative_volume_sessions` / `prior_sessions` in the strategies. The strategy declares what it needs (`prior_sessions_needed` exists); the bot and the replay load the largest declared need.
+5. **`price-action-v2`** repeats all 23 values of `price-action-v1` and adds 3. A variant stores only its differences from the strategy it extends.
+6. **Smaller repeats**: `atr_period` in `config/research.toml`, `output_decimal_places` in `research.toml` and `replay.toml`.
+7. **Test**: a key that means the same thing may not exist at two levels; `tests/test_config.py` enforces it. The Sandbox and Production tables repeat nine equal values on purpose (spec section 4: Production inherits nothing from Sandbox); the owner decides whether that exception stays.
+
+### B. Platform checks before real money
+8. **Tradability and halts**: the item "Tradability check before entry" above, plus a probe of how a trading halt and the LULD band show in Webull data, no entry into a halted symbol, and the open owner question about a position held through a halt.
+9. **Money in the account**: buying power, settled cash (cash account) and intraday margin (the pattern day trader rule ended on 2026-06-04; brokers now check intraday margin deficits) as an admission check; `buying_power_usd` is read but always empty today.
+10. **Price collar**: refuse an entry whose price is implausibly far from the last completed bar and the previous quote (one bad quote must not make a breakout).
+11. **Weekly loss ceiling and a stop-out streak lock** (the "Loss locks" item above), before any unattended trading.
+12. **Slippage measurement**: planned loss against the realized loss of every stopped trade, reported per day; replay and backtests use the measured value instead of the fixed 0.05%.
+13. **Simulations obey platform rules**: observers, replay and "what if" run through the same admission rules (position limit, pause after a loss, daily ceiling) as the active strategy, from one shared code path, and the app labels each result with the rules it was computed under.
+14. **Exit side**: the platform rule "a stop only moves toward the price" with the trailing stop; profit target and time exit as strategy rules.
+
+### C. Settings as a product feature
+15. **Settings schema**: one record per setting: key, owner (platform or one strategy), type, unit, minimum, maximum, step, group, description (English and Russian), when a change applies, whether it needs biometrics, plus cross-field rules. The TOML comments, the validation, the app forms and the advisor's limits all come from it.
+16. **Three classes**: owner settings (about 20 platform keys plus strategy parameters) shown in the apps; engineering settings (about 210 keys) file only; closed settings (environment, Production authorization, secrets) never changeable from an app.
+17. **Strategy version computed by the bot** as a fingerprint of the values; the owner only names it. Every decision and trade references the settings version.
+18. **Settings API**: schema, current values, validate a draft, apply, history, rollback; every change journaled with time and device.
+19. **Apply rules**: tightening protection applies at once; strategy parameters and the active strategy apply when the bot is flat, by a safe restart through the normal startup and reconciliation; loosening protection applies from the next session and needs biometrics; an open trade finishes under the version it was opened with. No generic hot reload.
+20. **App screens** (design first, then macOS, then iOS): Protection, Strategy, Rules in force (every limit on a trade with its level and value), Change history; a "platform rule" label and value on every refusal; a count of entries the platform stopped, by cause.
+21. **Try before apply**: replay a draft of strategy parameters on recent sessions from the Strategy screen (Lab).
+
+### D. Strategy analysis tools
+22. **Parameter sweep and sensitivity report**: result against each parameter moved by one step; a strategy must sit on a plateau, not a peak.
+23. **Walk-forward run** as the standard evaluation, and a counter of how many times each data set and hold-out was used.
+24. **Promotion ladder with written criteria**: history, observer for N sessions, active in Sandbox, real account at small size, full size. Answers the open question "what counts as Sandbox proved the strategy".
+25. **Risk budget per strategy** (share of the daily ceiling, position limit), needed before two strategies are active at once.
+26. **Fewer parameters**: new strategies aim for one hypothesis and at most about 10 parameters (price-action-v1 has 23).
+
+### E. Selling it (only if the owner still wants to after A to D)
+27. Check the "Tickr" trademark, buy the domain, add a license file (the repository is public without one).
+28. Written answer from Webull on third-party use: the Trading API is for a person's own account; a product for others needs the Connect API (OAuth, by application). Nothing else in this section starts before the answer.
+29. Landing page and waitlist; continue only with real demand (about 200 emails in 2 to 3 months; under 50 means stop).
+30. First-run setup without a terminal: installer, credentials entry, pairing, preflight in the app.
+31. Strategy templates with parameters and the advisor instead of a visual strategy builder; strategies stay code.
+32. Company, securities lawyer (tool, not advice), direct sale of the notarized Mac app by subscription (App Store rule 3.2.1(viii) blocks trading apps from individuals), closed beta.
+33. Strategy marketplace: postponed until demand is proven (owner decision 2026-11-15).
