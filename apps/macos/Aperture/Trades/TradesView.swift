@@ -521,6 +521,7 @@ private struct TradeDetailCard: View {
                   Text(L10n.Trades.overshootValue(Money.signedUSD(usd), trade.overshootR.map { Risk.text($0.value) }
                     ?? Format.missing))
                     .font(Tokens.Typography.bodyMono)
+                    .foregroundStyle(Palette.result(usd))
                 } else {
                   Text(L10n.Trades.unknown).foregroundStyle(Palette.textQuaternary)
                     .help(Text(verbatim: trade.overshootCause ?? Format.missing))
@@ -528,6 +529,7 @@ private struct TradeDetailCard: View {
               }
             }
             if let after = WhatIfText.after(trade.pricesAfter) {
+              Divider()
               Text(verbatim: after)
                 .font(Tokens.Typography.captionMono)
                 .foregroundStyle(Palette.textTertiary)
@@ -623,10 +625,15 @@ private struct SkippedRow: View {
             .foregroundStyle(Palette.textTertiary)
         }
         let result = WhatIfText.result(setup.whatIf)
-        Text(verbatim: result.text)
-          .font(Tokens.Typography.captionMono)
-          .foregroundStyle(result.color)
-          .help(Text(verbatim: WhatIfText.after(setup.pricesAfter) ?? setup.pricesAfterCause ?? Format.missing))
+        HStack(spacing: Tokens.Space.xs) {
+          Circle()
+            .fill(result.color)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+          Text(verbatim: result.text)
+            .font(Tokens.Typography.captionMono)
+            .foregroundStyle(result.color)
+        }
+        .help(Text(verbatim: WhatIfText.after(setup.pricesAfter) ?? setup.pricesAfterCause ?? Format.missing))
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(.rect)
@@ -686,9 +693,17 @@ private struct WhatIfCard: View {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         if let signals = model.skipped?.signals {
           if let summary = WhatIfSummary.make(SkippedGroup.make(signals)) {
-            Text(L10n.Trades.whatIfSummary(Risk.text(summary.resultR), Money.signedUSD(summary.resultUsd)))
-              .font(Tokens.Typography.bodyMono)
-              .foregroundStyle(Palette.result(summary.resultUsd))
+            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+              Text(L10n.Trades.whatIfSummary)
+                .font(Tokens.Typography.callout)
+                .foregroundStyle(Palette.textSecondary)
+              Text(verbatim: Risk.text(summary.resultR))
+                .font(Tokens.Typography.chipValue)
+                .foregroundStyle(Palette.result(summary.resultR))
+              Text(verbatim: Money.signedUSD(summary.resultUsd))
+                .font(Tokens.Typography.calloutMono)
+                .foregroundStyle(Palette.result(summary.resultUsd))
+            }
             Text(L10n.Trades.whatIfCounts(summary.wins, summary.losses, summary.notReplayed))
               .font(Tokens.Typography.captionMono)
               .foregroundStyle(Palette.textTertiary)

@@ -1488,7 +1488,7 @@ enum L10n {
     }
     /// Not taken row: the replay could not run, with why.
     static func whatIfNoResult(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("trades.whatIfNoResult", defaultValue: "If entered: unknown, \(cause)", bundle: L10n.bundle)
+      LocalizedStringResource("trades.whatIfNoResult", defaultValue: "If entered: not replayed · \(cause)", bundle: L10n.bundle)
     }
     /// How a replay ended: the stop was hit.
     static var exitStop: LocalizedStringResource {
@@ -1514,9 +1514,9 @@ enum L10n {
     static func afterMinutes(_ minutes: Int, _ change: String) -> LocalizedStringResource {
       LocalizedStringResource("trades.afterMinutes", defaultValue: "\(minutes) min \(change)", bundle: L10n.bundle)
     }
-    /// What if card: the day's skipped setups replayed as entries, in R and USD.
-    static func whatIfSummary(_ r: String, _ usd: String) -> LocalizedStringResource {
-      LocalizedStringResource("trades.whatIfSummary", defaultValue: "Each skipped setup entered once: \(r) · \(usd)", bundle: L10n.bundle)
+    /// What if card: label before the replays' sum in R and USD.
+    static var whatIfSummary: LocalizedStringResource {
+      LocalizedStringResource("trades.whatIfSummary", defaultValue: "Each skipped setup entered once:", bundle: L10n.bundle)
     }
     /// What if card: replays that won, lost, or could not run.
     static func whatIfCounts(_ wins: Int, _ losses: Int, _ unknown: Int) -> LocalizedStringResource {

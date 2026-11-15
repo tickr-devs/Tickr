@@ -9378,13 +9378,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If entered: unknown, %@"
+            "value" : "If entered: not replayed · %@"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Если бы вошли: неизвестно, %@"
+            "value" : "Если бы вошли: без расчёта · %@"
           }
         }
       }
@@ -9429,13 +9429,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Each skipped setup entered once: %1$@ · %2$@"
+            "value" : "Each skipped setup entered once:"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Каждый пропущенный сетап взят один раз: %1$@ · %2$@"
+            "value" : "Каждый пропущенный сетап взят один раз:"
           }
         }
       }
