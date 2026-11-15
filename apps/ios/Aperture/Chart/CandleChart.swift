@@ -30,12 +30,6 @@ struct CandleChart: View {
   static let volumeHeight: CGFloat = 64
   /// Share of a candle's time slot its body fills; the rest is the gap between candles.
   static let bodyShare = 0.64
-  /// Candles on screen when the chart opens, and the fewest and most zooming allows.
-  static let defaultVisible = 40.0
-  static let fewestVisible = 15.0
-  static let mostVisible = 390.0
-  /// How much one zoom step changes the number of candles on screen.
-  static let zoomStep = 1.5
   /// Space above and below the visible prices, as a share of their range.
   static let pricePadding = 0.08
   /// Value labels on the volume and ATR panes' scales.
@@ -436,7 +430,14 @@ struct CandleChart: View {
 /// Which stretch of the day the chart shows: how many candles fit on screen and where the view
 /// starts. Kept by the Chart tab so its controls can zoom and follow the newest candle.
 struct ChartViewport: Equatable {
-  var visible = CandleChart.defaultVisible
+  /// Candles on screen when the chart opens, and the fewest and most zooming allows.
+  static let defaultVisible = 40.0
+  static let fewestVisible = 15.0
+  static let mostVisible = 390.0
+  /// How much one zoom step changes the number of candles on screen.
+  static let zoomStep = 1.5
+
+  var visible = ChartViewport.defaultVisible
   var scroll = Date.distantPast
 
   /// Seconds of the day on screen.
@@ -448,10 +449,10 @@ struct ChartViewport: Equatable {
   }
 
   func canZoomOut(_ series: ChartSeries) -> Bool {
-    visible < min(CandleChart.mostVisible, Double(series.candles.count))
+    visible < min(Self.mostVisible, Double(series.candles.count))
   }
 
-  var canZoomIn: Bool { visible > CandleChart.fewestVisible }
+  var canZoomIn: Bool { visible > Self.fewestVisible }
 
   /// Whether the newest candle is on screen.
   func showsEnd(_ series: ChartSeries) -> Bool {
@@ -462,7 +463,7 @@ struct ChartViewport: Equatable {
   /// Show `factor` times as many candles, keeping the right edge where it is.
   mutating func zoom(by factor: Double, _ series: ChartSeries) {
     let end = scroll.addingTimeInterval(window(series))
-    visible = min(max(visible * factor, CandleChart.fewestVisible), CandleChart.mostVisible)
+    visible = min(max(visible * factor, Self.fewestVisible), Self.mostVisible)
     scroll = end.addingTimeInterval(-window(series))
   }
 

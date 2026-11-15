@@ -258,10 +258,10 @@ private struct ChartControls: View {
         }
         Spacer(minLength: Tokens.Space.s)
         Group {
-          Button { zoom(by: CandleChart.zoomStep) } label: { Image(systemName: "minus") }
+          Button { zoom(by: ChartViewport.zoomStep) } label: { Image(systemName: "minus") }
             .disabled(!viewport.canZoomOut(series))
             .accessibilityLabel(Text(ChartText.zoomOut))
-          Button { zoom(by: 1 / CandleChart.zoomStep) } label: { Image(systemName: "plus") }
+          Button { zoom(by: 1 / ChartViewport.zoomStep) } label: { Image(systemName: "plus") }
             .disabled(!viewport.canZoomIn)
             .accessibilityLabel(Text(ChartText.zoomIn))
         }
