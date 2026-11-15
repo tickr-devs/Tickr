@@ -357,6 +357,9 @@ enum L10n {
     static var reconciled: LocalizedStringResource {
       LocalizedStringResource("positions.reconciled", defaultValue: "Reconciled with broker", bundle: L10n.bundle)
     }
+    static func asOf(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("positions.asOf", defaultValue: "as of \(time)", bundle: L10n.bundle)
+    }
     static func last(_ price: String) -> LocalizedStringResource {
       LocalizedStringResource("positions.last", defaultValue: "last \(price)", bundle: L10n.bundle)
     }

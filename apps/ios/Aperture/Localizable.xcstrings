@@ -3027,6 +3027,23 @@
         }
       }
     },
+    "positions.asOf" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "as of %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "на %@"
+          }
+        }
+      }
+    },
     "positions.chain" : {
       "extractionState" : "manual",
       "localizations" : {

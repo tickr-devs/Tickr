@@ -26,7 +26,7 @@ struct PositionsView: View {
           }
           .rise()
         } else {
-          PositionChips(positions: positions, marks: prices.marks)
+          PositionChips(positions: positions, marks: prices.marks.filter { model.isCurrent($0.value) })
             .rise(step: PositionDetail.Order.chips.rawValue)
           if let position = positions.first(where: { $0.symbol == model.selectedSymbol }) ?? positions.first {
             PositionDetail(position: position, marks: prices.marks[position.symbol])
@@ -41,6 +41,7 @@ struct PositionsView: View {
       await model.refresh()
       if let url = model.connection.url, let status = model.status { await prices.load(url, status: status) }
     }
+    .task(id: model.connection.url) { await model.followAccount() }
     .task(id: followKey) {
       guard let url = model.connection.url, let status = model.status, !status.positions.isEmpty else { return }
       await prices.follow(url, status: status)
@@ -173,15 +174,23 @@ private struct PositionDetail: View {
             .font(.largeTitle.monospaced().bold())
           Spacer()
           if let marks {
+            // An old last bar (capture stopped, a past session) is shown as history: muted and
+            // dated, never as a live result.
+            let current = model.isCurrent(marks)
             VStack(alignment: .trailing, spacing: Tokens.Space.xxs) {
               Text(verbatim: Money.signedUSD(marks.unrealized))
                 .font(Tokens.Typography.metric)
-                .foregroundStyle(Palette.result(marks.unrealized))
+                .foregroundStyle(current ? Palette.result(marks.unrealized) : Palette.textQuaternary)
                 .contentTransition(.numericText())
               Text(marks.resultR.map { L10n.Positions.lastAndR(Money.plain(marks.last), Risk.text($0)) }
                 ?? L10n.Positions.last(Money.plain(marks.last)))
                 .font(Tokens.Typography.captionMono)
                 .foregroundStyle(Palette.textTertiary)
+              if !current {
+                Text(L10n.Positions.asOf(Format.clock(marks.lastAt.addingTimeInterval(PositionMarks.barSeconds))))
+                  .font(Tokens.Typography.annotationBold)
+                  .foregroundStyle(Palette.warningText)
+              }
             }
             .accessibilityElement(children: .combine)
           }
@@ -193,9 +202,10 @@ private struct PositionDetail: View {
       }
       .rise(step: Order.title.rawValue)
 
-      LevelsCard(entry: entry, stop: stop, marks: marks).rise(step: Order.levels.rawValue)
+      LevelsCard(entry: entry, stop: stop, marks: marks, current: marks.map(model.isCurrent) ?? false)
+        .rise(step: Order.levels.rawValue)
       ProtectionChain(position: position, brokerReadAt: model.status?.freshness.lastBrokerReadAt?.date,
-        current: model.response?.stale == false)
+        reconciled: model.isFresh && model.account?.stale == false)
         .rise(step: Order.chain.rawValue)
 
       HStack(spacing: Tokens.Space.s) {
@@ -260,6 +270,8 @@ private struct LevelsCard: View {
   let entry: Decimal
   let stop: Decimal?
   let marks: PositionMarks?
+  /// Whether the marks are current; an old last close does not pulse.
+  let current: Bool
 
   /// Highest and lowest price the drawing must show.
   private var top: Decimal { max(entry, marks?.high ?? entry) }
@@ -334,7 +346,7 @@ private struct LevelsCard: View {
         .trim(from: 0, to: drawn ? 1 : 0)
         .stroke(color, style: StrokeStyle(lineWidth: Tokens.Stroke.bold, lineCap: .round, lineJoin: .round))
       if let last = points.last {
-        PulseDot(color, size: Tokens.Size.dotSmall)
+        PulseDot(color, size: Tokens.Size.dotSmall, pulsing: current)
           .position(last)
       }
     }
@@ -373,9 +385,12 @@ private struct ProtectionChain: View {
 
   @State private var progress: CGFloat = 0
   let position: Position
-  /// When the bot last read the broker's positions and orders, and whether its status is current.
+  /// When the bot last read the broker's positions and orders, and whether that read is current:
+  /// the status is current and GET /account says the read is within account_stale_seconds. A
+  /// failing reconciliation stops the read while the status keeps updating, so the status alone
+  /// proves nothing.
   let brokerReadAt: Date?
-  let current: Bool
+  let reconciled: Bool
 
   var body: some View {
     let steps = self.steps
@@ -426,7 +441,7 @@ private struct ProtectionChain: View {
       (L10n.Positions.stopSent(position.stop.price?.text ?? ""), position.stop.clientOrderId ?? Format.missing,
         state == .pending || state == .verified),
       (L10n.Positions.stopWorking, Board.stopStateTitle(state), state.isProtected),
-      (L10n.Positions.reconciled, brokerReadAt.map(Format.clock) ?? Format.missing, brokerReadAt != nil && current),
+      (L10n.Positions.reconciled, brokerReadAt.map(Format.clock) ?? Format.missing, brokerReadAt != nil && reconciled),
     ]
   }
 }

@@ -5,10 +5,12 @@ import Foundation
 /// display only; the bot never acts on these, and the broker's numbers stay the truth.
 public struct PositionMarks: Hashable, Sendable {
   /// Seconds in one captured bar (the API serves M1 only).
-  static let barSeconds: TimeInterval = 60
+  public static let barSeconds: TimeInterval = 60
 
   /// Close of the newest bar.
   public let last: Decimal
+  /// When the newest bar started.
+  public let lastAt: Date
   /// (last − entry) × quantity, in dollars.
   public let unrealized: Decimal
   /// (last − entry) / (entry − stop); nil when the stop is unknown or not below the entry.
@@ -26,6 +28,12 @@ public struct PositionMarks: Hashable, Sendable {
   public let low: Decimal
   public let high: Decimal
 
+  /// Whether the newest bar closed within `staleSeconds` of `now` (the bot's clock): only then
+  /// are the last price and the results current. Older marks are history and must say so.
+  public func isFresh(now: Date, staleSeconds: TimeInterval) -> Bool {
+    now.timeIntervalSince(lastAt.addingTimeInterval(Self.barSeconds)) <= staleSeconds
+  }
+
   /// Nil when no bar covers the time since the position opened.
   public init?(bars: [BarV1], entry: Decimal, stop: Decimal?, quantity: Decimal, openedAt: Date) {
     // The bar the fill happened in counts: it starts up to one bar before the open.
@@ -35,6 +43,7 @@ public struct PositionMarks: Hashable, Sendable {
       let high = since.map(\.high.value).max() else { return nil }
     let risk: Decimal? = stop.flatMap { $0 < entry ? entry - $0 : nil }
     last = lastBar.close.value
+    lastAt = lastBar.start.date
     unrealized = (last - entry) * quantity
     adverse = min(low - entry, 0)
     favorable = max(high - entry, 0)
