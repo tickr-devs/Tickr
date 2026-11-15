@@ -40,7 +40,9 @@ final class RouteProtocol: URLProtocol {
       Self.routes.withLock { $0.barSymbols.append(symbol) }
     }
     let body = Self.routes.withLock { $0.bodies[path] }
-    let response = HTTPURLResponse(url: url, statusCode: body == nil ? 404 : 200, httpVersion: "HTTP/1.1",
+    // A queued command answers 202 Accepted, a read 200 OK (docs/api.md).
+    let success = request.httpMethod == "POST" ? 202 : 200
+    let response = HTTPURLResponse(url: url, statusCode: body == nil ? 404 : success, httpVersion: "HTTP/1.1",
       headerFields: ["Content-Type": "application/json"])
     if let response {
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
