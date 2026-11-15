@@ -222,6 +222,7 @@ private struct DayRow: View {
           .foregroundStyle(Palette.textQuaternary)
       }
       Spacer(minLength: Tokens.Space.s)
+      CleanMark(clean: day.clean)
       if !day.hasBars {
         Image(systemName: "chart.bar.xaxis")
           .foregroundStyle(Palette.textQuaternary)

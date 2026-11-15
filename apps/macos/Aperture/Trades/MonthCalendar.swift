@@ -125,11 +125,20 @@ private struct CalendarDay: View {
           shape.strokeBorder(Palette.accent.opacity(Tokens.Opacity.faint), lineWidth: Tokens.Stroke.thin)
         }
       }
+      .overlay(alignment: .topTrailing) {
+        if let clean = cell.summary?.clean, clean.verdict != .unknown {
+          Circle()
+            .fill(clean.verdict == .clean ? Palette.profit : Palette.loss)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+            .padding(Tokens.Space.xxs)
+        }
+      }
       .contentShape(shape)
     }
     .buttonStyle(.plain)
     .disabled(result == nil && !isToday)
-    .help(Text(verbatim: Format.dayLabel(cell.day)))
+    .help(Text(verbatim: cell.summary.map { Format.dayLabel(cell.day) + Format.lineSeparator + CleanMark.text($0.clean) }
+      ?? Format.dayLabel(cell.day)))
     .accessibilityLabel(Text(verbatim: Format.dayLabel(cell.day)))
     .accessibilityValue(result.map { Text(verbatim: Money.signedUSD($0)) } ?? Text(L10n.Trades.noRecords))
     .accessibilityAddTraits(selected ? .isSelected : [])

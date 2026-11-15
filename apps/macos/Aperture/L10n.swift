@@ -1450,6 +1450,18 @@ enum L10n {
     static func repeatRange(_ first: String, _ last: String, _ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("trades.repeatRange", defaultValue: "\(first)–\(last) · ×\(count)", bundle: L10n.bundle)
     }
+    /// Tooltip of a clean day's mark.
+    static var cleanDay: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanDay", defaultValue: "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended clean.", bundle: L10n.bundle)
+    }
+    /// Tooltip of a day that was not clean, with what made it so.
+    static func notCleanDay(_ causes: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.notCleanDay", defaultValue: "Not clean: \(causes)", bundle: L10n.bundle)
+    }
+    /// Tooltip of a day whose clean-day verdict is unknown.
+    static func cleanUnknown(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.cleanUnknown", defaultValue: "Clean or not is unknown: \(cause)", bundle: L10n.bundle)
+    }
     /// A refusal with the end of its window (a cooldown), New York time.
     static func refusedUntil(_ message: String, _ time: String) -> LocalizedStringResource {
       LocalizedStringResource("trades.refusedUntil", defaultValue: "\(message) · until \(time)", bundle: L10n.bundle)

@@ -8034,6 +8034,40 @@
         }
       }
     },
+    "trades.cleanDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended clean."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чистый день: брокер и записи бота сходились, у каждой позиции был стоп, день закрыт чисто."
+          }
+        }
+      }
+    },
+    "trades.cleanUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clean or not is unknown: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чистый ли день, неизвестно: %@"
+          }
+        }
+      }
+    },
     "trades.closed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8387,6 +8421,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Нет записей"
+          }
+        }
+      }
+    },
+    "trades.notCleanDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not clean: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не чистый: %@"
           }
         }
       }
