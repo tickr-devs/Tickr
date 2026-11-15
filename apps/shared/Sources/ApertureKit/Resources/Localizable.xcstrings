@@ -474,6 +474,23 @@
         }
       }
     },
+    "kit.environment.demo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Демо"
+          }
+        }
+      }
+    },
     "kit.environment.production" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -113,11 +113,14 @@ public enum ApiText {
 public enum BotEnvironment: String, CaseIterable, Sendable {
   case sandbox
   case production
+  /// `aperture demo` (config/demo.toml).
+  case demo
 
   public var title: LocalizedStringResource {
     switch self {
     case .sandbox: L10n.environmentSandbox
     case .production: L10n.environmentProduction
+    case .demo: L10n.environmentDemo
     }
   }
 }

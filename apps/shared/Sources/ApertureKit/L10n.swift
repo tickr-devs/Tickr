@@ -251,6 +251,10 @@ enum L10n {
   static var environmentSandbox: LocalizedStringResource {
     LocalizedStringResource("kit.environment.sandbox", defaultValue: "Sandbox", bundle: bundle)
   }
+  /// Where the bot runs: `aperture demo`, a made-up day with no broker.
+  static var environmentDemo: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.demo", defaultValue: "Demo", bundle: bundle)
+  }
   /// Where the bot trades: the real account.
   static var environmentProduction: LocalizedStringResource {
     LocalizedStringResource("kit.environment.production", defaultValue: "Production", bundle: bundle)

@@ -25,6 +25,7 @@ struct ApiTextTests {
   func environments() {
     #expect(ApiText.environment("sandbox") == String(localized: L10n.environmentSandbox))
     #expect(ApiText.environment("production") == String(localized: L10n.environmentProduction))
+    #expect(ApiText.environment("demo") == String(localized: L10n.environmentDemo))
     #expect(ApiText.environment("paper_v2") == String(localized: L10n.environmentUnknown))
   }
 
