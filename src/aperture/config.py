@@ -34,7 +34,9 @@ class RenamedKeyWarning(UserWarning):
 
 
 # Keys renamed after release: (section, old name) -> new name. An old local
-# `config/bot.toml` keeps loading with a warning; giving both names is refused.
+# `config/bot.toml` keeps loading with a warning; giving both names is refused. Display keys
+# only: a renamed risk or order number stays a loud refusal. Drop an entry once the owner's
+# file uses the new name.
 RENAMED_KEYS: dict[tuple[str, str], str] = {
     ("api", "watching_check_decimal_places"): "check_decimal_places",
 }
