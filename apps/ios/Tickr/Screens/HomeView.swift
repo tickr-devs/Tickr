@@ -16,6 +16,10 @@ struct HomeView: View {
   var body: some View {
     Screen(L10n.App.name) {
       ConnectionPrompt()
+      if model.connection.demo {
+        // Every command from here goes to the demo day: said at the top, as loud as a warning.
+        WarningBanner(L10n.Home.demoTitle, detail: L10n.Home.demoDetail, systemImage: SettingsView.demoSymbol)
+      }
       DayLine(days: dayModel).rise(step: Order.day.rawValue)
       Summary(past: dayModel.shown).rise(step: Order.summary.rawValue)
       if let past = dayModel.shown {

@@ -55,4 +55,12 @@ import TickrKit
     #expect(!Connection.load(defaults).demo)
     defaults.removePersistentDomain(forName: "DemoDayTests")
   }
+
+  @MainActor
+  @Test func everyConfirmationNamesWhereTheCommandGoes() {
+    #expect(BotControl.target("Stops the bot.", demo: true).key == "control.toDemo")
+    #expect(BotControl.target("Stops the bot.", demo: false).key == "control.toBot")
+    let demo = String(localized: BotControl.target("Stops the bot.", demo: true))
+    #expect(demo.hasPrefix("Stops the bot.") && demo.contains("DEMO"))
+  }
 }

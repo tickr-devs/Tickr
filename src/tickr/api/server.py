@@ -490,6 +490,16 @@ GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", 
               "/trades/whatif", "/advisor")
 MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
 MAX_PORT = 65535  # TCP ports are 16-bit (protocol constant)
+HTML_TYPE = "text/html; charset=utf-8"
+# Every HTML page this API serves, its own or the demo's through /demo/, carries these headers.
+PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline'; connect-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"),
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
 LAB_REPLAY = "/lab/replay"  # GET reads, POST starts: outside the command inbox
 TRADE_WHATIF = "/trades/whatif"  # GET: another version on one trade's day, simulated
 # A strategy folder name: one path segment, never "." or "..".
@@ -627,14 +637,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._demo(None)
                 return
             if path == "/":
-                self._send(200, self.server.page, "text/html; charset=utf-8", {
-                    "Content-Security-Policy": (
-                        "default-src 'none'; script-src 'unsafe-inline'; "
-                        "style-src 'unsafe-inline'; connect-src 'self'; "
-                        "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"),
-                    "X-Frame-Options": "DENY",
-                    "Referrer-Policy": "no-referrer",
-                })
+                self._send(200, self.server.page, HTML_TYPE, dict(PAGE_HEADERS))
             elif path == "/status":
                 self._json(200, self.server.status_response())
             elif path == "/commands/pending":
@@ -790,7 +793,10 @@ class Handler(BaseHTTPRequestHandler):
             self._error("unavailable", str(exc))
             return
         content_type = answer.headers.pop("Content-Type", f"{JSON_TYPE}; charset=utf-8")
-        self._send(answer.status, answer.body, content_type, answer.headers)
+        extra = answer.headers
+        if content_type.split(";", 1)[0].strip().lower() == HTML_TYPE.split(";", 1)[0]:
+            extra = {**extra, **PAGE_HEADERS}  # the demo's page gets this API's page headers
+        self._send(answer.status, answer.body, content_type, extra)
 
     def _redeem(self) -> None:
         """POST /pair with {"code": "<code>"} on the remote port: the one-time pairing code `pair`

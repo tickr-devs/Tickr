@@ -191,6 +191,15 @@ enum L10n {
   }
 
   enum Bot {
+    /// A command confirmation's message with where the command goes: the demo day.
+    static func confirmToDemo(_ explanation: String) -> LocalizedStringResource {
+      LocalizedStringResource("bot.confirmToDemo",
+        defaultValue: "\(explanation)\n\nSent to: the DEMO day, not the bot.", bundle: L10n.bundle)
+    }
+    /// A command confirmation's message with where the command goes: the real bot.
+    static func confirmToBot(_ explanation: String) -> LocalizedStringResource {
+      LocalizedStringResource("bot.confirmToBot", defaultValue: "\(explanation)\n\nSent to: the bot.", bundle: L10n.bundle)
+    }
     static var pauseEntries: LocalizedStringResource {
       LocalizedStringResource("bot.pauseEntries", defaultValue: "Pause Entries", bundle: L10n.bundle)
     }
@@ -2401,6 +2410,14 @@ enum L10n {
     }
   }
   enum MenuBar {
+    static var demoTitle: LocalizedStringResource {
+      LocalizedStringResource("menuBar.demoTitle", defaultValue: "Demo day: commands go to the demo, not the bot",
+        bundle: L10n.bundle)
+    }
+    static var demoDetail: LocalizedStringResource {
+      LocalizedStringResource("menuBar.demoDetail", defaultValue: "Turn it off in Settings › General before trading.",
+        bundle: L10n.bundle)
+    }
     /// Menu bar: label over today's result.
     static var today: LocalizedStringResource {
       LocalizedStringResource("menuBar.today", defaultValue: "Today", bundle: L10n.bundle)

@@ -222,6 +222,40 @@
         }
       }
     },
+    "bot.confirmToBot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n\nSent to: the bot."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n\nКуда: настоящий бот."
+          }
+        }
+      }
+    },
+    "bot.confirmToDemo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n\nSent to: the DEMO day, not the bot."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n\nКуда: ДЕМО-день, не бот."
+          }
+        }
+      }
+    },
     "bot.emergency" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4930,6 +4964,40 @@
         }
       }
     },
+    "menuBar.demoDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn it off in Settings › General before trading."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перед торговлей выключите его в Настройках › Основные."
+          }
+        }
+      }
+    },
+    "menuBar.demoTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo day: commands go to the demo, not the bot"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Демо-день: команды уходят в демо, не боту"
+          }
+        }
+      }
+    },
     "menuBar.entry" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9113,13 +9181,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "DEMO"
+            "value" : "DEMO DAY"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ДЕМО"
+            "value" : "ДЕМО-ДЕНЬ"
           }
         }
       }

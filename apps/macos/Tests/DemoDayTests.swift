@@ -73,4 +73,12 @@ struct DemoDayTests {
     model.selectedDay = past
     #expect(model.selectedDay == past)
   }
+
+  @Test("Every command confirmation names where the command goes")
+  func confirmationNamesTheTarget() {
+    #expect(BotControls.confirmation("Closes MVLD.", demo: true).key == "bot.confirmToDemo")
+    #expect(BotControls.confirmation("Closes MVLD.", demo: false).key == "bot.confirmToBot")
+    let demo = String(localized: BotControls.confirmation("Closes MVLD.", demo: true))
+    #expect(demo.hasPrefix("Closes MVLD.") && demo.contains("DEMO"))
+  }
 }

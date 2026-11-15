@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import replace
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,10 +18,11 @@ from tickr.api import contract
 from tickr.api.server import make_remote_server, make_server, settings_from_config
 
 from .samples import T0
-from .test_remote import REMOTE, paired, remote
+from .test_remote import REMOTE, paired, remote, with_remote_hosts
 from .test_server import ROOT, Clock, doc, request
 
 DEMO_ANSWER = b'{"demo": true}'
+DEMO_PAGE = b"<!doctype html><title>demo</title>"
 
 
 class Upstream(ThreadingHTTPServer):
@@ -39,12 +41,15 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         self.server.seen.append({"method": self.command, "path": self.path,
                                  "headers": dict(self.headers.items()),
                                  "body": self.rfile.read(length) if length else b""})
+        page = self.path == "/"
+        answer = DEMO_PAGE if page else DEMO_ANSWER
         self.send_response(202 if self.command == "POST" else 200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(DEMO_ANSWER)))
+        self.send_header("Content-Type", "text/html; charset=utf-8" if page
+                         else "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(answer)))
         self.send_header("Set-Cookie", "never=passed")
         self.end_headers()
-        self.wfile.write(DEMO_ANSWER)
+        self.wfile.write(answer)
 
     do_GET = do_POST = _answer  # noqa: N815 - stdlib naming
 
@@ -68,7 +73,7 @@ def upstream():
 @pytest.fixture
 def settings(tmp_path, upstream):
     cfg = config.load(ROOT / "config" / "bot.toml", root=tmp_path)
-    cfg = replace(cfg, api=replace(cfg.api, remote_hosts=(REMOTE,)))
+    cfg = with_remote_hosts(cfg, REMOTE)
     return replace(settings_from_config(cfg), port=0, remote_port=0,
                    demo_port=upstream.server_port)
 
@@ -112,9 +117,24 @@ def test_get_is_forwarded_with_its_query_and_answered_as_it_came(local_api, upst
     assert seen["headers"]["Host"] == f"127.0.0.1:{upstream.server_port}"
 
 
-def test_the_demo_root_is_the_demo_page(local_api, upstream):
-    resp, _ = request(local_api, "GET", "/demo")
-    assert resp.status == 200 and upstream.seen[-1]["path"] == "/"
+def test_the_demo_root_is_the_demo_page_with_the_page_headers(local_api, upstream):
+    resp, payload = request(local_api, "GET", "/demo")
+    assert resp.status == 200 and payload == DEMO_PAGE and upstream.seen[-1]["path"] == "/"
+    own, _ = request(local_api, "GET", "/")
+    for name in ("Content-Security-Policy", "X-Frame-Options", "Referrer-Policy"):
+        assert resp.getheader(name) == own.getheader(name) is not None
+
+
+def test_a_get_with_a_content_length_is_answered_at_once(local_api, upstream, settings):
+    """A client's Content-Length on a GET is not forwarded: the demo would wait for a body that
+    never comes, until the timeout."""
+    start = time.monotonic()
+    resp, payload = request(local_api, "GET", "/demo/status",
+                            headers={"Content-Length": "5", "Content-Type": "application/json"})
+    assert resp.status == 200 and payload == DEMO_ANSWER
+    assert time.monotonic() - start < float(settings.demo_timeout_seconds) / 2
+    sent = {name.lower() for name in upstream.seen[-1]["headers"]}
+    assert "content-length" not in sent and "content-type" not in sent
 
 
 def test_a_path_that_only_starts_like_demo_is_not_forwarded(local_api, upstream):

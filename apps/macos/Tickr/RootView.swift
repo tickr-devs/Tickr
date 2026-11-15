@@ -414,15 +414,16 @@ private struct DayStepper: View {
   /// holds the longest live-day label in 12-point mono, the Russian "ср, 30 сент. · сегодня"
   /// (22 characters) as well as the English "Wed, Sep 30 · today" (19).
   static let dayMinWidth: CGFloat = 162
-  /// Accessibility id of the DEMO chip, for the UI tests.
+  /// Accessibility id of the DEMO chip, for the UI tests, and its symbol.
   static let demoChipID = "toolbar-demo"
+  static let demoSymbol = "theatermasks.fill"
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
       ConnectionStatus()
         .padding(.trailing, Self.connectionGap)
       if model.dayLocked {
-        Badge(L10n.Toolbar.demoChip, tone: .warning)
+        StatusPill(L10n.Toolbar.demoChip, systemImage: Self.demoSymbol, tone: .warning)
           .help(Text(L10n.Toolbar.demoHelp))
           .accessibilityIdentifier(Self.demoChipID)
       }
