@@ -674,6 +674,6 @@ public final class AppModel {
   }
 
   static func describe(_ error: Error) -> String {
-    (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+    ErrorText.describe(error)
   }
 }

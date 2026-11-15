@@ -76,6 +76,15 @@ public enum APIError: Error, LocalizedError, Equatable {
   }
 }
 
+/// Any error as the apps show it: its own description in the person's language when it has
+/// one (APIError, ContractError, the system's network errors), a plain "unexpected error"
+/// otherwise; never Swift's English debug form of the error.
+public enum ErrorText {
+  public static func describe(_ error: Error) -> String {
+    (error as? LocalizedError)?.errorDescription ?? String(localized: L10n.unexpectedError)
+  }
+}
+
 /// Client for the bot's local API. Stateless; safe to share.
 public struct APIClient: Sendable {
   /// Where the bot's local API listens by default (config/bot.toml `[api]`); the apps' settings
