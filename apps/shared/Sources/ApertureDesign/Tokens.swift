@@ -251,9 +251,6 @@ public enum Tokens {
     public static let launchFly = Animation.smooth(duration: launchFlySeconds)
     /// The cross-fade that replaces the opening animation under Reduce Motion.
     public static let launchFadeSeconds = 0.35
-    /// Seconds between redraws of a scrolling marquee (30 a second): at `tickerSpeed` a step is
-    /// under a point, smooth to the eye, at a quarter of the work of a 120 Hz display's every frame.
-    public static let marqueeFrameSeconds = 1.0 / 30
     /// Seconds for one turn of the radar sweep.
     public static let rotationSeconds = 4.0
     /// Points per second of the event ticker.
