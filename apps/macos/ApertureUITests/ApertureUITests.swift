@@ -118,7 +118,9 @@ final class ApertureUITests: XCTestCase {
     let toggle = app.descendants(matching: .any)[Self.decisionsToggle].firstMatch
     XCTAssertTrue(toggle.waitForExistence(timeout: Self.timeout))
     toggle.click()
-    XCTAssertTrue(app.staticTexts[Self.decisionRule].firstMatch.waitForExistence(timeout: Self.timeout))
+    // A check row reads as one accessibility element, so its rule is part of a longer label.
+    let check = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", Self.decisionRule))
+    XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout))
   }
 
   @MainActor
