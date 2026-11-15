@@ -12,18 +12,20 @@ struct RootView: View {
         .tabItem { Label { Text(L10n.App.home) } icon: { Image(systemName: "square.grid.2x2") } }
         .tag(AppTab.home)
       NavigationStack { PositionsView() }
-        .tabItem { Label { Text(L10n.App.positions) } icon: { Image(systemName: "lock.shield") } }
+        .tabItem { Label { Text(L10n.App.positions) } icon: { Image(systemName: "lock") } }
         .tag(AppTab.positions)
       NavigationStack { ChartTab() }
-        .tabItem { Label { Text(L10n.App.chart) } icon: { Image(systemName: "chart.xyaxis.line") } }
+        .tabItem { Label { Text(L10n.App.chart) } icon: { Image(systemName: "chart.line.uptrend.xyaxis") } }
         .tag(AppTab.chart)
       NavigationStack { ActivityView() }
-        .tabItem { Label { Text(L10n.App.activity) } icon: { Image(systemName: "list.bullet.rectangle") } }
+        .tabItem { Label { Text(L10n.App.activity) } icon: { Image(systemName: "line.3.horizontal") } }
         .tag(AppTab.activity)
       NavigationStack { LabView() }
-        .tabItem { Label { Text(L10n.App.lab) } icon: { Image(systemName: "sparkles") } }
+        .tabItem { Label { Text(L10n.App.lab) } icon: { Image(systemName: "star") } }
         .tag(AppTab.lab)
     }
+    // Outline icons, as on the design, rather than the tab bar's default filled variants.
+    .environment(\.symbolVariants, .none)
     .modifier(NoticeOverlay())
     .onOpenURL { url in
       if let pairing = Pairing.parse(url.absoluteString) {
