@@ -69,6 +69,22 @@ public enum Studies {
     return Array(repeating: nil, count: first) + tail
   }
 
+  /// EMA seeded the charting way: undefined for the first `period - 1` values, the SMA of the first
+  /// `period` values at the `period`-th, then `ema = prev + (value - prev) * 2 / (period + 1)`.
+  /// The bot's own EMA (`Indicators.ema`, seeded with the first value) is a different definition.
+  public static func ema(_ values: [Double], period: Int) -> [Double?] {
+    guard period > 0, values.count >= period else { return values.map { _ in nil } }
+    let weight = Indicators.emaSmoothing / Double(period + 1)
+    var previous = values[..<period].reduce(0, +) / Double(period)
+    var line: [Double?] = Array(repeating: nil, count: period - 1)
+    line.append(previous)
+    for value in values[period...] {
+      previous += (value - previous) * weight
+      line.append(previous)
+    }
+    return line
+  }
+
   /// Bollinger bands: the SMA of the closes, and lines `width` population standard deviations
   /// above and below it.
   public static func bollinger(_ closes: [Double], period: Int, width: Double) -> [BollingerPoint?] {
@@ -82,17 +98,18 @@ public enum Studies {
     }
   }
 
-  /// MACD: fast EMA minus slow EMA of the closes, with an EMA of that line as the signal. Defined
-  /// once the slow EMA has `slow` candles behind it.
+  /// MACD: fast EMA minus slow EMA of the closes (both SMA-seeded, `ema`), with an SMA-seeded EMA
+  /// of that line as the signal. The MACD line is defined from the `slow`-th candle, the signal
+  /// `signal - 1` candles later.
   public static func macd(_ closes: [Double], fast: Int, slow: Int, signal: Int) -> [MACDPoint?] {
-    let fastLine = Indicators.ema(closes, period: fast)
-    let slowLine = Indicators.ema(closes, period: slow)
+    let fastLine = ema(closes, period: fast)
+    let slowLine = ema(closes, period: slow)
     let macdLine: [Double?] = closes.indices.map { index in
-      guard index + 1 >= slow, let fastValue = fastLine[index], let slowValue = slowLine[index] else { return nil }
+      guard let fastValue = fastLine[index], let slowValue = slowLine[index] else { return nil }
       return fastValue - slowValue
     }
     guard let first = macdLine.firstIndex(where: { $0 != nil }) else { return macdLine.map { _ in nil } }
-    let signalLine = Indicators.ema(macdLine[first...].compactMap { $0 }, period: signal)
+    let signalLine = ema(macdLine[first...].compactMap { $0 }, period: signal)
     return macdLine.indices.map { index in
       guard index >= first, let value = macdLine[index], let signalValue = signalLine[index - first] else { return nil }
       return MACDPoint(macd: value, signal: signalValue)
@@ -100,7 +117,8 @@ public enum Studies {
   }
 
   /// RSI with Wilder smoothing: the first average gain and loss are simple averages of the first
-  /// `period` changes, later ones `(prev * (period - 1) + change) / period`. 100 when nothing fell.
+  /// `period` changes, later ones `(prev * (period - 1) + change) / period`. 100 when nothing fell, 50 when
+  /// nothing moved at all.
   public static func rsi(_ closes: [Double], period: Int) -> [Double?] {
     guard period > 0, closes.count > period else { return closes.map { _ in nil } }
     var values: [Double?] = Array(repeating: nil, count: period)
@@ -124,7 +142,7 @@ public enum Studies {
   }
 
   private static func rsiValue(gain: Double, loss: Double) -> Double {
-    guard loss > 0 else { return oscillatorScale }
+    guard loss > 0 else { return gain > 0 ? oscillatorScale : oscillatorScale / 2 }
     return oscillatorScale - oscillatorScale / (1 + gain / loss)
   }
 
