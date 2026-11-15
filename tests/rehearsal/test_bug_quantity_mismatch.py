@@ -12,9 +12,9 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.types import OrderType, Side
 from rehearsal.harness import Rehearsal
 from rehearsal.kit import add, breakout, fence_names, scripted, without_fsync
+from tickr.types import OrderType, Side
 
 
 @pytest.fixture(autouse=True)

@@ -1,4 +1,4 @@
-"""Rehearsals: odd broker answers during a day, through the real `aperture run` (spec 9, 13).
+"""Rehearsals: odd broker answers during a day, through the real `tickr run` (spec 9, 13).
 
 A lost reply to the entry (order created, or never created), a 429 or a local budget refusal on
 the stop, an unmapped order status, Detail that cannot find an order for a while, and a
@@ -17,8 +17,6 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.broker.base import OrderNotFound
-from aperture.types import OrderDetail, OrderState, OrderType
 from rehearsal.harness import Rehearsal
 from rehearsal.kit import (
     add,
@@ -30,6 +28,8 @@ from rehearsal.kit import (
     scripted,
     without_fsync,
 )
+from tickr.broker.base import OrderNotFound
+from tickr.types import OrderDetail, OrderState, OrderType
 
 
 @pytest.fixture(autouse=True)

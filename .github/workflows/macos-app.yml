@@ -7,10 +7,9 @@ on:
       - "apps/macos/**"
       - "apps/shared/**"
       - "tests/api/fixtures/**"
-      - "src/aperture/api/schema/**"
-      - "Aperture.xcworkspace/**"
+      - "src/tickr/api/schema/**"
+      - "Tickr.xcworkspace/**"
       - ".github/workflows/macos-app.yml"
-      - ".swiftlint.yml"
   workflow_dispatch:
   # Weekly build of main, so a conflict between two separately green pull requests shows up.
   schedule:
@@ -34,12 +33,9 @@ jobs:
           newest=$(ls -d /Applications/Xcode_*.app | grep -viE "beta|rc" | sort -V | tail -1)
           sudo xcode-select -s "$newest"
           xcodebuild -version
+      # SwiftLint runs in the swift-rules workflow (Linux), on every pull request.
       - name: Design-system checks (docs/design-system.md)
-        run: |
-          python3 apps/scripts/check_swift_rules.py
-          command -v swiftlint >/dev/null || brew install swiftlint
-          swiftlint version
-          swiftlint lint --strict --quiet --config .swiftlint.yml
+        run: python3 apps/scripts/check_swift_rules.py
       - run: swift --version
       - name: Toolchain id for the build cache
         run: echo "XCODE_ID=$(xcodebuild -version | head -1 | tr ' ' '-')" >> "$GITHUB_ENV"
@@ -50,7 +46,7 @@ jobs:
           path: |
             apps/shared/.build
             apps/macos/.build
-          key: spm-${{ runner.os }}-${{ env.XCODE_ID }}-${{ hashFiles('apps/shared/Package.swift', 'apps/macos/Package.swift', 'apps/shared/Sources/**', 'apps/macos/Aperture/**') }}
+          key: spm-${{ runner.os }}-${{ env.XCODE_ID }}-${{ hashFiles('apps/shared/Package.swift', 'apps/macos/Package.swift', 'apps/shared/Sources/**', 'apps/macos/Tickr/**') }}
           restore-keys: spm-${{ runner.os }}-${{ env.XCODE_ID }}-
       - name: Shared package (contract models, design) tests
         working-directory: apps/shared
@@ -61,11 +57,11 @@ jobs:
           swift build
           swift test
           scripts/make-app.sh
-      # Builds the app as the owner does in Xcode and runs its UI tests (apps/macos/ApertureUITests)
+      # Builds the app as the owner does in Xcode and runs its UI tests (apps/macos/TickrUITests)
       # against the contract fixtures; ad-hoc signed, because a UI test runner must be signed.
       - name: Xcode workspace builds the macOS app and runs its UI tests
         run: |
           xcodebuild -version
-          xcodebuild -workspace Aperture.xcworkspace -scheme "Aperture macOS" \
+          xcodebuild -workspace Tickr.xcworkspace -scheme "Tickr macOS" \
             -destination "platform=macOS" -derivedDataPath apps/macos/build/xcode \
             CODE_SIGN_IDENTITY=- test
