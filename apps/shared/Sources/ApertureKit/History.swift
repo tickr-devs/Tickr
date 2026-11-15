@@ -117,11 +117,13 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
   public let overshootUsd: DecimalString?
   public let overshootR: DecimalString?
   public let overshootCause: String?
+  /// The strategy and version that opened the trade; nil when the bot did not record it.
+  public let strategy: StrategyId?
 
   public var id: String { tradeId }
 
   enum CodingKeys: String, CodingKey {
-    case symbol, quantity
+    case symbol, quantity, strategy
     case tradeId = "trade_id"
     case entryPrice = "entry_price"
     case exitPrice = "exit_price"
@@ -166,6 +168,7 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
     overshootUsd = try c.decodeNullable(DecimalString.self, forKey: .overshootUsd)
     overshootR = try c.decodeNullable(DecimalString.self, forKey: .overshootR)
     overshootCause = try c.decodeNullable(String.self, forKey: .overshootCause)
+    strategy = try c.decodeNullable(StrategyId.self, forKey: .strategy)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -191,6 +194,7 @@ public struct DayTrade: Codable, Hashable, Sendable, Identifiable {
     try c.encodeNullable(overshootUsd, forKey: .overshootUsd)
     try c.encodeNullable(overshootR, forKey: .overshootR)
     try c.encodeNullable(overshootCause, forKey: .overshootCause)
+    try c.encodeNullable(strategy, forKey: .strategy)
   }
 
   /// Result in R (result / planned loss), nil when the planned loss is zero.
