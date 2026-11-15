@@ -60,7 +60,11 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
 
   /// The New York date `days` calendar days later (earlier when negative).
   public func adding(days: Int) -> WireDate {
-    WireDate(newYorkDateOf: WireDate.newYork.date(byAdding: .day, value: days, to: noonInNewYork)!)
+    // A Gregorian calendar always adds whole days to a noon anchor; no fallback date.
+    guard let date = WireDate.newYork.date(byAdding: .day, value: days, to: noonInNewYork) else {
+      preconditionFailure()
+    }
+    return WireDate(newYorkDateOf: date)
   }
 
   public var description: String { text }
