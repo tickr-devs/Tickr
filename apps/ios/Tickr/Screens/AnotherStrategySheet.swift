@@ -6,9 +6,6 @@ import TickrKit
 /// API on the trade's symbol and day (GET /trades/whatif), under what the bot did. Simulated and
 /// read-only; the API refuses it during the session, and that reason is shown as sent.
 struct AnotherStrategySheet: View {
-  /// Decimals of an R.
-  static let rDigits = 2
-
   let activity: ActivityModel
   let url: URL
   let symbol: String
@@ -104,7 +101,7 @@ struct AnotherStrategySheet: View {
                 String(localized: ending(item.exitReason))))
                 .foregroundStyle(Palette.textTertiary)
               Spacer(minLength: Tokens.Space.s)
-              Text(verbatim: Risk.text(item.resultR.value, fractionDigits: Self.rDigits))
+              Text(verbatim: Risk.text(item.resultR.value, fractionDigits: StatDigits.r))
                 .foregroundStyle(Palette.result(item.resultR.value))
             }
             .font(Tokens.Typography.captionMono)
@@ -144,7 +141,7 @@ struct AnotherStrategySheet: View {
   }
 
   @ViewBuilder private func figures(r: Decimal?, usd: Decimal?) -> some View {
-    Text(verbatim: r.map { Risk.text($0, fractionDigits: Self.rDigits) } ?? Format.missing)
+    Text(verbatim: r.map { Risk.text($0, fractionDigits: StatDigits.r) } ?? Format.missing)
       .font(Tokens.Typography.calloutMono.bold())
       .foregroundStyle(r.map { Palette.result($0) } ?? Palette.textQuaternary)
     Text(verbatim: usd.map { Money.signedUSD($0) } ?? Format.missing)
