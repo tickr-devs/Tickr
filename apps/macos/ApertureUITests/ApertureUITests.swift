@@ -41,6 +41,8 @@ final class ApertureUITests: XCTestCase {
   /// The Overview's screener chips (ScreenerChips.id) and watching card (WatchingCard.id).
   static let screenerChips = "overview-screener-chips"
   static let watchingCard = "overview-watching"
+  /// The month calendar of Trades & days (MonthCalendar.id).
+  static let calendar = "trades-calendar"
   /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "ask_above_trigger"
@@ -185,6 +187,16 @@ final class ApertureUITests: XCTestCase {
     let watching = app.descendants(matching: .any)[Self.watchingCard].firstMatch
     let check = watching.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", Self.decisionRule))
     XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "watched symbol\n\(app.debugDescription)")
+  }
+
+  @MainActor
+  func testTradesShowTheMonthCalendar() {
+    let app = launch()
+    open(Self.sections[2], in: app)
+    let calendar = app.descendants(matching: .any)[Self.calendar].firstMatch
+    XCTAssertTrue(calendar.waitForExistence(timeout: Self.timeout), "calendar\n\(app.debugDescription)")
+    // The fixture's recorded days are buttons in the month grid.
+    XCTAssertTrue(calendar.buttons.count > 0, "calendar days\n\(app.debugDescription)")
   }
 
   @MainActor
