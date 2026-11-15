@@ -13,9 +13,10 @@ final class HomeDayModel {
   private(set) var shown: DaySummary?
   /// The bot the days were listed from; another bot starts again from today.
   @ObservationIgnored private var source: URL?
+  @ObservationIgnored @Injected(\.appModel) private var app
 
   /// Today in New York, on the bot's clock.
-  private var today: WireDate { Container.shared.appModel().today }
+  private var today: WireDate { app.today }
 
   /// The day the switcher stands on: the chosen past day, else today.
   var day: WireDate { shown?.day ?? today }
@@ -30,7 +31,7 @@ final class HomeDayModel {
       days = []
       shown = nil
     }
-    let client = Container.shared.apiClient(Container.shared.appModel().connection.endpoint(for: url))
+    let client = Container.shared.apiClient(app.connection.endpoint(for: url))
     guard let listed = try? await client.days().days, source == url else { return }
     days = listed
     // A day no longer listed (another environment's database) is not shown as recorded.

@@ -3114,23 +3114,6 @@
         }
       }
     },
-    "home.flatAtClose" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is a recorded day. Its trades are on the Activity tab."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ — записанный день. Его сделки на вкладке «Активность»."
-          }
-        }
-      }
-    },
     "home.gateClosed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3195,6 +3178,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "НЕТ СТОПА"
+          }
+        }
+      }
+    },
+    "home.pastDayNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is a recorded day. Its trades are on the Activity tab."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ — записанный день. Его сделки на вкладке «Активность»."
           }
         }
       }

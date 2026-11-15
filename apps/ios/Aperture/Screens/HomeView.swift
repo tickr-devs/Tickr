@@ -20,7 +20,7 @@ struct HomeView: View {
       Summary(past: dayModel.shown).rise(step: Order.summary.rawValue)
       if let past = dayModel.shown {
         // A recorded day: its result above, nothing live below.
-        Text(L10n.Home.flatAtClose(Format.day(past.day.noonInNewYork)))
+        Text(L10n.Home.pastDayNote(Format.day(past.day.noonInNewYork)))
           .font(.subheadline)
           .foregroundStyle(Palette.textTertiary)
           .frame(maxWidth: .infinity, alignment: .leading)

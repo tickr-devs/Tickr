@@ -247,8 +247,8 @@ enum L10n {
       LocalizedStringResource("home.recordedNote",
         defaultValue: "Read-only from the bot's records. Commands are off for past days.", bundle: L10n.bundle)
     }
-    static func flatAtClose(_ day: String) -> LocalizedStringResource {
-      LocalizedStringResource("home.flatAtClose",
+    static func pastDayNote(_ day: String) -> LocalizedStringResource {
+      LocalizedStringResource("home.pastDayNote",
         defaultValue: "\(day) is a recorded day. Its trades are on the Activity tab.", bundle: L10n.bundle)
     }
     static var noPosition: LocalizedStringResource {
