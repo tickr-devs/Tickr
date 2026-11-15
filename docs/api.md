@@ -5,6 +5,9 @@ local API. The API process is separate from the bot and never talks to the broke
 account routes: it serves the status and account files the bot writes and drops operator commands
 into an inbox the bot reads. Its one market-data read, `GET /chart`, is off by default (below).
 
+Planned additions for the backlog screens (advisor, trailing stop, Production gate, notifications)
+are in `docs/api-planned.md`.
+
 Run it: `python -m tickr.api --config config/bot.toml`. Settings are in `config/bot.toml` `[api]`.
 
 ## Transport and safety
@@ -14,6 +17,8 @@ Run it: `python -m tickr.api --config config/bot.toml`. Settings are in `config/
   sends `Origin`, it must be `http://<name>:<port>`. Otherwise `403`. No CORS headers are ever sent.
 - Commands require `Content-Type: application/json` and a `Content-Length` within
   `[api] max_request_body_bytes`.
+- Both ports close a connection that sends nothing for `[api] request_timeout_seconds` (request
+  line, headers or body), so an idle or slow client cannot hold a server thread.
 
 ## Remote access (the phone)
 
