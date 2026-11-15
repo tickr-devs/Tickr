@@ -88,8 +88,11 @@ public extension View {
   func rise(_ delay: Double = 0) -> some View { modifier(Rise(delay: delay)) }
 }
 
-/// A ring that fills to `fraction` (0...1) with a soft halo behind it. When the fraction changes the
-/// ring animates to it and the halo swells once; nothing moves between changes.
+/// A ring that fills to `fraction` (0...1) with a soft halo behind it. The ring follows the fraction
+/// as it is; when its colour changes (the value crossed into another band) the ring animates there
+/// and the halo swells once. A fraction that moves every second with an open position's result
+/// restarted both animations on every tick, so they never rested and the screen around them was
+/// laid out on every frame (Risk, Instruments 2026-11-15).
 public struct ResultRing<Center: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn = false
@@ -111,7 +114,7 @@ public struct ResultRing<Center: View>: View {
         .fill(RadialGradient(colors: [color.opacity(Tokens.Opacity.border), .clear], center: .center,
           startRadius: 0, endRadius: Tokens.Size.ringHalo))
         .padding(lineWidth)
-        .phaseAnimator([false, true], trigger: reduceMotion ? 0 : fraction) { halo, swelled in
+        .phaseAnimator([false, true], trigger: reduceMotion ? nil : color) { halo, swelled in
           halo
             .scaleEffect(swelled ? Tokens.Motion.breatheScale : 1)
             .opacity(swelled ? Tokens.Opacity.overlay : Tokens.Opacity.faint)
@@ -123,7 +126,7 @@ public struct ResultRing<Center: View>: View {
         .trim(from: 0, to: drawn ? fraction : 0)
         .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
         .rotationEffect(RingGeometry.startAngle)
-        .animation(Tokens.Motion.fill, value: fraction)
+        .animation(Tokens.Motion.fill, value: color)
       center
     }
     .padding(lineWidth / 2)
