@@ -10,7 +10,8 @@ from tickr.broker.fake import FakeBroker
 from tickr.broker.webull import MalformedResponse
 from tickr.calendar import NEW_YORK, SessionCalendar
 from tickr.config import GateResult
-from tickr.data.base import FakeMarketData
+from tickr.data.base import FakeMarketData, ScreenerKind, ScreenerRow
+from tickr.data.discovery import NoStrategy
 from tickr.data.health import StreamHealth
 from tickr.engine.core import Engine
 from tickr.observers.loader import load_active
@@ -153,11 +154,16 @@ def test_discovery_waits_while_protection_needs_the_loop(tmp_path):
     assert len(rig.store.journal(DISCOVERY)) == 1
 
 
-def test_discovery_needs_the_strategy_liquidity_rules(tmp_path):
+def test_without_a_strategy_discovery_captures_but_keeps_no_candidate(tmp_path):
     rig = Rig(tmp_path)
-    rig.market.screen = None  # the active strategy did not load: no entries, no discovery
+    rig.market.screen = NoStrategy()  # the active strategy did not load: no entries
+    rig.source.set_screener(ScreenerKind.GAINERS, [ScreenerRow(
+        ScreenerKind.GAINERS, 1, "id-ABC", "ABC", "NSQ", "USD", "COMMON_STOCK", {})])
+    rig.source.set_quote(quote(rig.now))
     rig.market.tick()
-    assert rig.source.calls == [] and rig.market.discovery is None
+    assert any(c[0] == "screener" for c in rig.source.calls)
+    assert rig.market.discovery is not None and rig.market.discovery.candidates == ()
+    assert not any(c[0] == "bars" for c in rig.source.calls)
 
 
 def test_discovery_never_runs_outside_the_session(tmp_path):

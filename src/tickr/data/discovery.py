@@ -237,6 +237,21 @@ def universe_cause(instrument: Instrument, settings: DiscoverySettings) -> Rejec
     return None
 
 
+class NoStrategy:
+    """Liquidity rules that refuse every symbol, for when the active strategy did not load:
+    discovery still reads and captures screeners and snapshot quotes (replay input), but no
+    symbol becomes a candidate, so nothing is subscribed or evaluated for it."""
+
+    name, version = "none", "-"
+    REFUSED = (Check("strategy_loaded", None, "is", None, False, "no active strategy"),)
+
+    def quote_liquidity(self, quote: Quote) -> tuple[Check, ...]:
+        return self.REFUSED
+
+    def session_liquidity(self, session_bars: Sequence[Bar]) -> tuple[Check, ...]:
+        return self.REFUSED
+
+
 def strategy_refusal(instrument: Instrument, checks: Sequence[Check],
                      screen: Liquidity) -> Rejection | None:
     """The first failed check of the strategy's liquidity rules as a refusal, or None."""

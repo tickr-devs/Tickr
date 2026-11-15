@@ -41,6 +41,7 @@ class GainerGate:
         self.version = inner.version
         self._pool = frozenset(pool_days)
         self._factor = ONE + change_percent / PERCENT
+        # Keyed by day only: the backtest builds one gate per symbol (backtest/run.py).
         self._since: dict[date, datetime] = {}
         self._scanned: dict[date, int] = {}  # session bars already found not eligible
 
