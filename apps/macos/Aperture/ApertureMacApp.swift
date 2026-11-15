@@ -50,7 +50,11 @@ struct ApertureMacApp: App {
         .frame(minWidth: Self.minWidth, minHeight: Self.minHeight)
     }
     .defaultSize(width: Self.defaultWidth, height: Self.defaultHeight)
-    .commands { AppCommands(model: model) }
+    .commands {
+      // The standard View > Show/Hide Sidebar item (Control-Command-S).
+      SidebarCommands()
+      AppCommands(model: model)
+    }
 
     Settings {
       SettingsView()

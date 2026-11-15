@@ -25,6 +25,9 @@ final class ApertureUITests: XCTestCase {
   /// English titles of the standard Window menu and its Zoom item.
   static let windowMenu = "Window"
   static let zoomItem = "Zoom"
+  /// English titles of the standard View menu and its sidebar item while the sidebar is hidden.
+  static let viewMenu = "View"
+  static let showSidebarItem = "Show Sidebar"
   /// How long an element may take to appear, in seconds (the app polls every few seconds).
   static let timeout: TimeInterval = 10
 
@@ -44,6 +47,14 @@ final class ApertureUITests: XCTestCase {
     // every control is on screen and hittable.
     app.menuBars.menuBarItems[Self.windowMenu].click()
     app.menuItems[Self.zoomItem].click()
+    // A window as narrow as a small display can start with the sidebar collapsed.
+    app.menuBars.menuBarItems[Self.viewMenu].click()
+    let showSidebar = app.menuItems[Self.showSidebarItem]
+    if showSidebar.exists {
+      showSidebar.click()
+    } else {
+      app.typeKey(.escape, modifierFlags: [])
+    }
     return app
   }
 
