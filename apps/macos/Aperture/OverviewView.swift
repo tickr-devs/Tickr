@@ -94,6 +94,9 @@ private struct Header: View {
             Text(L10n.App.name).font(Tokens.Typography.title).foregroundStyle(Palette.infoText)
             Text(L10n.Common.operatorTitle).font(Tokens.Typography.subtitle).foregroundStyle(Palette.textPrimary)
           }
+          // The product name never wraps ("Tickr Operat / or" in a narrow window): badges give way first.
+          .lineLimit(1)
+          .fixedSize()
           #if DEBUG
           // Fixture data looks live; say so on the screen it would be mistaken on.
           if PreviewAPI.servesFixtures {
