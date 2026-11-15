@@ -98,6 +98,15 @@ final class StubProtocol: URLProtocol {
     #expect(request.url?.absoluteString == "http://127.0.0.1:8766/status")
   }
 
+  @Test func account() async throws {
+    StubProtocol.answer = try (200, fixture("account-response-v1.json"))
+    let response = try await client.account()
+    #expect(response.account.matchesRecords)
+    let request = try #require(StubProtocol.seen.first)
+    #expect(request.httpMethod == "GET")
+    #expect(request.url?.absoluteString == "http://127.0.0.1:8766/account")
+  }
+
   @Test func commandsSendExactBodies() async throws {
     StubProtocol.answer = try (202, fixture("command-accepted-v1.json"))
     let cases: [(OperatorCommand, String, [String: String])] = [
