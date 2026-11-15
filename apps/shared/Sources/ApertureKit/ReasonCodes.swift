@@ -14,7 +14,6 @@ public enum ReasonParam: String, CaseIterable, Sendable {
   case keys
   case order
   case orders
-  case outcome
   case quantity
   case seconds
   case state
@@ -173,7 +172,7 @@ public enum FenceReason: String, CaseIterable, Sendable {
     case .stopRejectedExiting: []
     case .exitRefusedNoStop: []
     case .exitRefusedStopAgain: []
-    case .cancelOutcomeUnknown: [.outcome]
+    case .cancelOutcomeUnknown: []
     case .cancelCrashed: []
     case .cancelFailed: []
     case .cancelNotSent: [.seconds]

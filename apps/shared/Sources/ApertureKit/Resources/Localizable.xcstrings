@@ -1261,7 +1261,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отмену не удалось отправить {seconds} с (лимит запросов)"
+            "value" : "Отмену не удаётся отправить уже {seconds} с (лимит запросов)"
           }
         }
       }
@@ -1273,13 +1273,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancel {outcome}; waiting for the order's detail"
+            "value" : "A cancel's outcome is unclear; waiting for the order's detail"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отмена: {outcome}; ждём детали ордера"
+            "value" : "Исход отмены неясен; ждём детали ордера"
           }
         }
       }
@@ -1291,13 +1291,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Close of {quantity} of {expected} {symbol} not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next session and the bot sends the close"
+            "value" : "Close of {quantity} of {expected} {symbol} not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next regular session and the bot sends the close"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Закрытие {quantity} из {expected} {symbol} не отправлено вне основной сессии; стоп остаётся. Закройте позицию в приложении Webull или снимите это в следующую сессию, и бот отправит закрытие"
+            "value" : "Закрытие {quantity} из {expected} {symbol} не отправлено вне основной сессии; стоп остаётся. Закройте позицию в приложении Webull или снимите это в следующей основной сессии, и бот отправит закрытие"
           }
         }
       }
@@ -1345,13 +1345,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Close {order} of {quantity} {symbol} not filled in {seconds} s (filled {filled}, {state}); nothing more is sent: check the Webull app"
+            "value" : "Closing order {order} for {quantity} {symbol} not filled in {seconds} s (filled {filled}, {state}); nothing more is sent: check the Webull app (trading halt? no buyers?)"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Закрытие {order} на {quantity} {symbol} не исполнено за {seconds} с (исполнено {filled}, {state}); больше ничего не отправляется: проверьте приложение Webull"
+            "value" : "Закрывающий ордер {order} на {quantity} {symbol} не исполнен за {seconds} с (исполнено {filled}, {state}); больше ничего не отправляется: проверьте приложение Webull (торги остановлены? нет покупателей?)"
           }
         }
       }
@@ -1441,7 +1441,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Брошенный ордер оказался исполнен"
+            "value" : "Ордер, от которого бот отказался, оказался исполнен"
           }
         }
       }
@@ -1453,13 +1453,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop and close held after an unconfirmed stop move: check the Webull app"
+            "value" : "Stop and close on hold after an unconfirmed stop move: check the Webull app"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стоп и закрытие задержаны после неподтверждённого переноса стопа: проверьте приложение Webull"
+            "value" : "Стоп и закрытие приостановлены после неподтверждённого переноса стопа: проверьте приложение Webull"
           }
         }
       }
@@ -1471,13 +1471,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop and close held: an untracked sell {orders} rests in {symbol}; resolve it in the Webull app"
+            "value" : "Stop and close on hold: an untracked sell order {orders} rests in {symbol}; resolve it in the Webull app"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стоп и закрытие задержаны: неучтённая продажа {orders} стоит по {symbol}; разберитесь в приложении Webull"
+            "value" : "Стоп и закрытие приостановлены: по {symbol} висит неучтённая продажа {orders}; разберитесь в приложении Webull"
           }
         }
       }
@@ -1747,7 +1747,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет подтверждённого стопа {seconds} с, закрытие отклонено: закройте позицию в приложении Webull"
+            "value" : "Подтверждённого стопа нет уже {seconds} с, закрытие отклонено: закройте позицию в приложении Webull"
           }
         }
       }
@@ -1765,7 +1765,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет подтверждённого стопа {seconds} с: позиция закрывается"
+            "value" : "Подтверждённого стопа нет уже {seconds} с: позиция закрывается"
           }
         }
       }

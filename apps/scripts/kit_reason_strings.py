@@ -124,13 +124,13 @@ GROUPS = [
                 "unprotected_close_by_hand",
                 "No verified stop for {seconds} s and the close was refused: "
                 "close the position in the Webull app",
-                "Нет подтверждённого стопа {seconds} с, закрытие отклонено: "
+                "Подтверждённого стопа нет уже {seconds} с, закрытие отклонено: "
                 "закройте позицию в приложении Webull",
             ),
             (
                 "unprotected_exiting",
                 "No verified stop for {seconds} s: closing the position",
-                "Нет подтверждённого стопа {seconds} с: позиция закрывается",
+                "Подтверждённого стопа нет уже {seconds} с: позиция закрывается",
             ),
             (
                 "stop_rejected_exiting",
@@ -150,8 +150,8 @@ GROUPS = [
             ),
             (
                 "cancel_outcome_unknown",
-                "Cancel {outcome}; waiting for the order's detail",
-                "Отмена: {outcome}; ждём детали ордера",
+                "A cancel's outcome is unclear; waiting for the order's detail",
+                "Исход отмены неясен; ждём детали ордера",
             ),
             (
                 "cancel_crashed",
@@ -166,12 +166,12 @@ GROUPS = [
             (
                 "cancel_not_sent",
                 "No cancel could be sent for {seconds} s (request budget)",
-                "Отмену не удалось отправить {seconds} с (лимит запросов)",
+                "Отмену не удаётся отправить уже {seconds} с (лимит запросов)",
             ),
             (
                 "given_up_order_filled",
                 "An order given up on turned out filled",
-                "Брошенный ордер оказался исполнен",
+                "Ордер, от которого бот отказался, оказался исполнен",
             ),
             (
                 "working_not_in_records",
@@ -211,33 +211,34 @@ GROUPS = [
             ),
             (
                 "held_after_replace",
-                "Stop and close held after an unconfirmed stop move: check the Webull app",
-                "Стоп и закрытие задержаны после неподтверждённого переноса стопа: "
+                "Stop and close on hold after an unconfirmed stop move: check the Webull app",
+                "Стоп и закрытие приостановлены после неподтверждённого переноса стопа: "
                 "проверьте приложение Webull",
             ),
             (
                 "held_untracked_sell",
-                "Stop and close held: an untracked sell {orders} rests in {symbol}; "
+                "Stop and close on hold: an untracked sell order {orders} rests in {symbol}; "
                 "resolve it in the Webull app",
-                "Стоп и закрытие задержаны: неучтённая продажа {orders} стоит по {symbol}; "
+                "Стоп и закрытие приостановлены: по {symbol} висит неучтённая продажа {orders}; "
                 "разберитесь в приложении Webull",
             ),
             (
                 "exit_not_filled",
-                "Close {order} of {quantity} {symbol} not filled in {seconds} s "
-                "(filled {filled}, {state}); nothing more is sent: check the Webull app",
-                "Закрытие {order} на {quantity} {symbol} не исполнено за {seconds} с "
+                "Closing order {order} for {quantity} {symbol} not filled in {seconds} s "
+                "(filled {filled}, {state}); nothing more is sent: check the Webull app "
+                "(trading halt? no buyers?)",
+                "Закрывающий ордер {order} на {quantity} {symbol} не исполнен за {seconds} с "
                 "(исполнено {filled}, {state}); больше ничего не отправляется: "
-                "проверьте приложение Webull",
+                "проверьте приложение Webull (торги остановлены? нет покупателей?)",
             ),
             (
                 "close_not_sent",
                 "Close of {quantity} of {expected} {symbol} not sent outside the regular "
                 "session; the stop stays. Close it in the Webull app, or clear this in the "
-                "next session and the bot sends the close",
+                "next regular session and the bot sends the close",
                 "Закрытие {quantity} из {expected} {symbol} не отправлено вне основной "
                 "сессии; стоп остаётся. Закройте позицию в приложении Webull или снимите это "
-                "в следующую сессию, и бот отправит закрытие",
+                "в следующей основной сессии, и бот отправит закрытие",
             ),
         ],
     ),

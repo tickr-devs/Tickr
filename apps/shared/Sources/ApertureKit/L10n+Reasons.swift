@@ -124,10 +124,10 @@ extension L10n {
     LocalizedStringResource("kit.fenceReason.exit_refused_stop_again",
       defaultValue: "The close was refused; the stop is placed again, please look", bundle: bundle)
   }
-  /// A fence's cause (`Fence.code`). cancel_outcome_unknown (values: outcome)
+  /// A fence's cause (`Fence.code`). cancel_outcome_unknown
   static var fenceReasonCancelOutcomeUnknown: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.cancel_outcome_unknown",
-      defaultValue: "Cancel {outcome}; waiting for the order's detail", bundle: bundle)
+      defaultValue: "A cancel's outcome is unclear; waiting for the order's detail", bundle: bundle)
   }
   /// A fence's cause (`Fence.code`). cancel_crashed
   static var fenceReasonCancelCrashed: LocalizedStringResource {
@@ -192,24 +192,24 @@ extension L10n {
   /// A fence's cause (`Fence.code`). held_after_replace
   static var fenceReasonHeldAfterReplace: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.held_after_replace",
-      defaultValue: "Stop and close held after an unconfirmed stop move: check the Webull app", bundle: bundle)
+      defaultValue: "Stop and close on hold after an unconfirmed stop move: check the Webull app", bundle: bundle)
   }
   /// A fence's cause (`Fence.code`). held_untracked_sell (values: orders, symbol)
   static var fenceReasonHeldUntrackedSell: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.held_untracked_sell",
       // swiftlint:disable:next line_length
-      defaultValue: "Stop and close held: an untracked sell {orders} rests in {symbol}; resolve it in the Webull app", bundle: bundle)
+      defaultValue: "Stop and close on hold: an untracked sell order {orders} rests in {symbol}; resolve it in the Webull app", bundle: bundle)
   }
   /// A fence's cause (`Fence.code`). exit_not_filled (values: order, quantity, symbol, seconds, filled, state)
   static var fenceReasonExitNotFilled: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.exit_not_filled",
       // swiftlint:disable:next line_length
-      defaultValue: "Close {order} of {quantity} {symbol} not filled in {seconds} s (filled {filled}, {state}); nothing more is sent: check the Webull app", bundle: bundle)
+      defaultValue: "Closing order {order} for {quantity} {symbol} not filled in {seconds} s (filled {filled}, {state}); nothing more is sent: check the Webull app (trading halt? no buyers?)", bundle: bundle)
   }
   /// A fence's cause (`Fence.code`). close_not_sent (values: quantity, expected, symbol)
   static var fenceReasonCloseNotSent: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.close_not_sent",
       // swiftlint:disable:next line_length
-      defaultValue: "Close of {quantity} of {expected} {symbol} not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next session and the bot sends the close", bundle: bundle)
+      defaultValue: "Close of {quantity} of {expected} {symbol} not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next regular session and the bot sends the close", bundle: bundle)
   }
 }
