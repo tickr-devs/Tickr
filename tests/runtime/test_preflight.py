@@ -137,6 +137,15 @@ def test_token_dir_open_to_other_accounts_is_refused(config_path, mode):
     assert f"chmod 700 {token_dir}" in check.detail
 
 
+def test_token_dir_that_is_a_file_is_refused(config_path):
+    environ = _ready(config_path)
+    cfg = config_module.load(config_path)
+    token_dir = cfg.root / cfg.run.data_dir / cfg.environment.token_dir
+    token_dir.rmdir()
+    token_dir.write_text("")
+    assert _run(config_path, environ).cause is PreflightCause.TOKEN_DIR_MISSING
+
+
 def test_low_disk(config_path):
     environ = _ready(config_path)
     need = config_module.load(config_path).runtime.min_free_disk_mb

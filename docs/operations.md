@@ -90,7 +90,8 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
    that reaches you away from the Mac). Presence only, never the value.
 7. Broker token folder `<data_dir>/<token_dir>` exists (cause `token-dir-missing`) and is closed to
    other accounts on the machine, no group or other permission bits (cause `token-dir-open`;
-   `chmod 700` it). The SDK writes its token file there with default permissions.
+   `chmod 700` it). The SDK writes its token file there with default permissions. Only POSIX mode
+   bits are checked, not macOS ACLs, which is enough on a single-owner Mac.
 7b. No operator stop marker (cause `stopped-by-operator`): a stop-bot command from the apps
    left `<data_dir>/<[runtime] stop_marker_file>`; `tickr clear-stop` removes it.
 7c. The database, when it exists, holds runs of this environment only (cause
@@ -130,8 +131,9 @@ All checks are reported; the first failure is the recorded cause.
    **Deadline:** `TICKR_IMESSAGE_TO` must be in this file before the first preflight run
    (08:30 Mac time on Monday with the default `[runtime] preflight_start_local`). Without it
    preflight fails with `alert-recipient-missing` and the bot job does not start the bot.
-3. Data and token folders: `mkdir -p data && mkdir -m 700 data/webull-token-sandbox` (`[environments.sandbox]
-   token_dir`; `data/webull-token-production` before Production).
+3. Data and token folders: `mkdir -p data && mkdir -m 700 data/webull-token-sandbox`
+   (`[environments.sandbox] token_dir`; `data/webull-token-production` before Production). A folder
+   that already exists keeps its mode: `chmod 700 data/webull-token-sandbox` instead.
 4. Alerts: sign in to iMessage in the Messages app on this Mac (Messages > Settings > iMessage)
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m tickr.runtime alert preflight-failed "test"` once. You should get a
