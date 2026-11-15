@@ -69,7 +69,13 @@ struct ApertureMacApp: App {
   var body: some Scene {
     Window(String(localized: L10n.App.name), id: WindowID.main) {
       RootView()
+        .overlay {
+          if !model.openingPlayed {
+            BrandOpening(target: { model.overviewMarkCentre }, finished: { model.openingPlayed = true })
+          }
+        }
         .environment(model)
+        .environment(Container.shared.chartModel())
         // The design's accent for links, selection and controls (as on iOS), not the system blue.
         .tint(Palette.info)
         // The window's least size is these numbers and nothing else: with a maximum given, the

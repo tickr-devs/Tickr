@@ -545,3 +545,110 @@ def test_a_failed_optional_unsubscribe_drops_the_symbols_without_reconnecting():
     s.on_disconnected("blip")
     s.on_connected()
     assert sent[-1] == ("sub", ["AAA"])
+
+
+def test_after_a_failed_optional_send_the_next_optional_subscribe_cleans_up_first():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    good = s._send_subscribe
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    s._send_subscribe = lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    s.subscribe_optional(["OB2"], rec, 0)  # unsubscribes the maybe-held OBS first
+    assert sent[-2:] == [("unsub", ["OBS"]), ("sub", ["OB2"])] and s.up
+    assert s.symbols == {"AAA", "OB2"} and ("reconnect", []) not in sent
+
+
+def test_a_required_sync_never_sends_maybe_held_symbols():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    good, s._send_subscribe = s._send_subscribe, lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    s.subscribe(["BBB"], rec)  # a failure here would reconnect: it must not carry OBS
+    assert sent[-1] == ("sub", ["BBB"]) and ("unsub", ["OBS"]) not in sent and s.up
+    s.on_disconnected("blip")
+    s.on_connected()  # a new connection forgets maybe-held symbols
+    s.subscribe_optional(["OB2"], rec, 0)
+    assert sent[-1] == ("sub", ["OB2"])
+
+
+def test_a_failed_cleanup_refuses_the_optional_subscribe_without_reconnecting():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    s.subscribe_optional(["OBS"], rec, 0)
+
+    def refuse(symbols):
+        raise RuntimeError("HTTP 500")
+
+    s._send_unsubscribe = refuse
+    with pytest.raises(MarketDataError):
+        s.unsubscribe_optional(["OBS"], 0)
+    with pytest.raises(MarketDataError):  # cleanup of OBS fails again: nothing new is sent
+        s.subscribe_optional(["OB2"], rec, 0)
+    assert ("sub", ["OB2"]) not in sent and s.up and ("reconnect", []) not in sent
+
+
+def test_a_refused_optional_unsubscribe_stays_counted_until_removed():
+    s, sent, _, _ = session(limit=3, max_symbols=2)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    s.subscribe_optional(["OBS"], rec, 0)
+    with pytest.raises(MarketDataError):
+        s.unsubscribe_optional(["OBS"], 5)  # refused for the reserve: nothing sent
+    assert ("unsub", ["OBS"]) not in sent and s.symbols == {"AAA"}
+    with pytest.raises(MarketDataError):  # the cleanup is refused for the reserve too
+        s.subscribe_optional(["OB2"], rec, 5)
+
+
+def test_a_required_subscribe_clears_maybe_held_symbols_that_would_pass_the_cap():
+    s, sent, _, _ = session(max_symbols=2)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    good, s._send_subscribe = s._send_subscribe, lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    s.subscribe(["BBB"], rec)  # AAA + BBB + maybe-held OBS > 2: OBS is unsubscribed first
+    assert sent[-2:] == [("unsub", ["OBS"]), ("sub", ["BBB"])] and s.up
+
+
+def test_a_maybe_held_symbol_sent_by_a_required_subscribe_is_no_longer_maybe_held():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    good, s._send_subscribe = s._send_subscribe, lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    s.subscribe(["OBS"], rec)  # the position now needs it
+    s.unsubscribe(["OBS"])
+    s.subscribe_optional(["OB2"], rec, 0)  # no redundant cleanup of OBS
+    assert sent[-1] == ("sub", ["OB2"]) and sent.count(("unsub", ["OBS"])) == 1

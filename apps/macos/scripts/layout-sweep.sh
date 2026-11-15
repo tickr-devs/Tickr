@@ -16,11 +16,13 @@ swift build --product ApertureMac
 # A bare executable has no bundle that declares Russian, so macOS would show it in English
 # whatever -AppleLanguages says. Wrap the debug build in a minimal app that declares both
 # languages, with its own bundle id, so its settings never touch the real app's.
-# (Its String Catalogs stay in SwiftPM's resource bundles, found from the build folder.)
+# The String Catalogs are SwiftPM resource bundles, copied into the app's Resources.
 APP="build/LayoutSweep.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$(swift build --show-bin-path)/ApertureMac" "$APP/Contents/MacOS/ApertureMac"
+mkdir -p "$APP/Contents/Resources"
+cp -R "$(swift build --show-bin-path)"/*.bundle "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -262,7 +262,7 @@ enum L10n {
     }
     static func dayResult(_ result: String, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
       LocalizedStringResource("home.dayResult",
-        defaultValue: "Day result \(result), \(wins) wins, \(losses) losses",
+        defaultValue: "Day result \(result), wins: \(wins), losses: \(losses)",
         bundle: L10n.bundle)
     }
     static func protected(_ symbol: String) -> LocalizedStringResource {
@@ -970,7 +970,7 @@ enum L10n {
       LocalizedStringResource("settings.failing", defaultValue: "\(count) failing", bundle: L10n.bundle)
     }
     static func brokerCounts(_ positions: Int, _ orders: Int) -> LocalizedStringResource {
-      LocalizedStringResource("settings.brokerCounts", defaultValue: "\(positions) pos · \(orders) orders", bundle: L10n.bundle)
+      LocalizedStringResource("settings.brokerCounts", defaultValue: "positions: \(positions) · orders: \(orders)", bundle: L10n.bundle)
     }
     static func stops(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("settings.stops", defaultValue: "\(verified) of \(total) verified", bundle: L10n.bundle)
@@ -1085,6 +1085,8 @@ enum ChartText {
   static let m1 = LocalizedStringResource("chart.timeframe.m1", defaultValue: "M1")
   static let m5 = LocalizedStringResource("chart.timeframe.m5", defaultValue: "M5")
   static let m15 = LocalizedStringResource("chart.timeframe.m15", defaultValue: "M15")
+  static let m30 = LocalizedStringResource("chart.timeframe.m30", defaultValue: "M30")
+  static let h1 = LocalizedStringResource("chart.timeframe.h1", defaultValue: "H1")
   static let vwap = LocalizedStringResource("chart.indicator.vwap", defaultValue: "VWAP")
   static let volume = LocalizedStringResource("chart.indicator.volume",
     defaultValue: "Volume")
