@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -173,8 +173,12 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         raise ConfigError("[api] lab_replay_sessions must be positive")
     if not 0 <= api.lab_replay_niceness <= MAX_NICENESS:
         raise ConfigError(f"[api] lab_replay_niceness must be 0-{MAX_NICENESS}")
-    if not api.lab_replay_data_dir or not api.lab_replay_results_dir \
-            or api.lab_replay_data_dir == api.lab_replay_results_dir:
+    for key in ("lab_replay_data_dir", "lab_replay_results_dir"):
+        parts = PurePosixPath(getattr(api, key)).parts
+        if not parts or parts[0] == "/" or any(p in (".", "..") for p in parts) \
+                or "\\" in getattr(api, key):
+            raise ConfigError(f"[api] {key} must be a plain subfolder of data_dir")
+    if PurePosixPath(api.lab_replay_data_dir) == PurePosixPath(api.lab_replay_results_dir):
         raise ConfigError("[api] lab_replay_data_dir and lab_replay_results_dir must be "
                           "two different folders")
     data = cfg.root / cfg.run.data_dir

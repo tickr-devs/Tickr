@@ -198,7 +198,12 @@ def test_both_listeners_share_one_replay(cfg):
 
 @pytest.mark.parametrize("key,value", [("lab_replay_sessions", 0),
                                        ("lab_replay_niceness", 20),
-                                       ("lab_replay_results_dir", "backtest")])
+                                       ("lab_replay_results_dir", "backtest"),
+                                       ("lab_replay_results_dir", "."),
+                                       ("lab_replay_results_dir", ""),
+                                       ("lab_replay_results_dir", "../lab"),
+                                       ("lab_replay_results_dir", "/tmp/lab"),
+                                       ("lab_replay_data_dir", "a/../b")])
 def test_config_refuses_bad_lab_replay_values(cfg, key, value):
     with pytest.raises(ConfigError):
         settings_from_config(replace(cfg, api=replace(cfg.api, **{key: value})))
