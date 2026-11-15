@@ -146,6 +146,10 @@ final class ChartModel {
   /// Switch to another symbol of the chosen day.
   func show(symbol: String, from url: URL) async {
     self.symbol = symbol
+    // Over a range the last symbol's candles and failure must not stay on screen while this one
+    // loads: rebuild drops a GET /chart answer for another symbol.
+    rangeFailure = nil
+    rebuild()
     do {
       try await loadBars(url)
     } catch is CancellationError {
