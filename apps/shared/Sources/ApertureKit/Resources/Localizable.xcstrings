@@ -1653,7 +1653,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "У брокера {held} акций, по деталям ордера {expected}"
+            "value" : "Акций у брокера: {held}, по деталям ордера: {expected}"
           }
         }
       }
@@ -1761,7 +1761,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подтверждённый стоп покрывает {verified} из {expected} акций"
+            "value" : "Подтверждённый стоп покрывает акций: {verified} из {expected}"
           }
         }
       }
@@ -1797,7 +1797,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стопы покрывают {covered} акций, у брокера {held}"
+            "value" : "Акций под стопами: {covered}, у брокера: {held}"
           }
         }
       }
@@ -2336,6 +2336,57 @@
         }
       }
     },
+    "kit.orderOther.side" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown side"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестная сторона"
+          }
+        }
+      }
+    },
+    "kit.orderOther.status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown status"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный статус"
+          }
+        }
+      }
+    },
+    "kit.orderOther.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown type"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный тип"
+          }
+        }
+      }
+    },
     "kit.prose.all_checks_passed" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). all_checks_passed",
       "extractionState" : "manual",
@@ -2583,7 +2634,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "У сделки {count} ордеров входа, ожидался 1"
+            "value" : "Ордеров входа у сделки: {count}, ожидался 1"
           }
         }
       }
@@ -4132,6 +4183,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Расстояние до стопа"
+          }
+        }
+      }
+    },
+    "kit.ruleOther" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other check"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая проверка"
           }
         }
       }

@@ -14,7 +14,7 @@ struct LabView: View {
   static let warningSymbol = "exclamationmark.triangle.fill"
 
   /// Order in which the blocks rise in (`rise(step:)`).
-  private enum Order: Int { case active = 1, versions, observers, refusals, later }
+  private enum Order: Int { case active = 1, versions, replay, observers, refusals, later }
 
   @Environment(AppModel.self) private var model
   @State private var lab = Container.shared.labModel()
@@ -44,6 +44,8 @@ struct LabView: View {
         VersionsCard(curves: curves(status), missing: missing,
           end: WireDate(newYorkDateOf: status.writtenAt.date) == model.today ? model.botNow : status.writtenAt.date)
           .rise(step: Order.versions.rawValue)
+        LabReplayCard(lab: lab, url: model.connection.url)
+          .rise(step: Order.replay.rawValue)
         ObserversCard(lab: lab, traded: Set(status.tradesToday.map(\.symbol) + status.positions.map(\.symbol)))
           .rise(step: Order.observers.rawValue)
         RefusalsCard(counts: lab.refusals, failure: lab.refusalsFailure)
@@ -110,6 +112,8 @@ private struct RefusalsCard: View {
               Group {
                 if let code = count.cause?.known {
                   Text(L10n.Cause.title(code))
+                } else if let cause = count.cause, cause.hasCode {
+                  Text(L10n.Cause.other)
                 } else if let cause = count.cause {
                   Text(verbatim: cause.code)
                 } else {
@@ -140,7 +144,7 @@ private struct RefusalsCard: View {
   /// The cause in words, for its glyph's hint.
   private func causeText(_ count: RefusalCount) -> Text {
     if let code = count.cause?.known { return Text(L10n.Cause.title(code)) }
-    if let cause = count.cause { return Text(verbatim: cause.code) }
+    if let cause = count.cause { return cause.hasCode ? Text(L10n.Cause.other) : Text(verbatim: cause.code) }
     return Text(L10n.Lab.noCause)
   }
 }
