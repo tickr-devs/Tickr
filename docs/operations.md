@@ -403,6 +403,9 @@ normal exit path. The watchdog itself never places, cancels or replaces anything
   flatten time finds a position or open order, or the bot still down with an open trade. It
   replaces `watchdog-not-flat` on that day. Open the Webull app now and close by hand.
 - On a quiet day nothing changes: a running bot, or a flat database, never triggers it.
-- To keep the bot down on purpose with a position open (a manual trade), keep the stop marker
-  (`stop-bot`) in place or unload the bot job; see docs/manual-trade.md.
+- To keep the bot down on purpose with a position open (a manual trade), unload the bot job, or
+  keep a stop marker left from an earlier stop made while flat. A new `stop-bot` is refused while
+  any trade is open, so it cannot create the marker then. See docs/manual-trade.md.
+- Owner check, once on the Mac: the exit code of `launchctl kickstart gui/$(id -u)/local.aperture.bot`
+  (no `-k`) for a job launchd still sees running, and for a booted-out job. Record both here.
 
