@@ -130,6 +130,7 @@ struct BotControls: View {
         .tint(action.isDestructive ? Palette.loss : nil)
         .disabled(!model.commandsEnabled || !applicable(action))
         .help(Text(verbatim: action.explanation))
+        .accessibilityIdentifier(action.id)
       }
     }
     .alert(Text(verbatim: confirming?.question ?? ""), isPresented: Binding(get: { confirming != nil },

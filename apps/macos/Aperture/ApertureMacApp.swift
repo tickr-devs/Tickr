@@ -25,6 +25,9 @@ struct ApertureMacApp: App {
   @AppStorage(Defaults.showMenuBarExtra) private var showMenuBarExtra = true
 
   init() {
+    #if DEBUG
+    PreviewAPI.serveFixturesIfAsked()
+    #endif
     let model = Container.shared.appModel()
     model.start()
     _model = State(initialValue: model)

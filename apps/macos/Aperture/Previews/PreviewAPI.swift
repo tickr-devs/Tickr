@@ -6,9 +6,18 @@ import Foundation
 /// URLSession is replaced (through Factory) by one that answers every read from the repository's
 /// contract fixtures (tests/api/fixtures). Debug builds only.
 enum PreviewAPI {
+  /// Launch argument that makes the app read the fixtures instead of a running bot (the UI tests
+  /// pass it; debug builds only).
+  static let fixturesArgument = "-ApertureFixtures"
   /// Size of a previewed main-window screen, in points.
   static let windowWidth: CGFloat = 1280
   static let windowHeight: CGFloat = 820
+
+  /// Serve the API from the fixtures when the app was launched with `fixturesArgument`.
+  static func serveFixturesIfAsked() {
+    guard ProcessInfo.processInfo.arguments.contains(fixturesArgument) else { return }
+    Container.shared.urlSession.register { FixtureProtocol.session() }
+  }
 
   /// The app model as the screens see it, reading the fixtures.
   @MainActor
