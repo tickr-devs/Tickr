@@ -11,7 +11,7 @@ from advisor.test_advisor import FakeClient, answer
 from advisor.test_backtest_advisor import IDEA, make_root, run, write_results
 
 from tickr.advisor.judge import judge
-from tickr.advisor.record import DECISION_FILE, DECISION_SCHEMA, RUN_FILE
+from tickr.advisor_files import DECISION_FILE, DECISION_SCHEMA, RUN_FILE
 from tickr.api import contract
 from tickr.api.advisor import NO_FOLDER, advisor_document
 from tickr.api.server import make_server, settings_from_config

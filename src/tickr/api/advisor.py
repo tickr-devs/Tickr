@@ -2,7 +2,7 @@
 
 Each run folder under `[advisor] proposals_dir` holds `run.json` (advisor-run-v1), any
 `judge-*.json` (advisor-judge-v1) and the owner's `decision.json` (advisor-decision-v1); the
-formats are in advisor.record. A folder that cannot be read exactly (no run.json: a run from
+formats are in tickr.advisor_files. A folder that cannot be read exactly (no run.json: a run from
 before these files, a missing key, an unknown status) is listed under `unreadable` with its
 cause, never guessed. Nothing here copies, loads or runs a strategy.
 """
@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from tickr.advisor import record
+from tickr import advisor_files as files
 from tickr.api import contract as api
 
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[a-z0-9][a-z0-9-]*$")
@@ -52,9 +52,9 @@ def advisor_document(folder: Path, rows: int) -> api.AdvisorRunsV1:
 
 
 def read_run(path: Path) -> api.AdvisorRunV1:
-    raw = _json(path / record.RUN_FILE, record.RUN_SCHEMA)
-    judges = tuple(_judge(p) for p in sorted(path.glob(f"{record.JUDGE_PREFIX}*.json")))
-    decision_path = path / record.DECISION_FILE
+    raw = _json(path / files.RUN_FILE, files.RUN_SCHEMA)
+    judges = tuple(_judge(p) for p in sorted(path.glob(f"{files.JUDGE_PREFIX}*.json")))
+    decision_path = path / files.DECISION_FILE
     decision = _decision(decision_path) if decision_path.exists() else None
     try:
         idea = raw["idea"]
@@ -84,7 +84,7 @@ def read_run(path: Path) -> api.AdvisorRunV1:
             decision=decision,
         )
     except (KeyError, TypeError, ValueError) as exc:
-        raise Unreadable(f"{record.RUN_FILE}: {type(exc).__name__}: {exc}") from exc
+        raise Unreadable(f"{files.RUN_FILE}: {type(exc).__name__}: {exc}") from exc
 
 
 def _json(path: Path, schema: str) -> dict[str, Any]:
@@ -101,7 +101,7 @@ def _json(path: Path, schema: str) -> dict[str, Any]:
 
 
 def _judge(path: Path) -> api.AdvisorJudgeV1:
-    raw = _json(path, record.JUDGE_SCHEMA)
+    raw = _json(path, files.JUDGE_SCHEMA)
     try:
         return api.AdvisorJudgeV1(
             candidate=_text(raw["candidate"]),
@@ -118,7 +118,7 @@ def _judge(path: Path) -> api.AdvisorJudgeV1:
 
 
 def _decision(path: Path) -> api.AdvisorDecisionV1:
-    raw = _json(path, record.DECISION_SCHEMA)
+    raw = _json(path, files.DECISION_SCHEMA)
     try:
         return api.AdvisorDecisionV1(api.OwnerVerdict(raw["verdict"]), _time(raw["at"]))
     except (KeyError, TypeError, ValueError) as exc:

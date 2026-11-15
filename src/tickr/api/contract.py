@@ -30,8 +30,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
-from tickr.advisor.record import OwnerVerdict
-from tickr.advisor.record import Verdict as HoldoutVerdict
+from tickr.advisor_files import OwnerVerdict
+from tickr.advisor_files import Verdict as HoldoutVerdict
 from tickr.api.reasons import UNRECOGNIZED as UNRECOGNIZED_CODE
 from tickr.api.reasons import Reason, prose_reasons, refusal_params
 from tickr.data.base import ScreenerKind

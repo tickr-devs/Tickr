@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from tickr.advisor.record import OwnerVerdict
-from tickr.advisor.record import Verdict as HoldoutVerdict
+from tickr.advisor_files import OwnerVerdict
+from tickr.advisor_files import Verdict as HoldoutVerdict
 from tickr.api import contract
 from tickr.api.advisor import NO_FOLDER as NO_ADVISOR_FOLDER
 from tickr.api.contract import (

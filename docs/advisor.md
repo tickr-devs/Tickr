@@ -72,7 +72,7 @@ request carries the strategy module's source code as well.
 Every run folder also gets `run.json` (advisor-run-v1: status, versions, the changes with
 their old and new values as text, the idea, the hold-out rule), and `judge` writes
 `judge-<name>-v<N>.json` (advisor-judge-v1: verdict codes and the hold-out, base hold-out and
-fitting rows) next to its markdown. Formats: `src/tickr/advisor/record.py`. The API serves
+fitting rows) next to its markdown. Formats: `src/tickr/advisor_files.py`. The API serves
 them at GET /advisor (`docs/api.md`) for the Lab's advisor card and the Overview tag. Runs from
 before these files show as unreadable; rerun `judge` to get its json. The owner's review
 (`decision.json`) is a note only: trying a proposal stays the hand steps above.

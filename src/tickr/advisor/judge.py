@@ -24,8 +24,8 @@ from typing import Any
 
 from tickr.advisor.backtest_evidence import read_run
 from tickr.advisor.errors import AdvisorError
-from tickr.advisor.record import JUDGE_PREFIX, Verdict, judge_record
 from tickr.advisor.run import TUNING_FILE
+from tickr.advisor_files import JUDGE_PREFIX, Verdict, judge_record
 
 COLUMNS = ("trades", "win_rate_percent", "mean_r", "median_r", "total_r", "profit_factor")
 

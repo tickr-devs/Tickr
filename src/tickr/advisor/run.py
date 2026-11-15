@@ -37,8 +37,9 @@ from tickr.advisor.client import AdvisorClient
 from tickr.advisor.errors import AdvisorError
 from tickr.advisor.evidence import build_evidence
 from tickr.advisor.proposal import SCHEMA, Proposal, next_version, parse_reply, render_toml
-from tickr.advisor.record import RUN_FILE, run_record
+from tickr.advisor.record import run_record
 from tickr.advisor.report import render_idea, render_report
+from tickr.advisor_files import RUN_FILE
 from tickr.archive import existing
 from tickr.calendar import TIMEZONE_NAME, SessionCalendar
 from tickr.config import Config

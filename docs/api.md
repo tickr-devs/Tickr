@@ -517,7 +517,7 @@ database yet, it cannot be read, or the journal has no rows yet.
 ### GET /advisor (read-only, nothing applied)
 
 The Lab's advisor card and the Overview tag. Code: `src/tickr/api/advisor.py`; the files it
-reads are defined in `src/tickr/advisor/record.py` (see `docs/advisor.md`). One entry per run
+reads are defined in `src/tickr/advisor_files.py` (see `docs/advisor.md`). One entry per run
 folder under `[advisor] proposals_dir`, newest first, the newest `[api] advisor_runs` of them:
 `status` (`proposed`, `idea`, `no_change`, `refused`), `mode` (`live` or `backtest`), `base` and
 `proposed` versions, the advisor's own texts (`summary`, `changes` with `now` and `proposed`
