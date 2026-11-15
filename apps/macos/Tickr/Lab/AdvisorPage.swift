@@ -495,8 +495,9 @@ private struct HoldoutCard: View {
   }
 
   /// "base → candidate" of one figure.
-  private func pair(_ judge: AdvisorJudgeV1, _ figure: KeyPath<AdvisorStatsV1, DecimalString?>,
-    _ text: (Decimal) -> String) -> String {
+  private func pair(
+    _ judge: AdvisorJudgeV1, _ figure: KeyPath<AdvisorStatsV1, DecimalString?>, _ text: (Decimal) -> String
+  ) -> String {
     let base = judge.baseHoldout?[keyPath: figure].map { text($0.value) } ?? Format.missing
     let candidate = judge.holdout?[keyPath: figure].map { text($0.value) } ?? Format.missing
     return base + AdvisorLook.arrow + candidate
