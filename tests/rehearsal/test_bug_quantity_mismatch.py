@@ -49,10 +49,23 @@ def test_the_bots_own_shares_are_closed_by_the_flatten_time(tmp_path, monkeypatc
     r = held_with_foreign_shares(tmp_path, monkeypatch)
     assert r.run_until("09:53") == 0
     r.bot_down_until("15:50")
-    assert r.run_until("15:58") == 0
+    assert r.run_until("16:00") == 0
     ex = r.world.exchange
     sold = sum(o.quantity for o in ex.of("AAA", OrderType.MARKET))
     assert sold == D(26)  # exactly the bot's own shares
     assert ex.holdings["AAA"].quantity == D(10)  # the foreign shares are never touched
     assert ex.short == []
-    assert "quantity-mismatch:t1" in fence_names(r)
+    # End state at 16:00: the trade stays open (exiting) while the broker is not flat, so
+    # entries stay blocked until the operator sells or explains the 10 shares.
+    (trade,) = r.trades()
+    assert trade["state"] == "exiting" and trade["closed_at"] is None
+    store = r.store()
+    try:
+        fences = {row["name"]: row["cause"] for row in store.query("SELECT * FROM fences")}
+    finally:
+        store.close()
+    # The fence keeps the cause it was set with; it is not rewritten as the quantities change.
+    assert fences["quantity-mismatch:t1"] == "broker holds 36, Detail says 26"
+    not_flat = [row.body["text"] for row in r.journal("alert")
+                if row.body["kind"] == "not-flat-after-flatten"]
+    assert not_flat and all("position AAA 10." in text for text in not_flat)
