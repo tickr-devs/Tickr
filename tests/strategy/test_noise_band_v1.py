@@ -156,7 +156,7 @@ def test_open_position_is_held():
 
 
 def test_a_full_day_evaluates_well_inside_the_observer_time_limit():
-    # The claim is about the strategy's own cost, so this measures this process's CPU time
+    # The claim is about the strategy's own cost, so this measures this thread's CPU time
     # with the garbage collector paused: under a loaded full-suite run, wall time also counted
     # other processes and a collection of the whole suite's heap, which made it flaky.
     bars = today(380)
@@ -166,9 +166,9 @@ def test_a_full_day_evaluates_well_inside_the_observer_time_limit():
     collecting = gc.isenabled()
     gc.disable()
     try:
-        started = time.process_time()
+        started = time.thread_time()
         strategy.evaluate(context)
-        spent = time.process_time() - started
+        spent = time.thread_time() - started
     finally:
         if collecting:
             gc.enable()
