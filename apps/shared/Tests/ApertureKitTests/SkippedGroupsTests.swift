@@ -13,6 +13,7 @@ struct SkippedGroupsTests {
       {"at": "2026-11-13T16:\(String(format: "%02d", minute)):00.000Z", "symbol": "\(symbol)",
        "strategy": {"name": "price-action", "version": "2"}, "admission": "\(admission)",
        "refusal_cause": \(cause.map { "\"\($0)\"" } ?? "null"),
+       "refusal": null,
        "entry_price": "12.345678901234567890123456789", "stop_price": null, "checks": []}
       """
     return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
@@ -54,5 +55,17 @@ struct SkippedGroupsTests {
     #expect(groups.map(\.latest.symbol) == ["MVLD", "MVLD", "MVLD", "BXVR"])
     #expect(groups[2].cause?.code == "SYMBOL_COOLDOWN")
     #expect(groups[0].cause == nil)
+  }
+
+  @Test("Refusals counted by cause, most first; signals not refused are left out")
+  func counts() throws {
+    let counts = RefusalCount.make([
+      try signal(27, "MVLD", cause: Self.cooldown),
+      try signal(27, "BXVR", cause: "QUOTE_STALE: quote 9 s old > 5 s"),
+      try signal(28, "MVLD", cause: Self.cooldown),
+      try signal(29, "HLQN", cause: nil),
+    ])
+    #expect(counts.map(\.cause.code) == ["SYMBOL_COOLDOWN", "QUOTE_STALE"])
+    #expect(counts.map(\.count) == [2, 1])
   }
 }
