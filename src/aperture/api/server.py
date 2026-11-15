@@ -54,6 +54,7 @@ from aperture.api.contract import (
 )
 from aperture.api.history import SYMBOL_PATTERN, History, HistoryPaths, HistoryUnavailable
 from aperture.api.jobs import JobsSettings, jobs_document
+from aperture.api.journal import journal_document
 from aperture.api.observer_results import ObserverResults, SimulationPaths
 from aperture.calendar import ny_date_of
 from aperture.config import Config, ConfigError
@@ -116,6 +117,7 @@ class ApiSettings:
     simulation: SimulationPaths  # inputs of the observers' simulated day results
     observer_trades_max_rows: int  # most simulated trades per observer at GET /observers
     universe: DiscoverySettings  # the universe filter GET /flow applies to captured passes
+    journal_rows: int  # GET /journal: latest journal rows served
     watching_max_rows: int
     closeness_places: int  # decimal places of GET /watching closeness
     check_places: int  # decimal places of check values in every document that shows checks
@@ -154,6 +156,8 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         raise ConfigError("[api] observer_trades_max_rows must be positive")
     if api.watching_max_rows <= 0:
         raise ConfigError("[api] watching_max_rows must be positive")
+    if api.journal_rows <= 0:
+        raise ConfigError("[api] journal_rows must be positive")
     if min(api.watching_closeness_decimal_places, api.flow_change_pct_decimal_places,
            api.check_decimal_places) < 0:
         raise ConfigError("[api] decimal places must not be negative")
@@ -194,6 +198,7 @@ def settings_from_config(cfg: Config) -> ApiSettings:
         observer_trades_max_rows=api.observer_trades_max_rows,
         universe=DiscoverySettings.from_config(cfg),
         watching_max_rows=api.watching_max_rows,
+        journal_rows=api.journal_rows,
         closeness_places=api.watching_closeness_decimal_places,
         check_places=api.check_decimal_places,
         change_pct_places=api.flow_change_pct_decimal_places,
@@ -385,7 +390,7 @@ _ERROR_CODES = {
 }
 GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", "/settings",
               "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
-              "/watching", "/performance", "/chart", "/jobs")
+              "/watching", "/performance", "/chart", "/jobs", "/journal")
 DAY_PREFIX = "/days/"
 
 
@@ -530,6 +535,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/jobs":
                 self._json(200, jobs_document(self.server.settings.jobs,
                                               self.server.status_response()))
+            elif path == "/journal":
+                self._json(200, journal_document(self.server.settings.jobs.database,
+                                                 self.server.settings.journal_rows))
             elif path == "/explain":
                 self._explain()
             elif path in ("/observers", "/decisions", "/skipped", "/flow", "/watching"):

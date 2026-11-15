@@ -54,6 +54,8 @@ from aperture.api.contract import (
     FlowStopV1,
     FlowV1,
     JobsV1,
+    JournalRowV1,
+    JournalV1,
     LaunchdJobV1,
     ObserverDecisionV1,
     ObserversV1,
@@ -210,6 +212,13 @@ def documents() -> dict[str, object]:
             BackupJobV1(T0 + timedelta(days=4), T0 + timedelta(days=4, hours=7),
                         "OperationalError", None),
             _LAUNCHD, None, "2026-11-21 is a weekend"),
+        # The Overview's journal card: the latest rows, oldest first; "line #731".
+        "journal-v1": JournalV1(731, (
+            JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),
+            JournalRowV1(729, T0 - timedelta(seconds=8), "trade-opened", "ABCD"),
+            JournalRowV1(730, T0 - timedelta(seconds=4), "reconcile-checked", None),
+            JournalRowV1(731, T0, "stop-from-fill", "ABCD")), None),
+        "journal-v1.empty": JournalV1(None, (), "the bot has not created its database yet"),
         "day-v1.empty": DayV1("sandbox", DAY - timedelta(days=3), (), Decimal("0"), ()),
         "bars-v1": BarsV1("sandbox", "ABCD", DAY, tuple(
             BarV1(T0 + timedelta(minutes=i), Decimal(o), Decimal(h), Decimal(lo), Decimal(c),

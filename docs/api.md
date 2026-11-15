@@ -82,6 +82,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. |
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
+| GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
 | GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first, its simulated day result and simulated trades. |
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
@@ -495,6 +496,17 @@ reads and writes nothing for it.
 - `session`: today's New York date with `regular_open`, `last_entry_at`, `flatten_at` and
   `regular_close`, or null with `session_cause` (a weekend, a closure, a half day with
   `half_days_enabled = false`, a calendar that does not cover today).
+
+### GET /journal (read-only)
+
+The Overview's journal card and its "line #N". Code: `src/aperture/api/journal.py`. Reads the
+database opened read-only; the bot reads and writes nothing for it. `rows`: the latest
+`[api] journal_rows` journal rows, oldest first, each with `seq` (the journal's own row number,
+one more per row, never reused), `at`, `kind` (the bot's event name, such as `order-intent`,
+`trade-opened`, `stop-from-fill`, `reconcile-checked`: clients map kinds to their own tags and
+words) and `symbol` (when the row's body names one). The body itself is not served.
+`last_seq` is the newest row's number; it and the rows are empty with `cause` when there is no
+database yet, it cannot be read, or the journal has no rows yet.
 
 ### GET /chart (read-only, market data)
 
