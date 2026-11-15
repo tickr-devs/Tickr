@@ -367,6 +367,9 @@ enum L10n {
         defaultValue: "The bot cancels this position's stop, re-reads the quantity and sells at market through the normal exit. Only this symbol closes; the bot's other positions and positions not opened by the bot are not touched.",
         bundle: L10n.bundle)
     }
+    static var openChart: LocalizedStringResource {
+      LocalizedStringResource("positions.openChart", defaultValue: "open full chart →", bundle: L10n.bundle)
+    }
     static var riskBand: LocalizedStringResource {
       LocalizedStringResource("positions.riskBand", defaultValue: "Risk band", bundle: L10n.bundle)
     }

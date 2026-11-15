@@ -4100,6 +4100,23 @@
         }
       }
     },
+    "positions.openChart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "open full chart →"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "открыть график →"
+          }
+        }
+      }
+    },
     "positions.protected" : {
       "extractionState" : "manual",
       "localizations" : {
