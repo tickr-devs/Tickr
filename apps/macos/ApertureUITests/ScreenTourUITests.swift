@@ -95,7 +95,10 @@ final class ScreenTourUITests: XCTestCase {
       }
     }
     settings()
-    if let captureDir {
+  }
+
+  override func tearDown() async throws {
+    if let captureDir {  // ends tour_capture.swift, also after a failure
       FileManager.default.createFile(atPath: captureDir.appending(path: "stop").path, contents: nil)
     }
   }
@@ -174,11 +177,13 @@ final class ScreenTourUITests: XCTestCase {
   /// Asks tour_capture.swift for a picture and waits until it is taken.
   private func requestCapture(_ name: String, front: Bool, in folder: URL) {
     let kind = front ? "front" : "main"
+    let done = folder.appending(path: "\(name).done").path
+    let failed = folder.appending(path: "\(name).failed").path
+    try? FileManager.default.removeItem(atPath: done)
+    try? FileManager.default.removeItem(atPath: failed)
     FileManager.default.createFile(atPath: folder.appending(path: "\(name).request").path,
                                    contents: Data(kind.utf8))
     let deadline = Date().addingTimeInterval(Self.wait)
-    let done = folder.appending(path: "\(name).done").path
-    let failed = folder.appending(path: "\(name).failed").path
     while Date() < deadline {
       if FileManager.default.fileExists(atPath: done) { return }
       if FileManager.default.fileExists(atPath: failed) { break }

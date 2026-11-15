@@ -21,6 +21,13 @@ let folder = URL(fileURLWithPath: arguments[1], isDirectory: true)
 let owner = arguments.count >= 3 ? arguments[2] : "Aperture"
 let poll: UInt32 = 200_000  // microseconds between looks at the folder
 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+// A folder reused from an earlier run: its stop, answers and pictures would end this run at once
+// or pass old pictures off as new ones.
+let leftovers = [".request", ".done", ".failed", ".png"]
+for file in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+where file == "stop" || leftovers.contains(where: file.hasSuffix) {
+  try FileManager.default.removeItem(at: folder.appendingPathComponent(file))
+}
 
 /// On-screen normal windows of the app, front to back.
 func windows() -> [[String: Any]] {
@@ -32,8 +39,8 @@ func windows() -> [[String: Any]] {
 }
 
 func bounds(_ window: [String: Any]) -> CGRect? {
-  guard let raw = window[kCGWindowBounds as String] else { return nil }
-  return CGRect(dictionaryRepresentation: raw as! CFDictionary)
+  guard let raw = window[kCGWindowBounds as String] as? NSDictionary else { return nil }
+  return CGRect(dictionaryRepresentation: raw as CFDictionary)
 }
 
 /// `main`: the app's largest window, with any sheet or menu on top of it (a screen region);
