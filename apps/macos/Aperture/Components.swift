@@ -58,11 +58,13 @@ struct MoneyText: View {
   var colored = true
   /// A result carries its sign ("+12.40"); an amount such as the room left does not ("292.00").
   var signed = true
+  /// Greyed: a figure as of an older moment, not the current one.
+  var muted = false
 
   var body: some View {
     Text(verbatim: text)
       .font(font)
-      .foregroundStyle(colored ? Palette.result(value) : Palette.textPrimary)
+      .foregroundStyle(muted ? Palette.textQuaternary : colored ? Palette.result(value) : Palette.textPrimary)
       .contentTransition(.numericText(value: NSDecimalNumber(decimal: value).doubleValue))
       .animation(Tokens.Motion.quick, value: value)
   }
@@ -310,7 +312,17 @@ enum Format {
 
   /// "5 s": a duration from the bot's settings.
   static func seconds(_ value: Decimal) -> String {
-    String(localized: L10n.Format.seconds(Money.plain(value)))
+    String(localized: L10n.Format.seconds(secondsNumber(value)))
+  }
+
+  /// "5" for 5.00, "0.5" for 0.50: a setting in seconds without trailing zeros.
+  static func secondsNumber(_ value: Decimal) -> String {
+    NSDecimalNumber(decimal: value).stringValue
+  }
+
+  /// "4 s": an age or duration in whole seconds, rounded.
+  static func wholeSeconds(_ value: Decimal) -> String {
+    Money.plain(value, fractionDigits: 0)
   }
 
   /// "250.00 USD": an amount from the bot's settings.

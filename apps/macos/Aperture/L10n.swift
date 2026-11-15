@@ -461,25 +461,14 @@ enum L10n {
     static func filled(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.filled", defaultValue: "\(count) filled", bundle: L10n.bundle)
     }
-    static var chipGainers: LocalizedStringResource {
-      LocalizedStringResource("flow.chipGainers", defaultValue: "gainers", bundle: L10n.bundle)
-    }
-    static var chipLosers: LocalizedStringResource {
-      LocalizedStringResource("flow.chipLosers", defaultValue: "losers", bundle: L10n.bundle)
-    }
-    static var chipActives: LocalizedStringResource {
-      LocalizedStringResource("flow.chipActives", defaultValue: "actives", bundle: L10n.bundle)
-    }
-    static var chipSkipped: LocalizedStringResource {
-      LocalizedStringResource("flow.chipSkipped", defaultValue: "skipped", bundle: L10n.bundle)
+    /// Under the broker-stop stage: the day's symbols whose broker stop was confirmed, "7 verified".
+    static func verified(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.verified", defaultValue: "\(count) verified", bundle: L10n.bundle)
     }
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title",
         defaultValue: "Live flow · screeners → strategy → risk → order → broker stop",
         bundle: L10n.bundle)
-    }
-    static var live: LocalizedStringResource {
-      LocalizedStringResource("flow.live", defaultValue: "live", bundle: L10n.bundle)
     }
     static var recorded: LocalizedStringResource {
       LocalizedStringResource("flow.recorded", defaultValue: "recorded", bundle: L10n.bundle)
@@ -1281,6 +1270,10 @@ enum L10n {
     static var days: LocalizedStringResource {
       LocalizedStringResource("trades.days", defaultValue: "Days", bundle: L10n.bundle)
     }
+
+    static var allDays: LocalizedStringResource {
+      LocalizedStringResource("trades.allDays", defaultValue: "All days", bundle: L10n.bundle)
+    }
     /// Days list is empty.
     static var noDays: LocalizedStringResource {
       LocalizedStringResource("trades.noDays", defaultValue: "No recorded days yet.", bundle: L10n.bundle)
@@ -1677,9 +1670,9 @@ enum L10n {
     static var noFences: LocalizedStringResource {
       LocalizedStringResource("risk.noFences", defaultValue: "No fences: nothing the bot noticed blocks entries.", bundle: L10n.bundle)
     }
-    /// A fence's kind and start time (New York).
-    static func fenceSince(_ kind: String, _ time: String) -> LocalizedStringResource {
-      LocalizedStringResource("risk.fenceSince", defaultValue: "\(kind) · since \(time)", bundle: L10n.bundle)
+    /// When a fence was raised (New York time).
+    static func fenceSince(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.fenceSince", defaultValue: "since \(time)", bundle: L10n.bundle)
     }
     /// Card title: configured risk limits.
     static var limits: LocalizedStringResource {
@@ -1941,34 +1934,9 @@ enum L10n {
     }
   }
   enum Screener {
-    /// Pipeline stage value: symbols that reached the stage on the day.
-    /// Pipeline stop stage: trades whose broker-side stop the broker confirmed.
-    static func stopsVerified(_ verified: Int, _ total: Int) -> LocalizedStringResource {
-      LocalizedStringResource("screener.stopsVerified", defaultValue: "\(verified) of \(total) verified", bundle: L10n.bundle)
-    }
     /// Pipeline reconcile stage: the broker and the bot's records disagree.
     static var mismatch: LocalizedStringResource {
       LocalizedStringResource("screener.mismatch", defaultValue: "Mismatch", bundle: L10n.bundle)
-    }
-    /// Screener name: top gainers.
-    static var gainers: LocalizedStringResource {
-      LocalizedStringResource("screener.gainers", defaultValue: "Gainers", bundle: L10n.bundle)
-    }
-    /// Screener name: top losers.
-    static var losers: LocalizedStringResource {
-      LocalizedStringResource("screener.losers", defaultValue: "Losers", bundle: L10n.bundle)
-    }
-    /// Screener name: most traded.
-    static var topActives: LocalizedStringResource {
-      LocalizedStringResource("screener.topActives", defaultValue: "Most active", bundle: L10n.bundle)
-    }
-    /// Tooltip of a screener chip the universe left out.
-    static func excluded(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("screener.excluded", defaultValue: "Left out of the universe: \(cause)", bundle: L10n.bundle)
-    }
-    /// No screener chips.
-    static var none: LocalizedStringResource {
-      LocalizedStringResource("screener.none", defaultValue: "The screeners returned nothing on this day.", bundle: L10n.bundle)
     }
     /// Flow read failed.
     static func unavailable(_ cause: String) -> LocalizedStringResource {

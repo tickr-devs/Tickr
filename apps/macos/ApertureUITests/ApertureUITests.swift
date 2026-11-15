@@ -41,16 +41,17 @@ final class ApertureUITests: XCTestCase {
   /// The performance card (PerformanceCard.id) and the start of its exclusion line.
   static let performanceCard = "trades-performance"
   static let excludedPrefix = "Left out: 1"
-  /// The Overview's screener chips (ScreenerChips.id) and watching card (WatchingCard.id).
-  static let screenerChips = "overview-screener-chips"
+  /// The Overview's latest-event line (LatestEvent.id) and watching card (WatchingCard.id).
+  static let latestEvent = "overview-latest-event"
   static let watchingCard = "overview-watching"
   /// The month calendar of Trades & days (MonthCalendar.id).
   static let calendar = "trades-calendar"
   /// The fixtures' live day (2026-11-16) as the calendar names it (Format.dayLabel).
   static let fixtureDayLabel = "Mon, Nov 16"
-  /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json.
+  /// The Chart's decisions toggle (ChartView.decisionsToggleID) and a rule from decisions-v1.json
+  /// (ask_above_trigger), as the English app shows it (ApiText.rule).
   static let decisionsToggle = "chart-decisions"
-  static let decisionRule = "ask_above_trigger"
+  static let decisionRule = "Ask above trigger"
   /// English titles of the standard Window menu and its Zoom item.
   static let windowMenu = "Window"
   static let zoomItem = "Zoom"
@@ -212,8 +213,8 @@ final class ApertureUITests: XCTestCase {
   @MainActor
   func testOverviewShowsTheFlowAndWatchedSymbols() {
     let app = launch()
-    let chips = app.descendants(matching: .any)[Self.screenerChips].firstMatch
-    XCTAssertTrue(chips.waitForExistence(timeout: Self.timeout), "screener chips\n\(app.debugDescription)")
+    let event = app.descendants(matching: .any)[Self.latestEvent].firstMatch
+    XCTAssertTrue(event.waitForExistence(timeout: Self.timeout), "latest event\n\(app.debugDescription)")
     let watching = app.descendants(matching: .any)[Self.watchingCard].firstMatch
     let check = watching.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", Self.decisionRule))
     XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "watched symbol\n\(app.debugDescription)")
