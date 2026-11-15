@@ -21,11 +21,19 @@ public struct ObserverV1: Codable, Hashable, Sendable {
   public let resultGrossUSD: DecimalString?
   /// Why `resultGrossUSD` is nil; nil when there is a result.
   public let resultCause: String?
+  /// The observer's simulated trades that day, oldest first; nil with `tradesCause` when they
+  /// cannot be simulated.
+  public let trades: [ObserverTradeV1]?
+  public let tradesCause: String?
+  /// Whether the server cut `trades` short (it lists at most a configured number).
+  public let tradesTruncated: Bool
 
   enum CodingKeys: String, CodingKey {
-    case name, version, decisions
+    case name, version, decisions, trades
     case resultGrossUSD = "result_gross_usd"
     case resultCause = "result_cause"
+    case tradesCause = "trades_cause"
+    case tradesTruncated = "trades_truncated"
   }
 
   public init(from decoder: Decoder) throws {
@@ -35,6 +43,9 @@ public struct ObserverV1: Codable, Hashable, Sendable {
     decisions = try c.decode([ObserverDecisionV1].self, forKey: .decisions)
     resultGrossUSD = try c.decodeNullable(DecimalString.self, forKey: .resultGrossUSD)
     resultCause = try c.decodeNullable(String.self, forKey: .resultCause)
+    trades = try c.decodeNullable([ObserverTradeV1].self, forKey: .trades)
+    tradesCause = try c.decodeNullable(String.self, forKey: .tradesCause)
+    tradesTruncated = try c.decode(Bool.self, forKey: .tradesTruncated)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -44,6 +55,9 @@ public struct ObserverV1: Codable, Hashable, Sendable {
     try c.encode(decisions, forKey: .decisions)
     try c.encodeNullable(resultGrossUSD, forKey: .resultGrossUSD)
     try c.encodeNullable(resultCause, forKey: .resultCause)
+    try c.encodeNullable(trades, forKey: .trades)
+    try c.encodeNullable(tradesCause, forKey: .tradesCause)
+    try c.encode(tradesTruncated, forKey: .tradesTruncated)
   }
 }
 

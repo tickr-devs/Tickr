@@ -117,6 +117,17 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(skipped.signals.last?.pricesAfter.isEmpty == true)
   }
 
+  @Test func observerTrades() throws {
+    let observers = try Wire.decoder().decode(ObserversV1.self, from: fixture("observers-v1.json"))
+    let trades = try #require(observers.observers.first?.trades)
+    #expect(trades.first?.exitReason == .stop)
+    #expect(trades.first?.resultR?.text == "-1.0333")
+    #expect(trades.dropFirst().first?.entryPrice == nil)
+    #expect(trades.dropFirst().first?.cause != nil)
+    #expect(observers.observers.last?.trades == nil)
+    #expect(observers.observers.last?.tradesCause != nil)
+  }
+
   @Test func wireDateArithmetic() throws {
     #expect(try WireDate("2026-11-16").adding(days: -29) == WireDate("2026-10-18"))
     #expect(try WireDate("2026-03-08").adding(days: 1) == WireDate("2026-03-09"))
