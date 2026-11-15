@@ -2,7 +2,11 @@ import ApertureKit
 import Foundation
 import Observation
 
+<<<<<<< HEAD
 /// Candles, lines, ATR and studies of one day's bars in one timeframe. Built once per new bars or timeframe
+=======
+/// Candles, lines and ATR of one day's bars in one timeframe. Built once per new bars or timeframe
+>>>>>>> origin/main
 /// (`ChartModel.plot(timeframe:)`), not on every redraw: a scroll or a zoom redraws many times a
 /// second, and building the series converts every bar's decimals again.
 struct ChartPlot: Sendable {
@@ -10,6 +14,7 @@ struct ChartPlot: Sendable {
   let revision: Int
   let series: ChartSeries
   let atr: [Double?]
+<<<<<<< HEAD
   /// Moving averages, Bollinger, MACD, RSI and stochastic of the candles, split into one array
   /// per drawn line so a redraw only looks values up.
   let movingAverages: [[Double?]]
@@ -22,11 +27,14 @@ struct ChartPlot: Sendable {
   let rsi: [Double?]
   let stochasticK: [Double?]
   let stochasticD: [Double?]
+=======
+>>>>>>> origin/main
 
   init(bars: [BarV1], timeframe: Timeframe, revision: Int) {
     self.revision = revision
     series = ChartSeries(bars: bars, timeframe: timeframe)
     atr = ChartSeries.atr(bars: bars, timeframe: timeframe)
+<<<<<<< HEAD
     let studies = CandleStudies(candles: series.candles)
     movingAverages = studies.movingAverages
     bollingerUpper = studies.bollinger.map { $0?.upper }
@@ -38,6 +46,8 @@ struct ChartPlot: Sendable {
     rsi = studies.rsi
     stochasticK = studies.stochastic.map { $0?.k }
     stochasticD = studies.stochastic.map { $0?.d }
+=======
+>>>>>>> origin/main
   }
 
   var timeframe: Timeframe { series.timeframe }
@@ -78,6 +88,7 @@ final class ChartPointer {
   /// The pointed time as the chart last reported it; not observed, so the chart reading it back
   /// does not redraw on every pointer move.
   @ObservationIgnored var time: Date?
+<<<<<<< HEAD
   /// The pane under the pointer and where in it, for the horizontal line and its value tag.
   var hover: ChartHover?
 
@@ -105,4 +116,6 @@ enum ChartPane: Hashable, Sendable {
 struct ChartHover: Equatable {
   let pane: ChartPane
   let location: CGPoint
+=======
+>>>>>>> origin/main
 }

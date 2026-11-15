@@ -100,6 +100,8 @@ OPERATOR_FENCES = frozenset({Fence.STOP_REJECTED, Fence.EXIT_REFUSED, Fence.CANC
                              Fence.MARKET_CLOSED})
 
 _LEG_LETTER = {Leg.ENTRY: "e", Leg.STOP: "s", Leg.EXIT: "x"}
+# Key of the broker-read fence a failed open-orders read sets; only a reconcile clears it.
+OPEN_ORDERS_READ = "open-orders"
 # A Detail read that changed an order's state or filled quantity.
 ORDER_OBSERVED = "order-observed"
 # A Detail read showing a stop still working with nothing filled, journaled at most once per
@@ -646,7 +648,7 @@ class Engine:
                  - datetime.fromisoformat(last[0]["at_utc"])).total_seconds()
         return since >= self.config.orders.stop_held_proof_seconds
 
-    def _refresh(self, row: OrderRow, held: dict[str, Decimal]) -> None:
+    def _refresh(self, row: OrderRow, held: dict[str, Decimal] | None) -> None:
         """One Detail read; RateLimited propagates so the caller stops reading this step.
         The attempt time is recorded whatever the outcome, so scheduling rotates."""
         cid = row.client_order_id
@@ -675,7 +677,7 @@ class Engine:
         if detail.state.terminal:
             self._note_not_sent(cid, False)
 
-    def _not_found(self, row: OrderRow, held: dict[str, Decimal]) -> None:
+    def _not_found(self, row: OrderRow, held: dict[str, Decimal] | None) -> None:
         cid = row.client_order_id
         if row.send_state is SendState.ACKNOWLEDGED:
             # The broker acknowledged it and now says it does not exist: a conflict.
@@ -685,8 +687,8 @@ class Engine:
         with self.store.transaction():
             self.store.execute("UPDATE orders SET absent_reads = ?, last_detail_at = ? "
                                "WHERE client_order_id = ?", (reads, self.clock(), cid))
-        if reads < self.config.orders.unknown_absent_reads:
-            return
+        if reads < self.config.orders.unknown_absent_reads or held is None:
+            return  # too early, or the positions read failed: absence cannot be decided
         # Detail alone is not enough: also require absence from open orders, and for an
         # entry no unexplained position in the symbol.
         try:
@@ -741,6 +743,7 @@ class Engine:
         except BrokerError as exc:
             self.broker_view = None  # the latest read failed: what the broker holds is unknown
             self._set_fence(Fence.BROKER_READ, "", f"positions read failed: {type(exc).__name__}")
+            self._step_blind()
             return
         self._positions = positions
         self._clear_fence(Fence.BROKER_READ)
@@ -763,13 +766,24 @@ class Engine:
                                                     or symbol in open_symbols):
                 self._clear_fence(Fence.FOREIGN_POSITION, symbol)
 
-    def _observe(self, held: dict[str, Decimal]) -> None:
+    def _step_blind(self) -> None:
+        """The positions read failed. Detail still says what filled and stops are sized on
+        Detail alone, so fills are still observed and protected (hard rule 2). Nothing that
+        needs the held quantity happens: no order is declared absent, no trade is closed and
+        no closing order is sent."""
+        self._observe(None)
+        for trade in self.trades():
+            self._advance(trade, None)
+
+    def _observe(self, held: dict[str, Decimal] | None) -> None:
         """Detail reads within `detail_reads_per_step`, one queue for everything: orders still
-        open, and orders we gave up on in a symbol whose position we cannot explain."""
+        open, and orders we gave up on in a symbol whose position we cannot explain. `held`
+        is None when the positions read failed."""
         due = [o for o in self.orders()
                if o.send_state in (SendState.ACKNOWLEDGED, SendState.UNKNOWN)
                and (o.broker_state is None or not o.broker_state.terminal)]
-        due += self._lost_fill_suspects(held)
+        if held is not None:
+            due += self._lost_fill_suspects(held)
         poll = float(self.config.orders.detail_poll_seconds)
         due.sort(key=lambda row: _detail_priority(row, poll))
         for row in due[:self.config.orders.detail_reads_per_step]:
@@ -806,7 +820,9 @@ class Engine:
             return
         self._resurrect(row, detail, "order given up on was found with a fill")
 
-    def _advance(self, trade: TradeRow, held: Decimal) -> None:
+    def _advance(self, trade: TradeRow, held: Decimal | None) -> None:
+        """`held` is None when the positions read failed: the trade is not closed, the
+        quantity fence is left as it is and no closing order is sent; stops are kept."""
         orders = self.orders(trade.trade_id)
         entry = next(o for o in orders if o.leg is Leg.ENTRY)
         stops = [o for o in orders if o.leg is Leg.STOP]
@@ -830,7 +846,9 @@ class Engine:
 
         # Only entry and exit orders change the quantity on purpose; a resting stop does not.
         in_flight = entry.live or any(e.live for e in exits)
-        if held == expected or in_flight:
+        if held is None:
+            pass
+        elif held == expected or in_flight:
             self._clear_fence(Fence.QUANTITY_MISMATCH, trade.trade_id)
         else:
             self._set_fence(Fence.QUANTITY_MISMATCH, trade.trade_id,
@@ -1005,7 +1023,7 @@ class Engine:
                 self._set_fence(Fence.UNPROTECTED_TIMEOUT, trade.trade_id, text)
 
     def _exit_step(self, trade: TradeRow, entry: OrderRow, stops: list[OrderRow],
-                   exits: list[OrderRow], held: Decimal, expected: Decimal) -> None:
+                   exits: list[OrderRow], held: Decimal | None, expected: Decimal) -> None:
         """Teardown in a safe order: entry first (stops keep protecting late fills), then the
         stops, then one closing order for exactly the agreed quantity. Whenever the close
         cannot be sent, protection is restored instead of waiting unprotected."""
@@ -1225,8 +1243,13 @@ class Engine:
         try:
             open_orders = self.broker.open_orders()
         except BrokerError as exc:
-            self._set_fence(Fence.BROKER_READ, "", f"open orders read failed: {type(exc).__name__}")
+            # Its own keyed fence: a positions read that works (step) must not clear it, or
+            # entries would go out between reconciles while foreign orders cannot be seen.
+            self._set_fence(Fence.BROKER_READ, OPEN_ORDERS_READ,
+                            f"open orders read failed: {type(exc).__name__}")
+            self.step()  # fills are still observed and protection maintained
             return False
+        self._clear_fence(Fence.BROKER_READ, OPEN_ORDERS_READ)
         rows = {o.client_order_id: o for o in self.orders()}
         broker_ids = set()
         for order in open_orders:

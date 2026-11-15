@@ -61,7 +61,13 @@ private struct DaysColumn: View {
   var body: some View {
     Card(L10n.Trades.days) {
       if model.days.isEmpty {
-        Footnote(model.historyError == nil ? L10n.Trades.noDays : L10n.Trades.daysUnavailable)
+        ContentUnavailableView {
+          Label {
+            Text(model.historyError == nil ? L10n.Trades.noDays : L10n.Trades.daysUnavailable)
+          } icon: {
+            BrandMark.empty(model.historyError == nil ? .brand : .muted)
+          }
+        }
       } else {
         DayBars(days: Array(model.days.prefix(Self.shownDays).reversed()), shown: model.shownDay)
           .frame(height: Self.barsHeight)
@@ -225,7 +231,10 @@ private struct TradesTable: View {
   var body: some View {
     Card(L10n.Trades.tradesOfDay) {
       if model.shownTrades.isEmpty {
-        Footnote(model.isLive ? L10n.Trades.noTradesToday : L10n.Trades.noTrades)
+        ContentUnavailableView {
+          Label { Text(model.isLive ? L10n.Trades.noTradesToday : L10n.Trades.noTrades) } icon: { BrandMark.empty() }
+        }
+        .frame(minHeight: Self.minimumHeight)
       } else {
         table
           .frame(minHeight: Self.minimumHeight, maxHeight: .infinity)
@@ -307,6 +316,14 @@ private struct TradeDetailCard: View {
                 } else {
                   notRecorded
                 }
+              }
+              GridRow {
+                let sent = EntrySent.line(trade.entry, cause: trade.entryCause)
+                Text(L10n.EntrySent.title).foregroundStyle(Palette.textSecondary)
+                Text(verbatim: sent.text)
+                  .font(Tokens.Typography.bodyMono)
+                  .foregroundStyle(sent.color)
+                  .help(sent.help.map { Text(verbatim: $0) } ?? Text(L10n.EntrySent.title))
               }
               excursion(L10n.Trades.maeAtLeast, trade.maeUsd)
               excursion(L10n.Trades.mfeAtLeast, trade.mfeUsd)
