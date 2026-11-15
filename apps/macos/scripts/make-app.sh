@@ -3,9 +3,10 @@
 # Usage: apps/macos/scripts/make-app.sh   -> apps/macos/build/Tickr.app
 set -eu
 cd "$(dirname "$0")/.."
-# Lowest macOS the app runs on: Package.swift `platforms` and the Xcode project's
-# MACOSX_DEPLOYMENT_TARGET say the same; used for the icon compile and LSMinimumSystemVersion.
-MIN_MACOS=26.0
+# Lowest macOS the app runs on, read from its one source: Package.swift `platforms`
+# (scripts/check-deployment-target.sh keeps the Xcode project's MACOSX_DEPLOYMENT_TARGET equal).
+# Used for the icon compile and LSMinimumSystemVersion.
+MIN_MACOS="$(scripts/package-min-macos.sh)"
 # App icon name: the Xcode project's ASSETCATALOG_COMPILER_APPICON_NAME (the AppIcon.icon file).
 ICON_NAME=AppIcon
 swift build -c release --product TickrMac
