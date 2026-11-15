@@ -31,6 +31,13 @@ public enum Money {
     plain(value, fractionDigits: abs(value) < subPennyBelow ? subPennyDigits : centsDigits)
   }
 
+  /// A measured value a strategy check compared (a price, a ratio, a volume multiple) at the
+  /// precision of a price: "17.37" for 17.36550…, "−0.0412" for −0.04123…, "2.00" for 2.0.
+  public static func measure(_ value: Decimal) -> String {
+    let body = price(value)
+    return value < 0 && body != price(0) ? minus + body : body
+  }
+
   /// "+$11.80", "−$1.60", "$0.00".
   public static func signedUSD(_ value: Decimal) -> String {
     let body = "$" + fixed(abs(value), fractionDigits: centsDigits)

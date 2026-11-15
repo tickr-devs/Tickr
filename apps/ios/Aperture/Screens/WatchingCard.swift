@@ -53,6 +53,11 @@ private struct WatchingRow: View {
     row.closeness.map { NSDecimalNumber(decimal: $0.value).doubleValue }
   }
 
+  /// A compared value at a price's precision: the bot sends full-precision ratios.
+  static func measure(_ value: DecimalString?) -> String {
+    value.map { Money.measure($0.value) } ?? Format.missing
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
@@ -68,8 +73,8 @@ private struct WatchingRow: View {
           .foregroundStyle(Palette.textQuaternary)
       }
       if let check = row.decisiveCheck {
-        Text(verbatim: [check.rule, check.measured?.text ?? Format.missing, check.operator,
-          check.threshold?.text ?? Format.missing].joined(separator: ChartFormat.space))
+        Text(verbatim: [check.rule, Self.measure(check.measured), check.operator,
+          Self.measure(check.threshold)].joined(separator: ChartFormat.space))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textTertiary)
           .lineLimit(1)
