@@ -28,6 +28,9 @@ struct CandleChart: View {
   static let pricePadding = 0.08
   /// Smallest price range drawn, as a share of the price, so a flat stretch is not a line.
   static let minimumSpan = 0.0005
+  /// Width of every pane's value labels, in points: one width keeps the panes' plot areas, and so
+  /// their candles and crosshairs, lined up.
+  static let axisLabelWidth: CGFloat = 56
   /// Gridlines each pane asks for on its value axis.
   static let priceTicks = 6
   static let paneTicks = 3
@@ -145,7 +148,7 @@ struct CandleChart: View {
       }
     }
     .chartYScale(domain: priceDomain)
-    .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: Self.priceTicks)) }
+    .chartYAxis { valueAxis(ticks: Self.priceTicks, format: Self.priceFormat) }
     .chartXAxis(hasPaneBelow ? .hidden : .automatic)
     .modifier(SharedAxis(chart: self))
   }
@@ -160,7 +163,7 @@ struct CandleChart: View {
           .foregroundStyle(color(candle).opacity(Tokens.Opacity.medium))
       }
     }
-    .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: Self.paneTicks)) }
+    .chartYAxis { valueAxis(ticks: Self.paneTicks, format: .number.notation(.compactName)) }
     .chartXAxis(lines.atr ? .hidden : .automatic)
     .modifier(SharedAxis(chart: self))
   }
@@ -169,13 +172,27 @@ struct CandleChart: View {
     Chart {
       line(atr, name: Plot.atr, color: Palette.seriesATR)
     }
-    .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: Self.paneTicks)) }
+    .chartYAxis { valueAxis(ticks: Self.paneTicks, format: Self.priceFormat) }
     .modifier(SharedAxis(chart: self))
     .overlay {
       if !atr.contains(where: { $0 != nil }) {
         Text(L10n.Chart.atrWaiting(Indicators.atrPeriod))
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.textQuaternary)
+      }
+    }
+  }
+
+  /// A pane's value scale on the right, its labels all `axisLabelWidth` wide: scales of different
+  /// widths (prices, volumes in thousands, ATR) gave each pane a plot area of its own width, so the
+  /// same minute, and the crosshair on it, sat at a different x in each pane.
+  private func valueAxis(ticks: Int, format: FloatingPointFormatStyle<Double>) -> some AxisContent {
+    AxisMarks(position: .trailing, values: .automatic(desiredCount: ticks)) { value in
+      AxisGridLine()
+      AxisTick()
+      AxisValueLabel {
+        Text(verbatim: value.as(Double.self)?.formatted(format) ?? Format.missing)
+          .frame(width: Self.axisLabelWidth, alignment: .leading)
       }
     }
   }
@@ -269,8 +286,11 @@ struct CandleChart: View {
       .onEnded { _ in pinchStart = nil }
   }
 
+  /// Prices and ATR values: dollars and cents.
+  static let priceFormat = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(Money.centsDigits))
+
   static func price(_ value: Double) -> String {
-    value.formatted(.number.precision(.fractionLength(Money.centsDigits)))
+    value.formatted(priceFormat)
   }
 }
 
