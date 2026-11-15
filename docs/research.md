@@ -10,12 +10,12 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `whatif` | What if we had entered on an ENTER that was refused or never evaluated? | `simulated` |
 | `decide` + `diff` | What would another strategy version have decided over the same day? | (decisions) |
 | `observers` | How did the live observer versions do against the active one today? | `simulated` |
+| `latency` | How late do captured quotes arrive, by symbol and hour? What do stream notices say? | (measured) |
+| `refusals` | Per day and setup: which check refused first, which platform causes, how many entries? | (counts) |
 
 Live observers see only the symbols discovery kept, and discovery applies the active strategy's
 liquidity rules, so observer results are comparable only while the active strategy (and its
 `[liquidity]` values) stays the same.
-| `latency` | How late do captured quotes arrive, by symbol and hour? What do stream notices say? | (measured) |
-| `refusals` | Per day and setup: which check refused first, which platform causes, how many entries? | (counts) |
 
 Outcomes are price moves, never called profit. What-if results are simulated with the replay's
 conservative fill model and prove nothing about real fills.
