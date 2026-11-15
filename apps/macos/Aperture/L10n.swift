@@ -1690,7 +1690,6 @@ enum L10n {
     static var dailyLoss: LocalizedStringResource {
       LocalizedStringResource("risk.dailyLoss", defaultValue: "Daily loss limit", bundle: L10n.bundle)
     }
-    /// Configured position count.
     /// Accessibility label of the position slot tiles.
     static var slots: LocalizedStringResource {
       LocalizedStringResource("risk.slots", defaultValue: "Position slots", bundle: L10n.bundle)
@@ -1707,6 +1706,7 @@ enum L10n {
     static func slotStop(_ price: String) -> LocalizedStringResource {
       LocalizedStringResource("risk.slotStop", defaultValue: "stop \(price)", bundle: L10n.bundle)
     }
+    /// Configured position count.
     static var openPositions: LocalizedStringResource {
       LocalizedStringResource("risk.openPositions", defaultValue: "Open positions at most", bundle: L10n.bundle)
     }

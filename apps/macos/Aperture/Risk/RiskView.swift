@@ -282,8 +282,9 @@ private struct LimitsCard: View {
 }
 
 /// One tile per position the config allows, as on the design: an open position's symbol, size,
-/// entry and stop (green once the broker confirmed it), and a dashed tile for each free slot. More
-/// positions than the limit (a broker mismatch) still show every one.
+/// entry and stop with its state (as `StopBadge`: confirmed green, pending amber, missing or
+/// unknown red), and a dashed tile for each free slot. More positions than the limit (a broker
+/// mismatch) still show every one.
 private struct PositionSlots: View {
   let limit: Int
   let positions: [PositionRow]
@@ -311,18 +312,36 @@ private struct PositionSlots: View {
     .accessibilityLabel(Text(L10n.Risk.slots))
   }
 
+  /// Colours of a stop state, as `StopBadge` draws it: confirmed green, pending amber, missing or
+  /// unknown red.
+  private func colors(_ state: StopState) -> (frame: Color, text: Color) {
+    switch state {
+    case .verified: return (Palette.profit, Palette.profitText)
+    case .pending: return (Palette.warning, Palette.warningText)
+    case .missing, .unknown: return (Palette.loss, Palette.lossText)
+    }
+  }
+
   private func taken(_ row: PositionRow) -> some View {
-    let verified = row.position.stop.state == .verified
+    let state = row.position.stop.state
+    let colors = colors(state)
     return VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-      Text(verbatim: row.position.symbol)
-        .font(Tokens.Typography.calloutMono.weight(.bold))
-        .foregroundStyle(Palette.textPrimary)
+      HStack(spacing: Tokens.Space.xs) {
+        Text(verbatim: row.position.symbol)
+          .font(Tokens.Typography.calloutMono.weight(.bold))
+          .foregroundStyle(Palette.textPrimary)
+        Spacer(minLength: 0)
+        StopBadge(state: state, compact: true)
+      }
       Text(L10n.Risk.slotSize(Format.quantity(row.quantity), Format.price(row.entry)))
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
-      Text(L10n.Risk.slotStop(Format.price(row.stop)))
+      // Without a stop price the line says the state ("No stop"), never a bare dash.
+      Group {
+        if let stop = row.stop { Text(L10n.Risk.slotStop(Format.price(stop))) } else { Text(verbatim: state.title) }
+      }
         .font(Tokens.Typography.annotation)
-        .foregroundStyle(verified ? Palette.profitText : Palette.warningText)
+        .foregroundStyle(colors.text)
     }
     .lineLimit(1)
     .minimumScaleFactor(Self.textMinimumScale)
@@ -331,8 +350,12 @@ private struct PositionSlots: View {
     .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.medium))
     .overlay {
       RoundedRectangle(cornerRadius: Tokens.Radius.medium)
-        .strokeBorder(verified ? Palette.accent : Palette.warning, lineWidth: Tokens.Stroke.thin)
+        .strokeBorder(colors.frame, lineWidth: Tokens.Stroke.thin)
     }
+    // The state in words too, not only in colour: read by VoiceOver and shown on hover.
+    .help(Text(verbatim: state.title))
+    .accessibilityElement(children: .combine)
+    .accessibilityValue(Text(verbatim: state.title))
   }
 
   private var freeTile: some View {
@@ -345,6 +368,8 @@ private struct PositionSlots: View {
           .strokeBorder(Palette.separatorStrong,
             style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
       }
+      .help(Text(L10n.Risk.freeSlot))
+      .accessibilityLabel(Text(L10n.Risk.freeSlot))
   }
 }
 
