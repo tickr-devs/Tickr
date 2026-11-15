@@ -40,7 +40,10 @@ struct ApiTextTests {
     let covered = #"{"kind": "unprotected", "since": "2026-11-16T15:00:00.123Z", "text": "bot words", "#
       + #""code": "stop_covers_part", "params": {"verified": "40", "expected": "100"}}"#
     let fence = try Wire.decoder().decode(Fence.self, from: Data(covered.utf8))
-    #expect(ApiText.fenceDetail(fence) == String(localized: L10n.fenceReasonStopCoversPart("40", "100")))
+    let sentence = String(localized: L10n.fenceReasonStopCoversPart)
+      .replacing("{verified}", with: "40").replacing("{expected}", with: "100")
+    #expect(ApiText.fenceDetail(fence) == sentence)
+    #expect(!sentence.contains("{"))
     let partial = covered.replacing(#", "expected": "100""#, with: "")
     #expect(ApiText.fenceDetail(try Wire.decoder().decode(Fence.self, from: Data(partial.utf8))) == "bot words")
     let unknown = covered.replacing("stop_covers_part", with: "brand_new")
@@ -48,7 +51,8 @@ struct ApiTextTests {
     let closed = #"{"open": false, "cause": "bot words", "code": "trading_disabled", "#
       + #""params": {"environment": "production"}}"#
     let gate = try Wire.decoder().decode(Gate.self, from: Data(closed.utf8))
-    #expect(ApiText.gate(gate) == String(localized: L10n.gateReasonTradingDisabled("production")))
+    #expect(ApiText.gate(gate)
+      == String(localized: L10n.gateReasonTradingDisabled).replacing("{environment}", with: "production"))
   }
 
   @Test("Order values and check rules translate; unknown ones stay as sent")

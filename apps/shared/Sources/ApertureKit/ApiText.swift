@@ -30,7 +30,7 @@ public enum ApiText {
   /// every value the sentence needs, else the bot's own words. It often says what to do ("close
   /// the position in the Webull app"), so it stays visible.
   public static func fenceDetail(_ fence: Fence) -> String {
-    FenceReason(rawValue: fence.code)?.text(fence.params).map { String(localized: $0) } ?? fence.text
+    FenceReason(rawValue: fence.code)?.text(fence.params) ?? fence.text
   }
 
   /// The fence in words followed by what it says.
@@ -42,7 +42,7 @@ public enum ApiText {
 
   /// The trading gate's cause in the person's language, else the bot's own words.
   public static func gate(_ gate: Gate) -> String {
-    GateReason(rawValue: gate.code)?.text(gate.params).map { String(localized: $0) } ?? gate.cause
+    GateReason(rawValue: gate.code)?.text(gate.params) ?? gate.cause
   }
 
   public static func orderSide(_ raw: String) -> String {

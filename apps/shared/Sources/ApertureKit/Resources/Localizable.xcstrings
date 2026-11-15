@@ -1255,13 +1255,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No cancel could be sent for %@ s (request budget)"
+            "value" : "No cancel could be sent for {seconds} s (request budget)"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отмену не удалось отправить %@ с (лимит запросов)"
+            "value" : "Отмену не удалось отправить {seconds} с (лимит запросов)"
           }
         }
       }
@@ -1273,13 +1273,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancel %@; waiting for the order's detail"
+            "value" : "Cancel {outcome}; waiting for the order's detail"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отмена: %@; ждём детали ордера"
+            "value" : "Отмена: {outcome}; ждём детали ордера"
           }
         }
       }
@@ -1291,13 +1291,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Close of %1$@ of %2$@ %3$@ not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next session and the bot sends the close"
+            "value" : "Close of {quantity} of {expected} {symbol} not sent outside the regular session; the stop stays. Close it in the Webull app, or clear this in the next session and the bot sends the close"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Закрытие %1$@ из %2$@ %3$@ не отправлено вне основной сессии; стоп остаётся. Закройте позицию в приложении Webull или снимите это в следующую сессию, и бот отправит закрытие"
+            "value" : "Закрытие {quantity} из {expected} {symbol} не отправлено вне основной сессии; стоп остаётся. Закройте позицию в приложении Webull или снимите это в следующую сессию, и бот отправит закрытие"
           }
         }
       }
@@ -1345,13 +1345,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Close %1$@ of %2$@ %3$@ not filled in %4$@ s (filled %5$@, %6$@); nothing more is sent: check the Webull app"
+            "value" : "Close {order} of {quantity} {symbol} not filled in {seconds} s (filled {filled}, {state}); nothing more is sent: check the Webull app"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Закрытие %1$@ на %2$@ %3$@ не исполнено за %4$@ с (исполнено %5$@, %6$@); больше ничего не отправляется: проверьте приложение Webull"
+            "value" : "Закрытие {order} на {quantity} {symbol} не исполнено за {seconds} с (исполнено {filled}, {state}); больше ничего не отправляется: проверьте приложение Webull"
           }
         }
       }
@@ -1471,13 +1471,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop and close held: an untracked sell %1$@ rests in %2$@; resolve it in the Webull app"
+            "value" : "Stop and close held: an untracked sell {orders} rests in {symbol}; resolve it in the Webull app"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стоп и закрытие задержаны: неучтённая продажа %1$@ стоит по %2$@; разберитесь в приложении Webull"
+            "value" : "Стоп и закрытие задержаны: неучтённая продажа {orders} стоит по {symbol}; разберитесь в приложении Webull"
           }
         }
       }
@@ -1489,13 +1489,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open orders read failed: %@"
+            "value" : "Open orders read failed: {error}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чтение открытых ордеров не удалось: %@"
+            "value" : "Чтение открытых ордеров не удалось: {error}"
           }
         }
       }
@@ -1561,13 +1561,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Positions read failed: %@"
+            "value" : "Positions read failed: {error}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чтение позиций не удалось: %@"
+            "value" : "Чтение позиций не удалось: {error}"
           }
         }
       }
@@ -1579,13 +1579,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The broker holds %1$@ shares, the order detail says %2$@"
+            "value" : "The broker holds {held} shares, the order detail says {expected}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "У брокера %1$@ акций, по деталям ордера %2$@"
+            "value" : "У брокера {held} акций, по деталям ордера {expected}"
           }
         }
       }
@@ -1597,13 +1597,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop move to %@ not confirmed: please look"
+            "value" : "Stop move to {stop_price} not confirmed: please look"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перенос стопа на %@ не подтверждён: проверьте"
+            "value" : "Перенос стопа на {stop_price} не подтверждён: проверьте"
           }
         }
       }
@@ -1669,13 +1669,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unknown order status “%@”"
+            "value" : "Unknown order status “{status}”"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Неизвестный статус ордера «%@»"
+            "value" : "Неизвестный статус ордера «{status}»"
           }
         }
       }
@@ -1687,13 +1687,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The verified stop covers %1$@ of %2$@ shares"
+            "value" : "The verified stop covers {verified} of {expected} shares"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подтверждённый стоп покрывает %1$@ из %2$@ акций"
+            "value" : "Подтверждённый стоп покрывает {verified} из {expected} акций"
           }
         }
       }
@@ -1723,13 +1723,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stops cover %1$@ shares, the broker holds %2$@"
+            "value" : "Stops cover {covered} shares, the broker holds {held}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стопы покрывают %1$@ акций, у брокера %2$@"
+            "value" : "Стопы покрывают {covered} акций, у брокера {held}"
           }
         }
       }
@@ -1741,13 +1741,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No verified stop for %@ s and the close was refused: close the position in the Webull app"
+            "value" : "No verified stop for {seconds} s and the close was refused: close the position in the Webull app"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет подтверждённого стопа %@ с, закрытие отклонено: закройте позицию в приложении Webull"
+            "value" : "Нет подтверждённого стопа {seconds} с, закрытие отклонено: закройте позицию в приложении Webull"
           }
         }
       }
@@ -1759,13 +1759,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No verified stop for %@ s: closing the position"
+            "value" : "No verified stop for {seconds} s: closing the position"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет подтверждённого стопа %@ с: позиция закрывается"
+            "value" : "Нет подтверждённого стопа {seconds} с: позиция закрывается"
           }
         }
       }
@@ -1813,13 +1813,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Owner authorization file not found: %@"
+            "value" : "Owner authorization file not found: {file}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Файл разрешения владельца не найден: %@"
+            "value" : "Файл разрешения владельца не найден: {file}"
           }
         }
       }
@@ -1849,13 +1849,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The owner authorization file must have exactly: %@"
+            "value" : "The owner authorization file must have exactly: {keys}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "В файле разрешения владельца должны быть ровно: %@"
+            "value" : "В файле разрешения владельца должны быть ровно: {keys}"
           }
         }
       }
@@ -1921,13 +1921,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trading is disabled for %@"
+            "value" : "Trading is disabled for {environment}"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Торговля отключена для %@"
+            "value" : "Торговля отключена для {environment}"
           }
         }
       }

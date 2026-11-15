@@ -244,8 +244,8 @@ GROUPS = [
 ]
 
 PARAM = re.compile(r"\{(\w+)\}")
-# Longest generated code line (SwiftLint warns, strict in CI, above 130).
-LINE = 120
+# Longest line SwiftLint allows (it warns above this, and CI runs it strict).
+LINE = 130
 
 
 def camel(name):
@@ -263,15 +263,9 @@ def params(text):
     return list(dict.fromkeys(PARAM.findall(text)))
 
 
-def swift_text(text):
-    return PARAM.sub(lambda m: f"\\({camel(m[1])})", text)
-
-
-def catalog_text(text, names):
-    """The sentence with the catalog's placeholders: %@, or %N$@ when it names several values."""
-    if len(names) == 1:
-        return PARAM.sub("%@", text)
-    return PARAM.sub(lambda m: f"%{names.index(m[1]) + 1}$@", text)
+def line_length_exemption(line):
+    """The line, after a one-line SwiftLint exemption when it is longer than SwiftLint allows."""
+    return ["      // swiftlint:disable:next line_length", line] if len(line) > LINE else [line]
 
 
 def entries():
@@ -288,26 +282,13 @@ def l10n_name(enum, code):
 
 
 def l10n_swift():
-    out = [
-        HEADER,
-        "// swiftlint:disable line_length",
-        "",
-        "import Foundation",
-        "",
-        "extension L10n {",
-    ]
+    out = [HEADER, "", "import Foundation", "", "extension L10n {"]
     for enum, key, code, names, en, _ru, doc in entries():
-        out.append(f"  /// {doc}")
-        if names:
-            args = ", ".join(f"_ {camel(n)}: String" for n in names)
-            out.append(
-                f"  static func {l10n_name(enum, code)}({args}) -> LocalizedStringResource {{"
-            )
-        else:
-            out.append(f"  static var {l10n_name(enum, code)}: LocalizedStringResource {{")
         out += [
+            f"  /// {doc}" + (f" (values: {', '.join(names)})" if names else ""),
+            f"  static var {l10n_name(enum, code)}: LocalizedStringResource {{",
             f'    LocalizedStringResource("{key}",',
-            f'      defaultValue: "{swift_text(en)}", bundle: bundle)',
+            *line_length_exemption(f'      defaultValue: "{en}", bundle: bundle)'),
             "  }",
         ]
     out.append("}")
@@ -326,7 +307,14 @@ def reason_swift():
     ]
     for name in names:
         out.append(f"  case {camel(name)}" + (f' = "{name}"' if camel(name) != name else ""))
-    out += ["}", ""]
+    out += [
+        "",
+        "  /// Around a value's name in a sentence: {name}.",
+        '  static let open = "{"',
+        '  static let close = "}"',
+        "}",
+        "",
+    ]
     for enum, _prefix, doc, items in GROUPS:
         out += [
             f"/// {doc} An unknown code has no case; show the bot's own text then.",
@@ -336,28 +324,41 @@ def reason_swift():
             out.append(f'  case {camel(code)} = "{code}"')
         out += [
             "",
-            "  /// The sentence with the values the bot sent; nil when one of them is missing.",
-            "  public func text(_ params: [String: String]) -> LocalizedStringResource? {",
-            "    func value(_ name: ReasonParam) -> String? { params[name.rawValue] }",
+            "  /// The sentence, naming each value of `names` as {name}.",
+            "  public var template: LocalizedStringResource {",
+            "    switch self {",
+        ]
+        for code, *_ in items:
+            out.append(f"    case .{camel(code)}: L10n.{l10n_name(enum, code)}")
+        out += [
+            "    }",
+            "  }",
+            "",
+            "  /// The values the sentence names.",
+            "  public var names: [ReasonParam] {",
             "    switch self {",
         ]
         for e, _key, code, ns, *_ in entries():
-            if e != enum:
-                continue
-            if not ns:
-                out.append(f"    case .{camel(code)}: return L10n.{l10n_name(enum, code)}")
-                continue
-            lets = [f"let {camel(n)} = value(.{camel(n)})" for n in ns]
-            call = ", ".join(camel(n) for n in ns)
-            guard = f"      guard {', '.join(lets)} else {{ return nil }}"
-            if len(guard) > LINE:
-                guard = "      guard " + ",\n        ".join(lets) + " else { return nil }"
-            out += [
-                f"    case .{camel(code)}:",
-                guard,
-                f"      return L10n.{l10n_name(enum, code)}({call})",
-            ]
-        out += ["    }", "  }", "}", ""]
+            if e == enum:
+                listed = ", ".join(f".{camel(n)}" for n in ns)
+                out.append(f"    case .{camel(code)}: [{listed}]")
+        out += [
+            "    }",
+            "  }",
+            "",
+            "  /// The sentence with the values the bot sent; nil when one of them is missing.",
+            "  public func text(_ params: [String: String]) -> String? {",
+            "    var text = String(localized: template)",
+            "    for name in names {",
+            "      guard let value = params[name.rawValue] else { return nil }",
+            "      let token = ReasonParam.open + name.rawValue + ReasonParam.close",
+            "      text = text.replacing(token, with: value)",
+            "    }",
+            "    return text",
+            "  }",
+            "}",
+            "",
+        ]
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -366,8 +367,8 @@ def catalog_entry(en, ru, names, doc):
         "comment": doc,
         "extractionState": "manual",
         "localizations": {
-            "en": {"stringUnit": {"state": "translated", "value": catalog_text(en, names)}},
-            "ru": {"stringUnit": {"state": "translated", "value": catalog_text(ru, names)}},
+            "en": {"stringUnit": {"state": "translated", "value": en}},
+            "ru": {"stringUnit": {"state": "translated", "value": ru}},
         },
     }
 

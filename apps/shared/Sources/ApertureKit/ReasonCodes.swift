@@ -22,6 +22,10 @@ public enum ReasonParam: String, CaseIterable, Sendable {
   case stopPrice = "stop_price"
   case symbol
   case verified
+
+  /// Around a value's name in a sentence: {name}.
+  static let open = "{"
+  static let close = "}"
 }
 
 /// The trading gate's cause (`Gate.code`). An unknown code has no case; show the bot's own text then.
@@ -36,26 +40,45 @@ public enum GateReason: String, CaseIterable, Sendable {
   case authorizationOtherEnvironment = "authorization_other_environment"
   case authorizationDigestMismatch = "authorization_digest_mismatch"
 
-  /// The sentence with the values the bot sent; nil when one of them is missing.
-  public func text(_ params: [String: String]) -> LocalizedStringResource? {
-    func value(_ name: ReasonParam) -> String? { params[name.rawValue] }
+  /// The sentence, naming each value of `names` as {name}.
+  public var template: LocalizedStringResource {
     switch self {
-    case .tradingEnabled: return L10n.gateReasonTradingEnabled
-    case .authorizationValid: return L10n.gateReasonAuthorizationValid
-    case .tradingDisabled:
-      guard let environment = value(.environment) else { return nil }
-      return L10n.gateReasonTradingDisabled(environment)
-    case .authorizationFileNotSet: return L10n.gateReasonAuthorizationFileNotSet
-    case .authorizationFileMissing:
-      guard let file = value(.file) else { return nil }
-      return L10n.gateReasonAuthorizationFileMissing(file)
-    case .authorizationNotToml: return L10n.gateReasonAuthorizationNotToml
-    case .authorizationKeysWrong:
-      guard let keys = value(.keys) else { return nil }
-      return L10n.gateReasonAuthorizationKeysWrong(keys)
-    case .authorizationOtherEnvironment: return L10n.gateReasonAuthorizationOtherEnvironment
-    case .authorizationDigestMismatch: return L10n.gateReasonAuthorizationDigestMismatch
+    case .tradingEnabled: L10n.gateReasonTradingEnabled
+    case .authorizationValid: L10n.gateReasonAuthorizationValid
+    case .tradingDisabled: L10n.gateReasonTradingDisabled
+    case .authorizationFileNotSet: L10n.gateReasonAuthorizationFileNotSet
+    case .authorizationFileMissing: L10n.gateReasonAuthorizationFileMissing
+    case .authorizationNotToml: L10n.gateReasonAuthorizationNotToml
+    case .authorizationKeysWrong: L10n.gateReasonAuthorizationKeysWrong
+    case .authorizationOtherEnvironment: L10n.gateReasonAuthorizationOtherEnvironment
+    case .authorizationDigestMismatch: L10n.gateReasonAuthorizationDigestMismatch
     }
+  }
+
+  /// The values the sentence names.
+  public var names: [ReasonParam] {
+    switch self {
+    case .tradingEnabled: []
+    case .authorizationValid: []
+    case .tradingDisabled: [.environment]
+    case .authorizationFileNotSet: []
+    case .authorizationFileMissing: [.file]
+    case .authorizationNotToml: []
+    case .authorizationKeysWrong: [.keys]
+    case .authorizationOtherEnvironment: []
+    case .authorizationDigestMismatch: []
+    }
+  }
+
+  /// The sentence with the values the bot sent; nil when one of them is missing.
+  public func text(_ params: [String: String]) -> String? {
+    var text = String(localized: template)
+    for name in names {
+      guard let value = params[name.rawValue] else { return nil }
+      let token = ReasonParam.open + name.rawValue + ReasonParam.close
+      text = text.replacing(token, with: value)
+    }
+    return text
   }
 }
 
@@ -94,77 +117,90 @@ public enum FenceReason: String, CaseIterable, Sendable {
   case exitNotFilled = "exit_not_filled"
   case closeNotSent = "close_not_sent"
 
-  /// The sentence with the values the bot sent; nil when one of them is missing.
-  public func text(_ params: [String: String]) -> LocalizedStringResource? {
-    func value(_ name: ReasonParam) -> String? { params[name.rawValue] }
+  /// The sentence, naming each value of `names` as {name}.
+  public var template: LocalizedStringResource {
     switch self {
-    case .startupReconcilePending: return L10n.fenceReasonStartupReconcilePending
-    case .positionsReadFailed:
-      guard let error = value(.error) else { return nil }
-      return L10n.fenceReasonPositionsReadFailed(error)
-    case .openOrdersReadFailed:
-      guard let error = value(.error) else { return nil }
-      return L10n.fenceReasonOpenOrdersReadFailed(error)
-    case .detailBudget: return L10n.fenceReasonDetailBudget
-    case .sendOutcomeUnknown: return L10n.fenceReasonSendOutcomeUnknown
-    case .crashedDuringSend: return L10n.fenceReasonCrashedDuringSend
-    case .orderMissing: return L10n.fenceReasonOrderMissing
-    case .statusUnmapped:
-      guard let status = value(.status) else { return nil }
-      return L10n.fenceReasonStatusUnmapped(status)
-    case .stopCoversPart:
-      guard let verified = value(.verified), let expected = value(.expected) else { return nil }
-      return L10n.fenceReasonStopCoversPart(verified, expected)
-    case .stopsOverPosition:
-      guard let covered = value(.covered), let held = value(.held) else { return nil }
-      return L10n.fenceReasonStopsOverPosition(covered, held)
-    case .unprotectedCloseByHand:
-      guard let seconds = value(.seconds) else { return nil }
-      return L10n.fenceReasonUnprotectedCloseByHand(seconds)
-    case .unprotectedExiting:
-      guard let seconds = value(.seconds) else { return nil }
-      return L10n.fenceReasonUnprotectedExiting(seconds)
-    case .stopRejectedExiting: return L10n.fenceReasonStopRejectedExiting
-    case .exitRefusedNoStop: return L10n.fenceReasonExitRefusedNoStop
-    case .exitRefusedStopAgain: return L10n.fenceReasonExitRefusedStopAgain
-    case .cancelOutcomeUnknown:
-      guard let outcome = value(.outcome) else { return nil }
-      return L10n.fenceReasonCancelOutcomeUnknown(outcome)
-    case .cancelCrashed: return L10n.fenceReasonCancelCrashed
-    case .cancelFailed: return L10n.fenceReasonCancelFailed
-    case .cancelNotSent:
-      guard let seconds = value(.seconds) else { return nil }
-      return L10n.fenceReasonCancelNotSent(seconds)
-    case .givenUpOrderFilled: return L10n.fenceReasonGivenUpOrderFilled
-    case .workingNotInRecords: return L10n.fenceReasonWorkingNotInRecords
-    case .foreignPosition: return L10n.fenceReasonForeignPosition
-    case .foreignOrder: return L10n.fenceReasonForeignOrder
-    case .quantityMismatch:
-      guard let held = value(.held), let expected = value(.expected) else { return nil }
-      return L10n.fenceReasonQuantityMismatch(held, expected)
-    case .shuttingDown: return L10n.fenceReasonShuttingDown
-    case .operatorCommand: return L10n.fenceReasonOperatorCommand
-    case .operatorEmergency: return L10n.fenceReasonOperatorEmergency
-    case .replaceUnresolved:
-      guard let stopPrice = value(.stopPrice) else { return nil }
-      return L10n.fenceReasonReplaceUnresolved(stopPrice)
-    case .heldAfterReplace: return L10n.fenceReasonHeldAfterReplace
-    case .heldUntrackedSell:
-      guard let orders = value(.orders), let symbol = value(.symbol) else { return nil }
-      return L10n.fenceReasonHeldUntrackedSell(orders, symbol)
-    case .exitNotFilled:
-      guard let order = value(.order),
-        let quantity = value(.quantity),
-        let symbol = value(.symbol),
-        let seconds = value(.seconds),
-        let filled = value(.filled),
-        let state = value(.state) else { return nil }
-      return L10n.fenceReasonExitNotFilled(order, quantity, symbol, seconds, filled, state)
-    case .closeNotSent:
-      guard let quantity = value(.quantity),
-        let expected = value(.expected),
-        let symbol = value(.symbol) else { return nil }
-      return L10n.fenceReasonCloseNotSent(quantity, expected, symbol)
+    case .startupReconcilePending: L10n.fenceReasonStartupReconcilePending
+    case .positionsReadFailed: L10n.fenceReasonPositionsReadFailed
+    case .openOrdersReadFailed: L10n.fenceReasonOpenOrdersReadFailed
+    case .detailBudget: L10n.fenceReasonDetailBudget
+    case .sendOutcomeUnknown: L10n.fenceReasonSendOutcomeUnknown
+    case .crashedDuringSend: L10n.fenceReasonCrashedDuringSend
+    case .orderMissing: L10n.fenceReasonOrderMissing
+    case .statusUnmapped: L10n.fenceReasonStatusUnmapped
+    case .stopCoversPart: L10n.fenceReasonStopCoversPart
+    case .stopsOverPosition: L10n.fenceReasonStopsOverPosition
+    case .unprotectedCloseByHand: L10n.fenceReasonUnprotectedCloseByHand
+    case .unprotectedExiting: L10n.fenceReasonUnprotectedExiting
+    case .stopRejectedExiting: L10n.fenceReasonStopRejectedExiting
+    case .exitRefusedNoStop: L10n.fenceReasonExitRefusedNoStop
+    case .exitRefusedStopAgain: L10n.fenceReasonExitRefusedStopAgain
+    case .cancelOutcomeUnknown: L10n.fenceReasonCancelOutcomeUnknown
+    case .cancelCrashed: L10n.fenceReasonCancelCrashed
+    case .cancelFailed: L10n.fenceReasonCancelFailed
+    case .cancelNotSent: L10n.fenceReasonCancelNotSent
+    case .givenUpOrderFilled: L10n.fenceReasonGivenUpOrderFilled
+    case .workingNotInRecords: L10n.fenceReasonWorkingNotInRecords
+    case .foreignPosition: L10n.fenceReasonForeignPosition
+    case .foreignOrder: L10n.fenceReasonForeignOrder
+    case .quantityMismatch: L10n.fenceReasonQuantityMismatch
+    case .shuttingDown: L10n.fenceReasonShuttingDown
+    case .operatorCommand: L10n.fenceReasonOperatorCommand
+    case .operatorEmergency: L10n.fenceReasonOperatorEmergency
+    case .replaceUnresolved: L10n.fenceReasonReplaceUnresolved
+    case .heldAfterReplace: L10n.fenceReasonHeldAfterReplace
+    case .heldUntrackedSell: L10n.fenceReasonHeldUntrackedSell
+    case .exitNotFilled: L10n.fenceReasonExitNotFilled
+    case .closeNotSent: L10n.fenceReasonCloseNotSent
     }
+  }
+
+  /// The values the sentence names.
+  public var names: [ReasonParam] {
+    switch self {
+    case .startupReconcilePending: []
+    case .positionsReadFailed: [.error]
+    case .openOrdersReadFailed: [.error]
+    case .detailBudget: []
+    case .sendOutcomeUnknown: []
+    case .crashedDuringSend: []
+    case .orderMissing: []
+    case .statusUnmapped: [.status]
+    case .stopCoversPart: [.verified, .expected]
+    case .stopsOverPosition: [.covered, .held]
+    case .unprotectedCloseByHand: [.seconds]
+    case .unprotectedExiting: [.seconds]
+    case .stopRejectedExiting: []
+    case .exitRefusedNoStop: []
+    case .exitRefusedStopAgain: []
+    case .cancelOutcomeUnknown: [.outcome]
+    case .cancelCrashed: []
+    case .cancelFailed: []
+    case .cancelNotSent: [.seconds]
+    case .givenUpOrderFilled: []
+    case .workingNotInRecords: []
+    case .foreignPosition: []
+    case .foreignOrder: []
+    case .quantityMismatch: [.held, .expected]
+    case .shuttingDown: []
+    case .operatorCommand: []
+    case .operatorEmergency: []
+    case .replaceUnresolved: [.stopPrice]
+    case .heldAfterReplace: []
+    case .heldUntrackedSell: [.orders, .symbol]
+    case .exitNotFilled: [.order, .quantity, .symbol, .seconds, .filled, .state]
+    case .closeNotSent: [.quantity, .expected, .symbol]
+    }
+  }
+
+  /// The sentence with the values the bot sent; nil when one of them is missing.
+  public func text(_ params: [String: String]) -> String? {
+    var text = String(localized: template)
+    for name in names {
+      guard let value = params[name.rawValue] else { return nil }
+      let token = ReasonParam.open + name.rawValue + ReasonParam.close
+      text = text.replacing(token, with: value)
+    }
+    return text
   }
 }
