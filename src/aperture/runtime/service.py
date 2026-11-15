@@ -236,11 +236,13 @@ class Service:
         return api.CommandOutcome.DONE, None if trades else "nothing open"
 
     def _stop_bot(self, command: api.CommandV1) -> None:
-        """Graceful stop: the marker first (durable, so no later start can miss it), then the
-        record; the loop then ends and drains as on SIGTERM: working entries cancelled, broker
-        stops left resting, nothing flattened. Refused while a close is requested or working
+        """Graceful stop, obeyed only when flat: the marker first (durable, so no later start
+        can miss it), then the record; the loop then ends and drains as on SIGTERM: working
+        entries cancelled, nothing flattened. Refused while a close is requested or working
         (an operator flatten, an emergency, the session flatten): stopping then would abandon
-        an exit request that a later start would carry out without anyone asking."""
+        an exit request that a later start would carry out without anyone asking. Refused
+        while any position is open: its broker stop is a DAY order and a stopped bot does not
+        flatten at the flatten time, so the position could go overnight unprotected."""
         engine = self.engine
         held = 0
         for trade in engine.trades():
@@ -251,11 +253,15 @@ class Service:
                 return
             if engine.expected_quantity(orders) > 0:
                 held += 1
+        if held:
+            with engine.store.transaction():
+                self._record(command, api.CommandOutcome.REFUSED, (
+                    f"{held} position(s) open; flatten first (or send emergency), "
+                    "then stop-bot"))
+            return
         stopmarker.write(self.config, command.command_id, self.now())
         with engine.store.transaction():
-            self._record(command, api.CommandOutcome.DONE,
-                         f"{held} position(s) left open under their broker stop" if held
-                         else None)
+            self._record(command, api.CommandOutcome.DONE, None)
         self.stopped_by = command.command_id
 
     def _emergency(self, command: api.CommandV1) -> None:
