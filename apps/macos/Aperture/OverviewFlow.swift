@@ -29,7 +29,8 @@ enum FlowStages {
 
 /// The live flow's latest event on one still line, as in the design: its New York time, its tag
 /// in its tone and what happened. A new event replaces the line; nothing scrolls. A recorded day
-/// shows its last closed trade.
+/// shows its last closed trade. A failed /flow read says so under it, since the stages and dots
+/// below then lack the day's flow.
 struct LatestEvent: View {
   @Environment(AppModel.self) private var model
 
@@ -50,15 +51,15 @@ struct LatestEvent: View {
     }
     guard let trade = model.shownTrades.max(by: { $0.closedAt.date < $1.closedAt.date }) else { return nil }
     let result = trade.resultGrossUsd.value
-    return Line(time: trade.closedAt.date, tag: Board.exitReasonTitle(trade.exitReason).uppercased(),
+    return Line(time: trade.closedAt.date, tag: Board.exitReasonTitle(trade.exitReason),
       text: "\(trade.symbol) \(Money.signed(result))", color: result >= 0 ? Palette.profitText : Palette.lossText)
   }
 
-  var body: some View {
+  @ViewBuilder var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.m) {
       if let line {
         Text(verbatim: Format.marketTime(line.time)).foregroundStyle(Palette.textQuaternary)
-        Text(verbatim: line.tag).bold().foregroundStyle(line.color)
+        Text(verbatim: line.tag).bold().textCase(.uppercase).foregroundStyle(line.color)
         Text(verbatim: line.text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
       } else {
         Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
@@ -70,15 +71,8 @@ struct LatestEvent: View {
     .lineLimit(1)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier(Self.id)
-  }
-}
-
-extension ScreenerSource {
-  var title: LocalizedStringResource {
-    switch self {
-    case .gainers: L10n.Screener.gainers
-    case .losers: L10n.Screener.losers
-    case .topActives: L10n.Screener.topActives
+    if let error = model.flowError {
+      Footnote(L10n.Screener.unavailable(error), color: Palette.warningText)
     }
   }
 }
