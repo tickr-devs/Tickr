@@ -1616,6 +1616,23 @@
         }
       }
     },
+    "chart.intervalDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Д"
+          }
+        }
+      }
+    },
     "chart.intervalHours" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1646,6 +1663,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lldм"
+          }
+        }
+      }
+    },
+    "chart.intervalMonth" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "M"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "М"
+          }
+        }
+      }
+    },
+    "chart.intervalWeek" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "W"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Н"
           }
         }
       }
@@ -3153,6 +3204,23 @@
         }
       }
     },
+    "flow.more" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld"
+          }
+        }
+      }
+    },
     "flow.nothingYet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3348,6 +3416,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Живой поток · скринеры → стратегия → риск → ордер → стоп брокера"
+          }
+        }
+      }
+    },
+    "flow.trayExcluded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "left out"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не прошли"
+          }
+        }
+      }
+    },
+    "flow.trayRefused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refused"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "отказ"
           }
         }
       }

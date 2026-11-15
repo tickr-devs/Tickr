@@ -153,6 +153,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `bar` | 8 | Progress bar height |
 | `barThin` | 4 | Thin progress bar inside a row (Watching closely) |
 | `ticker` | 22 | Ticker strip height |
+| `flowMark` / `flowPool` | 10 / 44 | A symbol's dot on the live flow board / least height of a stage's pool |
 | `flowChip` | 96 | Least width of a live-flow symbol chip |
 | `sideColumn` | 320 | Side column of cards |
 | `contentMaxWidth` | 1500 | Content stops growing and centres |
@@ -197,6 +198,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | Command button | bot controls | `ActionButtonStyle` below |
 | Live-flow chips (Mac) | `Marquee` | The screeners' symbols scroll across the top of the live flow: symbol in `chip`, below it the screener and change % in `annotation`, coloured by screener (gainers `profitText`, top actives `infoText`, losers `seriesATRText`; left out of the universe `textQuaternary`, struck through); `surfaceSunken` fill, `separator` hairline, `Radius.medium`. The event ticker runs under the chips, alone while there are none |
 | Watching row (Mac) | `WatchingRow` | `surfaceSunken` box with `separator` hairline, `Radius.medium`: symbol in `chip`, verdict `Badge`, time in `annotation`; the deciding check in `captionMono`; closeness as a `barThin` capsule in the verdict colour, a dashed `dashFine` outline when unknown |
+| Live-flow board (Mac) | `Pipeline` pools | Under each stage, today's symbols whose furthest stage it is (`FlowBoard`), as `flowMark` dots in the stage colour on a `surfaceSunken` pool (at most 24, then "+N"); amber while the broker stop waits, red if never confirmed. Universe and risk have a dashed tray of refused symbols as red outlines. A dot flies to its new stage (`matchedGeometryEffect`, `Motion.standard`) only when a new read moves it; hover names the symbol and the reason |
 | Live-flow stage | pipeline | `Size.stage` circle, `Stroke.bold` ring and a soft glow in the stage colour; name in the stage's text colour |
 | Accent | `.tint` | `info` for links, selection and system controls on both apps, never the system blue |
 | Planned tag | BACKLOG / NEEDS API | `highlightText`, dashed `dashFine` outline, `Radius.small` |
@@ -252,8 +254,9 @@ breaks upward, with a spark at its end.
   `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`).
 - macOS opening (`BrandOpening`, macOS has no launch screen): the first window of a launch opens
   on the background with the mark (`openingMark`) in its centre, the line draws itself
-  (`openingDrawSeconds`), then the mark flies into Overview's header mark (`openingFly`) as the
-  background fades. Once per launch (`AppModel.openingPlayed`), not on reopening the window.
+  (`openingDrawSeconds`, once the window is on screen and key), then the mark flies into
+  Overview's header mark (`openingFly`) over the still plain background, and only then does the
+  background fade. Once per launch (`AppModel.openingPlayed`), not on reopening the window.
   Reduce Motion: the same cross-fade.
 - Empty screens (nothing yet, no trades, bot unreachable) use `BrandMark.empty()` as the
   `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors
