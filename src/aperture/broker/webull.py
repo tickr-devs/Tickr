@@ -1390,12 +1390,12 @@ class StreamSession:
         self._sync_lock = threading.RLock()  # one _sync at a time: no duplicate subscribe POSTs
         self._symbols: set[str] = set()
         self._sent: set[str] = set()  # subscribed on the current connection
+        self._maybe_held: set[str] = set()  # see subscribe_optional; this connection only
         self._listener: QuoteListener | None = None
         self._send_subscribe: Callable[[list[str]], None] | None = None
         self._send_unsubscribe: Callable[[list[str]], None] | None = None
         self._reconnect: Callable[[], None] | None = None
         self._generation = 0  # counts connects and disconnects: an optional send checks it
-        self._optional_failed = False  # an optional send failed on this connection
         self._connected = False
         self._up = False
 
@@ -1491,50 +1491,66 @@ class StreamSession:
 
     def subscribe_optional(self, symbols: Iterable[str], listener: QuoteListener,
                            budget_reserve: int) -> None:
-        """Subscribe symbols nobody trades on (observers) without ever disturbing the
-        connection: only while up and in sync, only within `max_symbols` counting every
-        symbol the provider may hold, only while at least `budget_reserve` subscribe requests
-        stay free for the required symbols, and never again on a connection where an optional
-        send failed. A failed send is reported to `on_error` and raised as MarketDataError,
-        without a reconnect; its symbols may be held by the provider (the answer was lost), so
-        they stay counted as sent and the next required sync unsubscribes them as stale."""
-        with self._sync_lock:  # no _sync runs between the checks and the send
+        """Subscribe symbols no position or entry depends on (discovery candidates, observer
+        symbols) without ever disturbing the connection: only while up, only within
+        `max_symbols` counting every symbol the provider may hold, and only while at least
+        `budget_reserve` subscribe requests stay free for the required symbols. A failed send
+        is reported to `on_error` and raised as MarketDataError, without a reconnect.
+
+        Symbols the provider may still hold although we no longer want them (the answer to a
+        failed optional subscribe was lost, or an optional unsubscribe failed or was refused)
+        are kept apart as maybe-held: counted against `max_symbols`, never sent by the
+        required sync (whose failure reconnects), and unsubscribed, optionally, before the
+        next optional subscribe goes out; if that cleanup fails, the subscribe is refused.
+        A new connection forgets them (the provider's count starts again)."""
+        with self._sync_lock:  # no _sync runs between the checks and the sends
             with self._lock:
                 if self._listener is not listener:
                     raise MarketDataError("optional subscribe needs the bound stream listener")
                 if not self._up:
                     raise MarketDataError("optional subscribe needs a live stream in sync")
-                if self._optional_failed:
-                    raise MarketDataError("an optional send failed on this connection")
+                generation = self._generation
+                leftover = sorted(self._maybe_held - self._symbols)
+            if leftover:
+                self._send_optional(False, leftover, budget_reserve, generation)
+                with self._lock:
+                    if self._generation != generation:
+                        raise MarketDataError("optional cleanup raced a reconnect")
+                    self._maybe_held.difference_update(leftover)
+            with self._lock:
                 added = set(symbols) - self._symbols
                 if not added:
                     return
-                held = self._symbols | self._sent
+                held = self._symbols | self._sent | self._maybe_held
                 if len(held | added) > self._max_symbols:
                     raise SubscriptionLimit(added, self._max_symbols, by_provider=False)
-                generation = self._generation
             self._send_optional(True, sorted(added), budget_reserve, generation)
             with self._lock:
                 if self._generation != generation:  # reconnected meanwhile: not on this one
                     raise MarketDataError("optional subscribe raced a reconnect: dropped")
                 self._symbols.update(added)
                 self._sent.update(added)
+                self._maybe_held.difference_update(added)
 
     def unsubscribe_optional(self, symbols: Iterable[str], budget_reserve: int) -> None:
         """Drop symbols added by `subscribe_optional`, with the same guarantees. They leave
-        the desired set whatever happens; when the request is refused or fails they stay
-        counted as sent, so the next required sync unsubscribes them as stale."""
+        the desired set and the sent set whatever happens; when the request is refused or
+        fails they become maybe-held (see `subscribe_optional`)."""
         with self._sync_lock:
             with self._lock:
                 gone = set(symbols) & self._symbols
                 self._symbols.difference_update(gone)
                 sent = sorted(gone & self._sent)
+                self._sent.difference_update(sent)
                 up, generation = self._up, self._generation
-            if sent and up:
+                if not up:  # no live connection to send on; the next one starts clean
+                    return
+                self._maybe_held.update(sent)
+            if sent:
                 self._send_optional(False, sent, budget_reserve, generation)
                 with self._lock:
                     if self._generation == generation:
-                        self._sent.difference_update(sent)
+                        self._maybe_held.difference_update(sent)
 
     def _send_optional(self, subscribe: bool, symbols: list[str], budget_reserve: int,
                        generation: int) -> None:
@@ -1545,10 +1561,8 @@ class StreamSession:
             self._send(subscribe, symbols)
         except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK: never a reconnect here
             with self._lock:
-                if self._generation == generation:
-                    self._optional_failed = True
-                    if subscribe:  # the provider may hold them: count them, clean up later
-                        self._sent.update(symbols)
+                if self._generation == generation and subscribe:
+                    self._maybe_held.update(symbols)  # the answer may be lost: count them
             self._on_error("subscribe-optional" if subscribe else "unsubscribe-optional", exc)
             raise MarketDataError(f"optional {route} failed ({type(exc).__name__})") from None
 
@@ -1581,8 +1595,8 @@ class StreamSession:
     def on_connected(self) -> None:
         with self._lock:
             self._connected, self._up, self._sent = True, False, set()
+            self._maybe_held = set()
             self._generation += 1
-            self._optional_failed = False
         if not self._sync_or_reconnect(raise_error=False):
             return
         with self._lock:
@@ -1594,8 +1608,8 @@ class StreamSession:
             was = self._connected or self._up
             self._connected = self._up = False
             self._sent = set()
+            self._maybe_held = set()
             self._generation += 1
-            self._optional_failed = False
         if was or detail:
             self._notify(False, detail)
 
