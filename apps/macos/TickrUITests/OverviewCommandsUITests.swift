@@ -7,7 +7,8 @@ import XCTest
 /// longest; the macOS app has one text size (no Dynamic Type on the Mac, Tokens.Typography).
 /// The app reads the contract fixtures; every confirmation is cancelled.
 final class OverviewCommandsUITests: XCTestCase {
-  /// Environment variable of the fixture API (PreviewAPI.fixturesKey in the app) and its value.
+  /// Environment variable of the fixture API (PreviewAPI.fixturesKey in the app), and the value
+  /// that turns it and `smallestKey` on.
   static let fixturesKey = "TICKR_FIXTURES"
   static let fixturesOn = "1"
   /// Launch arguments of each language, without restoring windows saved by an earlier run.
@@ -24,17 +25,13 @@ final class OverviewCommandsUITests: XCTestCase {
   static let confirmed = ["cancel", "flatten-ABCD", "flatten-all", "stop", "emergency"]
   /// The narrowest window (TickrMacApp.minWidth), in points.
   static let minWidth: CGFloat = 1000
-  /// Identifier of the standard Window › Zoom item (its action), the same in every language.
-  static let zoomItem = "performZoom:"
-  /// How far the window's right and bottom edges are dragged in, as a fraction of the window:
-  /// past the least size, which stops them there.
-  static let shrinkShare = 0.8
-  /// Points inside an edge where the drag grabs it.
-  static let edgeInset: CGFloat = 2
-  /// Seconds an edge is held before the drag, and points between the window's top and the card
-  /// once it is scrolled into view (the title bar and some room).
-  static let dragSeconds: TimeInterval = 0.5
+  /// Environment variable that opens the window at its least size (LayoutSweep.smallestKey).
+  static let smallestKey = "TICKR_SMALLEST_WINDOW"
+  /// Points between the window's top and the card once it is scrolled into view (the title bar
+  /// and some room), and how far in from the screen's left edge the scroll is aimed: in its
+  /// padding, beside the cards, so no card's own scroll view takes the wheel.
   static let topRoom: CGFloat = 96
+  static let gutter: CGFloat = 4
   /// How long an element may take to appear, and how long a moving element must keep still
   /// before it is read or clicked, polled every `settlePoll`, in seconds.
   static let timeout: TimeInterval = 10
@@ -60,23 +57,11 @@ final class OverviewCommandsUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = arguments
     app.launchEnvironment[Self.fixturesKey] = Self.fixturesOn
+    app.launchEnvironment[Self.smallestKey] = Self.fixturesOn
     app.launch()
     let window = app.windows.firstMatch
     XCTAssertTrue(window.waitForExistence(timeout: Self.timeout), "no window after launch")
-    // The first window can be larger than a small display (its edges off screen): Zoom fits it
-    // to the screen, then its right and bottom edges are dragged in past the least size.
-    app.menuBarItems.containing(.menuItem, identifier: Self.zoomItem).firstMatch.click()
-    app.menuItems[Self.zoomItem].click()
-    // Grabbed just inside each edge: a zoomed window's edge is the screen's, where the pointer
-    // cannot reach.
-    let right = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
-      .withOffset(CGVector(dx: -Self.edgeInset, dy: 0))
-    right.press(forDuration: Self.dragSeconds,
-      thenDragTo: right.withOffset(CGVector(dx: -window.frame.width * Self.shrinkShare, dy: 0)))
-    let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1))
-      .withOffset(CGVector(dx: 0, dy: -Self.edgeInset))
-    bottom.press(forDuration: Self.dragSeconds,
-      thenDragTo: bottom.withOffset(CGVector(dx: 0, dy: -window.frame.height * Self.shrinkShare)))
+    waitUntilStill(window, "window", in: app)
     XCTAssertEqual(window.frame.width, Self.minWidth, accuracy: 1, "the window is not at its least width")
 
     let row = app.descendants(matching: .any)[Self.overviewRow].firstMatch
@@ -90,7 +75,8 @@ final class OverviewCommandsUITests: XCTestCase {
     // on a small display (the least window is taller than the space above the Dock there).
     let below = card.frame.minY - window.frame.minY - Self.topRoom
     if below > 0 {
-      screen.scroll(byDeltaX: 0, deltaY: -below)
+      screen.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: Self.gutter, dy: 0))
+        .scroll(byDeltaX: 0, deltaY: -below)
       waitUntilStill(card, "safety card", in: app)
     }
     XCTAssertLessThanOrEqual(card.frame.maxY, window.frame.maxY, "the card is still below the window")

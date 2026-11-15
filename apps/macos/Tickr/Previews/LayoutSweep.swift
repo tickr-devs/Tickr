@@ -49,6 +49,26 @@ enum LayoutSweep {
   static let dragStep: CGFloat = 16
   static let dragStepSeconds: Double = 0.02
 
+  /// Environment variable that opens the main window at the app's least size, in the screen's
+  /// visible area: the UI tests of the narrowest window (OverviewCommandsUITests), where dragging
+  /// a window's edge is unreliable.
+  static let smallestKey = "TICKR_SMALLEST_WINDOW"
+  /// Seconds between looks for the main window while it opens.
+  static let windowPollSeconds = 0.1
+
+  /// Sets the main window to the app's least size when the app was launched with `smallestKey`.
+  static func smallestIfAsked() {
+    guard ProcessInfo.processInfo.environment[smallestKey] != nil else { return }
+    Task { @MainActor in
+      while mainWindow() == nil {
+        try? await Task.sleep(for: .seconds(windowPollSeconds))
+      }
+      if let window = mainWindow() {
+        resize(window, to: CGSize(width: TickrMacApp.minWidth, height: TickrMacApp.minHeight))
+      }
+    }
+  }
+
   /// Starts the sweep when the app was launched with `sweepKey` set.
   static func startIfAsked(model: AppModel) {
     guard let path = ProcessInfo.processInfo.environment[sweepKey] else { return }
