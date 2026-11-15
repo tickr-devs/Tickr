@@ -5,8 +5,9 @@
 - `run-bot -- <bot command...>`: preflight again (a failure alerts "bot did not start"), then
   run the bot under supervision; alert if it crashes. Never relaunches.
 - `watchdog`: the separate end-of-day watchdog (runtime/watchdog.py): read-only broker checks
-  after the flatten time, and "bot down with an open trade" during the session. Exit 0 all
-  clear, 1 something alerted, 2 config invalid, 3 no session today.
+  after the flatten time, "bot down with an open trade" during the session, and near the
+  flatten time one start a day of a down bot job so the bot flattens (it never sends orders).
+  Exit 0 all clear, 1 something alerted, 2 config invalid, 3 no session today.
 - `alert <kind> <text>`: show one alert (used to test notifications on the Mac).
 - `render-launchd`: write filled-in plists from ops/launchd into a folder; installs nothing.
 
@@ -160,11 +161,13 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-# Replaced in tests: the watchdog's broker factory, clock and sleep. The watchdog only ever
-# holds the broker through watchdog.ReadOnlyBroker.
+# Replaced in tests: the watchdog's broker factory, clock, sleep and command runner (its one
+# restart a day of the bot job). The watchdog only ever holds the broker through
+# watchdog.ReadOnlyBroker.
 WATCHDOG_BROKER: Callable[[config_module.Config, Callable[[], None]], Broker] = _webull_broker
 WATCHDOG_NOW: Callable[[], datetime] = _utc_now
 WATCHDOG_SLEEP: Callable[[float], None] = time.sleep
+WATCHDOG_RUNNER: watchdog.Runner = watchdog.run_command
 
 
 def _watchdog(config_path: Path) -> int:
@@ -174,8 +177,15 @@ def _watchdog(config_path: Path) -> int:
     launchd.check_timings(cfg)
     database, lock_path = data_paths(cfg)
     journal = watchdog.Journal(cfg.root / cfg.run.data_dir / cfg.runtime.watchdog_journal_file)
-    alerter = Alerter(cfg.alerts, f"{TITLE} {cfg.environment_name}",
-                      default_notifier(cfg.alerts), clock=WATCHDOG_NOW)
+    notifier = default_notifier(cfg.alerts)
+    alerter = Alerter(cfg.alerts, f"{TITLE} {cfg.environment_name}", notifier,
+                      clock=WATCHDOG_NOW)
+    if notifier is None:
+        # No channel on this machine (not macOS): every alert is journaled "no-notifier" only.
+        # Recorded once at the start so the journal says why nobody was told; the exit code is
+        # then never 0, so the host scheduler shows a failed job.
+        journal.write(watchdog.CHANNEL_REFUSED, {"cause": PreflightCause.ALERT_CHANNEL_MISSING,
+                                                 "platform": sys.platform})
     missing = recipient_missing(cfg.alerts, os.environ)
     if missing is not None:
         # Recorded, and every iMessage attempt fails with the same cause; the watchdog still
@@ -193,6 +203,7 @@ def _watchdog(config_path: Path) -> int:
             cfg, day, alerter=alerter, journal=journal, clock=WATCHDOG_NOW,
             sleep=WATCHDOG_SLEEP, lock_path=lock_path, database=database,
             status_path=cfg.root / cfg.run.data_dir / cfg.api.status_file,
+            runner=WATCHDOG_RUNNER,
             connect=lambda: watchdog.ReadOnlyBroker(WATCHDOG_BROKER(cfg, token_pending)))
     except CalendarRefused as exc:
         if exc.cause in watchdog.CLOSED_CAUSES:
@@ -204,7 +215,10 @@ def _watchdog(config_path: Path) -> int:
         for done in (outcome, *alerter.flush()):
             journal.write(watchdog.ALERT, done.journal_body())
         return int(ExitCode.FAILED)
-    return guard.run()
+    code = guard.run()
+    if notifier is None and code == ExitCode.READY:
+        return int(ExitCode.FAILED)
+    return code
 
 
 def _render(args: argparse.Namespace) -> int:

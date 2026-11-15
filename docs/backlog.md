@@ -21,19 +21,17 @@ Out of scope for v1. Nothing here is built unless a task names it. The full orig
 - Spike-entry setup block (owner wants it back as its own block; values open).
 - Account page completeness (balances, buying power, all broker fields), fee evidence, gRPC trade events.
 - Production readiness: authorization record form, readiness checklist, enabling day.
-- Store maintenance (archive/compact closed days).
+- Store maintenance beyond `aperture maintain` (docs/operations.md): pruning the prior-session `history/` cache, deleting very old archives.
 
 ## From the old bot's tracker (reviewed 2026-11-14)
 Ideas from the frozen `Trading` tracker (open and closed tasks) that Aperture does not have yet; old numbers in brackets. Old-tracker answers are not owner decisions until recorded in `docs/decisions.md`.
 
 Strategy and research:
-- **No-progress exit** as a strategy version: close when price has not moved X R in favour within N minutes; X and N were never chosen (old Q43); judge it by replay and observers first (old #083).
+- **No-progress exit** as a strategy version: close when price has not moved X R in favour within N minutes; X and N were never chosen (old Q43); judge it by replay and observers first (old #083). Built as candidate `price-action-v2` with provisional X and N (docs/observers.md); not active.
 - **Trailing values to start from** when the trailing stop is built: stop = best price since entry minus 1.5 ATR, at least the fill price after +1.0 R, only tightens; provisional, never confirmed (old #153-34, Q10).
-- **Trigger confirmation**: two consecutive executable quotes through the trigger before ENTER, against one-quote flicker entries (old trading review of #153).
+- **Trigger confirmation**: two consecutive executable quotes through the trigger before ENTER, against one-quote flicker entries (old trading review of #153). Built in candidate `price-action-v2` (docs/observers.md); not active.
 - **Acceleration check** (price velocity, dollar volume per minute) as a strategy rule, kept only if recorded days show it helps (old #153-33, ADR 0013).
 - **Screener source and rank vs outcome**: do the list (gainers/losers/top actives) or the rank predict the move? Study on recorded days (old Q46).
-- **Per-check refusal table**: decisions already record the first failed check and the refusal cause, and the research report and advisor evidence count them; missing is a per-day, per-setup table in the research CLI (old #085, product-spec Q25).
-- **Quote latency report** from capture files (receipt minus provider time by symbol and hour), plus the stream notice 1001 counters `drop`/`rtt`/`sent`: the adapter recognises notice 1001 but drops these counters today (old #094, #028).
 
 Broker and safety features:
 - **Tradability check before entry**: instrument profile `status` (seen OC/CO/NT, ignored today) and trade-instrument `trade_policy`/`forbid_reason` (CLOSE_ONLY, DENIED, HALTED) refuse entries with a typed cause and never block exits; first probe how a halt shows in snapshot, profile and stream (old #158).

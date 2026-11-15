@@ -18,12 +18,15 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
   static let days = 1...31
   /// Hour of the day used as a safe anchor (noon: never near a DST change).
   static let anchorHour = 12
+  /// How a date is written on the wire, and the time zone of trading dates.
+  static let format = "%04d-%02d-%02d"
+  static let newYorkZone = "America/New_York"
 
   public init(_ text: String) throws {
     let parts = text.split(separator: "-").compactMap { Int($0) }
     guard Wire.matches(Self.pattern, text), parts.count == Self.partCount,
       Self.months.contains(parts[1]), Self.days.contains(parts[2]) else {
-      throw ContractError("expected a date like 2026-01-02, got \"\(text)\"")
+      throw ContractError(String(localized: L10n.badDate(text)))
     }
     self.text = text
     year = parts[0]
@@ -34,15 +37,19 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
   /// The New York date of `date`.
   public init(newYorkDateOf date: Date) {
     let parts = WireDate.newYork.dateComponents([.year, .month, .day], from: date)
-    year = parts.year ?? 0
-    month = parts.month ?? 0
-    day = parts.day ?? 0
-    text = String(format: "%04d-%02d-%02d", year, month, day)
+    // A Gregorian calendar always fills the components it is asked for; no fallback date.
+    guard let year = parts.year, let month = parts.month, let day = parts.day else {
+      preconditionFailure()
+    }
+    self.year = year
+    self.month = month
+    self.day = day
+    text = String(format: Self.format, year, month, day)
   }
 
   public static let newYork: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "America/New_York")!
+    calendar.timeZone = TimeZone(identifier: WireDate.newYorkZone)!
     return calendar
   }()
 
@@ -57,7 +64,7 @@ public struct WireDate: Codable, Hashable, Comparable, Sendable, CustomStringCon
   public init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()
     guard let text = try? container.decode(String.self) else {
-      throw DecodingError.dataCorruptedError(in: container, debugDescription: "expected a date string")
+      throw DecodingError.dataCorruptedError(in: container, debugDescription: String(localized: L10n.expectedDate))
     }
     do { try self.init(text) } catch {
       throw DecodingError.dataCorruptedError(in: container, debugDescription: "\(error)")

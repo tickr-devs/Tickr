@@ -11,14 +11,18 @@ journal (store.py) keeps its own durability.
 
 from __future__ import annotations
 
+import json
 import threading
 from datetime import date
 from pathlib import Path
 from typing import TextIO
 
+from aperture.archive import existing, open_text
 from aperture.calendar import ny_date_of
 from aperture.config import Config
-from aperture.research.records import DecisionRecord, record_to_json
+from aperture.research.errors import RecordFileError
+from aperture.research.records import DecisionRecord, record_from_mapping, record_to_json
+from aperture.strategy.base import Role
 
 FILE_NAME = "decisions.jsonl"
 
@@ -37,6 +41,45 @@ class DecisionLog:
 
     def path(self, day: date) -> Path:
         return self.directory / day.isoformat() / FILE_NAME
+
+    def latest_active(self, day: date, symbol: str) -> DecisionRecord | None:
+        """The last active-strategy record for `symbol` in the file of `day` (read only), or
+        None when there is none. See `records` for what is read and refused."""
+        found = [r for r in self.records(day, symbol=symbol) if r.role is Role.ACTIVE]
+        return found[-1] if found else None
+
+    def records(self, day: date, *, symbol: str | None = None,
+                role: Role | None = None) -> tuple[DecisionRecord, ...]:
+        """The records of `day` (read only, plain or archived file) in file order, limited to
+        `symbol` and `role` when given; empty when the day has no file. A last line still being
+        written (no newline yet) and blank lines are not read. When filtering, lines without the
+        key exactly as `record_to_json` writes it (json.dumps default separators) cannot match
+        and are skipped unparsed; any other malformed line is a RecordFileError."""
+        path = self.path(day)
+        if existing(path) is None:
+            return ()
+        keys = []
+        if symbol is not None:
+            keys.append('"symbol": ' + json.dumps(symbol))
+        if role is not None:
+            keys.append('"role": ' + json.dumps(role.value))
+        found = []
+        with open_text(path) as handle:  # plain or archived (.gz)
+            for number, text in enumerate(handle, start=1):
+                if not text.endswith("\n") or not text.strip():
+                    continue
+                if any(key not in text for key in keys):
+                    continue
+                try:
+                    record = record_from_mapping(json.loads(text))
+                except ValueError as exc:  # JSONDecodeError is a ValueError
+                    raise RecordFileError(str(path), number, str(exc)) from exc
+                if symbol is not None and record.symbol != symbol:
+                    continue
+                if role is not None and record.role is not role:
+                    continue
+                found.append(record)
+        return tuple(found)
 
     def append(self, record: DecisionRecord) -> None:
         """Write one record (refused if it breaks the record rules) and flush it. Safe to call

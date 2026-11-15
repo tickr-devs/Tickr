@@ -16,8 +16,12 @@ import pytest
 
 from aperture.api import contract
 from aperture.api.contract import (
+    AccountOrder,
+    AccountPosition,
+    AccountResponseV1,
     BarsV1,
     BarV1,
+    CheckV1,
     CommandAcceptedV1,
     CommandKind,
     CommandV1,
@@ -25,15 +29,24 @@ from aperture.api.contract import (
     DaysV1,
     DayTrade,
     DayV1,
+    DecisionsV1,
+    DecisionV1,
     ErrorV1,
+    ExplainV1,
+    ObserverDecisionV1,
+    ObserversV1,
+    ObserverV1,
     PendingCommandsV1,
     RiskSettings,
     SessionSettings,
     SettingsV1,
     StatusResponseV1,
+    StrategyId,
 )
+from aperture.research.records import Admission
+from aperture.strategy.base import Verdict
 
-from .samples import T0, status
+from .samples import T0, account, status
 from .schema_check import errors
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -49,7 +62,19 @@ def _response(st, age, stale, cause=None) -> StatusResponseV1:
 
 def documents() -> dict[str, object]:
     minimal = status(entry_block=None, fences=(), position=None, trades_today=(),
-                     recent_commands=(), run_id=None, result_today_gross_usd=Decimal("0"))
+                     recent_commands=(), run_id=None, result_today_gross_usd=Decimal("0"),
+                     realized_loss_today_usd=None, open_reservations_usd=Decimal("0"),
+                     daily_room_usd=None, positions=())
+    mismatch = account(
+        positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12.34")),
+                   AccountPosition("EFGH", Decimal("5"), None)),
+        orders=(AccountOrder("ap-0001-s", "ABCD", "SELL", "STOP_LOSS", "ACCEPTED",
+                             Decimal("10"), None, Decimal("11.90"), True),
+                AccountOrder("manual-1", "EFGH", "BUY", "LIMIT", "ACCEPTED", Decimal("5"),
+                             None, None, False)),
+        matches_records=False,
+        mismatch="foreign-position:EFGH: position not opened by this bot; "
+                 "foreign-order:manual-1: open order not in our records")
     command = CommandV1("3f2c9a7e-5b1d-4c8e-9a0f-1e2d3c4b5a69", CommandKind.FLATTEN,
                         T0, "api")
     return {
@@ -63,6 +88,9 @@ def documents() -> dict[str, object]:
         "command-accepted-v1.warning": CommandAcceptedV1(
             command=command, warning="the bot does not look alive; the command runs only if "
                                      "the bot reads it before it expires"),
+        "command-accepted-v1.flatten-symbol": CommandAcceptedV1(
+            command=CommandV1("8b1e4d2c-6a3f-4e9b-8c7d-2f1a0b9c8d7e", CommandKind.FLATTEN,
+                              T0, "api", "ABCD"), warning=None),
         "pending-commands-v1": PendingCommandsV1(commands=(command,)),
         "pending-commands-v1.empty": PendingCommandsV1(commands=()),
         "error-v1": ErrorV1("forbidden_host", "Host 'evil.example:8766' is not allowed"),
@@ -80,7 +108,8 @@ def documents() -> dict[str, object]:
             Decimal("2.50"), ("ABCD", "WXYZ")),
         "settings-v1": SettingsV1(
             "sandbox", "price-action-v1", ("price-action-v1-lookback8",),
-            RiskSettings(Decimal("50"), Decimal("2500"), Decimal("300"), 1, Decimal("5")),
+            RiskSettings(Decimal("50"), Decimal("2500"), Decimal("300"), 1, Decimal("5"),
+                         Decimal("10")),
             SessionSettings("America/New_York", 15, 5, False), Decimal("15"), POLL),
         "day-v1.empty": DayV1("sandbox", DAY - timedelta(days=3), (), Decimal("0"), ()),
         "bars-v1": BarsV1("sandbox", "ABCD", DAY, tuple(
@@ -90,6 +119,39 @@ def documents() -> dict[str, object]:
                 ("12.30", "12.38", "12.28", "12.36", "18450"),
                 ("12.36", "12.41", "12.33", "12.34", "9120"),
                 ("12.34", "12.52", "12.34", "12.50", "40211"))))),
+        "account-v1": account(),
+        "account-v1.mismatch": mismatch,
+        "account-response-v1": AccountResponseV1(T0 + timedelta(seconds=4), account(),
+                                                 Decimal("4.000"), False),
+        "account-response-v1.stale": AccountResponseV1(T0 + timedelta(seconds=40), mismatch,
+                                                       Decimal("40.000"), True),
+        "explain-v1": ExplainV1(
+            "sandbox", DAY, "ABCD", T0 + timedelta(minutes=1, seconds=2), T0.replace(
+                microsecond=0), "price_action_v1", "1", Verdict.WATCH, "breakout",
+            Admission.NOT_APPLICABLE, None, "spread_ratio", (
+                CheckV1("bars_consistent", None, "is", None, True, "own symbol, increasing "
+                        "start"),
+                CheckV1("relative_volume", Decimal("2.4"), ">=", Decimal("1.5"), True, ""),
+                CheckV1("spread_ratio", Decimal("0.0031"), "<=", Decimal("0.002"), False,
+                        ""))),
+        "observers-v1": ObserversV1(DAY, (
+            ObserverV1("price-action-v1", "2", (
+                ObserverDecisionV1(T0.replace(microsecond=0), "ABCD", Verdict.WATCH,
+                                   ("ask_above_trigger",)),
+                ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), "ABCD",
+                                   Verdict.ENTER, ())), None),
+            ObserverV1("price-action-v2", "1", (), None))),
+        "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
+        "decisions-v1": DecisionsV1("ABCD", DAY, (
+            DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,
+                       StrategyId("price-action-v1", "1"), False, (
+                           CheckV1("ask_above_trigger", Decimal("12.33"), ">",
+                                   Decimal("12.35"), False, ""),), None, None),
+            DecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), Verdict.ENTER,
+                       StrategyId("price-action-v1", "2"), True, (
+                           CheckV1("ask_above_trigger", Decimal("12.37"), ">",
+                                   Decimal("12.35"), True, ""),),
+                       Decimal("12.40"), Decimal("12.10")))),
     }
 
 

@@ -14,6 +14,8 @@ public enum CommandKind: String, Codable, Sendable, CaseIterable {
   case entryStopOff = "entry-stop-off"
   case cancelOwnOrders = "cancel-own-orders"
   case flatten
+  case stopBot = "stop-bot"
+  case emergency
 }
 
 public enum CommandOutcome: String, Codable, Sendable { case done, refused }
@@ -177,10 +179,18 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let resultTodayGrossUsd: DecimalString
   public let freshness: Freshness
   public let recentCommands: [CommandRecord]
+  /// Realized loss counted against the daily limit; nil when the bot cannot compute it.
+  public let realizedLossTodayUsd: DecimalString?
+  /// Worst-case loss reserved by entries in flight; nil when unknown.
+  public let openReservationsUsd: DecimalString?
+  /// What is left of the daily loss limit after losses and reservations; nil when unknown.
+  public let dailyRoomUsd: DecimalString?
+  /// Every open position; `position` is the first of them, kept for older readers.
+  public let positions: [Position]
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
-    case environment, strategy, fences, position, freshness
+    case environment, strategy, fences, position, freshness, positions
     case writtenAt = "written_at"
     case botState = "bot_state"
     case runId = "run_id"
@@ -190,6 +200,9 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case tradesToday = "trades_today"
     case resultTodayGrossUsd = "result_today_gross_usd"
     case recentCommands = "recent_commands"
+    case realizedLossTodayUsd = "realized_loss_today_usd"
+    case openReservationsUsd = "open_reservations_usd"
+    case dailyRoomUsd = "daily_room_usd"
     case schemaVersion = "schema_version"
   }
 
@@ -210,6 +223,10 @@ public struct StatusV1: Codable, Hashable, Sendable {
     resultTodayGrossUsd = try c.decode(DecimalString.self, forKey: .resultTodayGrossUsd)
     freshness = try c.decode(Freshness.self, forKey: .freshness)
     recentCommands = try c.decode([CommandRecord].self, forKey: .recentCommands)
+    realizedLossTodayUsd = try c.decodeNullable(DecimalString.self, forKey: .realizedLossTodayUsd)
+    openReservationsUsd = try c.decodeNullable(DecimalString.self, forKey: .openReservationsUsd)
+    dailyRoomUsd = try c.decodeNullable(DecimalString.self, forKey: .dailyRoomUsd)
+    positions = try c.decode([Position].self, forKey: .positions)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -229,6 +246,10 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encode(resultTodayGrossUsd, forKey: .resultTodayGrossUsd)
     try c.encode(freshness, forKey: .freshness)
     try c.encode(recentCommands, forKey: .recentCommands)
+    try c.encodeNullable(realizedLossTodayUsd, forKey: .realizedLossTodayUsd)
+    try c.encodeNullable(openReservationsUsd, forKey: .openReservationsUsd)
+    try c.encodeNullable(dailyRoomUsd, forKey: .dailyRoomUsd)
+    try c.encode(positions, forKey: .positions)
   }
 }
 
@@ -237,10 +258,12 @@ public struct CommandV1: Codable, Hashable, Sendable {
   public let kind: CommandKind
   public let requestedAt: WireTime
   public let source: String
+  /// The one symbol a flatten closes; nil for every other command and for a flatten of everything.
+  public let symbol: String?
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
-    case kind, source
+    case kind, source, symbol
     case commandId = "command_id"
     case requestedAt = "requested_at"
     case schemaVersion = "schema_version"
@@ -253,6 +276,17 @@ public struct CommandV1: Codable, Hashable, Sendable {
     kind = try c.decode(CommandKind.self, forKey: .kind)
     requestedAt = try c.decode(WireTime.self, forKey: .requestedAt)
     source = try c.decode(String.self, forKey: .source)
+    symbol = try c.decodeNullable(String.self, forKey: .symbol)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(commandId, forKey: .commandId)
+    try c.encode(kind, forKey: .kind)
+    try c.encode(requestedAt, forKey: .requestedAt)
+    try c.encode(source, forKey: .source)
+    try c.encodeNullable(symbol, forKey: .symbol)
+    try c.encode(schemaVersion, forKey: .schemaVersion)
   }
 }
 

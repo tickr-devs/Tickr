@@ -27,6 +27,7 @@ class RunConfig:
     data_dir: str
     database_busy_timeout_seconds: Decimal
     backups_dir: str
+    maintain_keep_sessions: int
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class SessionConfig:
     last_entry_minutes_before_close: int
     flatten_minutes_before_close: int
     flatten_grace_seconds: Decimal
+    close_order_cutoff_seconds: Decimal
     half_days_enabled: bool
 
 
@@ -97,7 +99,14 @@ class ApiConfig:
     host: str
     port: int
     allowed_hosts: tuple[str, ...]
+    remote_hosts: tuple[str, ...]
+    remote_port: int
+    remote_token_hash_file: str
+    remote_token_bytes: int
+    remote_pairing_file: str
     status_file: str
+    account_file: str
+    account_stale_seconds: Decimal
     commands_dir: str
     status_stale_seconds: Decimal
     poll_seconds: Decimal
@@ -105,6 +114,7 @@ class ApiConfig:
     max_pending_commands: int
     command_max_age_seconds: Decimal
     status_recent_commands: int
+    idempotency_key_ttl_seconds: int
 
 
 @dataclass(frozen=True)
@@ -174,7 +184,12 @@ class RuntimeConfig:
     watchdog_bot_check_seconds: int
     watchdog_status_stale_seconds: int
     watchdog_journal_file: str
+    watchdog_restart_before_flatten_seconds: int
+    watchdog_restart_command: tuple[str, ...]
+    watchdog_restart_timeout_seconds: int
+    watchdog_restart_file: str
     evaluation_budget_seconds: Decimal
+    stop_marker_file: str
 
 
 @dataclass(frozen=True)
@@ -348,6 +363,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError(
             f"[run] environment {run.environment!r} is not one of: {', '.join(environments)}"
         )
+    if run.maintain_keep_sessions < 1:
+        raise ConfigError("[run] maintain_keep_sessions must be at least 1 (today is always kept)")
     md: MarketDataConfig = built["market_data"]
     if md.candidate_subscriptions > md.stream_max_symbols - md.stream_reserved_symbols:
         raise ConfigError(
@@ -360,6 +377,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
+    if built["api"].account_stale_seconds <= built["orders"].reconcile_interval_seconds:
+        raise ConfigError("[api] account_stale_seconds must be above [orders] "
+                          "reconcile_interval_seconds (the account file is written per reconcile)")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")

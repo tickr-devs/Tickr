@@ -5,45 +5,48 @@ import SwiftUI
 /// Strategy lab: the active strategy now; observer versions, replays and refusal counts arrive with
 /// the API additions for them.
 struct LabView: View {
-    @Environment(AppModel.self) private var model
+  /// Order in which the blocks rise in (`rise(step:)`).
+  private enum Order: Int { case active = 1, observers = 3 }
 
-    var body: some View {
-        Screen("Strategy lab") {
-            ConnectionPrompt()
-            if let status = model.status {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        CardLabel("Active strategy")
-                        Spacer()
-                        Text("trades")
-                            .font(.system(size: 10, design: .monospaced))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .foregroundStyle(Palette.tealStrong)
-                            .background(Palette.teal.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    HStack(spacing: 8) {
-                        PulseDot(Palette.teal)
-                        Text("\(status.strategy.name) v\(status.strategy.version)")
-                            .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                        Spacer()
-                        Text(Money.signed(status.resultTodayGrossUsd.value))
-                            .font(.system(size: 15, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Palette.result(status.resultTodayGrossUsd.value))
-                    }
-                }
-                .padding(14)
-                .apertureCard()
-                .rise(0.05)
+  @Environment(AppModel.self) private var model
 
-                ContentUnavailableView {
-                    Label("Observers and replays", systemImage: "sparkles")
-                } description: {
-                    Text("How each observer version would have traded today, replays of past days and why signals "
-                        + "were refused appear here once the bot's API publishes them. Approving a new version stays on the Mac.")
-                }
-                .rise(0.15)
-            }
+  var body: some View {
+    Screen(L10n.Lab.title) {
+      ConnectionPrompt()
+      if let status = model.status {
+        VStack(alignment: .leading, spacing: Tokens.Space.s) {
+          HStack {
+            CardLabel(L10n.Lab.active)
+            Spacer()
+            Text(L10n.Lab.trades)
+              .font(Tokens.Typography.annotation)
+              .padding(.horizontal, Tokens.Space.s)
+              .padding(.vertical, Tokens.Space.xxs)
+              .foregroundStyle(Palette.accentText)
+              .background(Palette.accent.opacity(Tokens.Opacity.glow),
+                in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
+          }
+          HStack(spacing: Tokens.Space.s) {
+            PulseDot(Palette.accent)
+            Text(L10n.Common.strategyVersion(status.strategy.name, status.strategy.version))
+              .font(.subheadline.monospaced().weight(.semibold))
+            Spacer()
+            Text(verbatim: Money.signed(status.resultTodayGrossUsd.value))
+              .font(.subheadline.monospaced().bold())
+              .foregroundStyle(Palette.result(status.resultTodayGrossUsd.value))
+          }
         }
+        .padding(Tokens.Space.l)
+        .apertureCard()
+        .rise(step: Order.active.rawValue)
+
+        ContentUnavailableView {
+          Label { Text(L10n.Lab.observers) } icon: { Image(systemName: "sparkles") }
+        } description: {
+          Text(L10n.Lab.observersBody)
+        }
+        .rise(step: Order.observers.rawValue)
+      }
     }
+  }
 }

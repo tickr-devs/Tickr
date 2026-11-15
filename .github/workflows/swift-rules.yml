@@ -1,0 +1,19 @@
+name: swift-rules
+# The apps' Swift code rules (CLAUDE.md, "Swift code rules"): no words in code outside L10n.swift,
+# no magic numbers, 2-space indentation, Russian translation for every key. Runs on every pull
+# request, whatever it touches, so it can be a required check.
+on:
+  pull_request:
+  push:
+    branches: [main]
+concurrency:
+  group: swift-rules-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift code rules (apps/scripts/check_swift_rules.py)
+        run: python3 apps/scripts/check_swift_rules.py

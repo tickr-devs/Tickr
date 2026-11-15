@@ -3,204 +3,254 @@ import ApertureKit
 import SwiftUI
 
 extension Severity {
-    var tint: Color {
-        switch self {
-        case .ok: return Palette.tealStrong
-        case .attention: return Palette.amberStrong
-        case .alarm: return Palette.redStrong
-        }
+  var tint: Color {
+    switch self {
+    case .ok: return Palette.accentText
+    case .attention: return Palette.warningText
+    case .alarm: return Palette.lossText
     }
+  }
 }
 
 extension Board.Event.Tone {
-    var ticker: TickerItem.Tone {
-        switch self {
-        case .teal: return .teal
-        case .green: return .green
-        case .blue: return .blue
-        case .amber: return .amber
-        case .violet: return .violet
-        case .red: return .red
-        case .muted: return .muted
-        }
+  var ticker: TickerItem.Tone {
+    switch self {
+    case .teal: return .teal
+    case .green: return .green
+    case .blue: return .blue
+    case .amber: return .amber
+    case .violet: return .violet
+    case .red: return .red
+    case .muted: return .muted
     }
+  }
 
-    var color: Color {
-        switch self {
-        case .teal: return Palette.teal
-        case .green: return Palette.green
-        case .blue: return Palette.blue
-        case .amber: return Palette.amber
-        case .violet: return Palette.violet
-        case .red: return Palette.red
-        case .muted: return Palette.dim
-        }
+  var color: Color {
+    switch self {
+    case .teal: return Palette.accent
+    case .green: return Palette.profit
+    case .blue: return Palette.info
+    case .amber: return Palette.warning
+    case .violet: return Palette.highlight
+    case .red: return Palette.loss
+    case .muted: return Palette.textQuaternary
     }
+  }
 }
 
 extension StopState {
-    var isProtected: Bool { self == .verified }
+  var isProtected: Bool { self == .verified }
+}
+
+extension BotState {
+  /// The bot's state as a person reads it.
+  var title: LocalizedStringResource {
+    switch self {
+    case .starting: return L10n.BotState.starting
+    case .running: return L10n.BotState.running
+    case .stopping: return L10n.BotState.stopping
+    case .stopped: return L10n.BotState.stopped
+    }
+  }
+}
+
+extension StreamHealth {
+  /// The quote stream's health as a person reads it.
+  var title: LocalizedStringResource {
+    switch self {
+    case .fresh: return L10n.Stream.fresh
+    case .quiet: return L10n.Stream.quiet
+    case .lost: return L10n.Stream.lost
+    case .off: return L10n.Stream.off
+    }
+  }
+}
+
+extension StatusV1 {
+  /// The bot may open a position now: no entry block, no operator pause, and the trading gate open.
+  var entriesAllowed: Bool { entryBlock == nil && !entryStop && tradingGate.open }
 }
 
 extension DecimalString {
-    var signedMoney: String { Money.signed(value) }
+  var signedMoney: String { Money.signed(value) }
 }
 
 /// Money and time formatting used across screens.
 enum Format {
-    static func time(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .shortened)
-    }
+  /// Shown where a value is missing.
+  static let missing = "—"
+  /// Percent sign after a number.
+  static let percentSign = "%"
+  /// Between the two times of a trade.
+  static let timeRange = "–"
+  /// Between a trade's entry and its exit price.
+  static let arrow = " → "
+  /// Between two facts on one line.
+  static let separator = " · "
 
-    static func clock(_ date: Date) -> String {
-        date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
-    }
+  static func time(_ date: Date) -> String {
+    date.formatted(date: .omitted, time: .shortened)
+  }
 
-    /// "updated 3 s ago" from the API's age of the status document.
-    static func age(_ response: StatusResponseV1?) -> String {
-        guard let response, let age = response.ageSeconds else { return "no status yet" }
-        let seconds = NSDecimalNumber(decimal: age.value).intValue
-        return response.stale ? "stale · written \(seconds) s ago" : "updated \(seconds) s ago"
-    }
+  static func clock(_ date: Date) -> String {
+    date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+  }
+
+  static func day(_ date: Date) -> String {
+    date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+  }
+
+  static func timeOrDash(_ time: WireTime?) -> String {
+    time.map { clock($0.date) } ?? missing
+  }
+
+  /// "updated 3 s ago" from the API's age of the status document.
+  static func age(_ response: StatusResponseV1?) -> LocalizedStringResource {
+    guard let response, let age = response.ageSeconds else { return L10n.Age.none }
+    let seconds = NSDecimalNumber(decimal: age.value).intValue
+    return response.stale ? L10n.Age.stale(seconds) : L10n.Age.updated(seconds)
+  }
 }
 
 /// Every tab draws on the same background and keeps its own navigation stack.
 struct Screen<Content: View>: View {
-    let title: String
-    let content: Content
+  let title: LocalizedStringResource
+  let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
+  init(_ title: LocalizedStringResource, @ViewBuilder content: () -> Content) {
+    self.title = title
+    self.content = content()
+  }
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) { content }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
-        }
-        .scrollContentBackground(.hidden)
-        .background(ApertureBackground())
-        .navigationTitle(title)
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: Tokens.Space.m) { content }
+        .padding(.horizontal, Tokens.Space.l)
+        .padding(.bottom, Tokens.Space.xl)
     }
+    .scrollContentBackground(.hidden)
+    .background(ApertureBackground())
+    .navigationTitle(Text(title))
+  }
 }
 
 /// Shown instead of data when the phone has no address for the bot or cannot reach it.
 struct ConnectionPrompt: View {
-    @Environment(AppModel.self) private var model
+  @Environment(AppModel.self) private var model
 
-    var body: some View {
-        if !model.isConfigured {
-            ContentUnavailableView {
-                Label("Connect to your Mac", systemImage: "desktopcomputer.and.arrow.down")
-            } description: {
-                Text("Enter the address of the bot's API in Settings.")
-            } actions: {
-                NavigationLink("Open Settings") { SettingsView() }
-                    .buttonStyle(.borderedProminent)
-            }
-            .rise()
-        } else if model.status == nil, let cause = model.fetchError ?? model.response?.unavailableCause {
-            ContentUnavailableView {
-                Label("No status from the bot", systemImage: "antenna.radiowaves.left.and.right.slash")
-            } description: {
-                Text(cause)
-            }
-            .rise()
-        }
+  var body: some View {
+    if !model.isConfigured {
+      ContentUnavailableView {
+        Label { Text(L10n.Connect.title) } icon: { Image(systemName: "desktopcomputer.and.arrow.down") }
+      } description: {
+        Text(L10n.Connect.body)
+      } actions: {
+        NavigationLink { SettingsView() } label: { Text(L10n.Connect.openSettings) }
+          .buttonStyle(.borderedProminent)
+      }
+      .rise()
+    } else if model.status == nil, let cause = model.fetchError ?? model.response?.unavailableCause {
+      ContentUnavailableView {
+        Label { Text(L10n.Connect.noStatus) } icon: { Image(systemName: "antenna.radiowaves.left.and.right.slash") }
+      } description: {
+        Text(verbatim: cause)
+      }
+      .rise()
     }
+  }
 }
 
 /// A label and a value in a small card, used in rows of three.
 struct StatTile: View {
-    let label: String
-    let value: String
-    var color: Color = Palette.text
+  /// Smallest scale the value may shrink to before it truncates.
+  static let minimumScale = 0.7
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            CardLabel(label)
-            Text(value)
-                .font(.system(size: 15, weight: .bold, design: .monospaced))
-                .foregroundStyle(color)
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 9)
-        .apertureCard(radius: 14)
-        .accessibilityElement(children: .combine)
+  let label: LocalizedStringResource
+  let value: String
+  var color: Color = Palette.textPrimary
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+      CardLabel(label)
+      Text(verbatim: value)
+        .font(Tokens.Typography.bodyMono.bold())
+        .foregroundStyle(color)
+        .contentTransition(.numericText())
+        .lineLimit(1)
+        .minimumScaleFactor(Self.minimumScale)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, Tokens.Space.m)
+    .padding(.vertical, Tokens.Space.s)
+    .apertureCard(radius: Tokens.Radius.large)
+    .accessibilityElement(children: .combine)
+  }
 }
 
 /// The environment badge (SANDBOX / PRODUCTION) from the status document.
 struct EnvironmentBadge: View {
-    let environment: String
+  let environment: String
 
-    var body: some View {
-        Text(environment.uppercased())
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .foregroundStyle(Palette.amberStrong)
-            .background(Palette.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.amber.opacity(0.4)))
-            .accessibilityLabel("Environment \(environment)")
-    }
+  var body: some View {
+    Text(verbatim: environment.uppercased())
+      .font(Tokens.Typography.badge)
+      .tracking(Tokens.Typography.badgeTracking)
+      .padding(.horizontal, Tokens.Space.s)
+      .padding(.vertical, Tokens.Space.xs)
+      .foregroundStyle(Palette.warningText)
+      .background(Palette.warning.opacity(Tokens.Opacity.wash), in: Capsule())
+      .overlay(Capsule().strokeBorder(Palette.warning.opacity(Tokens.Opacity.border)))
+      .accessibilityLabel(Text(L10n.Connect.environment(environment)))
+  }
 }
 
 /// The command notice floating at the top of the screen, with haptics, gone after a few seconds.
 struct NoticeOverlay: ViewModifier {
-    @Environment(AppModel.self) private var model
+  /// Seconds a notice stays on screen.
+  static let seconds = 4.0
 
-    func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .top) {
-                if let notice = model.notice {
-                    Text(notice.text)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(color(notice.tone))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.regularMaterial, in: Capsule())
-                        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .id(notice.id)
-                        .task(id: notice.id) {
-                            try? await Task.sleep(for: .seconds(4))
-                            if model.notice?.id == notice.id { model.notice = nil }
-                        }
-                        .onTapGesture { model.notice = nil }
-                }
-            }
-            .animation(.spring(response: 0.45, dampingFraction: 0.8), value: model.notice)
-            .sensoryFeedback(trigger: model.notice) { _, new in
-                switch new?.tone {
-                case .success: return .success
-                case .failure: return .error
-                case .info: return .impact(weight: .light)
-                case nil: return nil
-                }
-            }
-    }
+  @Environment(AppModel.self) private var model
 
-    private func color(_ tone: Notice.Tone) -> Color {
-        switch tone {
-        case .info: return Palette.blueStrong
-        case .success: return Palette.greenStrong
-        case .failure: return Palette.redStrong
+  func body(content: Content) -> some View {
+    content
+      .overlay(alignment: .top) {
+        if let notice = model.notice {
+          Text(verbatim: notice.text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(color(notice.tone))
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, Tokens.Space.l)
+            .padding(.vertical, Tokens.Space.m)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: Palette.shadow.opacity(Tokens.Opacity.shadow), radius: Tokens.Size.shadowRadius,
+              y: Tokens.Size.shadowOffset)
+            .padding(.horizontal, Tokens.Space.xl)
+            .padding(.top, Tokens.Space.s)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .id(notice.id)
+            .task(id: notice.id) {
+              try? await Task.sleep(for: .seconds(Self.seconds))
+              if model.notice?.id == notice.id { model.notice = nil }
+            }
+            .onTapGesture { model.notice = nil }
         }
-    }
-}
+      }
+      .animation(Tokens.Motion.standard, value: model.notice)
+      .sensoryFeedback(trigger: model.notice) { _, new in
+        switch new?.tone {
+        case .success: return .success
+        case .failure: return .error
+        case .info: return .impact(weight: .light)
+        case nil: return nil
+        }
+      }
+  }
 
-extension Format {
-    static func timeOrDash(_ time: WireTime?) -> String {
-        time.map { clock($0.date) } ?? "—"
+  private func color(_ tone: Notice.Tone) -> Color {
+    switch tone {
+    case .info: return Palette.infoText
+    case .success: return Palette.profitText
+    case .failure: return Palette.lossText
     }
+  }
 }

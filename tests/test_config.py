@@ -32,6 +32,7 @@ COMMENTED_TOML = [
     BOT,
     ROOT / "config" / "replay.toml",
     ROOT / "config" / "backtest.toml",
+    ROOT / "config" / "demo.toml",
     *sorted((ROOT / "strategies").glob("*/strategy.toml")),
 ]
 
@@ -108,6 +109,13 @@ def test_min_daily_room_must_sit_below_the_ceiling(tmp_path, value):
     text = re.sub(r"(?m)^min_daily_room_usd = \S+", f"min_daily_room_usd = {value}",
                   BOT.read_text("utf-8"))
     with pytest.raises(config.ConfigError, match="min_daily_room_usd"):
+        config.load(_copy(tmp_path, text))
+
+
+def test_account_stale_must_exceed_the_reconcile_interval(tmp_path):
+    text = re.sub(r"(?m)^account_stale_seconds = \S+", "account_stale_seconds = 10",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="account_stale_seconds"):
         config.load(_copy(tmp_path, text))
 
 

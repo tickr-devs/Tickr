@@ -2,7 +2,7 @@
 
 The bot is a headless service. Clients (the status page now, the macOS app later) talk only to this
 local API. The API process is separate from the bot and never talks to the broker: it serves the
-status file the bot writes and drops operator commands into an inbox the bot reads.
+status and account files the bot writes and drops operator commands into an inbox the bot reads.
 
 Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `config/bot.toml` `[api]`.
 
@@ -13,6 +13,40 @@ Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `conf
   sends `Origin`, it must be `http://<name>:<port>`. Otherwise `403`. No CORS headers are ever sent.
 - Commands require `Content-Type: application/json` and a `Content-Length` within
   `[api] max_request_body_bytes`.
+
+## Remote access (the phone)
+
+The API still binds loopback only. The iPhone reaches it through an HTTPS proxy on the same Mac,
+[Tailscale](https://tailscale.com) `serve`, which is reachable only from devices signed in to the
+owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
+tailnet name. The proxy points at a second loopback port, `[api] remote_port`, opened only when
+`[api] remote_hosts` is set. Every request on that port must carry the paired token, whatever its
+`Host` header says; the local port never accepts the remote name. Whether a token is needed is
+decided by the port a request arrives on, never by a header the caller chooses.
+
+1. Install Tailscale on the Mac and the iPhone, sign in to the same account, enable MagicDNS and
+   HTTPS certificates in the Tailscale admin console.
+2. On the Mac: `tailscale serve --bg --https=443 http://127.0.0.1:8767` (the `[api] remote_port`,
+   never the `[api] port`). `tailscale serve status` shows the address, e.g.
+   `https://mac.tailnet-name.ts.net`.
+3. In `config/bot.toml` set `[api] remote_hosts = ["mac.tailnet-name.ts.net"]` and restart the API.
+4. `python -m aperture.api --config config/bot.toml pair` makes a new token and leaves the pairing
+   link in a file readable by you only (`[api] remote_pairing_file` under `data_dir`); the token is
+   never printed. AirDrop that file to the iPhone (not Notes or Messages, which sync to iCloud),
+   then in the iOS app: Settings › Pair with Mac, paste the link. The API deletes the file when the
+   phone first connects with the token. The Mac keeps only the token's SHA-256
+   (`[api] remote_token_hash_file`); pairing again revokes the previous token.
+
+Rules on the remote port: `Host` must be one of `remote_hosts` (no port when 443, else
+`name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
+`401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
+An unreadable token hash file answers `503 unavailable`. The local port (the Mac app, the status
+page) needs no token, as before: any process on this Mac can use it. Until the phone first connects,
+the pairing file holds the token in clear (0600); delete it if you abandon a pairing. `remote_hosts = []` (the shipped value) turns remote access off.
+
+The phone keeps the token in its Keychain (this device only) together with the address it was
+paired with, and sends it only over HTTPS to exactly that address; changing the address by hand
+drops the token.
 
 ## Wire rules
 
@@ -42,16 +76,24 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/days` | `200` `days-v1`: every New York date with records (closed trades, a bot run, captured data), newest first. |
 | GET | `/days/<YYYY-MM-DD>` | `200` `day-v1`: trades closed that New York date and the symbols with captured M1 bars. A date without records answers with empty lists. |
 | GET | `/bars?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `bars-v1`: captured M1 bars of one symbol on one date, oldest first. |
+| GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). |
+| GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
+| GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first. |
+| GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
 | POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
-| POST | `/commands/flatten` | Body `{}`. `202` `command-accepted-v1`. |
+| POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
+| POST | `/commands/stop-bot` | Body `{}`. Graceful stop that sticks. `202` `command-accepted-v1`. |
+| POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. `202` `command-accepted-v1`. |
 
 Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1}`:
 `forbidden_host` / `forbidden_origin` 403, `not_found` 404, `method_not_allowed` 405,
+`unauthorized` 401 (remote request without the paired token),
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
-`too_many_pending` 429, `internal` 500, `unavailable` 503 (history cannot be read now: database of
-another schema version, unreadable capture file).
+`too_many_pending` 429, `conflict` 409 (an `Idempotency-Key` already used for another command),
+`internal` 500, `unavailable` 503 (history cannot be read now: database of another schema
+version, unreadable capture file).
 
 ### GET /status
 
@@ -60,6 +102,41 @@ missing, invalid or dated in the future. `age_seconds` = `served_at - status.wri
 `stale` is true when the age exceeds `[api] status_stale_seconds`. `summary` is the one line to
 show first, in plain words: the single entry-blocking reason, "Entries allowed.", or why the status
 cannot be trusted. Clients should poll every `poll_seconds`.
+
+Daily loss money (spec 7, check 6), exactly as the bot's admission computes it; `null` means
+unknown (a trade closed today has fills without a known price), never zero:
+`realized_loss_today_usd` is today's net realized loss (wins offset losses, never below 0),
+`open_reservations_usd` the planned loss of every open trade, and `daily_room_usd` =
+`[risk] max_daily_loss_usd` - realized - reserved (may be negative). Entries are refused while the
+room is below `settings.risk.min_daily_room_usd`. `positions` lists every open position the bot
+tracks; `position` is its first element or `null`, kept for older clients.
+
+### GET /account
+
+`account` is the bot's `account-v1` document, written (temp file + fsync + rename, like status)
+after every successful reconciliation: a broker read of open orders and positions, at startup
+and every `[orders] reconcile_interval_seconds`. A failed read writes nothing, so the age grows; a failed write
+is journaled once (`account-write-failed`) and the bot carries on. `read_at` is the time the file
+was written, just after the reads. `age_seconds` = `served_at - account.read_at`; `stale` is true when the age exceeds
+`[api] account_stale_seconds`. A missing, invalid or future-dated file is `503 unavailable` with
+the cause.
+
+- `positions`: every non-zero position the broker listed (`avg_price` null when the broker row
+  does not show it).
+- `orders`: every open order the broker listed. `side`, `type` and `status` are the bot's names
+  (`BUY`/`SELL`; `MARKET`/`LIMIT`/`STOP_LOSS`; `ACCEPTED`, `PARTIALLY_FILLED`, ...). `ours` is
+  true when the client order id is one of the bot's own. `limit_price` is not read yet and is
+  always null.
+- `matches_records` is true only when the broker's positions equal what the bot's open trades
+  expect and its open orders are exactly the bot's live orders (the same test as the day-end
+  record), AND no fence says otherwise: foreign position or order, quantity mismatch,
+  resurrected, unknown send outcome, order missing, unknown order status, over-protected.
+  `mismatch` lists those fences' causes (`name: cause; ...`), or one plain sentence when only
+  the comparison fails. `resurrected` is an operator fence that stays until it is cleared, so
+  `mismatch` may describe something the broker has already resolved.
+- `equity_usd` and `buying_power_usd` are always null in this version: the adapter does not read
+  the account balance (the balance response shape is unproven, docs/webull-facts.md).
+- No account id or broker order id is ever in the document.
 
 ### History (read-only)
 
@@ -74,19 +151,157 @@ received when the provider revised one. On today's file a last line still being 
 read yet. Only M1 is served; clients aggregate M5/M15 and compute indicators themselves.
 Query strings take exactly the documented parameters, each once; anything else is `bad_request`.
 
+### GET /explain (read-only)
+
+Answers "why did the bot do (or not do) this?" for one symbol, from the decision file the bot
+already writes (`<data_dir>/<decisions_dir>/<environment>/<NY date>/decisions.jsonl`); it never
+reads the broker and records nothing. "Today" is the New York date of the API's clock. Only
+records of the active strategy count (observer records are left out); the last one written wins.
+`symbol` must be a ticker in upper case, exactly as the bot records it; nothing is normalized.
+
+`checks` are in the order the strategy evaluated them: `measured` `operator` `threshold` and
+`passed`; yes/no rules have operator `"is"` with null `measured` and `threshold`.
+`first_failed_check` is the rule of the first check with `passed` false, or null. `admission` is
+`taken` / `refused` for an ENTER that reached admission (`refusal_cause` then holds the single
+`CAUSE: detail`), `not_evaluated` for an ENTER made too late to act on, `not_applicable` for
+every other verdict. The quote age the admission measured is not recorded in the decision file;
+when it was the cause it appears in `refusal_cause`.
+
+No record for the symbol today is `404 not_found` (cause names the symbol and date); a malformed
+line for the symbol in the decision file is `503 unavailable` (lines of other symbols are not
+parsed); a missing, repeated, extra or non-ticker parameter is
+`400 bad_request`. The command line has the same read: `aperture explain SYMBOL` (exit 0 found,
+1 none or unreadable).
+
+### GET /observers and GET /decisions (read-only)
+
+Both serve decisions already in the decision file of one New York date (the same file as
+`/explain`; an archived day's `decisions.jsonl.gz` is read the same way). They never read the
+broker, simulate nothing and record nothing. `at` is the start (UTC) of the decision's M1 bar;
+decisions are oldest first (bar start, then decision time). `action` is the recorded verdict,
+the same enum as explain-v1 `verdict`: `IGNORE` `WATCH` `ENTER` `HOLD` `EXIT`. A
+date without a decision file answers with empty lists; a last line still being written is not
+read yet.
+
+`/observers?date=` (date optional, default today in New York) lists the observers of
+`[strategy] observers`, matched by the strategy `name` their `strategy.toml` declares, with
+only observer records (`role` `observer`). There is one entry per (name, version) recorded that
+day, with the recorded version, so records made before a version bump stay listed under their
+old version. A configured observer with no records that day gets one entry with the version of
+its current `strategy.toml` and an empty list. Entries are in configuration order, then by
+version (numeric versions numerically). `reasons` are the rules of the checks that failed,
+in the order evaluated (empty when every check passed); the full checks are in `/decisions`.
+`result_gross_usd` is the observer's simulated day result once one is recorded; the bot records
+none yet, so it is always `null` (the offline report `python -m aperture.research observers`
+computes one). An observer folder whose `strategy.toml` cannot be read is `503 unavailable`.
+
+`/decisions?symbol=&date=` (both required) lists the active strategy's and the observers'
+decisions for the symbol, `observer` true for an observer record, `strategy` its `{name,
+version}`. `checks` have the explain-v1 shape (`rule` `measured` `operator` `threshold` `passed`
+`note`), as recorded. `entry_price` and `stop_price` are the what-if levels of a skipped ENTER
+(admission `refused`, or `not_evaluated` as for every observer ENTER): the top of the recorded
+entry window (`entry_high`, the price sizing and the what-if simulation use) and the recorded
+stop, each `null` when the record does not hold it, and both `null` for any other decision.
+
+A missing, repeated, extra, malformed or non-ticker parameter is `400 bad_request`; a malformed
+line for the symbol (`/decisions`) or an observer line (`/observers`) of that day is
+`503 unavailable` with the file, line and cause.
+
 ### Commands
 
 `202` means queued, not executed. The command's result appears later in
 `status.recent_commands` (matched by `command_id`) with `outcome` `done` or `refused` and a cause.
-`warning` is non-null when the bot does not look alive at the time of the request.
+`warning` is non-null when the bot does not look alive at the time of the request (the command
+is still queued; the bot refuses it if it reads it later than `[api] command_max_age_seconds`).
+The server never relies on anything the client checked (Face ID on the phone is client-side
+only): the remote port needs the paired token for every request, and the bot applies its own
+preconditions to every command.
+
+`command.symbol` is the ticker of a flatten of one position, otherwise `null`.
+
+- **flatten**: every open trade, or only the trades of `symbol`, gets an exit request through
+  the normal exit path. Refused when `symbol` has no open position ("no open position in
+  XYZ"), while a closing order of a chosen trade was refused before (fence
+  `exit-refused:<trade>`: look in the Webull app first), while a chosen trade holds the fence
+  `market-closed:<trade>` ("a close of <trade> was due outside the regular session and was not
+  sent ..."), and with a
+  trade to close outside the regular session ("no closing order is sent now: at or after
+  15:59:00 ET, ...": no MARKET order is sent from `[session] close_order_cutoff_seconds`
+  before the regular close until the next open; the stops stay; close in the Webull app).
+  The emergency's flatten step is refused the same way. `{"symbol": null}`, a lower-case ticker
+  or any other key is `400`: a client bug never widens a one-symbol flatten to everything.
+- **stop-bot**: a graceful stop, obeyed only when the bot is flat. The bot writes its stop
+  marker (`<data_dir>/<[runtime] stop_marker_file>`), journals the command `done`, ends its
+  loop at once (no strategy pass after it) and drains as on SIGTERM, status `stopped`, exit 0
+  (run end cause `stopped (operator command <id>)`).
+  Stop-bot is refused while any trade is not closed: a position open, or an entry working even
+  with no fill yet. The cause is "N trade(s) open or entering; flatten first (or send
+  emergency), then stop-bot": a broker stop is a DAY order and a stopped bot does not flatten
+  at the session's flatten time, so a position (or an entry that fills during the drain)
+  could go overnight unprotected. Nothing changes and the bot keeps running. Send emergency
+  (it also cancels working entries) or flatten, wait until every trade is closed, then send
+  stop-bot again.
+  Checked first: stop-bot is refused while any trade has an exit requested or a closing order
+  working (an operator flatten, an emergency, the session flatten), with the cause "a close is
+  in progress; send stop-bot again after it completes": stopping then would leave an exit
+  request that a later start would carry out without anyone asking. Commands the bot reads
+  after an obeyed stop-bot, in the same pass, are refused ("read after stop-bot <id>: the bot
+  is stopping"), never recorded done.
+  The launchd bot job has `KeepAlive` false, so launchd does not restart it today, but its
+  calendar start (`[runtime] bot_start_local` on `launch_weekdays`) would start it the next
+  trading day. The marker stops that: while it exists preflight fails with cause
+  `stopped-by-operator` (the bot job alerts `bot-did-not-start`, the morning preflight job
+  `preflight-failed`), `aperture run` refuses (exit 3) and `aperture status` says so. To trade
+  again: `aperture clear-stop`, then wait for the next scheduled start or
+  `launchctl kickstart gui/$(id -u)/local.aperture.bot`. `aperture resume` and `aperture exit`
+  still work while the marker exists.
+- **emergency**: three steps in this order, each the existing handler and each journaled as a
+  `command-step` row: entry-stop on (the same fence as `/commands/entry-stop`, survives
+  restarts), cancel own orders (working entry orders only), flatten all (exit cause
+  `operator-emergency`). A step that refuses does not stop the others; the command is `done`
+  with a cause listing every step, or `refused` with the cause of each refused step. Cancel own
+  orders never cancels a broker stop: the flatten's exit path cancels a trade's stop only right
+  before it sends the closing sale for the shares no live stop still covers, and restores
+  protection whenever that sale cannot be sent. Cancelling the stops in step 2 would leave the
+  position unprotected until the sale fills, so it is not done. After a crash in the middle the
+  bot reads the command again and runs only the steps not yet journaled; if by then it is
+  older than `[api] command_max_age_seconds`, nothing more is run and the command is recorded
+  `refused` with the steps done and the steps not run.
+
+#### Idempotency-Key
+
+Every `POST /commands/*` takes an optional `Idempotency-Key` header: 1-128 characters from
+`A-Z a-z 0-9 . _ : -`, else `400 bad_request`. Keys are case-sensitive. The first request with
+a key queues the command and the API remembers the key with its `202` answer for
+`[api] idempotency_key_ttl_seconds` (in `<data_dir>/<commands_dir>/idempotency/`, one file per
+key, named by the key's SHA-256; written atomically with fsync; expired files are deleted when a
+new key is stored). Within that lifetime:
+
+- the same key with the same command (kind, and the symbol of a flatten) answers `202` with the
+  first answer, byte for byte, and queues nothing, also after the bot consumed the command and
+  also when the inbox is full;
+- the same key with another command answers `409 conflict` and queues nothing;
+- an unreadable record of the key answers `500 internal` and queues nothing.
+
+After its lifetime a key is new again. The lifetime must be above
+`[api] command_max_age_seconds` (checked at startup), so a repeat can never queue a second copy of
+a command the bot may still execute. The command file is written before the key: if the API dies
+between the two, a repeat queues the command again, which every command tolerates (exit requests,
+the entry-stop fence and entry cancels are idempotent; a second stop-bot only writes the marker
+again).
 
 ## Bot side
 
 - Status: after each loop step that changes what `/status` shows, the bot calls
   `contract.write_status(path, StatusV1(...))` (temp file + fsync + rename).
+- Account: after each successful reconciliation the bot calls
+  `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way.
 - Commands: the bot calls `contract.read_commands(inbox, now, command_max_age_seconds)`. Each item
   is a command or a refusal (unreadable file, expired, dated in the future). For each item the bot
   journals it in one transaction, acts if it is a command, then calls `contract.retire_command`
   (moves the file to `<commands_dir>/processed/`). If the bot crashes between journal and retire,
   the file is read again: a `command_id` already in the journal is retired without acting.
   Commands older than `[api] command_max_age_seconds` are refused, never executed late.
+- Emergency steps are journaled one by one (`command-step`, keyed by `command_id`) and the
+  command record comes last, so a command read again after a crash finishes only its missing
+  steps.

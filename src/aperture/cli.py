@@ -17,18 +17,20 @@ from typing import TYPE_CHECKING, Any
 
 from aperture import config as config_module
 from aperture.broker.base import Broker
-from aperture.calendar import CalendarRefused, SessionCalendar
+from aperture.calendar import CalendarRefused, SessionCalendar, ny_date_of
 from aperture.data.base import MarketData
 from aperture.engine.core import Engine, EntryRefused
 from aperture.engine.manual import (
     CLOSE_WAITS,
     ManualRefused,
     check_window,
+    close_refusal,
     flatten_deadline,
     plan_probe,
     run_until_closed,
 )
 from aperture.lock import AlreadyRunning, SingleInstanceLock, recorded_holder
+from aperture.runtime import stopmarker
 from aperture.store import DATABASE_FILE, MIGRATIONS, Store
 
 if TYPE_CHECKING:
@@ -53,6 +55,9 @@ def _status(path: Path) -> int:
     pid = recorded_holder(lock_path)
     print("bot: not running" if pid is None
           else f"bot: pid {pid} recorded, process exists (lock not verified)")
+    stopped = stopmarker.describe(cfg)
+    if stopped is not None:
+        print(f"starts refused: {stopped}")
     if not database.exists():
         print("database: not created yet")
         return 0
@@ -167,8 +172,14 @@ def _engine(path: Path, broker: Broker | None = None,
                                  strategy="manual", strategy_version="-", code_version="-")
         cause = "crashed"
         try:
+            try:
+                calendar: SessionCalendar | None = SessionCalendar.load(
+                    (cfg.root / cfg.session.calendar_file).parent)
+            except CalendarRefused:
+                calendar = None  # closes at once, as `flatten_deadline` without a calendar
             engine = Engine(store, broker if broker is not None else BROKER_FACTORY(cfg), cfg,
-                            run_id, lambda: config_module.trading_gate(cfg))
+                            run_id, lambda: config_module.trading_gate(cfg),
+                            close_refusal=lambda: close_refusal(cfg, calendar, NOW()))
             if precheck is not None:
                 precheck(engine)
             engine.recover()
@@ -302,6 +313,68 @@ def _check_quote(args: argparse.Namespace) -> int:
     return 0
 
 
+def _explain(args: argparse.Namespace) -> int:
+    """Read-only: the latest decision of the active strategy recorded today for one symbol,
+    from the decision file. No broker, no database writes. Exit 0 found, 1 none or unreadable."""
+    from aperture.api.contract import explain
+    from aperture.observers.log import DecisionLog
+    from aperture.research.errors import RecordFileError
+
+    cfg = config_module.load(args.config)
+    day = ny_date_of(NOW())
+    try:
+        record = DecisionLog.from_config(cfg).latest_active(day, args.symbol)
+    except (RecordFileError, OSError) as exc:
+        print(f"decision file unreadable: {exc}", file=sys.stderr)
+        return 1
+    if record is None:
+        print(f"no decision recorded for {args.symbol} on {day.isoformat()} "
+              f"({cfg.environment_name})")
+        return 1
+    e = explain(cfg.environment_name, day, record)
+    print(f"{e.symbol} {e.day.isoformat()}: {e.verdict} by {e.strategy} {e.version} at "
+          f"{e.decided_at.isoformat()} (bar {e.bar_start.isoformat()}), setup {e.setup or '-'}")
+    print(f"admission: {e.admission}"
+          + (f" ({e.refusal_cause})" if e.refusal_cause is not None else ""))
+    for c in e.checks:
+        value = ("" if c.measured is None and c.threshold is None
+                 else f": {c.measured} {c.operator} {c.threshold}")
+        note = f" [{c.note}]" if c.note else ""
+        print(f"  {'pass' if c.passed else 'FAIL'} {c.rule}{value}{note}")
+    print(f"first failed check: {e.first_failed_check or 'none'}")
+    return 0
+
+
+def _maintain(args: argparse.Namespace) -> int:
+    """Archive finished days' capture and decision files, checkpoint the database (see
+    `aperture.maintain`). Holds the bot's lock: refused while the bot runs. Dry run unless
+    --apply. Exit 0 done, 1 an archive failed, 3 refused."""
+    from aperture import maintain
+
+    cfg = config_module.load(args.config)
+    database, lock_path = data_paths(cfg)
+    try:
+        calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+    except CalendarRefused as exc:
+        raise ManualRefused(f"calendar unreadable: {exc}") from exc
+    with SingleInstanceLock(lock_path):
+        try:
+            return maintain.run(cfg, calendar, database, ny_date_of(NOW()), apply=args.apply,
+                                out=print)
+        except maintain.MaintainRefused as exc:
+            raise ManualRefused(str(exc)) from exc
+
+
+def _clear_stop(path: Path) -> int:
+    cfg = config_module.load(path)
+    if not stopmarker.clear(cfg):
+        print("no stop marker: starts were not refused")
+        return 1
+    print("stop marker removed: the bot may start again (the next scheduled launchd start, or "
+          "launchctl kickstart)")
+    return 0
+
+
 def _clear_fence(args: argparse.Namespace) -> int:
     with _engine(args.config) as engine:
         if not engine.clear_operator_fence(args.name):
@@ -357,7 +430,8 @@ def _closer(observers: ObserverSet, cfg: config_module.Config) -> Callable[[], N
 
 def _run(path: Path) -> int:
     """The launchd bot job (via `aperture.runtime run-bot`): run until SIGTERM, then drain.
-    Exit 0 after a clean drain, 5 when the drain hit its deadline."""
+    Exit 0 after a clean drain (SIGTERM or a stop-bot command), 3 refused while the operator's
+    stop marker exists, 5 when the drain hit its deadline."""
     from aperture.data.capture import CaptureWriter
     from aperture.data.health import StreamHealth
     from aperture.observers.errors import ObserverError
@@ -368,6 +442,10 @@ def _run(path: Path) -> int:
     from aperture.runtime.watch import ALERT, Watch
 
     cfg = config_module.load(path)
+    stopped = stopmarker.describe(cfg)
+    if stopped is not None:
+        print(f"refused: {stopped}", file=sys.stderr)
+        return 3
     strategy = service.strategy_id(cfg)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
@@ -395,10 +473,11 @@ def _run(path: Path) -> int:
                     store.append(ALERT, outcome.journal_body(), run_id=run_id)
 
             adapters = RUN_ADAPTERS(cfg, inbox.on_error, token_pending)
+            calendar = service.load_calendar(cfg)
             engine = Engine(store, adapters.broker, cfg, run_id,
                             lambda: config_module.trading_gate(cfg),
-                            clock=lambda: NOW().timestamp())
-            calendar = service.load_calendar(cfg)
+                            clock=lambda: NOW().timestamp(),
+                            close_refusal=lambda: close_refusal(cfg, calendar, NOW()))
             capture = CaptureWriter.from_config(cfg, adapters.market.provider)
             market = MarketRuntime(engine, cfg, adapters.market,
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
@@ -429,8 +508,11 @@ def _run(path: Path) -> int:
                                   observers=observers, watch=watch)
             market.bind()
             adapters.start_stream()
-            clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP, monotonic=MONOTONIC)
-            cause = f"stopped ({stop.signal_name})" if clean else "shutdown-deadline"
+            clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP,
+                            monotonic=MONOTONIC)
+            how = (f"operator command {bot.stopped_by}" if bot.stopped_by is not None
+                   else stop.signal_name)
+            cause = f"stopped ({how})" if clean else "shutdown-deadline"
         finally:
             # Each step guarded: a failing SDK disconnect must not skip recording the run end.
             for step in ((adapters.stop_stream if adapters is not None else None),
@@ -497,8 +579,17 @@ def main(argv: list[str] | None = None) -> int:
     quote = sub.add_parser("check-quote", help="read-only: is the snapshot quote fresh enough "
                            "for the probes? Sends no orders")
     quote.add_argument("symbol")
+    explain_parser = sub.add_parser("explain", help="read-only: the latest decision recorded "
+                                    "today for a symbol, with every check")
+    explain_parser.add_argument("symbol")
+    maint = sub.add_parser("maintain", help="with the bot stopped: gzip finished days' capture "
+                           "and decision files, checkpoint the database (dry run by default)")
+    maint.add_argument("--apply", action="store_true", help="act; without it only print")
     fence = sub.add_parser("clear-fence", help="clear an operator fence after looking at it")
     fence.add_argument("name")
+    sub.add_parser("clear-stop", help="allow starts again after an operator stop-bot command")
+    sub.add_parser("demo", help="a made-up trading day in its own folder (config/demo.toml) "
+                   "served to the apps; never talks to Webull")
     args = parser.parse_args(argv)
     try:
         if args.command == "trade":
@@ -513,12 +604,22 @@ def main(argv: list[str] | None = None) -> int:
             return _probe_replace_stop(args)
         if args.command == "check-quote":
             return _check_quote(args)
+        if args.command == "explain":
+            return _explain(args)
+        if args.command == "maintain":
+            return _maintain(args)
         if args.command == "clear-fence":
             return _clear_fence(args)
+        if args.command == "clear-stop":
+            return _clear_stop(args.config)
         if args.command == "check-config":
             return _check_config(args.config)
         if args.command == "status":
             return _status(args.config)
+        if args.command == "demo":
+            from aperture.demo.run import main as demo_main
+            repo = config_module.load(args.config).root
+            return demo_main(repo, repo / "config" / "demo.toml")
     except config_module.ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
