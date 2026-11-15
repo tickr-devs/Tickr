@@ -66,7 +66,7 @@ struct SettingsView: View {
           let running = status.botState == .running
           SettingsRow(L10n.Settings.state, systemImage: Self.stateSymbol, tone: running ? .accent : .neutral) {
             StatusPill(status.botState.title, tone: running ? .accent : .neutral,
-              live: running && model.response?.stale == false, event: status.writtenAt.date)
+              live: running && model.response?.stale == false, event: status.botState)
           }
           let open = status.tradingGate.open
           SettingsRow(L10n.Settings.gate, systemImage: open ? Self.gateOpenSymbol : Self.gateClosedSymbol,
@@ -74,7 +74,7 @@ struct SettingsView: View {
             StatusPill(open ? L10n.Settings.gateOpen : L10n.Settings.gateClosed, tone: open ? .profit : .warning)
           }
           if !open {
-            InfoCaption(verbatim: status.tradingGate.cause, tone: .warning)
+            InfoCaption(verbatim: ApiText.gate(status.tradingGate), tone: .warning)
           }
           SettingsRow(L10n.Settings.strategy, systemImage: Self.strategySymbol, tone: .highlight) {
             Badge(L10n.Common.strategyVersion(status.strategy.name, status.strategy.version), tone: .highlight)

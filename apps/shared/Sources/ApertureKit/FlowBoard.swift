@@ -68,10 +68,10 @@ public enum FlowBoard {
     }
   }
 
-  /// Why the platform refused `signal`, as the apps word it: the bot's message, else the
-  /// recorded "CAUSE: detail"; nil when neither was recorded.
+  /// Why the platform refused `signal`, as the apps word it: the refusal in the reader's
+  /// language (`ApiText.refusal`), else the recorded "CAUSE: detail"; nil when neither was recorded.
   public static func note(_ signal: SkippedSignalV1) -> String? {
-    signal.refusal?.message ?? signal.refusalCause
+    signal.refusal.map(ApiText.refusal) ?? signal.refusalCause
   }
 
   /// How an open position's stop colours its mark: verified, waiting, or missing or unknown.

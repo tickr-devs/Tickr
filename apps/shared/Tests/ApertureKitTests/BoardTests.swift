@@ -30,7 +30,8 @@ import Testing
     let skipped = try Wire.decoder().decode(SkippedV1.self, from: fixture("skipped-v1.json"))
     let latest = try #require(Board.latestEvent(status, skipped: skipped))
     #expect(latest.tag == String(localized: L10n.tagRefused))
-    #expect(latest.text == "ZNTH" + Board.refusalGap + "ZNTH closed at a loss; no new entry in it during the cooldown")
+    let znth = try #require(skipped.signals.first { $0.symbol == "ZNTH" })
+    #expect(latest.text == "ZNTH" + Board.refusalGap + (FlowBoard.note(znth) ?? ""))
     #expect(latest.tone == .amber)
   }
 
