@@ -29,6 +29,8 @@ final class OverviewCommandsUITests: XCTestCase {
   /// How far the window's right and bottom edges are dragged in, as a fraction of the window:
   /// past the least size, which stops them there.
   static let shrinkShare = 0.8
+  /// Points inside an edge where the drag grabs it.
+  static let edgeInset: CGFloat = 2
   /// Seconds the corner is held before the drag, and points of room kept under the card after it
   /// is scrolled into view.
   static let dragSeconds: TimeInterval = 0.5
@@ -65,10 +67,12 @@ final class OverviewCommandsUITests: XCTestCase {
     // to the screen, then its right and bottom edges are dragged in past the least size.
     app.menuBarItems.containing(.menuItem, identifier: Self.zoomItem).firstMatch.click()
     app.menuItems[Self.zoomItem].click()
-    let right = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+    // Grabbed just inside each edge: a zoomed window's edge is the screen's, where the pointer
+    // cannot reach.
+    let right = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -Self.edgeInset, dy: 0))
     right.press(forDuration: Self.dragSeconds,
       thenDragTo: right.withOffset(CGVector(dx: -window.frame.width * Self.shrinkShare, dy: 0)))
-    let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: -1))
+    let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: -Self.edgeInset))
     bottom.press(forDuration: Self.dragSeconds,
       thenDragTo: bottom.withOffset(CGVector(dx: 0, dy: -window.frame.height * Self.shrinkShare)))
     XCTAssertEqual(window.frame.width, Self.minWidth, accuracy: 1, "the window is not at its least width")
