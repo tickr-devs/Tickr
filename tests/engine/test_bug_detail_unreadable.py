@@ -27,11 +27,11 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.broker.base import BrokerError
-from aperture.broker.fake import FakeBroker
-from aperture.engine.core import Engine, Fence, TradeState
-from aperture.store import Store
-from aperture.types import OrderState, OrderType
+from tickr.broker.base import BrokerError
+from tickr.broker.fake import FakeBroker
+from tickr.engine.core import Engine, Fence, TradeState
+from tickr.store import Store
+from tickr.types import OrderState, OrderType
 
 from .test_chaos import Chaos
 from .test_engine import CFG, OPEN, POLL, Leg, enter, has, legs, make, run, working_stops

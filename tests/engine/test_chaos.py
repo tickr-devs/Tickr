@@ -38,11 +38,11 @@ from pathlib import Path
 
 import pytest
 
-from aperture import config
-from aperture.broker.base import BrokerError, OutcomeUnknown, RateLimited, Refused
-from aperture.broker.fake import FakeBroker
-from aperture.config import GateResult
-from aperture.engine.core import (
+from tickr import config
+from tickr.broker.base import BrokerError, OutcomeUnknown, RateLimited, Refused
+from tickr.broker.fake import FakeBroker
+from tickr.config import GateResult
+from tickr.engine.core import (
     OPERATOR_FENCES,
     Engine,
     EntryRefused,
@@ -50,8 +50,8 @@ from aperture.engine.core import (
     SendState,
     TradeState,
 )
-from aperture.store import Store
-from aperture.types import OrderDetail, OrderRequest, OrderState, OrderType, Side
+from tickr.store import Store
+from tickr.types import OrderDetail, OrderRequest, OrderState, OrderType, Side
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
