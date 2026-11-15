@@ -17,7 +17,6 @@ outcome: keep the stop, send nothing, alert"; here nothing alerts) and spec 9 st
 
 from __future__ import annotations
 
-from dataclasses import replace
 from decimal import Decimal as D
 
 import pytest
@@ -29,6 +28,7 @@ from aperture.types import OrderState, OrderType
 
 from .test_chaos import Chaos
 from .test_engine import Leg, enter, legs, make, run, working_stops
+from .test_reviewer_findings import TeardownWatch, assert_unreadable_stop_kept
 
 
 @pytest.fixture
@@ -38,21 +38,16 @@ def store():
     s.close()
 
 
-class StopDetailDies(FakeBroker):
+class StopDetailDies(TeardownWatch):
     """Detail of STOP_LOSS orders fails once `dead` is set; a cancel takes at once."""
 
     dead = False
 
-    def order_detail(self, client_order_id):
+    def read_detail(self, client_order_id):
         order = FakeBroker.order_detail(self, client_order_id)
         if self.dead and order.order_type is OrderType.STOP_LOSS:
             raise BrokerError("Detail body could not be read")
         return order
-
-    def cancel(self, client_order_id):
-        order = FakeBroker.order_detail(self, client_order_id)
-        self.orders[client_order_id] = replace(order, state=OrderState.CANCELLED,
-                                               raw_status="CANCELLED")
 
 
 def exit_with_unreadable_stop(store):
@@ -79,15 +74,16 @@ def test_bare_position_after_cancel_is_fenced(store):
 
 
 @pytest.mark.xfail(strict=True, reason="bug: the engine cancels the stop it cannot read and "
-                   "then can neither confirm the cancel nor close")
-def test_held_shares_keep_a_stop_or_get_a_close(store):
+                   "then can neither confirm the cancel nor close, with no fence")
+def test_held_shares_keep_the_stop_they_cannot_read(store):
     broker, engine = exit_with_unreadable_stop(store)
-    closes = [r for r in broker.sent if r.order_type is OrderType.MARKET]
-    assert working_stops(broker) >= 2 or closes
+    assert_unreadable_stop_kept(broker, engine, D(2))
 
 
 @pytest.mark.xfail(strict=True, reason="bug: chaos with persistent unreadable Detail finds "
-                   "held shares without stop, close or fence (see module docstring)")
+                   "held shares with no stop, no close and no fence on the trade: seed 22 "
+                   "(stop cancelled, see module docstring), seeds 26 and 57 (unreadable "
+                   "entry Detail, test_reviewer_findings.py bug C)")
 def test_chaos_with_unreadable_detail():
     for seed in range(60):
         Chaos(seed, full=True).run()
