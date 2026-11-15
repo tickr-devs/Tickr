@@ -79,6 +79,12 @@ private struct ObserversCard: View {
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
       CardLabel(L10n.Lab.board)
       if let observers = lab.observers {
+        // A failed refresh after a good read: the rows stay, marked as the last read.
+        if let failure = lab.failure {
+          Text(L10n.Lab.failed(failure))
+            .font(Tokens.Typography.annotation)
+            .foregroundStyle(Palette.warningText)
+        }
         if observers.observers.isEmpty {
           Text(L10n.Lab.noObservers)
             .font(Tokens.Typography.callout)

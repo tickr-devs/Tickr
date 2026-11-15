@@ -623,7 +623,7 @@ enum L10n {
     }
     static func agreement(_ shared: Int, _ entered: Int, _ symbols: String) -> LocalizedStringResource {
       LocalizedStringResource("lab.agreement",
-        defaultValue: "bot agreed on \(shared) of \(entered) entries: \(symbols)", bundle: L10n.bundle)
+        defaultValue: "bot also traded \(shared) of \(entered): \(symbols)", bundle: L10n.bundle)
     }
     static func failed(_ cause: String) -> LocalizedStringResource {
       LocalizedStringResource("lab.failed", defaultValue: "Couldn't read the observers: \(cause)", bundle: L10n.bundle)

@@ -2489,13 +2489,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "bot agreed on %1$lld of %2$lld entries: %3$@"
+            "value" : "bot also traded %1$lld of %2$lld: %3$@"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "бот согласился в %1$lld из %2$lld входов: %3$@"
+            "value" : "бот тоже торговал %1$lld из %2$lld: %3$@"
           }
         }
       }
