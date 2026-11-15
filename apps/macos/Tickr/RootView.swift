@@ -56,6 +56,11 @@ struct RootView: View {
   static let screenMinWidth: CGFloat = 420
   static let screenMinHeight: CGFloat = 400
 
+  /// Width of the screen column and of the title bar's right-hand group, as last laid out: the
+  /// title line gets the room between them (see `WindowLine`).
+  @State private var detailWidth: CGFloat = 0
+  @State private var stepperWidth: CGFloat = 0
+
   private var section: AppSection { model.section }
 
   var body: some View {
@@ -111,7 +116,10 @@ struct RootView: View {
       // the design's one centred line instead.
       .navigationTitle(Text(section.title))
       .toolbar(removing: .title)
-      .toolbar { WindowToolbar() }
+      .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
+      .toolbar {
+        WindowToolbar(lineWidth: WindowLine.width(detail: detailWidth, stepper: stepperWidth)) { stepperWidth = $0 }
+      }
       .toolbarBackground(Palette.titleBar, for: .windowToolbar)
       .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
@@ -133,6 +141,8 @@ struct RootView: View {
 private struct Sidebar: View {
   @Environment(AppModel.self) private var model
   @Binding var selection: AppSection
+  /// Whether the section rows have the keyboard focus (the arrow keys then move the selection).
+  @FocusState private var rowsFocused: Bool
 
   /// Space under the "OPERATOR" label, in points.
   static let labelBottom: CGFloat = 10
@@ -143,14 +153,25 @@ private struct Sidebar: View {
         .padding(.horizontal, Tokens.Space.m)
         .padding(.top, Tokens.Space.xs)
         .padding(.bottom, Self.labelBottom)
-      ForEach(AppSection.allCases) { item in
-        Button { selection = item } label: {
-          SidebarRow(title: item.title, symbol: item.symbol, badge: badge(for: item), selected: selection == item)
+      VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+        ForEach(AppSection.allCases) { item in
+          Button {
+            selection = item
+            rowsFocused = true
+          } label: {
+            SidebarRow(title: item.title, symbol: item.symbol, badge: badge(for: item), selected: selection == item)
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier(item.rowID)
+          .accessibilityAddTraits(selection == item ? .isSelected : [])
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(item.rowID)
-        .accessibilityAddTraits(selection == item ? .isSelected : [])
       }
+      // ↑ and ↓ move between the sections, as in a sidebar list; a click on a row (or Tab) gives
+      // the rows the focus. The selected row's tint already shows where the focus is.
+      .focusable()
+      .focused($rowsFocused)
+      .focusEffectDisabled()
+      .onMoveCommand(perform: move)
       SettingsLink {
         SidebarRow(title: L10n.Root.settingsRow, symbol: AppSection.settingsSymbol, badge: nil, selected: false)
       }
@@ -165,6 +186,17 @@ private struct Sidebar: View {
     // The design's hairlines: under the title bar and between the sidebar and the screen.
     .overlay(alignment: .top) { Hairline(axis: .horizontal) }
     .overlay(alignment: .trailing) { Hairline(axis: .vertical) }
+  }
+
+  /// Selects the section above or below the selected one; the ends stay where they are.
+  private func move(_ direction: MoveCommandDirection) {
+    let sections = AppSection.allCases
+    guard let index = sections.firstIndex(of: selection) else { return }
+    switch direction {
+    case .up where index > sections.startIndex: selection = sections[sections.index(before: index)]
+    case .down where sections.index(after: index) < sections.endIndex: selection = sections[sections.index(after: index)]
+    default: break
+    }
   }
 
   /// The Trades row counts the shown day's trades; no other row has a number behind it.
@@ -306,27 +338,52 @@ private struct BotStateCard: View {
 /// The title bar as the design draws it: one centred mono line, and on the right the connection
 /// status, the day stepper ‹ day › and Today.
 private struct WindowToolbar: ToolbarContent {
+  /// Width of the title line (`WindowLine.width`).
+  let lineWidth: CGFloat
+  /// Called with the right-hand group's width whenever it changes.
+  let stepperWidthChanged: (CGFloat) -> Void
+
   var body: some ToolbarContent {
-    ToolbarItem(placement: .principal) {
-      WindowLine()
+    ToolbarItem(placement: .navigation) {
+      WindowLine(width: lineWidth)
     }
     .sharedBackgroundVisibility(.hidden)
     ToolbarItem(placement: .primaryAction) {
       DayStepper()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stepperWidthChanged($0) }
     }
     .sharedBackgroundVisibility(.hidden)
   }
 }
 
 /// "tickr — sandbox — price-action-v1 v1 — up to 3 positions", from the status and the settings.
+/// The line fills the room between the screen column's leading edge and the right-hand group,
+/// centred in it as the design centres it between the window buttons and the controls. A toolbar
+/// item is as wide as its view asks, so the width is given outright: a line wider than the room
+/// pushed the connection status and the day stepper into the toolbar's overflow menu in a narrow
+/// window (the 1000-point least width, the CI runner's 1024-point display); now the line is cut
+/// at its end instead.
 private struct WindowLine: View {
   @Environment(AppModel.self) private var model
+  let width: CGFloat
+
+  /// Least width of the line, in points.
+  static let minWidth: CGFloat = 120
+  /// The toolbar's own margins and item spacing around the two items, in points.
+  static let toolbarInsets: CGFloat = 40
+
+  /// The room the line gets beside the right-hand group in a screen column `detail` wide.
+  static func width(detail: CGFloat, stepper: CGFloat) -> CGFloat {
+    max(minWidth, detail - stepper - toolbarInsets)
+  }
 
   var body: some View {
     Text(line)
       .font(Tokens.Typography.calloutMono)
       .foregroundStyle(Palette.textQuaternary)
       .lineLimit(1)
+      .truncationMode(.tail)
+      .frame(width: width)
   }
 
   private var line: LocalizedStringResource {
@@ -350,9 +407,10 @@ private struct DayStepper: View {
   static let nextSymbol = "chevron.right"
   /// Gap between the connection status and the stepper, in points (added to the items' gap).
   static let connectionGap: CGFloat = 10
-  /// Least width of the day label, in points: holds "Mon, Nov 16 · today" so the arrows keep
-  /// their place from day to day.
-  static let dayMinWidth: CGFloat = 118
+  /// Least width of the day label, in points, so the arrows keep their place from day to day:
+  /// holds the longest live-day label in 12-point mono, the Russian "ср, 30 сент. · сегодня"
+  /// (22 characters) as well as the English "Wed, Sep 30 · today" (19).
+  static let dayMinWidth: CGFloat = 162
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
@@ -441,10 +499,11 @@ struct ConnectionStatus: View {
   static let id = "toolbar-connection"
   /// Width of the item, in points: fixed, so the age ticking from "9 s" to "10 s" or to "1 min"
   /// never changes the toolbar's width, which AppKit would answer with a new layout of the whole
-  /// window every second. Holds "127.0.0.1 · 59 s ago" in English and Russian, right-aligned so
+  /// window every second. Holds "127.0.0.1 · 59 s ago" in English and "127.0.0.1 · 59 с назад" in
+  /// Russian (11-point mono, with the dot), right-aligned so
   /// the text keeps to the stepper; a longer address is shortened in the middle (the whole line
   /// is in the tooltip).
-  static let width: CGFloat = 190
+  static let width: CGFloat = 176
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
