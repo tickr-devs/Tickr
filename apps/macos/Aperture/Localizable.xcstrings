@@ -2915,6 +2915,23 @@
         }
       }
     },
+    "flow.waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not now"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не сейчас"
+          }
+        }
+      }
+    },
     "format.minutesAgo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5162,6 +5179,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Торговый шлюз"
+          }
+        }
+      }
+    },
+    "risk.waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NOT NOW"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "НЕ СЕЙЧАС"
           }
         }
       }
