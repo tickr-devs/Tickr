@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from dataclasses import replace
@@ -115,3 +116,23 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
                  / scenario.environment / FRIDAY.isoformat() / "decisions.jsonl")
     roles = {json.loads(line)["role"] for line in decisions.read_text("utf-8").splitlines()}
     assert roles == {"active", "observer"}
+
+
+def test_demo_copy_can_never_reach_a_broker_account(tmp_path):
+    root = repo(tmp_path)
+    base = (root / "config" / "bot.toml").read_text("utf-8")
+    built = demo.build_folder(root, load(root / "config" / "demo.toml")).read_text("utf-8")
+    assert "webull.com" not in built
+    real_names = re.findall(r'^\w+_variable = "(.+)"$', base, re.MULTILINE)
+    assert real_names and not any(f'"{name}"' in built for name in real_names)
+
+
+def test_absolute_real_data_dir_stays_out_of_the_demo(tmp_path):
+    root = repo(tmp_path)
+    path = root / "config" / "bot.toml"
+    real = tmp_path / "real-data"
+    path.write_text(path.read_text("utf-8").replace('data_dir = "data"', f'data_dir = "{real}"', 1),
+                    "utf-8")
+    scenario = load(root / "config" / "demo.toml")
+    cfg = config.load(demo.build_folder(root, scenario))
+    assert (cfg.root / cfg.run.data_dir).resolve().is_relative_to(root / scenario.root_dir)

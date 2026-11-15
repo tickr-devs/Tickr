@@ -39,6 +39,12 @@ MARKER = ".aperture-demo"  # marks a folder this command built and may delete
 COPIED = ("config", "strategies")
 COMMAND_SOURCE = "demo"
 ONE_DAY = timedelta(days=1)
+DEMO_DATA_DIR = "data"  # inside the demo folder, whatever the real bot.toml says
+# Broker hosts and credential variable names in the demo copy point nowhere (RFC 2606 .invalid).
+HOST_LINE = re.compile(r'^(\w+_host) = ".*"$', re.MULTILINE)
+VARIABLE_LINE = re.compile(r'^(\w+_variable) = ".*"$', re.MULTILINE)
+UNREACHABLE_HOST = "demo.invalid"
+UNSET_VARIABLE_PREFIX = "APERTURE_DEMO_NEVER_SET_"
 
 
 class DemoRefused(Exception):
@@ -103,11 +109,22 @@ def build_folder(repo: Path, scenario: Scenario) -> Path:
     text = _set_line(text, "port", str(scenario.api_port))
     text = _set_line(text, "observers", "[" + ", ".join(f'"{o}"' for o in scenario.observers)
                      + "]")
+    text = _set_line(text, "data_dir", f'"{DEMO_DATA_DIR}"')
     renamed = table.split("\n", 1)
     text += f"\n# Copy for `aperture demo`.\n[environments.{scenario.environment}]\n{renamed[1]}"
-    path.write_text(text, "utf-8")
-    config_module.load(path)  # refuse here, not half way through a day
+    path.write_text(_unreachable(text), "utf-8")
+    cfg = config_module.load(path)  # refuse here, not half way through a day
+    if not (cfg.root / cfg.run.data_dir).resolve().is_relative_to(root):
+        raise DemoRefused("the demo data_dir is outside the demo folder")
     return path
+
+
+def _unreachable(text: str) -> str:
+    """Every broker host and credential variable name in the copy points nowhere, so even
+    `aperture --config demo/config/bot.toml run` outside the demo can never reach an account."""
+    text = HOST_LINE.sub(lambda m: f'{m.group(1)} = "{UNREACHABLE_HOST}"', text)
+    return VARIABLE_LINE.sub(
+        lambda m: f'{m.group(1)} = "{UNSET_VARIABLE_PREFIX}{m.group(1).upper()}"', text)
 
 
 # --- running sessions --------------------------------------------------------------------------

@@ -610,7 +610,7 @@ def main(argv: list[str] | None = None) -> int:
             return _status(args.config)
         if args.command == "demo":
             from aperture.demo.run import main as demo_main
-            repo = args.config.resolve().parent.parent
+            repo = config_module.load(args.config).root
             return demo_main(repo, repo / "config" / "demo.toml")
     except config_module.ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
