@@ -1761,7 +1761,9 @@ enum L10n {
     }
     /// Tooltip of the Another Strategy button.
     static var anotherHelp: LocalizedStringResource {
-      LocalizedStringResource("trades.anotherHelp", defaultValue: "What another strategy version would have done with this symbol that day (simulated)", bundle: L10n.bundle)
+      LocalizedStringResource("trades.anotherHelp",
+        defaultValue: "What another strategy version would have done with this symbol that day (simulated)",
+        bundle: L10n.bundle)
     }
     /// Title of the Another Strategy popover.
     static func anotherTitle(_ symbol: String) -> LocalizedStringResource {
@@ -1769,7 +1771,9 @@ enum L10n {
     }
     /// Another Strategy: the API offered no version.
     static var anotherNoVersions: LocalizedStringResource {
-      LocalizedStringResource("trades.anotherNoVersions", defaultValue: "No strategy version to replay: the bot lists none.", bundle: L10n.bundle)
+      LocalizedStringResource("trades.anotherNoVersions",
+        defaultValue: "No strategy version to replay: the bot lists none.",
+        bundle: L10n.bundle)
     }
     /// Another Strategy: the row of what the bot actually did.
     static var anotherBot: LocalizedStringResource {
@@ -1777,7 +1781,10 @@ enum L10n {
     }
     /// Another Strategy: how the result was made.
     static var anotherNote: LocalizedStringResource {
-      LocalizedStringResource("trades.anotherNote", defaultValue: "Simulated on that day's captured bars with the version's own stop, exit and size, gross before fees. Outside the session only.", bundle: L10n.bundle)
+      LocalizedStringResource("trades.anotherNote",
+        // swiftlint:disable:next line_length
+        defaultValue: "Simulated on that day's captured bars with the version's own stop, exit and size, gross before fees. Outside the session only.",
+        bundle: L10n.bundle)
     }
     /// Another Strategy: one simulated trade, its times and how it ended.
     static func anotherLeg(_ opened: String, _ closed: String, _ reason: String) -> LocalizedStringResource {
@@ -1785,11 +1792,16 @@ enum L10n {
     }
     /// Another Strategy: the version never entered.
     static var anotherNoEntry: LocalizedStringResource {
-      LocalizedStringResource("trades.anotherNoEntry", defaultValue: "No entry that day: its rules never said enter.", bundle: L10n.bundle)
+      LocalizedStringResource("trades.anotherNoEntry",
+        defaultValue: "No entry that day: its rules never said enter.",
+        bundle: L10n.bundle)
     }
     /// Another Strategy: what the simulation did with each entry decision.
     static func anotherSignals(_ filled: Int, _ missed: Int, _ rejected: Int, _ ignored: Int) -> LocalizedStringResource {
-      LocalizedStringResource("trades.anotherSignals", defaultValue: "Entries: \(filled) filled · \(missed) missed the window · \(rejected) too late · \(ignored) while in a trade", bundle: L10n.bundle)
+      LocalizedStringResource("trades.anotherSignals",
+        // swiftlint:disable:next line_length
+        defaultValue: "Entries: \(filled) filled · \(missed) missed the window · \(rejected) too late · \(ignored) while in a trade",
+        bundle: L10n.bundle)
     }
   }
   /// A refused entry in words: the rule behind its code, and the detail of a pause after a loss.
@@ -2330,7 +2342,9 @@ enum L10n {
     }
     /// Replay of one day: how to read it.
     static func replayOneDayNote(_ day: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.replayOneDayNote", defaultValue: "\(day) only: one day proves nothing, read it as an example.", bundle: L10n.bundle)
+      LocalizedStringResource("lab.replayOneDayNote",
+        defaultValue: "\(day) only: one day proves nothing, read it as an example.",
+        bundle: L10n.bundle)
     }
     /// Comparison column: the second version minus the first.
     static var replayDifference: LocalizedStringResource {
@@ -2350,7 +2364,10 @@ enum L10n {
     }
     /// What the replay does.
     static var replayNote: LocalizedStringResource {
-      LocalizedStringResource("lab.replayNote", defaultValue: "Replays a strategy version over the data fetched on the Mac, at low priority. Simulated: the bot never reads it.", bundle: L10n.bundle)
+      LocalizedStringResource("lab.replayNote",
+        // swiftlint:disable:next line_length
+        defaultValue: "Replays a strategy version over the data fetched on the Mac, at low priority. Simulated: the bot never reads it.",
+        bundle: L10n.bundle)
     }
   }
   enum MenuBar {

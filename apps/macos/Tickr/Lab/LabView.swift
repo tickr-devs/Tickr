@@ -363,7 +363,8 @@ private struct ReplayCard: View {
               Image(systemName: Self.startSymbol)
             }
           }
-          .disabled(running || model.labReplayStarting || replay == nil || (first == nil && !listsNone) || (oneDay && chosenDay == nil))
+          .disabled(running || model.labReplayStarting || replay == nil || (first == nil && !listsNone)
+            || (oneDay && chosenDay == nil))
           if running || model.labReplayStarting {
             ProgressView().controlSize(.small)
           }
@@ -524,8 +525,9 @@ private struct ReplayCard: View {
   }
 
   /// Both versions side by side over the same days, with the second minus the first.
-  @ViewBuilder private func comparison(_ replay: LabReplayV1, _ summary: LabReplaySummaryV1,
-    _ second: LabReplayLegV1) -> some View {
+  @ViewBuilder private func comparison(
+    _ replay: LabReplayV1, _ summary: LabReplaySummaryV1, _ second: LabReplayLegV1
+  ) -> some View {
     let firstName = String(localized: L10n.Lab.versionName(replay.strategy ?? Format.missing,
       replay.version ?? Format.missing))
     let secondName = String(localized: L10n.Lab.versionName(second.strategy, second.version))
@@ -570,8 +572,10 @@ private struct ReplayCard: View {
   }
 
   /// One metric of both versions and their difference; a missing number reads as a dash.
-  private func compareRow(_ title: LocalizedStringResource, _ first: Decimal?, _ second: Decimal?,
-    colored: Bool = true, format: (Decimal) -> String, delta: (Decimal) -> String) -> some View {
+  private func compareRow(
+    _ title: LocalizedStringResource, _ first: Decimal?, _ second: Decimal?,
+    colored: Bool = true, format: (Decimal) -> String, delta: (Decimal) -> String
+  ) -> some View {
     GridRow {
       Text(title)
         .font(Tokens.Typography.caption)
