@@ -112,6 +112,10 @@ public struct APIClient: Sendable {
   static let jobsPath = "/jobs"
   static let journalPath = "/journal"
   static let advisorPath = "/advisor"
+  static let advisorDecisionPath = "/advisor/decision"
+  /// Body keys of POST /advisor/decision.
+  static let advisorRunField = "run"
+  static let advisorVerdictField = "verdict"
   static let labReplayPath = "/lab/replay"
   static let observersPath = "/observers"
   static let decisionsPath = "/decisions"
@@ -221,6 +225,16 @@ public struct APIClient: Sendable {
   /// decisions, newest first.
   public func advisor() async throws -> AdvisorRunsV1 {
     try await perform(request(path: Self.advisorPath, body: nil), expect: Self.ok)
+  }
+
+  /// Record the owner's verdict on an advisor proposal or idea. A note only: the bot deploys
+  /// nothing from it. Answers the runs as they now stand; an unknown run is 404 and a run that
+  /// takes no decision (refused, no change) 409, both thrown as `APIError.refused`.
+  public func decideAdvisor(run: String, verdict: OwnerVerdict) async throws -> AdvisorRunsV1 {
+    let body = try JSONSerialization.data(withJSONObject: [
+      Self.advisorRunField: run, Self.advisorVerdictField: verdict.rawValue,
+    ])
+    return try await perform(request(path: Self.advisorDecisionPath, body: body), expect: Self.ok)
   }
 
   /// The Lab's replay of the current strategy over the recent sessions: idle, running, done with

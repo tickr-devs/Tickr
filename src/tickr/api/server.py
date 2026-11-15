@@ -38,7 +38,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from tickr.api import contract, flow
-from tickr.api.advisor import advisor_document
+from tickr.api.advisor import DecisionRefused, advisor_document, record_decision
 from tickr.api.after import AfterSettings, SkippedAfter
 from tickr.api.chart import Chart, ChartRefused, ChartSettings, parse_query
 from tickr.api.contract import (
@@ -423,6 +423,7 @@ GET_ROUTES = ("/", "/status", "/commands/pending", "/schema", "/days", "/bars", 
               "/watching", "/performance", "/chart", "/jobs", "/journal", "/advisor")
 MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
 LAB_REPLAY = "/lab/replay"  # GET reads, POST starts: outside the command inbox
+ADVISOR_DECISION = "/advisor/decision"  # POST only: the owner's note on a run, never a command
 DAY_PREFIX = "/days/"
 
 
@@ -579,6 +580,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/advisor":
                 self._json(200, advisor_document(self.server.settings.advisor_dir,
                                                  self.server.settings.advisor_runs))
+            elif path == ADVISOR_DECISION:
+                self._error("method_not_allowed", "use POST", {"Allow": "POST"})
             elif path == LAB_REPLAY:
                 self._json(200, self.server.lab.state())
             elif path == "/explain":
@@ -605,6 +608,9 @@ class Handler(BaseHTTPRequestHandler):
             path = self._path()
             if path == LAB_REPLAY:
                 self._start_lab_replay()
+                return
+            if path == ADVISOR_DECISION:
+                self._advisor_decision()
                 return
             if path not in COMMAND_ROUTES:
                 if path in GET_ROUTES or path.startswith(DAY_PREFIX):
@@ -648,6 +654,28 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(202, result)
         except Exception as exc:  # noqa: BLE001 - one typed answer instead of a dropped socket
             self._error("internal", type(exc).__name__)
+
+    def _advisor_decision(self) -> None:
+        """POST /advisor/decision with {"run": "<id>", "verdict": "accepted"|"rejected"}:
+        record the owner's verdict (a note, nothing is deployed), 200 with advisor-runs-v1;
+        404 without such a run, 409 when the run takes no decision."""
+        body = self._read_json_body()
+        if body is None:
+            return
+        verdicts = {v.value: v for v in contract.OwnerVerdict}
+        if (set(body) != {"run", "verdict"} or not isinstance(body["run"], str)
+                or not isinstance(body["verdict"], str) or body["verdict"] not in verdicts):
+            self._error("bad_request", 'body must be {"run": "<run id>", "verdict": '
+                        '"accepted"} or "rejected"')
+            return
+        settings = self.server.settings
+        try:
+            record_decision(settings.advisor_dir, body["run"], verdicts[body["verdict"]],
+                            self.server.clock())
+        except DecisionRefused as exc:
+            self._error("not_found" if exc.missing else "conflict", str(exc))
+            return
+        self._json(200, advisor_document(settings.advisor_dir, settings.advisor_runs))
 
     def _start_lab_replay(self) -> None:
         """POST /lab/replay with {}: start the simulated replay, 202 with its state, or 409

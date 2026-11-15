@@ -7,7 +7,7 @@ package.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from tickr.advisor.proposal import Proposal
@@ -16,6 +16,8 @@ from tickr.advisor_files import RUN_SCHEMA
 
 def literal(value: Any) -> str:
     """A strategy.toml value as the text the owner reads (JSON spelling of the TOML value)."""
+    if isinstance(value, date | time | datetime):  # TOML dates and times
+        return value.isoformat()
     return json.dumps(value)
 
 

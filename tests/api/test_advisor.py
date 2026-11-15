@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import replace
+from datetime import date, time
 
 import pytest
 from advisor.test_advisor import FakeClient, answer
 from advisor.test_backtest_advisor import IDEA, make_root, run, write_results
 
 from tickr.advisor.judge import judge
+from tickr.advisor.record import literal
 from tickr.advisor_files import DECISION_FILE, DECISION_SCHEMA, RUN_FILE
 from tickr.api import contract
 from tickr.api.advisor import NO_FOLDER, advisor_document
@@ -83,6 +85,77 @@ def test_decision_and_idea_and_unreadable_folders(tmp_path):
     assert [(u.id, u.cause.split(" ")[0]) for u in document.unreadable] == [
         (broken.name, "run.json:"), (old.name, "no")]
     assert advisor_document(out, 1).unreadable == ()  # only the newest folder is listed
+
+
+def _serve(cfg, folder):
+    settings = replace(settings_from_config(cfg), port=0, advisor_dir=folder)
+    server = make_server(settings, Clock(T0))
+    threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
+    return server
+
+
+def test_the_owner_decision_is_a_note_on_proposals_and_ideas(tmp_path):
+    cfg, folder = _proposal_and_judge(tmp_path)
+    refused = folder.parent / "20991231T000000Z-price-action-v1"
+    refused.mkdir()
+    raw = json.loads((folder / RUN_FILE).read_text())
+    (refused / RUN_FILE).write_text(json.dumps({**raw, "status": "refused"}))
+    before = sorted(p.name for p in folder.rglob("*"))
+    server = _serve(cfg, folder.parent)
+    try:
+        post = lambda body: request(server, "POST", "/advisor/decision", body)  # noqa: E731
+        resp, payload = post({"run": folder.name, "verdict": "rejected"})
+        body = doc(payload)
+        assert resp.status == 200 and body["awaiting_review"] == 0
+        assert errors(contract.json_schema(contract.AdvisorRunsV1), body) == []
+        resp, payload = post({"run": folder.name, "verdict": "accepted"})  # changed mind
+        decided = next(r for r in doc(payload)["runs"] if r["id"] == folder.name)
+        assert decided["decision"] == {"verdict": "accepted", "at": contract.format_time(T0)}
+        assert post({"run": refused.name, "verdict": "accepted"})[0].status == 409
+        assert post({"run": "20990101T000000Z-nothing", "verdict": "accepted"})[0].status == 404
+        assert post({"run": "../" + folder.name, "verdict": "accepted"})[0].status == 404
+        for bad in ({"run": folder.name}, {"run": folder.name, "verdict": "maybe"},
+                    {"run": folder.name, "verdict": ["accepted"]},
+                    {"run": 1, "verdict": "accepted"}):
+            assert post(bad)[0].status == 400
+        assert request(server, "GET", "/advisor/decision")[0].status == 405
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert sorted(p.name for p in folder.rglob("*")) == sorted([*before, DECISION_FILE])
+    assert not (refused / DECISION_FILE).exists()
+
+
+def test_a_bad_judge_or_decision_file_refuses_its_run(tmp_path):
+    cfg, folder = _proposal_and_judge(tmp_path)
+    judge_file = next(folder.glob("judge-*.json"))
+    good = judge_file.read_text()
+    raw = json.loads(good)
+    for broken in ({**raw, "holdout": {**raw["holdout"], "mean_r_interval": ["0.1"]}},
+                   {**raw, "verdict": "great"}):
+        judge_file.write_text(json.dumps(broken))
+        (cause,) = [u.cause for u in advisor_document(folder.parent, 5).unreadable]
+        assert cause.startswith(judge_file.name)
+    judge_file.write_text(good)
+    for decision in ({"schema": DECISION_SCHEMA, "verdict": "maybe", "at": T0.isoformat()},
+                     {"schema": DECISION_SCHEMA, "verdict": "accepted",
+                      "at": "2026-11-16T10:00:00"}):
+        (folder / DECISION_FILE).write_text(json.dumps(decision))
+        (cause,) = [u.cause for u in advisor_document(folder.parent, 5).unreadable]
+        assert cause.startswith(DECISION_FILE)
+
+
+def test_an_odd_folder_name_is_unreadable_not_skipped(tmp_path):
+    odd = tmp_path / "20261101T000000Z-Price Action"
+    odd.mkdir(parents=True)
+    (tmp_path / "notes").mkdir()
+    document = advisor_document(tmp_path, 5)
+    assert [u.id for u in document.unreadable] == [odd.name]
+
+
+def test_toml_dates_are_shown_as_text():
+    assert literal(date(2026, 11, 16)) == "2026-11-16" and literal(time(9, 45)) == "09:45:00"
+    assert literal(0.5) == "0.5" and literal(True) == "true" and literal("vwap") == '"vwap"'
 
 
 def test_no_folder_yet(tmp_path):

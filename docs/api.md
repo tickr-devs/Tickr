@@ -86,6 +86,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
 | GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
 | GET | `/advisor` | `200` `advisor-runs-v1`: the AI advisor's newest `[api] advisor_runs` runs with their proposals, ideas, hold-out verdicts and the owner's decision (read-only; see GET /advisor below). |
+| POST | `/advisor/decision` | Body `{"run": "<run id>", "verdict": "accepted"\|"rejected"}`. Records the owner's review of a proposal or idea (a note, nothing is deployed): `200` `advisor-runs-v1`; `404 not_found` without that run; `409 conflict` for a refused, no-change or unreadable run. Not a bot command. |
 | GET | `/lab/replay` | `200` `lab-replay-v1`: the Lab's latest SIMULATED replay of the active strategy over the last sessions of fetched data (see Lab replay below). |
 | POST | `/lab/replay` | Body `{}`. Starts that replay: `202` `lab-replay-v1` (state `running`), or `409 conflict` with the cause it cannot start now. Not a bot command: nothing goes to the inbox. |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
@@ -528,8 +529,10 @@ rule (`tuned_on`, `judge_on`), every `judges` result of `python -m tickr.advisor
 the owner's `decision` (null = awaiting review). `awaiting_review` counts every run (not only the
 listed ones) with status `proposed` or `idea` and no decision. A folder that cannot be read
 exactly (no `run.json`: a run from before this file, or a malformed file) is listed under
-`unreadable` with its cause. `cause` is set when the folder does not exist yet. A decision is a
-note only: nothing copies, loads or deploys a strategy from it.
+`unreadable` with its cause (one malformed judge or decision file refuses its whole run).
+`cause` is set when the folder does not exist yet or cannot be listed. POST /advisor/decision
+writes the owner's verdict into the run folder as `decision.json`; a later verdict replaces it.
+A decision is a note only: nothing copies, loads or deploys a strategy from it.
 ### GET and POST /lab/replay (simulated, never the bot)
 
 The Lab's "replay the last days": the active strategy (`[strategy] active`, its module from

@@ -3,8 +3,9 @@
 Each run folder under `[advisor] proposals_dir` holds `run.json` (advisor-run-v1), any
 `judge-*.json` (advisor-judge-v1) and the owner's `decision.json` (advisor-decision-v1); the
 formats are in tickr.advisor_files. A folder that cannot be read exactly (no run.json: a run from
-before these files, a missing key, an unknown status) is listed under `unreadable` with its
-cause, never guessed. Nothing here copies, loads or runs a strategy.
+before these files, a missing key, an unknown status, a malformed judge or decision file) is
+listed under `unreadable` with its cause, never guessed. POST /advisor/decision writes only
+decision.json (`record_decision`). Nothing here copies, loads or runs a strategy.
 """
 
 from __future__ import annotations
@@ -19,8 +20,10 @@ from typing import Any
 from tickr import advisor_files as files
 from tickr.api import contract as api
 
-RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[a-z0-9][a-z0-9-]*$")
-"""advisor.run names each folder "<%Y%m%dT%H%M%SZ>-<strategy name>"."""
+RUN_PREFIX = re.compile(r"[0-9]{8}T[0-9]{6}Z-")
+"""advisor.run names each folder "<%Y%m%dT%H%M%SZ>-<strategy name>"; other folders are not runs."""
+RUN_ID = re.compile(r"[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9][A-Za-z0-9_.-]*")
+"""The run ids the API reads or writes into; a run folder with another name is unreadable."""
 NO_FOLDER = "no advisor run yet: the proposals folder does not exist"
 _AWAITING = (api.AdvisorRunStatus.PROPOSED, api.AdvisorRunStatus.IDEA)
 
@@ -32,8 +35,11 @@ class Unreadable(ValueError):
 def advisor_document(folder: Path, rows: int) -> api.AdvisorRunsV1:
     if not folder.is_dir():
         return api.AdvisorRunsV1((), (), 0, NO_FOLDER)
-    ids = sorted((p.name for p in folder.iterdir() if p.is_dir() and RUN_ID.match(p.name)),
-                 reverse=True)
+    try:
+        ids = sorted((p.name for p in folder.iterdir()
+                      if RUN_PREFIX.match(p.name) and p.is_dir()), reverse=True)
+    except OSError as exc:
+        return api.AdvisorRunsV1((), (), 0, f"proposals folder unreadable ({type(exc).__name__})")
     runs: list[api.AdvisorRunV1] = []
     unreadable: list[api.AdvisorUnreadableV1] = []
     awaiting = 0
@@ -51,9 +57,41 @@ def advisor_document(folder: Path, rows: int) -> api.AdvisorRunsV1:
     return api.AdvisorRunsV1(tuple(runs), tuple(unreadable), awaiting, None)
 
 
+class DecisionRefused(ValueError):
+    """POST /advisor/decision cannot record this decision; `missing` = no such run (404),
+    else a conflict (409). The message is the cause."""
+
+    def __init__(self, cause: str, missing: bool = False) -> None:
+        super().__init__(cause)
+        self.missing = missing
+
+
+def record_decision(folder: Path, run_id: str, verdict: api.OwnerVerdict, at: datetime) -> None:
+    """Write the owner's verdict on a proposal or idea as decision.json: a note only, nothing
+    copies, loads or deploys a strategy. A later verdict replaces an earlier one."""
+    if not RUN_ID.fullmatch(run_id) or not (folder / run_id).is_dir():
+        raise DecisionRefused(f"no advisor run {run_id!r}", missing=True)
+    try:
+        run = read_run(folder / run_id)
+    except Unreadable as exc:
+        raise DecisionRefused(f"run {run_id} is unreadable: {exc}") from exc
+    if run.status not in _AWAITING:
+        raise DecisionRefused(f"run {run_id} is {run.status.value}: only a proposal or an idea "
+                              "takes a decision")
+    api.write_atomic(folder / run_id / files.DECISION_FILE, json.dumps(
+        {"schema": files.DECISION_SCHEMA, "verdict": verdict.value, "at": at.isoformat()},
+        indent=1) + "\n")
+
+
 def read_run(path: Path) -> api.AdvisorRunV1:
+    if not RUN_ID.fullmatch(path.name):
+        raise Unreadable("the folder name is not <UTC time>-<strategy name>")
     raw = _json(path / files.RUN_FILE, files.RUN_SCHEMA)
-    judges = tuple(_judge(p) for p in sorted(path.glob(f"{files.JUDGE_PREFIX}*.json")))
+    try:
+        judge_paths = sorted(path.glob(f"{files.JUDGE_PREFIX}*.json"))
+    except OSError as exc:
+        raise Unreadable(f"folder unreadable ({type(exc).__name__})") from exc
+    judges = tuple(_judge(p) for p in judge_paths)  # one bad judge file refuses the run
     decision_path = path / files.DECISION_FILE
     decision = _decision(decision_path) if decision_path.exists() else None
     try:

@@ -2,8 +2,8 @@
 
 - `run.json` (advisor-run-v1): written by advisor.run with report.md, whatever the outcome.
 - `judge-<name>-v<N>.json` (advisor-judge-v1): written by advisor.judge with its markdown.
-- `decision.json` (advisor-decision-v1): the owner's review verdict, written by the API. It is a
-  note only: nothing reads it to copy, load or deploy a strategy.
+- `decision.json` (advisor-decision-v1): the owner's review verdict, written by POST
+  /advisor/decision. It is a note only: nothing reads it to copy, load or deploy a strategy.
 
 The names, codes and the judge's format live here, outside the advisor package, because the API
 reads them and the bot never imports the advisor (tests/test_invariants.py); advisor.record
