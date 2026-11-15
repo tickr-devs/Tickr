@@ -12,11 +12,11 @@ struct ApertureApp: App {
   var body: some Scene {
     WindowGroup {
       RootView()
-        .environment(model)
-        .tint(Palette.info)
         .overlay {
           if opening { LaunchHandoff { opening = false } }
         }
+        .environment(model)
+        .tint(Palette.info)
     }
     .onChange(of: scenePhase, initial: true) { _, phase in
       // Poll only while the app is on screen; the bot never depends on the phone.
