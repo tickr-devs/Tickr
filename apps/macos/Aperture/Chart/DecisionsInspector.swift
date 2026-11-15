@@ -13,9 +13,6 @@ struct DecisionsInspector: View {
   /// Width of the decisions pane beside the chart, in points: narrow enough that at the
   /// window's least width the chart keeps most of the room.
   static let width: CGFloat = 240
-  /// Significant digits of a check's measured value and threshold (the bot sends full
-  /// precision, such as 3.4492753623188405797).
-  static let checkDigits = 1...4
   /// How far a long rule name may shrink to stay on one line before it is cut in the middle.
   static let ruleMinimumScale = 0.8
   /// Accessibility id of the inspector's content, for the UI tests.
@@ -139,16 +136,9 @@ private struct CheckRow: View {
     .accessibilityElement(children: .combine)
   }
 
-  /// A recorded number to a few significant digits; a dash when missing.
-  static func short(_ number: DecimalString?) -> String {
-    guard let number else { return Format.missing }
-    return number.value.formatted(.number.precision(.significantDigits(DecisionsInspector.checkDigits)))
-  }
-
-  /// "measured operator threshold" as the bot recorded them, rounded; a missing side shows as a
-  /// dash.
+  /// "measured operator threshold" as the bot recorded them; a missing side shows as a dash.
   private var comparison: String {
-    "\(Self.short(check.measured)) \(check.operator) \(Self.short(check.threshold))"
+    "\(check.measured?.text ?? Format.missing) \(check.operator) \(check.threshold?.text ?? Format.missing)"
   }
 }
 
