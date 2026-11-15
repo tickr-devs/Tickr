@@ -95,12 +95,14 @@ struct ApertureMacApp: App {
 
     Settings {
       SettingsView()
+        .hintHost()
         .environment(model)
         .tint(Palette.info)
     }
 
     MenuBarExtra(isInserted: $showMenuBarExtra) {
       MenuBarPanel()
+        .hintHost()
         .environment(model)
         .tint(Palette.info)
     } label: {
