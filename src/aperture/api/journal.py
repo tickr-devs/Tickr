@@ -35,5 +35,6 @@ def journal_document(database: Path, rows: int) -> api.JournalV1:
 
 
 def _symbol(body: str) -> str | None:
-    value = json.loads(body).get("symbol")
+    parsed = json.loads(body)
+    value = parsed.get("symbol") if isinstance(parsed, dict) else None
     return value if isinstance(value, str) else None
