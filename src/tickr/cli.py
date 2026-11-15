@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     from tickr.runtime.market import StreamInbox
 
 LOCK_FILE = "tickr.lock"
+# Lock file name of the code before the rename to Tickr; a bot holding it blocks every start.
+LEGACY_LOCK_FILE = "aperture.lock"  # rename-keep
 
 
 def data_paths(cfg: config_module.Config) -> tuple[Path, Path]:
@@ -175,7 +177,7 @@ def _engine(path: Path, broker: Broker | None = None,
     may already send cancels or orders)."""
     cfg = config_module.load(path)
     database, lock_path = data_paths(cfg)
-    with SingleInstanceLock(lock_path):
+    with SingleInstanceLock(lock_path, lock_path.with_name(LEGACY_LOCK_FILE)):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds)
         _require_environment(store, cfg)
         run_id = store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
@@ -367,7 +369,7 @@ def _maintain(args: argparse.Namespace) -> int:
         calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
     except CalendarRefused as exc:
         raise ManualRefused(f"calendar unreadable: {exc}") from exc
-    with SingleInstanceLock(lock_path):
+    with SingleInstanceLock(lock_path, lock_path.with_name(LEGACY_LOCK_FILE)):
         try:
             return maintain.run(cfg, calendar, database, ny_date_of(NOW()), apply=args.apply,
                                 out=print)
@@ -459,7 +461,7 @@ def _run(path: Path) -> int:
         return 3
     strategy = service.strategy_id(cfg)
     database, lock_path = data_paths(cfg)
-    with SingleInstanceLock(lock_path):
+    with SingleInstanceLock(lock_path, lock_path.with_name(LEGACY_LOCK_FILE)):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds,
                            now=NOW)
         _require_environment(store, cfg)

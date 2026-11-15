@@ -372,40 +372,6 @@
         }
       }
     },
-    "kit.command.entryStopOff" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entry stop off"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Стоп входов: выкл."
-          }
-        }
-      }
-    },
-    "kit.command.entryStopOn" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entry stop on"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Стоп входов: вкл."
-          }
-        }
-      }
-    },
     "kit.command.flatten" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -470,6 +436,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Остановить бота"
+          }
+        }
+      }
+    },
+    "kit.error.unexpected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unexpected error in the app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "непредвиденная ошибка в приложении"
           }
         }
       }
@@ -1208,6 +1191,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Позиция слишком долго без защиты"
+          }
+        }
+      }
+    },
+    "kit.fenceKind.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other block"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая блокировка"
           }
         }
       }

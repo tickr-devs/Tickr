@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from decimal import Decimal as D
 
-from tickr.broker.base import OutcomeUnknown
 from rehearsal.harness import DAY, Rehearsal, history
 from rehearsal.world import build_day
+from tickr.broker.base import OutcomeUnknown
 
 HOT = D(30000)
 RAMP = ("09:30", "09:45", D("24.50"), HOT)  # breakout; bought at 09:45, stop 22.65
