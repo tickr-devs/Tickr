@@ -890,6 +890,10 @@ enum ChartText {
     defaultValue: "Entries and exits only")
   static let observer = LocalizedStringResource("chart.decisions.observer",
     defaultValue: "observer")
+  static let tradingStrategy = LocalizedStringResource("chart.decisions.strategyLabel",
+    defaultValue: "Trading strategy")
+  static let noStrategyDecisions = LocalizedStringResource("chart.decisions.noStrategy",
+    defaultValue: "The trading strategy recorded nothing on this symbol that day.")
   static let observers = LocalizedStringResource("chart.decisions.observers",
     defaultValue: "Observers · never trade")
   static let openPosition = LocalizedStringResource("chart.symbol.open",

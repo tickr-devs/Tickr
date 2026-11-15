@@ -193,6 +193,7 @@ private struct DayHeader: View {
 /// One chip per symbol with captured bars that day, open positions first: a pulsing dot marks an
 /// open position, a plain dot a symbol the bot traded.
 private struct SymbolChips: View {
+  @Environment(AppModel.self) private var app
   let chart: ChartModel
   let url: URL
 
@@ -208,7 +209,8 @@ private struct SymbolChips: View {
           } label: {
             HStack(spacing: Tokens.Space.xs) {
               if open {
-                PulseDot(Palette.accent, size: Tokens.Size.dotSmall)
+                // Pulses only while the status saying it is open is current.
+                PulseDot(Palette.accent, size: Tokens.Size.dotSmall, pulsing: app.response?.stale == false)
                   .accessibilityLabel(Text(ChartText.openPosition))
               }
               Text(symbol)

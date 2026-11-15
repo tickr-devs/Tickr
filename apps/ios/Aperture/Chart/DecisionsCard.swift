@@ -18,8 +18,11 @@ struct DecisionsCard: View {
         let list = DecisionList(decisions.decisions, everything: showsAll)
         if list.total == 0 {
           note(ChartText.noDecisions)
-        } else if list.strategy.isEmpty && !showsAll {
-          note(ChartText.noEntries)
+        } else {
+          CardLabel(ChartText.tradingStrategy)
+          if list.strategy.isEmpty {
+            note(showsAll ? ChartText.noStrategyDecisions : ChartText.noEntries)
+          }
         }
         runs(list.strategy)
         if !list.observers.isEmpty {

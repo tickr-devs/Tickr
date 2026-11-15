@@ -4,13 +4,18 @@ import Testing
 
 @Suite("Decision runs and chart symbol order")
 struct DecisionRunsTests {
-  /// A decision at minute `minute` past 15:00 UTC.
+  /// A decision at minute `minute` past 15:00 UTC; `skipped` gives it what-if levels (a refused
+  /// ENTER), `failed` the rule of a check that did not pass.
   func decision(_ minute: Int, _ action: String, _ name: String = "price-action", version: String = "1",
-    observer: Bool = false) throws -> DecisionV1 {
+    observer: Bool = false, skipped: Bool = false, failed: String? = nil) throws -> DecisionV1 {
+    let levels = skipped ? #""entry_price": "12.40", "stop_price": "12.10""# : #""entry_price": null, "stop_price": null"#
+    let checks = failed.map {
+      #"[{"rule": "\#($0)", "measured": null, "operator": "is", "threshold": null, "passed": false, "note": ""}]"#
+    } ?? "[]"
     let json = """
       {"at": "2026-11-16T15:\(String(format: "%02d", minute)):00.000Z", "action": "\(action)",
        "strategy": {"name": "\(name)", "version": "\(version)"}, "observer": \(observer),
-       "checks": [], "entry_price": null, "stop_price": null}
+       "checks": \(checks), \(levels)}
       """
     return try Wire.decoder().decode(DecisionV1.self, from: Data(json.utf8))
   }
@@ -27,6 +32,26 @@ struct DecisionRunsTests {
     let oldest = try decision(1, "ENTER")
     #expect(runs[0].latest.at == newest.at)
     #expect(runs[0].earliest.at == oldest.at)
+  }
+
+  @Test("A taken entry never merges with a refused one, nor decisions whose checks differ")
+  func outcomes() throws {
+    let runs = DecisionRun.merge([
+      try decision(40, "ENTER", skipped: true, failed: "symbol_not_paused"),
+      try decision(39, "ENTER", skipped: true, failed: "symbol_not_paused"),
+      try decision(5, "ENTER"),
+      try decision(4, "WATCH", failed: "ask_above_trigger"),
+      try decision(3, "WATCH", failed: "volume_surge"),
+    ])
+    #expect(runs.map(\.count) == [2, 1, 1, 1])
+    #expect(runs[1].latest.entryPrice == nil)
+  }
+
+  @Test("Entries an hour apart with holding between them are two rows, not a run of two")
+  func runsBeforeFilter() throws {
+    let list = DecisionList([try decision(0, "ENTER"), try decision(1, "HOLD"), try decision(2, "HOLD"),
+      try decision(59, "ENTER")], everything: false)
+    #expect(list.strategy.map(\.count) == [1, 1])
   }
 
   @Test("The trading strategy leads; ten observer entries in a row are one run")
