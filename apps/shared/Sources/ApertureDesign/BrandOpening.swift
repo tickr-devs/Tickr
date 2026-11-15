@@ -4,13 +4,17 @@ import SwiftUI
 /// plain background with the mark in its centre, the line draws itself, then the mark flies to the
 /// header's mark (`target`, on screen) over the still plain background; only then does the
 /// background fade and the screen show through, the mark giving way to the header's own. It starts
-/// when the window is on screen and key, not before. Under Reduce Motion it only cross-fades. Design: the "Бренд Tickr" board, "macOS opening".
+/// when the window is on screen and in front (key or active), or after `openingWaitSeconds` at the
+/// latest, so a window opened in the background is never left covered. Under Reduce Motion it only
+/// cross-fades. Design: the "Бренд Tickr" board, "macOS opening".
 public struct BrandOpening: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   #if os(macOS)
   @Environment(\.controlActiveState) private var activeState
   #endif
-  /// The mark is on stage (and starts drawing): the window is on screen.
+  /// The window is ready for the opening (in front, or waited long enough); set once, never undone.
+  @State private var ready = false
+  /// The mark is on stage (and starts drawing).
   @State private var started = false
   @State private var flown = false
   @State private var faded = false
@@ -53,20 +57,30 @@ public struct BrandOpening: View {
     .onGeometryChange(for: CGPoint.self) { $0.frame(in: .global).origin } action: { origin = $0 }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
-    .task(id: windowShown) {
-      guard windowShown, !started else { return }
+    #if os(macOS)
+    .onChange(of: activeState, initial: true) { _, state in
+      if Self.inFront(state) { ready = true }
+    }
+    #else
+    .onAppear { ready = true }
+    #endif
+    .task {
+      try? await Task.sleep(for: .seconds(Tokens.Motion.openingWaitSeconds))
+      ready = true
+    }
+    // `ready` only ever turns true, so this runs the opening once and is never cancelled midway.
+    .task(id: ready) {
+      guard ready, !started else { return }
       await play()
     }
   }
 
-  /// The window is on screen and in front, so the opening is seen from its first frame.
-  private var windowShown: Bool {
-    #if os(macOS)
-    activeState == .key
-    #else
-    true
-    #endif
+  #if os(macOS)
+  /// Whether a window in this state is in front, so the opening is seen from its first frame.
+  static func inFront(_ state: ControlActiveState) -> Bool {
+    state == .key || state == .active
   }
+  #endif
 
   /// Where the header mark is now, in this view's coordinates.
   private func readLanding() -> CGPoint? {
@@ -74,11 +88,11 @@ public struct BrandOpening: View {
   }
 
   private func play() async {
+    started = true
     if reduceMotion {
       withAnimation(.easeOut(duration: Tokens.Motion.launchFadeSeconds)) { faded = true } completion: { finished() }
       return
     }
-    started = true
     try? await Task.sleep(for: .seconds(Tokens.Motion.openingDelaySeconds + Tokens.Motion.openingDrawSeconds))
     landing = readLanding()
     withAnimation(Tokens.Motion.openingFly) { flown = true }
