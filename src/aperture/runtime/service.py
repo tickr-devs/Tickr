@@ -237,27 +237,26 @@ class Service:
 
     def _stop_bot(self, command: api.CommandV1) -> None:
         """Graceful stop, obeyed only when flat: the marker first (durable, so no later start
-        can miss it), then the record; the loop then ends and drains as on SIGTERM: working
-        entries cancelled, nothing flattened. Refused while a close is requested or working
-        (an operator flatten, an emergency, the session flatten): stopping then would abandon
-        an exit request that a later start would carry out without anyone asking. Refused
-        while any position is open: its broker stop is a DAY order and a stopped bot does not
-        flatten at the flatten time, so the position could go overnight unprotected."""
+        can miss it), then the record; the loop then ends and drains as on SIGTERM. Refused
+        while a close is requested or working (an operator flatten, an emergency, the session
+        flatten): stopping then would abandon an exit request that a later start would carry
+        out without anyone asking. Refused while any trade is not closed, a working entry with
+        no fill included: a broker stop is a DAY order and a stopped bot does not flatten at
+        the flatten time, so a position (or an entry filling during the drain) could go
+        overnight unprotected."""
         engine = self.engine
-        held = 0
-        for trade in engine.trades():
+        trades = engine.trades()
+        for trade in trades:
             orders = engine.orders(trade.trade_id)
             if trade.exit_requested or any(o.leg is Leg.EXIT and o.live for o in orders):
                 with engine.store.transaction():
                     self._record(command, api.CommandOutcome.REFUSED, CLOSE_IN_PROGRESS)
                 return
-            if engine.expected_quantity(orders) > 0:
-                held += 1
-        if held:
+        if trades:
             with engine.store.transaction():
                 self._record(command, api.CommandOutcome.REFUSED, (
-                    f"{held} position(s) open; flatten first (or send emergency), "
-                    "then stop-bot"))
+                    f"{len(trades)} trade(s) open or entering; flatten first (or send "
+                    "emergency), then stop-bot"))
             return
         stopmarker.write(self.config, command.command_id, self.now())
         with engine.store.transaction():
