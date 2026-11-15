@@ -110,9 +110,10 @@ public final class AppModel {
   public private(set) var labReplayError: String?
   /// Why the last start was refused (409): a reason to wait, not a failure.
   public private(set) var labReplayRefusal: String?
-  /// The replay as read when the refusal came, as state and run: a later read that differs means
-  /// the replay moved on and the refusal no longer holds.
-  private var labReplayRefusedAt: (state: LabReplayState?, runId: String?)?
+  /// The replay as read when the refusal came, as state and run, and when it came: a later read
+  /// that differs means the replay moved on, and past `Pace.labReplaySeconds` the reason may no
+  /// longer hold (the session closed), so either clears it.
+  private var labReplayRefusedAt: (state: LabReplayState?, runId: String?, at: Date)?
   /// A start is on its way to the API.
   public private(set) var labReplayStarting = false
   /// What runs on its own on the Mac (GET /jobs), read while Settings is open.
@@ -419,7 +420,8 @@ public final class AppModel {
       guard url == baseURL else { return }
       labReplay = read
       labReplayError = nil
-      if let refused = labReplayRefusedAt, refused.state != read.state || refused.runId != read.runId {
+      if let refused = labReplayRefusedAt, refused.state != read.state || refused.runId != read.runId
+        || Date.now.timeIntervalSince(refused.at) >= Pace.labReplaySeconds {
         labReplayRefusal = nil
         labReplayRefusedAt = nil
       }
@@ -448,7 +450,7 @@ public final class AppModel {
     } catch APIError.refused(_, _, let cause) {
       guard url == baseURL else { return }
       labReplayRefusal = cause
-      labReplayRefusedAt = (labReplay?.state, labReplay?.runId)
+      labReplayRefusedAt = (labReplay?.state, labReplay?.runId, .now)
     } catch {
       guard url == baseURL else { return }
       labReplayError = Self.describe(error)
