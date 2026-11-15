@@ -244,4 +244,11 @@ enum L10n {
     LocalizedStringResource("kit.wire.unsupportedVersion",
       defaultValue: "unsupported \(key) \(value), this app reads \(expected)", bundle: bundle)
   }
+
+  // MARK: Fences (ApiText.fenceTitle)
+
+  /// A fence of a kind this app does not know; the bot's detail follows it.
+  static var fenceOther: LocalizedStringResource {
+    LocalizedStringResource("kit.fenceKind.other", defaultValue: "Other block", bundle: bundle)
+  }
 }
