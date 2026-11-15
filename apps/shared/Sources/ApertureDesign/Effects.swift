@@ -235,16 +235,13 @@ public struct Ticker: View {
 
 /// A row that scrolls slowly to the left in a loop, faded at both ends, paused when `moving` is
 /// false or Reduce Motion is on; then it is an ordinary horizontal scroll view. It redraws at most
-/// `Tokens.Motion.marqueeFrameSeconds` apart and holds still while its window is in the
-/// background: a marquee redrawn every display frame kept a third of a CPU core busy on every
-/// screen (Instruments, 2026-11-15).
+/// `Tokens.Motion.marqueeFrameSeconds` apart and holds still while its window is hidden or
+/// minimized (a window merely not in use, such as on a second screen, keeps it moving): a marquee
+/// redrawn every display frame kept a third of a CPU core busy on every screen (Instruments,
+/// 2026-11-15).
 public struct Marquee<Row: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  #if os(macOS)
-  @Environment(\.controlActiveState) private var activeState
-  #else
   @Environment(\.scenePhase) private var scenePhase
-  #endif
   @State private var contentWidth: CGFloat = 0
   let moving: Bool
   /// Points per second.
@@ -261,7 +258,8 @@ public struct Marquee<Row: View>: View {
     Group {
       if moving && !reduceMotion {
         let schedule = AnimationTimelineSchedule(
-          minimumInterval: Tokens.Motion.marqueeFrameSeconds, paused: inBackground)
+          minimumInterval: Tokens.Motion.marqueeFrameSeconds, paused: scenePhase == .background)
+        // decorative: the ticker scrolls as an ornament; its items change only on real events (owner, 2026-11-15).
         TimelineView(schedule) { context in
           let t = context.date.timeIntervalSinceReferenceDate
           let offset = contentWidth > 0 ? -CGFloat((t * speed).truncatingRemainder(dividingBy: Double(contentWidth))) : 0
@@ -284,15 +282,6 @@ public struct Marquee<Row: View>: View {
         .init(color: .black, location: 1 - MarqueeLayout.fadeEdge), .init(color: .clear, location: 1)],
       startPoint: .leading, endPoint: .trailing))
     .accessibilityElement(children: .combine)
-  }
-
-  /// The window is not the one in use (macOS) or the app is not on screen (iOS).
-  private var inBackground: Bool {
-    #if os(macOS)
-    activeState == .inactive
-    #else
-    scenePhase != .active
-    #endif
   }
 }
 
