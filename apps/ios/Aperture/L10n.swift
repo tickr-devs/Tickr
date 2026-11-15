@@ -262,7 +262,7 @@ enum L10n {
     }
     static func dayResult(_ result: String, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
       LocalizedStringResource("home.dayResult",
-        defaultValue: "Day result \(result), \(wins) wins, \(losses) losses",
+        defaultValue: "Day result \(result), wins: \(wins), losses: \(losses)",
         bundle: L10n.bundle)
     }
     static func protected(_ symbol: String) -> LocalizedStringResource {
@@ -480,6 +480,9 @@ enum L10n {
     }
     static var blocked: LocalizedStringResource {
       LocalizedStringResource("risk.blocked", defaultValue: "Blocked", bundle: L10n.bundle)
+    }
+    static var notNow: LocalizedStringResource {
+      LocalizedStringResource("risk.notNow", defaultValue: "Not now", bundle: L10n.bundle)
     }
     static var pausedByYou: LocalizedStringResource {
       LocalizedStringResource("risk.pausedByYou", defaultValue: "Operator pause", bundle: L10n.bundle)
@@ -967,7 +970,7 @@ enum L10n {
       LocalizedStringResource("settings.failing", defaultValue: "\(count) failing", bundle: L10n.bundle)
     }
     static func brokerCounts(_ positions: Int, _ orders: Int) -> LocalizedStringResource {
-      LocalizedStringResource("settings.brokerCounts", defaultValue: "\(positions) pos · \(orders) orders", bundle: L10n.bundle)
+      LocalizedStringResource("settings.brokerCounts", defaultValue: "positions: \(positions) · orders: \(orders)", bundle: L10n.bundle)
     }
     static func stops(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("settings.stops", defaultValue: "\(verified) of \(total) verified", bundle: L10n.bundle)

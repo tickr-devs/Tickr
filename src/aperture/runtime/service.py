@@ -12,7 +12,7 @@ import time
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -39,7 +39,7 @@ from aperture.engine.manual import flatten_deadline
 from aperture.risk.admission import Admission, AdmissionLimits, session_refusal
 from aperture.risk.causes import AdmissionCause
 from aperture.runtime import stopmarker
-from aperture.runtime.account import account_document
+from aperture.runtime.account import account_document, record_reconcile
 from aperture.runtime.alerts import AlertKind
 from aperture.runtime.dayend import DayEnd
 from aperture.runtime.protection import LatencyLog, busy
@@ -149,6 +149,9 @@ class Service:
         self._skipping: str | None = None  # cause of the current protect-first episode
         self.stopped_by: str | None = None  # command_id of an obeyed stop-bot command
         self._account_failing = False  # the last account file write failed (journaled once)
+        # The records disagreed with the broker on the last successful reconciliation
+        # (record_reconcile: a disagreement is recorded once two passes in a row show it).
+        self._disagreed = False
         # Stop confirmation time of each closed trade shown in status (final once closed).
         self._stop_timing: dict[str, Decimal | None] = {}
         # Entry send of each trade shown, once final (trade closed, or its journal unreadable).
@@ -440,7 +443,9 @@ class Service:
         self._feed_observers()
         observers = self.observers
         self.market.observer_watch = (set() if observers is None
-                                      else set(observers.watching(self.now())))
+                                      else set(observers.watching(
+                                          self.now(), timedelta(seconds=float(
+                                              self.config.observers.watching_seconds)))))
 
     def _feed_observers(self) -> None:
         """The contexts the active strategy just saw go to the observers, after all broker
@@ -729,7 +734,10 @@ class Service:
         if not reconcile:
             self.engine.step()
         elif ok:
+            self._disagreed = record_reconcile(self.engine, self._disagreed)
             self.write_account()
+        else:
+            self._disagreed = False  # a failed read: the next two must agree again
         if ok and not self._broker_read_failing():
             self.last_broker_read_at = self.now()
 
@@ -746,6 +754,8 @@ class Service:
         orders = self.config.orders
         self.write_status()
         self.engine.recover()
+        # Nothing when the startup reconcile did not read.
+        self._disagreed = record_reconcile(self.engine, False)
         if not self._broker_read_failing():
             self.last_broker_read_at = self.now()
             self.write_account()
