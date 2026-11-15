@@ -13,13 +13,28 @@ struct OverviewView: View {
 
   /// Columns of the three-column grid the Positions card spans.
   static let positionsColumns = 2
+  /// Narrowest screen, in points, with the day's result beside the header: the mark, the name,
+  /// its badges and the result column. Measured on the screen's width, which the window sets, so
+  /// the choice never feeds back into it.
+  static let headerBesideResultMinWidth: CGFloat = 1000
+
+  @State private var headerBesideResult = true
 
   var body: some View {
     ScrollView {
       VStack(spacing: Tokens.Space.l) {
-        HStack(alignment: .top, spacing: Tokens.Space.xl) {
-          Header().rise(step: Order.header.rawValue)
-          DayResult().frame(width: Tokens.Size.dayResultWidth).rise(step: Order.result.rawValue)
+        // The day's result beside the header; under it on a narrower screen (side by side they
+        // were wider than a 1000-point window and pushed every card off the right edge).
+        if headerBesideResult {
+          HStack(alignment: .top, spacing: Tokens.Space.xl) {
+            Header().rise(step: Order.header.rawValue)
+            DayResult().frame(width: Tokens.Size.dayResultWidth).rise(step: Order.result.rawValue)
+          }
+        } else {
+          VStack(alignment: .leading, spacing: Tokens.Space.l) {
+            Header().rise(step: Order.header.rawValue)
+            DayResult().rise(step: Order.result.rawValue)
+          }
         }
         LiveFlowCard().rise(step: Order.flow.rawValue)
         WatchingCard().rise(step: Order.watching.rawValue)
@@ -57,6 +72,9 @@ struct OverviewView: View {
         }
       }
       .padding(Tokens.Space.xl)
+    }
+    .onGeometryChange(for: Bool.self) { $0.size.width >= Self.headerBesideResultMinWidth } action: {
+      headerBesideResult = $0
     }
   }
 
