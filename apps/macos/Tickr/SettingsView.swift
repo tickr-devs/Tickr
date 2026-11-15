@@ -473,11 +473,11 @@ private struct EnvironmentSettings: View {
     return [current] + known
   }
 
-  /// "SANDBOX · gate open" for the environment in use, "PRODUCTION · closed" for the others.
+  /// "SANDBOX · gate open" for the environment in use; only the name for the others (the app
+  /// knows nothing about an environment it is not connected to) and before the first status.
   private func label(_ raw: String, active: Bool) -> String {
     let name = ApiText.environment(raw).localizedUppercase
-    guard active else { return name + Format.itemSeparator + String(localized: L10n.Settings.gateClosed) }
-    guard let open = model.status?.tradingGate.open else { return name }
+    guard active, let open = model.status?.tradingGate.open else { return name }
     return name + Format.itemSeparator + String(localized: open ? L10n.Settings.gateOpenShort : L10n.Settings.gateClosedShort)
   }
 
