@@ -456,6 +456,21 @@ def test_observer_trade_without_quantity_has_r_only(api, cfg):
     assert trade["cause"] == "no recorded whole quantity: result in R only"
 
 
+def test_observer_trade_repeating_a_traded_signal_is_listed_with_its_cause(api, cfg):
+    """After the 10:05 trade is stopped out, the same signal at 10:20 is deduplicated."""
+    def signal(record):
+        return replace(record, decision=replace(record.decision, setup="x",
+                                                trigger=Decimal("12.05")))
+    _write(DecisionLog.from_config(cfg), signal(_enter()), signal(_enter(minute=20)))
+    _capture(cfg)
+    trades, cause, _ = _trades(api)
+    assert cause is None and trades[0]["cause"] is None
+    assert [t["at"] for t in trades] == ["2026-11-16T15:05:00.000Z", "2026-11-16T15:20:00.000Z"]
+    assert trades[1]["result_r"] is None and trades[1]["cause"] == (
+        "skipped_same_signal: the same signal (setup x, trigger 12.05) already made a "
+        "simulated trade of ABCD that day")
+
+
 def test_observer_trades_are_capped_oldest_first(cfg):
     log = DecisionLog.from_config(cfg)
     _write(log, _enter(minute=7, symbol="WXYZ"), _enter(), _enter(minute=6, symbol="EFGH"))
