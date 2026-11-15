@@ -6,7 +6,7 @@ public struct ChartEvent: Hashable, Sendable, Identifiable {
   public enum Kind: Hashable, Sendable {
     /// The first WATCH of a run of them.
     case watch
-    /// An ENTER the platform took or has not refused.
+    /// An ENTER the platform took.
     case enter
     /// An ENTER the platform refused.
     case refused
@@ -40,7 +40,13 @@ public struct ChartEvent: Hashable, Sendable, Identifiable {
   static func kind(_ decision: DecisionV1) -> Kind? {
     switch decision.action {
     case .watch: .watch
-    case .enter: decision.admission == .refused ? .refused : .enter
+    case .enter:
+      switch decision.admission {
+      case .taken: .enter
+      case .refused: .refused
+      // Never evaluated (an observer's) or without an admission: nothing to claim on the chart.
+      case .notEvaluated, .notApplicable: nil
+      }
     case .ignore, .hold, .exit: nil
     }
   }

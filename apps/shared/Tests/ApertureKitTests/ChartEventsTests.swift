@@ -55,6 +55,14 @@ struct ChartEventsTests {
     #expect(events.map(\.kind) == [.watch])
   }
 
+  @Test("An ENTER the platform never evaluated is not marked as an entry")
+  func notEvaluated() throws {
+    let events = ChartEvent.make([
+      try decision(1, "ENTER", admission: "not_evaluated"), try decision(2, "ENTER", admission: "not_applicable"),
+    ], candles: candles(10))
+    #expect(events.isEmpty)
+  }
+
   @Test("Two runs of one kind in one longer candle make one mark")
   func sameCandle() throws {
     let events = ChartEvent.make([

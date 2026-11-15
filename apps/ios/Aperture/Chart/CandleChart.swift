@@ -261,22 +261,24 @@ struct CandleChart: View {
   @ChartContentBuilder
   private func positionMarks(_ position: Position) -> some ChartContent {
     let entry = ChartFormat.double(position.entryPrice)
-    levelLines(entry: entry, stop: position.stop.price.map(ChartFormat.double))
+    levelLines(entry: entry, stop: position.stop.price.map(ChartFormat.double),
+      protected: position.stop.state.isProtected)
     PointMark(
       x: .value(Plot.time, position.openedAt.date),
       y: .value(Plot.entry, entry))
       .symbol { marker(Image(systemName: "arrowtriangle.up.fill"), Palette.info) }
   }
 
-  /// Dashed lines across the chart at an entry and its stop.
+  /// Dashed lines across the chart at an entry and its stop; a stop the broker has not proven
+  /// working is amber, not red.
   @ChartContentBuilder
-  private func levelLines(entry: Double, stop: Double?) -> some ChartContent {
+  private func levelLines(entry: Double, stop: Double?, protected: Bool = true) -> some ChartContent {
     RuleMark(y: .value(Plot.entry, entry))
       .foregroundStyle(Palette.info.opacity(Tokens.Opacity.border))
       .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dash))
     if let stop {
       RuleMark(y: .value(Plot.stop, stop))
-        .foregroundStyle(Palette.loss.opacity(Tokens.Opacity.border))
+        .foregroundStyle(Self.stopColour(protected: protected).opacity(Tokens.Opacity.border))
         .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dash))
     }
   }
@@ -290,6 +292,10 @@ struct CandleChart: View {
       .symbolSize(Self.eventSize)
       .foregroundStyle(Self.colour(event.kind))
       .accessibilityLabel(Text(Self.title(event.kind)))
+  }
+
+  static func stopColour(protected: Bool) -> Color {
+    protected ? Palette.loss : Palette.warning
   }
 
   static func colour(_ kind: ChartEvent.Kind) -> Color {
@@ -317,13 +323,14 @@ struct CandleChart: View {
   /// The last close, then each entry and stop on the chart (the trades' and the open position's).
   private var priceTags: [PriceTag] {
     var tags: [PriceTag] = []
-    var levels = trades.map { (ChartFormat.double($0.entryPrice), $0.stopPrice.map(ChartFormat.double)) }
+    var levels = trades.map { (ChartFormat.double($0.entryPrice), $0.stopPrice.map(ChartFormat.double), true) }
     if let position {
-      levels.append((ChartFormat.double(position.entryPrice), position.stop.price.map(ChartFormat.double)))
+      levels.append((ChartFormat.double(position.entryPrice), position.stop.price.map(ChartFormat.double),
+        position.stop.state.isProtected))
     }
-    for (entry, stop) in levels {
+    for (entry, stop, protected) in levels {
       tags.append(PriceTag(price: entry, fill: Palette.info))
-      if let stop { tags.append(PriceTag(price: stop, fill: Palette.loss)) }
+      if let stop { tags.append(PriceTag(price: stop, fill: Self.stopColour(protected: protected))) }
     }
     if let last = series.candles.last {
       tags.append(PriceTag(price: last.close, fill: last.isUp ? Palette.profit : Palette.loss))
