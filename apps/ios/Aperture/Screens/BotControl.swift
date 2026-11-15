@@ -19,23 +19,23 @@ struct BotControl: ViewModifier {
         Text(severeMessage(command))
       }
       .confirmationDialog(Text(title), isPresented: $isPresented, titleVisibility: .visible) {
-      if let status = model.status, model.canCommand {
-        if status.entryStop {
-          Button { run(.entryStop(on: false)) } label: { Text(L10n.Control.resume) }
-        } else {
-          Button { run(.entryStop(on: true)) } label: { Text(L10n.Control.pause) }
+        if let status = model.status, model.canCommand {
+          if status.entryStop {
+            Button { run(.entryStop(on: false)) } label: { Text(L10n.Control.resume) }
+          } else {
+            Button { run(.entryStop(on: true)) } label: { Text(L10n.Control.pause) }
+          }
+          Button { run(.cancelOwnOrders) } label: { Text(L10n.Control.cancelOrders) }
+          Button(role: .destructive) { run(.flatten) } label: { Text(L10n.Control.flattenAll) }
+          if status.botState == .running {
+            Button(role: .destructive) { severe = .stopBot } label: { Text(L10n.Control.stopBot) }
+          }
+          Button(role: .destructive) { severe = .emergency } label: { Text(L10n.Control.emergency) }
         }
-        Button { run(.cancelOwnOrders) } label: { Text(L10n.Control.cancelOrders) }
-        Button(role: .destructive) { run(.flatten) } label: { Text(L10n.Control.flattenAll) }
-        if status.botState == .running {
-          Button(role: .destructive) { severe = .stopBot } label: { Text(L10n.Control.stopBot) }
-        }
-        Button(role: .destructive) { severe = .emergency } label: { Text(L10n.Control.emergency) }
+        Button(role: .cancel) {} label: { Text(L10n.Common.cancel) }
+      } message: {
+        Text(L10n.Control.message)
       }
-      Button(role: .cancel) {} label: { Text(L10n.Common.cancel) }
-    } message: {
-      Text(L10n.Control.message)
-    }
   }
 
   private var title: LocalizedStringResource {
