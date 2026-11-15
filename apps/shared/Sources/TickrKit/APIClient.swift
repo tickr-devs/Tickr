@@ -21,7 +21,6 @@ public enum OperatorCommand: Hashable, Sendable {
   static let cancelOwnOrdersPath = "/commands/cancel-own-orders"
   static let flattenPath = "/commands/flatten"
   static let stopBotPath = "/commands/stop-bot"
-  static let startBotPath = "/commands/start-bot"
   static let emergencyPath = "/commands/emergency"
   /// The flatten body's key for one symbol.
   static let symbolKey = "symbol"
@@ -114,6 +113,7 @@ public struct APIClient: Sendable {
   static let jobsPath = "/jobs"
   static let journalPath = "/journal"
   static let labReplayPath = "/lab/replay"
+  static let startBotPath = "/commands/start-bot"
   /// Remote port only: redeem a pairing link's one-time code for the bearer token.
   static let pairPath = "/pair"
   /// Body key of the pairing code.
