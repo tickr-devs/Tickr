@@ -59,6 +59,7 @@ class Evaluator:
 
 class Market:
     watch: set[str] = set()
+    observer_watch: set[str] = set()
     discovery = None
 
     def tick(self, *, discover: bool = True) -> None:
@@ -73,7 +74,8 @@ def wire(tmp_path: Path, observer: Observer, symbols: list[str], queue_size: int
     bot = Bot(tmp_path)
     observers = ObserverSet([LoadedStrategy("obs", observer)],
                             DecisionLog(tmp_path / "decisions"),
-                            CFG.observers.max_evaluation_seconds, queue_size)
+                            CFG.observers.max_evaluation_seconds, queue_size,
+                            CFG.risk.max_quote_age_seconds, CFG.risk.max_clock_skew_seconds)
     bot.service.market = Market()  # type: ignore[assignment]
     bot.service.evaluator = Evaluator(bot, symbols)  # type: ignore[assignment]
     bot.service.observers = observers
@@ -127,3 +129,18 @@ def test_an_error_in_the_hook_switches_observers_off_and_the_loop_goes_on(tmp_pa
     assert stopped.body["error"] == "RuntimeError"
     assert [a.body["kind"] for a in bot.store.journal(ALERT)] == [
         AlertKind.OBSERVERS_STOPPED.value]
+
+
+def test_observer_watch_symbols_reach_the_market_and_go_when_observers_stop(tmp_path):
+    bot, observers = wire(tmp_path, Observer(), ["ABC"])
+    bot.service._evaluate()
+    assert observers.wait_idle(5)
+    bot.service._evaluate()
+    assert bot.service.market.observer_watch == {"ABC"}
+
+    def broken(context, at):
+        raise RuntimeError("hook bug")
+
+    observers.on_evaluation = broken  # type: ignore[method-assign]
+    bot.service._evaluate()
+    assert bot.service.observers is None and bot.service.market.observer_watch == set()

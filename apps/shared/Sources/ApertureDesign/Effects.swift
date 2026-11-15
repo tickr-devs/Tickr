@@ -3,36 +3,67 @@ import SwiftUI
 // Small animated pieces shared by the operator apps. Motion is part of the design on every screen;
 // each piece falls back to a still version when the person has Reduce Motion on.
 
-/// A status dot with a ring that keeps expanding and fading out, meaning "live".
+/// A status dot. While `pulsing`, a ring expands and fades out once each time `event` changes (a new
+/// status read, a fill, a state change): motion only on real events, never a loop. With no event it
+/// stays still.
 public struct PulseDot: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var expanded = false
   let color: Color
   let size: CGFloat
   let pulsing: Bool
+  let event: AnyHashable?
 
-  public init(_ color: Color, size: CGFloat = Tokens.Size.dot, pulsing: Bool = true) {
+  public init(_ color: Color, size: CGFloat = Tokens.Size.dot, pulsing: Bool = true, event: AnyHashable? = nil) {
     self.color = color
     self.size = size
     self.pulsing = pulsing
+    self.event = event
   }
 
   public var body: some View {
     Circle()
       .fill(color)
       .frame(width: size, height: size)
-      .overlay {
-        if pulsing && !reduceMotion {
-          Circle()
-            .stroke(color, lineWidth: Tokens.Stroke.bold)
-            .scaleEffect(expanded ? Tokens.Motion.pulseScale : 1)
-            .opacity(expanded ? 0 : Tokens.Opacity.medium)
-            .animation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false),
-              value: expanded)
-        }
-      }
-      .onAppear { expanded = true }
+      .eventPulse(Circle(), color: color, scale: Tokens.Motion.pulseScale, event: pulsing ? event : nil)
       .accessibilityHidden(true)
+  }
+}
+
+/// The steps of one event pulse: hidden, shown at the outline, grown and faded.
+enum PulsePhase: CaseIterable {
+  case rest, start, end
+}
+
+/// Draws `shape`'s outline around the view and plays one expanding, fading pulse each time `event`
+/// changes. Nothing moves without a new event or with Reduce Motion on.
+struct EventPulse<S: Shape>: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let shape: S
+  let color: Color
+  let scale: CGFloat
+  let event: AnyHashable?
+
+  func body(content: Content) -> some View {
+    content.overlay {
+      if let event, !reduceMotion {
+        shape
+          .stroke(color, lineWidth: Tokens.Stroke.bold)
+          .phaseAnimator(PulsePhase.allCases, trigger: event) { ring, phase in
+            ring
+              .scaleEffect(phase == .end ? scale : 1)
+              .opacity(phase == .start ? Tokens.Opacity.medium : 0)
+          } animation: { phase in
+            phase == .end ? .easeOut(duration: Tokens.Motion.pulseSeconds) : nil
+          }
+          .allowsHitTesting(false)
+      }
+    }
+  }
+}
+
+extension View {
+  /// One pulse of `shape`'s outline per change of `event`; still without one.
+  func eventPulse<S: Shape>(_ shape: S, color: Color, scale: CGFloat, event: AnyHashable?) -> some View {
+    modifier(EventPulse(shape: shape, color: color, scale: scale, event: event))
   }
 }
 
@@ -61,11 +92,11 @@ public extension View {
   func rise(_ delay: Double = 0) -> some View { modifier(Rise(delay: delay)) }
 }
 
-/// A ring that fills to `fraction` (0...1) with a soft breathing halo behind it.
+/// A ring that fills to `fraction` (0...1) with a soft halo behind it. When the fraction changes the
+/// ring animates to it and the halo swells once; nothing moves between changes.
 public struct ResultRing<Center: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn = false
-  @State private var breathing = false
   let fraction: Double
   let color: Color
   let lineWidth: CGFloat
@@ -84,8 +115,13 @@ public struct ResultRing<Center: View>: View {
         .fill(RadialGradient(colors: [color.opacity(Tokens.Opacity.border), .clear], center: .center,
           startRadius: 0, endRadius: Tokens.Size.ringHalo))
         .padding(lineWidth)
-        .scaleEffect(breathing ? Tokens.Motion.breatheScale : 1)
-        .opacity(breathing ? Tokens.Opacity.overlay : Tokens.Opacity.faint)
+        .phaseAnimator([false, true], trigger: reduceMotion ? 0 : fraction) { halo, swelled in
+          halo
+            .scaleEffect(swelled ? Tokens.Motion.breatheScale : 1)
+            .opacity(swelled ? Tokens.Opacity.overlay : Tokens.Opacity.faint)
+        } animation: { _ in
+          .easeInOut(duration: Tokens.Motion.breatheSeconds)
+        }
       Circle().stroke(Palette.separator, lineWidth: lineWidth)
       Circle()
         .trim(from: 0, to: drawn ? fraction : 0)
@@ -97,11 +133,6 @@ public struct ResultRing<Center: View>: View {
     .padding(lineWidth / 2)
     .onAppear {
       withAnimation(reduceMotion ? nil : Tokens.Motion.fill) { drawn = true }
-      if !reduceMotion {
-        withAnimation(.easeInOut(duration: Tokens.Motion.breatheSeconds).repeatForever(autoreverses: true)) {
-          breathing = true
-        }
-      }
     }
   }
 }
@@ -170,15 +201,10 @@ extension TickerItem.Tone {
 /// A slowly scrolling strip of recent events (a marquee), paused when `moving` is false or Reduce
 /// Motion is on; then it is an ordinary horizontal scroll view.
 public struct Ticker: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var contentWidth: CGFloat = 0
   let items: [TickerItem]
   let moving: Bool
   /// Points per second.
   let speed: Double
-
-  /// Share of the strip's width that fades out at each end.
-  static let fadeEdge = 0.06
 
   public init(_ items: [TickerItem], moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed) {
     self.items = items
@@ -187,8 +213,45 @@ public struct Ticker: View {
   }
 
   public var body: some View {
+    Marquee(moving: moving && !items.isEmpty, speed: speed) { row }
+  }
+
+  private var row: some View {
+    HStack(spacing: Tokens.Space.xl) {
+      ForEach(items) { item in
+        HStack(spacing: Tokens.Space.s) {
+          Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
+          Text(item.text).foregroundStyle(Palette.textTertiary)
+        }
+        .font(Tokens.Typography.annotation)
+        .lineLimit(1)
+        .fixedSize()
+      }
+    }
+    .padding(.trailing, Tokens.Space.xl)
+  }
+
+}
+
+/// A row that scrolls slowly to the left in a loop, faded at both ends, paused when `moving` is
+/// false or Reduce Motion is on; then it is an ordinary horizontal scroll view.
+public struct Marquee<Row: View>: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var contentWidth: CGFloat = 0
+  let moving: Bool
+  /// Points per second.
+  let speed: Double
+  let row: Row
+
+  public init(moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed, @ViewBuilder row: () -> Row) {
+    self.moving = moving
+    self.speed = speed
+    self.row = row()
+  }
+
+  public var body: some View {
     Group {
-      if moving && !reduceMotion && !items.isEmpty {
+      if moving && !reduceMotion {
         TimelineView(.animation) { context in
           let t = context.date.timeIntervalSinceReferenceDate
           let offset = contentWidth > 0 ? -CGFloat((t * speed).truncatingRemainder(dividingBy: Double(contentWidth))) : 0
@@ -210,29 +273,19 @@ public struct Ticker: View {
       }
     }
     .mask(LinearGradient(
-      stops: [.init(color: .clear, location: 0), .init(color: .black, location: Self.fadeEdge),
-        .init(color: .black, location: 1 - Self.fadeEdge), .init(color: .clear, location: 1)],
+      stops: [.init(color: .clear, location: 0), .init(color: .black, location: MarqueeLayout.fadeEdge),
+        .init(color: .black, location: 1 - MarqueeLayout.fadeEdge), .init(color: .clear, location: 1)],
       startPoint: .leading, endPoint: .trailing))
     .accessibilityElement(children: .combine)
   }
+}
 
-  private var row: some View {
-    HStack(spacing: Tokens.Space.xl) {
-      ForEach(items) { item in
-        HStack(spacing: Tokens.Space.s) {
-          Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
-          Text(item.text).foregroundStyle(Palette.textTertiary)
-        }
-        .font(Tokens.Typography.annotation)
-        .lineLimit(1)
-        .fixedSize()
-      }
-    }
-    .padding(.trailing, Tokens.Space.xl)
-  }
+private enum MarqueeLayout {
+  /// Share of a marquee's width that fades out at each end.
+  static let fadeEdge = 0.06
+}
 
-  private struct WidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-  }
+private struct WidthKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

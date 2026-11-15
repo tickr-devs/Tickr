@@ -54,13 +54,15 @@ from aperture.broker.base import (
 from aperture.broker.budget import RequestBudget, RouteLimit
 from aperture.broker.status import map_status
 from aperture.calendar import ny_date_of
-from aperture.config import Config, GateResult, trading_gate
+from aperture.config import BARS_ROUTE, Config, GateResult, check_chart_slice, trading_gate
 from aperture.data.base import (
+    BarSpan,
     DelayedData,
     MarketDataError,
     QuoteListener,
     ScreenerKind,
     ScreenerRow,
+    SessionBar,
     StreamNotice,
     SubscriptionLimit,
 )
@@ -118,7 +120,7 @@ class Route(Enum):
     GAINERS_LOSERS = ("GET", "/market-data/screeners/gainers-losers/list", False)
     TOP_ACTIVES = ("GET", "/market-data/screeners/top-actives/list", False)
     SNAPSHOT = ("GET", "/market-data/stocks/snapshots/list", False)
-    BARS = ("POST", "/market-data/stocks/bars/list", False)
+    BARS = ("POST", BARS_ROUTE, False)
     PROFILES = ("GET", "/trading/instruments/stocks/profiles/list", False)
 
     @property
@@ -138,6 +140,10 @@ class Route(Enum):
 ACCOUNT_FREE_ROUTES = frozenset(
     {Route.ACCOUNTS, Route.GAINERS_LOSERS, Route.TOP_ACTIVES, Route.SNAPSHOT, Route.BARS,
      Route.PROFILES}
+)
+# The only routes a market-data-only transport (the API's chart reads) may send.
+MARKET_DATA_ROUTES = frozenset(
+    {Route.GAINERS_LOSERS, Route.TOP_ACTIVES, Route.SNAPSHOT, Route.BARS, Route.PROFILES}
 )
 
 
@@ -721,6 +727,9 @@ SECURITY_TYPE_KEY = "sub_category"
 BAR_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 # Bars are requested for the regular session only (the default); any other session is refused.
 BAR_SESSION_REGULAR = "RTH"
+# Chart M1 bars ask for every session probe M4 proved (PRE 04:00-09:29, RTH, ATH 16:00-19:59 ET;
+# no overnight bars), sent comma-joined as the SDK does (`set_trading_sessions`).
+BAR_SESSIONS_ALL = ("PRE", BAR_SESSION_REGULAR, "ATH")
 
 
 def epoch_ms_to_utc(value: Any, where: str) -> datetime:
@@ -865,6 +874,33 @@ def read_bars(body: Any) -> list[Bar]:
     return bars
 
 
+def read_history_bars(body: Any, span: BarSpan) -> list[SessionBar]:
+    """Chart bars body (same envelope as M1 bars) -> labelled bars, oldest first per symbol.
+    An M1 bar must carry a session of BAR_SESSIONS_ALL; a D bar's `time` is the provider's label
+    (never interpreted here) and its session, if any, is not read (probe C3)."""
+    out: list[SessionBar] = []
+    for symbol, rows in _bar_series(body):
+        own = []
+        for number, row in enumerate(rows):
+            at = f"bars[{symbol}][{number}]"
+            session = None
+            if span is BarSpan.M1:
+                session = str(_require(row, "trading_session", at))
+                if session not in BAR_SESSIONS_ALL:
+                    raise MalformedResponse(f"{at}: trading_session {session!r} not requested")
+            own.append(SessionBar(Bar(
+                symbol=symbol,
+                start=_bar_time(_require(row, "time", at), f"{at}.time"),
+                open=_decimal_field(row, "open", at),
+                high=_decimal_field(row, "high", at),
+                low=_decimal_field(row, "low", at),
+                close=_decimal_field(row, "close", at),
+                volume=_decimal_field(row, "volume", at),
+            ), session))
+        out.extend(sorted(own, key=lambda b: b.bar.start))
+    return out
+
+
 def _require_present(obj: Any, key: str, where: str) -> Any:
     """Like _require, but 0 is a value (delay_minutes = 0 means real time)."""
     if not isinstance(obj, Mapping) or key not in obj or obj[key] is None or obj[key] == "":
@@ -993,6 +1029,28 @@ class WebullMarketData:
             raise MalformedResponse(f"bars: symbols not requested: {', '.join(stray)}")
         return [b for b in bars if b.start < end]
 
+    def history_bars(self, symbol: str, span: BarSpan, end: datetime,
+                     count: int) -> list[SessionBar]:
+        """One chart page: `end_time` (exclusive, probe M4) and `count`, never `start_time`. M1
+        asks for PRE, RTH and ATH. Built only by `chart_market_data_from_config` (the API's own
+        transport and budget); the bot never calls it."""
+        if end.tzinfo is None or end.utcoffset() is None:
+            raise ValueError(f"naive end time {end!r}")
+        params: dict[str, Any] = {
+            "symbols": [symbol],
+            "category": self._category,
+            "timespan": span.value,
+            "count": str(count),
+            "end_time": int(end.timestamp() * MILLISECONDS_PER_SECOND),
+        }
+        if span is BarSpan.M1:
+            params["trading_sessions"] = ",".join(BAR_SESSIONS_ALL)
+        bars = read_history_bars(self._read(Route.BARS, params), span)
+        stray = sorted({b.bar.symbol for b in bars} - {symbol})
+        if stray:
+            raise MalformedResponse(f"bars: symbols not requested: {', '.join(stray)}")
+        return [b for b in bars if b.bar.start < end]
+
     def subscribe(self, symbols: Iterable[str], listener: QuoteListener) -> None:
         """Any failure (budget, HTTP, SDK) is a MarketDataError naming only its type: the
         caller is the trading loop, which must never be ended by a stream problem."""
@@ -1014,6 +1072,17 @@ class WebullMarketData:
             raise
         except Exception as exc:  # noqa: BLE001 - see subscribe
             raise MarketDataError(f"unsubscribe failed ({type(exc).__name__})") from None
+
+    def subscribe_optional(self, symbols: Iterable[str], listener: QuoteListener,
+                           budget_reserve: int) -> None:
+        if self._stream is None:
+            raise MarketDataError("no L1 stream configured for this adapter")
+        self._stream.subscribe_optional(symbols, listener, budget_reserve)
+
+    def unsubscribe_optional(self, symbols: Iterable[str], budget_reserve: int) -> None:
+        if self._stream is None:
+            raise MarketDataError("no L1 stream configured for this adapter")
+        self._stream.unsubscribe_optional(symbols, budget_reserve)
 
 
 # --------------------------------------------------------------------------------------------
@@ -1241,6 +1310,11 @@ class QuoteStream(Protocol):
 
     def unsubscribe(self, symbols: Iterable[str]) -> None: ...
 
+    def subscribe_optional(self, symbols: Iterable[str], listener: QuoteListener,
+                           budget_reserve: int) -> None: ...
+
+    def unsubscribe_optional(self, symbols: Iterable[str], budget_reserve: int) -> None: ...
+
 
 def quote_from_stream(result: Any, receipt_time: datetime) -> Quote | None:
     """SDK `QuoteResult` (basic{symbol, timestamp ms}, bids[], asks[] of {price, size}) -> Quote.
@@ -1316,10 +1390,12 @@ class StreamSession:
         self._sync_lock = threading.RLock()  # one _sync at a time: no duplicate subscribe POSTs
         self._symbols: set[str] = set()
         self._sent: set[str] = set()  # subscribed on the current connection
+        self._maybe_held: set[str] = set()  # see subscribe_optional; this connection only
         self._listener: QuoteListener | None = None
         self._send_subscribe: Callable[[list[str]], None] | None = None
         self._send_unsubscribe: Callable[[list[str]], None] | None = None
         self._reconnect: Callable[[], None] | None = None
+        self._generation = 0  # counts connects and disconnects: an optional send checks it
         self._connected = False
         self._up = False
 
@@ -1413,6 +1489,83 @@ class StreamSession:
         if up:
             self._sync_or_reconnect(raise_error=True)
 
+    def subscribe_optional(self, symbols: Iterable[str], listener: QuoteListener,
+                           budget_reserve: int) -> None:
+        """Subscribe symbols no position or entry depends on (discovery candidates, observer
+        symbols) without ever disturbing the connection: only while up, only within
+        `max_symbols` counting every symbol the provider may hold, and only while at least
+        `budget_reserve` subscribe requests stay free for the required symbols. A failed send
+        is reported to `on_error` and raised as MarketDataError, without a reconnect.
+
+        Symbols the provider may still hold although we no longer want them (the answer to a
+        failed optional subscribe was lost, or an optional unsubscribe failed or was refused)
+        are kept apart as maybe-held: counted against `max_symbols`, never sent by the
+        required sync (whose failure reconnects), and unsubscribed, optionally, before the
+        next optional subscribe goes out; if that cleanup fails, the subscribe is refused.
+        A new connection forgets them (the provider's count starts again)."""
+        with self._sync_lock:  # no _sync runs between the checks and the sends
+            with self._lock:
+                if self._listener is not listener:
+                    raise MarketDataError("optional subscribe needs the bound stream listener")
+                if not self._up:
+                    raise MarketDataError("optional subscribe needs a live stream in sync")
+                generation = self._generation
+                leftover = sorted(self._maybe_held - self._symbols)
+            if leftover:
+                self._send_optional(False, leftover, budget_reserve, generation)
+                with self._lock:
+                    if self._generation != generation:
+                        raise MarketDataError("optional cleanup raced a reconnect")
+                    self._maybe_held.difference_update(leftover)
+            with self._lock:
+                added = set(symbols) - self._symbols
+                if not added:
+                    return
+                held = self._symbols | self._sent | self._maybe_held
+                if len(held | added) > self._max_symbols:
+                    raise SubscriptionLimit(added, self._max_symbols, by_provider=False)
+            self._send_optional(True, sorted(added), budget_reserve, generation)
+            with self._lock:
+                if self._generation != generation:  # reconnected meanwhile: not on this one
+                    raise MarketDataError("optional subscribe raced a reconnect: dropped")
+                self._symbols.update(added)
+                self._sent.update(added)
+                self._maybe_held.difference_update(added)
+
+    def unsubscribe_optional(self, symbols: Iterable[str], budget_reserve: int) -> None:
+        """Drop symbols added by `subscribe_optional`, with the same guarantees. They leave
+        the desired set and the sent set whatever happens; when the request is refused or
+        fails they become maybe-held (see `subscribe_optional`)."""
+        with self._sync_lock:
+            with self._lock:
+                gone = set(symbols) & self._symbols
+                self._symbols.difference_update(gone)
+                sent = sorted(gone & self._sent)
+                self._sent.difference_update(sent)
+                up, generation = self._up, self._generation
+                if not up:  # no live connection to send on; the next one starts clean
+                    return
+                self._maybe_held.update(sent)
+            if sent:
+                self._send_optional(False, sent, budget_reserve, generation)
+                with self._lock:
+                    if self._generation == generation:
+                        self._maybe_held.difference_update(sent)
+
+    def _send_optional(self, subscribe: bool, symbols: list[str], budget_reserve: int,
+                       generation: int) -> None:
+        route = STREAM_SUBSCRIBE_PATH if subscribe else STREAM_UNSUBSCRIBE_PATH
+        if not self._budget.can_take(route, budget_reserve + 1):
+            raise MarketDataError(f"optional {route}: request budget kept for required symbols")
+        try:
+            self._send(subscribe, symbols)
+        except Exception as exc:  # noqa: BLE001 - budget, HTTP or SDK: never a reconnect here
+            with self._lock:
+                if self._generation == generation and subscribe:
+                    self._maybe_held.update(symbols)  # the answer may be lost: count them
+            self._on_error("subscribe-optional" if subscribe else "unsubscribe-optional", exc)
+            raise MarketDataError(f"optional {route} failed ({type(exc).__name__})") from None
+
     def _sync_or_reconnect(self, raise_error: bool,
                            rollback: Iterable[str] = ()) -> bool:
         """Sync; on failure drop `rollback` from the desired set, mark the transport down
@@ -1442,6 +1595,8 @@ class StreamSession:
     def on_connected(self) -> None:
         with self._lock:
             self._connected, self._up, self._sent = True, False, set()
+            self._maybe_held = set()
+            self._generation += 1
         if not self._sync_or_reconnect(raise_error=False):
             return
         with self._lock:
@@ -1453,6 +1608,8 @@ class StreamSession:
             was = self._connected or self._up
             self._connected = self._up = False
             self._sent = set()
+            self._maybe_held = set()
+            self._generation += 1
         if was or detail:
             self._notify(False, detail)
 
@@ -1557,6 +1714,13 @@ class SdkQuoteStream:
 
     def unsubscribe(self, symbols: Iterable[str]) -> None:
         self._session.unsubscribe(symbols)
+
+    def subscribe_optional(self, symbols: Iterable[str], listener: QuoteListener,
+                           budget_reserve: int) -> None:
+        self._session.subscribe_optional(symbols, listener, budget_reserve)
+
+    def unsubscribe_optional(self, symbols: Iterable[str], budget_reserve: int) -> None:
+        self._session.unsubscribe_optional(symbols, budget_reserve)
 
     def _run(self) -> None:
         """Connect and loop until stop(). Whenever the SDK loop ends (our deliberate
@@ -1674,17 +1838,23 @@ def _no_token_hook() -> None:
 
 class SdkTransport:
     """`Transport` over webull-openapi-python-sdk 3.0.3. `on_token_pending` runs at most once,
-    during construction, when the token waits for the owner's confirmation in the Webull app."""
+    during construction, when the token waits for the owner's confirmation in the Webull app.
+
+    `market_data_only` (the API's chart reads): the account id is never read and only
+    MARKET_DATA_ROUTES may be sent; any other route is refused before anything is sent."""
 
     def __init__(self, settings: WebullSettings,
-                 on_token_pending: Callable[[], None] = _no_token_hook) -> None:
+                 on_token_pending: Callable[[], None] = _no_token_hook,
+                 market_data_only: bool = False) -> None:
         if settings.trading_host not in settings.allowed_hosts:
             raise AdapterConfigError("trading_host is not on the host allowlist")
         self._host = settings.trading_host
         self._allowed = settings.allowed_hosts
+        self._routes = MARKET_DATA_ROUTES if market_data_only else frozenset(Route)
         app_key = _read_credential(settings.app_key_env)
         app_secret = _read_credential(settings.app_secret_env)
-        self._account_id = _read_credential(settings.account_id_env)
+        self._account_id = None if market_data_only else _read_credential(
+            settings.account_id_env)
 
         silence_sdk_loggers()  # SDK modules attach handlers at import time
         from webull.core.client import ApiClient
@@ -1735,12 +1905,16 @@ class SdkTransport:
             raise AdapterConfigError("SDK resolves to a host outside the allowlist")
 
     def is_own_account(self, account_id: str) -> bool:
-        return account_id == self._account_id
+        return self._account_id is not None and account_id == self._account_id
 
     def _scrub(self, text: str) -> str:
-        return text.replace(self._account_id, "<account>") if text else text
+        if not text or self._account_id is None:
+            return text
+        return text.replace(self._account_id, "<account>")
 
     def send(self, route: Route, params: Mapping[str, Any]) -> WireResponse:
+        if route not in self._routes:  # checked before anything is built or sent
+            raise AdapterConfigError(f"route {route.name} is not allowed on this transport")
         from webull.core.exception.exceptions import ClientException, ServerException
         from webull.core.request import ApiRequest
 
@@ -1810,6 +1984,12 @@ def settings_from_config(config: Config) -> WebullSettings:
 def budget_from_config(
     config: Config, clock: Callable[[], float] = time.monotonic
 ) -> RequestBudget:
+    """The bot's (and every bot-side tool's) request budget. With `[chart] webull_enabled` the
+    bars route keeps `[chart] requests_per_minute` fewer requests per 60 s: that slice belongs to
+    the API's chart budget (`chart_budget_from_config`), so both processes together never pass
+    the route limit even if Webull counts it per App Key. The slice's window and size are refused
+    when the config is loaded (`config.check_chart_slice`); checked again here for a config built
+    another way."""
     env = config.environment
     pause = float(env.rate_limit_cooldown_seconds)
     default = RouteLimit(env.requests_per_route_per_minute, SECONDS_PER_MINUTE, pause)
@@ -1817,7 +1997,23 @@ def budget_from_config(
         route: RouteLimit(count, float(window), pause)
         for route, (count, window) in env.route_limits.items()
     }
+    chart = config.chart
+    if chart.webull_enabled:
+        check_chart_slice(chart, config.environment_name, env)
+        bars = limits.get(Route.BARS.path, default)
+        limits[Route.BARS.path] = RouteLimit(bars.max_requests - chart.requests_per_minute,
+                                             SECONDS_PER_MINUTE, pause)
     return RequestBudget(default, limits, clock=clock)
+
+
+def chart_budget_from_config(
+    config: Config, clock: Callable[[], float] = time.monotonic
+) -> RequestBudget:
+    """The API's chart budget: `[chart] requests_per_minute` per 60 s on every route (only the
+    bars route is ever used), its own instance, never shared with the bot's."""
+    limit = RouteLimit(config.chart.requests_per_minute, SECONDS_PER_MINUTE,
+                       float(config.environment.rate_limit_cooldown_seconds))
+    return RequestBudget(limit, clock=clock)
 
 
 def stream_settings_from_config(config: Config) -> StreamSettings:
@@ -1856,6 +2052,23 @@ def market_data_from_config(
         md.profile_symbols_per_request,
         utc_now=lambda: datetime.now(UTC),
         stream=stream,
+    )
+
+
+def chart_market_data_from_config(
+    config: Config, transport: Transport | None = None,
+    budget: RequestBudget | None = None,
+) -> WebullMarketData:
+    """Market data for GET /chart in the API process: its own market-data-only SDK transport (no
+    account id; the same token folder as the bot, docs/webull-facts.md C1) and its own chart
+    budget. Refused unless `[chart] webull_enabled`."""
+    if not config.chart.webull_enabled:
+        raise AdapterConfigError("[chart] webull_enabled is false")
+    return market_data_from_config(
+        config,
+        transport if transport is not None
+        else SdkTransport(settings_from_config(config), market_data_only=True),
+        budget if budget is not None else chart_budget_from_config(config),
     )
 
 

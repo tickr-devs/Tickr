@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -22,7 +22,15 @@ from aperture.api.contract import (
     Agreement,
     BarsV1,
     BarV1,
+    ChartBarV1,
+    ChartInterval,
+    ChartRange,
+    ChartV1,
     CheckV1,
+    CleanCause,
+    CleanCauseKind,
+    CleanDay,
+    CleanVerdict,
     CommandAcceptedV1,
     CommandKind,
     CommandV1,
@@ -116,8 +124,26 @@ def documents() -> dict[str, object]:
         "pending-commands-v1.empty": PendingCommandsV1(commands=()),
         "error-v1": ErrorV1("forbidden_host", "Host 'evil.example:8766' is not allowed"),
         "days-v1": DaysV1("sandbox", (
-            DaySummary(DAY, 2, 1, 1, Decimal("2.50"), True),
-            DaySummary(DAY - timedelta(days=3), 0, 0, 0, Decimal("0"), False))),
+            DaySummary(DAY, 2, 1, 1, Decimal("2.50"), True, CleanDay(
+                CleanVerdict.UNKNOWN, "the day is not over", (), 41, T0 - timedelta(hours=6),
+                T0 + timedelta(minutes=5), None)),
+            DaySummary(DAY - timedelta(days=3), 0, 0, 0, Decimal("0"), False, CleanDay(
+                CleanVerdict.CLEAN, None, (), 80, T0 - timedelta(days=3, hours=6),
+                T0 - timedelta(days=3) + timedelta(hours=1), 9120)),
+            DaySummary(DAY - timedelta(days=4), 1, 0, 1, Decimal("-1.60"), True, CleanDay(
+                CleanVerdict.NOT_CLEAN, None, (
+                    CleanCause(CleanCauseKind.RECONCILE_MISMATCH,
+                               "foreign-order:manual-1: open order not in our records; "
+                               "reconcile: foreign-order:manual-1: open order not in our records",
+                               (8410, 8411)),
+                    CleanCause(CleanCauseKind.SAFETY_EXIT, "exit stream-lost for trade t-0007",
+                               (8502,))),
+                82, T0 - timedelta(days=4, hours=6), T0 - timedelta(days=4) + timedelta(hours=1),
+                8890)),
+            DaySummary(DAY - timedelta(days=5), 0, 0, 0, Decimal("0"), True, CleanDay(
+                CleanVerdict.UNKNOWN, "not recorded: no reconcile-checked row that date (the "
+                "bot records them since [orders] reconcile_proof_seconds was added)", (), 0,
+                None, None, 7001)))),
         "days-v1.empty": DaysV1("sandbox", ()),
         "day-v1": DayV1("sandbox", DAY, (
             DayTrade("t-0001", "WXYZ", Decimal("20"), Decimal("5.10"), Decimal("5.02"), T0,
@@ -144,6 +170,19 @@ def documents() -> dict[str, object]:
                 ("12.30", "12.38", "12.28", "12.36", "18450"),
                 ("12.36", "12.41", "12.33", "12.34", "9120"),
                 ("12.34", "12.52", "12.34", "12.50", "40211"))))),
+        # 5m candles around the regular open of 2026-11-16 (09:20 and 09:25 New York are
+        # pre-market, 09:30 is the first regular candle).
+        "chart-v1": ChartV1("ABCD", ChartInterval.M5, ChartRange.D1, "webull",
+                            datetime(2026, 11, 16, 14, 41, 2, 250000, tzinfo=UTC), None, tuple(
+            ChartBarV1(datetime(2026, 11, 16, 14, 20, tzinfo=UTC) + timedelta(minutes=5 * i),
+                       Decimal(o), Decimal(h), Decimal(lo), Decimal(c), Decimal(v), i < 2)
+            for i, (o, h, lo, c, v) in enumerate((
+                ("12.10", "12.18", "12.05", "12.16", "3120"),
+                ("12.16", "12.31", "12.15", "12.30", "5410"),
+                ("12.30", "12.52", "12.28", "12.47", "182300"))))),
+        "chart-v1.empty": ChartV1("ABCD", ChartInterval.D1, ChartRange.Y1, "webull",
+                                  datetime(2026, 11, 16, 14, 41, 2, 250000, tzinfo=UTC),
+                                  "no 1d bars from webull for ABCD in range 1y", ()),
         "account-v1": account(),
         "account-v1.mismatch": mismatch,
         "account-response-v1": AccountResponseV1(T0 + timedelta(seconds=4), account(),
@@ -228,7 +267,7 @@ def documents() -> dict[str, object]:
             FlowStopV1("t-0002", "EFGH", FlowStopState.NEVER_VERIFIED),
             FlowStopV1("t-0003", "ABCD", FlowStopState.PENDING)),
             FlowReconcileV1(Agreement.MATCH, None, T0, None, (
-                Fence("foreign_exposure", T0, "A position not opened by the bot exists."),),
+                Fence("foreign-position:EFGH", T0, "position not opened by this bot"),),
                 None)),
         "flow-v1.empty": FlowV1("sandbox", DAY - timedelta(days=3), (), tuple(
             FlowStageV1(stage, 0, ()) for stage in FlowStage), (), FlowReconcileV1(

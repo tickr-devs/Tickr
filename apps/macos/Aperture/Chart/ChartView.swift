@@ -6,7 +6,7 @@ import SwiftUI
 /// open position's entry and stop. Live days refresh as new M1 bars arrive.
 struct ChartView: View {
   @Environment(AppModel.self) private var model
-  @State private var chart = ChartModel()
+  @Environment(ChartModel.self) private var chart
   @State private var viewport = Viewport()
   @AppStorage(Keys.symbol) private var picked = ""
   @AppStorage(Keys.timeframe) private var timeframe: Timeframe = .m1
@@ -57,10 +57,6 @@ struct ChartView: View {
 
   /// Width of the symbol picker, in points.
   static let pickerWidth: CGFloat = 150
-  /// Least size of the chart screen beside the sidebar and the inspector, in points: sidebar
-  /// (200) + inspector (240) + this stays under the window's least width (1000).
-  static let minimumWidth: CGFloat = 420
-  static let minimumHeight: CGFloat = 420
   /// Height of the separators between control groups, in points.
   static let separatorHeight: CGFloat = 18
   /// Key equivalent of the decisions inspector (with ⌥⌘), as for inspectors in Apple's apps.
@@ -77,23 +73,26 @@ struct ChartView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      controls
-      content
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    // The decisions as a fixed-width pane beside the chart, not an `.inspector` split: on
+    // macOS 27 every split-view form (nested in the screen, or a column of the window) let the
+    // columns' least sizes and safe areas resize each other inside AppKit's layout pass until it
+    // threw ("needs another Update Constraints in Window pass").
+    HStack(spacing: 0) {
+      VStack(alignment: .leading, spacing: Tokens.Space.m) {
+        controls
+        content
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      .padding(Tokens.Space.xl)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      if showDecisions {
+        Divider()
+        DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: chart.hasSymbol)
+          .frame(width: DecisionsInspector.width)
+          .transition(.move(edge: .trailing))
+      }
     }
-    .padding(Tokens.Space.xl)
-    // A fixed least size, the content cut at it: the screen's least size must not follow its
-    // content (controls that switch layout, a readout whose values change under the pointer).
-    // When it did, the split view resized this column inside its own layout pass, the new
-    // width changed the content's least size again, and AppKit threw ("needs another Update
-    // Constraints in Window pass") with the inspector open in a narrow window.
-    .frame(minWidth: Self.minimumWidth, maxWidth: .infinity, minHeight: Self.minimumHeight,
-      maxHeight: .infinity, alignment: .topLeading)
-    .clipped()
-    .inspector(isPresented: $showDecisions) {
-      DecisionsInspector(decisions: chart.decisions, error: chart.decisionsError, hasSymbol: symbol != nil)
-    }
+    .animation(Tokens.Motion.standard, value: showDecisions)
     .task(id: LoadKey(baseURL: model.baseURL, symbol: symbol, day: model.shownDay, live: model.isLive)) {
       await keepLoading()
     }
@@ -115,6 +114,7 @@ struct ChartView: View {
 
   private func keepLoading() async {
     chart.clear()
+    chart.hasSymbol = symbol != nil
     viewport = Viewport()
     guard let symbol else { return }
     let baseURL = model.baseURL
@@ -388,6 +388,7 @@ struct Viewport: Equatable {
 #Preview {
   ChartView()
     .environment(PreviewAPI.model())
+    .environment(ChartModel())
     .frame(width: PreviewAPI.windowWidth, height: PreviewAPI.windowHeight)
 }
 #endif

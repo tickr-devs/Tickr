@@ -4,6 +4,12 @@
 `[api] remote_port` (bearer token always required). `pair` makes a new bearer token for the phone,
 keeps only its SHA-256 under data_dir, and leaves the pairing link in a 0600 file there for the
 owner to move to the phone. The token is never printed. A new pairing replaces the old one.
+
+With `[chart] webull_enabled`, `serve` builds the chart's own Webull market-data client in a
+background thread once serving has begun (app key and secret from the environment, never the
+account id; it may wait for a token confirmation like the bot). Status and commands (stop,
+emergency) never wait for it: until it is ready GET /chart answers 503 "starting", and if the
+build fails it answers 503 with the cause.
 """
 
 from __future__ import annotations
@@ -11,10 +17,59 @@ from __future__ import annotations
 import argparse
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from aperture import config as config_module
-from aperture.api.server import make_remote_server, make_server, pair, settings_from_config
+from aperture.api.server import (
+    ApiServer,
+    make_remote_server,
+    make_server,
+    pair,
+    settings_from_config,
+)
+from aperture.broker.base import BrokerError
+from aperture.data.base import MarketData
+
+CHART_STARTING = "chart market data is starting: its Webull client is still being built"
+
+
+def _webull_chart_source(cfg: config_module.Config) -> MarketData:
+    from aperture.broker.webull import chart_market_data_from_config
+
+    return chart_market_data_from_config(cfg)
+
+
+def attach_chart_source(
+    server: ApiServer, cfg: config_module.Config,
+    build: Callable[[config_module.Config], MarketData] = _webull_chart_source,
+) -> threading.Thread | None:
+    """Give GET /chart its Webull source when `[chart] webull_enabled`; else leave it off. The
+    client is built in a daemon thread (returned) so nothing else the API serves waits for it;
+    GET /chart answers 503 while it builds and, if the build fails, 503 with the cause."""
+    if not cfg.chart.webull_enabled:
+        return None
+    server.chart.use(None, CHART_STARTING)
+
+    def build_source() -> None:
+        try:
+            source = build(cfg)
+        except (BrokerError, config_module.ConfigError) as exc:  # our own texts: no secrets
+            cause = f"chart market data unavailable: {type(exc).__name__}: {exc}"
+            server.chart.use(None, cause)
+            print(f"aperture api: GET /chart is off: {cause}", file=sys.stderr)
+            return
+        except Exception as exc:  # noqa: BLE001 - SDK text may carry a key or token: type only
+            cause = f"chart market data unavailable: client build failed ({type(exc).__name__})"
+            server.chart.use(None, cause)
+            print(f"aperture api: GET /chart is off: {cause}", file=sys.stderr)
+            return
+        server.chart.use(source)
+        print("aperture api: GET /chart is served from Webull market data", file=sys.stderr)
+
+    thread = threading.Thread(target=build_source, name="chart-source", daemon=True)
+    thread.start()
+    return thread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,7 +80,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="serve the API (default) or pair a phone")
     args = parser.parse_args(argv)
     try:
-        settings = settings_from_config(config_module.load(args.config))
+        cfg = config_module.load(args.config)
+        settings = settings_from_config(cfg)
         if args.command == "pair":
             link_file = pair(settings)
     except config_module.ConfigError as exc:
@@ -46,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(target=remote.serve_forever, daemon=True).start()
         print(f"aperture api for the phone on http://{settings.host}:{remote.server_port}/ "
               "(bearer token required; point tailscale serve here)", file=sys.stderr)
+    attach_chart_source(server, cfg)  # in the background: serving does not wait for it
     try:
         server.serve_forever()
     except KeyboardInterrupt:

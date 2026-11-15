@@ -12,7 +12,7 @@ import time
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,13 +25,21 @@ from aperture.api.history import (
     entry_send,
     trade_metrics,
 )
-from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
+from aperture.calendar import (
+    NEW_YORK,
+    CalendarCause,
+    CalendarRefused,
+    MarketDay,
+    SessionCalendar,
+)
 from aperture.config import Config, trading_gate
 from aperture.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeRow
 from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
+from aperture.risk.admission import Admission, AdmissionLimits, session_refusal
+from aperture.risk.causes import AdmissionCause
 from aperture.runtime import stopmarker
-from aperture.runtime.account import account_document
+from aperture.runtime.account import account_document, record_reconcile
 from aperture.runtime.alerts import AlertKind
 from aperture.runtime.dayend import DayEnd
 from aperture.runtime.protection import LatencyLog, busy
@@ -141,6 +149,9 @@ class Service:
         self._skipping: str | None = None  # cause of the current protect-first episode
         self.stopped_by: str | None = None  # command_id of an obeyed stop-bot command
         self._account_failing = False  # the last account file write failed (journaled once)
+        # The records disagreed with the broker on the last successful reconciliation
+        # (record_reconcile: a disagreement is recorded once two passes in a row show it).
+        self._disagreed = False
         # Stop confirmation time of each closed trade shown in status (final once closed).
         self._stop_timing: dict[str, Decimal | None] = {}
         # Entry send of each trade shown, once final (trade closed, or its journal unreadable).
@@ -416,7 +427,7 @@ class Service:
 
     def _evaluate(self) -> None:
         """The active strategy on the latest completed minute; its WATCH set feeds the L1
-        subscriptions (spec 6)."""
+        subscriptions (spec 6), and the observers' WATCH symbols a lower tier of them."""
         if self.evaluator is None or self.market is None:
             return
         found = self.market.discovery
@@ -430,6 +441,11 @@ class Service:
                                          run_id=self.engine.run_id)
         self.market.watch = set(self.evaluator.watch)
         self._feed_observers()
+        observers = self.observers
+        self.market.observer_watch = (set() if observers is None
+                                      else set(observers.watching(
+                                          self.now(), timedelta(seconds=float(
+                                              self.config.observers.watching_seconds)))))
 
     def _feed_observers(self) -> None:
         """The contexts the active strategy just saw go to the observers, after all broker
@@ -502,7 +518,58 @@ class Service:
         if self.entries_off is not None:
             return api.EntryBlock("strategy_not_loaded",
                                   f"Active strategy not loaded: {self.entries_off}")
-        return NOT_WIRED if self.evaluator is None else None
+        if self.evaluator is None:
+            return NOT_WIRED
+        return self._ordinary_block()
+
+    def _ordinary_block(self) -> api.EntryBlock | None:
+        """Why admission refuses every entry right now although nothing is wrong: no session,
+        outside the entry window, or a trade of our own is already open. Reported with
+        `attention = False` so the apps can say "not now" without a warning. The answers are
+        admission's own (its session check and its counts of our positions and orders), so
+        the status cannot say "allowed" while admission refuses. A calendar that cannot
+        answer is a real block."""
+        from aperture.runtime import entries  # entries imports this module
+
+        now = self.now()
+        day = entries.session_at(self.calendar, now)
+        refused = session_refusal(day, now, AdmissionLimits.from_config(self.config))
+        if refused is not None:
+            return self._session_block(day, refused)
+        if any(entries.own_exposure(self.engine)):
+            return api.EntryBlock("own_trade_open", "The bot already has a trade open.",
+                                  attention=False)
+        return None
+
+    def _session_block(self, day: MarketDay | CalendarRefused,
+                       refused: Admission) -> api.EntryBlock:
+        """Admission's session refusal in the status document's words."""
+        if isinstance(day, CalendarRefused):
+            if day.cause in (CalendarCause.WEEKEND, CalendarCause.HOLIDAY):
+                return api.EntryBlock("no_session_today", "No regular session today.",
+                                      attention=False)
+            if self.calendar is None:
+                return api.EntryBlock("calendar_unknown", "No trading calendar is loaded.")
+            return api.EntryBlock("calendar_unknown", f"Trading calendar: {day.cause}.")
+        if refused.cause is AdmissionCause.HALF_DAY:
+            return api.EntryBlock("no_session_today",
+                                  "Half day: the bot does not trade half days.",
+                                  attention=False)
+        if refused.cause is AdmissionCause.OUTSIDE_REGULAR_SESSION:
+            return api.EntryBlock(
+                "outside_regular_session",
+                f"Outside the regular session ({day.regular_open.astimezone(NEW_YORK):%H:%M}-"
+                f"{day.regular_close.astimezone(NEW_YORK):%H:%M} New York).", attention=False)
+        if refused.cause is AdmissionCause.AFTER_LAST_ENTRY:
+            session = self.config.session
+            times = day.session_times(session.last_entry_minutes_before_close,
+                                      session.flatten_minutes_before_close)
+            return api.EntryBlock(
+                "after_last_entry",
+                f"Past the last entry time ({times.last_entry.astimezone(NEW_YORK):%H:%M} "
+                "New York).",
+                attention=False)
+        return api.EntryBlock("calendar_unknown", f"Trading calendar: {refused.detail}.")
 
     def _daily_money_block(self) -> api.EntryBlock | None:
         """Entries the daily ceiling refuses anyway: the room left is below
@@ -667,7 +734,10 @@ class Service:
         if not reconcile:
             self.engine.step()
         elif ok:
+            self._disagreed = record_reconcile(self.engine, self._disagreed)
             self.write_account()
+        else:
+            self._disagreed = False  # a failed read: the next two must agree again
         if ok and not self._broker_read_failing():
             self.last_broker_read_at = self.now()
 
@@ -684,6 +754,8 @@ class Service:
         orders = self.config.orders
         self.write_status()
         self.engine.recover()
+        # Nothing when the startup reconcile did not read.
+        self._disagreed = record_reconcile(self.engine, False)
         if not self._broker_read_failing():
             self.last_broker_read_at = self.now()
             self.write_account()

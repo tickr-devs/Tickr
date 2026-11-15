@@ -1,8 +1,9 @@
 # Local API, version 1
 
 The bot is a headless service. Clients (the status page now, the macOS app later) talk only to this
-local API. The API process is separate from the bot and never talks to the broker: it serves the
-status and account files the bot writes and drops operator commands into an inbox the bot reads.
+local API. The API process is separate from the bot and never talks to the broker's trading or
+account routes: it serves the status and account files the bot writes and drops operator commands
+into an inbox the bot reads. Its one market-data read, `GET /chart`, is off by default (below).
 
 Run it: `python -m aperture.api --config config/bot.toml`. Settings are in `config/bot.toml` `[api]`.
 
@@ -73,9 +74,10 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/status` | `200` `status-response-v1`, always this shape. |
 | GET | `/commands/pending` | `200` `pending-commands-v1`: commands written but not yet consumed. |
 | GET | `/schema` | `200` all schemas by name. |
-| GET | `/days` | `200` `days-v1`: every New York date with records (closed trades, a bot run, captured data), newest first. |
+| GET | `/days` | `200` `days-v1`: every New York date with records (closed trades, a bot run, captured data), newest first, each with its clean-day verdict (`clean`). |
 | GET | `/days/<YYYY-MM-DD>` | `200` `day-v1`: trades closed that New York date and the symbols with captured M1 bars. A date without records answers with empty lists. |
 | GET | `/bars?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `bars-v1`: captured M1 bars of one symbol on one date, oldest first. |
+| GET | `/chart?symbol=<ticker>&interval=<1m\|5m\|30m\|1h\|1d\|1w\|1mo>&range=<1d\|5d\|1m\|3m\|1y>` | `200` `chart-v1`: candles of any US stock from market data; `400`, `429` `rate_limited`, `503` `unavailable`. |
 | GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). |
@@ -95,7 +97,8 @@ Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1}`:
 `forbidden_host` / `forbidden_origin` 403, `not_found` 404, `method_not_allowed` 405,
 `unauthorized` 401 (remote request without the paired token),
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
-`too_many_pending` 429, `conflict` 409 (an `Idempotency-Key` already used for another command),
+`too_many_pending` 429, `rate_limited` 429 (GET /chart: its request budget is spent; `Retry-After`),
+`conflict` 409 (an `Idempotency-Key` already used for another command),
 `internal` 500, `unavailable` 503 (history cannot be read now: database of another schema
 version, unreadable capture file).
 
@@ -106,6 +109,17 @@ missing, invalid or dated in the future. `age_seconds` = `served_at - status.wri
 `stale` is true when the age exceeds `[api] status_stale_seconds`. `summary` is the one line to
 show first, in plain words: the single entry-blocking reason, "Entries allowed.", or why the status
 cannot be trusted. Clients should poll every `poll_seconds`.
+
+`entry_block` is `null` only when admission could take an entry now. Its `cause` is a stable
+code and `attention` says how to show it. `attention: true` is a real block (trading gate,
+operator pause, a fence: the code is the fence name with `_`, a daily ceiling, strategy not
+loaded, `calendar_unknown`). `attention: false` is an ordinary state that passes on its own:
+`no_session_today`, `outside_regular_session`, `after_last_entry`, `own_trade_open`.
+`fences[].kind` is the bot's fence name, with its key after a colon when it has one
+(`foreign-position:ABCD`, `foreign-order:<client order id>`, `broker-read-failed:open-orders`,
+`unprotected:<trade>`): match the part before the colon.
+`attention` was added after version 1 shipped: a reader takes a document without it as
+`attention: true`; the bot always writes it.
 
 Daily loss money (spec 7, check 6), exactly as the bot's admission computes it; `null` means
 unknown (a trade closed today has fills without a known price), never zero:
@@ -161,6 +175,64 @@ fill-weighted averages, `stop_price` is the first protective stop sent (null if 
 received when the provider revised one. On today's file a last line still being written is not
 read yet. Only M1 is served; clients aggregate M5/M15 and compute indicators themselves.
 Query strings take exactly the documented parameters, each once; anything else is `bad_request`.
+
+#### Clean day
+
+Every `days-v1` entry has `clean`: did the broker and the bot's records agree all that New York
+date? Built only from the bot's journal (`src/aperture/api/cleanday.py`), rows of runs of the
+configured environment, bucketed by the New York date of their journal time. Display only.
+
+```json
+"clean": {
+  "verdict": "not_clean",
+  "cause": null,
+  "causes": [{"kind": "safety_exit", "text": "exit stream-lost for trade t7", "journal_seqs": [8502]}],
+  "reconcile_rows": 82,
+  "first_reconcile_at": "2026-11-12T14:20:01.000Z",
+  "last_reconcile_at": "2026-11-12T21:05:00.000Z",
+  "day_end_seq": 8890
+}
+```
+
+- The record: after every successful reconciliation (positions and open orders read) the bot
+  journals `reconcile-checked` `{matches_records, mismatch}` (the same test and text as
+  account-v1) when the answer differs from the last such row, and otherwise at most once per
+  `[orders] reconcile_proof_seconds` (300). A failed read writes none. Dates before this row
+  existed have none. A disagreement is recorded only once confirmed: a mismatch fence is set,
+  or the records disagree on two successful reconciliations in a row (a failed read in between
+  starts the count again). One pass alone can disagree for a moment: reconcile reads open
+  orders, then its step places the stop for a fill it just saw, so the stop is live in the
+  records but not in that read; such a pass writes no row.
+- `not_clean` when any of these rows exists; `causes` has one entry per kind, `journal_seqs`
+  the rows (`journal.seq`) that prove it:
+  - `reconcile_mismatch`: a `reconcile-checked` row with `matches_records` false that date (a
+    reconciliation that saw an unknown order outcome counts too: account-v1 calls that a
+    mismatch), or a `fence-set` row that date of `foreign-position`, `foreign-order`,
+    `quantity-mismatch`, `resurrected`, `order-missing` or `over-protected`;
+  - `unknown_order_outcome`: an `unknown-order`, `status-unknown`, `cancel-unknown` or
+    `replace-unresolved` fence set before the end of the date and not cleared by then (also
+    when it was set on an earlier date); its `fence-set` row;
+  - `unprotected_position`: a `fence-set` row of `unprotected-timeout` or `stop-rejected`, or an
+    `unprotected-position` alert, that date (the short `unprotected` fence while a fresh fill's
+    stop is being verified is not a fault);
+  - `safety_exit`: an `exit-requested` row that date with cause `stop-rejected`,
+    `unprotected-too-long` or `stream-lost`, or an `emergency` command row (any outcome). A
+    session flatten or an operator flatten is not a fault;
+  - `day_end_not_clean`: the date's `day-end` row has `day_clean` false (not flat, records not
+    agreeing, or a trade still open).
+- Otherwise `unknown` with one `cause`, checked in this order: the date is today or later
+  (`the day is not over`, even with faults already recorded), no `reconcile-checked` row that
+  date (`not recorded: ...`), no `day-end` row (the bot was not running after the flatten
+  time), the day-end row has `day_clean` null (no broker reads), the session calendar cannot be
+  read or has no session that date (`calendar: ...`), or a gap in the regular session longer
+  than `[orders] reconcile_max_gap_seconds` (900; the bot down, or hours of failed reads):
+  `no reconcile-checked row from <time> to <time> (...)`. The gaps measured are between the last
+  row at or before the regular open (else the open itself), every row inside the session, and
+  the first row at or after the regular close (else the close; the early close on a half day).
+  A journal row of these kinds that cannot be read makes every date `unknown` with `journal
+  unreadable: ...`.
+- Otherwise `clean`. `reconcile_rows`, `first_reconcile_at`, `last_reconcile_at` and
+  `day_end_seq` are the evidence, shown for every verdict.
 
 #### Per-trade metrics
 
@@ -274,6 +346,57 @@ A journal row it cannot read makes every field `null` with `entry_cause` = `jour
 unreadable: <error>`; in the bot it is journaled once per trade (`entry-send-failed`) and the
 step goes on. The bot reads it again on every status write while the trade is open, and keeps
 it once the trade is closed (or a row is unreadable). `/days/<date>` computes it the same way.
+
+### GET /chart (read-only, market data)
+
+Candles of any US stock for the apps' chart, read from market data by the API process itself (not
+from the bot's capture). Code: `src/aperture/api/chart.py`; settings: `[chart]` in bot.toml.
+
+- Query: exactly `symbol` (upper-case ticker, letters and digits with one optional `.` or `-`
+  class suffix, e.g. `BRK.B`), `interval` and `range`. Served pairs: `1m`, `5m`, `30m`, `1h` with
+  `1d` (the latest session) or `5d` (the latest five); `1d`, `1w`, `1mo` with `1m`, `3m`, `1y`
+  (calendar months back from today). Anything else is `400 bad_request`.
+- `chart-v1`: `{symbol, interval, range, source, cached_at, cause, bars[], api_version}`; each bar
+  `{start, open, high, low, close, volume, extended}`, oldest first. `source` names the provider
+  (`webull`, or the demo's own). `cached_at` is when the oldest data in the answer was read from it.
+  `cause` is null, or says why `bars` is empty (no data for that symbol and range).
+- Sessions: a session is the calendar's day from the pre-market open (04:00) to the extended close
+  (20:00; 17:00 on half days); a 1d/5d range counts sessions whose pre-market has begun. Pre- and
+  post-market bars are included and `extended: true`, decided by the session calendar; a bar the
+  provider labels differently from the calendar, or one outside the day's sessions, refuses the
+  answer (`503`). 5m/30m/1h candles are merged from M1, anchored at the start of each part of the
+  day (04:00, the regular open, the regular close), so no candle spans a session edge; the last
+  candle of a part can be shorter, and minutes without trades simply have no bar.
+- Daily candles: one D bar per New York date; `1w` (from Monday) and `1mo` (from the 1st) are
+  merged from them; their `start` is 00:00 New York time of the candle's first calendar day and
+  `extended` is false. The range start is moved back to the start of its week or month, so the
+  first candle is whole. Daily bars are forward-adjusted, minute bars are not (SDK docstring).
+- Merging: open of the first bar, close of the last, highest high, lowest low, summed volume,
+  exact decimals.
+- Cache: a session's M1 bars are kept on disk under `<data_dir>/<[chart] cache_dir>/
+  <environment>/<SYMBOL>/<date>.json` once `[chart] closed_day_settle_seconds` have passed after
+  its extended close, and only if the day has bars (minute bars are unadjusted, so a settled day
+  never changes). Before that, a day without bars, the session in progress, and the daily series
+  while the day's session is not over are read again after `[chart] live_ttl_seconds`; after the
+  session the daily series is kept until the next pre-market opens.
+- Pruning: the disk cache grows by one file per symbol and settled day charted (about 100 KB each
+  at most); `aperture maintain --apply` deletes day files older than `[chart] cache_max_age_days`
+  (docs/operations.md). A pruned day is read from Webull again when charted.
+- Budget: the chart has its own request budget, `[chart] requests_per_minute` per 60 s, never the
+  bot's. When it is spent the answer is `429 rate_limited` with `Retry-After` (seconds); nothing is
+  queued or retried. A 1d range costs at most one request per uncached session, a daily range one.
+  With the chart on, the bot's own budget for the bars route is lowered by the same number, so the
+  two processes together never pass one route limit (docs/webull-facts.md, section C).
+- Off by default: `[chart] webull_enabled = false` answers every chart `503 unavailable` with that
+  cause. Turned on, `python -m aperture.api` builds its own Webull market-data client in a
+  background thread once it serves (status and commands never wait for it, even while the token
+  awaits confirmation): it needs the app key and secret in its environment (the launchd job and
+  the container do not load them for the API today) and uses the environment's token folder; it
+  never reads the account id and refuses any non-market-data route. Until the client is ready
+  `/chart` answers `503` "starting"; if it cannot be built, `503` with the cause. The gate for
+  turning it on is in docs/webull-facts.md, section C (C1 and C2, C1 in that environment). `aperture demo` serves its simulated world here (regular session only).
+- Delayed data (`delay_minutes` not 0), a failed read or a calendar refusal is `503 unavailable`
+  with the cause.
 
 ### GET /performance (read-only)
 
@@ -484,6 +607,11 @@ order evaluated, the same as explain-v1 `first_failed_check`; `null` when every 
 passed, as for a `WATCH` made without a quote), `closeness`, `closeness_cause`,
 `quote_age_seconds` and `quote_age_cause`.
 
+The decisive check's `measured` and `threshold` are rounded to `[api]
+watching_check_decimal_places`, each away from passing (for `>` `>=` measured down and threshold
+up, for `<` `<=` the reverse), so the shown pair still fails; a value with no more decimals than
+that is shown as recorded. `closeness` uses the recorded values.
+
 `closeness` (0..1, rounded down to `[api] watching_closeness_decimal_places`) says how near the
 decisive check is to passing:
 - operator `>` or `>=` (passes once measured rises to the threshold): `measured / threshold`,
@@ -590,7 +718,8 @@ again).
 - Status: after each loop step that changes what `/status` shows, the bot calls
   `contract.write_status(path, StatusV1(...))` (temp file + fsync + rename).
 - Account: after each successful reconciliation the bot calls
-  `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way.
+  `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way. Before
+  that it journals `reconcile-checked` when due (`record_reconcile`, see "Clean day").
 - Commands: the bot calls `contract.read_commands(inbox, now, command_max_age_seconds)`. Each item
   is a command or a refusal (unreadable file, expired, dated in the future). For each item the bot
   journals it in one transaction, acts if it is a command, then calls `contract.retire_command`

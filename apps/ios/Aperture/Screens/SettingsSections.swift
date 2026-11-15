@@ -77,7 +77,7 @@ private struct SessionBar: View {
     TimelineView(.periodic(from: .now, by: Self.tick)) { context in
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         HStack {
-          Text(context.date, format: .dateTime.hour().minute().second())
+          Text(verbatim: Format.clock(context.date))
             .font(Tokens.Typography.bodyMono.bold())
             .monospacedDigit()
             .contentTransition(.numericText())
@@ -108,7 +108,7 @@ private struct SessionBar: View {
         HStack {
           ForEach([Self.extendedOpen, Self.regularOpen, Self.regularClose, Self.extendedClose], id: \.self) { mark in
             if mark != Self.extendedOpen { Spacer() }
-            Text(label(mark), format: .dateTime.hour().minute())
+            Text(verbatim: Format.time(label(mark)))
           }
         }
         .font(Tokens.Typography.annotation)
@@ -196,10 +196,13 @@ struct PreflightSection: View {
       Image(systemName: "checkmark.circle.fill")
         .foregroundStyle(Palette.profit)
         .symbolEffect(.bounce, value: outcome)
+        .accessibilityLabel(Text(L10n.Access.passed))
     case .failed:
       Image(systemName: "xmark.octagon.fill").foregroundStyle(Palette.loss)
+        .accessibilityLabel(Text(L10n.Access.failed))
     case .unknown:
       Image(systemName: "circle.dashed").foregroundStyle(Palette.textQuaternary)
+        .accessibilityLabel(Text(L10n.Access.checking))
     }
   }
 
