@@ -2676,13 +2676,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Paused by you"
+            "value": "Operator pause"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Пауза от тебя"
+            "value": "Пауза оператора"
           }
         }
       }
@@ -2716,7 +2716,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Самая старая годная котировка"
+            "value": "Самая старая котировка для сделки"
           }
         }
       }
@@ -2903,7 +2903,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Торговый допуск"
+            "value": "Торговый шлюз"
           }
         }
       }

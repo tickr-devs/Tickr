@@ -384,7 +384,7 @@ enum L10n {
       LocalizedStringResource("risk.blocked", defaultValue: "Blocked", bundle: L10n.bundle)
     }
     static var pausedByYou: LocalizedStringResource {
-      LocalizedStringResource("risk.pausedByYou", defaultValue: "Paused by you", bundle: L10n.bundle)
+      LocalizedStringResource("risk.pausedByYou", defaultValue: "Operator pause", bundle: L10n.bundle)
     }
     static var tradingGate: LocalizedStringResource {
       LocalizedStringResource("risk.tradingGate", defaultValue: "Trading gate", bundle: L10n.bundle)

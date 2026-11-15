@@ -23,7 +23,7 @@ struct RiskView: View {
       LimitsCard(risk: model.settings?.risk, failure: model.settingsError).rise(step: Order.limits.rawValue)
       SessionCard(session: model.settings?.session).rise(step: Order.session.rawValue)
     }
-    .refreshable { await model.refresh() }
+    .refreshable { await model.refreshAll() }
   }
 }
 

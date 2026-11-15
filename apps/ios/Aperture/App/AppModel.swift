@@ -112,6 +112,14 @@ final class AppModel {
     if settings == nil { await refreshSettings(url) }
   }
 
+  /// Pull to refresh: the status, and the settings read again, since the owner may have changed
+  /// config/bot.toml and restarted the bot.
+  func refreshAll() async {
+    await refresh()
+    guard let url = connection.url, fetchError == nil else { return }
+    await refreshSettings(url)
+  }
+
   /// Reads the bot's configuration; the answer is dropped when the address changed meanwhile.
   private func refreshSettings(_ url: URL) async {
     do {

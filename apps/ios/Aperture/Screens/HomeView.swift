@@ -68,7 +68,7 @@ struct HomeView: View {
       }
     }
     .botControl(isPresented: $showControl)
-    .refreshable { await model.refresh() }
+    .refreshable { await model.refreshAll() }
   }
 }
 
