@@ -184,6 +184,7 @@ struct CandleChart: View {
     .chartYScale(domain: scale.domain)
     .chartYAxis { valueAxis(ticks: Self.priceTicks) }
     .chartXAxis(studyPanes.isEmpty ? .automatic : .hidden)
+    .chartXAxis { timeAxis }
     .modifier(SharedAxis(chart: self, pane: .price, showsTime: studyPanes.isEmpty, tags: priceTags))
   }
 
@@ -252,6 +253,7 @@ struct CandleChart: View {
       }
       .chartYAxis { valueAxis(ticks: Self.paneTicks) }
       .chartXAxis(bottom ? .automatic : .hidden)
+      .chartXAxis { timeAxis }
       .modifier(SharedAxis(chart: self, pane: pane, showsTime: bottom, tags: []))
     case .rsi:
       Chart {
@@ -261,6 +263,7 @@ struct CandleChart: View {
       .chartYScale(domain: 0...Studies.oscillatorScale)
       .chartYAxis { valueAxis(values: [Studies.rsiLow, Studies.rsiHigh]) }
       .chartXAxis(bottom ? .automatic : .hidden)
+      .chartXAxis { timeAxis }
       .modifier(SharedAxis(chart: self, pane: pane, showsTime: bottom, tags: lastTag(plot.rsi, color: Palette.info)))
     case .stochastic:
       Chart {
@@ -271,6 +274,7 @@ struct CandleChart: View {
       .chartYScale(domain: 0...Studies.oscillatorScale)
       .chartYAxis { valueAxis(values: [Studies.stochasticLow, Studies.stochasticHigh]) }
       .chartXAxis(bottom ? .automatic : .hidden)
+      .chartXAxis { timeAxis }
       .modifier(SharedAxis(chart: self, pane: pane, showsTime: bottom, tags: []))
     case .atr:
       Chart {
@@ -278,6 +282,7 @@ struct CandleChart: View {
       }
       .chartYAxis { valueAxis(ticks: Self.paneTicks) }
       .chartXAxis(bottom ? .automatic : .hidden)
+      .chartXAxis { timeAxis }
       .modifier(SharedAxis(chart: self, pane: pane, showsTime: bottom, tags: []))
       .overlay {
         if !plot.atr.contains(where: { $0 != nil }) {
@@ -319,6 +324,20 @@ struct CandleChart: View {
   private func valueAxis(values: [Double]) -> some AxisContent {
     AxisMarks(position: .trailing, values: values) { value in
       axisMark(value)
+    }
+  }
+
+  /// The time scale under the bottom pane: 24-hour market time ("14:30"), whatever the Mac's
+  /// clock setting.
+  private var timeAxis: some AxisContent {
+    AxisMarks(values: .automatic) { value in
+      AxisGridLine()
+      AxisTick()
+      AxisValueLabel {
+        if let date = value.as(Date.self) {
+          Text(verbatim: Format.marketMinute(date))
+        }
+      }
     }
   }
 
