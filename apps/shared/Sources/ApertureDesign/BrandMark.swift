@@ -84,7 +84,7 @@ public struct BrandMark: View {
           endPoint: UnitPoint(x: Self.breakout.x, y: Self.areaBottom)))
         .mask(LinearGradient(
           stops: [.init(color: .clear, location: 0), .init(color: .black, location: Self.areaIn),
-                  .init(color: .black, location: Self.areaOut), .init(color: .clear, location: 1)],
+            .init(color: .black, location: Self.areaOut), .init(color: .clear, location: 1)],
           startPoint: UnitPoint(x: Self.start.x, y: Self.start.y),
           endPoint: UnitPoint(x: Self.breakout.x, y: Self.start.y)))
         .opacity(drawn)
