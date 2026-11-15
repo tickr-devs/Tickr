@@ -665,7 +665,7 @@ private struct LatestEventLine: View {
     }
     let refusal = skipped?.signals.filter { $0.admission == .refused }.max { $0.at.date < $1.at.date }.map {
       LatestEventLine(time: $0.at.date, tag: String(localized: L10n.Flow.refusedTag),
-        text: [$0.symbol, $0.refusal?.message ?? $0.refusalCause].compactMap { $0 }.joined(separator: Self.gap),
+        text: [$0.symbol, $0.refusal.map(ApiText.refusal) ?? $0.refusalCause].compactMap { $0 }.joined(separator: Self.gap),
         color: Palette.warning)
     }
     guard let event, let refusal else { return event ?? refusal }
