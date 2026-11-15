@@ -113,8 +113,12 @@ enum Format {
       timeZone: WireDate.newYork.timeZone, calendar: WireDate.newYork))
   }
 
+  /// "Fri, Nov 13" in the person's language: the New York day, as the bot keeps its sessions,
+  /// whatever the phone's time zone (noon in New York is already the next day from UTC+7 eastward).
   static func day(_ date: Date) -> String {
-    date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    var style = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+    style.timeZone = WireDate.newYork.timeZone
+    return date.formatted(style)
   }
 
   static func timeOrDash(_ time: WireTime?) -> String {
@@ -207,9 +211,6 @@ struct ConnectionPrompt: View {
 
 /// A label and a value in a small card, used in rows of three.
 struct StatTile: View {
-  /// Smallest scale a value may shrink to before it truncates (also used by the watching card).
-  static let minimumScale = 0.7
-
   let label: LocalizedStringResource
   let value: String
   var color: Color = Palette.textPrimary
