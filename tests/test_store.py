@@ -5,12 +5,12 @@ from decimal import Decimal
 
 import pytest
 
-from aperture.store import MIGRATIONS, EnvironmentMismatch, Store
+from tickr.store import MIGRATIONS, EnvironmentMismatch, Store
 
 
 @pytest.fixture
 def store(tmp_path):
-    s = Store.open(tmp_path / "data" / "aperture.sqlite3", busy_timeout_seconds=0)
+    s = Store.open(tmp_path / "data" / "tickr.sqlite3", busy_timeout_seconds=0)
     yield s
     s.close()
 
@@ -87,7 +87,7 @@ def test_backup_is_verified(store, tmp_path):
 
 
 def test_busy_begin_does_not_wedge_the_store(store, tmp_path):
-    other = sqlite3.connect(tmp_path / "data" / "aperture.sqlite3", isolation_level=None)
+    other = sqlite3.connect(tmp_path / "data" / "tickr.sqlite3", isolation_level=None)
     other.execute("BEGIN IMMEDIATE")
     with pytest.raises(sqlite3.OperationalError, match="locked"), store.transaction():
         pass
@@ -115,7 +115,7 @@ def test_failed_commit_rolls_back(store):
 
 
 def test_migration_backs_up_existing_database(tmp_path, monkeypatch):
-    import aperture.store as store_module
+    import tickr.store as store_module
     path = tmp_path / "a.sqlite3"
     s = Store.open(path, busy_timeout_seconds=0)
     with s.transaction():
