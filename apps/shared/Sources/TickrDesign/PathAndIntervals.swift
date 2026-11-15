@@ -77,6 +77,8 @@ public struct StepPath: View {
             .multilineTextAlignment(.center)
             .lineLimit(1)
             .fixedSize()
+            // A gap between neighbouring titles, so the row gives way to the list before they touch.
+            .padding(.horizontal, Tokens.Space.xs)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)

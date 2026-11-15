@@ -303,9 +303,10 @@ struct AdvisorPage: View {
     }
   }
 
-  @ViewBuilder private func decisionBar(_ run: AdvisorRunV1) -> some View {
-    HStack(spacing: Tokens.Space.m) {
-      StatusPill(run.stateWords, tone: AdvisorLook.tone(run), event: run.decision?.at)
+  /// The run's state with what happened to the decision on its own line, then the buttons, so
+  /// neither squeezes the other in a narrow window.
+  private func decisionBar(_ run: AdvisorRunV1) -> some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.s) {
       Group {
         if let decision = run.decision {
           Text(decision.verdict == .accepted ? AdvisorWords.acceptedNext : AdvisorWords.rejectedRecorded)
@@ -315,16 +316,20 @@ struct AdvisorPage: View {
       }
       .font(Tokens.Typography.caption)
       .foregroundStyle(Palette.textTertiary)
-      Spacer(minLength: Tokens.Space.s)
-      if run.status == .proposed || run.status == .idea {
-        Button { decide(run.id, .rejected) } label: {
-          Label { Text(AdvisorWords.reject) } icon: { Image(systemName: AdvisorLook.rejectedSymbol) }
+      .fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: Tokens.Space.m) {
+        StatusPill(run.stateWords, tone: AdvisorLook.tone(run), event: run.decision?.at)
+        Spacer(minLength: Tokens.Space.s)
+        if run.status == .proposed || run.status == .idea {
+          Button { decide(run.id, .rejected) } label: {
+            Label { Text(AdvisorWords.reject) } icon: { Image(systemName: AdvisorLook.rejectedSymbol) }
+          }
+          .buttonStyle(.action(.destructive))
+          Button { accepting = run } label: {
+            Label { Text(AdvisorWords.accept) } icon: { Image(systemName: AdvisorLook.decidedSymbol) }
+          }
+          .buttonStyle(.action(.primary))
         }
-        .buttonStyle(.action(.destructive))
-        Button { accepting = run } label: {
-          Label { Text(AdvisorWords.accept) } icon: { Image(systemName: AdvisorLook.decidedSymbol) }
-        }
-        .buttonStyle(.action(.primary))
       }
     }
     .disabled(advisor.deciding != nil)
