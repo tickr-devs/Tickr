@@ -49,6 +49,11 @@ struct HomeView: View {
       }
     }
     .toolbar {
+      // The mark the opening animation flies into (LaunchHandoff); it pulses while data is current.
+      ToolbarItem(placement: .topBarLeading) {
+        BrandMark(size: Tokens.Size.logoSmall, live: model.isFresh)
+      }
+      .sharedBackgroundVisibility(.hidden)
       ToolbarItemGroup(placement: .topBarTrailing) {
         if let environment = model.status?.environment {
           EnvironmentBadge(environment: environment)

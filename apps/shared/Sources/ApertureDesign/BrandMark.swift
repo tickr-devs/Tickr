@@ -30,11 +30,11 @@ public struct BrandMark: View {
   static let dip = CGPoint(x: 0.39, y: 0.7)
   static let bounce = CGPoint(x: 0.5, y: 0.575)
   static let retest = CGPoint(x: 0.565, y: 0.625)
-  static let breakout = CGPoint(x: 0.81, y: 0.285)
+  public static let breakout = CGPoint(x: 0.81, y: 0.285)
   static let points = [start, dip, bounce, retest, breakout]
   /// Line width, spark diameter and the bottom of the fading area, as shares of the side.
   static let lineWidth = 0.084
-  static let sparkDiameter = 0.09
+  public static let sparkDiameter = 0.09
   static let areaBottom = 0.86
 
   public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand) {
