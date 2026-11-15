@@ -5,7 +5,7 @@ import TickrKit
 /// The rail's explain card: what the strategy (or an observer) decided about the shown symbol at
 /// the pointed candle, or its latest decision while the pointer is off the chart, with every check
 /// that led to it.
-struct ExplainCard: View {
+struct ChartExplainCard: View {
   let symbol: String?
   /// The day's candles, to find the pointed candle's decision; nil over a longer range.
   let plot: ChartPlot?
@@ -112,14 +112,14 @@ private struct CheckRow: View {
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-      Image(systemName: check.passed ? ExplainCard.passedSymbol : ExplainCard.failedSymbol)
+      Image(systemName: check.passed ? ChartExplainCard.passedSymbol : ChartExplainCard.failedSymbol)
         .foregroundStyle(check.passed ? Palette.profit : Palette.textQuaternary)
         .accessibilityLabel(Text(check.passed ? L10n.Chart.checkPassed : L10n.Chart.checkFailed))
       // The rule in words (ApiText), wrapped over a few lines rather than cut mid-word.
       Text(verbatim: ApiText.rule(check.rule))
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(ExplainCard.ruleLines)
+        .lineLimit(ChartExplainCard.ruleLines)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Tokens.Space.xs)
       Text(verbatim: check.measured?.text ?? Format.missing)

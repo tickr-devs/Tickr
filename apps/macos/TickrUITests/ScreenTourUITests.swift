@@ -42,7 +42,7 @@ final class ScreenTourUITests: XCTestCase {
   private static let screenPrefix = "screen-"
   /// The Chart's decisions toggle (ChartView.decisionsToggleID).
   private static let decisionsToggle = "chart-decisions"
-  /// The Chart rail's explain card (ExplainCard.contentID): present while the rail is shown.
+  /// The Chart rail's explain card (ChartExplainCard.contentID): present while the rail is shown.
   private static let explainCard = "chart-decisions-list"
   /// Prefix of a flatten button id (BotAction.flattenPrefix).
   private static let flattenPrefix = "flatten-"

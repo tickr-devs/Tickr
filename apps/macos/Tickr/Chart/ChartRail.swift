@@ -29,7 +29,7 @@ struct ChartRail: View {
       VStack(spacing: Tokens.Space.m) {
         SymbolList(
           rows: rows, positions: model.positions.count, symbol: symbol, pick: pick)
-        ExplainCard(
+        ChartExplainCard(
           symbol: symbol, plot: plot, pointer: pointer, decisions: decisions, error: error, showsDay: showsDay)
         if let position {
           PositionCard(row: position)
