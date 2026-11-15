@@ -275,8 +275,9 @@ struct LabReplayCard: View {
 
   /// Both versions side by side over the same days, as mean R with trades and the bot-limited
   /// result under it, then the second minus the first.
-  @ViewBuilder private func comparison(_ replay: LabReplayV1, _ summary: LabReplaySummaryV1,
-    _ second: LabReplayLegV1) -> some View {
+  @ViewBuilder private func comparison(
+    _ replay: LabReplayV1, _ summary: LabReplaySummaryV1, _ second: LabReplayLegV1
+  ) -> some View {
     let firstName = L10n.Lab.versionName(replay.strategy ?? Format.missing, replay.version ?? Format.missing)
     let secondName = L10n.Lab.versionName(second.strategy, second.version)
     if let other = second.summary {

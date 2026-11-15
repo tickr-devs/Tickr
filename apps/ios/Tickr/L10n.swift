@@ -798,7 +798,9 @@ enum L10n {
     }
     /// The bot offers no version to replay.
     static var anotherNoVersions: LocalizedStringResource {
-      LocalizedStringResource("activity.anotherNoVersions", defaultValue: "No strategy version to replay: the bot lists none.", bundle: L10n.bundle)
+      LocalizedStringResource("activity.anotherNoVersions",
+        defaultValue: "No strategy version to replay: the bot lists none.",
+        bundle: L10n.bundle)
     }
     /// Row of what the bot did.
     static var anotherBot: LocalizedStringResource {
@@ -806,7 +808,10 @@ enum L10n {
     }
     /// What the sheet's numbers are.
     static var anotherNote: LocalizedStringResource {
-      LocalizedStringResource("activity.anotherNote", defaultValue: "Simulated on that day's captured bars with the version's own stop, exit and size, gross before fees. Outside the session only.", bundle: L10n.bundle)
+      LocalizedStringResource("activity.anotherNote",
+        // swiftlint:disable:next line_length
+        defaultValue: "Simulated on that day's captured bars with the version's own stop, exit and size, gross before fees. Outside the session only.",
+        bundle: L10n.bundle)
     }
     /// One simulated trade: its times and how it ended.
     static func anotherLeg(_ opened: String, _ closed: String, _ exit: String) -> LocalizedStringResource {
@@ -814,11 +819,15 @@ enum L10n {
     }
     /// The version decided no entry that day.
     static var anotherNoEntry: LocalizedStringResource {
-      LocalizedStringResource("activity.anotherNoEntry", defaultValue: "No entry that day: its rules never said enter.", bundle: L10n.bundle)
+      LocalizedStringResource("activity.anotherNoEntry",
+        defaultValue: "No entry that day: its rules never said enter.",
+        bundle: L10n.bundle)
     }
     /// What became of the version's entries.
     static func anotherSignals(_ filled: Int, _ missed: Int, _ late: Int, _ busy: Int) -> LocalizedStringResource {
-      LocalizedStringResource("activity.anotherSignals", defaultValue: "Entries: \(filled) filled · \(missed) missed the window · \(late) too late · \(busy) while in a trade", bundle: L10n.bundle)
+      LocalizedStringResource("activity.anotherSignals",
+        defaultValue: "Entries: \(filled) filled · \(missed) missed the window · \(late) too late · \(busy) while in a trade",
+        bundle: L10n.bundle)
     }
   }
 
@@ -1155,7 +1164,9 @@ enum L10n {
     }
     /// Under a one-day replay.
     static func replayOneDayNote(_ day: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.replayOneDayNote", defaultValue: "\(day) only: one day proves nothing, read it as an example.", bundle: L10n.bundle)
+      LocalizedStringResource("lab.replayOneDayNote",
+        defaultValue: "\(day) only: one day proves nothing, read it as an example.",
+        bundle: L10n.bundle)
     }
     /// Under a running comparison: the second version, replayed once the first ends.
     static func replayThen(_ name: String) -> LocalizedStringResource {

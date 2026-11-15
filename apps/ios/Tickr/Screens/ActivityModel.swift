@@ -68,7 +68,7 @@ final class ActivityModel {
       let all = try await client(url).labReplay().versions.filter { $0.cause == nil }
       return .success(all.filter { $0.role != .active } + all.filter { $0.role == .active })
     } catch {
-      return .failure(WhatIfFailure(cause: AppModel.describe(error)))
+      return .failure(WhatIfFailure(cause: ErrorText.text(error)))
     }
   }
 
@@ -80,7 +80,7 @@ final class ActivityModel {
     } catch APIError.refused(_, _, let cause) {
       return .failure(WhatIfFailure(cause: cause))
     } catch {
-      return .failure(WhatIfFailure(cause: AppModel.describe(error)))
+      return .failure(WhatIfFailure(cause: ErrorText.text(error)))
     }
   }
 

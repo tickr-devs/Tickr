@@ -172,7 +172,8 @@ struct ActivityView: View {
             trades: status.tradesToday.map { TradeLine($0, recorded: activity.session?.trades ?? []) },
             empty: (L10n.Activity.noTrades, L10n.Activity.noTradesBody))
         } else {
-          TradesList(activity: activity, url: model.connection.url, positions: [], trades: activity.day?.trades.map(TradeLine.init) ?? [],
+          TradesList(activity: activity, url: model.connection.url, positions: [],
+            trades: activity.day?.trades.map(TradeLine.init) ?? [],
             empty: (L10n.Activity.noTradesThatDay, L10n.Activity.noTradesThatDayBody))
         }
       case .skipped:
