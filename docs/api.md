@@ -158,7 +158,14 @@ preconditions to every command.
   stops left resting, nothing flattened, status `stopped`, exit 0 (run end cause
   `stopped (operator command <id>)`). An open position stays open under its broker stop and is
   no longer flattened at the session's flatten time; the watchdog then alerts
-  `bot-down-with-open-trade`. Flatten first if you want to be flat.
+  `bot-down-with-open-trade`. Flatten first if you want to be flat. When positions stay open
+  the record's cause says so: "N position(s) left open under their broker stop".
+  Stop-bot is refused while any trade has an exit requested or a closing order working (an
+  operator flatten, an emergency, the session flatten), with the cause "a close is in progress;
+  send stop-bot again after it completes": stopping then would leave an exit request that a
+  later start would carry out without anyone asking. Commands the bot reads after an obeyed
+  stop-bot, in the same pass, are refused ("read after stop-bot <id>: the bot is stopping"),
+  never recorded done.
   The launchd bot job has `KeepAlive` false, so launchd does not restart it today, but its
   calendar start (`[runtime] bot_start_local` on `launch_weekdays`) would start it the next
   trading day. The marker stops that: while it exists preflight fails with cause
@@ -176,7 +183,9 @@ preconditions to every command.
   before it sends the closing sale for the shares no live stop still covers, and restores
   protection whenever that sale cannot be sent. Cancelling the stops in step 2 would leave the
   position unprotected until the sale fills, so it is not done. After a crash in the middle the
-  bot reads the command again and runs only the steps not yet journaled.
+  bot reads the command again and runs only the steps not yet journaled; if by then it is
+  older than `[api] command_max_age_seconds`, nothing more is run and the command is recorded
+  `refused` with the steps done and the steps not run.
 
 #### Idempotency-Key
 
