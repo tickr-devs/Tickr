@@ -47,8 +47,9 @@ def _fast_files(monkeypatch):
 def test_partial_entry_is_protected_piece_by_piece_and_a_strategy_exit_closes_it(
         tmp_path, monkeypatch):
     """The entry fills 10, then 16 two minutes later: one stop per fill observation, sized on
-    Detail. The strategy's EXIT tears down (stops cancelled and shown CANCELLED, then closing
-    orders for exactly what is held); the win pauses nothing."""
+    Detail. The strategy's EXIT tears down (each stop cancelled and shown CANCELLED before any
+    share it protected is sold; the closing orders sell exactly what is held); the win pauses
+    nothing."""
     r = Rehearsal(tmp_path, monkeypatch, start="09:43")
     ex = scripted(r)
     add(r, "AAA", "20", breakout("09:30", "09:45", "24.50"), ("10:00", "10:10", D("25.50"), HOT))
@@ -63,8 +64,8 @@ def test_partial_entry_is_protected_piece_by_piece_and_a_strategy_exit_closes_it
              and "-t1-" in o.client_order_id]
     assert [s.quantity for s in stops] == [D(10), D(16)]
     assert all(s.stop_price == D(first["stop_price"]) for s in stops)
-    # Teardown: every stop cancelled and shown CANCELLED before any share is sold, and the
-    # closing orders together sell exactly the 26 held, never more.
+    # Teardown: every stop cancelled and shown CANCELLED (its own observation) before the
+    # shares it protected are sold, and the closing orders together sell exactly the 26 held.
     rows = r.journal()
     seq = {(row.kind, row.key): row.seq for row in rows}
     closes = [o for o in ex.sent if o.order_type is OrderType.MARKET
@@ -73,10 +74,18 @@ def test_partial_entry_is_protected_piece_by_piece_and_a_strategy_exit_closes_it
     for close in closes:
         intent = seq[("order-intent", close.client_order_id)]
         assert any(seq[("cancel-sent", s.client_order_id)] < intent for s in stops)
-    first_close = min(seq[("order-intent", c.client_order_id)] for c in closes)
-    cancelled = [row.seq for row in rows if row.kind == "order-observed"
-                 and row.body["state"] == "CANCELLED"]
-    assert cancelled and min(cancelled) < first_close
+    shown_cancelled = {}
+    for stop in stops:
+        own = [row.seq for row in rows if row.kind == "order-observed"
+               and row.key == stop.client_order_id and row.body["state"] == "CANCELLED"]
+        assert own, stop.client_order_id
+        shown_cancelled[stop.client_order_id] = min(own)
+    for close in closes:  # sold so far never exceeds what stops shown CANCELLED had covered
+        intent = seq[("order-intent", close.client_order_id)]
+        freed = sum(s.quantity for s in stops if shown_cancelled[s.client_order_id] < intent)
+        sold = sum(c.quantity for c in closes
+                   if seq[("order-intent", c.client_order_id)] <= intent)
+        assert sold <= freed, (close.client_order_id, sold, freed)
     assert first["exit_requested"] == "strategy-exit"
     # A winning close pauses nothing: AAA is bought again at the next signal.
     assert later and later[0]["symbol"] == "AAA"
