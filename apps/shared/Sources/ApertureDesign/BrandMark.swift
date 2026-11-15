@@ -18,6 +18,7 @@ public struct BrandMark: View {
   }
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorScheme) private var colorScheme
   @State private var drawn: CGFloat = 0
   @State private var breathing = false
   /// Where the live shine is along the line (0 to 1 plus its length, so it leaves at the end).
@@ -47,6 +48,10 @@ public struct BrandMark: View {
   static let drawDelay = 0.35
   /// Length of the live shine running along the line, as a share of the line.
   static let shineLength: CGFloat = 0.28
+  /// The area's side fade, from the line's start to its end: fully in at `areaIn`, fading out
+  /// again from `areaOut` (shares of that run), so neither side has an edge.
+  static let areaIn = 0.45
+  static let areaOut = 0.6
 
   public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand) {
     self.size = size
@@ -61,6 +66,11 @@ public struct BrandMark: View {
 
   private var lineColor: Color { tone == .brand ? Palette.profit : Palette.textQuaternary }
   private var areaColor: Color { tone == .brand ? Palette.accent : Palette.textQuaternary }
+  /// A green halo on dark; on light a halo turns muddy, so only a trace of it.
+  private var glowColor: Color {
+    guard tone == .brand else { return .clear }
+    return lineColor.opacity(colorScheme == .dark ? Tokens.Opacity.border : Tokens.Opacity.wash)
+  }
   private var lineEnd: Color { tone == .brand ? Palette.accent : Palette.textQuaternary }
 
   public var body: some View {
@@ -72,9 +82,11 @@ public struct BrandMark: View {
         .fill(LinearGradient(colors: [areaColor.opacity(Tokens.Opacity.border), .clear],
           startPoint: UnitPoint(x: Self.breakout.x, y: Self.breakout.y),
           endPoint: UnitPoint(x: Self.breakout.x, y: Self.areaBottom)))
-        .mask(LinearGradient(colors: [.clear, .black],
+        .mask(LinearGradient(
+          stops: [.init(color: .clear, location: 0), .init(color: .black, location: Self.areaIn),
+                  .init(color: .black, location: Self.areaOut), .init(color: .clear, location: 1)],
           startPoint: UnitPoint(x: Self.start.x, y: Self.start.y),
-          endPoint: UnitPoint(x: Self.bounce.x, y: Self.start.y)))
+          endPoint: UnitPoint(x: Self.breakout.x, y: Self.start.y)))
         .opacity(drawn)
       TickLine(points: Self.points)
         .trim(from: 0, to: drawn)
@@ -106,7 +118,7 @@ public struct BrandMark: View {
         .position(x: spark.x * size, y: spark.y * size)
     }
     .frame(width: size, height: size)
-    .shadow(color: tone == .brand ? lineColor.opacity(Tokens.Opacity.border) : .clear, radius: size * Self.glowRadius)
+    .shadow(color: glowColor, radius: size * Self.glowRadius)
     .onAppear(perform: appear)
     .accessibilityHidden(true)
   }
