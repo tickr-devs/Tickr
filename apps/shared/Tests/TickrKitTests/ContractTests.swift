@@ -34,6 +34,7 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "status-response-v1": { try roundTrip(StatusResponseV1.self, $0) },
       "command-v1": { try roundTrip(CommandV1.self, $0) },
       "command-accepted-v1": { try roundTrip(CommandAcceptedV1.self, $0) },
+      "bot-start-v1": { try roundTrip(BotStartV1.self, $0) },
       "pending-commands-v1": { try roundTrip(PendingCommandsV1.self, $0) },
       "error-v1": { try roundTrip(ErrorV1.self, $0) },
       "days-v1": { try roundTrip(DaysV1.self, $0) },
@@ -72,7 +73,7 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "days-v1", "day-v1", "bars-v1", "settings-v1", "explain-v1",
       "observers-v1", "decisions-v1", "skipped-v1", "performance-v1",
       "flow-v1", "watching-v1", "account-v1", "account-response-v1",
-      "chart-v1", "jobs-v1", "journal-v1", "lab-replay-v1"])
+      "chart-v1", "jobs-v1", "journal-v1", "lab-replay-v1", "bot-start-v1"])
   }
 
   @Test func flowStagesChipsAndCauses() throws {
