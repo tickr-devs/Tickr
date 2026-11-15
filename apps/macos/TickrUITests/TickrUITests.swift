@@ -54,6 +54,9 @@ final class TickrUITests: XCTestCase {
   /// (ask_above_trigger), as the English app shows it (ApiText.rule).
   static let decisionsToggle = "chart-decisions"
   static let decisionRule = "Ask above trigger"
+  /// The rail starts shown (ChartView.Keys.decisions); this launch argument starts it hidden, so
+  /// the test shows it with the toggle.
+  static let railHidden = ["-chart.decisions", "NO"]
   /// English titles of the standard Window menu and its Zoom item.
   static let windowMenu = "Window"
   static let zoomItem = "Zoom"
@@ -185,7 +188,7 @@ final class TickrUITests: XCTestCase {
 
   @MainActor
   func testChartShowsTheDecisions() {
-    let app = launch()
+    let app = launch(settings: Self.railHidden)
     open(Self.sections[1], in: app)
     let toggle = app.descendants(matching: .any)[Self.decisionsToggle].firstMatch
     XCTAssertTrue(toggle.waitForExistence(timeout: Self.timeout))

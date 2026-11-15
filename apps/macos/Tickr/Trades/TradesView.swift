@@ -19,6 +19,8 @@ struct TradesView: View {
   /// toolbar's day picker stays at the top). Measured on the screen's own width, which the window
   /// sets, so the choice never feeds back into it.
   static let sideBySideMinWidth: CGFloat = 1180
+  /// Width of the selected trade's card beside Not taken, in points.
+  static let detailWidth: CGFloat = 330
 
   /// Entrance order of the screen's parts.
   private enum Order: Int {
@@ -34,7 +36,11 @@ struct TradesView: View {
     .onGeometryChange(for: Bool.self) { [threshold = Self.sideBySideMinWidth] in $0.size.width >= threshold } action: {
       sideBySide = $0
     }
-    .onChange(of: model.shownDay) { selection = nil }
+    .plainCardLabels()
+    // The first trade of the day is selected until another is picked, so its details show at once.
+    .onChange(of: model.shownTrades.map(\.id), initial: true) { _, ids in
+      if selection.map({ !ids.contains($0) }) ?? true { selection = ids.first }
+    }
   }
 
   private var content: some View {
@@ -56,7 +62,7 @@ struct TradesView: View {
     .frame(maxWidth: .infinity)
   }
 
-  /// The calendar, the 30-day performance and the day list: beside the day as on the design, or
+  /// The calendar, the 30-day performance and the day list: beside the day as in the design, or
   /// after it in a narrow window, so the day's trades are on the first screen.
   private var sideColumn: some View {
     VStack(spacing: Tokens.Space.l) {
@@ -73,10 +79,8 @@ struct TradesView: View {
   /// replays.
   private var dayDetail: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.l) {
-      if let clean = model.days.first(where: { $0.day == model.shownDay })?.clean {
-        CleanBadge(clean: clean)
-          .rise(step: Order.stats.rawValue)
-      }
+      dayTitle
+        .rise(step: Order.stats.rawValue)
       DayStatsRow()
         .rise(step: Order.stats.rawValue)
       TradesTable(selection: $selection, showOnChart: showOnChart)
@@ -87,8 +91,27 @@ struct TradesView: View {
     }
   }
 
-  /// As on the board, the selected trade beside the signals that did not become one; one above
-  /// the other in a narrow window.
+  /// "Today · Mon, Nov 16" (or the recorded day) with its clean-day verdict.
+  private var dayTitle: some View {
+    HStack(alignment: .center, spacing: Tokens.Space.m) {
+      Group {
+        if model.isLive {
+          Text(L10n.Trades.dayTitleToday(Format.dayLabel(model.shownDay)))
+        } else {
+          Text(verbatim: Format.dayLabel(model.shownDay))
+        }
+      }
+      .font(Tokens.Typography.heading)
+      .foregroundStyle(Palette.textPrimary)
+      .accessibilityAddTraits(.isHeader)
+      if let clean = model.days.first(where: { $0.day == model.shownDay })?.clean {
+        CleanBadge(clean: clean)
+      }
+    }
+  }
+
+  /// As on the board, the selected trade beside the signals that did not become one, one height;
+  /// one above the other in a narrow window.
   @ViewBuilder private var selectedAndNotTaken: some View {
     let detail = TradeDetailCard(trade: model.shownTrades.first { $0.id == selection })
       .rise(step: Order.detail.rawValue)
@@ -96,9 +119,11 @@ struct TradesView: View {
       .rise(step: Order.notTaken.rawValue)
     if sideBySide {
       HStack(alignment: .top, spacing: Tokens.Space.l) {
-        detail.frame(width: Tokens.Size.sideColumn)
+        detail.frame(width: Self.detailWidth)
         notTaken
       }
+      .filling()
+      .fixedSize(horizontal: false, vertical: true)
     } else {
       VStack(alignment: .leading, spacing: Tokens.Space.l) {
         detail
@@ -116,18 +141,13 @@ struct TradesView: View {
 
 // MARK: Days
 
-/// Recorded days, newest first, with a bar per day's result.
+/// The month of recorded days; the calendar labels the card with its month.
 private struct DaysColumn: View {
   @Environment(AppModel.self) private var model
 
-  /// Days the result bars cover.
-  static let shownDays = 20
-  /// Height of the result bars, in points.
-  static let barsHeight: CGFloat = 70
-
   var body: some View {
-    Card(L10n.Trades.days) {
-      if model.days.isEmpty {
+    if model.days.isEmpty {
+      Card(L10n.Trades.days) {
         ContentUnavailableView {
           Label {
             Text(model.historyError == nil ? L10n.Trades.noDays : L10n.Trades.daysUnavailable)
@@ -135,11 +155,12 @@ private struct DaysColumn: View {
             BrandMark.empty(model.historyError == nil ? .brand : .muted)
           }
         }
-      } else {
-        MonthCalendar()
-        DayBars(days: Array(model.days.prefix(Self.shownDays).reversed()), shown: model.shownDay)
-          .frame(height: Self.barsHeight)
       }
+    } else {
+      MonthCalendar()
+        .padding(Tokens.Space.l)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .tickrCard(radius: Tokens.Radius.large)
     }
   }
 }
@@ -171,38 +192,6 @@ private struct DayListCard: View {
     } else {
       model.selectedDay = day
     }
-  }
-}
-
-/// One bar per day: its gross result, the shown day in full colour.
-private struct DayBars: View {
-  let days: [DaySummary]
-  let shown: WireDate
-
-  /// Share of a day's slot its bar fills.
-  static let barShare = 0.6
-
-  /// One slot per day the bars cover, oldest first: empty slots before the recorded days, so a
-  /// few days draw as thin bars on the right, not as one bar across the whole card.
-  private var slots: [String] {
-    let empty = (0..<max(0, DaysColumn.shownDays - days.count)).map { "\($0)" }
-    return empty + days.map(\.day.text)
-  }
-
-  var body: some View {
-    Chart(days) { day in
-      let result = NSDecimalNumber(decimal: day.resultGrossUsd.value).doubleValue
-      BarMark(
-        x: .value(String(localized: L10n.Trades.day), day.day.text),
-        y: .value(String(localized: L10n.Trades.result), result),
-        width: .ratio(Self.barShare))
-        .foregroundStyle(Palette.result(day.resultGrossUsd.value).opacity(day.day == shown ? 1 : Tokens.Opacity.faint))
-        .clipShape(.rect(cornerRadius: Tokens.Radius.small / 2))
-    }
-    .chartXScale(domain: slots)
-    .chartXAxis(.hidden)
-    .chartYAxis(.hidden)
-    .animation(Tokens.Motion.standard, value: shown)
   }
 }
 
@@ -271,14 +260,14 @@ private struct DayStatsRow: View {
 
   private var result: some View {
     Stat(L10n.Trades.resultGross) {
-      MoneyText(value: model.shownResult, usd: true, font: Tokens.Typography.metric)
+      MoneyText(value: model.shownResult, usd: true, font: Tokens.Typography.figure)
     }
   }
 
   private var trades: some View {
     Stat(L10n.Trades.trades) {
       Text(L10n.Trades.closedWinsLosses(model.shownTradeCount, model.shownWins, model.shownLosses))
-        .font(Tokens.Typography.metric)
+        .font(Tokens.Typography.figure)
         .foregroundStyle(Palette.textPrimary)
     }
   }
@@ -286,7 +275,7 @@ private struct DayStatsRow: View {
   private var average: some View {
     Stat(L10n.Trades.averageR) {
       Text(verbatim: averageR.map(Risk.text) ?? Format.missing)
-        .font(Tokens.Typography.metric)
+        .font(Tokens.Typography.figure)
         .foregroundStyle(averageR.map(Palette.result) ?? Palette.textQuaternary)
     }
   }
@@ -295,11 +284,11 @@ private struct DayStatsRow: View {
     Stat(L10n.Trades.bestWorst) {
       HStack(spacing: Tokens.Space.s) {
         if let best = results.max(), let worst = results.min() {
-          MoneyText(value: best, usd: true, font: Tokens.Typography.metric)
-          MoneyText(value: worst, usd: true, font: Tokens.Typography.metric)
+          MoneyText(value: best, usd: true, font: Tokens.Typography.figure)
+          MoneyText(value: worst, usd: true, font: Tokens.Typography.figure)
         } else {
           Text(verbatim: Format.missing)
-            .font(Tokens.Typography.metric)
+            .font(Tokens.Typography.figure)
             .foregroundStyle(Palette.textQuaternary)
         }
       }
@@ -331,22 +320,23 @@ private struct TradesTable: View {
   /// Least and preferred widths of the table's columns, in points: the least keeps a time, a
   /// symbol, a price or a figure whole in a narrow window; the preferred share out a wide one.
   private enum Column {
-    /// Least and preferred width of each column, in points: the preferred widths add up to
-    /// what a 1000-point window leaves the table, so every column shows without scrolling.
+    /// Least and preferred width of each column, in points: the preferred widths (with the
+    /// table's cell spacing) add up to what the day column leaves the table beside the side
+    /// column, so every column shows without scrolling.
     static let timeMin: CGFloat = 56
-    static let time: CGFloat = 64
+    static let time: CGFloat = 60
     static let symbolMin: CGFloat = 52
-    static let symbol: CGFloat = 60
-    static let quantityMin: CGFloat = 36
-    static let quantity: CGFloat = 44
-    static let priceMin: CGFloat = 56
-    static let price: CGFloat = 64
+    static let symbol: CGFloat = 56
+    static let quantityMin: CGFloat = 32
+    static let quantity: CGFloat = 40
+    static let priceMin: CGFloat = 52
+    static let price: CGFloat = 58
     static let reasonMin: CGFloat = 96
-    static let reason: CGFloat = 130
+    static let reason: CGFloat = 112
     static let figureMin: CGFloat = 48
-    static let figure: CGFloat = 56
-    static let moneyMin: CGFloat = 76
-    static let money: CGFloat = 88
+    static let figure: CGFloat = 52
+    static let moneyMin: CGFloat = 72
+    static let money: CGFloat = 80
   }
 
   /// The table's height, in points: at most about eight rows; a busier day scrolls inside the
@@ -364,7 +354,12 @@ private struct TradesTable: View {
   }
 
   var body: some View {
-    Card(L10n.Trades.tradesOfDay) {
+    Card(L10n.Trades.tradesOfDay, trailing: {
+      Text(L10n.Trades.tradesHint)
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+        .lineLimit(1)
+    }, content: {
       // On the live day, positions still open come first: the table holds closed trades only.
       let open = model.isLive ? model.positions : []
       ForEach(open) { row in
@@ -382,46 +377,46 @@ private struct TradesTable: View {
         table
           .frame(height: tableHeight)
       }
-    }
+    })
   }
 
   private var table: some View {
     Table(model.shownTrades, selection: $selection) {
-      TableColumn(Text(L10n.Trades.closed)) { trade in
+      TableColumn(Self.header(L10n.Trades.closed)) { trade in
         Text(verbatim: Format.marketTime(trade.closedAt.date)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.timeMin, ideal: Column.time)
-      TableColumn(Text(L10n.Trades.symbol)) { trade in
+      TableColumn(Self.header(L10n.Trades.symbol)) { trade in
         Text(verbatim: trade.symbol).font(Tokens.Typography.calloutMono.weight(.semibold))
       }
       .width(min: Column.symbolMin, ideal: Column.symbol)
-      TableColumn(Text(L10n.Trades.quantity)) { trade in
+      TableColumn(Self.header(L10n.Trades.quantity)) { trade in
         Text(verbatim: Format.quantity(trade.quantity.value)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.quantityMin, ideal: Column.quantity)
-      TableColumn(Text(L10n.Trades.entry)) { trade in
+      TableColumn(Self.header(L10n.Trades.entry)) { trade in
         Text(verbatim: Format.price(trade.entryPrice.value)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.priceMin, ideal: Column.price)
-      TableColumn(Text(L10n.Trades.exit)) { trade in
+      TableColumn(Self.header(L10n.Trades.exit)) { trade in
         Text(verbatim: Format.price(trade.exitPrice.value)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.priceMin, ideal: Column.price)
-      TableColumn(Text(L10n.Trades.stop)) { trade in
+      TableColumn(Self.header(L10n.Trades.stop)) { trade in
         Text(verbatim: Format.price(trade.stopPrice?.value)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.priceMin, ideal: Column.price)
-      TableColumn(Text(L10n.Trades.reason)) { trade in
+      TableColumn(Self.header(L10n.Trades.reason)) { trade in
         Badge(verbatim: Board.exitReasonTitle(trade.exitReason), color: Palette.textTertiary)
       }
       .width(min: Column.reasonMin, ideal: Column.reason)
-      TableColumn(Text(L10n.Trades.resultR)) { trade in
+      TableColumn(Self.header(L10n.Trades.resultR)) { trade in
         Text(verbatim: trade.resultR.map(Risk.text) ?? Format.missing)
           .font(Tokens.Typography.calloutMono)
           .foregroundStyle(trade.resultR.map(Palette.result) ?? Palette.textQuaternary)
       }
       .width(min: Column.figureMin, ideal: Column.figure)
-      TableColumn(Text(L10n.Trades.result)) { trade in
+      TableColumn(Self.header(L10n.Trades.result)) { trade in
         MoneyText(value: trade.resultGrossUsd.value, usd: true, font: Tokens.Typography.calloutMono)
       }
       .width(min: Column.moneyMin, ideal: Column.money)
@@ -435,6 +430,13 @@ private struct TradesTable: View {
     } primaryAction: { ids in
       if let trade = trade(ids) { showOnChart(trade.symbol) }
     }
+  }
+
+  /// A column's title as the design's table heads read: mono label type, uppercase.
+  private static func header(_ title: LocalizedStringResource) -> Text {
+    Text(verbatim: String(localized: title).uppercased())
+      .font(Tokens.Typography.label)
+      .foregroundStyle(Palette.textQuaternary)
   }
 
   private func trade(_ ids: Set<DayTrade.ID>) -> DayTrade? {
@@ -494,23 +496,32 @@ private struct TradeDetailCard: View {
           } label: {
             Label { Text(L10n.Trades.whatIfStrategy) } icon: { Image(systemName: Self.anotherSymbol) }
           }
-          .controlSize(.small)
+          // The design's outlined button in the card's header.
+          .buttonStyle(.chip(selected: true))
           .help(Text(L10n.Trades.anotherHelp))
           .popover(isPresented: $anotherShown, arrowEdge: .bottom) {
             AnotherStrategyView(trade: trade)
           }
         }, content: {
           VStack(alignment: .leading, spacing: Tokens.Space.m) {
-            Grid(alignment: .leading, horizontalSpacing: Tokens.Space.l, verticalSpacing: Tokens.Space.s) {
+            Grid(alignment: .leading, horizontalSpacing: Tokens.Space.m, verticalSpacing: Tokens.Space.s) {
               GridRow {
                 Text(L10n.Trades.oneR).foregroundStyle(Palette.textSecondary)
-                MoneyText(value: trade.plannedLossUsd.value, usd: true, colored: false, signed: false)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .fixedSize(horizontal: false, vertical: true)
+                MoneyText(
+                  value: trade.plannedLossUsd.value, usd: true, font: Tokens.Typography.calloutMono, colored: false,
+                  signed: false)
+                  // The values line up on the right, as in the design; the labels take the rest.
+                  .gridColumnAlignment(.trailing)
               }
               GridRow {
                 Text(L10n.Trades.stopConfirmedAfter).foregroundStyle(Palette.textSecondary)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .fixedSize(horizontal: false, vertical: true)
                   .help(Text(L10n.Trades.stopConfirmedHelp))
                 if let seconds = trade.stopConfirmedAfterSeconds {
-                  Text(verbatim: Format.seconds(seconds.value)).font(Tokens.Typography.bodyMono)
+                  Text(verbatim: Format.seconds(seconds.value)).font(Tokens.Typography.calloutMono)
                 } else {
                   notRecorded
                 }
@@ -518,8 +529,10 @@ private struct TradeDetailCard: View {
               GridRow {
                 let sent = EntrySent.line(trade.entry, cause: ApiText.prose(trade.entryCauseCodes, text: trade.entryCause))
                 Text(L10n.EntrySent.title).foregroundStyle(Palette.textSecondary)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .fixedSize(horizontal: false, vertical: true)
                 let value = Text(verbatim: sent.text)
-                  .font(Tokens.Typography.bodyMono)
+                  .font(Tokens.Typography.calloutMono)
                   .foregroundStyle(sent.color)
                 // A tooltip only when there is something to add (the bot's cause of a missing record).
                 if let help = sent.help {
@@ -532,11 +545,13 @@ private struct TradeDetailCard: View {
               excursion(L10n.Trades.mfeAtLeast, trade.mfeUsd)
               GridRow {
                 Text(L10n.Trades.overshoot).foregroundStyle(Palette.textSecondary)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .fixedSize(horizontal: false, vertical: true)
                   .help(Text(L10n.Trades.overshootHelp))
                 if let usd = trade.overshootUsd?.value {
                   Text(L10n.Trades.overshootValue(Money.signedUSD(usd), trade.overshootR.map { Risk.text($0.value) }
                     ?? Format.missing))
-                    .font(Tokens.Typography.bodyMono)
+                    .font(Tokens.Typography.calloutMono)
                     // Neutral, not green: this is profit the trade left behind, not a gain.
                     .foregroundStyle(Palette.textPrimary)
                 } else {
@@ -545,6 +560,7 @@ private struct TradeDetailCard: View {
                 }
               }
             }
+            .font(Tokens.Typography.callout)
             if let after = WhatIfText.after(trade.pricesAfter) {
               Divider()
               Text(verbatim: after)
@@ -552,8 +568,10 @@ private struct TradeDetailCard: View {
                 .foregroundStyle(Palette.textTertiary)
                 .help(Text(L10n.Trades.priceAfterExit))
             }
+            Spacer(minLength: 0)
             Footnote(L10n.Trades.excursionLowerBound)
           }
+          .frame(maxHeight: .infinity, alignment: .top)
         })
       } else {
         Card(L10n.Trades.selectedTrade) { Footnote(L10n.Trades.selectTrade) }
@@ -566,8 +584,10 @@ private struct TradeDetailCard: View {
   private func excursion(_ title: LocalizedStringResource, _ value: DecimalString?) -> some View {
     GridRow {
       Text(title).foregroundStyle(Palette.textSecondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
       if let value {
-        MoneyText(value: value.value, usd: true)
+        MoneyText(value: value.value, usd: true, font: Tokens.Typography.calloutMono)
       } else {
         Text(L10n.Trades.unknown).foregroundStyle(Palette.textQuaternary)
       }
@@ -747,7 +767,12 @@ private struct NotTakenCard: View {
   let showOnChart: (String) -> Void
 
   var body: some View {
-    Card(L10n.Trades.notTaken) {
+    Card(L10n.Trades.notTaken, trailing: {
+      Text(L10n.Trades.notTakenHint)
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+        .lineLimit(1)
+    }, content: {
       if let signals = model.skipped?.signals, !signals.isEmpty {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
           ForEach(Array(SkippedGroup.make(signals).enumerated()), id: \.element.id) { index, group in
@@ -762,7 +787,7 @@ private struct NotTakenCard: View {
       } else {
         ProgressView().controlSize(.small)
       }
-    }
+    })
   }
 }
 
@@ -862,21 +887,31 @@ private struct CauseText: View {
           Text(verbatim: cause.readable(time: Format.marketMinute))
         }
       }
-      .font(Tokens.Typography.caption)
-      .foregroundStyle(Palette.textSecondary)
+      .font(Tokens.Typography.captionMono)
+      .foregroundStyle(Palette.textTertiary)
       .fixedSize(horizontal: false, vertical: true)
     }
   }
 }
 
 /// What the day's skipped setups would have made had each been entered once, from the bot's
-/// replays; replaying the day under another strategy is still planned.
+/// replays: one slim row, its label on the left.
 private struct WhatIfCard: View {
   @Environment(AppModel.self) private var model
 
+  /// Width of the label column, in points.
+  static let labelWidth: CGFloat = 56
+
   var body: some View {
-    Card(L10n.Trades.whatIf) {
-      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+    HStack(alignment: .top, spacing: Tokens.Space.l) {
+      Text(L10n.Trades.whatIf)
+        .textCase(.uppercase)
+        .font(Tokens.Typography.label)
+        .tracking(Tokens.Typography.labelTracking)
+        .foregroundStyle(Palette.textQuaternary)
+        .frame(width: Self.labelWidth, alignment: .leading)
+        .accessibilityAddTraits(.isHeader)
+      VStack(alignment: .leading, spacing: Tokens.Space.xs) {
         if let signals = model.skipped?.signals {
           if let summary = WhatIfSummary.make(SkippedGroup.make(signals)) {
             HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
@@ -887,19 +922,28 @@ private struct WhatIfCard: View {
                 .font(Tokens.Typography.chipValue)
                 .foregroundStyle(Palette.result(summary.resultR))
               Text(verbatim: Money.signedUSD(summary.resultUsd))
-                .font(Tokens.Typography.calloutMono)
+                .font(Tokens.Typography.calloutMono.bold())
                 .foregroundStyle(Palette.result(summary.resultUsd))
+              Text(L10n.Trades.whatIfCounts(summary.wins, summary.losses, summary.notReplayed))
+                .font(Tokens.Typography.captionMono)
+                .foregroundStyle(Palette.textTertiary)
             }
-            Text(L10n.Trades.whatIfCounts(summary.wins, summary.losses, summary.notReplayed))
-              .font(Tokens.Typography.captionMono)
-              .foregroundStyle(Palette.textTertiary)
           } else {
-            Footnote(L10n.Trades.whatIfNone)
+            Text(L10n.Trades.whatIfNone)
+              .font(Tokens.Typography.callout)
+              .foregroundStyle(Palette.textSecondary)
           }
         }
-        Footnote(L10n.Trades.whatIfHelp)
+        Text(L10n.Trades.whatIfHelp)
+          .font(Tokens.Typography.caption)
+          .foregroundStyle(Palette.textTertiary)
+          .fixedSize(horizontal: false, vertical: true)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .padding(Tokens.Space.l)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .tickrCard(radius: Tokens.Radius.large)
   }
 }
 

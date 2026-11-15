@@ -3,8 +3,9 @@ import SwiftUI
 import TickrDesign
 import TickrKit
 
-/// The price pane (candles or a filled line, with volume along its bottom, the bot's lines and
-/// the chosen studies) and the study panes below it, which scroll, zoom and point together. One
+/// The price pane (candles or a filled line, the bot's lines and the chosen studies, with their
+/// values in its top left corner) and the volume and study panes below it, which scroll, zoom and
+/// point together. One
 /// crosshair runs through every pane, with the pointed time on the time axis and the value under
 /// the pointer on the hovered pane's value axis. Times read in New York, like the bot.
 struct CandleChart: View {
@@ -15,8 +16,9 @@ struct CandleChart: View {
   let decisions: [DecisionMark]
   let live: Bool
   @Binding var viewport: Viewport
+  /// The candle under the pointer, shared with the screen's header readout and the explain card.
+  let pointer: ChartPointer
 
-  @State private var pointer = ChartPointer()
   /// The pointer state, for the shared axis and crosshair of every pane.
   var pointerModel: ChartPointer { pointer }
   @State private var appeared = false
@@ -24,7 +26,7 @@ struct CandleChart: View {
   @State private var chartWidth: CGFloat = 0
   @State private var pinchStart: Int?
 
-  /// Height of each study pane (MACD, RSI, stochastic, ATR), in points.
+  /// Height of each study pane (volume, MACD, RSI, stochastic, ATR), in points.
   static let paneHeight: CGFloat = 96
   /// Least heights of the price pane and of a study pane, in points: with many studies in a
   /// short window the study panes shrink first, never the price pane below its least height.
@@ -74,15 +76,21 @@ struct CandleChart: View {
 
   /// The panes below the price pane, top to bottom.
   private var studyPanes: [ChartPane] {
-    [lines.macd ? .macd : nil, lines.rsi ? .rsi : nil, lines.stochastic ? .stochastic : nil, lines.atr ? .atr : nil]
-      .compactMap { $0 }
+    [
+      lines.volume ? .volume : nil, lines.macd ? .macd : nil, lines.rsi ? .rsi : nil,
+      lines.stochastic ? .stochastic : nil, lines.atr ? .atr : nil,
+    ]
+    .compactMap { $0 }
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      ChartReadout(plot: plot, lines: lines, pointer: pointer)
       PaneStack(priceMinimum: Self.priceMinHeight, paneHeight: Self.paneHeight, paneMinimum: Self.paneMinHeight) {
         priceChart
+          .overlay(alignment: .topLeading) {
+            ChartLegend(plot: plot, lines: lines, pointer: pointer)
+              .padding(Tokens.Space.s)
+          }
         ForEach(studyPanes, id: \.self) { pane in
           studyChart(pane)
             .overlay(alignment: .top) {
@@ -108,16 +116,6 @@ struct CandleChart: View {
   private var priceChart: some View {
     let scale = priceScale
     return Chart {
-      if lines.volume {
-        ForEach(candles[drawn]) { candle in
-          RectangleMark(
-            xStart: .value(Plot.time, bodyStart(candle)),
-            xEnd: .value(Plot.time, bodyEnd(candle)),
-            yStart: .value(Plot.price, scale.volumeBase),
-            yEnd: .value(Plot.price, scale.volumeTop(candle.volume)))
-            .foregroundStyle(color(candle).opacity(Tokens.Opacity.faint))
-        }
-      }
       if lines.style == .line {
         lineArea(scale)
       } else {
@@ -175,10 +173,8 @@ struct CandleChart: View {
               .font(Tokens.Typography.annotation)
               .foregroundStyle(mark.color)
           }
-          .annotation(position: mark.kind == .entry ? .bottom : .top) {
-            Text(mark.label)
-              .font(Tokens.Typography.annotation)
-              .foregroundStyle(mark.textColor)
+          .annotation(position: mark.kind == .entry ? .bottom : .top, overflowResolution: Self.keepInside) {
+            MarkPlate(text: mark.label, color: mark.color, textColor: mark.textColor)
           }
       }
       ForEach(decisions) { mark in
@@ -190,12 +186,7 @@ struct CandleChart: View {
           }
           .annotation(position: .top, overflowResolution: Self.keepInside) {
             if labelsDecisions {
-              Text(mark.label)
-                .font(Tokens.Typography.annotation)
-                .foregroundStyle(mark.color)
-                .padding(.horizontal, Tokens.Space.xxs)
-                .background(Palette.surface.opacity(Tokens.Opacity.overlay), in: .rect(cornerRadius: Tokens.Radius.small))
-                .fixedSize()
+              MarkPlate(text: mark.label, color: mark.color, textColor: mark.color)
             }
           }
       }
@@ -205,10 +196,9 @@ struct CandleChart: View {
           .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.hairline, dash: Tokens.Stroke.dashFine))
       }
     }
-    .chartYScale(domain: scale.domain)
+    .chartYScale(domain: scale)
     .chartYAxis {
-      valueAxis(ticks: Self.priceTicks, hiding: priceTags.map(\.value), span: scale.domain,
-        floor: scale.volumeBase + scale.volumeHeight)
+      valueAxis(ticks: Self.priceTicks, hiding: priceTags.map(\.value), span: scale)
     }
     .chartXAxis(studyPanes.isEmpty ? .automatic : .hidden)
     .chartXAxis { timeAxis }
@@ -216,14 +206,14 @@ struct CandleChart: View {
     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: { chartWidth = $0 })
   }
 
-  /// The close as a line with a fill fading down to the volume bars, coloured by whether
+  /// The close as a line with a fill fading down to the bottom of the pane, coloured by whether
   /// the visible stretch ended above where it began.
-  @ChartContentBuilder private func lineArea(_ scale: PriceScale) -> some ChartContent {
+  @ChartContentBuilder private func lineArea(_ scale: ClosedRange<Double>) -> some ChartContent {
     let tint = visibleTrendUp ? Palette.profit : Palette.loss
     ForEach(candles[drawn]) { candle in
       AreaMark(
         x: .value(Plot.time, candle.middle),
-        yStart: .value(Plot.price, scale.volumeBase + scale.volumeHeight),
+        yStart: .value(Plot.price, scale.lowerBound),
         yEnd: .value(Plot.price, candle.close))
         .foregroundStyle(
           LinearGradient(
@@ -268,6 +258,24 @@ struct CandleChart: View {
   @ViewBuilder private func studyChart(_ pane: ChartPane) -> some View {
     let bottom = pane == studyPanes.last
     switch pane {
+    case .volume:
+      let span = volumeSpan
+      Chart {
+        ForEach(candles[drawn]) { candle in
+          RectangleMark(
+            xStart: .value(Plot.time, bodyStart(candle)),
+            xEnd: .value(Plot.time, bodyEnd(candle)),
+            yStart: .value(Plot.volume, 0),
+            yEnd: .value(Plot.volume, candle.volume))
+            .foregroundStyle(color(candle).opacity(Tokens.Opacity.faint))
+        }
+        line(plot.volumeAverage, name: Plot.volumeAverage, color: Palette.warning)
+      }
+      .chartYScale(domain: span)
+      .chartYAxis { volumeAxis(span: span) }
+      .chartXAxis(bottom ? .automatic : .hidden)
+      .chartXAxis { timeAxis }
+      .modifier(SharedAxis(chart: self, pane: pane, showsTime: bottom, tags: []))
     case .macd:
       Chart {
         ForEach(drawn, id: \.self) { index in
@@ -349,21 +357,43 @@ struct CandleChart: View {
     return decisions.filter { shown.contains($0.time) }.count <= Self.decisionLabelLimit
   }
 
-  /// The study's name in the pane's top left corner.
+  /// The pane's name in its top left corner; the volume pane adds the newest candle's volume,
+  /// the span of its average and the relative volume, the ATR pane its newest value.
   private func paneName(_ pane: ChartPane) -> some View {
-    Group {
+    HStack(spacing: Tokens.Space.xs) {
       switch pane {
+      case .volume: volumeName
       case .macd: Text(L10n.Chart.macd)
       case .rsi: Text(L10n.Chart.rsi(Studies.rsiPeriod))
       case .stochastic: Text(L10n.Chart.stochastic)
-      case .atr: Text(L10n.Chart.atr(Indicators.atrPeriod))
+      case .atr:
+        if let value = plot.atr.last(where: { $0 != nil }) ?? nil {
+          Text(L10n.Chart.atr(Indicators.atrPeriod)) + Text(verbatim: Format.itemSeparator)
+            + Text(verbatim: value.formatted(Self.atrFormat)).foregroundStyle(Palette.seriesATRText)
+        } else {
+          Text(L10n.Chart.atr(Indicators.atrPeriod))
+        }
       case .price: EmptyView()
       }
     }
-    .font(Tokens.Typography.annotationBold)
-    .foregroundStyle(Palette.textTertiary)
+    .font(Tokens.Typography.annotation)
+    .foregroundStyle(Palette.textQuaternary)
     .padding(Tokens.Space.xs)
     .allowsHitTesting(false)
+  }
+
+  /// "VOL 23.4K · avg 20 · rel. volume 2.6×" for the newest candle; the volume alone until the
+  /// average has its first value.
+  @ViewBuilder private var volumeName: some View {
+    if let last = candles.indices.last {
+      let volume = Self.volumeText(candles[last].volume)
+      if let average = plot.volumeAverage[last], average > 0 {
+        Text(L10n.Chart.volumePane(
+          volume, ChartPlot.volumeAveragePeriod, (candles[last].volume / average).formatted(Self.ratioFormat)))
+      } else {
+        Text(L10n.Chart.volumePaneShort(volume))
+      }
+    }
   }
 
   /// Dashed lines at an oscillator's overbought and oversold levels.
@@ -413,12 +443,11 @@ struct CandleChart: View {
   }
 
   /// The price scale, its labels left out where a tag (last price, entry, stop) covers them
-  /// (within `tagClearance` of the pane's height from a tagged value), and over the volume bars
-  /// along the bottom (below `floor`, with the same clearance): prices there mean nothing, and
-  /// the lowest one hung over the pane below.
-  private func valueAxis(ticks: Int, hiding tagged: [Double], span: ClosedRange<Double>, floor: Double) -> some AxisContent {
+  /// (within `tagClearance` of the pane's height from a tagged value), and at the very bottom
+  /// (with the same clearance), where the lowest one hung over the pane below.
+  private func valueAxis(ticks: Int, hiding tagged: [Double], span: ClosedRange<Double>) -> some AxisContent {
     let clearance = (span.upperBound - span.lowerBound) * Self.tagClearance
-    let lowest = max(floor, span.lowerBound) + clearance
+    let lowest = span.lowerBound + clearance
     return AxisMarks(position: .trailing, values: .automatic(desiredCount: ticks)) { value in
       AxisGridLine()
       AxisTick()
@@ -426,6 +455,25 @@ struct CandleChart: View {
         if let price = value.as(Double.self), price >= lowest,
           !tagged.contains(where: { abs($0 - price) < clearance }) {
           Text(verbatim: price.formatted(Self.valueFormat))
+            .frame(width: Self.axisLabelWidth, alignment: .leading)
+        } else {
+          Color.clear.frame(width: Self.axisLabelWidth)
+        }
+      }
+    }
+  }
+
+  /// The volume scale: compact figures ("40K"), its top and bottom labels left out as on the
+  /// study panes.
+  private func volumeAxis(span: ClosedRange<Double>) -> some AxisContent {
+    let clearance = (span.upperBound - span.lowerBound) * Self.paneEdgeShare
+    let shown = (span.lowerBound + clearance)...(span.upperBound - clearance)
+    return AxisMarks(position: .trailing, values: .automatic(desiredCount: Self.paneTicks)) { value in
+      AxisGridLine()
+      AxisTick()
+      AxisValueLabel {
+        if let number = value.as(Double.self), shown.contains(number) {
+          Text(verbatim: Self.volumeText(number))
             .frame(width: Self.axisLabelWidth, alignment: .leading)
         } else {
           Color.clear.frame(width: Self.axisLabelWidth)
@@ -587,25 +635,23 @@ struct CandleChart: View {
 
   private func color(_ candle: Candle) -> Color { candle.isUp ? Palette.profit : Palette.loss }
 
-  /// Prices of the candles, levels and drawn bands on screen, padded so nothing touches the edge,
-  /// with room under them for the volume bars.
-  private var priceScale: PriceScale {
+  /// Prices of the candles, levels and drawn bands on screen, padded so nothing touches the edge.
+  private var priceScale: ClosedRange<Double> {
     let shown = visibleIndices
     var prices = candles[shown].flatMap { [$0.low, $0.high] } + levels.map(\.price)
     if lines.bollinger {
       prices += shown.compactMap { plot.bollingerUpper[$0] } + shown.compactMap { plot.bollingerLower[$0] }
     }
-    let volumes = candles[shown].map(\.volume)
-    guard let low = prices.min(), let high = prices.max() else {
-      return PriceScale(domain: 0...1, volumeBase: 0, volumeHeight: 0, volumeCeiling: 0)
-    }
+    guard let low = prices.min(), let high = prices.max() else { return 0...1 }
     let span = max(high - low, high * Self.minimumSpan)
     let pad = span * Tokens.Chart.pricePadding
-    let volumeHeight = lines.volume ? (span + pad + pad) * Tokens.Chart.volumeShare : 0
-    let bottom = low - pad - volumeHeight
-    return PriceScale(
-      domain: bottom...(high + pad), volumeBase: bottom, volumeHeight: volumeHeight,
-      volumeCeiling: volumes.max() ?? 0)
+    return (low - pad)...(high + pad)
+  }
+
+  /// Zero to the largest volume on screen, with room above it for the pane's name.
+  private var volumeSpan: ClosedRange<Double> {
+    let ceiling = candles[visibleIndices].map(\.volume).max() ?? 0
+    return 0...max(ceiling * (1 + Self.volumeHeadroom), 1)
   }
 
   private var pinch: some Gesture {
@@ -620,27 +666,22 @@ struct CandleChart: View {
 
   /// Axis labels and study values: two decimals.
   static let valueFormat = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(Money.centsDigits))
+  /// The ATR pane's newest value: three decimals, as ATRs of cheap stocks are a few cents.
+  static let atrFormat = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(atrDigits))
+  static let atrDigits = 3
+  /// Relative volume: one decimal ("2.6").
+  static let ratioFormat = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(1))
+  /// Share of the largest volume on screen left free above it, for the pane's name.
+  static let volumeHeadroom = 0.35
+
+  /// "23.4K": a volume in the person's language.
+  static func volumeText(_ value: Double) -> String {
+    value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
+  }
 
   /// A price as the readout and tags show it: cents, or four decimals under a dollar.
   static func price(_ value: Double) -> String {
     Money.price(Decimal(value))
-  }
-}
-
-/// The price pane's value range and where its volume bars sit.
-private struct PriceScale {
-  let domain: ClosedRange<Double>
-  /// Price at the bottom of the volume bars.
-  let volumeBase: Double
-  /// Price range the tallest visible volume bar spans.
-  let volumeHeight: Double
-  /// Largest volume on screen.
-  let volumeCeiling: Double
-
-  /// Price at the top of a bar of `volume`.
-  func volumeTop(_ volume: Double) -> Double {
-    guard volumeCeiling > 0 else { return volumeBase }
-    return volumeBase + volume / volumeCeiling * volumeHeight
   }
 }
 
@@ -816,10 +857,65 @@ private struct ExtremeLabel: View {
   }
 }
 
-/// Values of the candle under the pointer (or the newest) above the panes: time, open, high, low,
-/// close, change from the previous close, volume, then the drawn lines and studies. It alone
-/// reads the pointer's candle, so a pointer move redraws these rows and not the panes.
-private struct ChartReadout: View {
+/// Values of the candle under the pointer (or the newest), in the screen's header: time, open,
+/// high, low, close, change from the previous close and volume. It alone reads the pointer's
+/// candle, so a pointer move redraws this line and not the panes.
+struct ChartReadout: View {
+  let plot: ChartPlot
+  let pointer: ChartPointer
+
+  private var series: ChartSeries { plot.series }
+
+  var body: some View {
+    let pointed = pointer.index.flatMap { series.candles.indices.contains($0) ? $0 : nil }
+    if let index = pointed ?? series.candles.indices.last {
+      let candle = series.candles[index]
+      HStack(spacing: Tokens.Space.m) {
+        Text(verbatim: plot.timeText(index))
+          .foregroundStyle(Palette.textSecondary)
+        value(L10n.Chart.open, CandleChart.price(candle.open))
+        value(L10n.Chart.high, CandleChart.price(candle.high))
+        value(L10n.Chart.low, CandleChart.price(candle.low))
+        value(L10n.Chart.close, CandleChart.price(candle.close))
+        if let change = series.candles.change(at: index) {
+          Text(verbatim: Self.changeText(change))
+            .foregroundStyle(change.amount >= 0 ? Palette.profitText : Palette.lossText)
+        }
+        value(L10n.Chart.volumeShort, CandleChart.volumeText(candle.volume))
+      }
+      .font(Tokens.Typography.annotation)
+      .monospacedDigit()
+      .contentTransition(.numericText())
+      .lineLimit(1)
+      .fixedSize()
+      // One line, cut at the edge when the window is narrow: values that wrapped made the
+      // readout's height (and with it the window's least size) change on every pointed candle,
+      // and AppKit re-laid the window inside its own layout pass until it threw.
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
+      .clipped()
+    }
+  }
+
+  /// "+0.21 (+6.21%)": the change in price and as a percentage, always signed.
+  static func changeText(_ change: CandleChange) -> String {
+    let amount = change.amount.formatted(
+      .number.precision(.fractionLength(Money.centsDigits)).sign(strategy: .always()))
+    let percent = change.fraction.formatted(
+      .percent.precision(.fractionLength(Money.centsDigits)).sign(strategy: .always()))
+    return String(localized: L10n.Chart.change(amount, percent))
+  }
+
+  private func value(_ name: LocalizedStringResource, _ text: String) -> some View {
+    HStack(spacing: Tokens.Space.xs) {
+      Text(name).foregroundStyle(Palette.textQuaternary)
+      Text(verbatim: text).foregroundStyle(Palette.textTertiary)
+    }
+  }
+}
+
+/// The drawn lines and studies with their values at the pointed (or newest) candle, in their
+/// colours, in the price pane's top left corner.
+private struct ChartLegend: View {
   let plot: ChartPlot
   let lines: ChartLines
   let pointer: ChartPointer
@@ -829,46 +925,26 @@ private struct ChartReadout: View {
   var body: some View {
     let pointed = pointer.index.flatMap { series.candles.indices.contains($0) ? $0 : nil }
     if let index = pointed ?? series.candles.indices.last {
-      let candle = series.candles[index]
-      let tone = candle.isUp ? Palette.profitText : Palette.lossText
-      VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+      let items = entries(index)
+      if !items.isEmpty {
         HStack(spacing: Tokens.Space.m) {
-          Text(verbatim: plot.timeText(index))
-            .font(Tokens.Typography.annotationBold)
-            .foregroundStyle(Palette.textSecondary)
-          value(L10n.Chart.open, CandleChart.price(candle.open), color: tone)
-          value(L10n.Chart.high, CandleChart.price(candle.high), color: tone)
-          value(L10n.Chart.low, CandleChart.price(candle.low), color: tone)
-          value(L10n.Chart.close, CandleChart.price(candle.close), color: tone)
-          if let change = series.candles.change(at: index) {
-            Text(verbatim: Self.changeText(change))
-              .foregroundStyle(change.amount >= 0 ? Palette.profitText : Palette.lossText)
+          ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            HStack(spacing: Tokens.Space.xs) {
+              Text(item.name)
+              Text(verbatim: CandleChart.price(item.value))
+            }
+            .foregroundStyle(item.color)
           }
-          value(L10n.Chart.volumeShort, candle.volume.formatted(.number.notation(.compactName)))
         }
-        studies(index)
-      }
-      .font(Tokens.Typography.annotation)
-      .monospacedDigit()
-      .contentTransition(.numericText())
-      .lineLimit(1)
-      .fixedSize()
-      // One line each, cut at the edge when the window is narrow: values that wrapped made the
-      // readout's height (and with it the window's least size) change on every pointed candle,
-      // and AppKit re-laid the window inside its own layout pass until it threw.
-      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-      .clipped()
-    }
-  }
-
-  /// Values of the drawn lines and studies at the candle; nothing when none is drawn.
-  @ViewBuilder private func studies(_ index: Int) -> some View {
-    let items = entries(index)
-    if !items.isEmpty {
-      HStack(spacing: Tokens.Space.m) {
-        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-          value(item.name, CandleChart.price(item.value), color: item.color)
-        }
+        .font(Tokens.Typography.annotation)
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, Tokens.Space.xs)
+        .background(Palette.surfaceSunken.opacity(Tokens.Opacity.overlay), in: .rect(cornerRadius: Tokens.Radius.small))
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .allowsHitTesting(false)
       }
     }
   }
@@ -878,9 +954,9 @@ private struct ChartReadout: View {
     func add(_ name: LocalizedStringResource, _ value: Double?, _ color: Color) {
       if let value { items.append(ReadoutEntry(name: name, value: value, color: color)) }
     }
-    if lines.vwap { add(L10n.Chart.vwap, series.vwap[index], Palette.seriesVWAP) }
-    if lines.fastEMA { add(L10n.Chart.ema(Indicators.fastEMAPeriod), series.fastEMA[index], Palette.seriesFastEMA) }
-    if lines.slowEMA { add(L10n.Chart.ema(Indicators.slowEMAPeriod), series.slowEMA[index], Palette.seriesSlowEMA) }
+    if lines.vwap { add(L10n.Chart.vwap, series.vwap[index], Palette.warningText) }
+    if lines.fastEMA { add(L10n.Chart.ema(Indicators.fastEMAPeriod), series.fastEMA[index], Palette.accentText) }
+    if lines.slowEMA { add(L10n.Chart.ema(Indicators.slowEMAPeriod), series.slowEMA[index], Palette.highlightText) }
     if lines.movingAverages {
       for (offset, period) in Studies.movingAveragePeriods.enumerated() {
         add(L10n.Chart.movingAverage(period), plot.movingAverages[offset][index], CandleChart.movingAverageColors[offset])
@@ -904,21 +980,24 @@ private struct ChartReadout: View {
     if lines.atr { add(L10n.Chart.atr(Indicators.atrPeriod), plot.atr[index], Palette.seriesATRText) }
     return items
   }
+}
 
-  /// "+0.21 (+6.21%)": the change in price and as a percentage, always signed.
-  static func changeText(_ change: CandleChange) -> String {
-    let amount = change.amount.formatted(
-      .number.precision(.fractionLength(Money.centsDigits)).sign(strategy: .always()))
-    let percent = change.fraction.formatted(
-      .percent.precision(.fractionLength(Money.centsDigits)).sign(strategy: .always()))
-    return String(localized: L10n.Chart.change(amount, percent))
-  }
+/// A trade's or a decision's label on the price pane: bold mono on a plate washed in its colour.
+private struct MarkPlate: View {
+  let text: LocalizedStringResource
+  let color: Color
+  let textColor: Color
 
-  private func value(_ name: LocalizedStringResource, _ text: String, color: Color = Palette.textPrimary) -> some View {
-    HStack(spacing: Tokens.Space.xs) {
-      Text(name).foregroundStyle(Palette.textQuaternary)
-      Text(verbatim: text).foregroundStyle(color)
-    }
+  var body: some View {
+    Text(text)
+      .textCase(.uppercase)
+      .font(Tokens.Typography.annotationBold)
+      .foregroundStyle(textColor)
+      .padding(.horizontal, Tokens.Space.xs)
+      .padding(.vertical, Tokens.Space.xxs)
+      .background(color.opacity(Tokens.Opacity.wash), in: .rect(cornerRadius: Tokens.Radius.small))
+      .background(Palette.surface.opacity(Tokens.Opacity.overlay), in: .rect(cornerRadius: Tokens.Radius.small))
+      .fixedSize()
   }
 }
 
@@ -940,6 +1019,8 @@ private enum Plot {
   static let fastEMA = String(localized: L10n.Chart.ema(Indicators.fastEMAPeriod))
   static let slowEMA = String(localized: L10n.Chart.ema(Indicators.slowEMAPeriod))
   static let atr = String(localized: L10n.Chart.atr(Indicators.atrPeriod))
+  static let volume = String(localized: L10n.Chart.volume)
+  static let volumeAverage = String(localized: L10n.Chart.volumeAverage(ChartPlot.volumeAveragePeriod))
   static let movingAverages = Studies.movingAveragePeriods.map { String(localized: L10n.Chart.movingAverage($0)) }
   static let bollingerUpper = String(localized: L10n.Chart.bollingerUpper)
   static let bollingerMiddle = String(localized: L10n.Chart.bollingerMiddle)

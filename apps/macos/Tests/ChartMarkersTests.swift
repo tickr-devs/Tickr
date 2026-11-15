@@ -77,7 +77,23 @@ struct ChartMarkersTests {
     #expect(String(localized: mark.label) == String(localized: expected))
   }
 
-  @Test("A decision with no price and no candle around it has no mark; WATCH is never marked")
+  @Test("The strategy's first WATCH is marked at its candle's close; a WATCH after IGNORE bars is the same watch")
+  func watchMarks() throws {
+    let url = fixturesDir.appendingPathComponent("decisions-v1.json")
+    let watch = try Wire.decoder().decode(DecisionsV1.self, from: Data(contentsOf: url)).decisions
+      .filter { $0.action == .watch }
+    let first = try #require(watch.first)
+    let start = first.at.date
+    let candle = Candle(start: start, end: start.addingTimeInterval(60), open: 12.3, high: 12.4, low: 12.2,
+      close: 12.35, volume: 1000)
+    // The same WATCH twice in a row (as after an IGNORE bar in between) is one mark.
+    let marks = ChartMarkers.decisionMarks(decisions: watch + watch, candles: [candle])
+    #expect(marks.map(\.action) == [.watch])
+    #expect(marks[0].price == 12.35)
+    #expect(marks[0].id == 0)
+  }
+
+  @Test("A decision with no price and no candle around it has no mark; a WATCH without a candle neither")
   func decisionWithoutCandle() throws {
     let marks = ChartMarkers.decisionMarks(decisions: try decisions(), candles: [])
     #expect(marks.map(\.action) == [.enter, .enter])

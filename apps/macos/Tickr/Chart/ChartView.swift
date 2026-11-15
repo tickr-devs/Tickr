@@ -2,12 +2,17 @@ import SwiftUI
 import TickrDesign
 import TickrKit
 
-/// Chart screen: candles of one symbol on the shown day with the bot's lines, its trades and the
-/// open position's entry and stop. Live days refresh as new M1 bars arrive.
+/// Chart screen: the symbol with its last price and the pointed candle's values on top, the range,
+/// interval, chart type, zoom and study chips under it, then the candles of the shown day (or a
+/// longer range) with the bot's lines, its trades and the open position's entry and stop, in a
+/// card. Beside it, the rail: the symbols to pick from, what the strategy decided at the pointed
+/// candle, and the open position. Live days refresh as new M1 bars arrive.
 struct ChartView: View {
   @Environment(AppModel.self) private var model
   @Environment(ChartModel.self) private var chart
   @State private var viewport = Viewport()
+  /// The candle under the pointer: the chart, the header's readout and the explain card share it.
+  @State private var pointer = ChartPointer()
   @AppStorage(Keys.symbol) private var picked = ""
   @AppStorage(Keys.timeframe) private var timeframe: Timeframe = .m1
   @AppStorage(Keys.range) private var range: ChartRange = .oneDay
@@ -22,7 +27,8 @@ struct ChartView: View {
   @AppStorage(Keys.macd) private var showMACD = false
   @AppStorage(Keys.rsi) private var showRSI = true
   @AppStorage(Keys.stochastic) private var showStochastic = false
-  @AppStorage(Keys.decisions) private var showDecisions = false
+  @AppStorage(Keys.marks) private var showMarks = true
+  @AppStorage(Keys.decisions) private var showDecisions = true
 
   /// Settings keys of the chart's choices; Trades sets `symbol` for "Show on Chart".
   enum Keys {
@@ -38,7 +44,7 @@ struct ChartView: View {
     static let fastEMA = "chart.emaFast"
     /// Whether the slow EMA line is drawn.
     static let slowEMA = "chart.emaSlow"
-    /// Whether the volume bars are drawn along the bottom of the price pane.
+    /// Whether the volume pane is shown.
     static let volume = "chart.volume"
     /// Whether the ATR pane is shown.
     static let atr = "chart.atr"
@@ -54,18 +60,26 @@ struct ChartView: View {
     static let rsi = "chart.rsi"
     /// Whether the stochastic pane is shown.
     static let stochastic = "chart.stochastic"
-    /// Whether the decisions inspector is shown.
+    /// Whether the trades, the position's levels and the decisions are drawn on the price pane.
+    static let marks = "chart.marks"
+    /// Whether the rail (symbols, the explain card, the position) is shown beside the chart.
     static let decisions = "chart.decisions"
   }
 
-  /// Width of the symbol picker, in points.
-  static let pickerWidth: CGFloat = 150
-  /// Height of the separators between control groups, in points.
-  static let separatorHeight: CGFloat = 18
-  /// Key equivalent of the decisions inspector (with ⌥⌘), as for inspectors in Apple's apps.
+  /// Height of the separators between chip groups, in points.
+  static let separatorHeight: CGFloat = 20
+  /// Key equivalent of the rail (with ⌥⌘), as for inspectors in Apple's apps.
   static let decisionsKey: KeyEquivalent = "i"
-  /// Accessibility id of the decisions toggle, for the UI tests.
+  /// Accessibility id of the rail's toggle, for the UI tests.
   static let decisionsToggleID = "chart-decisions"
+  /// SF Symbols of the chip-row buttons.
+  static let zoomOutSymbol = "minus"
+  static let zoomInSymbol = "plus"
+  static let fitSymbol = "arrow.left.and.right"
+  static let railSymbol = "sidebar.trailing"
+  static let candlesSymbol = "chart.bar.fill"
+  static let lineSymbol = "chart.xyaxis.line"
+  static let menuSymbol = "chevron.down"
 
   /// What a read depends on: a change starts a new read and forgets the old bars.
   private struct LoadKey: Equatable {
@@ -78,26 +92,34 @@ struct ChartView: View {
   }
 
   var body: some View {
-    // The decisions as a fixed-width pane beside the chart, not an `.inspector` split: on
-    // macOS 27 every split-view form (nested in the screen, or a column of the window) let the
-    // columns' least sizes and safe areas resize each other inside AppKit's layout pass until it
-    // threw ("needs another Update Constraints in Window pass").
-    HStack(spacing: 0) {
+    // The rail as a fixed-width pane beside the chart, not an `.inspector` split: on macOS 27
+    // every split-view form (nested in the screen, or a column of the window) let the columns'
+    // least sizes and safe areas resize each other inside AppKit's layout pass until it threw
+    // ("needs another Update Constraints in Window pass").
+    HStack(alignment: .top, spacing: Tokens.Space.l) {
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
+        header
         controls
         content
+          .padding(Tokens.Space.s)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.large))
+          .overlay(
+            RoundedRectangle(cornerRadius: Tokens.Radius.large)
+              .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
       }
-      .padding(Tokens.Space.xl)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       if showDecisions {
-        Divider()
-        DecisionsInspector(
-          decisions: chart.decisions, error: chart.decisionsError, hasSymbol: chart.hasSymbol, showsDay: showsDay)
-          .frame(width: DecisionsInspector.width)
-          .transition(.move(edge: .trailing))
+        ChartRail(
+          symbol: symbol, symbols: symbols, pick: { picked = $0 }, plot: showsDay ? plot : nil, pointer: pointer,
+          decisions: chart.decisions, error: chart.decisionsError, showsDay: showsDay,
+          position: model.positions.first { $0.id == symbol })
+          .frame(width: ChartRail.width)
+          .frame(maxHeight: .infinity, alignment: .top)
+          .transition(.move(edge: .trailing).combined(with: .opacity))
       }
     }
+    .padding(Tokens.Space.l)
     .animation(Tokens.Motion.standard, value: showDecisions)
     .task(id: LoadKey(
       baseURL: model.baseURL, symbol: symbol, day: model.shownDay, live: model.isLive, range: range,
@@ -110,10 +132,12 @@ struct ChartView: View {
   // MARK: Data
 
   /// Symbols with something to show: open positions first, then symbols with recorded bars,
-  /// then symbols traded on the shown day.
+  /// then symbols traded on the shown day, then the watched symbols and the screeners'
+  /// candidates (the rail lists them).
   private var symbols: [String] {
     let document = model.isLive ? model.todayDocument : model.dayDocument
     let all = model.positions.map(\.id) + (document?.barSymbols ?? []) + model.shownTrades.map(\.symbol)
+      + ChartRail.watched(model.watching) + ChartRail.candidates(model.flow).map(\.symbol)
     var seen = Set<String>()
     return all.filter { seen.insert($0).inserted }
   }
@@ -132,6 +156,7 @@ struct ChartView: View {
     chart.clear()
     chart.hasSymbol = symbol != nil
     viewport = Viewport()
+    pointer.index = nil
     guard let symbol else { return }
     let baseURL = model.baseURL
     let day = model.shownDay
@@ -156,66 +181,109 @@ struct ChartView: View {
     } while !Task.isCancelled
   }
 
+  // MARK: Header
+
+  /// The symbol (a menu of the others), its last price and the day's change, and the pointed
+  /// candle's values on the right.
+  private var header: some View {
+    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.m) {
+      symbolMenu
+      if let last = plot?.candles.last {
+        Text(verbatim: CandleChart.price(last.close))
+          .font(Tokens.Typography.quote)
+          .foregroundStyle(last.isUp ? Palette.profitText : Palette.lossText)
+          .contentTransition(.numericText(value: last.close))
+          .animation(Tokens.Motion.quick, value: last.close)
+      }
+      if let change = dayChange {
+        Text(verbatim: change.formatted(.percent.precision(.fractionLength(Money.centsDigits)).sign(strategy: .always())))
+          .font(Tokens.Typography.calloutMono)
+          .foregroundStyle(Palette.result(change))
+          .help(Text(L10n.Chart.dayChangeHelp))
+      }
+      Spacer(minLength: Tokens.Space.m)
+      if let plot {
+        ChartReadout(plot: plot, pointer: pointer)
+          .layoutPriority(-1)
+      }
+    }
+  }
+
+  /// The day's change of the shown symbol from the previous close, when the screeners reported
+  /// it (the bars carry no previous close).
+  private var dayChange: Decimal? {
+    guard let symbol, let pct = model.flow?.chips.first(where: { $0.symbol == symbol })?.changePct else { return nil }
+    return pct.value / Self.percentFactor
+  }
+
+  /// A percent of 1 is 0.01.
+  static let percentFactor: Decimal = 100
+
+  private var symbolMenu: some View {
+    Menu {
+      ForEach(symbols, id: \.self) { item in
+        Button { picked = item } label: { Text(verbatim: item) }
+      }
+    } label: {
+      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
+        Text(verbatim: symbol ?? Format.missing)
+          .font(Tokens.Typography.metric)
+          .foregroundStyle(Palette.textPrimary)
+        Image(systemName: Self.menuSymbol)
+          .font(Tokens.Typography.chevron)
+          .foregroundStyle(Palette.textQuaternary)
+      }
+      .contentShape(.rect)
+    }
+    .menuStyle(.button)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .disabled(symbols.isEmpty)
+    .help(Text(L10n.Chart.symbolHelp))
+    .accessibilityLabel(Text(L10n.Chart.symbol))
+    .accessibilityValue(Text(verbatim: symbol ?? Format.missing))
+  }
+
   // MARK: Controls
 
-  /// The symbol, interval, chart type, zoom and inspector on top; the indicator chips under them
-  /// in a row that scrolls sideways when the window is narrow, so the chips never widen the
-  /// window and push the sidebar or the inspector off screen.
+  /// The range, interval and chart type chips with zoom, the live pill and the rail on the right;
+  /// the study chips under them, wrapping in a narrow window.
   private var controls: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: Tokens.Space.m) {
-          symbolPicker
-          rangePicker
-          timeframePicker
-          stylePicker
-          Spacer(minLength: Tokens.Space.m)
-          zoomButtons
-          decisionsToggle
-        }
-        VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          HStack(spacing: Tokens.Space.m) {
-            symbolPicker
-            Spacer(minLength: Tokens.Space.m)
-            zoomButtons
-            decisionsToggle
-          }
-          HStack(spacing: Tokens.Space.m) {
-            rangePicker
-            timeframePicker
-            stylePicker
-          }
-        }
+      HStack(spacing: Tokens.Space.xs) {
+        rangeChips
+        separator
+        intervalChips
+        separator
+        styleChips
+        Spacer(minLength: Tokens.Space.s)
+        zoomButtons
+        if model.isLive && showsDay { livePill }
+        decisionsToggle
       }
       indicatorToggles
     }
-    .animation(Tokens.Motion.quick, value: symbols)
+    .fixedSize(horizontal: false, vertical: true)
   }
 
-  private var symbolPicker: some View {
-    Picker(selection: Binding(get: { symbol ?? picked }, set: { picked = $0 })) {
-      ForEach(symbols, id: \.self) { item in
-        Text(verbatim: item).tag(item)
-      }
-    } label: {
-      Text(L10n.Chart.symbol)
-    }
-    .frame(width: Self.pickerWidth)
-    .disabled(symbols.isEmpty)
+  private var separator: some View {
+    Rectangle()
+      .fill(Palette.separatorStrong)
+      .frame(width: Tokens.Stroke.thin, height: Self.separatorHeight)
+      .padding(.horizontal, Tokens.Space.xs)
   }
 
-  private var rangePicker: some View {
-    Picker(selection: $range) {
+  private var rangeChips: some View {
+    HStack(spacing: Tokens.Space.xs) {
       ForEach(ChartRange.allCases, id: \.self) { item in
-        Text(Self.title(item)).tag(item)
+        Button { range = item } label: { Text(Self.title(item)) }
+          .buttonStyle(.chip(selected: range == item))
       }
-    } label: {
-      Text(L10n.Chart.rangeLabel)
     }
-    .pickerStyle(.segmented)
-    .labelsHidden()
-    .fixedSize()
     .help(Text(L10n.Chart.rangeHelp))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(Text(L10n.Chart.rangeLabel))
   }
 
   /// "Day", "5D", "1M": the range as charting apps name it.
@@ -229,31 +297,18 @@ struct ChartView: View {
     }
   }
 
-  /// The range's intervals to pick from; a range with one (a month: daily) names it instead of
-  /// showing a picker of one wide segment.
-  @ViewBuilder private var timeframePicker: some View {
-    if range.intervals.count > 1 {
-      intervalPicker
-    } else {
-      Text(Self.title(interval))
-        .font(Tokens.Typography.captionMono)
-        .foregroundStyle(Palette.textSecondary)
-        .help(Text(L10n.Chart.timeframeHelp))
-    }
-  }
-
-  private var intervalPicker: some View {
-    Picker(selection: Binding(get: { interval }, set: { timeframe = $0 })) {
+  /// The range's intervals to pick from; a range with one (a month: daily) shows it as the one
+  /// selected chip.
+  private var intervalChips: some View {
+    HStack(spacing: Tokens.Space.xs) {
       ForEach(range.intervals) { item in
-        Text(Self.title(item)).tag(item)
+        Button { timeframe = item } label: { Text(Self.title(item)) }
+          .buttonStyle(.chip(selected: interval == item))
       }
-    } label: {
-      Text(L10n.Chart.timeframeLabel)
     }
-    .pickerStyle(.segmented)
-    .labelsHidden()
-    .fixedSize()
     .help(Text(L10n.Chart.timeframeHelp))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(Text(L10n.Chart.timeframeLabel))
   }
 
   /// "1m", "5m", "1h": the interval as charting apps name it.
@@ -266,23 +321,25 @@ struct ChartView: View {
     }
   }
 
-  private var stylePicker: some View {
-    Picker(selection: $style) {
-      Label { Text(L10n.Chart.candles) } icon: { Image(systemName: "chart.bar.fill") }
-        .tag(ChartStyle.candles)
-      Label { Text(L10n.Chart.lineStyle) } icon: { Image(systemName: "chart.xyaxis.line") }
-        .tag(ChartStyle.line)
-    } label: {
-      Text(L10n.Chart.styleLabel)
+  private var styleChips: some View {
+    HStack(spacing: Tokens.Space.xs) {
+      chip(Self.candlesSymbol, title: L10n.Chart.candles, selected: style == .candles) { style = .candles }
+      chip(Self.lineSymbol, title: L10n.Chart.lineStyle, selected: style == .line) { style = .line }
     }
-    .pickerStyle(.segmented)
-    .labelStyle(.iconOnly)
-    .labelsHidden()
-    .fixedSize()
     .help(Text(L10n.Chart.styleHelp))
   }
 
-  /// Lines over the price (the bot's own first, then the studies), then the panes below it.
+  /// A chip showing one symbol, named for VoiceOver.
+  private func chip(
+    _ systemImage: String, title: LocalizedStringResource, selected: Bool = false, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) { Image(systemName: systemImage) }
+      .buttonStyle(.chip(selected: selected))
+      .accessibilityLabel(Text(title))
+  }
+
+  /// Lines over the price (the bot's own first, then the studies), then the panes below it, then
+  /// the trade marks.
   private var indicatorToggles: some View {
     ChipFlow(spacing: Tokens.Space.xs) {
       Toggle(isOn: $showVWAP) { Text(L10n.Chart.vwap) }
@@ -292,8 +349,8 @@ struct ChartView: View {
         .help(Text(L10n.Chart.movingAverageHelp))
       Toggle(isOn: $showBollinger) { Text(L10n.Chart.bollinger) }
         .help(Text(L10n.Chart.bollingerHelp(Studies.bollingerPeriod)))
+      separator
       Toggle(isOn: $showVolume) { Text(L10n.Chart.volume) }
-      Rectangle().fill(Palette.separator).frame(width: Tokens.Stroke.hairline, height: Self.separatorHeight)
       Toggle(isOn: $showMACD) { Text(L10n.Chart.macd) }
         .help(Text(L10n.Chart.macdHelp(Studies.macdFast, Studies.macdSlow, Studies.macdSignal)))
       Toggle(isOn: $showRSI) { Text(L10n.Chart.rsiChip) }
@@ -301,42 +358,55 @@ struct ChartView: View {
       Toggle(isOn: $showStochastic) { Text(L10n.Chart.stochastic) }
         .help(Text(L10n.Chart.stochasticHelp(Studies.stochasticPeriod, Studies.stochasticSmoothing)))
       Toggle(isOn: $showATR) { Text(L10n.Chart.atr(Indicators.atrPeriod)) }
+      separator
+      Toggle(isOn: $showMarks) { Text(L10n.Chart.tradesChip) }
+        .help(Text(L10n.Chart.tradesChipHelp))
+        .disabled(!showsDay)
     }
-    .toggleStyle(.button)
+    .toggleStyle(.chip)
   }
 
   private var zoomButtons: some View {
-    ControlGroup {
-      Button { viewport.zoomOut(total: candleCount) } label: {
-        Label { Text(L10n.Chart.zoomOut) } icon: { Image(systemName: "minus.magnifyingglass") }
-      }
-      .keyboardShortcut(Viewport.zoomOutKey, modifiers: .command)
-      .help(Text(L10n.Chart.zoomOutHelp))
-      .disabled(viewport.visible == nil)
-      Button { viewport.fit() } label: {
-        Label { Text(L10n.Chart.fit) } icon: { Image(systemName: "arrow.left.and.right") }
-      }
-      .keyboardShortcut(Viewport.fitKey, modifiers: .command)
-      .help(Text(L10n.Chart.fitHelp))
-      Button { viewport.zoomIn(total: candleCount) } label: {
-        Label { Text(L10n.Chart.zoomIn) } icon: { Image(systemName: "plus.magnifyingglass") }
-      }
-      .keyboardShortcut(Viewport.zoomInKey, modifiers: .command)
-      .help(Text(L10n.Chart.zoomInHelp))
+    HStack(spacing: Tokens.Space.xs) {
+      chip(Self.zoomOutSymbol, title: L10n.Chart.zoomOut) { viewport.zoomOut(total: candleCount) }
+        .keyboardShortcut(Viewport.zoomOutKey, modifiers: .command)
+        .help(Text(L10n.Chart.zoomOutHelp))
+        .disabled(viewport.visible == nil)
+      chip(Self.fitSymbol, title: L10n.Chart.fit) { viewport.fit() }
+        .keyboardShortcut(Viewport.fitKey, modifiers: .command)
+        .help(Text(L10n.Chart.fitHelp))
+      chip(Self.zoomInSymbol, title: L10n.Chart.zoomIn) { viewport.zoomIn(total: candleCount) }
+        .keyboardShortcut(Viewport.zoomInKey, modifiers: .command)
+        .help(Text(L10n.Chart.zoomInHelp))
     }
-    .labelStyle(.iconOnly)
-    .fixedSize()
     .disabled(candleCount == 0)
+  }
+
+  /// "● LIVE" while the chart follows the live day.
+  private var livePill: some View {
+    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.chip, style: .continuous)
+    return HStack(spacing: Tokens.Space.xs) {
+      Circle().fill(Palette.profit).frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+      Text(L10n.Chart.live).textCase(.uppercase)
+    }
+    .font(Tokens.Typography.label)
+    .foregroundStyle(Palette.profitText)
+    .padding(.horizontal, Tokens.Space.s)
+    .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
+    .background(Palette.profit.opacity(Tokens.Opacity.wash), in: shape)
+    .overlay(shape.strokeBorder(Palette.profit, lineWidth: Tokens.Stroke.thin))
+    .help(Text(L10n.Chart.liveHelp))
+    .transition(.opacity)
   }
 
   private var decisionsToggle: some View {
     Toggle(isOn: $showDecisions) {
-      Label { Text(L10n.Chart.decisions) } icon: { Image(systemName: "sidebar.trailing") }
+      Image(systemName: Self.railSymbol)
     }
-    .toggleStyle(.button)
-    .labelStyle(.iconOnly)
+    .toggleStyle(.chip)
     .keyboardShortcut(Self.decisionsKey, modifiers: [.command, .option])
     .help(Text(L10n.Chart.decisionsHelp))
+    .accessibilityLabel(Text(L10n.Chart.decisions))
     .accessibilityIdentifier(Self.decisionsToggleID)
   }
 
@@ -348,6 +418,9 @@ struct ChartView: View {
 
   private var candleCount: Int { plot?.candles.count ?? 0 }
 
+  /// Whether the trades, levels and decisions are drawn: one day only, while TRADES is on.
+  private var marked: Bool { showsDay && showMarks }
+
   @ViewBuilder private var content: some View {
     if let symbol, let plot {
       CandleChart(
@@ -356,14 +429,14 @@ struct ChartView: View {
           style: style, vwap: showVWAP, fastEMA: showFastEMA, slowEMA: showSlowEMA,
           movingAverages: showMovingAverages, bollinger: showBollinger, volume: showVolume,
           macd: showMACD, rsi: showRSI, stochastic: showStochastic, atr: showATR),
-        marks: showsDay ? ChartMarkers.marks(trades: model.shownTrades.filter { $0.symbol == symbol }) : [],
+        marks: marked ? ChartMarkers.marks(trades: model.shownTrades.filter { $0.symbol == symbol }) : [],
         // The position's lines start at its entry minute: on one day only, as its trades.
-        levels: showsDay ? ChartMarkers.levels(position: model.positions.first { $0.id == symbol }) : [],
-        decisions: showDecisions && showsDay
+        levels: marked ? ChartMarkers.levels(position: model.positions.first { $0.id == symbol }) : [],
+        decisions: marked
           ? ChartMarkers.decisionMarks(decisions: chart.decisions?.decisions ?? [], candles: plot.candles) : [],
         // Only the shown live day and intraday ranges reaching today still change.
         live: model.isLive && (showsDay || interval.isIntraday),
-        viewport: $viewport)
+        viewport: $viewport, pointer: pointer)
         // The bot's status arrives every few seconds and redraws this screen; the chart itself
         // only when what it draws changed.
         .equatable()
@@ -410,7 +483,7 @@ struct ChartLines: Equatable {
   let slowEMA: Bool
   let movingAverages: Bool
   let bollinger: Bool
-  /// Volume bars along the bottom of the price pane.
+  /// The volume pane under the price pane.
   let volume: Bool
   let macd: Bool
   let rsi: Bool
