@@ -3,6 +3,7 @@ import ApertureKit
 import Foundation
 import Testing
 
+@MainActor
 @Suite("Clean-day mark on the Trades calendar and day list")
 struct CleanMarkTests {
   func days() throws -> [DaySummary] {
