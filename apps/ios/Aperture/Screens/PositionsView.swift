@@ -470,11 +470,31 @@ private struct ProtectionChain: View {
     }
   }
 
+  /// The entry order went out exactly once and the broker took it: acknowledged, or filled.
+  private var entryProven: Bool {
+    let entry = position.entry
+    return entry.sends == 1 && (entry.latestOutcome == .acknowledged || entry.filledAt != nil)
+  }
+
+  /// When the entry was sent; an alarm when it went out other than once; an unknown outcome the
+  /// broker later confirmed says so; the bot's cause when it has no record.
+  private var entryDetail: String {
+    let entry = position.entry
+    if entry.sentOtherThanOnce, let sends = entry.sends {
+      return String(localized: L10n.Positions.entrySends(sends))
+    }
+    if entry.sendOutcome == .unknown, entry.latestOutcome == .acknowledged {
+      return String(localized: L10n.Positions.entryConfirmedLater)
+    }
+    return entry.sentAt.map { Format.clock($0.date) } ?? position.entryCause ?? Format.missing
+  }
+
   private var steps: [(label: LocalizedStringResource, detail: String, ok: Bool)] {
     let state = position.stop.state
     return [
-      (L10n.Positions.filled(position.quantity.text, position.entryPrice.text), Format.clock(position.openedAt.date),
-        true),
+      (L10n.Positions.entrySent, entryDetail, entryProven),
+      (L10n.Positions.filled(position.quantity.text, position.entryPrice.text),
+        Format.clock((position.entry.filledAt ?? position.openedAt).date), true),
       // No time: the status does not say when the stop was sent, and its order id means nothing here.
       (L10n.Positions.stopSent(position.stop.price?.text ?? ""), "", state == .pending || state == .verified),
       (L10n.Positions.stopWorking, Board.stopStateTitle(state), state.isProtected),

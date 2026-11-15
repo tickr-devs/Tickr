@@ -407,6 +407,16 @@ enum L10n {
     static func filled(_ quantity: String, _ price: String) -> LocalizedStringResource {
       LocalizedStringResource("positions.filled", defaultValue: "Filled \(quantity) @ \(price)", bundle: L10n.bundle)
     }
+    static var entrySent: LocalizedStringResource {
+      LocalizedStringResource("positions.entrySent", defaultValue: "Entry sent once", bundle: L10n.bundle)
+    }
+    static func entrySends(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("positions.entrySends", defaultValue: "sent \(count) times", bundle: L10n.bundle)
+    }
+    static var entryConfirmedLater: LocalizedStringResource {
+      LocalizedStringResource("positions.entryConfirmedLater",
+        defaultValue: "unknown at send, confirmed by the broker", bundle: L10n.bundle)
+    }
     static func stopSent(_ price: String) -> LocalizedStringResource {
       LocalizedStringResource("positions.stopSent", defaultValue: "Stop \(price) sent once", bundle: L10n.bundle)
     }

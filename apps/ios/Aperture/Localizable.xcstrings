@@ -3896,6 +3896,23 @@
         }
       }
     },
+    "positions.entryConfirmedLater" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unknown at send, confirmed by the broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "исход неизвестен при отправке, брокер подтвердил"
+          }
+        }
+      }
+    },
     "positions.entryLevel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3909,6 +3926,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "вход %@"
+          }
+        }
+      }
+    },
+    "positions.entrySends" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sent %lld times"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "отправлен раз: %lld"
+          }
+        }
+      }
+    },
+    "positions.entrySent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entry sent once"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход отправлен один раз"
           }
         }
       }
