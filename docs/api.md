@@ -82,7 +82,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
-| GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first. |
+| GET | `/observers?date=<YYYY-MM-DD>` | `200` `observers-v1`: every configured observer with its recorded decisions of that date (default today), oldest first, its simulated day result and simulated trades. |
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
 | GET | `/skipped?date=<YYYY-MM-DD>` | `200` `skipped-v1`: every ENTER of the active strategy that date (default today) that did not become a position (admission `refused` or `not_evaluated`), oldest first, with checks, prices after the signal and the simulated what-if. |
 | GET | `/flow?date=<YYYY-MM-DD>` | `200` `flow-v1`: the Overview's live flow that date (default today): screener chips and the pipeline stages from screeners to verified broker stops, with reconciliation. |
@@ -554,6 +554,30 @@ after one of them changed (a demo day of about 40 ENTERs takes well under a seco
 decided by a failure that can pass without a file changing (an OSError, a calendar or
 simulation refusal) is never kept. Nothing is written to disk. An observer folder whose `strategy.toml` cannot be read
 is `503 unavailable`.
+
+`trades` (for the Lab chart "Today if each version traded") lists every ENTER of that same
+simulation, so it comes from the same memo and costs no extra simulation: one
+`{symbol, at, opened_at, entry_price, closed_at, exit_price, quantity, exit_reason,
+result_gross_usd, result_r, cause}` per ENTER, oldest first (`at`, the decision bar start, then
+symbol), SIMULATED and display only. A filled trade has `opened_at` / `entry_price` (the
+simulated fill, slippage in) and `closed_at` / `exit_price`, `exit_reason` (`stop`,
+`strategy_exit`, `flatten`, `end_of_data`; today an open trade ends at the last captured bar,
+provisional), `result_r` per share against the simulated entry and the recorded stop, and
+`quantity` with `result_gross_usd` for the recorded whole quantity; prices, USD and R are
+rounded to the replay settings' `output_decimal_places`, each trade on its own, so their sum may
+differ from the observer's `result_gross_usd` in the last place by one unit per trade. Without
+a recorded whole quantity the trade is simulated for one share: `quantity` and
+`result_gross_usd` are `null` with the cause `no recorded whole quantity: result in R only`. An
+ENTER without a trade has every price, time and result `null` and a `cause` of the form
+`<outcome>: <detail>`: `missed: ...`, `rejected: ...`, `not_simulated: ...` (no captured bars
+for the symbol, decision bar not captured), `skipped_overlap: an earlier simulated trade of
+<symbol> was still open`; otherwise `cause` is `null`. At most `[api] observer_trades_max_rows`
+are listed; `trades_truncated` is `true` when that cap left later ones out. An observer without
+an ENTER that day has `trades: []`. `trades` is `null` with `trades_cause` when the simulation
+could not run: the same cause as `result_cause` (no decisions, no captured bars, unreadable
+inputs, simulation refused) or, for an unexpected error while listing them, `<Error>: <detail>`;
+otherwise `trades_cause` is `null`. The active strategy's trades are not here: `/observers`
+holds observers only, and the bot's real trades are in `day-v1`.
 
 `/decisions?symbol=&date=` (both required) lists the active strategy's and the observers'
 decisions for the symbol, `observer` true for an observer record, `strategy` its `{name,

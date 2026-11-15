@@ -682,16 +682,43 @@ class ObserverDecisionV1:
 
 
 @dataclass(frozen=True)
+class ObserverTradeV1:
+    """One ENTER of an observer as its day simulation replayed it, SIMULATED, display only.
+    `at` is the decision bar's start. A filled trade has its entry, exit, `exit_reason` and
+    `result_r` (per share); `quantity` and `result_gross_usd` only with a recorded whole
+    quantity. Every null has `cause` (missed, rejected, not simulated, skipped because an
+    earlier simulated trade of the symbol was open, no recorded whole quantity); else null."""
+
+    symbol: str
+    at: datetime
+    opened_at: datetime | None
+    entry_price: Decimal | None
+    closed_at: datetime | None
+    exit_price: Decimal | None
+    quantity: Decimal | None
+    exit_reason: ExitReason | None
+    result_gross_usd: Decimal | None
+    result_r: Decimal | None
+    cause: str | None
+
+
+@dataclass(frozen=True)
 class ObserverV1:
     """One configured observer. `result_gross_usd` is its simulated gross day result (the
     research observers report's what-if simulation of its ENTERs on that day's captured bars);
-    null when it cannot be computed, and then `result_cause` says why (else null)."""
+    null when it cannot be computed, and then `result_cause` says why (else null). `trades`:
+    every ENTER of that simulation, oldest first, at most `[api] observer_trades_max_rows`
+    (`trades_truncated` true when the cap left some out); null with `trades_cause` when the
+    simulation could not run (else `trades_cause` is null)."""
 
     name: str
     version: str
     decisions: tuple[ObserverDecisionV1, ...]
     result_gross_usd: Decimal | None
     result_cause: str | None
+    trades: tuple[ObserverTradeV1, ...] | None
+    trades_cause: str | None
+    trades_truncated: bool
 
 
 @dataclass(frozen=True)
@@ -758,8 +785,18 @@ def _oldest_first(records: tuple[DecisionRecord, ...]) -> list[DecisionRecord]:
     return sorted(records, key=lambda r: (r.bar_start, r.time))
 
 
-# (gross USD or None, cause when None) of one observer identity's simulated day.
-ObserverResult = tuple[Decimal | None, str | None]
+@dataclass(frozen=True)
+class ObserverResult:
+    """One observer identity's simulated day (not a document): gross USD or None with its
+    cause, and its trades or None with their cause."""
+
+    gross_usd: Decimal | None
+    cause: str | None
+    trades: tuple[ObserverTradeV1, ...] | None = ()
+    trades_cause: str | None = None
+    trades_truncated: bool = False
+
+
 NO_DECISIONS = "no decisions recorded that day"
 
 
@@ -771,7 +808,7 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
     version recorded that day (config order, then version), or, when a name has no records,
     one empty entry per current version, so a version bump never hides earlier records.
     `results`: the simulated result of every (name, version) recorded that day; an entry
-    without records gets null with the cause NO_DECISIONS."""
+    without records gets null result and trades with the cause NO_DECISIONS."""
     ordered = _oldest_first(records)
     names = list(dict.fromkeys(name for name, _ in identities))
     entries: list[ObserverV1] = []
@@ -780,13 +817,16 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
         current = [v for n, v in identities if n == name]
         for version in sorted(recorded or set(current), key=_version_order):
             if (name, version) in results:
-                gross, cause = results[(name, version)]
+                result = results[(name, version)]
             elif version in recorded:  # a caller bug: refuse rather than mislabel it
                 raise ContractError(f"no simulated result for observer {name} v{version}")
             else:
-                gross, cause = None, NO_DECISIONS
-            entries.append(ObserverV1(name=name, version=version, result_gross_usd=gross,
-                                      result_cause=cause, decisions=tuple(
+                result = ObserverResult(None, NO_DECISIONS, None, NO_DECISIONS)
+            entries.append(ObserverV1(
+                name=name, version=version, result_gross_usd=result.gross_usd,
+                result_cause=result.cause, trades=result.trades,
+                trades_cause=result.trades_cause, trades_truncated=result.trades_truncated,
+                decisions=tuple(
                 ObserverDecisionV1(r.bar_start, r.symbol, r.decision.verdict,
                                    tuple(c.rule for c in r.decision.checks if not c.passed))
                 for r in ordered

@@ -228,6 +228,15 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
             ("price-action-v2", None)]
         assert any(d["action"] == "ENTER" for d in observers[0]["decisions"])
         assert D(observers[0]["result_gross_usd"]) != 0
+        # The Lab chart's simulated trades add up to the day result (each rounded on its own:
+        # at most one unit of the last place apart per trade).
+        trades = observers[0]["trades"]
+        assert observers[0]["trades_cause"] is None and not observers[0]["trades_truncated"]
+        filled = [t for t in trades if t["cause"] is None]
+        assert filled and all(t["opened_at"] and t["exit_reason"] for t in filled)
+        total = D(observers[0]["result_gross_usd"])
+        unit = D(1).scaleb(total.as_tuple().exponent)
+        assert abs(sum(D(t["result_gross_usd"]) for t in filled) - total) <= len(filled) * unit
         # Performance over both demo sessions: one stop-out on each.
         perf = _get(server, f"/performance?from=2026-11-12&to={FRIDAY.isoformat()}")
         assert (perf["trades"], perf["losses"], perf["exclusions"]) == (2, 2, [])

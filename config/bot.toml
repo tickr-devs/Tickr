@@ -183,6 +183,8 @@ status_recent_commands = 10
 idempotency_key_ttl_seconds = 86400
 # Replay settings file (fill model) the API uses to simulate each observer's day result at GET /observers, the same simulation as `python -m aperture.research observers`, relative to the repo root; read by the api server.
 replay_settings_file = "config/replay.toml"
+# Most simulated trades (ENTERs, oldest first) GET /observers lists per observer; more = cut, with `trades_truncated` true; read by the api server (api/observer_results.py).
+observer_trades_max_rows = 100
 # Most rows GET /watching returns (the closest first; the answer's `total` counts them all); read by the api server.
 watching_max_rows = 8
 # Decimal places of GET /watching `closeness` (0..1, rounded down); read by the api server.
