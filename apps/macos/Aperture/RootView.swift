@@ -258,6 +258,11 @@ private struct ConnectionStatus: View {
   static let tick: TimeInterval = 1
   /// Accessibility id of the item, for the UI tests.
   static let id = "toolbar-connection"
+  /// Width of the item, in points: fixed, so the age ticking from "9 s" to "10 s" or to "1 min"
+  /// never changes the toolbar's width, which AppKit would answer with a new layout of the whole
+  /// window every second. Holds "127.0.0.1 · 59 s ago" in English and Russian; a longer address
+  /// is shortened in the middle (the whole line is in the tooltip).
+  static let width: CGFloat = 190
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: Self.tick)) { context in
@@ -267,7 +272,10 @@ private struct ConnectionStatus: View {
         Text(verbatim: text(now: model.botTime(context.date)))
           .font(Tokens.Typography.captionMono)
           .foregroundStyle(Palette.textTertiary)
+          .lineLimit(1)
+          .truncationMode(.middle)
       }
+      .frame(width: Self.width, alignment: .leading)
     }
     .help(Text(verbatim: model.headline.text))
     .accessibilityElement(children: .combine)
