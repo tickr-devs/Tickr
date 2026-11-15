@@ -22,6 +22,7 @@ import Testing
   /// debug form of the error.
   @Test func errorText() {
     #expect(ErrorText.describe(APIError.unreachable("down")) == "Local API not reachable: down")
-    #expect(ErrorText.describe(CancellationError()) == "unexpected error in the app")
+    #expect(ErrorText.describe(CancellationError()) == nil)
+    #expect(ErrorText.text(CancellationError()) == "unexpected error in the app")
   }
 }

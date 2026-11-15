@@ -648,7 +648,7 @@ public final class AppModel {
       show(record)
     } catch {
       show(SentCommand(id: UUID().uuidString, kind: command.kind, title: title, outcome: .refused,
-        cause: String(localized: L10n.Bot.notSent(Self.describe(error))), warning: nil))
+        cause: String(localized: L10n.Bot.notSent(ErrorText.text(error))), warning: nil))
     }
     await refreshStatus()
   }
@@ -673,7 +673,7 @@ public final class AppModel {
     }
   }
 
-  static func describe(_ error: Error) -> String {
+  static func describe(_ error: Error) -> String? {
     ErrorText.describe(error)
   }
 }

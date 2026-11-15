@@ -325,7 +325,7 @@ final class AppModel {
         notice = Notice(L10n.Notice.queued(title), tone: .info)
       }
     } catch {
-      notice = Notice(L10n.Notice.failed(title, Self.describe(error)), tone: .failure)
+      notice = Notice(L10n.Notice.failed(title, ErrorText.text(error)), tone: .failure)
     }
     await refresh()
   }
@@ -355,7 +355,7 @@ final class AppModel {
     }
   }
 
-  static func describe(_ error: Error) -> String {
+  static func describe(_ error: Error) -> String? {
     ErrorText.describe(error)
   }
 }

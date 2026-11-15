@@ -75,7 +75,7 @@ final class LabModel {
     } catch is CancellationError {
       return
     } catch {
-      if day == refusalsDay { refusalsFailure = error.localizedDescription }
+      if day == refusalsDay { refusalsFailure = ErrorText.text(error) }
     }
   }
 
@@ -90,7 +90,7 @@ final class LabModel {
     } catch is CancellationError {
       return
     } catch {
-      failure = error.localizedDescription
+      failure = ErrorText.text(error)
     }
   }
 
