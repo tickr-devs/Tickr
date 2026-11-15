@@ -66,6 +66,16 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "observers-v1", "decisions-v1", "skipped-v1", "account-v1", "account-response-v1"])
   }
 
+  @Test func entrySendRecords() throws {
+    let status = try Wire.decoder().decode(StatusV1.self, from: fixture("status-v1.example.json"))
+    #expect(status.position?.entry.sendOutcome == .acknowledged)
+    #expect(status.position?.entry.sentOtherThanOnce == false)
+    let day = try Wire.decoder().decode(DayV1.self, from: fixture("day-v1.json"))
+    #expect(day.trades.first?.entry.sends == 1)
+    #expect(day.trades.last?.entry.sends == nil)
+    #expect(day.trades.last?.entryCause != nil)
+  }
+
   @Test func skippedSignalsAndAdmissions() throws {
     let skipped = try Wire.decoder().decode(SkippedV1.self, from: fixture("skipped-v1.json"))
     #expect(skipped.signals.map(\.admission) == [.refused, .notEvaluated])
