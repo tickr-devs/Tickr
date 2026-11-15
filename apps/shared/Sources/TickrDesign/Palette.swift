@@ -42,6 +42,9 @@ public enum Palette {
   public static let textTertiary = Color(light: 0x475174, dark: 0xA9B2D3)
   /// Section labels, captions, placeholders ("—").
   public static let textQuaternary = Color(light: 0x5F6A8C, dark: 0x8F99BC)
+  /// Uppercase section labels (card and sidebar headers, metric names): the boards' `.lbl`, a
+  /// touch lighter than `textQuaternary` in light mode, the same in dark.
+  public static let textLabel = Color(light: 0x6A7495, dark: 0x8F99BC)
 
   // MARK: meanings
 
@@ -68,6 +71,9 @@ public enum Palette {
   /// Context that is not live: environment, recorded days, planned (BACKLOG) features, observers.
   public static let highlight = Color(light: 0x8B5CF6, dark: 0xA78BFA)
   public static let highlightText = Color(light: 0x6D28D9, dark: 0xC4B5FD)
+
+  /// An unselected chip's fill (ranges, intervals, studies; selected chips take `selection`).
+  public static let chipFill = Color(light: 0xF3F6FD, dark: 0x111834)
 
   // MARK: chart series
 
@@ -195,11 +201,13 @@ public struct CardStyle: ViewModifier {
   @Environment(\.colorScheme) private var scheme
   let radius: CGFloat
   let tint: Color?
+  /// The card's fill: `surface`, or `surfaceSunken` for a console-like card (the Mac journal).
+  var fill = Palette.surface
 
   public func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
     content
-      .background(shape.fill(Palette.surface))
+      .background(shape.fill(fill))
       .overlay(shape.strokeBorder(tint.map { $0.opacity(Tokens.Opacity.border) } ?? Palette.separator,
         lineWidth: Tokens.Stroke.thin))
       .shadow(
@@ -210,8 +218,8 @@ public struct CardStyle: ViewModifier {
 
 public extension View {
   /// Wraps the view in the standard card surface.
-  func tickrCard(radius: CGFloat = Tokens.Radius.card, tint: Color? = nil) -> some View {
-    modifier(CardStyle(radius: radius, tint: tint))
+  func tickrCard(radius: CGFloat = Tokens.Radius.card, tint: Color? = nil, fill: Color = Palette.surface) -> some View {
+    modifier(CardStyle(radius: radius, tint: tint, fill: fill))
   }
 }
 
@@ -221,14 +229,14 @@ public struct CardLabel: View {
   let title: Text
   let color: Color
 
-  public init(_ title: LocalizedStringResource, color: Color = Palette.textQuaternary) {
+  public init(_ title: LocalizedStringResource, color: Color = Palette.textLabel) {
     self.title = Text(title)
     self.color = color
   }
 
   /// Text that is already localized or is data (a symbol). Prefer the localized initializer.
   @_disfavoredOverload
-  public init(_ text: String, color: Color = Palette.textQuaternary) {
+  public init(_ text: String, color: Color = Palette.textLabel) {
     self.title = Text(verbatim: text)
     self.color = color
   }

@@ -15,6 +15,16 @@ extension Severity {
     }
   }
 
+  /// Tone of the menu-bar panel's banner: the design draws a calm headline in the accent (live),
+  /// not in profit green.
+  var bannerTone: Tone {
+    switch self {
+    case .ok: return .accent
+    case .attention: return .warning
+    case .alarm: return .loss
+    }
+  }
+
   /// SF Symbols of the menu-bar extra for each severity.
   static let okSymbol = "camera.tickr"
   static let attentionSymbol = "pause.circle"
@@ -60,11 +70,14 @@ struct MoneyText: View {
   var signed = true
   /// Greyed: a figure as of an older moment, not the current one.
   var muted = false
+  /// A colour for an uncoloured figure (the risk room's room left in the accent), instead of the
+  /// primary text colour.
+  var tint: Color?
 
   var body: some View {
     Text(verbatim: text)
       .font(font)
-      .foregroundStyle(muted ? Palette.textQuaternary : colored ? Palette.result(value) : Palette.textPrimary)
+      .foregroundStyle(muted ? Palette.textQuaternary : colored ? Palette.result(value) : tint ?? Palette.textPrimary)
       .contentTransition(.numericText(value: NSDecimalNumber(decimal: value).doubleValue))
       .animation(Tokens.Motion.quick, value: value)
   }
@@ -112,12 +125,20 @@ extension EnvironmentValues {
   /// Whether cards grow to the height they are offered (cards sharing a grid row), instead of
   /// hugging their content.
   @Entry var cardFills = false
+  /// Whether a card's header leads with the glowing tone tick (the Overview board); the other
+  /// screens' designs label their cards plainly.
+  @Entry var cardTicks = true
 }
 
 extension View {
   /// Cards in this view grow to the height they are offered, so a grid row's cards line up.
   func filling() -> some View {
     environment(\.cardFills, true)
+  }
+
+  /// Cards in this view label themselves plainly, without the tone tick.
+  func plainCardLabels() -> some View {
+    environment(\.cardTicks, false)
   }
 }
 
@@ -133,37 +154,80 @@ extension View {
 /// A card: a section header (glowing tick in the card's tone, label, accessory), then the content.
 struct Card<Trailing: View, Content: View>: View {
   @Environment(\.cardFills) private var fills
+  @Environment(\.cardTicks) private var ticks
   let title: Text
   var tint: Color?
   var tone: Tone
+  /// The card's fill (`CardStyle.fill`).
+  var fill: Color
   let trailing: Trailing
   let content: Content
 
   init(
-    _ title: LocalizedStringResource, tint: Color? = nil, tone: Tone = .accent, @ViewBuilder trailing: () -> Trailing,
-    @ViewBuilder content: () -> Content
+    _ title: LocalizedStringResource, tint: Color? = nil, tone: Tone = .accent, fill: Color = Palette.surface,
+    @ViewBuilder trailing: () -> Trailing, @ViewBuilder content: () -> Content
   ) {
     self.title = Text(title)
     self.tint = tint
     self.tone = tone
+    self.fill = fill
     self.trailing = trailing()
     self.content = content()
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      SectionHeader(title, tone: tone) { trailing }
-      content
+      if ticks {
+        SectionHeader(title, tone: tone) { trailing }
+      } else {
+        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+          title
+            .textCase(.uppercase)
+            .font(Tokens.Typography.label)
+            .tracking(Tokens.Typography.labelTracking)
+            .foregroundStyle(Palette.textQuaternary)
+            .lineLimit(1)
+            .accessibilityAddTraits(.isHeader)
+          Spacer(minLength: Tokens.Space.s)
+          trailing
+        }
+      }
+      // A card sharing a row of a set height scrolls under its header when its content is taller.
+      if fills {
+        ScrollsWhenTall {
+          VStack(alignment: .leading, spacing: Tokens.Space.m) { content }
+        }
+      } else {
+        content
+      }
     }
     .padding(Tokens.Space.l)
     .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
-    .tickrCard(radius: Tokens.Radius.large, tint: tint)
+    .tickrCard(radius: Tokens.Radius.large, tint: tint, fill: fill)
   }
 }
 
 extension Card where Trailing == EmptyView {
   init(_ title: LocalizedStringResource, tint: Color? = nil, tone: Tone = .accent, @ViewBuilder content: () -> Content) {
     self.init(title, tint: tint, tone: tone, trailing: { EmptyView() }, content: content)
+  }
+}
+
+/// Content at its own height when the space offered holds it, else in a scroll view of that
+/// height: a card in a row of a fixed height (the Overview's middle row) scrolls inside instead
+/// of growing the row.
+struct ScrollsWhenTall<Content: View>: View {
+  let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    ViewThatFits(in: .vertical) {
+      content
+      ScrollView(.vertical) { content }.scrollBounceBehavior(.basedOnSize)
+    }
   }
 }
 
