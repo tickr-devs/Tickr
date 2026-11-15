@@ -19,12 +19,18 @@ final class ScreenTourUITests: XCTestCase {
   private static let wait: TimeInterval = 10
   /// Most extra screenshots taken while scrolling one screen down.
   private static let maxScrolls = 4
+  /// Where to tap to dismiss a popover that has no Cancel button (iOS 26 shows the bot-control
+  /// dialog as a popover and hides its cancel action): low on the screen, above the tab bar, as
+  /// fractions of the window.
+  private static let outsideX = 0.5
+  private static let outsideY = 0.8
   /// English labels the tour taps (the app's L10n default values).
   private enum Label {
     static let settings = "Settings"
     static let botControl = "Bot control"
     static let cancel = "Cancel"
-    static let dailyLossRoom = "Daily loss room"
+    /// Title of the Home card that opens Risk (L10n.Flow.title).
+    static let liveFlow = "Live flow"
     static let calendar = "Calendar"
   }
 
@@ -60,9 +66,11 @@ final class ScreenTourUITests: XCTestCase {
   private func homeDetails() {
     if english, tap(app.buttons[Label.botControl]) {
       shot("tab0-bot-control")
-      _ = tap(app.buttons[Label.cancel].firstMatch)
+      dismiss()
     }
-    if english, tap(app.buttons[Label.dailyLossRoom].firstMatch) {
+    // The Live flow card is one link whose label also carries its stages and values.
+    let flow = NSPredicate(format: "label BEGINSWITH[c] %@", Label.liveFlow)
+    if english, tap(app.buttons.matching(flow).firstMatch) {
       capture(screen: "tab0-risk")
       back()
     }
@@ -91,6 +99,17 @@ final class ScreenTourUITests: XCTestCase {
     element.tap()
     sleep(Self.settle)
     return true
+  }
+
+  /// Closes a dialog: its Cancel button when it has one, else a tap outside the popover.
+  private func dismiss() {
+    let cancel = app.buttons[Label.cancel].firstMatch
+    if cancel.exists, cancel.isHittable {
+      cancel.tap()
+    } else {
+      app.coordinate(withNormalizedOffset: CGVector(dx: Self.outsideX, dy: Self.outsideY)).tap()
+    }
+    sleep(Self.settle)
   }
 
   private func back() {
