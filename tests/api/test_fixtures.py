@@ -26,7 +26,6 @@ from aperture.api.contract import (
     DaysV1,
     DayTrade,
     DayV1,
-    DecisionAction,
     DecisionsV1,
     DecisionV1,
     ErrorV1,
@@ -112,18 +111,18 @@ def documents() -> dict[str, object]:
                         ""))),
         "observers-v1": ObserversV1(DAY, (
             ObserverV1("price-action-v1", "2", (
-                ObserverDecisionV1(T0.replace(microsecond=0), "ABCD", DecisionAction.WATCH,
+                ObserverDecisionV1(T0.replace(microsecond=0), "ABCD", Verdict.WATCH,
                                    ("ask_above_trigger",)),
                 ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), "ABCD",
-                                   DecisionAction.ENTER, ())), None),
+                                   Verdict.ENTER, ())), None),
             ObserverV1("price-action-v2", "1", (), None))),
         "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
         "decisions-v1": DecisionsV1("ABCD", DAY, (
-            DecisionV1(T0.replace(microsecond=0), DecisionAction.WATCH,
+            DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,
                        StrategyId("price-action-v1", "1"), False, (
                            CheckV1("ask_above_trigger", Decimal("12.33"), ">",
                                    Decimal("12.35"), False, ""),), None, None),
-            DecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), DecisionAction.ENTER,
+            DecisionV1(T0.replace(microsecond=0) + timedelta(minutes=1), Verdict.ENTER,
                        StrategyId("price-action-v1", "2"), True, (
                            CheckV1("ask_above_trigger", Decimal("12.37"), ">",
                                    Decimal("12.35"), True, ""),),

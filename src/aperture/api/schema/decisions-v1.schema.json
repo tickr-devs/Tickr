@@ -23,11 +23,11 @@
           "action": {
             "type": "string",
             "enum": [
-              "ignore",
-              "watch",
-              "enter",
-              "hold",
-              "exit"
+              "IGNORE",
+              "WATCH",
+              "ENTER",
+              "HOLD",
+              "EXIT"
             ]
           },
           "strategy": {

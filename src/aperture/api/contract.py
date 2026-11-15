@@ -414,18 +414,7 @@ def explain(environment: str, day: date, record: DecisionRecord) -> ExplainV1:
 # ---------------------------------------------------------------- recorded decisions (read-only)
 
 
-class DecisionAction(StrEnum):
-    """A recorded verdict, lowercased: exactly the strategy protocol's Verdict set."""
-
-    IGNORE = "ignore"
-    WATCH = "watch"
-    ENTER = "enter"
-    HOLD = "hold"
-    EXIT = "exit"
-
-
-def action_of(verdict: Verdict) -> DecisionAction:
-    return DecisionAction(verdict.value.lower())
+# `action` is the recorded Verdict, the same enum and values as explain-v1 `verdict`.
 
 
 @dataclass(frozen=True)
@@ -435,7 +424,7 @@ class ObserverDecisionV1:
 
     at: datetime
     symbol: str
-    action: DecisionAction
+    action: Verdict
     reasons: tuple[str, ...]
 
 
@@ -467,7 +456,7 @@ class DecisionV1:
     that was not taken (refused, or never evaluated) and only when the record holds them."""
 
     at: datetime
-    action: DecisionAction
+    action: Verdict
     strategy: StrategyId
     observer: bool
     checks: tuple[CheckV1, ...]
@@ -496,7 +485,7 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
     ordered = _oldest_first(records)
     return ObserversV1(day=day, observers=tuple(
         ObserverV1(name=name, version=version, result_gross_usd=None, decisions=tuple(
-            ObserverDecisionV1(r.bar_start, r.symbol, action_of(r.decision.verdict),
+            ObserverDecisionV1(r.bar_start, r.symbol, r.decision.verdict,
                                tuple(c.rule for c in r.decision.checks if not c.passed))
             for r in ordered if (r.decision.strategy, r.decision.version) == (name, version)))
         for name, version in identities))
@@ -512,7 +501,7 @@ def decisions_document(symbol: str, day: date,
         d = r.decision
         skipped = d.verdict is Verdict.ENTER and r.admission in _SKIPPED
         out.append(DecisionV1(
-            at=r.bar_start, action=action_of(d.verdict),
+            at=r.bar_start, action=d.verdict,
             strategy=StrategyId(d.strategy, d.version), observer=r.role is Role.OBSERVER,
             checks=checks_of(d), entry_price=d.entry_high if skipped else None,
             stop_price=d.stop if skipped else None))

@@ -139,15 +139,17 @@ parsed); a missing, repeated, extra or non-ticker parameter is
 Both serve decisions already in the decision file of one New York date (the same file as
 `/explain`; an archived day's `decisions.jsonl.gz` is read the same way). They never read the
 broker, simulate nothing and record nothing. `at` is the start (UTC) of the decision's M1 bar;
-decisions are oldest first (bar start, then decision time). `action` is the recorded verdict in
-lower case, one of `ignore` `watch` `enter` `hold` `exit` (the strategy protocol's full set). A
+decisions are oldest first (bar start, then decision time). `action` is the recorded verdict,
+the same enum as explain-v1 `verdict`: `IGNORE` `WATCH` `ENTER` `HOLD` `EXIT`. A
 date without a decision file answers with empty lists; a last line still being written is not
 read yet.
 
 `/observers?date=` (date optional, default today in New York) lists every folder in
 `[strategy] observers`, in configuration order, as the `name` and `version` its `strategy.toml`
 declares, with only the observer records of that identity (`role` `observer`); an observer
-without decisions that day has an empty list. `reasons` are the rules of the checks that failed,
+without decisions that day has an empty list. Each observer's `name` and `version` come from its
+current `strategy.toml` at request time, not from the records: after a version bump a past date
+lists the new identity, and the old version's records of that date do not appear. `reasons` are the rules of the checks that failed,
 in the order evaluated (empty when every check passed); the full checks are in `/decisions`.
 `result_gross_usd` is the observer's simulated day result once one is recorded; the bot records
 none yet, so it is always `null` (the offline report `python -m aperture.research observers`

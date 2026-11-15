@@ -109,9 +109,13 @@ def test_records_filters_by_symbol_and_role(cfg):
     assert log.records(DAY, symbol="WXYZ", role=Role.OBSERVER) == ()
 
 
-def test_action_enum_is_the_verdict_set_lowercased():
-    assert [a.value for a in contract.DecisionAction] == [v.value.lower() for v in Verdict]
-    assert all(contract.action_of(v).value == v.value.lower() for v in Verdict)
+def test_action_is_the_explain_verdict_enum():
+    explain = contract.json_schema(contract.ExplainV1)["properties"]["verdict"]
+    item = contract.json_schema(contract.DecisionsV1)["properties"]["decisions"]["items"]
+    observed = (contract.json_schema(contract.ObserversV1)["properties"]["observers"]["items"]
+                ["properties"]["decisions"]["items"])
+    assert explain == {"type": "string", "enum": [v.value for v in Verdict]}
+    assert item["properties"]["action"] == explain == observed["properties"]["action"]
 
 
 # ---------------------------------------------------------------- GET /observers
@@ -130,9 +134,9 @@ def test_observers_today(api, cfg):
     assert body["observers"] == [{
         "name": "price-action-v2", "version": "2", "result_gross_usd": None,
         "decisions": [
-            {"at": "2026-11-16T15:01:00.000Z", "symbol": "WXYZ", "action": "watch",
+            {"at": "2026-11-16T15:01:00.000Z", "symbol": "WXYZ", "action": "WATCH",
              "reasons": ["bars_consistent", "spread_ratio"]},
-            {"at": "2026-11-16T15:05:00.000Z", "symbol": "ABCD", "action": "enter",
+            {"at": "2026-11-16T15:05:00.000Z", "symbol": "ABCD", "action": "ENTER",
              "reasons": []},
         ]}]
 
@@ -157,7 +161,7 @@ def test_observers_archived_day(api, cfg):
     assert not log.path(past).exists()
     body = _get(api, f"/observers?date={past.isoformat()}", "observers-v1")
     assert body["day"] == past.isoformat()
-    assert [d["action"] for d in body["observers"][0]["decisions"]] == ["watch"]
+    assert [d["action"] for d in body["observers"][0]["decisions"]] == ["WATCH"]
 
 
 # ---------------------------------------------------------------- GET /decisions
@@ -180,10 +184,10 @@ def test_decisions_of_a_symbol(api, cfg):
     got = [(d["at"][11:16], d["action"], d["strategy"]["name"], d["observer"],
             d["entry_price"], d["stop_price"]) for d in body["decisions"]]
     assert got == [
-        ("15:01", "watch", "price-action-v1", False, None, None),
-        ("15:02", "enter", "price-action-v1", False, "12.40", "12.10"),
-        ("15:02", "enter", "price-action-v2", True, None, "12.00"),
-        ("15:04", "enter", "price-action-v1", False, None, None),  # taken: not a what-if
+        ("15:01", "WATCH", "price-action-v1", False, None, None),
+        ("15:02", "ENTER", "price-action-v1", False, "12.40", "12.10"),
+        ("15:02", "ENTER", "price-action-v2", True, None, "12.00"),
+        ("15:04", "ENTER", "price-action-v1", False, None, None),  # taken: not a what-if
     ]
     assert body["decisions"][0]["checks"] == [
         {"rule": "bars_consistent", "measured": None, "operator": "is", "threshold": None,

@@ -4,7 +4,7 @@
   "decisions": [
     {
       "at": "2026-11-16T15:00:00.000Z",
-      "action": "watch",
+      "action": "WATCH",
       "strategy": {
         "name": "price-action-v1",
         "version": "1"
@@ -25,7 +25,7 @@
     },
     {
       "at": "2026-11-16T15:01:00.000Z",
-      "action": "enter",
+      "action": "ENTER",
       "strategy": {
         "name": "price-action-v1",
         "version": "2"
