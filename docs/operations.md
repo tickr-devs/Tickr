@@ -14,6 +14,7 @@ renders the job files, reads them, and loads them. Manual trades and the Sandbox
 
 The bot job has one starter besides its schedule: near the flatten time the watchdog may start it once a day (see "Watchdog", `watchdog-restarted-bot`).
 | test-alert | `local.tickr.test-alert` | only on `launchctl kickstart` (grants the Messages permission, see below) | never |
+| nightly-fetch | `local.tickr.nightly-fetch` | `[runtime] nightly_fetch_start_local` on `launch_weekdays` (after the close); stops itself before the next open | never |
 | api | `local.tickr.api` | at login, always on, loopback only | launchd keeps it alive |
 
 Times in `[runtime]` are the **Mac's local time**. The calendar decides whether there is a
@@ -156,8 +157,8 @@ mkdir -p ~/Library/Logs/Tickr
     --env-file ~/.config/tickr/env \
     --log-dir ~/Library/Logs/Tickr \
     --out data/launchd
-# Read the five files in data/launchd, then:
-for job in preflight bot watchdog api test-alert; do
+# Read the six files in data/launchd, then:
+for job in preflight bot watchdog api test-alert nightly-fetch; do
   cp data/launchd/local.tickr.$job.plist ~/Library/LaunchAgents/
   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.$job.plist
 done

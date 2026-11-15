@@ -15,6 +15,9 @@ from xml.sax.saxutils import escape
 from tickr.config import Config, ConfigError, RuntimeConfig
 
 TEMPLATE_SUFFIX = ".plist.template"
+# The nightly fetch writes its outcome here, in [runtime] nightly_fetch_out (backtest/nightly.py);
+# GET /jobs reads it.
+NIGHTLY_OUTCOME_FILE = "nightly.json"
 _PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
 _HHMM = re.compile(r"^(\d{2}):(\d{2})$")
 # launchd calendar units (protocol constants): hours 0-23, minutes 0-59, weekdays 0-7 where
@@ -36,6 +39,7 @@ class Schedule:
     preflight: LocalTime
     bot: LocalTime
     watchdog: LocalTime
+    nightly: LocalTime
     weekdays: tuple[int, ...]
 
 
@@ -54,6 +58,7 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
     preflight = _local_time("preflight_start_local", runtime.preflight_start_local)
     bot = _local_time("bot_start_local", runtime.bot_start_local)
     watchdog = _local_time("watchdog_start_local", runtime.watchdog_start_local)
+    nightly = _local_time("nightly_fetch_start_local", runtime.nightly_fetch_start_local)
     if (preflight.hour, preflight.minute) >= (bot.hour, bot.minute):
         raise ConfigError("[runtime] preflight_start_local must be before bot_start_local")
     days = runtime.launch_weekdays
@@ -71,7 +76,11 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
         raise ConfigError("[runtime] min_free_disk_mb must be positive")
     if runtime.watchdog_bot_check_seconds <= 0:
         raise ConfigError("[runtime] watchdog_bot_check_seconds must be positive")
-    return Schedule(preflight=preflight, bot=bot, watchdog=watchdog, weekdays=tuple(days))
+    for key in ("nightly_fetch_out", "nightly_fetch_seed"):
+        if not getattr(runtime, key) or Path(getattr(runtime, key)).is_absolute():
+            raise ConfigError(f"[runtime] {key} must be a folder relative to the repo root")
+    return Schedule(preflight=preflight, bot=bot, watchdog=watchdog, nightly=nightly,
+                    weekdays=tuple(days))
 
 
 def check_timings(config: Config) -> None:
@@ -91,6 +100,11 @@ def check_timings(config: Config) -> None:
     and unless the session flatten can still send its close:
     0 <= [session] close_order_cutoff_seconds < flatten_minutes_before_close (in seconds)."""
     schedule(config.runtime)
+    lab = (config.root / config.run.data_dir / config.api.lab_replay_data_dir).resolve()
+    nightly = (config.root / config.runtime.nightly_fetch_out / "current").resolve()
+    if lab != nightly:
+        raise ConfigError("[api] lab_replay_data_dir must be the nightly job's current/ folder "
+                          "([runtime] nightly_fetch_out), or the Lab replays data never refreshed")
     drain = config.orders.shutdown_deadline_seconds
     alert_after = config.runtime.stop_alert_after_seconds
     if not 0 < drain < alert_after:
@@ -173,6 +187,9 @@ def values(runtime: RuntimeConfig, paths: Paths) -> dict[str, str]:
         "PREFLIGHT_CALENDAR": _calendar_xml(sched.preflight, sched.weekdays),
         "BOT_CALENDAR": _calendar_xml(sched.bot, sched.weekdays),
         "WATCHDOG_CALENDAR": _calendar_xml(sched.watchdog, sched.weekdays),
+        "NIGHTLY_CALENDAR": _calendar_xml(sched.nightly, sched.weekdays),
+        "NIGHTLY_OUT": escape(runtime.nightly_fetch_out),
+        "NIGHTLY_SEED": escape(runtime.nightly_fetch_seed),
         "BOT_EXIT_TIMEOUT": str(runtime.bot_exit_timeout_seconds),
     }
 
