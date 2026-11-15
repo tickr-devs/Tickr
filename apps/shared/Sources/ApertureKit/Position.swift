@@ -89,7 +89,11 @@ public struct EntrySend: Codable, Hashable, Sendable {
   public let clientOrderId: String?
   public let intentAt: WireTime?
   public let sentAt: WireTime?
+  /// Outcome of the send as recorded when it was made.
   public let sendOutcome: SendOutcome?
+  /// The send's latest state (an unknown outcome may later read acknowledged); nil exactly when
+  /// `sendOutcome` is nil.
+  public let latestOutcome: SendOutcome?
   public let sends: Int?
   public let filledAt: WireTime?
 
@@ -99,6 +103,7 @@ public struct EntrySend: Codable, Hashable, Sendable {
     case intentAt = "intent_at"
     case sentAt = "sent_at"
     case sendOutcome = "send_outcome"
+    case latestOutcome = "latest_outcome"
     case filledAt = "filled_at"
   }
 
@@ -111,6 +116,7 @@ public struct EntrySend: Codable, Hashable, Sendable {
     intentAt = try c.decodeNullable(WireTime.self, forKey: .intentAt)
     sentAt = try c.decodeNullable(WireTime.self, forKey: .sentAt)
     sendOutcome = try c.decodeNullable(SendOutcome.self, forKey: .sendOutcome)
+    latestOutcome = try c.decodeNullable(SendOutcome.self, forKey: .latestOutcome)
     sends = try c.decodeNullable(Int.self, forKey: .sends)
     filledAt = try c.decodeNullable(WireTime.self, forKey: .filledAt)
   }
@@ -121,6 +127,7 @@ public struct EntrySend: Codable, Hashable, Sendable {
     try c.encodeNullable(intentAt, forKey: .intentAt)
     try c.encodeNullable(sentAt, forKey: .sentAt)
     try c.encodeNullable(sendOutcome, forKey: .sendOutcome)
+    try c.encodeNullable(latestOutcome, forKey: .latestOutcome)
     try c.encodeNullable(sends, forKey: .sends)
     try c.encodeNullable(filledAt, forKey: .filledAt)
   }
