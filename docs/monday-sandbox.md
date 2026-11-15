@@ -87,6 +87,9 @@ the bot is started by hand (steps 11 and 12) and runs to the close.
     If the API job was not restarted after the pull (step 1), restart it now, together with
     the bot: `launchctl kickstart -k gui/$(id -u)/local.tickr.api`.
     The job stays enabled: from Tuesday the bot starts by itself at 09:00 Mac time.
+    If the apps have a Start button for the bot, do not press it on Monday: it clears the
+    operator stop and kickstarts the bot job, which must wait for the go in step 11. While the
+    bot job is disabled for the probes it does nothing useful either. Start the bot as above.
 
 ## What to watch
 
