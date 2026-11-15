@@ -94,5 +94,17 @@
       ]
     }
   ],
+  "latest_size": {
+    "symbol": "QRST",
+    "at": "2026-11-16T14:57:00.000Z",
+    "strategy": {
+      "name": "price-action-v1",
+      "version": "1"
+    },
+    "verdict": "ENTER",
+    "quantity": "200",
+    "binding": null,
+    "binding_cause": "the planned loss or the notional cap: the record does not tell them apart"
+  },
   "api_version": 1
 }
