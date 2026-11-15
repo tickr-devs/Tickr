@@ -738,11 +738,52 @@ private struct SkippedRow: View {
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(Text(L10n.Activity.whatIf(signal.entryPrice.map { Money.price($0.value) } ?? Format.missing,
         signal.stopPrice.map { Money.price($0.value) } ?? Format.missing)))
+      ReplayLine(whatIf: signal.whatIf)
     }
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
     .apertureCard()
     .accessibilityElement(children: .combine)
+  }
+}
+
+/// What the bot's replay says a skipped signal would have made, with R and how the replay ended;
+/// or why it could not replay. Figures are shown as the bot sent them.
+private struct ReplayLine: View {
+  let whatIf: WhatIfV1
+
+  private var ending: LocalizedStringResource? {
+    switch whatIf.exitReason {
+    case .stop: L10n.Activity.replayStop
+    case .strategyExit: L10n.Activity.replayStrategyExit
+    case .flatten: L10n.Activity.replayFlatten
+    case .endOfData: L10n.Activity.replayEndOfData
+    case nil: nil
+    }
+  }
+
+  var body: some View {
+    if let result = whatIf.resultGrossUsd?.value {
+      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
+        Text(L10n.Activity.wouldHaveMade(Money.signedUSD(result)))
+          .foregroundStyle(result < 0 ? Palette.lossText : Palette.profitText)
+        if let r = whatIf.resultR?.value {
+          Text(verbatim: Format.separator + Risk.text(r))
+            .foregroundStyle(Palette.textTertiary)
+        }
+        if let ending {
+          Text(verbatim: Format.separator)
+            .foregroundStyle(Palette.textTertiary)
+          Text(ending)
+            .foregroundStyle(Palette.textTertiary)
+        }
+      }
+      .font(Tokens.Typography.captionMono)
+    } else if let cause = whatIf.cause {
+      Text(L10n.Activity.noReplay(cause))
+        .font(Tokens.Typography.captionMono)
+        .foregroundStyle(Palette.textQuaternary)
+    }
   }
 }
 
