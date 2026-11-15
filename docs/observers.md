@@ -63,6 +63,17 @@ python -m aperture.research diff --baseline <v1 decisions.jsonl> \
 To change a value, copy the folder and bump `version`. Making it the active strategy is an
 owner decision (`[strategy] active`), not something this candidate does.
 
+## Candidate: volume-shock-v1
+
+`strategies/volume-shock-v1/` with `src/aperture/strategy/volume_shock_v1.py` (shared entry and
+sizing in `strategy/simple.py`). It is family L4 of `docs/strategy-ledger.md`: a stock with a
+previous close of at least 10 USD, trading 1 to 3 percent above it, whose last 5 minutes traded
+at least 5 times the median volume of the same minutes over the 5 prior sessions, closing in
+the top quarter of the bar. It enters once per symbol and session with the stop at the signal
+bar's low, and the session flatten is the exit. On history it was positive only on days that
+later became gainers, which is look-ahead, so it runs as an observer to test the idea where
+nothing can look ahead. Enable: `observers = ["volume-shock-v1"]`.
+
 ## Engine wiring (to do in the engine, not here)
 
 ```python

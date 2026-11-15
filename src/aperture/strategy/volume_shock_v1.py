@@ -1,0 +1,129 @@
+"""Strategy volume-shock-v1: buy an early volume shock in a stock that is up a little (an
+observer candidate from docs/strategy-ledger.md L4, never the active strategy unless the owner
+selects it).
+
+Values come from `strategies/volume-shock-v1/strategy.toml`. On the last completed M1 bar:
+
+1. The previous session's last close is at least `min_previous_close_usd`, and the bar's
+   close is between `change_min_percent` and `change_max_percent` above it.
+2. The volume of the last `volume_window_bars` bars is at least `volume_shock_multiple` times
+   the median volume of the same New York minutes over the `prior_sessions` prior sessions
+   (every one of them must be present).
+3. The bar closes in the top of its range: (close - low) / (high - low) >= `close_location_min`.
+4. This is the first bar of the session where 1-3 hold (one entry per symbol and session).
+
+Then ENTER with the stop at the signal bar's low (or lower, at the minimum stop distance) and
+the exit left to the platform's session flatten. The history test (L4) is positive only on days
+that later became gainers, which is look-ahead; this module exists to test it live, where the
+universe is the bot's own and nothing can look ahead.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import time, timedelta
+from decimal import Decimal
+from statistics import median
+from typing import Any
+
+from aperture.strategy import indicators as ind
+from aperture.strategy import price_action_v1 as v1
+from aperture.strategy import simple
+from aperture.strategy.base import Decision, SymbolContext, Verdict
+from aperture.types import Bar
+
+NAME = "volume-shock-v1"
+SETUP = "volume_shock"
+M1 = timedelta(minutes=1)
+
+_SIGNAL: simple.Schema = {
+    "signal": {
+        "change_min_percent": v1._positive,
+        "change_max_percent": v1._positive,
+        "volume_window_bars": v1._positive_int,
+        "volume_shock_multiple": v1._positive,
+        "prior_sessions": v1._positive_int,
+        "close_location_min": v1._non_negative,
+    },
+}
+
+
+@dataclass(frozen=True)
+class Signal:
+    change_min_percent: Decimal
+    change_max_percent: Decimal
+    volume_window_bars: int
+    volume_shock_multiple: Decimal
+    prior_sessions: int
+    close_location_min: Decimal
+
+
+def _window_volume(bars: Sequence[Bar], first: time, last: time) -> Decimal:
+    return sum((b.volume for b in bars if first <= ind.ny_time(b) <= last), simple.ZERO)
+
+
+class VolumeShockV1:
+    def __init__(self, common: simple.Common, signal: Signal) -> None:
+        self.common, self.signal = common, signal
+        self.name, self.version = common.name, common.version
+        self.prior_sessions_needed = signal.prior_sessions
+
+    def evaluate(self, context: SymbolContext) -> Decision:
+        c, s = self.common, self.signal
+        checks = [simple.consistent(context)]
+
+        def ignore() -> Decision:
+            return simple.decide(self, context, Verdict.IGNORE, checks)
+
+        if context.position is not None:
+            checks[-1] = v1._flag("position_open", True, "exit by resting stop or session flatten")
+            return simple.decide(self, context, Verdict.HOLD, checks)
+        if not checks[-1].passed:
+            return ignore()
+        prior = [p for p in context.prior_sessions[-s.prior_sessions:] if p]
+        checks.append(v1._check("prior_sessions", Decimal(len(prior)), ">=",
+                                Decimal(s.prior_sessions), "non-empty prior sessions given"))
+        if not checks[-1].passed:
+            return ignore()
+        previous = simple.previous_close(context)
+        assert previous is not None  # guaranteed by prior_sessions >= 1
+        checks.append(v1._check("previous_close_usd", previous, ">=", c.min_previous_close_usd))
+        if not checks[-1].passed:
+            return ignore()
+        session = ind.current_session(context.bars)
+        low = previous * (simple.ONE + s.change_min_percent / simple.PERCENT)
+        high = previous * (simple.ONE + s.change_max_percent / simple.PERCENT)
+
+        def fires(i: int) -> bool:
+            if i + 1 < s.volume_window_bars:
+                return False
+            bar = session[i]
+            if not low <= bar.close <= high or bar.high <= bar.low:
+                return False
+            if (bar.close - bar.low) / (bar.high - bar.low) < s.close_location_min:
+                return False
+            last = ind.ny_time(bar)
+            first = ind.ny_time(session[i + 1 - s.volume_window_bars])
+            if (bar.start - session[i + 1 - s.volume_window_bars].start) != (
+                    s.volume_window_bars - 1) * M1:
+                return False  # a missing minute: the window is not the same minutes
+            normal = median(_window_volume(p, first, last) for p in prior)
+            mine = sum((b.volume for b in session[i + 1 - s.volume_window_bars:i + 1]),
+                       simple.ZERO)
+            return mine >= s.volume_shock_multiple * max(normal, simple.ONE)
+
+        checks.append(simple.first_signal(session, fires))
+        if not checks[-1].passed:
+            return ignore()
+        bar = session[-1]
+        return simple.enter(self, c, context, checks, SETUP, bar.close, bar.low)
+
+
+def create(values: Mapping[str, Any]) -> VolumeShockV1:
+    """Build the strategy from parsed strategy.toml values (ValueError on any key problem)."""
+    flat = simple.parse(values, _SIGNAL, NAME)
+    signal = Signal(**{k: flat[k] for k in Signal.__dataclass_fields__})
+    if signal.change_min_percent >= signal.change_max_percent:
+        raise ValueError("[signal] change_min_percent must be below change_max_percent")
+    return VolumeShockV1(simple.common(flat), signal)
