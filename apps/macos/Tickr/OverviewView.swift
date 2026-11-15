@@ -108,6 +108,8 @@ private struct Header: View {
     HStack(alignment: .center, spacing: Tokens.Space.l) {
       // Drawn at once while the opening flies the mark here; it draws itself on later visits.
       BrandMark(live: model.isCurrent, drawsIn: model.openingPlayed)
+        // Hidden while the launch's opening flies its own mark here; shown as that one lands.
+        .opacity(model.openingPlayed ? 1 : 0)
         .onGeometryChange(for: CGPoint.self) { proxy in
           let frame = proxy.frame(in: .global)
           return CGPoint(x: frame.midX, y: frame.midY)
@@ -1092,7 +1094,8 @@ private struct SafetyCard: View {
         tone: stream == .fresh ? .profit : stream == .off ? .neutral : .warning),
       Row(id: .read, label: L10n.Safety.lastBrokerRead,
         value: Format.age(since: status.freshness.lastBrokerReadAt?.date, now: now),
-        tone: BrokerReadAge.tone(since: status.freshness.lastBrokerReadAt?.date, now: now)),
+        tone: BrokerReadAge.tone(since: status.freshness.lastBrokerReadAt?.date, now: now,
+          limits: BrokerReadAge.Limits(model.settings))),
       Row(id: .foreign, label: L10n.Safety.foreignPositions,
         value: String(localized: foreign ? L10n.Safety.present : L10n.Common.none),
         tone: foreign ? .loss : .profit),

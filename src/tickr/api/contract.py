@@ -869,21 +869,108 @@ class LabReplaySummaryV1:
     bot_max_drawdown_usd: Decimal | None
 
 
+class LabVersionRole(StrEnum):
+    ACTIVE = "active"  # [strategy] active: the version that trades
+    OBSERVER = "observer"  # listed in [strategy] observers: decides live, never trades
+    CANDIDATE = "candidate"  # any other folder under strategies/
+
+
+@dataclass(frozen=True)
+class LabVersionV1:
+    """A strategy folder the Lab may replay. `strategy`/`version` as its strategy.toml says;
+    `cause` (null when it can be replayed): its file is unreadable or no module builds it."""
+
+    folder: str
+    strategy: str | None
+    version: str | None
+    role: LabVersionRole
+    cause: str | None
+
+
+@dataclass(frozen=True)
+class LabReplayLegV1:
+    """The second version of a comparison, replayed after the first over the same window."""
+
+    folder: str
+    strategy: str
+    version: str
+    state: LabReplayState
+    cause: str | None
+    summary: LabReplaySummaryV1 | None
+
+
 @dataclass(frozen=True)
 class LabReplayV1:
-    """GET and POST /lab/replay: the Lab's SIMULATED replay of the active strategy over the last
-    sessions of the already fetched backtest data (it never fetches). One run at a time; only
-    the latest is kept. `summary` when `state` is done; `cause` when failed."""
+    """GET and POST /lab/replay: the Lab's SIMULATED replay of a strategy version (the active
+    one unless asked) over the last sessions of the already fetched backtest data, or over one
+    of its days (it never fetches), optionally compared with a second version. One run at a
+    time; only the latest is kept. `summary` when `state` is done; `cause` when failed.
+    `versions` and `days` are what a run may ask for."""
 
     state: LabReplayState
     run_id: str | None
     strategy: str | None
     version: str | None
-    sessions: int  # [api] lab_replay_sessions asked for
+    sessions: int  # [api] lab_replay_sessions asked for (1 for one day)
     started_at: datetime | None
     finished_at: datetime | None
     cause: str | None
     summary: LabReplaySummaryV1 | None
+    folder: str | None = _added_later(None)  # strategies/<folder> replayed
+    day: date | None = _added_later(None)  # the one day replayed; null: the last sessions
+    compare: LabReplayLegV1 | None = _added_later(None)
+    versions: tuple[LabVersionV1, ...] = _added_later(())
+    days: tuple[date, ...] = _added_later(())  # pool days of the last sessions, newest first
+    api_version: int = _const(API_VERSION)
+
+
+# ---------------------------------------------------------------- trade what-if (simulated)
+
+
+@dataclass(frozen=True)
+class TradeWhatIfTradeV1:
+    """One trade the other version would have made that day, SIMULATED. `signal_at`: its
+    decision bar's start. R per share; `quantity` and `result_gross_usd` only when the version
+    chose a quantity."""
+
+    signal_at: datetime
+    opened_at: datetime
+    entry_price: Decimal
+    stop: Decimal
+    closed_at: datetime
+    exit_price: Decimal
+    exit_reason: ExitReason
+    result_r: Decimal
+    quantity: Decimal | None
+    result_gross_usd: Decimal | None
+
+
+@dataclass(frozen=True)
+class TradeWhatIfSignalsV1:
+    """What the simulation did with each ENTER of the version that day."""
+
+    filled: int
+    missed: int  # the price never came into the entry window
+    rejected: int  # live admission would refuse it on time alone
+    ignored: int  # a simulated position of the symbol was already open
+
+
+@dataclass(frozen=True)
+class TradeWhatIfV1:
+    """GET /trades/whatif: strategy folder `folder` replayed on `symbol`'s captured bars of
+    `day`, SIMULATED. Null numbers and no trades with `cause` when it could not be computed.
+    `result_gross_usd` is null when a trade has no quantity."""
+
+    day: date
+    symbol: str
+    folder: str
+    strategy: str | None
+    version: str | None
+    signals: TradeWhatIfSignalsV1 | None
+    trades: tuple[TradeWhatIfTradeV1, ...]
+    result_r: Decimal | None
+    result_gross_usd: Decimal | None
+    cause: str | None
     api_version: int = _const(API_VERSION)
 
 
@@ -1607,6 +1694,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "jobs-v1": JobsV1,
     "journal-v1": JournalV1,
     "lab-replay-v1": LabReplayV1,
+    "trade-whatif-v1": TradeWhatIfV1,
     "explain-v1": ExplainV1,
     "observers-v1": ObserversV1,
     "decisions-v1": DecisionsV1,

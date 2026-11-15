@@ -151,7 +151,7 @@ class ApiConfig:
     host: str
     port: int
     allowed_hosts: tuple[str, ...]
-    remote_hosts: tuple[str, ...]
+    remote_hosts_file: str
     remote_port: int
     remote_token_hash_file: str
     remote_token_bytes: int
@@ -189,6 +189,7 @@ class ApiConfig:
     lab_replay_results_dir: str
     lab_replay_niceness: int
     lab_replay_outside_session_only: bool
+    trade_whatif_outside_session_only: bool
 
 
 @dataclass(frozen=True)
@@ -200,8 +201,6 @@ class MarketDataConfig:
     screener_category: str
     allowed_security_types: tuple[str, ...]
     profile_symbols_per_request: int
-    max_spread_ratio: Decimal
-    min_session_dollar_volume_usd: Decimal
     gainers_losers_rank_type: str
     top_actives_rank_type: str
     snapshot_symbols_per_request: int
