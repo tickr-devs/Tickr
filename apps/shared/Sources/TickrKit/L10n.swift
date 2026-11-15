@@ -6,6 +6,17 @@ enum L10n {
   /// The package's resource bundle, which holds the String Catalog.
   static var bundle: LocalizedStringResource.BundleDescription { .atURL(Bundle.module.bundleURL) }
 
+  // MARK: Event texts (Board.events)
+
+  /// An entry or an open position: "ABCD 54 @ 28.30", in the cards' own wording.
+  static func eventQuantityAt(_ symbol: String, _ quantity: String, _ price: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.event.quantityAt", defaultValue: "\(symbol) \(quantity) @ \(price)", bundle: bundle)
+  }
+  /// An exit with its result: "ABCD @ 29.10 +43.20".
+  static func eventExitAt(_ symbol: String, _ price: String, _ result: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.event.exitAt", defaultValue: "\(symbol) @ \(price) \(result)", bundle: bundle)
+  }
+
   // MARK: Event tags (Board.events)
 
   /// Event tag: a trade was entered.
@@ -261,10 +272,34 @@ enum L10n {
   static var notJSON: LocalizedStringResource {
     LocalizedStringResource("kit.wire.notJSON", defaultValue: "the answer is not valid JSON", bundle: bundle)
   }
+  /// Contract error detail: the answer is JSON, but not an object of the kind asked for
+  /// (for example a list where one record was expected).
+  static var wrongShape: LocalizedStringResource {
+    LocalizedStringResource("kit.wire.wrongShape", defaultValue: "the answer has the wrong shape", bundle: bundle)
+  }
   /// Contract error detail; arguments: version key, version received, version this app reads.
   static func unsupportedVersion(_ key: String, _ value: Int, _ expected: Int) -> LocalizedStringResource {
     LocalizedStringResource("kit.wire.unsupportedVersion",
       defaultValue: "unsupported \(key) \(value), this app reads \(expected)", bundle: bundle)
+  }
+
+  // MARK: Environments (ApiText.environment)
+
+  /// Where the bot trades: the broker's test environment.
+  static var environmentSandbox: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.sandbox", defaultValue: "Sandbox", bundle: bundle)
+  }
+  /// Where the bot runs: `tickr demo`, a made-up day with no broker.
+  static var environmentDemo: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.demo", defaultValue: "Demo", bundle: bundle)
+  }
+  /// Where the bot trades: the real account.
+  static var environmentProduction: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.production", defaultValue: "Production", bundle: bundle)
+  }
+  /// Where the bot trades, when the bot sends no environment name.
+  static var environmentUnknown: LocalizedStringResource {
+    LocalizedStringResource("kit.environment.unknown", defaultValue: "Unknown environment", bundle: bundle)
   }
 
   // MARK: Fences (ApiText.fenceTitle)

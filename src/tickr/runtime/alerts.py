@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import plistlib
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -41,13 +42,15 @@ _APPLESCRIPT = (
 )
 # Sends argv item 2 by iMessage to the address held by the environment variable NAMED in argv
 # item 1. A missing recipient is an AppleScript error (non-zero exit), never a silent skip.
+# AppleScript names are case-insensitive: a variable must not share a name with a Messages
+# term (`imessage` is the `iMessage` service type and fails with -10003 before sending).
 _IMESSAGE_SCRIPT = (
     "on run argv",
     "set recipient to system attribute (item 1 of argv)",
     'if recipient is "" then error "recipient variable not set"',
     'tell application "Messages"',
-    "set imessage to 1st account whose service type = iMessage",
-    "send (item 2 of argv) to participant recipient of imessage",
+    "set acct to 1st account whose service type = iMessage",
+    "send (item 2 of argv) to participant recipient of acct",
     "end tell",
     "end run",
 )
@@ -127,12 +130,15 @@ class Notifier(Protocol):
 
 
 Runner = Callable[..., subprocess.CompletedProcess[bytes]]
+# osascript ends an error line with its number in brackets, e.g. "... Access not allowed. (-10003)".
+_APPLESCRIPT_ERROR = re.compile(rb"\((-\d+)\)\s*$")
 
 
 def _osascript(runner: Runner, timeout: float, script: tuple[str, ...],
                args: list[str]) -> None:
     """Run one AppleScript with `args` as its argv (an argument list, never a shell string).
-    The error names the exit code only: stderr could echo the arguments."""
+    The error names the exit code and the AppleScript error number only: the rest of stderr
+    could echo the arguments."""
     argv = [OSASCRIPT]
     for line in script:
         argv += ["-e", line]
@@ -142,7 +148,9 @@ def _osascript(runner: Runner, timeout: float, script: tuple[str, ...],
     except (OSError, subprocess.SubprocessError) as exc:
         raise NotifyError(f"osascript did not run: {type(exc).__name__}") from exc
     if result.returncode != 0:
-        raise NotifyError(f"osascript exited with code {result.returncode}")
+        number = _APPLESCRIPT_ERROR.search(result.stderr or b"")
+        detail = f" (AppleScript error {number.group(1).decode()})" if number else ""
+        raise NotifyError(f"osascript exited with code {result.returncode}{detail}")
 
 
 class MacNotifier:
@@ -256,9 +264,9 @@ def _spawn_daemon(target: Callable[[], None]) -> threading.Thread:
 class Channels:
     """Every alert through every channel; a failing channel never stops the others.
 
-    `channels` run in the caller's thread (the Mac notification is quick). `background`
-    channels (iMessage) each run once on a daemon thread, so the bot's loop never waits on
-    Messages.app; each reports its result through `done` exactly once. Never retried."""
+    `channels` run in the caller's thread. `background` channels each run once on a daemon
+    thread, so the bot's loop never waits on the Tickr app, osascript or Messages.app; each
+    reports its result through `done` exactly once. Never retried."""
 
     def __init__(self, channels: tuple[tuple[str, Notifier], ...],
                  background: tuple[tuple[str, Notifier], ...] = (),
@@ -274,7 +282,12 @@ class Channels:
         """Start the background channels, run the others; (name, error or None) of the latter."""
         self._threads = [t for t in self._threads if t.is_alive()]
         for name, channel in self._background:
-            self._threads.append(self._spawn(_once(channel, name, title, text, done)))
+            try:
+                self._threads.append(self._spawn(_once(channel, name, title, text, done)))
+            except Exception as exc:  # noqa: BLE001 - a thread that cannot start
+                # Reported like any failed send, so the caller never raises into the bot's
+                # loop and never waits for an outcome that cannot come.
+                done(name, f"not started: {type(exc).__name__}")
         results: list[tuple[str, str | None]] = []
         for name, channel in self._channels:
             try:
@@ -317,11 +330,12 @@ def _once(channel: Notifier, name: str, title: str, text: str, done: Done) -> Ca
 
 def default_notifier(config: AlertsConfig, platform: str = sys.platform,
                      environ: Mapping[str, str] = os.environ) -> Notifier | None:
-    """The channels for this machine (Mac notification now, iMessage in the background), or
-    None where there are none (CI, Linux)."""
+    """The channels for this machine (Mac notification and iMessage, both in the background:
+    the Tickr app and osascript can each take seconds, and the bot's loop must not wait for
+    them), or None where there are none (CI, Linux)."""
     if platform == DARWIN:
-        return Channels(((MACOS, mac_notifier(config)),),
-                        ((IMESSAGE, IMessageNotifier(config, environ)),))
+        return Channels((), ((MACOS, mac_notifier(config)),
+                             (IMESSAGE, IMessageNotifier(config, environ))))
     return None
 
 
@@ -363,7 +377,9 @@ class Alerter:
     """Shows alerts with repeat suppression. One instance per process.
 
     An alert counts as shown (for repeat suppression) once any channel delivered it, so a
-    channel that keeps failing does not repeat the others on every occurrence. Background
+    channel that keeps failing does not repeat the others on every occurrence. While a
+    background send of the same alert is still running it is a repeat too, so a condition
+    raised on every loop pass starts one send, not one per pass. Background
     results arrive through `completed()`, which the owner of the journal calls regularly (the
     bot once per loop pass), and `flush()` before a short-lived process exits."""
 
@@ -380,6 +396,8 @@ class Alerter:
                           else Channels(((NOTIFIER, notifier),)))
         self._clock = clock
         self._last_shown: dict[tuple[AlertKind, str], datetime] = {}
+        # Background sends of each alert not yet collected by completed().
+        self._sending: dict[tuple[AlertKind, str], int] = {}
         self._done: queue.SimpleQueue[tuple[AlertKind, str, str, str | None]] = \
             queue.SimpleQueue()
 
@@ -389,7 +407,7 @@ class Alerter:
         now = self._clock()
         key = (kind, text)
         last = self._last_shown.get(key)
-        if last is not None and now - last < self._window:
+        if (last is not None and now - last < self._window) or key in self._sending:
             return AlertOutcome(kind, text, now, Delivery.SUPPRESSED_REPEAT, None)
         if self._channels is None:
             return AlertOutcome(kind, text, now, Delivery.NO_NOTIFIER, None)
@@ -397,8 +415,16 @@ class Alerter:
         def done(name: str, error: str | None) -> None:  # on a background thread
             self._done.put((kind, text, name, error))
 
-        results = self._channels.send(f"{self._title}: {kind.value}", text, done)
         pending = self._channels.background
+        if pending:
+            self._sending[key] = len(pending)
+        try:
+            results = self._channels.send(f"{self._title}: {kind.value}", text, done)
+        except BaseException:
+            # No outcome will follow for sends that never started: the alert must not stay
+            # suppressed until the process restarts.
+            self._sending.pop(key, None)
+            raise
         failed = [error if name == NOTIFIER else f"{name}: {error}"
                   for name, error in results if error is not None]
         if len(failed) < len(results):
@@ -419,6 +445,11 @@ class Alerter:
             except queue.Empty:
                 return outcomes
             now = self._clock()
+            left = self._sending.get((kind, text), 1) - 1
+            if left > 0:
+                self._sending[(kind, text)] = left
+            else:
+                self._sending.pop((kind, text), None)
             if error is None:
                 self._last_shown[(kind, text)] = now
             outcomes.append(AlertOutcome(kind, text, now,
