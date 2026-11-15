@@ -111,8 +111,10 @@ struct SettingsCard<Content: View, Trailing: View>: View {
   let content: Content
   let trailing: Trailing
 
-  init(_ title: LocalizedStringResource, footnote: Text? = nil, footnoteColor: Color = Palette.textQuaternary,
-    @ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing) {
+  init(
+    _ title: LocalizedStringResource, footnote: Text? = nil, footnoteColor: Color = Palette.textQuaternary,
+    @ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing
+  ) {
     self.title = title
     self.footnote = footnote
     self.footnoteColor = footnoteColor
@@ -144,8 +146,10 @@ struct SettingsCard<Content: View, Trailing: View>: View {
 }
 
 extension SettingsCard where Trailing == EmptyView {
-  init(_ title: LocalizedStringResource, footnote: Text? = nil, footnoteColor: Color = Palette.textQuaternary,
-    @ViewBuilder content: () -> Content) {
+  init(
+    _ title: LocalizedStringResource, footnote: Text? = nil, footnoteColor: Color = Palette.textQuaternary,
+    @ViewBuilder content: () -> Content
+  ) {
     self.init(title, footnote: footnote, footnoteColor: footnoteColor, content: content) { EmptyView() }
   }
 }

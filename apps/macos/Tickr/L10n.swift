@@ -1067,7 +1067,6 @@ enum L10n {
     }
     static var featuresFootnote: LocalizedStringResource {
       LocalizedStringResource("settings.featuresFootnote",
-        // swiftlint:disable:next line_length
         defaultValue: "A switch here edits nothing: it shows the value in the bot's configuration; planned ones are off.",
         bundle: L10n.bundle)
     }

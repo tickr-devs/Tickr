@@ -588,10 +588,13 @@ struct JobsSection: View {
     return L10n.Settings.sessionTitle(Format.dayLabel(day))
   }
 
-  /// One job: dot, name, when, state, times.
-  private func row(_ tone: Tone, live: Bool, name: Text, when: Text, state: Text,
-    @ViewBuilder meta: () -> some View) -> some View {
-    HStack(spacing: Tokens.Space.s) {
+  /// One job: dot (its tone, and whether it pulses), name, when, state, times.
+  private func row(
+    _ dot: (tone: Tone, live: Bool), name: Text, when: Text, state: Text,
+    @ViewBuilder meta: () -> some View
+  ) -> some View {
+    let (tone, live) = dot
+    return HStack(spacing: Tokens.Space.s) {
       PulseDot(tone.fill, pulsing: live, event: live ? model.jobs.map { AnyHashable($0.servedAt) } : nil)
       name
         .font(Tokens.Typography.calloutMono)
@@ -623,13 +626,13 @@ struct JobsSection: View {
       let tone: Tone = jobs.statusStale ? .warning : running ? .accent : .neutral
       let state = jobs.statusStale ? String(localized: L10n.Settings.notReported)
         : jobs.botState?.title.localizedLowercase ?? String(localized: L10n.Settings.notRunning)
-      row(tone, live: running, name: name, when: when, state: Text(verbatim: state)) {
+      row((tone, running), name: name, when: when, state: Text(verbatim: state)) {
         if running, let started = jobs.botStartedAt {
           Text(L10n.Settings.since(Format.marketMinute(started.date)))
         }
       }
     } else {
-      row(.info, live: false, name: name, when: when, state: Text(verbatim: "")) { EmptyView() }
+      row((.info, false), name: name, when: when, state: Text(verbatim: "")) { EmptyView() }
     }
   }
 
@@ -652,7 +655,7 @@ struct JobsSection: View {
   /// The next reconcile counting down while the bot runs, else when it last ran (New York time).
   private func reconcile(_ job: ReconcileJobV1) -> some View {
     let running = job.nextAt.map { $0.date > model.botNow } ?? false
-    return row(.info, live: running, name: Text(L10n.Settings.reconcile),
+    return row((.info, running), name: Text(L10n.Settings.reconcile),
       when: Text(L10n.Settings.every(Format.seconds(job.intervalSeconds.value))),
       state: Text(L10n.Settings.whileBotRuns)) {
       if let next = job.nextAt?.date, next > model.botNow {
@@ -675,7 +678,7 @@ struct JobsSection: View {
     let tone: Tone = failure != nil ? .loss : job.lastAt == nil ? .neutral : .profit
     let state: Text = failure.map { Text(L10n.Settings.backupFailed(Format.marketMinute($0.date))) }
       ?? (job.lastAt == nil ? Text(verbatim: Format.missing) : Text(L10n.Settings.verified))
-    return row(tone, live: false, name: Text(L10n.Settings.backup), when: Text(L10n.Settings.daily), state: state) {
+    return row((tone, false), name: Text(L10n.Settings.backup), when: Text(L10n.Settings.daily), state: state) {
       if let at = job.lastAt {
         Text(L10n.Settings.lastShort(BackupSection.when(at.date)))
       }
@@ -687,7 +690,7 @@ struct JobsSection: View {
     let reachable = model.fetchError == nil
     let host = model.baseURL.host() ?? model.baseURL.absoluteString
     let address = model.baseURL.port.map { "\(host):\($0)" } ?? host
-    return row(reachable ? .info : .loss, live: reachable, name: Text(L10n.Settings.jobApi),
+    return row((reachable ? .info : .loss, reachable), name: Text(L10n.Settings.jobApi),
       when: Text(L10n.Settings.alwaysOn),
       state: Text(reachable ? L10n.Settings.connected : L10n.Settings.unreachable)) {
       Text(verbatim: address)
@@ -770,8 +773,9 @@ private struct SessionStrip: View {
   }
 
   /// A label at `x` (its leading edge, or its trailing edge when `trailing`), `y` from the top.
-  private func mark(_ text: LocalizedStringResource, color: Color, x: CGFloat, y: CGFloat = 0,
-    trailing: Bool = false) -> some View {
+  private func mark(
+    _ text: LocalizedStringResource, color: Color, x: CGFloat, y: CGFloat = 0, trailing: Bool = false
+  ) -> some View {
     // A trailing label ends at `x`: it sits at the end of a frame that reaches from the strip's
     // leading edge to `x` (an alignment guide would move the whole strip instead).
     Text(text)
