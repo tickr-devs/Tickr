@@ -1810,6 +1810,23 @@
         }
       }
     },
+    "chart.highTag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "H %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В %@"
+          }
+        }
+      }
+    },
     "chart.intervalDay" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1976,6 +1993,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Н"
+          }
+        }
+      }
+    },
+    "chart.lowTag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Н %@"
           }
         }
       }
@@ -12004,23 +12038,6 @@
         }
       }
     },
-    "trades.noClosedTrades" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No closed trades yet."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Закрытых сделок пока нет."
-          }
-        }
-      }
-    },
     "trades.noDays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12272,6 +12289,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Открыта"
+          }
+        }
+      }
+    },
+    "trades.openPosition" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open position %@: show on Chart"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открытая позиция %@: показать на графике"
           }
         }
       }

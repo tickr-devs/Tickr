@@ -1550,6 +1550,14 @@ enum L10n {
     static var low: LocalizedStringResource {
       LocalizedStringResource("chart.low", defaultValue: "L", bundle: L10n.bundle)
     }
+    /// The highest high on screen, on the price axis.
+    static func highTag(_ price: String) -> LocalizedStringResource {
+      LocalizedStringResource("chart.highTag", defaultValue: "H \(price)", bundle: L10n.bundle)
+    }
+    /// The lowest low on screen, on the price axis.
+    static func lowTag(_ price: String) -> LocalizedStringResource {
+      LocalizedStringResource("chart.lowTag", defaultValue: "L \(price)", bundle: L10n.bundle)
+    }
     /// Readout: close.
     static var close: LocalizedStringResource {
       LocalizedStringResource("chart.close", defaultValue: "C", bundle: L10n.bundle)
@@ -1690,9 +1698,10 @@ enum L10n {
     static var open: LocalizedStringResource {
       LocalizedStringResource("trades.open", defaultValue: "Open", bundle: L10n.bundle)
     }
-    /// Under the open positions when none has closed today.
-    static var noClosedTrades: LocalizedStringResource {
-      LocalizedStringResource("trades.noClosedTrades", defaultValue: "No closed trades yet.", bundle: L10n.bundle)
+    /// VoiceOver label of an open position's OPEN tag in the trades table.
+    static func openPosition(_ symbol: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.openPosition", defaultValue: "Open position \(symbol): show on Chart",
+        bundle: L10n.bundle)
     }
     /// Badge: the entry was never put to the platform's checks.
     static var notEvaluated: LocalizedStringResource {

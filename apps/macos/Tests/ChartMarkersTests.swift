@@ -100,4 +100,22 @@ struct ChartMarkersTests {
     let watch = try fixture(DecisionsV1.self, "decisions-v1.json").decisions.filter { $0.action == .watch }
     #expect(ChartMarkers.decisionMarks(decisions: watch, candles: []).isEmpty)
   }
+
+  @Test("The highest high and lowest low on screen are plain tags on the price axis, one for a flat stretch")
+  @MainActor
+  func extremeTags() {
+    let start = Date(timeIntervalSince1970: 0)
+    let candles = [(12.40, 12.10), (12.80, 12.30), (12.50, 11.90)].enumerated().map { index, range in
+      Candle(start: start.addingTimeInterval(Double(index) * 60), end: start.addingTimeInterval(Double(index + 1) * 60),
+        open: 12.3, high: range.0, low: range.1, close: 12.3, volume: 1000)
+    }
+    let tags = CandleChart.extremeTags(candles, in: candles.indices)
+    #expect(tags.map(\.value) == [12.80, 11.90])
+    #expect(tags.filter { !$0.plain }.isEmpty)
+    #expect(tags[0].text == String(localized: L10n.Chart.highTag(CandleChart.price(12.80))))
+    // Only the candles on screen count.
+    #expect(CandleChart.extremeTags(candles, in: 0..<1).map(\.value) == [12.40, 12.10])
+    let flat = [Candle(start: start, end: start.addingTimeInterval(60), open: 5, high: 5, low: 5, close: 5, volume: 1)]
+    #expect(CandleChart.extremeTags(flat, in: flat.indices).count == 1)
+  }
 }

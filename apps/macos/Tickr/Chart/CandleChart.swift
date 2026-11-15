@@ -52,8 +52,8 @@ struct CandleChart: View {
   /// label there hung over the pane above or below ("2.00" on the volume, "-2.00" on the RSI
   /// title).
   static let paneEdgeShare = 0.15
-  /// Length of the leader line of the high and low labels, in points.
-  static let extremeLeader: CGFloat = 14
+  /// Length of the leader line of the high and low labels on the price axis, in points.
+  static let extremeLeader: CGFloat = 6
   /// Symbols of entry and exit marks.
   static let entrySymbol = "arrowtriangle.up.fill"
   static let exitSymbol = "arrowtriangle.down.fill"
@@ -147,7 +147,6 @@ struct CandleChart: View {
       if lines.vwap { line(plot.series.vwap, name: Plot.vwap, color: Palette.seriesVWAP) }
       if lines.fastEMA { line(series.fastEMA, name: Plot.fastEMA, color: Palette.seriesFastEMA) }
       if lines.slowEMA { line(series.slowEMA, name: Plot.slowEMA, color: Palette.seriesSlowEMA) }
-      extremes
       ForEach(levels) { level in
         RuleMark(
           xStart: .value(Plot.time, max(level.since, windowStart)),
@@ -228,29 +227,36 @@ struct CandleChart: View {
     }
   }
 
-  /// The highest high and lowest low on screen, each labelled with its price.
-  @ChartContentBuilder private var extremes: some ChartContent {
-    if let found = candles.extremes(in: visibleIndices) {
-      PointMark(x: .value(Plot.time, candles[found.high].middle), y: .value(Plot.price, candles[found.high].high))
-        .symbolSize(0)
-        .annotation(position: .top, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
-          ExtremeLabel(price: candles[found.high].high)
-        }
-      PointMark(x: .value(Plot.time, candles[found.low].middle), y: .value(Plot.price, candles[found.low].low))
-        .symbolSize(0)
-        .annotation(position: .bottom, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
-          ExtremeLabel(price: candles[found.low].low)
-        }
-    }
-  }
-
-  /// The last close, tagged on the price axis in the colour of its candle.
+  /// The last close, tagged on the price axis in the colour of its candle, the position's
+  /// levels, and the highest high and lowest low on screen ("H 13.32", plain, as in the design).
   private var priceTags: [AxisTag] {
     var tags = levels.map { AxisTag(value: $0.price, text: Self.price($0.price), color: $0.color) }
     if let last = candles.last {
       tags.append(AxisTag(value: last.close, text: Self.price(last.close), color: color(last)))
     }
-    return tags
+    // A high or low next to a plate (the last price at the day's high) would sit under it.
+    let span = priceScale
+    let clearance = (span.upperBound - span.lowerBound) * Self.tagClearance
+    let extremes = Self.extremeTags(candles, in: visibleIndices).filter { extreme in
+      !tags.contains { abs($0.value - extreme.value) < clearance }
+    }
+    return tags + extremes
+  }
+
+  /// "H 13.32" at the highest high and "L 11.78" at the lowest low of the candles in `range`, as
+  /// plain tags on the price axis (out of the way of the legend in the plot's top left corner).
+  static func extremeTags(_ candles: [Candle], in range: Range<Int>) -> [AxisTag] {
+    guard let found = candles.extremes(in: range) else { return [] }
+    let high = candles[found.high].high
+    let low = candles[found.low].low
+    let tags = [
+      AxisTag(value: high, text: String(localized: L10n.Chart.highTag(price(high))), color: Palette.textTertiary,
+        plain: true),
+      AxisTag(value: low, text: String(localized: L10n.Chart.lowTag(price(low))), color: Palette.textTertiary,
+        plain: true),
+    ]
+    // A flat stretch has one price: one tag.
+    return high == low ? [tags[0]] : tags
   }
 
   // MARK: Study panes
@@ -698,8 +704,10 @@ struct AxisTag: Identifiable {
   let value: Double
   let text: String
   let color: Color
+  /// Plain text after a short leader (the high and low on screen), not a coloured plate.
+  var plain = false
 
-  var id: Double { value }
+  var id: String { "\(value) \(text)" }
 }
 
 /// The time axis every pane shares (same domain, window and pointer), the pointer's hover in the
@@ -777,9 +785,15 @@ private struct AxisTags: View {
         let frame = geometry[plotFrame]
         ForEach(tags) { tag in
           if let y = proxy.position(forY: tag.value), y >= 0, y <= frame.height {
-            TagPlate(text: tag.text, color: tag.color)
-              .fixedSize()
-              .position(x: frame.maxX + CandleChart.axisLabelWidth / 2 + Tokens.Space.xs, y: frame.minY + y)
+            Group {
+              if tag.plain {
+                ExtremeLabel(text: tag.text, color: tag.color)
+              } else {
+                TagPlate(text: tag.text, color: tag.color)
+              }
+            }
+            .fixedSize()
+            .position(x: frame.maxX + CandleChart.axisLabelWidth / 2 + Tokens.Space.xs, y: frame.minY + y)
           }
         }
       }
@@ -840,20 +854,22 @@ private struct Crosshair: View {
   }
 }
 
-/// The price of the highest high or lowest low on screen, with a short leader line to it.
+/// The highest high or lowest low on screen on the price axis: a short leader from the plot,
+/// then "H 13.32".
 private struct ExtremeLabel: View {
-  let price: Double
+  let text: String
+  let color: Color
 
   var body: some View {
     HStack(spacing: Tokens.Space.xxs) {
-      Text(verbatim: CandleChart.price(price))
       Rectangle()
-        .fill(Palette.textTertiary)
-        .frame(width: CandleChart.extremeLeader, height: Tokens.Stroke.hairline)
+        .fill(color)
+        .frame(width: CandleChart.extremeLeader, height: Tokens.Stroke.thin)
+      Text(verbatim: text)
     }
     .font(Tokens.Typography.annotation)
-    .foregroundStyle(Palette.textTertiary)
-    .fixedSize()
+    .foregroundStyle(color)
+    .frame(width: CandleChart.axisLabelWidth + Tokens.Space.s, alignment: .leading)
   }
 }
 

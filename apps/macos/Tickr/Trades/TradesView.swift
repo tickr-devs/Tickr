@@ -360,8 +360,13 @@ private struct TradesTable: View {
   static let fewestRows = 2
 
   private var tableHeight: CGFloat {
-    let rows = CGFloat(max(model.shownTrades.count, Self.fewestRows))
-    return min(Self.height, Self.headerHeight + rows * Self.rowHeight)
+    let count = CGFloat(max(rows.count, Self.fewestRows))
+    return min(Self.height, Self.headerHeight + count * Self.rowHeight)
+  }
+
+  /// On the live day the positions still open first, then the day's closed trades.
+  private var rows: [TradeRow] {
+    (model.isLive ? model.positions.map { TradeRow.open($0) } : []) + model.shownTrades.map { TradeRow.closed($0) }
   }
 
   var body: some View {
@@ -371,15 +376,7 @@ private struct TradesTable: View {
         .foregroundStyle(Palette.textQuaternary)
         .lineLimit(1)
     }, content: {
-      // On the live day, positions still open come first: the table holds closed trades only.
-      let open = model.isLive ? model.positions : []
-      ForEach(open) { row in
-        OpenPositionRow(row: row, showOnChart: showOnChart)
-        Divider()
-      }
-      if model.shownTrades.isEmpty && !open.isEmpty {
-        Footnote(L10n.Trades.noClosedTrades)
-      } else if model.shownTrades.isEmpty {
+      if rows.isEmpty {
         ContentUnavailableView {
           Label { Text(model.isLive ? L10n.Trades.noTradesToday : L10n.Trades.noTrades) } icon: { BrandMark.empty() }
         }
@@ -392,56 +389,85 @@ private struct TradesTable: View {
   }
 
   private var table: some View {
-    Table(model.shownTrades, selection: $selection) {
-      TableColumn(Self.header(L10n.Trades.closed)) { trade in
-        Text(verbatim: Format.marketTime(trade.closedAt.date)).font(Tokens.Typography.calloutMono)
+    Table(rows, selection: $selection) {
+      TableColumn(Self.header(L10n.Trades.closed)) { row in
+        switch row {
+        case .open(let position):
+          // Not closed yet: when it opened, quieter.
+          Text(verbatim: Format.marketTime(position.position.openedAt.date))
+            .font(Tokens.Typography.calloutMono)
+            .foregroundStyle(Palette.textTertiary)
+        case .closed(let trade):
+          Text(verbatim: Format.marketTime(trade.closedAt.date)).font(Tokens.Typography.calloutMono)
+        }
       }
       .width(min: Column.timeMin, ideal: Column.time)
-      TableColumn(Self.header(L10n.Trades.symbol)) { trade in
-        Text(verbatim: trade.symbol).font(Tokens.Typography.calloutMono.weight(.semibold))
+      TableColumn(Self.header(L10n.Trades.symbol)) { row in
+        Text(verbatim: row.symbol).font(Tokens.Typography.calloutMono.weight(.semibold))
       }
       .width(min: Column.symbolMin, ideal: Column.symbol)
-      TableColumn(Self.header(L10n.Trades.quantity)) { trade in
-        Text(verbatim: Format.quantity(trade.quantity.value)).font(Tokens.Typography.calloutMono)
+      TableColumn(Self.header(L10n.Trades.quantity)) { row in
+        Text(verbatim: Format.quantity(row.quantity)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.quantityMin, ideal: Column.quantity)
-      TableColumn(Self.header(L10n.Trades.entry)) { trade in
-        Text(verbatim: Format.price(trade.entryPrice.value)).font(Tokens.Typography.calloutMono)
+      TableColumn(Self.header(L10n.Trades.entry)) { row in
+        Text(verbatim: Format.price(row.entry)).font(Tokens.Typography.calloutMono)
       }
       .width(min: Column.priceMin, ideal: Column.price)
-      TableColumn(Self.header(L10n.Trades.exit)) { trade in
-        Text(verbatim: Format.price(trade.exitPrice.value)).font(Tokens.Typography.calloutMono)
+      TableColumn(Self.header(L10n.Trades.exit)) { row in
+        Text(verbatim: Format.price(row.exit)).font(Tokens.Typography.calloutMono)
+          .foregroundStyle(row.exit == nil ? Palette.textQuaternary : Palette.textPrimary)
       }
       .width(min: Column.priceMin, ideal: Column.price)
-      TableColumn(Self.header(L10n.Trades.stop)) { trade in
-        Text(verbatim: Format.price(trade.stopPrice?.value)).font(Tokens.Typography.calloutMono)
+      TableColumn(Self.header(L10n.Trades.stop)) { row in
+        Text(verbatim: Format.price(row.stop)).font(Tokens.Typography.calloutMono)
+          .foregroundStyle(row.stopUnverified ? Palette.lossText : Palette.textPrimary)
       }
       .width(min: Column.priceMin, ideal: Column.price)
-      TableColumn(Self.header(L10n.Trades.reason)) { trade in
-        // Coloured as the event ticker colours the exit: by its result, amber when forced.
-        Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
-          color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
+      TableColumn(Self.header(L10n.Trades.reason)) { row in
+        switch row {
+        case .open(let position):
+          // A position still open: the OPEN tag, which opens the Chart on it.
+          Button { showOnChart(position.id) } label: {
+            Badge(L10n.Trades.open, color: Palette.accentText)
+          }
+          .buttonStyle(.plain)
+          .help(Text(L10n.Trades.showOnChart))
+          .accessibilityLabel(Text(L10n.Trades.openPosition(position.id)))
+          .accessibilityIdentifier(TradeRow.openID)
+        case .closed(let trade):
+          // Coloured as the event ticker colours the exit: by its result, amber when forced.
+          Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
+            color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
+        }
       }
       .width(min: Column.reasonMin, ideal: Column.reason)
-      TableColumn(Self.header(L10n.Trades.resultR)) { trade in
-        Text(verbatim: trade.resultR.map(Risk.text) ?? Format.missing)
+      TableColumn(Self.header(L10n.Trades.resultR)) { row in
+        Text(verbatim: row.resultR.map(Risk.text) ?? Format.missing)
           .font(Tokens.Typography.calloutMono)
-          .foregroundStyle(trade.resultR.map(Palette.result) ?? Palette.textQuaternary)
+          .foregroundStyle(row.resultR.map(Palette.result) ?? Palette.textQuaternary)
       }
       .width(min: Column.figureMin, ideal: Column.figure)
-      TableColumn(Self.header(L10n.Trades.result)) { trade in
-        MoneyText(value: trade.resultGrossUsd.value, usd: true, font: Tokens.Typography.calloutMono)
+      TableColumn(Self.header(L10n.Trades.result)) { row in
+        if let result = row.result {
+          MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono)
+        } else {
+          Text(L10n.Trades.open)
+            .textCase(.lowercase)
+            .font(Tokens.Typography.calloutMono)
+            .foregroundStyle(Palette.textQuaternary)
+        }
       }
       .width(min: Column.moneyMin, ideal: Column.money)
     }
-    .contextMenu(forSelectionType: DayTrade.ID.self) { ids in
-      if let trade = trade(ids) {
-        Button { showOnChart(trade.symbol) } label: {
+    .contextMenu(forSelectionType: TradeRow.ID.self) { ids in
+      if let row = row(ids) {
+        Button { showOnChart(row.symbol) } label: {
           Label { Text(L10n.Trades.showOnChart) } icon: { Image(systemName: "chart.xyaxis.line") }
         }
       }
     } primaryAction: { ids in
-      if let trade = trade(ids) { showOnChart(trade.symbol) }
+      if let row = row(ids) { showOnChart(row.symbol) }
     }
   }
 
@@ -452,41 +478,87 @@ private struct TradesTable: View {
       .foregroundStyle(Palette.textQuaternary)
   }
 
-  private func trade(_ ids: Set<DayTrade.ID>) -> DayTrade? {
+  private func row(_ ids: Set<TradeRow.ID>) -> TradeRow? {
     guard let id = ids.first else { return nil }
-    return model.shownTrades.first { $0.id == id }
+    return rows.first { $0.id == id }
   }
 }
 
-/// A position still open on the live day, in the columns of the closed trades; a click opens the
-/// Chart on its symbol.
-struct OpenPositionRow: View {
-  let row: PositionRow
-  let showOnChart: (String) -> Void
+/// A row of the day's trades table: a position still open on the live day (its live R and
+/// result), or a closed trade.
+enum TradeRow: Identifiable {
+  case open(PositionRow)
+  case closed(DayTrade)
 
-  /// Accessibility id of an open position's row, for the UI tests.
-  static let id = "trades-open-position"
+  /// Accessibility id of an open position's OPEN tag, for the UI tests.
+  static let openID = "trades-open-position"
+  /// Prefix of an open row's id, apart from the trade ids of closed rows.
+  static let openPrefix = "open-"
 
-  var body: some View {
-    Button { showOnChart(row.position.symbol) } label: {
-      HStack(spacing: Tokens.Space.m) {
-        Badge(L10n.Trades.open, color: Palette.accentText)
-        Text(verbatim: Format.marketTime(row.position.openedAt.date))
-        Text(verbatim: row.position.symbol).fontWeight(.semibold)
-        Text(verbatim: Format.quantity(row.quantity))
-        Text(verbatim: Format.price(row.entry))
-        Text(verbatim: Format.price(row.stop))
-          .foregroundStyle(row.position.stop.state == .verified ? Palette.textPrimary : Palette.lossText)
-        Spacer(minLength: 0)
-        Text(verbatim: row.resultR.map(Risk.text) ?? Format.missing)
-          .foregroundStyle(row.resultR.map(Palette.result) ?? Palette.textQuaternary)
-      }
-      .font(Tokens.Typography.calloutMono)
-      .contentShape(.rect)
+  /// The closed trade's id (the selection's), or the open position's.
+  var id: DayTrade.ID {
+    switch self {
+    case .open(let row): Self.openPrefix + row.id
+    case .closed(let trade): trade.id
     }
-    .buttonStyle(.plain)
-    .help(Text(L10n.Trades.showOnChart))
-    .accessibilityIdentifier(Self.id)
+  }
+
+  var symbol: String {
+    switch self {
+    case .open(let row): row.id
+    case .closed(let trade): trade.symbol
+    }
+  }
+
+  var quantity: Decimal {
+    switch self {
+    case .open(let row): row.quantity
+    case .closed(let trade): trade.quantity.value
+    }
+  }
+
+  var entry: Decimal {
+    switch self {
+    case .open(let row): row.entry
+    case .closed(let trade): trade.entryPrice.value
+    }
+  }
+
+  /// The exit price; nil while open.
+  var exit: Decimal? {
+    switch self {
+    case .open: nil
+    case .closed(let trade): trade.exitPrice.value
+    }
+  }
+
+  var stop: Decimal? {
+    switch self {
+    case .open(let row): row.stop
+    case .closed(let trade): trade.stopPrice?.value
+    }
+  }
+
+  /// An open position whose broker stop is not verified.
+  var stopUnverified: Bool {
+    if case .open(let row) = self { return row.position.stop.state != .verified }
+    return false
+  }
+
+  /// R now (open, at the newest captured bar) or at the exit.
+  var resultR: Decimal? {
+    switch self {
+    case .open(let row): row.resultR ?? row.latestResultR
+    case .closed(let trade): trade.resultR
+    }
+  }
+
+  /// Gross result in USD now (open) or at the exit; nil while an open one has no bar yet.
+  var result: Decimal? {
+    switch self {
+    case .open(let row): row.unrealized ?? row.latestUnrealized
+    case .closed(let trade): trade.resultGrossUsd.value
+    }
   }
 }
 
