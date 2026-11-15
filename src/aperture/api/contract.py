@@ -30,6 +30,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
+from aperture.api.reasons import UNRECOGNIZED as UNRECOGNIZED_CODE
 from aperture.api.reasons import Reason, prose_reasons, refusal_params
 from aperture.data.base import ScreenerKind
 from aperture.replay.engine import ExitReason
@@ -89,17 +90,19 @@ REASONS_OF = "reasons_of"
 
 
 def _reasons_of(source: str) -> Any:
-    """`<source>_codes`: the codes of the cause in field `source`, computed from it on every
-    build (never passed in, never read from a document), so the two always agree. Added after
-    version 1 shipped."""
+    """`<source>_codes`: the codes of the cause in field `source`. Computed only when a document
+    is encoded (`to_jsonable`), never when one is built or read, so no path that builds these
+    records (the daily-loss check reads `DayTrade`s) ever parses a cause; the attribute itself
+    stays empty. Added after version 1 shipped."""
     return field(init=False, default=(), metadata={REASONS_OF: source, ADDED_AFTER_V1: True})
 
 
-def _fill_reasons(document: Any) -> None:
-    for f in fields(document):
-        source = f.metadata.get(REASONS_OF)
-        if source is not None:
-            object.__setattr__(document, f.name, prose_reasons(getattr(document, source)))
+def _codes_for(document: Any, source: str) -> tuple[Reason, ...]:
+    """Display only: a reason table that fails on a text shows it unrecognized, never raises."""
+    try:
+        return prose_reasons(getattr(document, source))
+    except Exception:  # noqa: BLE001 - see docstring
+        return (Reason(UNRECOGNIZED_CODE),)
 
 # The code of a reason the bot wrote before it recorded codes; clients show the text.
 UNRECORDED = "unrecorded"
@@ -236,9 +239,6 @@ class Position:
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class Trade:
     symbol: str
@@ -256,9 +256,6 @@ class Trade:
     entry_cause: str | None  # why a field of `entry` is null; null when none is
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
-
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
 
 @dataclass(frozen=True)
 class Freshness:
@@ -430,9 +427,6 @@ class PriceAfterV1:
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class WhatIfV1:
     """A skipped signal entered alone in the replay simulation (docs/api.md, "What if"):
@@ -445,9 +439,6 @@ class WhatIfV1:
     cause: str | None
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
-
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
 
 @dataclass(frozen=True)
 class DayTrade:
@@ -488,9 +479,6 @@ class DayTrade:
     prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
     overshoot_cause_codes: tuple[ReasonV1, ...] = _reasons_of("overshoot_cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 class CleanVerdict(StrEnum):
     """Did the broker and the bot's records agree all that New York day (docs/api.md)."""
 
@@ -515,9 +503,6 @@ class CleanCause:
 
     text_codes: tuple[ReasonV1, ...] = _reasons_of("text")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class CleanDay:
     """The clean-day verdict of one New York date, from the journal only (docs/api.md,
@@ -532,9 +517,6 @@ class CleanDay:
     day_end_seq: int | None  # the date's `day-end` row, if any
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
-
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
 
 @dataclass(frozen=True)
 class DaySummary:
@@ -789,9 +771,6 @@ class ObserverTradeV1:
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class ObserverV1:
     """One configured observer. `result_gross_usd` is its simulated gross day result (the
@@ -812,9 +791,6 @@ class ObserverV1:
 
     result_cause_codes: tuple[ReasonV1, ...] = _reasons_of("result_cause")
     trades_cause_codes: tuple[ReasonV1, ...] = _reasons_of("trades_cause")
-
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
 
 @dataclass(frozen=True)
 class ObserversV1:
@@ -1042,9 +1018,6 @@ class SkippedSignalV1:
 
     prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class SkippedV1:
     """GET /skipped?date=: every skipped ENTER of the active strategy on one New York date,
@@ -1186,9 +1159,6 @@ class WatchingRowV1:
     closeness_cause_codes: tuple[ReasonV1, ...] = _reasons_of("closeness_cause")
     quote_age_cause_codes: tuple[ReasonV1, ...] = _reasons_of("quote_age_cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class WatchingV1:
     """GET /watching?date=: the symbols the active strategy is closest to entering on, closest
@@ -1291,9 +1261,6 @@ class ExclusionV1:
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 @dataclass(frozen=True)
 class PerformanceDayV1:
     """One New York date with counted trades: its gross result and the running R total."""
@@ -1347,9 +1314,6 @@ class PerformanceV1:
         _reasons_of("average_loss_gross_r_cause"))
     profit_factor_gross_cause_codes: tuple[ReasonV1, ...] = _reasons_of("profit_factor_gross_cause")
 
-    def __post_init__(self) -> None:
-        _fill_reasons(self)
-
 SCHEMA_TYPES: dict[str, type] = {
     "status-v1": StatusV1,
     "command-v1": CommandV1,
@@ -1396,7 +1360,9 @@ def parse_time(text: str) -> datetime:
 
 def to_jsonable(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
-        return {f.name: to_jsonable(getattr(value, f.name)) for f in fields(value)}
+        return {f.name: to_jsonable(_codes_for(value, f.metadata[REASONS_OF])
+                                    if REASONS_OF in f.metadata else getattr(value, f.name))
+                for f in fields(value)}
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, bool | int | str) or value is None:

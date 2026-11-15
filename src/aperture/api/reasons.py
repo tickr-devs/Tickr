@@ -325,7 +325,7 @@ def _ny_wire(text: str) -> str:
     13, hour 25) stays as written."""
     try:
         return _ny_time(datetime.strptime(text, "%Y-%m-%dT%H:%M:%S.%f%z"))
-    except ValueError:
+    except (ValueError, OverflowError):
         return text
 
 
@@ -348,8 +348,8 @@ def _prose_one(text: str) -> Reason:
 def prose_reasons(text: str | None) -> tuple[Reason, ...]:
     """The codes of a cause the API wrote: empty for null, one reason when the whole text reads
     as one, else one per `; `-joined part (an entry send's missing rows, a clean day's faults),
-    each the shortest run of parts that reads as one cause. A part in no known shape is
-    UNRECOGNIZED: clients then show the text."""
+    a part joined with the next when only the two read as one cause. A part in no known shape
+    is UNRECOGNIZED: clients then show the text. Never raises on a string."""
     if text is None:
         return ()
     whole = _prose_one(text)
@@ -359,15 +359,13 @@ def prose_reasons(text: str | None) -> tuple[Reason, ...]:
     found: list[Reason] = []
     start = 0
     while start < len(parts):
-        # The shortest run of parts from `start` that reads as one cause: a part may itself
-        # hold `; ` (an engine fence cause quoted in a clean-day fault). A part no run makes
-        # readable stands alone, unrecognized.
-        end, reason = start + 1, Reason(UNRECOGNIZED)
-        for stop in range(start + 1, len(parts) + 1):
-            candidate = _prose_one(_SEPARATOR.join(parts[start:stop]))
-            if candidate.code != UNRECOGNIZED:
-                end, reason = stop, candidate
-                break
+        # One part, or a part with the next: an engine fence cause quoted in a clean-day fault
+        # may itself hold one `; ` ("...; exiting"). Linear in the number of parts.
+        end, reason = start + 1, _prose_one(parts[start])
+        if reason.code == UNRECOGNIZED and start + 1 < len(parts):
+            pair = _prose_one(_SEPARATOR.join(parts[start:start + 2]))
+            if pair.code != UNRECOGNIZED:
+                end, reason = start + 2, pair
         found.append(reason)
         start = end
     return tuple(found)
