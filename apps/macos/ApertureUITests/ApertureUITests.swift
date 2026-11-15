@@ -244,4 +244,35 @@ final class ApertureUITests: XCTestCase {
     XCTAssertFalse(screen.waitForNonExistence(timeout: Self.settleSeconds), "the chart screen went away")
     XCTAssertEqual(app.state, .runningForeground, "the app quit on the chart")
   }
+
+  static let inspectorOnly = ["-chart.decisions", "YES", "-chart.rsi", "NO"]
+  static let studiesNoInspector = ["-chart.decisions", "NO", "-chart.movingAverages", "YES",
+    "-chart.bollinger", "YES", "-chart.macd", "YES", "-chart.rsi", "YES", "-chart.stochastic", "YES", "-chart.atr", "YES"]
+  static let movingAveragesWithInspector = ["-chart.decisions", "YES", "-chart.movingAverages", "YES", "-chart.rsi", "NO"]
+  static let macdWithInspector = ["-chart.decisions", "YES", "-chart.macd", "YES", "-chart.rsi", "NO"]
+  static let stochasticWithInspector = ["-chart.decisions", "YES", "-chart.stochastic", "YES", "-chart.rsi", "NO"]
+  static let rsiWithInspector = ["-chart.decisions", "YES", "-chart.rsi", "YES"]
+
+  @MainActor private func survives(_ settings: [String], narrow: Bool) {
+    let app = launch(settings: settings)
+    open(Self.sections[1], in: app)
+    let window = app.windows.firstMatch
+    if narrow {
+      let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+      edge.press(forDuration: Self.dragSeconds,
+        thenDragTo: edge.withOffset(CGVector(dx: -window.frame.width * Self.narrowShare, dy: 0)))
+    }
+    let screen = app.descendants(matching: .any)[Self.screenPrefix + Self.sections[1]].firstMatch
+    XCTAssertFalse(screen.waitForNonExistence(timeout: Self.settleSeconds), "the chart screen went away")
+    XCTAssertEqual(app.state, .runningForeground, "the app quit on the chart")
+  }
+
+  @MainActor func testBisectInspectorOnlyWide() { survives(Self.inspectorOnly, narrow: false) }
+  @MainActor func testBisectInspectorOnlyNarrow() { survives(Self.inspectorOnly, narrow: true) }
+  @MainActor func testBisectStudiesNoInspectorNarrow() { survives(Self.studiesNoInspector, narrow: true) }
+  @MainActor func testBisectAllWide() { survives(Self.everyStudyWithInspector, narrow: false) }
+  @MainActor func testBisectMovingAveragesNarrow() { survives(Self.movingAveragesWithInspector, narrow: true) }
+  @MainActor func testBisectMACDNarrow() { survives(Self.macdWithInspector, narrow: true) }
+  @MainActor func testBisectStochasticNarrow() { survives(Self.stochasticWithInspector, narrow: true) }
+  @MainActor func testBisectRSINarrow() { survives(Self.rsiWithInspector, narrow: true) }
 }
