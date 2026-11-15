@@ -46,6 +46,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct RootView: View {
   @Environment(AppModel.self) private var model
+  @Environment(AdvisorModel.self) private var advisor
 
   /// Sidebar width: least, preferred (the design's) and most, in points.
   static let sidebarMin: CGFloat = 200
@@ -123,6 +124,8 @@ struct RootView: View {
       .toolbarBackground(Palette.titleBar, for: .windowToolbar)
       .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
+    // The advisor's runs for the Overview's advisor row and the Lab, read again now and then.
+    .task(id: model.baseURL) { await advisor.follow(model.baseURL) }
   }
 
   @ViewBuilder private var detail: some View {
@@ -411,11 +414,19 @@ private struct DayStepper: View {
   /// holds the longest live-day label in 12-point mono, the Russian "ср, 30 сент. · сегодня"
   /// (22 characters) as well as the English "Wed, Sep 30 · today" (19).
   static let dayMinWidth: CGFloat = 162
+  /// Accessibility id of the DEMO chip, for the UI tests, and its symbol.
+  static let demoChipID = "toolbar-demo"
+  static let demoSymbol = "theatermasks.fill"
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
       ConnectionStatus()
         .padding(.trailing, Self.connectionGap)
+      if model.dayLocked {
+        StatusPill(L10n.Toolbar.demoChip, systemImage: Self.demoSymbol, tone: .warning)
+          .help(Text(L10n.Toolbar.demoHelp))
+          .accessibilityIdentifier(Self.demoChipID)
+      }
       Button { model.showPreviousDay() } label: {
         Label(String(localized: L10n.Toolbar.previousDay), systemImage: Self.previousSymbol)
       }
@@ -448,15 +459,17 @@ private struct DayStepper: View {
       .buttonStyle(.plain)
       .menuIndicator(.hidden)
       .fixedSize()
-      .help(Text(L10n.Toolbar.pickDayHelp))
+      .disabled(model.dayLocked)
+      .help(Text(model.dayLocked ? L10n.Toolbar.demoHelp : L10n.Toolbar.pickDayHelp))
       Button { model.showNextDay() } label: {
         Label(String(localized: L10n.Toolbar.nextDay), systemImage: Self.nextSymbol)
       }
       .buttonStyle(TitleBarButtonStyle(square: true))
-      .disabled(model.isLive)
+      .disabled(model.isLive || model.dayLocked)
       .help(Text(L10n.Toolbar.nextDayHelp))
       Button(String(localized: L10n.Common.today)) { model.showToday() }
         .buttonStyle(TitleBarButtonStyle(square: false))
+        .disabled(model.dayLocked)
         .help(Text(L10n.Toolbar.todayHelp))
     }
   }
@@ -635,6 +648,7 @@ struct CommandToast: View {
   RootView()
     .environment(PreviewAPI.model())
     .environment(ChartModel())
+    .environment(PreviewAPI.advisor())
     .frame(width: PreviewAPI.windowWidth, height: PreviewAPI.windowHeight)
 }
 #endif
