@@ -400,8 +400,9 @@ private struct LevelsCard: View {
   }
 
   /// A dashed level across the width with its label just above it, or just under it when `below`.
-  private func line(_ text: LocalizedStringResource, color: Color, textColor: Color, y: CGFloat, width: CGFloat,
-    below: Bool = false) -> some View {
+  private func line(
+    _ text: LocalizedStringResource, color: Color, textColor: Color, y: CGFloat, width: CGFloat, below: Bool = false
+  ) -> some View {
     ZStack(alignment: .leading) {
       Path { path in
         path.move(to: .zero)
