@@ -545,15 +545,15 @@ private struct TradesList: View {
     let sorted = trades.sorted { $0.closedAt > $1.closedAt }
     VStack(spacing: Tokens.Space.s) {
       ForEach(positions, id: \.symbol) { position in
-        let protected = position.stop.state == .verified
+        let state = position.stop.state
         row(symbol: position.symbol, time: String(localized: L10n.Activity.openSince(Format.time(position.openedAt.date))),
           tag: String(localized: L10n.Activity.openTag), tagSymbol: Self.openSymbol, tone: .accent,
           result: String(localized: L10n.Common.quantityAt(position.quantity.text, position.entryPrice.text)),
           figures: [
-            Figure(symbol: Self.stopSymbol, label: L10n.Activity.hintStop,
-              value: position.stop.price?.text ?? Format.missing, tone: protected ? .profit : .loss),
-          ])
-          .accessibilityHint(Text(verbatim: Board.stopStateTitle(position.stop.state)))
+            Figure(symbol: StopGlyph.stateSymbol(state), label: L10n.Activity.hintStop,
+              value: position.stop.price?.text ?? Format.missing, tone: StopGlyph.stateTone(state)),
+          ],
+          stopState: state)
           .rise(step: ActivityView.Order.list.rawValue)
       }
       ForEach(Array(sorted.enumerated()), id: \.offset) { index, trade in
@@ -605,7 +605,7 @@ private struct TradesList: View {
   }
 
   private func row(symbol: String, time: String, tag: String, tagSymbol: String, tone: Tone, result: String,
-    figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil) -> some View {
+    figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       HStack(spacing: Tokens.Space.s) {
         Text(verbatim: symbol).font(Tokens.Typography.calloutMono.bold())
@@ -616,7 +616,15 @@ private struct TradesList: View {
           .font(Tokens.Typography.calloutMono.bold())
           .foregroundStyle(tone.text)
       }
-      chips(figures)
+      ChipFlow {
+        chipViews(figures)
+        // An open position's stop state in words, so pending, missing and unknown never look alike.
+        if let stopState {
+          StatusPill(verbatim: Board.stopStateTitle(stopState), systemImage: StopGlyph.stateSymbol(stopState),
+            tone: StopGlyph.stateTone(stopState))
+            .hint(L10n.Activity.hintStop)
+        }
+      }
       if !metrics.isEmpty {
         // VoiceOver reads the sentence ("stop confirmed in 1.4 s · MAE … (at least)").
         chips(metrics)
@@ -630,12 +638,15 @@ private struct TradesList: View {
     .accessibilityElement(children: .combine)
   }
 
+  /// A row of figure chips that wraps on a narrow screen.
   private func chips(_ figures: [Figure]) -> some View {
-    HStack(spacing: Tokens.Space.xs) {
-      ForEach(figures) { figure in
-        IconMetric(figure.symbol, label: figure.label, value: figure.value, tone: figure.tone,
-          color: figure.tone?.text, compact: true)
-      }
+    ChipFlow { chipViews(figures) }
+  }
+
+  private func chipViews(_ figures: [Figure]) -> some View {
+    ForEach(figures) { figure in
+      IconMetric(figure.symbol, label: figure.label, value: figure.value, tone: figure.tone,
+        color: figure.tone?.text, compact: true)
     }
   }
 }
@@ -717,7 +728,7 @@ private struct SkippedRow: View {
       if let cause = group.cause {
         CauseText(cause: cause)
       }
-      HStack(spacing: Tokens.Space.xs) {
+      ChipFlow {
         Badge(L10n.Activity.whatIfTag, tone: .highlight, planned: true)
         IconMetric(TradesList.entrySymbol, label: L10n.Activity.hintWhatIfEntry,
           value: signal.entryPrice.map { Money.price($0.value) } ?? Format.missing, compact: true)
