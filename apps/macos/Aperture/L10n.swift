@@ -1,3 +1,4 @@
+import ApertureKit
 import Foundation
 
 /// Every text of the macOS app that a person reads, in English, with its Russian translation in
@@ -363,7 +364,7 @@ enum L10n {
     }
     static func dayRow(_ day: String, _ result: String, _ trades: Int) -> LocalizedStringResource {
       LocalizedStringResource("toolbar.dayRow",
-        defaultValue: "\(day)   \(result)   \(trades) trades",
+        defaultValue: "\(day)   \(result)   trades: \(trades)",
         bundle: L10n.bundle)
     }
     static var pickDayHelp: LocalizedStringResource {
@@ -419,7 +420,7 @@ enum L10n {
     }
     static func protectedPositions(_ count: Int, _ protected: Int) -> LocalizedStringResource {
       LocalizedStringResource("overview.protectedPositions",
-        defaultValue: "\(count) positions · \(protected) protected by a verified broker stop",
+        defaultValue: "\(count) open · \(protected) protected by a verified broker stop",
         bundle: L10n.bundle)
     }
     static var dayResult: LocalizedStringResource {
@@ -556,8 +557,20 @@ enum L10n {
     static var lastBarClose: LocalizedStringResource {
       LocalizedStringResource("position.lastBarClose", defaultValue: "last bar close", bundle: L10n.bundle)
     }
-    static var old: LocalizedStringResource {
-      LocalizedStringResource("position.old", defaultValue: "old", bundle: L10n.bundle)
+    /// Tooltip of a position's price and R when the newest captured bar is not current.
+    static func staleHelp(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("position.staleHelp",
+        defaultValue: "No bar since \(time): the price and R are as of then.", bundle: L10n.bundle)
+    }
+    /// A position's result in R at the newest captured bar, when that bar is not current.
+    static func rAt(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("position.rAt", defaultValue: "R at \(time)", bundle: L10n.bundle)
+    }
+    /// Tooltip of max loss: why it can differ from the daily limit's reservation.
+    static var maxLossHelp: LocalizedStringResource {
+      LocalizedStringResource("position.maxLossHelp",
+        defaultValue: "At the fill price. The daily loss limit reserves the planned loss at the entry order's limit price, so the reservation can be a little higher.",
+        bundle: L10n.bundle)
     }
     static var chartLabel: LocalizedStringResource {
       LocalizedStringResource("position.chartLabel",
@@ -1239,7 +1252,7 @@ enum L10n {
     }
     /// Counts under the performance figures.
     static func performanceCounts(_ trades: Int, _ wins: Int, _ losses: Int, _ scratches: Int) -> LocalizedStringResource {
-      LocalizedStringResource("trades.performanceCounts", defaultValue: "\(trades) trades · \(wins) W · \(losses) L · \(scratches) flat", bundle: L10n.bundle)
+      LocalizedStringResource("trades.performanceCounts", defaultValue: "Trades: \(trades) · \(wins) W · \(losses) L · \(scratches) flat", bundle: L10n.bundle)
     }
     /// Trades left out of every performance figure, with why.
     static func excluded(_ trades: Int, _ cause: String) -> LocalizedStringResource {
@@ -1272,6 +1285,10 @@ enum L10n {
     /// VoiceOver value of a calendar day the bot did not record.
     static var noRecords: LocalizedStringResource {
       LocalizedStringResource("trades.noRecords", defaultValue: "No records", bundle: L10n.bundle)
+    }
+    /// Repeats of one refusal on one symbol: first and last time, and how many.
+    static func repeatRange(_ first: String, _ last: String, _ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("trades.repeatRange", defaultValue: "\(first)–\(last) · ×\(count)", bundle: L10n.bundle)
     }
     /// A refusal with the end of its window (a cooldown), New York time.
     static func refusedUntil(_ message: String, _ time: String) -> LocalizedStringResource {
@@ -1350,6 +1367,68 @@ enum L10n {
       LocalizedStringResource("trades.whatIfStrategy", defaultValue: "Another Strategy…", bundle: L10n.bundle)
     }
   }
+  /// A refused entry in words: the rule behind its code, and the detail of a pause after a loss.
+  enum Cause {
+    /// What the rule behind `code` is.
+    static func title(_ code: RefusalCode) -> LocalizedStringResource {
+      switch code {
+      case .gateClosed: LocalizedStringResource("cause.gateClosed",
+        defaultValue: "Trading gate closed", bundle: L10n.bundle)
+      case .notReconciled: LocalizedStringResource("cause.notReconciled",
+        defaultValue: "Not yet reconciled with the broker", bundle: L10n.bundle)
+      case .brokerReadMissing: LocalizedStringResource("cause.brokerReadMissing",
+        defaultValue: "No broker read yet", bundle: L10n.bundle)
+      case .brokerReadStale: LocalizedStringResource("cause.brokerReadStale",
+        defaultValue: "Broker read too old", bundle: L10n.bundle)
+      case .unresolvedExposure: LocalizedStringResource("cause.unresolvedExposure",
+        defaultValue: "Unresolved exposure", bundle: L10n.bundle)
+      case .foreignExposure: LocalizedStringResource("cause.foreignExposure",
+        defaultValue: "Someone else's position or order at the broker", bundle: L10n.bundle)
+      case .entryStop: LocalizedStringResource("cause.entryStop",
+        defaultValue: "Entries paused by you", bundle: L10n.bundle)
+      case .halfDay: LocalizedStringResource("cause.halfDay",
+        defaultValue: "Half day: entries off", bundle: L10n.bundle)
+      case .outsideSession: LocalizedStringResource("cause.outsideSession",
+        defaultValue: "Outside regular hours", bundle: L10n.bundle)
+      case .afterLastEntry: LocalizedStringResource("cause.afterLastEntry",
+        defaultValue: "After the last entry time", bundle: L10n.bundle)
+      case .ownPosition: LocalizedStringResource("cause.ownPosition",
+        defaultValue: "Already holding this symbol", bundle: L10n.bundle)
+      case .ownOrder: LocalizedStringResource("cause.ownOrder",
+        defaultValue: "An order on this symbol is working", bundle: L10n.bundle)
+      case .positionLimit: LocalizedStringResource("cause.positionLimit",
+        defaultValue: "All position slots taken", bundle: L10n.bundle)
+      case .cooldown: LocalizedStringResource("cause.cooldown",
+        defaultValue: "Pause after a loss", bundle: L10n.bundle)
+      case .setupInvalidated: LocalizedStringResource("cause.setupInvalidated",
+        defaultValue: "Setup no longer valid", bundle: L10n.bundle)
+      case .quoteMissing: LocalizedStringResource("cause.quoteMissing",
+        defaultValue: "No quote", bundle: L10n.bundle)
+      case .quoteStale: LocalizedStringResource("cause.quoteStale",
+        defaultValue: "Quote too old", bundle: L10n.bundle)
+      case .priceOutside: LocalizedStringResource("cause.priceOutside",
+        defaultValue: "Price left the entry window", bundle: L10n.bundle)
+      case .quantityBelowOne: LocalizedStringResource("cause.quantityBelowOne",
+        defaultValue: "Size under one share", bundle: L10n.bundle)
+      case .notionalOverCap: LocalizedStringResource("cause.notionalOverCap",
+        defaultValue: "Position value over the cap", bundle: L10n.bundle)
+      case .plannedLossOver: LocalizedStringResource("cause.plannedLossOver",
+        defaultValue: "Planned loss over the limit", bundle: L10n.bundle)
+      case .dailyCeiling: LocalizedStringResource("cause.dailyCeiling",
+        defaultValue: "Daily loss limit reached", bundle: L10n.bundle)
+      case .entryBudget: LocalizedStringResource("cause.entryBudget",
+        defaultValue: "No request budget for the entry", bundle: L10n.bundle)
+      case .stopBudget: LocalizedStringResource("cause.stopBudget",
+        defaultValue: "No request budget for the stop", bundle: L10n.bundle)
+      }
+    }
+    /// Detail of a pause after a loss: when the losing trade closed and when entries may resume.
+    static func cooldownDetail(_ loss: String, _ until: String) -> LocalizedStringResource {
+      LocalizedStringResource("cause.cooldownDetail", defaultValue: "loss at \(loss) · no entry before \(until)",
+        bundle: L10n.bundle)
+    }
+  }
+
   enum Risk {
     /// Card title: room left before the daily loss limit.
     static var lossRoom: LocalizedStringResource {
@@ -1764,7 +1843,7 @@ enum L10n {
     }
     /// Safety row alarm: an entry sent other than once.
     static func breach(_ symbol: String, _ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("entrySent.breach", defaultValue: "\(symbol): \(count) sends", bundle: L10n.bundle)
+      LocalizedStringResource("entrySent.breach", defaultValue: "\(symbol): sent \(count) times", bundle: L10n.bundle)
     }
     /// Safety row: entries without a send record.
     static func unrecorded(_ count: Int) -> LocalizedStringResource {

@@ -25,11 +25,19 @@ from aperture.api.history import (
     entry_send,
     trade_metrics,
 )
-from aperture.calendar import NEW_YORK, CalendarRefused, SessionCalendar
+from aperture.calendar import (
+    NEW_YORK,
+    CalendarCause,
+    CalendarRefused,
+    MarketDay,
+    SessionCalendar,
+)
 from aperture.config import Config, trading_gate
 from aperture.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeRow
 from aperture.engine.loop import drain
 from aperture.engine.manual import flatten_deadline
+from aperture.risk.admission import Admission, AdmissionLimits, session_refusal
+from aperture.risk.causes import AdmissionCause
 from aperture.runtime import stopmarker
 from aperture.runtime.account import account_document, record_reconcile
 from aperture.runtime.alerts import AlertKind
@@ -505,7 +513,58 @@ class Service:
         if self.entries_off is not None:
             return api.EntryBlock("strategy_not_loaded",
                                   f"Active strategy not loaded: {self.entries_off}")
-        return NOT_WIRED if self.evaluator is None else None
+        if self.evaluator is None:
+            return NOT_WIRED
+        return self._ordinary_block()
+
+    def _ordinary_block(self) -> api.EntryBlock | None:
+        """Why admission refuses every entry right now although nothing is wrong: no session,
+        outside the entry window, or a trade of our own is already open. Reported with
+        `attention = False` so the apps can say "not now" without a warning. The answers are
+        admission's own (its session check and its counts of our positions and orders), so
+        the status cannot say "allowed" while admission refuses. A calendar that cannot
+        answer is a real block."""
+        from aperture.runtime import entries  # entries imports this module
+
+        now = self.now()
+        day = entries.session_at(self.calendar, now)
+        refused = session_refusal(day, now, AdmissionLimits.from_config(self.config))
+        if refused is not None:
+            return self._session_block(day, refused)
+        if any(entries.own_exposure(self.engine)):
+            return api.EntryBlock("own_trade_open", "The bot already has a trade open.",
+                                  attention=False)
+        return None
+
+    def _session_block(self, day: MarketDay | CalendarRefused,
+                       refused: Admission) -> api.EntryBlock:
+        """Admission's session refusal in the status document's words."""
+        if isinstance(day, CalendarRefused):
+            if day.cause in (CalendarCause.WEEKEND, CalendarCause.HOLIDAY):
+                return api.EntryBlock("no_session_today", "No regular session today.",
+                                      attention=False)
+            if self.calendar is None:
+                return api.EntryBlock("calendar_unknown", "No trading calendar is loaded.")
+            return api.EntryBlock("calendar_unknown", f"Trading calendar: {day.cause}.")
+        if refused.cause is AdmissionCause.HALF_DAY:
+            return api.EntryBlock("no_session_today",
+                                  "Half day: the bot does not trade half days.",
+                                  attention=False)
+        if refused.cause is AdmissionCause.OUTSIDE_REGULAR_SESSION:
+            return api.EntryBlock(
+                "outside_regular_session",
+                f"Outside the regular session ({day.regular_open.astimezone(NEW_YORK):%H:%M}-"
+                f"{day.regular_close.astimezone(NEW_YORK):%H:%M} New York).", attention=False)
+        if refused.cause is AdmissionCause.AFTER_LAST_ENTRY:
+            session = self.config.session
+            times = day.session_times(session.last_entry_minutes_before_close,
+                                      session.flatten_minutes_before_close)
+            return api.EntryBlock(
+                "after_last_entry",
+                f"Past the last entry time ({times.last_entry.astimezone(NEW_YORK):%H:%M} "
+                "New York).",
+                attention=False)
+        return api.EntryBlock("calendar_unknown", f"Trading calendar: {refused.detail}.")
 
     def _daily_money_block(self) -> api.EntryBlock | None:
         """Entries the daily ceiling refuses anyway: the room left is below

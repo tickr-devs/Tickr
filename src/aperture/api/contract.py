@@ -25,7 +25,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, date, datetime
-from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR, Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
@@ -61,6 +61,16 @@ class ContractError(ValueError):
 
 def _const(value: int) -> Any:
     return field(default=value, metadata={"const": value})
+
+
+ADDED_AFTER_V1 = "added_after_v1"
+
+
+def _added_later(default: Any) -> Any:
+    """A key added to version 1 after it shipped: a reader takes a document without it as
+    `default`; writers always write it. Every other key stays required on read, whatever
+    default its dataclass field has."""
+    return field(default=default, metadata={ADDED_AFTER_V1: True})
 
 
 # ---------------------------------------------------------------- enums
@@ -131,10 +141,13 @@ class StrategyId:
 
 @dataclass(frozen=True)
 class EntryBlock:
-    """The single reason entries are blocked: a stable cause code plus plain words for people."""
+    """The single reason entries are blocked: a stable cause code plus plain words for people.
+    `attention` is false for an ordinary state that passes on its own (a position is already
+    open, the time is outside the entry window): clients show it calmly, not as a warning."""
 
     cause: str
     text: str
+    attention: bool = _added_later(True)
 
 
 @dataclass(frozen=True)
@@ -1023,8 +1036,31 @@ def closeness(check: Check | None, places: int) -> tuple[Decimal | None, str | N
     return value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_DOWN), None
 
 
+def shown_check(check: Check, places: int) -> CheckV1:
+    """The decisive (failed) check with measured and threshold rounded to `places`, each away
+    from passing: for `>` `>=` measured down and threshold up, for `<` `<=` the reverse. The
+    shown pair therefore still fails, and closeness is computed from the recorded values. A
+    value with no more than `places` decimals is shown as recorded.
+    Other operators keep the recorded values."""
+    if check.operator in _RISE:
+        measured_way, threshold_way = ROUND_FLOOR, ROUND_CEILING
+    elif check.operator in _FALL:
+        measured_way, threshold_way = ROUND_CEILING, ROUND_FLOOR
+    else:
+        return check_v1(check)
+    step = Decimal(1).scaleb(-places)
+
+    def shown(value: Decimal | None, way: str) -> Decimal | None:
+        if value is None or value.as_tuple().exponent >= -places:
+            return value  # already short enough: shown as recorded, no padding zeros
+        return value.quantize(step, rounding=way)
+
+    return CheckV1(check.rule, shown(check.measured, measured_way), check.operator,
+                   shown(check.threshold, threshold_way), check.passed, check.note)
+
+
 def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: int,
-                      places: int) -> WatchingV1:
+                      places: int, check_places: int) -> WatchingV1:
     """`records`: active-strategy records of `day`. The latest decision per symbol unless it is
     ENTER, HOLD or EXIT (entering or in a position); closest first, then by symbol."""
     latest = {r.symbol: r for r in _oldest_first(records)}
@@ -1037,7 +1073,8 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: 
         value, cause = closeness(decisive, places)
         rows.append(WatchingRowV1(
             symbol=r.symbol, at=r.bar_start, strategy=StrategyId(d.strategy, d.version),
-            verdict=d.verdict, decisive_check=None if decisive is None else check_v1(decisive),
+            verdict=d.verdict,
+            decisive_check=None if decisive is None else shown_check(decisive, check_places),
             closeness=value, closeness_cause=cause, quote_age_seconds=None,
             quote_age_cause=QUOTE_AGE_NOT_RECORDED))
     rows.sort(key=lambda w: (w.closeness is None, -(w.closeness or 0), w.symbol))
@@ -1251,19 +1288,24 @@ def _decode(where: str, raw: Any, hint: Any, meta: Any = None) -> Any:
 
 
 def from_jsonable(cls: type, raw: Any, where: str = "$") -> Any:
-    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys."""
+    """Build `cls` from decoded JSON, refusing unknown, missing and mistyped keys. Only a key
+    marked `_added_later` may be absent, so a document written by an older bot (a status file
+    left on disk across an update) still reads; a field's plain default never makes its key
+    optional (a flatten command without `symbol` is refused, not read as "everything")."""
     if not isinstance(raw, dict):
         raise ContractError(f"{where}: expected an object, got {type(raw).__name__}")
     hints = get_type_hints(cls)
     expected = [f.name for f in fields(cls)]
     unknown = sorted(set(raw) - set(expected))
-    missing = [name for name in expected if name not in raw]
+    optional = {f.name for f in fields(cls) if f.metadata.get(ADDED_AFTER_V1)}
+    missing = [name for name in expected if name not in raw and name not in optional]
     if unknown:
         raise ContractError(f"{where}: unknown keys: {', '.join(unknown)}")
     if missing:
         raise ContractError(f"{where}: missing keys: {', '.join(missing)}")
     meta = {f.name: f.metadata or None for f in fields(cls)}
-    return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n]) for n in expected})
+    return cls(**{n: _decode(f"{where}.{n}", raw[n], hints[n], meta[n])
+                  for n in expected if n in raw})
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
