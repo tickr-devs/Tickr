@@ -624,13 +624,13 @@ private struct TradesList: View {
             .minimumScaleFactor(DayCard.minimumScale)
         }
         Spacer(minLength: 0)
-        HStack(spacing: Tokens.Space.s) {
-          StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
-          Text(verbatim: result)
-            .font(Tokens.Typography.calloutMono.bold())
-            .foregroundStyle(tone.text)
-            .lineLimit(1)
-            .fixedSize()
+        // The tag and the result side by side, or one under the other when a long tag at the
+        // largest text sizes leaves no room beside it.
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: Tokens.Space.s) { tagAndResult(tag: tag, tagSymbol: tagSymbol, tone: tone, result: result) }
+          VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+            tagAndResult(tag: tag, tagSymbol: tagSymbol, tone: tone, result: result)
+          }
         }
       }
       ChipFlow {
@@ -653,6 +653,16 @@ private struct TradesList: View {
     .padding(.vertical, Tokens.Space.m)
     .apertureCard(radius: Tokens.Radius.card)
     .accessibilityElement(children: .combine)
+  }
+
+  @ViewBuilder
+  private func tagAndResult(tag: String, tagSymbol: String, tone: Tone, result: String) -> some View {
+    StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
+    Text(verbatim: result)
+      .font(Tokens.Typography.calloutMono.bold())
+      .foregroundStyle(tone.text)
+      .lineLimit(1)
+      .fixedSize()
   }
 
   /// A row of figure chips that wraps on a narrow screen.
