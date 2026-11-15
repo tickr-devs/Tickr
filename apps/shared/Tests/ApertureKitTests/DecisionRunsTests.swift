@@ -6,8 +6,15 @@ import Testing
 struct DecisionRunsTests {
   /// A decision at minute `minute` past 15:00 UTC; `skipped` gives it what-if levels (a refused
   /// ENTER), `failed` the rule of a check that did not pass.
-  func decision(_ minute: Int, _ action: String, _ name: String = "price-action", version: String = "1",
-    observer: Bool = false, skipped: Bool = false, failed: String? = nil) throws -> DecisionV1 {
+  func decision(
+    _ minute: Int,
+    _ action: String,
+    _ name: String = "price-action",
+    version: String = "1",
+    observer: Bool = false,
+    skipped: Bool = false,
+    failed: String? = nil
+  ) throws -> DecisionV1 {
     let levels = skipped ? #""entry_price": "12.40", "stop_price": "12.10""# : #""entry_price": null, "stop_price": null"#
     let checks = failed.map {
       #"[{"rule": "\#($0)", "measured": null, "operator": "is", "threshold": null, "passed": false, "note": ""}]"#
