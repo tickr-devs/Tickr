@@ -1,6 +1,6 @@
-import ApertureDesign
-@testable import ApertureMac
 import Testing
+import TickrDesign
+@testable import TickrMac
 
 @Suite("Toolbar connection dot")
 @MainActor
