@@ -2,55 +2,67 @@ import SwiftUI
 import TickrDesign
 import TickrKit
 
-/// The standard Settings window (⌘,). The app's own preferences are editable; the bot's
-/// configuration is shown read-only because it lives in config/bot.toml, not in the app.
+/// The Settings window (⌘,) as the design draws it: the pane's name in small monospace in the
+/// title bar, the design's tab strip, then the pane's cards on the pale background. The app's own
+/// preferences are editable; the bot's configuration is shown read-only because it lives in
+/// config/bot.toml, not in the app.
 struct SettingsView: View {
   @Environment(AppModel.self) private var model
+  @State private var tab: SettingsTab = .general
+  @State private var contentHeight: CGFloat = 0
 
-  /// Width of the Settings window, in points.
-  static let width: CGFloat = 560
-  /// SF Symbols of the tabs.
-  static let generalSymbol = "gearshape"
-  static let tradingSymbol = "chart.line.uptrend.xyaxis"
-  static let notificationsSymbol = "bell.badge"
-  static let environmentSymbol = "server.rack"
-  static let storageSymbol = "internaldrive"
-  static let advancedSymbol = "wrench.and.screwdriver"
+  /// Width of the Settings window, in points (the design's 820).
+  static let width: CGFloat = 820
+  /// Tallest the pane area grows to its content before it scrolls, in points.
+  static let maxPaneHeight: CGFloat = 720
 
   var body: some View {
-    TabView {
-      Tab { GeneralSettings() } label: {
-        Label(String(localized: L10n.Settings.general), systemImage: Self.generalSymbol)
+    VStack(spacing: 0) {
+      SettingsTabBar(selection: $tab)
+      ScrollView {
+        pane
+          .padding(.horizontal, Tokens.Space.xl)
+          .padding(.vertical, Tokens.Space.l)
+          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
       }
-      Tab { TradingSettings() } label: {
-        Label(String(localized: L10n.Settings.trading), systemImage: Self.tradingSymbol)
-      }
-      Tab { NotificationSettings() } label: {
-        Label(String(localized: L10n.Settings.notifications), systemImage: Self.notificationsSymbol)
-      }
-      Tab { EnvironmentSettings() } label: {
-        Label(String(localized: L10n.Settings.environment), systemImage: Self.environmentSymbol)
-      }
-      Tab { StorageSettings() } label: {
-        Label(String(localized: L10n.Settings.storage), systemImage: Self.storageSymbol)
-      }
-      Tab { AdvancedSettings() } label: {
-        Label(String(localized: L10n.Settings.advanced), systemImage: Self.advancedSymbol)
-      }
+      .scrollBounceBehavior(.basedOnSize)
+      .frame(height: min(max(contentHeight, 1), Self.maxPaneHeight))
     }
     .frame(width: Self.width)
-    .scenePadding()
+    .background(Palette.background)
+    // The window keeps the pane's name (Window menu); the title bar shows it in the design's
+    // small monospace instead of the system's bold title.
+    .navigationTitle(Text(tab.title))
+    .toolbar(removing: .title)
+    .toolbar {
+      ToolbarItem(placement: .principal) {
+        Text(tab.title)
+          .font(Tokens.Typography.calloutMono)
+          .foregroundStyle(Palette.textQuaternary)
+      }
+    }
+    .toolbarBackground(Palette.titleBar, for: .windowToolbar)
+    .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     .task(id: model.baseURL) { await model.followJobs() }
+  }
+
+  @ViewBuilder private var pane: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.m) {
+      switch tab {
+      case .general: GeneralSettings()
+      case .trading: TradingSettings()
+      case .notifications: NotificationSettings()
+      case .environment: EnvironmentSettings()
+      case .storage: StorageSettings()
+      case .advanced: AdvancedSettings()
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
-/// Where a read-only value comes from, shown under each bot-configuration section.
-private struct ConfigFootnote: View {
-  var body: some View {
-    Text(L10n.Settings.configFootnote)
-      .font(Tokens.Typography.caption).foregroundStyle(.secondary)
-  }
-}
+/// Where a read-only value comes from, under each bot-configuration card.
+private var configFootnote: Text { Text(L10n.Settings.configFootnote) }
 
 private struct GeneralSettings: View {
   @Environment(AppModel.self) private var model
@@ -63,44 +75,51 @@ private struct GeneralSettings: View {
   static let schemes: Set = ["http", "https"]
 
   var body: some View {
-    Form {
-      Section {
-        TextField(String(localized: L10n.Settings.apiAddress), text: $draft)
-          .onSubmit(apply)
-        HStack {
-          Spacer()
-          Button(String(localized: L10n.Settings.useDefault)) { draft = APIClient.defaultBaseURL.absoluteString; apply() }
-          Button(String(localized: L10n.Settings.connect), action: apply).keyboardShortcut(.defaultAction)
+    Group {
+      SettingsCard(L10n.Settings.botConnection, footnote: connectionNote,
+        footnoteColor: model.fetchError == nil ? Palette.textQuaternary : Palette.lossText) {
+        HStack(spacing: Tokens.Space.s) {
+          TextField(String(localized: L10n.Settings.apiAddress), text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .font(Tokens.Typography.calloutMono)
+            .onSubmit(apply)
+          Button(String(localized: L10n.Settings.useDefault)) {
+            draft = APIClient.defaultBaseURL.absoluteString
+            apply()
+          }
+            .buttonStyle(.action(.secondary, size: .compact))
+          Button(String(localized: L10n.Settings.connect), action: apply)
+            .buttonStyle(.action(.primary, size: .compact))
+            .keyboardShortcut(.defaultAction)
             .disabled(draft == model.baseURL.absoluteString)
         }
-      } header: {
-        Text(L10n.Settings.botConnection)
-      } footer: {
-        Group {
-          if let error = model.fetchError {
-            Text(L10n.Settings.notReachable(error))
-          } else {
-            Text(L10n.Settings.connectedTo(model.baseURL.absoluteString))
-          }
-        }
-        .font(Tokens.Typography.caption)
-        .foregroundStyle(model.fetchError == nil ? Color.secondary : Palette.lossText)
       }
       JobsSection()
-      Section(String(localized: L10n.Settings.menuBar)) {
-        Toggle(String(localized: L10n.Settings.showInMenuBar), isOn: $showMenuBarExtra)
+      SettingsCard(L10n.Settings.menuBar) {
+        Toggle(isOn: $showMenuBarExtra) {
+          Text(L10n.Settings.showInMenuBar)
+            .font(Tokens.Typography.callout)
+            .foregroundStyle(Palette.textSecondary)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .tint(Palette.accent)
       }
-      Section(String(localized: L10n.Settings.appearance)) {
-        LabeledContent(String(localized: L10n.Settings.theme)) { Text(L10n.Settings.followsSystem) }
+      SettingsCard(L10n.Settings.appearance) {
+        SettingsRow(L10n.Settings.theme) { Text(L10n.Settings.followsSystem) }
       }
     }
-    .formStyle(.grouped)
     .onAppear { draft = model.baseURL.absoluteString }
     .alert(String(localized: L10n.Settings.invalidAddress), isPresented: $invalid) {
       Button(String(localized: L10n.Settings.ok), role: .cancel) {}
     } message: {
       Text(L10n.Settings.enterAddress(APIClient.defaultBaseURL.absoluteString))
     }
+  }
+
+  private var connectionNote: Text {
+    if let error = model.fetchError { return Text(L10n.Settings.notReachable(error)) }
+    return Text(L10n.Settings.connectedTo(model.baseURL.absoluteString))
   }
 
   private func apply() {
@@ -118,145 +137,190 @@ private struct TradingSettings: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    Form {
-      if let settings = model.settings {
-        Section(String(localized: L10n.Common.strategy)) {
-          LabeledContent(String(localized: L10n.Settings.activeStrategy), value: settings.activeStrategy)
-          LabeledContent(String(localized: L10n.Settings.observers), value: settings.observers.isEmpty
-            ? String(localized: L10n.Common.none) : settings.observers.formatted(.list(type: .and)))
+    if let settings = model.settings {
+      SettingsCard(L10n.Common.strategy, footnote: configFootnote) {
+        SettingsRow(L10n.Settings.activeStrategy, value: settings.activeStrategy)
+      }
+      SettingsCard(L10n.Common.risk, footnote: configFootnote) {
+        SettingsRow(L10n.Settings.plannedLoss, value: Format.usd(settings.risk.plannedLossUsd.value))
+        SettingsRow(L10n.Settings.notionalCap, value: Format.usd(settings.risk.positionNotionalCapUsd.value))
+        SettingsRow(L10n.Settings.dailyLossLimit, value: Format.usd(settings.risk.maxDailyLossUsd.value))
+        SettingsRow(L10n.Settings.maxOpenPositions, value: "\(settings.risk.maxOpenPositions)")
+        SettingsRow(L10n.Settings.maxQuoteAge, value: Format.seconds(settings.risk.maxQuoteAgeSeconds.value))
+      }
+      SettingsCard(L10n.Settings.session, footnote: configFootnote) {
+        SettingsRow(L10n.Settings.marketTimezone, value: settings.session.timezone)
+        SettingsRow(L10n.Settings.lastEntry, value: Self.beforeClose(settings.session.lastEntryMinutesBeforeClose))
+        SettingsRow(L10n.Settings.flatten, value: Self.beforeClose(settings.session.flattenMinutesBeforeClose))
+      }
+      FeaturesCard(settings: settings)
+    } else {
+      SettingsCard(L10n.Common.strategy) {
+        Group {
+          if let error = model.settingsError { Text(verbatim: error) } else { Text(L10n.Settings.readingSettings) }
         }
-        Section {
-          LabeledContent(String(localized: L10n.Settings.plannedLoss), value: Format.usd(settings.risk.plannedLossUsd.value))
-          LabeledContent(String(localized: L10n.Settings.notionalCap),
-            value: Format.usd(settings.risk.positionNotionalCapUsd.value))
-          LabeledContent(String(localized: L10n.Settings.dailyLossLimit), value: Format.usd(settings.risk.maxDailyLossUsd.value))
-          LabeledContent(String(localized: L10n.Settings.maxOpenPositions), value: "\(settings.risk.maxOpenPositions)")
-          LabeledContent(String(localized: L10n.Settings.maxQuoteAge),
-            value: Format.seconds(settings.risk.maxQuoteAgeSeconds.value))
-        } header: {
-          Text(L10n.Common.risk)
-        } footer: {
-          ConfigFootnote()
-        }
-        Section {
-          LabeledContent(String(localized: L10n.Settings.marketTimezone), value: settings.session.timezone)
-          LabeledContent(String(localized: L10n.Settings.lastEntry),
-            value: Self.beforeClose(settings.session.lastEntryMinutesBeforeClose))
-          LabeledContent(String(localized: L10n.Settings.flatten),
-            value: Self.beforeClose(settings.session.flattenMinutesBeforeClose))
-          LabeledContent(String(localized: L10n.Settings.halfDays), value: settings.session.halfDaysEnabled
-            ? String(localized: L10n.Settings.traded) : String(localized: L10n.Settings.notTraded))
-        } header: {
-          Text(L10n.Settings.session)
-        } footer: {
-          ConfigFootnote()
-        }
-      } else {
-        Section {
-          Group {
-            if let error = model.settingsError { Text(verbatim: error) } else { Text(L10n.Settings.readingSettings) }
-          }
-          .foregroundStyle(.secondary)
-        }
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textTertiary)
       }
     }
-    .formStyle(.grouped)
   }
 
   private static func beforeClose(_ minutes: Int) -> String { String(localized: L10n.Settings.beforeClose(minutes)) }
 }
 
-/// The alerts the bot sends (runtime/alerts.py `AlertKind`, grouped): every one is on and goes out
-/// as a Mac notification and, with a recipient in the bot's env file, as an iMessage. Nothing here
-/// is a switch, because the bot decides; phone push waits for the iOS app.
+/// The design's "Features · from config": switches that show what the configuration turns on.
+/// Half days and live observers are real values; the rest are planned and marked so.
+private struct FeaturesCard: View {
+  let settings: SettingsV1
+
+  var body: some View {
+    SettingsCard(L10n.Settings.features, footnote: Text(L10n.Settings.featuresFootnote)) {
+      row(L10n.Settings.featureTrailing, on: false) { PlannedTag() }
+      row(L10n.Settings.featureExtendedHours, on: false) { PlannedTag() }
+      row(L10n.Settings.featureShort, on: false) { PlannedTag() }
+      row(L10n.Settings.featureChase, on: false) { PlannedTag() }
+      row(L10n.Settings.halfDays, on: settings.session.halfDaysEnabled) {
+        Text(settings.session.halfDaysEnabled ? L10n.Settings.traded : L10n.Settings.notTraded)
+      }
+      row(L10n.Settings.liveObservers, on: !settings.observers.isEmpty) {
+        Text(verbatim: settings.observers.isEmpty
+          ? String(localized: L10n.Common.none) : settings.observers.formatted(.list(type: .and)))
+      }
+    }
+  }
+
+  private func row(_ title: LocalizedStringResource, on: Bool, @ViewBuilder tag: () -> some View) -> some View {
+    HStack(spacing: Tokens.Space.m) {
+      ConfigSwitch(on: on)
+      Text(title)
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textSecondary)
+      Spacer(minLength: Tokens.Space.s)
+      tag()
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+    }
+    .accessibilityElement(children: .combine)
+  }
+}
+
+/// The alerts the bot sends (runtime/alerts.py `AlertKind`), one row each as the design lists
+/// them, with a dot of their weight; every one is on and goes out as a Mac notification and, with
+/// a recipient in the bot's env file, as an iMessage. Nothing here is a switch, because the bot
+/// decides; phone push waits for the iOS app.
 private struct NotificationSettings: View {
-  /// One group of the bot's alert kinds: symbol, tone, title and the kinds it covers.
-  struct AlertGroup: Identifiable {
-    let symbol: String
+  /// One row: what happened and how loud it is.
+  struct AlertRow: Identifiable {
     let tone: Tone
     let title: LocalizedStringResource
-    let kinds: LocalizedStringResource
     var id: String { title.key }
   }
 
-  /// Symbol of the phone push row.
-  static let phoneSymbol = "iphone.radiowaves.left.and.right"
-
-  /// The groups, most urgent first.
-  static var groups: [AlertGroup] {
+  /// The rows, loudest first: the design's eleven, then the watchdog, the morning checks and the
+  /// observers, which the bot sends too.
+  static var rows: [AlertRow] {
     [
-      AlertGroup(symbol: "shield.slash", tone: .loss, title: L10n.Settings.alertUnprotected,
-        kinds: L10n.Settings.alertUnprotectedKinds),
-      AlertGroup(symbol: "xmark.octagon", tone: .loss, title: L10n.Settings.alertExit, kinds: L10n.Settings.alertExitKinds),
-      AlertGroup(symbol: "power", tone: .loss, title: L10n.Settings.alertBot, kinds: L10n.Settings.alertBotKinds),
-      AlertGroup(symbol: "eye.trianglebadge.exclamationmark", tone: .warning, title: L10n.Settings.alertWatchdog,
-        kinds: L10n.Settings.alertWatchdogKinds),
-      AlertGroup(symbol: "arrow.triangle.2.circlepath", tone: .warning, title: L10n.Settings.alertBroker,
-        kinds: L10n.Settings.alertBrokerKinds),
-      AlertGroup(symbol: "gauge.with.dots.needle.100percent", tone: .warning, title: L10n.Settings.alertLossLimit,
-        kinds: L10n.Settings.alertLossLimitKinds),
-      AlertGroup(symbol: "checklist", tone: .info, title: L10n.Settings.alertMorning, kinds: L10n.Settings.alertMorningKinds),
-      AlertGroup(symbol: "binoculars", tone: .info, title: L10n.Settings.alertObservers,
-        kinds: L10n.Settings.alertObserversKinds),
+      AlertRow(tone: .loss, title: L10n.Settings.alertUnprotected),
+      AlertRow(tone: .loss, title: L10n.Settings.alertStopRejected),
+      AlertRow(tone: .loss, title: L10n.Settings.alertExitRefused),
+      AlertRow(tone: .loss, title: L10n.Settings.alertUnknownStatus),
+      AlertRow(tone: .warning, title: L10n.Settings.alertForeign),
+      AlertRow(tone: .warning, title: L10n.Settings.alertBrokerReads),
+      AlertRow(tone: .warning, title: L10n.Settings.alertStreamLost),
+      AlertRow(tone: .warning, title: L10n.Settings.alertLossLimit),
+      AlertRow(tone: .info, title: L10n.Settings.alertBot),
+      AlertRow(tone: .info, title: L10n.Settings.alertToken),
+      AlertRow(tone: .info, title: L10n.Settings.alertNotFlat),
+      AlertRow(tone: .info, title: L10n.Settings.alertWatchdog),
+      AlertRow(tone: .info, title: L10n.Settings.alertMorning),
+      AlertRow(tone: .info, title: L10n.Settings.alertObservers),
     ]
   }
 
   var body: some View {
-    Form {
-      Section {
-        ForEach(Self.groups) { group in
-          HStack(spacing: Tokens.Space.s) {
-            StateGlyph(group.symbol, tone: group.tone, label: group.title, style: .compact)
-            VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-              Text(group.title)
-              Text(group.kinds)
-                .font(Tokens.Typography.caption)
-                .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: Tokens.Space.s)
-            StatusPill(L10n.Common.on, tone: .profit)
-          }
-        }
+    SettingsCard(L10n.Settings.alerts, footnote: Text(L10n.Settings.alertsLegend)) {
+      ForEach(Self.rows) { row in
         HStack(spacing: Tokens.Space.s) {
-          StateGlyph(Self.phoneSymbol, tone: .neutral, label: L10n.Settings.phonePush, style: .compact)
-          Text(L10n.Settings.phonePush)
+          PulseDot(row.tone.fill, size: Tokens.Size.dotSmall, pulsing: false)
+          Text(row.title)
+            .font(Tokens.Typography.callout)
+            .foregroundStyle(Palette.textSecondary)
+            .lineLimit(1)
           Spacer(minLength: Tokens.Space.s)
-          PlannedTag()
+          Circle().fill(Palette.profit)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+            .frame(width: Tokens.Size.rowSymbol)
+          Circle().strokeBorder(Palette.highlight, lineWidth: Tokens.Stroke.thin)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+            .frame(width: Tokens.Size.rowSymbol)
         }
-      } header: {
-        Text(L10n.Settings.botAlerts)
-      } footer: {
-        Text(L10n.Settings.alertsFooter)
-          .font(Tokens.Typography.caption).foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
       }
+    } trailing: {
+      Text(L10n.Settings.alertColumns)
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
     }
-    .formStyle(.grouped)
+    SettingsCard(L10n.Settings.botAlerts) {
+      Text(L10n.Settings.alertsFooter)
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textTertiary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 }
 
+/// The environment and the trading gate as the design's two-part strip: the environment the bot
+/// runs in lit in its tone with the gate's state, the others muted and closed; then the cause.
 private struct EnvironmentSettings: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    Form {
-      Section {
-        LabeledContent(String(localized: L10n.Settings.environment),
-          value: (model.status?.environment ?? model.settings?.environment).map(ApiText.environment) ?? Format.missing)
-        if let gate = model.status?.tradingGate {
-          LabeledContent(String(localized: L10n.Settings.tradingGate),
-            value: String(localized: gate.open ? L10n.Settings.gateOpen : L10n.Settings.gateClosed))
-          LabeledContent(String(localized: L10n.Settings.gateCause), value: ApiText.gate(gate))
+    let raw = model.status?.environment ?? model.settings?.environment
+    SettingsCard(L10n.Settings.environmentGate, footnote: Text(L10n.Settings.environmentFixed)) {
+      HStack(spacing: Tokens.Space.xs) {
+        ForEach(Self.segments(current: raw), id: \.self) { segment in
+          let active = segment == raw
+          Text(verbatim: label(segment, active: active))
+            .font(Tokens.Typography.annotationBold)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Tokens.Space.s)
+            .foregroundStyle(active ? tone(segment).text : Palette.textQuaternary)
+            .background(active ? tone(segment).fill.opacity(Tokens.Opacity.glow) : .clear,
+              in: RoundedRectangle(cornerRadius: Tokens.Radius.small, style: .continuous))
         }
-        LabeledContent(String(localized: L10n.Settings.apiVersion),
-          value: model.settings.map { "\($0.apiVersion)" } ?? Format.missing)
-      } header: {
-        Text(L10n.Settings.brokerEnvironment)
-      } footer: {
-        Text(L10n.Settings.environmentFixed)
-          .font(Tokens.Typography.caption).foregroundStyle(.secondary)
       }
+      .padding(Tokens.Space.xs)
+      .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous))
+      .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
+        .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
+      if let gate = model.status?.tradingGate {
+        SettingsRow(L10n.Settings.gateCause, value: ApiText.gate(gate))
+      }
+      SettingsRow(L10n.Settings.apiVersion, value: model.settings.map { "\($0.apiVersion)" } ?? Format.missing)
     }
-    .formStyle(.grouped)
+  }
+
+  /// The parts of the strip: Sandbox and Production, with Demo in front while the demo runs, and
+  /// an environment this app does not know in front of them.
+  static func segments(current: String?) -> [String] {
+    let known = [BotEnvironment.sandbox.rawValue, BotEnvironment.production.rawValue]
+    guard let current, !known.contains(current) else { return known }
+    return [current] + known
+  }
+
+  /// "SANDBOX · gate open" for the environment in use, "PRODUCTION · closed" for the others.
+  private func label(_ raw: String, active: Bool) -> String {
+    let name = ApiText.environment(raw).localizedUppercase
+    guard active else { return name + Format.itemSeparator + String(localized: L10n.Settings.gateClosed) }
+    let open = model.status?.tradingGate.open
+    let state = open.map { String(localized: $0 ? L10n.Settings.gateOpenShort : L10n.Settings.gateClosedShort) }
+    return state.map { name + Format.itemSeparator + $0 } ?? name
+  }
+
+  private func tone(_ raw: String) -> Tone {
+    raw == BotEnvironment.production.rawValue ? .loss : .warning
   }
 }
 
@@ -264,27 +328,17 @@ private struct StorageSettings: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    Form {
-      Section {
-        LabeledContent(String(localized: L10n.Settings.recordedDays), value: "\(model.days.count)")
-        LabeledContent(String(localized: L10n.Settings.firstRecordedDay),
-          value: model.days.last.map { Format.dayLabel($0.day) } ?? Format.missing)
-        LabeledContent(String(localized: L10n.Settings.daysWithBars), value: "\(model.days.filter(\.hasBars).count)")
-      } header: {
-        Text(L10n.Settings.history)
-      } footer: {
-        Group {
-          if let error = model.historyError {
-            Text(verbatim: error)
-          } else {
-            Text(L10n.Settings.historySource)
-          }
-        }
-        .font(Tokens.Typography.caption).foregroundStyle(model.historyError == nil ? Color.secondary : Palette.lossText)
-      }
-      BackupSection()
+    BackupSection()
+    SettingsCard(L10n.Settings.history, footnote: historyNote,
+      footnoteColor: model.historyError == nil ? Palette.textQuaternary : Palette.lossText) {
+      SettingsRow(L10n.Settings.recordedDays, value: "\(model.days.count)")
+      SettingsRow(L10n.Settings.firstRecordedDay, value: model.days.last.map { Format.dayLabel($0.day) } ?? Format.missing)
+      SettingsRow(L10n.Settings.daysWithBars, value: "\(model.days.filter(\.hasBars).count)")
     }
-    .formStyle(.grouped)
+  }
+
+  private var historyNote: Text {
+    model.historyError.map { Text(verbatim: $0) } ?? Text(L10n.Settings.historySource)
   }
 }
 
@@ -292,36 +346,28 @@ private struct AdvancedSettings: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    Form {
-      Section {
-        LabeledContent(String(localized: L10n.Settings.statusRefresh),
-          value: model.settings.map { String(localized: L10n.Settings.every(Format.seconds($0.pollSeconds.value))) }
-            ?? Format.missing)
-        LabeledContent(String(localized: L10n.Settings.staleAfter),
-          value: model.settings.map { Format.seconds($0.statusStaleSeconds.value) } ?? Format.missing)
-      } header: {
-        Text(L10n.Common.bot)
-      } footer: {
-        ConfigFootnote()
-      }
-      Section(String(localized: L10n.Settings.notAvailableYet)) {
-        HStack { Text(L10n.Settings.startStop); Spacer(); PlannedTag(.needsAPI) }
-        HStack { Text(L10n.Settings.editConfig); Spacer(); PlannedTag() }
-      }
+    SettingsCard(L10n.Common.bot, footnote: configFootnote) {
+      SettingsRow(L10n.Settings.statusRefresh,
+        value: model.settings.map { String(localized: L10n.Settings.every(Format.seconds($0.pollSeconds.value))) }
+          ?? Format.missing)
+      SettingsRow(L10n.Settings.staleAfter, value: model.settings.map { Format.seconds($0.statusStaleSeconds.value) }
+        ?? Format.missing)
     }
-    .formStyle(.grouped)
+    SettingsCard(L10n.Settings.notAvailableYet) {
+      SettingsRow(L10n.Settings.startStop) { PlannedTag(.needsAPI) }
+      SettingsRow(L10n.Settings.editConfig) { PlannedTag() }
+    }
   }
 }
 
-/// What runs on its own on the Mac (GET /jobs): the bot service, its reconcile loop and the launchd
-/// jobs with their start times, as in the board's session card. Read while Settings is open.
+/// What runs on its own on the Mac (GET /jobs) as the design's "launchd jobs" list: a small dot
+/// in the job's colour (pulsing while the bot runs), the job's name in monospace, its state, and
+/// its times at the right. Read while Settings is open.
 struct JobsSection: View {
   @Environment(AppModel.self) private var model
 
-  /// Symbols of the rows.
-  static let serviceSymbol = "waveform.path.ecg"
-  static let reconcileSymbol = "arrow.triangle.2.circlepath"
-  static let launchdSymbol = "clock"
+  /// Width of the name column, in points (the design's 76, widened for the Russian names).
+  static let nameWidth: CGFloat = 150
   /// Days in a week; launchd numbers them 0 (or 7) Sunday, 1 Monday … 6 Saturday.
   static let week = 7
   /// Shortest run of days written as a range ("Mon–Fri") rather than a list.
@@ -330,33 +376,42 @@ struct JobsSection: View {
   static let rangeDash = "–"
 
   var body: some View {
-    Section {
+    SettingsCard(L10n.Settings.jobs, footnote: Text(L10n.Settings.jobsFooter)) {
       if let jobs = model.jobs {
         service(jobs)
         reconcile(jobs.reconcile)
         ForEach(jobs.launchd, id: \.name) { job in
-          LabeledContent {
+          row(tone: .info, live: false, name: Text(verbatim: Self.title(job.name)), state: Text(verbatim: "")) {
             Text(verbatim: job.localTime + Format.itemSeparator + Self.days(job.weekdays))
-              .font(Tokens.Typography.bodyMono)
-          } label: {
-            Label {
-              Text(verbatim: Self.title(job.name))
-            } icon: {
-              StateGlyph(Self.launchdSymbol, tone: .info, label: Text(verbatim: Self.title(job.name)), style: .compact)
-            }
           }
         }
       } else if let error = model.jobsError {
-        Text(verbatim: error).foregroundStyle(Palette.warningText)
+        Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
       } else {
         ProgressView().controlSize(.small)
       }
-    } header: {
-      Text(L10n.Settings.jobs)
-    } footer: {
-      Text(L10n.Settings.jobsFooter)
-        .font(Tokens.Typography.caption).foregroundStyle(.secondary)
     }
+  }
+
+  /// One job: dot, name, state, times.
+  private func row(tone: Tone, live: Bool, name: Text, state: Text, @ViewBuilder meta: () -> some View) -> some View {
+    HStack(spacing: Tokens.Space.s) {
+      PulseDot(tone.fill, pulsing: live, event: live ? model.jobs.map { AnyHashable($0.servedAt) } : nil)
+      name
+        .font(Tokens.Typography.calloutMono)
+        .foregroundStyle(Palette.textPrimary)
+        .lineLimit(1)
+        .frame(width: Self.nameWidth, alignment: .leading)
+      state
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textTertiary)
+        .lineLimit(1)
+      Spacer(minLength: Tokens.Space.s)
+      meta()
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+    }
+    .accessibilityElement(children: .combine)
   }
 
   /// The bot's state as its status reports it; a stale status proves nothing about the bot now, so
@@ -366,13 +421,9 @@ struct JobsSection: View {
     let tone: Tone = jobs.statusStale ? .warning : running ? .accent : .neutral
     let title = jobs.statusStale ? String(localized: L10n.Settings.notReported)
       : jobs.botState?.title ?? String(localized: L10n.Settings.notRunning)
-    return LabeledContent {
-      StatusPill(verbatim: title, tone: tone, live: running, event: running)
-    } label: {
-      Label {
-        Text(L10n.Settings.botService)
-      } icon: {
-        StateGlyph(Self.serviceSymbol, tone: tone, label: L10n.Settings.botService, style: .compact)
+    return row(tone: tone, live: running, name: Text(L10n.Settings.botService), state: Text(verbatim: title)) {
+      if running, let started = jobs.botStartedAt {
+        Text(L10n.Settings.since(Format.marketMinute(started.date)))
       }
     }
   }
@@ -395,26 +446,17 @@ struct JobsSection: View {
 
   /// The next reconcile counting down while the bot runs, else when it last ran (New York time).
   private func reconcile(_ job: ReconcileJobV1) -> some View {
-    LabeledContent {
-      Group {
-        if let next = job.nextAt?.date, next > model.botNow {
-          HStack(spacing: Tokens.Space.xs) {
-            Text(L10n.Settings.nextIn)
-            Text(timerInterval: Date.now...Date.now.addingTimeInterval(next.timeIntervalSince(model.botNow)))
-              .monospacedDigit()
-          }
-        } else if let last = job.lastAt {
-          Text(L10n.Settings.lastAt(Format.marketTime(last.date)))
-        } else {
-          Text(verbatim: Format.missing)
+    row(tone: .info, live: false, name: Text(L10n.Settings.reconcile), state: Text(verbatim: "")) {
+      if let next = job.nextAt?.date, next > model.botNow {
+        HStack(spacing: Tokens.Space.xs) {
+          Text(L10n.Settings.nextIn)
+          Text(timerInterval: Date.now...Date.now.addingTimeInterval(next.timeIntervalSince(model.botNow)))
+            .monospacedDigit()
         }
-      }
-      .font(Tokens.Typography.bodyMono)
-    } label: {
-      Label {
-        Text(L10n.Settings.reconcile)
-      } icon: {
-        StateGlyph(Self.reconcileSymbol, tone: .info, label: L10n.Settings.reconcile, style: .compact)
+      } else if let last = job.lastAt {
+        Text(L10n.Settings.lastAt(Format.marketTime(last.date)))
+      } else {
+        Text(verbatim: Format.missing)
       }
     }
   }
@@ -435,55 +477,69 @@ struct JobsSection: View {
   }
 }
 
-/// The bot's database backup (GET /jobs): the last good one, or the failure when it is newer, with
-/// its error; why neither is known when the bot cannot tell.
+/// The bot's database backup (GET /jobs) as the design's "Backups · storage": a green check with
+/// what the backup is and when the last one was made, or the failure when it is newer, with its
+/// error; why neither is known when the bot cannot tell; and how clean-up runs.
 private struct BackupSection: View {
   @Environment(AppModel.self) private var model
 
-  /// Symbol of the backup row.
-  static let backupSymbol = "externaldrive"
+  /// Symbols of the states and of the clean-up note.
+  static let verifiedSymbol = "checkmark.circle.fill"
+  static let failedSymbol = "xmark.circle.fill"
+  static let unknownSymbol = "circle.dashed"
+  static let cleanupSymbol = "trash"
 
   var body: some View {
-    Section {
+    SettingsCard(L10n.Settings.backups, footnote: Text(L10n.Settings.backupFooter)) {
       if let job = model.jobs?.backup {
         let failed = job.lastFailedAt.map { failure in job.lastAt.map { failure.date > $0.date } ?? true } ?? false
-        LabeledContent {
-          if failed, let at = job.lastFailedAt {
-            StatusPill(L10n.Settings.backupFailed(Format.marketTime(at.date)), tone: .loss)
-          } else if let at = job.lastAt {
-            Text(verbatim: Self.when(at.date)).font(Tokens.Typography.bodyMono)
-          } else {
-            Text(verbatim: Format.missing)
+        if failed, let at = job.lastFailedAt {
+          state(Self.failedSymbol, tone: .loss, Text(L10n.Settings.backupFailed(Self.when(at.date))))
+          if let error = job.lastFailedError {
+            Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.lossText)
           }
-        } label: {
-          Label {
-            Text(L10n.Settings.backup)
-          } icon: {
-            StateGlyph(Self.backupSymbol, tone: failed ? .loss : job.lastAt == nil ? .neutral : .profit,
-              label: L10n.Settings.backup, style: .compact)
-          }
-        }
-        if failed, let error = job.lastFailedError {
-          Text(verbatim: error).foregroundStyle(Palette.lossText)
+        } else if let at = job.lastAt {
+          state(Self.verifiedSymbol, tone: .profit, Text(L10n.Settings.backupVerified))
+          Text(L10n.Settings.backupLast(Self.when(at.date)))
+            .font(Tokens.Typography.annotation)
+            .foregroundStyle(Palette.textQuaternary)
+        } else {
+          state(Self.unknownSymbol, tone: .neutral, Text(verbatim: Format.missing))
         }
         if let cause = job.cause {
-          Text(verbatim: cause).foregroundStyle(Palette.warningText)
+          Text(verbatim: cause).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
         }
       } else if let error = model.jobsError {
-        Text(verbatim: error).foregroundStyle(Palette.warningText)
+        Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
       } else {
         ProgressView().controlSize(.small)
       }
-    } header: {
-      Text(L10n.Settings.backup)
-    } footer: {
-      Text(L10n.Settings.backupFooter)
-        .font(Tokens.Typography.caption).foregroundStyle(.secondary)
+      Label {
+        Text(L10n.Settings.cleanup)
+      } icon: {
+        Image(systemName: Self.cleanupSymbol)
+      }
+      .labelStyle(ControlLabelStyle())
+      .font(Tokens.Typography.callout)
+      .foregroundStyle(Palette.textTertiary)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.top, Tokens.Space.xs)
     }
   }
 
-  /// "Mon, Nov 16 · 08:12:09" in New York time.
+  private func state(_ symbol: String, tone: Tone, _ text: Text) -> some View {
+    HStack(spacing: Tokens.Space.s) {
+      Image(systemName: symbol)
+        .font(Tokens.Typography.symbol)
+        .foregroundStyle(tone.fill)
+      text
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textPrimary)
+    }
+  }
+
+  /// "Fri Nov 13 16:20" in New York time.
   private static func when(_ date: Date) -> String {
-    Format.dayLabel(WireDate(newYorkDateOf: date)) + Format.itemSeparator + Format.marketTime(date)
+    Format.dayLabel(WireDate(newYorkDateOf: date)) + " " + Format.marketMinute(date)
   }
 }
