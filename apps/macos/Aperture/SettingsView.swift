@@ -312,8 +312,6 @@ private struct JobsSection: View {
   static let shortestRange = 3
   /// Joins the first and last day of a range.
   static let rangeDash = "–"
-  /// Joins a launch time and its days.
-  static let timeDaysSeparator = " · "
 
   var body: some View {
     Section {
@@ -322,7 +320,7 @@ private struct JobsSection: View {
         reconcile(jobs.reconcile)
         ForEach(jobs.launchd, id: \.name) { job in
           LabeledContent {
-            Text(verbatim: job.localTime + Self.timeDaysSeparator + Self.days(job.weekdays))
+            Text(verbatim: job.localTime + Format.itemSeparator + Self.days(job.weekdays))
               .font(Tokens.Typography.bodyMono)
           } label: {
             Label {
@@ -469,6 +467,6 @@ private struct BackupSection: View {
 
   /// "Mon, Nov 16 · 08:12:09" in New York time.
   private static func when(_ date: Date) -> String {
-    Format.dayLabel(WireDate(newYorkDateOf: date)) + JobsSection.timeDaysSeparator + Format.marketTime(date)
+    Format.dayLabel(WireDate(newYorkDateOf: date)) + Format.itemSeparator + Format.marketTime(date)
   }
 }
