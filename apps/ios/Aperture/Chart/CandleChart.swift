@@ -68,6 +68,9 @@ struct CandleChart: View {
   static let priceHeight: CGFloat = 300
   /// Height of each study pane, in points.
   static let paneHeight: CGFloat = 72
+  /// Height a price tag covers on the scale, with a gap, in points: an axis price this close
+  /// to a tag hides under it.
+  static let tagClearance: CGFloat = 20
   /// Share of a candle's time slot its body fills; the rest is the gap between candles.
   static let bodyShare = 0.64
   /// Space above and below the visible prices, as a share of their range.
@@ -203,15 +206,19 @@ struct CandleChart: View {
     .chartYScale(domain: scale.domain)
     .chartXAxis { timeAxis }
     .chartYAxis {
+      // Coloured tags over the scale: the last price, entries and stops; a plain axis price
+      // they would cover stays hidden.
+      let tags = priceTags
+      let clearance = (scale.domain.upperBound - scale.domain.lowerBound) * Self.tagClearance / Self.priceHeight
       AxisMarks(position: .trailing) { value in
         AxisGridLine(stroke: StrokeStyle(lineWidth: Tokens.Stroke.hairline))
           .foregroundStyle(Palette.separator)
         AxisValueLabel {
-          axisLabel(value, ChartFormat.price, Palette.textQuaternary)
+          if let price = value.as(Double.self), !tags.contains(where: { abs($0.price - price) < clearance }) {
+            axisLabel(value, ChartFormat.price, Palette.textQuaternary)
+          }
         }
       }
-      // Coloured tags over the scale: the last price, entries and stops.
-      let tags = priceTags
       AxisMarks(position: .trailing, values: tags.map(\.price)) { value in
         AxisValueLabel {
           if tags.indices.contains(value.index) {
