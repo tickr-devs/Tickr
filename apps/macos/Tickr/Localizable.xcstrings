@@ -3801,19 +3801,104 @@
         }
       }
     },
-    "lab.activeStrategy" : {
+    "lab.activeNote" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Active strategy"
+            "value" : "trades · %1$lld closed · %2$lld W · %3$lld L"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Активная стратегия"
+            "value" : "торгует · закрыто %1$lld · %2$lld П · %3$lld У"
+          }
+        }
+      }
+    },
+    "lab.admission" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admission"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Допуск"
+          }
+        }
+      }
+    },
+    "lab.admissionNotEvaluated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not evaluated"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не проверялся"
+          }
+        }
+      }
+    },
+    "lab.admissionNotReached" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not reached"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не дошло"
+          }
+        }
+      }
+    },
+    "lab.admissionRefused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refused"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "отклонён"
+          }
+        }
+      }
+    },
+    "lab.admissionTaken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "taken"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "принят"
           }
         }
       }
@@ -3831,6 +3916,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "бот тоже торговал %1$lld из %2$lld: %3$@"
+          }
+        }
+      }
+    },
+    "lab.alsoTraded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld also traded"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld совпали"
+          }
+        }
+      }
+    },
+    "lab.candidateNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "candidate · replay only"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "кандидат · только прогон"
           }
         }
       }
@@ -3903,6 +4022,40 @@
         }
       }
     },
+    "lab.curvesOnDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If each version traded"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Если бы торговала каждая версия"
+          }
+        }
+      }
+    },
+    "lab.curvesRunning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "running"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "работает"
+          }
+        }
+      }
+    },
     "lab.curveTime" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3962,6 +4115,159 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "решений: %lld"
+          }
+        }
+      }
+    },
+    "lab.explain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explain a symbol"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Объяснить символ"
+          }
+        }
+      }
+    },
+    "lab.explainBacklog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "strategy blocks behind each check"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "блоки стратегии за каждой проверкой"
+          }
+        }
+      }
+    },
+    "lab.explainHead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@"
+          }
+        }
+      }
+    },
+    "lab.explainHeadline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · cause: %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · причина: %2$@"
+          }
+        }
+      }
+    },
+    "lab.explainHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a symbol to see why the strategy decided what it did."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите символ, чтобы увидеть, почему стратегия так решила."
+          }
+        }
+      }
+    },
+    "lab.explainNone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No decision on this symbol on the shown day."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "По этому символу в показанный день решений нет."
+          }
+        }
+      }
+    },
+    "lab.explainPrompt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbol"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Символ"
+          }
+        }
+      }
+    },
+    "lab.explainRun" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explain"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Объяснить"
+          }
+        }
+      }
+    },
+    "lab.explainSymbol" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbol to explain"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Символ для объяснения"
           }
         }
       }
@@ -4034,19 +4340,36 @@
         }
       }
     },
-    "lab.observers" : {
+    "lab.observerNote" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Observers"
+            "value" : "observer · decisions: %1$lld"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Наблюдатели"
+            "value" : "наблюдатель · решений: %1$lld"
+          }
+        }
+      }
+    },
+    "lab.observerNoteUnread" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "observer · decisions not read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "наблюдатель · решения не прочитаны"
           }
         }
       }
@@ -4064,23 +4387,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Наблюдатели не настроены."
-          }
-        }
-      }
-    },
-    "lab.observersNote" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shadow versions see the same data live and record their decisions without trading."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Теневые версии получают те же данные в реальном времени и записывают свои решения, не торгуя."
           }
         }
       }
@@ -4119,19 +4425,36 @@
         }
       }
     },
+    "lab.refusalsToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Why signals were refused today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Почему сигналы отклонены сегодня"
+          }
+        }
+      }
+    },
     "lab.replay" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Replay"
+            "value" : "Replay · compare versions"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повтор"
+            "value" : "Прогон · сравнение версий"
           }
         }
       }
@@ -4222,23 +4545,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Данные %1$@ – %2$@ (сессий: %3$lld) · заканчиваются %2$@"
-          }
-        }
-      }
-    },
-    "lab.replayDay" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Day"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "День"
           }
         }
       }
@@ -4425,6 +4731,23 @@
         }
       }
     },
+    "lab.replayOneDayOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One day · %1$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Один день · %1$@"
+          }
+        }
+      }
+    },
     "lab.replayPoints" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4438,6 +4761,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ п."
+          }
+        }
+      }
+    },
+    "lab.replayPriority" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replays on the Mac at low priority, one version after the other over the same days. Outside the session only; during it the button rests with the reason."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прогон идёт на Mac с низким приоритетом, версии по очереди на одних и тех же днях. Только вне сессии; во время неё кнопка ждёт и показывает причину."
           }
         }
       }
@@ -4476,6 +4816,23 @@
         }
       }
     },
+    "lab.replayRunAgain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run Again"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запустить снова"
+          }
+        }
+      }
+    },
     "lab.replayRunCompare" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4506,6 +4863,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Идёт с %@"
+          }
+        }
+      }
+    },
+    "lab.replaySimulated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "simulated · fetched data"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "симуляция · скачанные данные"
           }
         }
       }
@@ -4561,6 +4935,23 @@
         }
       }
     },
+    "lab.replayVersus" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vs"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "против"
+          }
+        }
+      }
+    },
     "lab.replayWinRate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4591,35 +4982,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "с лимитами бота"
-          }
-        }
-      }
-    },
-    "lab.replayWithLimits" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "with bot limits · %lld trade"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "with bot limits · %lld trades"
-                }
-              }
-            }
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "с лимитами бота · сделок: %lld"
           }
         }
       }
@@ -4692,36 +5054,19 @@
         }
       }
     },
-    "lab.shownDayResult" : {
+    "lab.screenerBacklog" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Result · gross"
+            "value" : "screener source × rank → move after 15 min"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Результат · брутто"
-          }
-        }
-      }
-    },
-    "lab.shownDayTrades" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trades"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Сделки"
+            "value" : "источник скринера × место → движение за 15 мин"
           }
         }
       }
@@ -4739,6 +5084,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Стратегии — сменные модули: активная задаётся в конфиге бота и никогда не ослабляет риск платформы."
+          }
+        }
+      }
+    },
+    "lab.tagActive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активна"
+          }
+        }
+      }
+    },
+    "lab.tagCandidate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Candidate"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кандидат"
+          }
+        }
+      }
+    },
+    "lab.tagObserver" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Observer"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наблюдатель"
           }
         }
       }
@@ -4875,6 +5271,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ v%2$@"
+          }
+        }
+      }
+    },
+    "lab.versions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strategy versions"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Версии стратегии"
+          }
+        }
+      }
+    },
+    "lab.versionSuffix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · v%1$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · v%1$@"
           }
         }
       }
@@ -5764,13 +6194,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Account"
+            "value" : "Account · broker read"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Счёт"
+            "value" : "Счёт · чтение брокера"
+          }
+        }
+      }
+    },
+    "risk.accountBacklog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backlog · full page"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позже · полная страница"
           }
         }
       }
@@ -5805,6 +6252,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Данные счёта недоступны: API бота не ответил."
+          }
+        }
+      }
+    },
+    "risk.admissionClosed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "admission closed"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "допуск закрыт"
+          }
+        }
+      }
+    },
+    "risk.admissionOpen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "admission open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "допуск открыт"
           }
         }
       }
@@ -5928,19 +6409,53 @@
         }
       }
     },
-    "risk.dailyLoss" : {
+    "risk.entriesBlocked" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Daily loss limit"
+            "value" : "Entries blocked"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Дневной лимит убытка"
+            "value" : "Входы закрыты"
+          }
+        }
+      }
+    },
+    "risk.entriesOpen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entries open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы открыты"
+          }
+        }
+      }
+    },
+    "risk.entriesWaiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entries wait"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы ждут"
           }
         }
       }
@@ -5979,19 +6494,155 @@
         }
       }
     },
-    "risk.fences" : {
+    "risk.fenceActive" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fences"
+            "value" : "active"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ограждения"
+            "value" : "активна"
+          }
+        }
+      }
+    },
+    "risk.fenceBrokerReads" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker reads"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтение брокера"
+          }
+        }
+      }
+    },
+    "risk.fenceExits" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exits and cancels"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выходы и отмены"
+          }
+        }
+      }
+    },
+    "risk.fenceForeign" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foreign exposure"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чужие позиции и ордера"
+          }
+        }
+      }
+    },
+    "risk.fenceNone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "none"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "нет"
+          }
+        }
+      }
+    },
+    "risk.fenceOrderStatus" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown order status"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный статус ордера"
+          }
+        }
+      }
+    },
+    "risk.fenceProtection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop protection"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Защита стопом"
+          }
+        }
+      }
+    },
+    "risk.fenceQuantity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quantity mismatch"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Расхождение количества"
+          }
+        }
+      }
+    },
+    "risk.fenceSession" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session and operator stop"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сессия и стоп оператора"
           }
         }
       }
@@ -6047,6 +6698,23 @@
         }
       }
     },
+    "risk.freeWaiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "waiting for ENTER"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ждёт ENTER"
+          }
+        }
+      }
+    },
     "risk.gateClosed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6098,6 +6766,23 @@
         }
       }
     },
+    "risk.jobsUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next read unknown: jobs unavailable"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Следующее чтение неизвестно: задачи недоступны"
+          }
+        }
+      }
+    },
     "risk.lastEntry" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6138,13 +6823,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Limits"
+            "value" : "Configured limits"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Лимиты"
+            "value" : "Лимиты из конфига"
+          }
+        }
+      }
+    },
+    "risk.lossBacklog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "risk as % of equity · loss locks"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "риск в % от капитала · блокировки после убытков"
           }
         }
       }
@@ -6155,13 +6857,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Daily loss room · net"
+            "value" : "Daily loss limit · net"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Запас до дневного лимита · нетто"
+            "value" : "Дневной лимит убытка · нетто"
           }
         }
       }
@@ -6251,19 +6953,70 @@
         }
       }
     },
-    "risk.noFences" : {
+    "risk.nextPlannedLoss" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No fences: nothing the bot noticed blocks entries."
+            "value" : "Next planned loss"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ограждений нет: бот не видит причин блокировать входы."
+            "value" : "Плановый убыток следующего входа"
+          }
+        }
+      }
+    },
+    "risk.nextRead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next broker read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Следующее чтение брокера"
+          }
+        }
+      }
+    },
+    "risk.nextReadAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next read at %1$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Следующее чтение в %1$@"
+          }
+        }
+      }
+    },
+    "risk.nextReadUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No next read: the bot is not running"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтения не будет: бот не запущен"
           }
         }
       }
@@ -6315,23 +7068,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "НЕ НАШ"
-          }
-        }
-      }
-    },
-    "risk.openPositions" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open positions at most"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Открытых позиций не больше"
           }
         }
       }
@@ -6393,13 +7129,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Broker read at %1$@ · %2$@ s ago"
+            "value" : "read at %1$@ · %2$@ s ago · account id never shown or stored"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чтение брокера в %1$@ · %2$@ с назад"
+            "value" : "чтение в %1$@ · %2$@ с назад · номер счёта не показывается и не хранится"
           }
         }
       }
@@ -6417,6 +7153,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Реализованный убыток за день"
+          }
+        }
+      }
+    },
+    "risk.reconciliation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconciliation · fences"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сверка · блокировки"
+          }
+        }
+      }
+    },
+    "risk.recordsMatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Positions and orders match the broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позиции и ордера совпадают с брокером"
+          }
+        }
+      }
+    },
+    "risk.recordsMismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Positions or orders differ from the broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позиции или ордера расходятся с брокером"
           }
         }
       }
@@ -6461,13 +7248,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Left today"
+            "value" : "room left today"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Осталось сегодня"
+            "value" : "запас на сегодня"
           }
         }
       }
@@ -6540,6 +7327,23 @@
         }
       }
     },
+    "risk.sizingBacklog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "next entry size · binding constraint"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "размер следующего входа · что ограничивает"
+          }
+        }
+      }
+    },
     "risk.slots" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6570,6 +7374,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ @ %2$@"
+          }
+        }
+      }
+    },
+    "risk.slotsLimit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "limit %1$lld · config"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "лимит %1$lld · конфиг"
           }
         }
       }
@@ -6621,6 +7442,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Статус бота неизвестен, поэтому неясно, разрешены ли входы."
+          }
+        }
+      }
+    },
+    "risk.stopsCover" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld stops confirmed at the broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld из %2$lld стопов подтверждены у брокера"
           }
         }
       }
