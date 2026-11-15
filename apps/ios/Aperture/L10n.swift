@@ -302,9 +302,21 @@ enum L10n {
     static var blocked: LocalizedStringResource {
       LocalizedStringResource("flow.blocked", defaultValue: "blocked", bundle: L10n.bundle)
     }
-    /// Verified broker stops, under the stop stage: "2 ✓".
-    static func stopsVerified(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("flow.stopsVerified", defaultValue: "\(count) ✓", bundle: L10n.bundle)
+    /// Verified broker stops of all open positions, under the stop stage: "2/3 ✓".
+    static func stopsVerified(_ verified: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stopsVerified", defaultValue: "\(verified)/\(total) ✓", bundle: L10n.bundle)
+    }
+    /// In place of the slots when the status is stale, failed or from an earlier session.
+    static var notCurrent: LocalizedStringResource {
+      LocalizedStringResource("flow.notCurrent", defaultValue: "not current", bundle: L10n.bundle)
+    }
+    /// The quote stream's state under the stages: "quotes fresh".
+    static func quotes(_ state: String) -> LocalizedStringResource {
+      LocalizedStringResource("flow.quotes", defaultValue: "quotes \(state)", bundle: L10n.bundle)
+    }
+    /// The bot's last broker read under the stages: "broker read 14:06:02".
+    static func brokerRead(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("flow.brokerRead", defaultValue: "broker read \(time)", bundle: L10n.bundle)
     }
     /// Open positions against the configured limit: "slots 2 of 3".
     static func slots(_ used: Int, _ limit: Int) -> LocalizedStringResource {

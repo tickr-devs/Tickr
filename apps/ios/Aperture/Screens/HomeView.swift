@@ -42,7 +42,8 @@ struct HomeView: View {
             .apertureCard()
             .rise(step: Order.positions.rawValue)
         }
-        LiveFlowCard(status: status, maxPositions: model.settings?.risk.maxOpenPositions)
+        LiveFlowCard(status: status, maxPositions: model.settings?.risk.maxOpenPositions,
+          current: model.isFresh && WireDate(newYorkDateOf: status.writtenAt.date) == model.today)
           .rise(step: Order.flow.rawValue)
       }
     }
@@ -252,10 +253,14 @@ private struct PositionRow: View {
 }
 
 /// The live flow as on the design: the stages a setup passes, each a breathing dot in its colour
-/// with what the bot reports for it. Tapping it opens Risk (the room and why entries are blocked).
+/// with what the bot reports for it, and the bot's inputs (quote stream, last broker read) below.
+/// A status that is stale, failed or from an earlier session shows still, faint dots and says so.
+/// Tapping it opens Risk (the room and why entries are blocked).
 private struct LiveFlowCard: View {
   let status: StatusV1
   let maxPositions: Int?
+  /// The status is fresh and describes today's session.
+  let current: Bool
 
   /// The stages, in the order a setup passes them.
   private enum StageID: Int { case screen = 0, stocks, strategy, risk, order, stop }
@@ -272,6 +277,12 @@ private struct LiveFlowCard: View {
     let positions = status.positions
     let verified = positions.filter { $0.stop.state.isProtected }.count
     let allProtected = verified == positions.count
+    guard current else {
+      // Nothing here is live: no counts, no green, nothing breathing.
+      return [StageID.screen, .stocks, .strategy, .risk, .order, .stop].map { id in
+        Stage(id: id, name: Self.names[id.rawValue], value: nil, color: Palette.textQuaternary)
+      }
+    }
     return [
       Stage(id: .screen, name: L10n.Flow.screen, value: nil, color: Palette.accent),
       Stage(id: .stocks, name: L10n.Flow.stocks, value: nil, color: Palette.seriesUniverse),
@@ -281,7 +292,7 @@ private struct LiveFlowCard: View {
         color: status.entriesAllowed ? Palette.warning : Palette.loss),
       Stage(id: .order, name: L10n.Flow.order, value: String(status.tradesToday.count), color: Palette.info),
       Stage(id: .stop, name: L10n.Flow.stop,
-        value: positions.isEmpty ? Format.missing : String(localized: L10n.Flow.stopsVerified(verified)),
+        value: positions.isEmpty ? Format.missing : String(localized: L10n.Flow.stopsVerified(verified, positions.count)),
         color: allProtected ? Palette.profit : Palette.loss),
     ]
   }
@@ -294,7 +305,11 @@ private struct LiveFlowCard: View {
         HStack {
           CardLabel(L10n.Flow.title)
           Spacer()
-          if let maxPositions {
+          if !current {
+            Text(L10n.Flow.notCurrent)
+              .font(Tokens.Typography.annotation)
+              .foregroundStyle(Palette.warningText)
+          } else if let maxPositions {
             Text(L10n.Flow.slots(status.positions.count, maxPositions))
               .font(Tokens.Typography.annotation)
               .foregroundStyle(Palette.textQuaternary)
@@ -306,6 +321,13 @@ private struct LiveFlowCard: View {
             column(stage)
           }
         }
+        HStack(spacing: Tokens.Space.s) {
+          Text(L10n.Flow.quotes(String(localized: status.freshness.stream.title)))
+            .foregroundStyle(streamColor)
+          Text(L10n.Flow.brokerRead(Format.timeOrDash(status.freshness.lastBrokerReadAt)))
+            .foregroundStyle(status.freshness.lastBrokerReadAt == nil ? Palette.lossText : Palette.textQuaternary)
+        }
+        .font(Tokens.Typography.annotation)
         ForEach(status.fences, id: \.kind) { fence in
           Label { Text(verbatim: fence.text) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
             .font(.caption)
@@ -317,6 +339,20 @@ private struct LiveFlowCard: View {
       .apertureCard()
     }
     .buttonStyle(.plain)
+  }
+
+  /// Stage names, in `StageID` order.
+  private static let names = [L10n.Flow.screen, L10n.Flow.stocks, L10n.Flow.strategy, L10n.Flow.risk, L10n.Flow.order,
+    L10n.Flow.stop]
+
+  /// The quote stream's state in its colour: a lost stream is an alarm.
+  private var streamColor: Color {
+    switch status.freshness.stream {
+    case .fresh: return Palette.profitText
+    case .quiet: return Palette.warningText
+    case .lost: return Palette.lossText
+    case .off: return Palette.textQuaternary
+    }
   }
 
   private func column(_ stage: Stage) -> some View {
