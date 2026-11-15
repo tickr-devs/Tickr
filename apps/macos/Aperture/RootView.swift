@@ -20,10 +20,10 @@ enum AppSection: String, CaseIterable, Identifiable {
 
   /// SF Symbols of the sections in the sidebar.
   static let overviewSymbol = "square.grid.2x2"
-  static let chartSymbol = "chart.xyaxis.line"
-  static let tradesSymbol = "list.bullet.rectangle"
-  static let riskSymbol = "shield.lefthalf.filled"
-  static let labSymbol = "sparkles"
+  static let chartSymbol = "chart.line.uptrend.xyaxis"
+  static let tradesSymbol = "line.3.horizontal"
+  static let riskSymbol = "shield"
+  static let labSymbol = "star"
 
   /// Accessibility ids of a section's sidebar row and its screen (the UI tests find them by these).
   static let rowIDPrefix = "sidebar-"
@@ -61,6 +61,9 @@ struct RootView: View {
       ZStack(alignment: .bottom) {
         ApertureBackground()
         detail
+          .safeAreaInset(edge: .top, spacing: 0) {
+            if section != .overview { EventStrip() }
+          }
           // One container element per screen, so its id holds even when the screen's root is a
           // split (the Chart's inspector) rather than a single view.
           .accessibilityElement(children: .contain)

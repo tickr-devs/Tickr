@@ -25,15 +25,16 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
+from aperture.data.base import ScreenerKind
 from aperture.research.records import Admission, DecisionRecord
 from aperture.risk.causes import ENGINE_REFUSED, AdmissionCause
 from aperture.risk.ticks import round_to_tick
-from aperture.strategy.base import Decision, Role, Verdict
+from aperture.strategy.base import Check, Decision, Role, Verdict
 
 API_VERSION = 1
 STATUS_SCHEMA_VERSION = 1
@@ -79,6 +80,17 @@ class StopState(StrEnum):
     PENDING = "pending"  # sent, not yet verified
     MISSING = "missing"  # no working stop: an alert condition
     UNKNOWN = "unknown"  # outcome unknown: broker read in progress
+
+
+class SendOutcome(StrEnum):
+    """The engine's send states (engine.core.SendState), mirrored value for value."""
+
+    INTENT = "intent"  # journaled, not attempted yet
+    ATTEMPTED = "attempted"  # attempt recorded, no outcome yet (in flight, or crashed)
+    ACKNOWLEDGED = "acknowledged"  # the broker accepted the order
+    REFUSED = "refused"  # refused by the broker or our request budget: no order exists
+    UNKNOWN = "unknown"  # may or may not exist: never resent, resolved by broker reads
+    ABSENT = "absent"  # never at the broker (not attempted, or not found by reads)
 
 
 class StreamHealth(StrEnum):
@@ -140,12 +152,28 @@ class Stop:
 
 
 @dataclass(frozen=True)
+class EntrySend:
+    """The first link of the protection chain: the entry order's single send, from the journal
+    (docs/api.md, "Entry send"). Display only; each null is explained by `entry_cause`."""
+
+    client_order_id: str | None  # the bot's own id for the entry order
+    intent_at: datetime | None  # `order-intent` row: written before the send
+    sent_at: datetime | None  # first `order-attempted` row: just before the HTTP call
+    send_outcome: SendOutcome | None  # the state the send itself recorded
+    latest_outcome: SendOutcome | None  # the latest send state (a broker read may resolve it)
+    sends: int | None  # `order-attempted` rows of the entry order: 1, never clamped
+    filled_at: datetime | None  # first `order-observed` row showing filled quantity > 0
+
+
+@dataclass(frozen=True)
 class Position:
     symbol: str
     quantity: Decimal
     entry_price: Decimal
     opened_at: datetime
     stop: Stop
+    entry: EntrySend
+    entry_cause: str | None  # why a field of `entry` is null; null when none is
 
 
 @dataclass(frozen=True)
@@ -161,6 +189,8 @@ class Trade:
     planned_loss_usd: Decimal  # 1 R, as recorded when the trade was opened
     # First entry fill observed -> first stop seen working at the broker; null = never.
     stop_confirmed_after_seconds: Decimal | None
+    entry: EntrySend
+    entry_cause: str | None  # why a field of `entry` is null; null when none is
 
 
 @dataclass(frozen=True)
@@ -342,6 +372,8 @@ class DayTrade:
     stop_confirmed_after_seconds: Decimal | None
     mae_usd: Decimal | None
     mfe_usd: Decimal | None
+    entry: EntrySend  # as in `Position`
+    entry_cause: str | None
 
 
 @dataclass(frozen=True)
@@ -474,10 +506,13 @@ class ExplainV1:
     api_version: int = _const(API_VERSION)
 
 
-def checks_of(decision: Decision) -> tuple[CheckV1, ...]:
+def check_v1(c: Check) -> CheckV1:
     """The explain-v1 check shape, shared by every document that shows checks."""
-    return tuple(CheckV1(c.rule, c.measured, c.operator, c.threshold, c.passed, c.note)
-                 for c in decision.checks)
+    return CheckV1(c.rule, c.measured, c.operator, c.threshold, c.passed, c.note)
+
+
+def checks_of(decision: Decision) -> tuple[CheckV1, ...]:
+    return tuple(check_v1(c) for c in decision.checks)
 
 
 def explain(environment: str, day: date, record: DecisionRecord) -> ExplainV1:
@@ -751,6 +786,173 @@ def skipped_document(day: date, records: tuple[DecisionRecord, ...]) -> SkippedV
         if r.decision.verdict is Verdict.ENTER and r.admission in _SKIPPED))
 
 
+# ---------------------------------------------------------------- overview flow (read-only)
+
+
+class FlowStage(StrEnum):
+    SCREENERS = "screeners"  # listed by a screener that day
+    UNIVERSE = "universe"  # passed the universe filter in the latest pass that listed it
+    STRATEGY = "strategy"  # the active strategy recorded a decision
+    RISK = "risk"  # an ENTER that admission took
+    ORDER = "order"  # an entry order of a trade opened that day filled
+    STOP = "stop"  # that trade's broker stop was seen working (verified)
+
+
+class FlowStopState(StrEnum):
+    """Not status-v1's StopState: a day's trades, closed ones included, from the journal."""
+
+    VERIFIED = "verified"  # a broker read showed one of its stops working after the fill
+    PENDING = "pending"  # open today, no such read yet
+    NEVER_VERIFIED = "never_verified"  # closed, or a past day, without any such read
+    UNKNOWN = "unknown"  # its journal rows cannot be read
+
+
+class Agreement(StrEnum):
+    MATCH = "match"
+    MISMATCH = "mismatch"
+
+
+@dataclass(frozen=True)
+class FlowChipV1:
+    """One symbol a screener listed that day. `sources`: every screener that listed it that
+    day. `change_pct`: (price - pre_close) / pre_close x 100 from its latest captured row, null
+    with `change_cause`. `excluded_cause`: the universe filter's refusal in the latest pass
+    that listed it, `CAUSE: measured`; null when it passed."""
+
+    symbol: str
+    sources: tuple[ScreenerKind, ...]
+    change_pct: Decimal | None
+    change_cause: str | None
+    excluded_cause: str | None
+
+
+@dataclass(frozen=True)
+class FlowStageV1:
+    stage: FlowStage
+    count: int
+    symbols: tuple[str, ...]  # sorted
+
+
+@dataclass(frozen=True)
+class FlowStopV1:
+    """The stop of one trade whose entry filled that day (FlowStopState)."""
+
+    trade_id: str
+    symbol: str
+    state: FlowStopState
+
+
+@dataclass(frozen=True)
+class FlowReconcileV1:
+    """The bot's latest reconciliation (account file) and fences (status file), only when
+    they are of the day asked for. Each part is null when unknown and its cause says why."""
+
+    agreement: Agreement | None
+    agreement_cause: str | None
+    read_at: datetime | None
+    mismatch: str | None
+    fences: tuple[Fence, ...] | None
+    fences_cause: str | None
+
+
+@dataclass(frozen=True)
+class FlowV1:
+    """GET /flow?date=: the day's pipeline from screeners to broker stops (docs/api.md)."""
+
+    environment: str
+    day: date
+    chips: tuple[FlowChipV1, ...]
+    stages: tuple[FlowStageV1, ...]
+    stops: tuple[FlowStopV1, ...]
+    reconcile: FlowReconcileV1
+    api_version: int = _const(API_VERSION)
+
+
+# ---------------------------------------------------------------- watching closely (read-only)
+
+
+@dataclass(frozen=True)
+class WatchingRowV1:
+    """The latest decision of one symbol. `decisive_check`: the first failed check, the one
+    standing between the symbol and an ENTER (null when every recorded check passed).
+    `closeness`: how near that check is to passing, 0..1 (see `closeness`), null with
+    `closeness_cause`. `quote_age_seconds`: null with `quote_age_cause` (not recorded)."""
+
+    symbol: str
+    at: datetime
+    strategy: StrategyId
+    verdict: Verdict
+    decisive_check: CheckV1 | None
+    closeness: Decimal | None
+    closeness_cause: str | None
+    quote_age_seconds: Decimal | None
+    quote_age_cause: str | None
+
+
+@dataclass(frozen=True)
+class WatchingV1:
+    """GET /watching?date=: the symbols the active strategy is closest to entering on, closest
+    first, at most `[api] watching_max_rows`; `total` counts them before the cap."""
+
+    day: date
+    total: int
+    rows: tuple[WatchingRowV1, ...]
+    api_version: int = _const(API_VERSION)
+
+
+ALL_CHECKS_PASSED = "every recorded check passed"
+QUOTE_AGE_NOT_RECORDED = "not recorded: decision records hold no quote time"
+_RISE = (">", ">=")  # passes once measured rises to the threshold
+_FALL = ("<", "<=")  # passes once measured falls to the threshold
+_NOT_WATCHING = (Verdict.ENTER, Verdict.HOLD, Verdict.EXIT)
+
+
+def closeness(check: Check | None, places: int) -> tuple[Decimal | None, str | None]:
+    """(closeness, None) or (None, cause) for the decisive (failed) check, rounded down to
+    `places`: `>` `>=`: measured / threshold (needs threshold > 0 and measured >= 0);
+    `<` `<=`: threshold / measured (needs measured > 0 and threshold >= 0). 1 is at the
+    threshold; a value outside 0..1 means the record contradicts itself and is refused."""
+    if check is None:
+        return None, ALL_CHECKS_PASSED
+    measured, threshold = check.measured, check.threshold
+    if measured is None or threshold is None:
+        return None, f"{check.rule}: a yes/no check has no measured value"
+    if check.operator in _RISE:
+        if threshold <= 0 or measured < 0:
+            return None, f"{check.rule}: needs threshold > 0 and measured >= 0"
+        value = measured / threshold
+    elif check.operator in _FALL:
+        if measured <= 0 or threshold < 0:
+            return None, f"{check.rule}: needs measured > 0 and threshold >= 0"
+        value = threshold / measured
+    else:
+        return None, f"{check.rule}: operator {check.operator!r} has no direction"
+    if not 0 <= value <= 1:
+        return None, f"{check.rule}: recorded as failed but measured meets the threshold"
+    return value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_DOWN), None
+
+
+def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: int,
+                      places: int) -> WatchingV1:
+    """`records`: active-strategy records of `day`. The latest decision per symbol unless it is
+    ENTER, HOLD or EXIT (entering or in a position); closest first, then by symbol."""
+    latest = {r.symbol: r for r in _oldest_first(records)}
+    rows = []
+    for r in latest.values():
+        d = r.decision
+        if d.verdict in _NOT_WATCHING:
+            continue
+        decisive = d.decisive
+        value, cause = closeness(decisive, places)
+        rows.append(WatchingRowV1(
+            symbol=r.symbol, at=r.bar_start, strategy=StrategyId(d.strategy, d.version),
+            verdict=d.verdict, decisive_check=None if decisive is None else check_v1(decisive),
+            closeness=value, closeness_cause=cause, quote_age_seconds=None,
+            quote_age_cause=QUOTE_AGE_NOT_RECORDED))
+    rows.sort(key=lambda w: (w.closeness is None, -(w.closeness or 0), w.symbol))
+    return WatchingV1(day=day, total=len(rows), rows=tuple(rows[:max_rows]))
+
+
 # ---------------------------------------------------------------- performance (read-only)
 
 
@@ -822,6 +1024,8 @@ SCHEMA_TYPES: dict[str, type] = {
     "observers-v1": ObserversV1,
     "decisions-v1": DecisionsV1,
     "skipped-v1": SkippedV1,
+    "flow-v1": FlowV1,
+    "watching-v1": WatchingV1,
     "performance-v1": PerformanceV1,
     "account-v1": AccountV1,
     "account-response-v1": AccountResponseV1,

@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -21,10 +21,17 @@ from typing import Any
 from aperture.api import contract as api
 from aperture.api.performance import performance
 from aperture.archive import existing
-from aperture.calendar import ny_date_of
+from aperture.calendar import NEW_YORK, ny_date_of
 from aperture.config import Config
 from aperture.data.capture import BARS_FILE, CaptureError, read_captured_bars
-from aperture.engine.core import ORDER_HELD, ORDER_OBSERVED, Leg, OrderRow, order_from_row
+from aperture.engine.core import (
+    ORDER_HELD,
+    ORDER_OBSERVED,
+    Leg,
+    OrderRow,
+    SendState,
+    order_from_row,
+)
 from aperture.store import DATABASE_FILE, MIGRATIONS, Store
 from aperture.types import OrderState
 
@@ -184,6 +191,67 @@ def trade_metrics(store: Store, trade: api.DayTrade,
     return replace(trade, stop_confirmed_after_seconds=confirmed, mae_usd=mae, mfe_usd=mfe)
 
 
+# Entry send (docs/api.md, "Entry send"): the engine journals `order-<SendState>` for every
+# change of an order's send state: `order-intent` before the send, `order-attempted` just
+# before the HTTP call, then the outcome.
+_SEND_KINDS = {f"order-{state}": state for state in SendState}
+NO_ENTRY = api.EntrySend(None, None, None, None, None, None, None)
+NOT_READ = "not read on this path"  # the daily-loss path never reads the journal
+
+
+def _send_outcome(states: list[SendState]) -> SendState | None:
+    """The state the send itself recorded: the row after the first attempt (acknowledged,
+    refused or unknown); without an attempt, the row after the intent (absent when recovery
+    found it never attempted); with no such row yet, that last state (intent or attempted).
+    A later resolution by a broker read (unknown -> acknowledged) does not change it."""
+    for anchor in (SendState.ATTEMPTED, SendState.INTENT):
+        if anchor in states:
+            at = states.index(anchor)
+            return states[at + 1] if at + 1 < len(states) else anchor
+    return states[-1] if states else None
+
+
+def entry_send(store: Store, trade_id: str) -> tuple[api.EntrySend, str | None]:
+    """The trade's entry send as journaled, and why any field is null (None when none is).
+    Raises MalformedJournal for a row it cannot read. Display only: never on the daily-loss
+    or trading path."""
+    entries = [order_from_row(o) for o in store.query(
+        "SELECT * FROM orders WHERE trade_id = ? AND leg = ? ORDER BY rowid",
+        (trade_id, str(Leg.ENTRY)))]
+    if len(entries) != 1:
+        return NO_ENTRY, f"trade {trade_id} has {len(entries)} entry orders, expected 1"
+    cid = entries[0].client_order_id
+    kinds = (*_SEND_KINDS, OBSERVED)
+    marks = ", ".join("?" for _ in kinds)
+    rows = store.query("SELECT seq, at_utc, kind, key, body FROM journal WHERE kind IN "
+                       f"({marks}) AND key = ? ORDER BY seq", (*kinds, cid))
+    intent = sent = filled = None
+    states: list[SendState] = []
+    for row in rows:
+        at, body = _parsed(row)
+        if row["kind"] == OBSERVED:
+            quantity, _ = _observed(row, body)
+            if filled is None and quantity > 0:
+                filled = at
+            continue
+        state = _SEND_KINDS[row["kind"]]
+        states.append(state)
+        if state is SendState.INTENT and intent is None:
+            intent = at
+        elif state is SendState.ATTEMPTED and sent is None:
+            sent = at
+    outcome = _send_outcome(states)
+    causes = [text for missing, text in (
+        (intent is None, "no order-intent row"),
+        (sent is None, "never attempted: no order-attempted row"),
+        (filled is None, "no order-observed row shows the entry filled")) if missing]
+    entry = api.EntrySend(cid, intent, sent,
+                          None if outcome is None else api.SendOutcome(outcome),
+                          api.SendOutcome(states[-1]) if states else None,
+                          states.count(SendState.ATTEMPTED), filled)
+    return entry, "; ".join(causes) or None
+
+
 def closed_trades(store: Store, environment: str | None = None,
                   closed_on: date | None = None) -> list[api.DayTrade]:
     """Closed trades that had fills, oldest close first, with their gross result.
@@ -223,7 +291,8 @@ def closed_trades(store: Store, environment: str | None = None,
             result_gross_usd=(exit_price - entry_price) * quantity,
             # Display metrics are never read here (see `trade_metrics`): this path feeds the
             # daily-loss check and stays as it was.
-            stop_confirmed_after_seconds=None, mae_usd=None, mfe_usd=None))
+            stop_confirmed_after_seconds=None, mae_usd=None, mfe_usd=None,
+            entry=NO_ENTRY, entry_cause=NOT_READ))
     return result
 
 
@@ -252,21 +321,73 @@ class History:
 
     # ------------------------------------------------------------ sources
 
-    def _read_db(self, metrics_of: tuple[date, date] | None = None,
-                 ) -> tuple[list[api.DayTrade], set[date]]:
-        """Closed trades and New York dates of bot runs; none while no database exists.
-        `metrics_of` (day, today): the trades closed that day get their display metrics."""
+    def _open(self) -> Store | None:
+        """The database read-only, None while none exists; the caller closes it."""
         if not self.paths.database.exists():
-            return [], set()
+            return None
         try:
             store = Store.open_readonly(self.paths.database)
         except sqlite3.Error as exc:
             raise HistoryUnavailable(f"database unreadable: {exc}") from exc
         try:
             version = store.schema_version
-            if version != len(MIGRATIONS):
-                raise HistoryUnavailable(
-                    f"database schema v{version}, this API reads v{len(MIGRATIONS)}")
+        except sqlite3.Error as exc:
+            store.close()
+            raise HistoryUnavailable(f"database unreadable: {exc}") from exc
+        if version != len(MIGRATIONS):
+            store.close()
+            raise HistoryUnavailable(
+                f"database schema v{version}, this API reads v{len(MIGRATIONS)}")
+        return store
+
+    def entries(self, day: date, today: date) -> tuple[api.FlowStopV1, ...]:
+        """Trades of this environment opened on `day` whose entry filled, oldest first, each
+        with its stop as the journal proves it (`fill_times`, the same rows as
+        `stop_confirmed_after_seconds`): `verified` once seen working; else `pending` while
+        the trade is open today, `never_verified` once it is closed or the day is past."""
+        store = self._open()
+        if store is None:
+            return ()
+        # `opened_at` is written by Store.stamp() as UTC ISO text, so text order is time order.
+        start, end = (datetime.combine(d, time(), NEW_YORK).astimezone(UTC).isoformat()
+                      for d in (day, day + timedelta(days=1)))
+        try:
+            found = []
+            for row in store.query(
+                    "SELECT t.trade_id, t.symbol, t.opened_at, t.closed_at FROM trades t "
+                    "JOIN runs r ON r.run_id = t.run_id WHERE r.environment = ? "
+                    "AND t.opened_at >= ? AND t.opened_at < ? ORDER BY t.opened_at, t.trade_id",
+                    (self.paths.environment, start, end)):
+                if ny_date_of(datetime.fromisoformat(row["opened_at"])) != day:
+                    continue  # a row not in Store.stamp() form; never seen, kept as a guard
+                orders = [order_from_row(o) for o in store.query(
+                    "SELECT * FROM orders WHERE trade_id = ? ORDER BY rowid", (row["trade_id"],))]
+                if not any(o.leg is Leg.ENTRY and o.filled_quantity > 0 for o in orders):
+                    continue
+                try:
+                    times = fill_times(store, orders)
+                except MalformedJournal:
+                    state = api.FlowStopState.UNKNOWN
+                else:
+                    open_today = day == today and row["closed_at"] is None
+                    state = (api.FlowStopState.VERIFIED if times.stop_confirmed is not None
+                             else api.FlowStopState.PENDING if open_today
+                             else api.FlowStopState.NEVER_VERIFIED)
+                found.append(api.FlowStopV1(row["trade_id"], row["symbol"], state))
+            return tuple(found)
+        except sqlite3.Error as exc:
+            raise HistoryUnavailable(f"database unreadable: {exc}") from exc
+        finally:
+            store.close()
+
+    def _read_db(self, metrics_of: tuple[date, date] | None = None,
+                 ) -> tuple[list[api.DayTrade], set[date]]:
+        """Closed trades and New York dates of bot runs; none while no database exists.
+        `metrics_of` (day, today): the trades closed that day get their display metrics."""
+        store = self._open()
+        if store is None:
+            return [], set()
+        try:
             trades = closed_trades(store, self.paths.environment)
             if metrics_of is not None:
                 trades = [self._with_metrics(store, t, *metrics_of) for t in trades]
@@ -282,11 +403,17 @@ class History:
                       today: date) -> api.DayTrade:
         if ny_date_of(trade.closed_at) != day:
             return trade
+        # Display only: an unreadable journal row shows null, each part on its own.
+        try:
+            entry, cause = entry_send(store, trade.trade_id)
+        except MalformedJournal as exc:
+            entry, cause = NO_ENTRY, f"journal unreadable: {exc}"
+        trade = replace(trade, entry=entry, entry_cause=cause)
         try:
             return trade_metrics(store, trade,
                                  self._bars_by_symbol(day, today).get(trade.symbol, []))
         except MalformedJournal:
-            return trade  # display only: an unreadable journal row shows null metrics
+            return trade
 
     def _capture_days(self) -> set[date]:
         if not self.paths.capture.is_dir():

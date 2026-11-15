@@ -120,9 +120,14 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         (closed,) = status.trades_today
         assert closed.planned_loss_usd > 0
         assert closed.stop_confirmed_after_seconds is not None
+        for shown in (closed, status.positions[0]):  # entry sent once, then seen filled
+            assert shown.entry_cause is None and shown.entry.sends == 1
+            assert shown.entry.send_outcome is api.SendOutcome.ACKNOWLEDGED
+            assert shown.entry.intent_at <= shown.entry.sent_at <= shown.entry.filled_at
         (day_trade,) = server.history.day(FRIDAY, FRIDAY).trades
         assert day_trade.stop_confirmed_after_seconds == closed.stop_confirmed_after_seconds
         assert day_trade.planned_loss_usd == closed.planned_loss_usd
+        assert (day_trade.entry, day_trade.entry_cause) == (closed.entry, None)
         assert day_trade.mae_usd is not None and day_trade.mfe_usd is not None
         # Lower bound: the stop-out shows its 1 R loss, not the fall after the stop filled.
         assert day_trade.mae_usd == day_trade.result_gross_usd == -day_trade.planned_loss_usd
@@ -158,6 +163,19 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         since, until = api.parse_time(cooldown["since"]), api.parse_time(cooldown["until"])
         assert (until - since).total_seconds() == cfg.risk.symbol_cooldown_minutes_after_loss * 60
         assert since == day_trade.closed_at.replace(microsecond=since.microsecond)
+        # The Overview's live flow and "Watching closely".
+        flow = _get(server, "/flow")
+        assert {c["symbol"] for c in flow["chips"]} == {"AAA", "BBB", "CCC"}
+        assert all(c["change_pct"] is not None and c["excluded_cause"] is None
+                   for c in flow["chips"])
+        stages = {s["stage"]: s["symbols"] for s in flow["stages"]}
+        assert stages["universe"] == stages["screeners"] == ["AAA", "BBB", "CCC"]
+        assert stages["risk"] == stages["order"] == stages["stop"] == ["AAA", "BBB"]
+        assert {s["state"] for s in flow["stops"]} == {"verified"}
+        assert flow["reconcile"]["agreement"] == "match"
+        watching = _get(server, "/watching")
+        assert 0 < len(watching["rows"]) <= cfg.api.watching_max_rows
+        assert all(r["verdict"] in ("WATCH", "IGNORE") for r in watching["rows"])
         observers = _get(server, "/observers")["observers"]
         assert [(o["name"], o["result_cause"]) for o in observers] == [
             ("price-action-v2", None)]

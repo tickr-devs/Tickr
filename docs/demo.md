@@ -3,8 +3,9 @@
 A made-up trading day, so every screen of the macOS and iOS apps can be looked at with full data
 (open position with its stop, wins and losses, daily room near the ceiling, decisions and their
 checks, skipped signals for "Not taken" (ZNTH's re-breakout inside its cooldown after a loss is
-refused, with the cooldown's `until`), observers with their simulated day results, account, past
-days for the day picker, performance in R over the demo sessions, minute bars).
+refused, with the cooldown's `until`), the Overview's live flow and "Watching closely", observers
+with their simulated day results, account, past days for the day picker, performance in R over
+the demo sessions, minute bars).
 
 ```
 .venv/bin/aperture demo          # or: python -m aperture.cli demo
@@ -20,8 +21,9 @@ What it does:
   only the broker, market data, clock, `sleep` and alerts are replaced. Webull is never
   contacted, alerts go to the terminal. So the database, status, account, capture and decision
   files have exactly the format of a real day. The per-trade metrics of `docs/api.md`
-  (planned loss, stop confirmation time, MAE/MFE) come from those records too, so every demo
-  trade has them.
+  (planned loss, stop confirmation time, MAE/MFE) and the entry send of each position and
+  trade (sent once, outcome, fill time) come from those records too, so every demo trade has
+  them.
 - Plays the past sessions in `config/demo.toml` fast, then the demo day (today if it is a session,
   otherwise the latest session before it) fast up to `[demo] clock`, then in real time with the
   local API listening, until Ctrl-C. About two to three minutes before the API is up.
