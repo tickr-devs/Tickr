@@ -19,6 +19,7 @@ public struct BrandMark: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.scenePhase) private var scenePhase
   @State private var drawn: CGFloat = 0
   @State private var settled = false
   let size: CGFloat
@@ -103,8 +104,9 @@ public struct BrandMark: View {
         // (Core Animation runs both; see BrandMarkLive).
         BrandMarkLive(
           size: size, lineColor: lineColor.opacity(Tokens.Opacity.medium),
-          shineColor: Palette.shine.opacity(Tokens.Opacity.medium))
+          shineColor: Palette.shine.opacity(Tokens.Opacity.medium), active: scenePhase == .active)
           .frame(width: size, height: size)
+          .allowsHitTesting(false)
           .blendMode(.plusLighter)
       }
       Circle()

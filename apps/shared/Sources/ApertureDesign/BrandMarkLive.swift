@@ -16,6 +16,9 @@ struct BrandMarkLive {
   let size: CGFloat
   let lineColor: Color
   let shineColor: Color
+  /// Whether the scene is in front. Core Animation drops a layer's loops when the app goes to the
+  /// background; a change here updates the view, which starts them again.
+  let active: Bool
 }
 
 /// Holds the shine and ring layers and their loops.
@@ -55,6 +58,13 @@ final class BrandMarkLiveView: PlatformView {
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { nil }
+
+  // An ornament: clicks go through to what is under it (on the Mac, dragging the window).
+  #if canImport(UIKit)
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+  #else
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  #endif
 
   // Core Animation drops a layer's animations when its window goes away (or the app goes to the
   // background on iOS); start them again when the view is back on screen.
