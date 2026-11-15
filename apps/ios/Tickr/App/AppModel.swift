@@ -363,7 +363,7 @@ final class AppModel {
 
   /// Asks the Mac to start the bot job through launchd (POST /commands/start-bot), once, after
   /// the owner's Face ID: Start clears an operator stop and lets the bot trade again.
-  func startBot(confirmOwner: (() async -> Biometrics.Outcome)? = nil) async {
+  func startBot(confirmOwner: () async -> Biometrics.Outcome) async {
     let title = String(localized: L10n.Control.startBot)
     guard canStartBot, let url = connection.url else {
       notice = Notice(L10n.Notice.notCurrent(title), tone: .failure)
@@ -371,14 +371,12 @@ final class AppModel {
     }
     botStarting = true
     defer { botStarting = false }
-    if let confirmOwner {
-      switch await confirmOwner() {
-      case .confirmed: break
-      case .declined: return
-      case .unavailable(let cause):
-        notice = Notice(L10n.Notice.notConfirmed(title, cause), tone: .failure)
-        return
-      }
+    switch await confirmOwner() {
+    case .confirmed: break
+    case .declined: return
+    case .unavailable(let cause):
+      notice = Notice(L10n.Notice.notConfirmed(title, cause), tone: .failure)
+      return
     }
     guard connection.url == url else { return }
     do {
