@@ -3245,6 +3245,91 @@
         }
       }
     },
+    "flow.chipActives" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "actives"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "активные"
+          }
+        }
+      }
+    },
+    "flow.chipChange" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@%%"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@%%"
+          }
+        }
+      }
+    },
+    "flow.chipGainers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gainers"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "рост"
+          }
+        }
+      }
+    },
+    "flow.chipLosers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "losers"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "падение"
+          }
+        }
+      }
+    },
+    "flow.chipSkipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "skipped"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пропущен"
+          }
+        }
+      }
+    },
     "flow.closedCount" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3773,13 +3858,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Journal"
+            "value" : "$ tail -f journal"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Журнал"
+            "value" : "$ tail -f журнал"
           }
         }
       }
@@ -5049,6 +5134,23 @@
         }
       }
     },
+    "observers.lab" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lab"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Лаборатория"
+          }
+        }
+      }
+    },
     "observers.none" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5089,13 +5191,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld closed · %lld W · %lld L"
+            "value" : "%lld trades · %lld W · %lld L"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "закрыто: %lld · в плюс: %lld · в минус: %lld"
+            "value" : "сделок: %lld · в плюс: %lld · в минус: %lld"
           }
         }
       }
@@ -6659,6 +6761,23 @@
         }
       }
     },
+    "riskRoom.bindingDailyRoom" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "daily room"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "дневной запас"
+          }
+        }
+      }
+    },
     "riskRoom.details" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6672,6 +6791,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Подробнее →"
+          }
+        }
+      }
+    },
+    "riskRoom.latestSize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last size: %1$@ %2$@ sh · binding: %3$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последний объём: %1$@ %2$@ шт. · ограничил: %3$@"
           }
         }
       }
@@ -7135,19 +7271,19 @@
         }
       }
     },
-    "safety.title" : {
+    "safety.titleWithBot" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Safety"
+            "value" : "Safety · bot"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Безопасность"
+            "value" : "Безопасность · бот"
           }
         }
       }
