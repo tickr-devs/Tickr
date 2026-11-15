@@ -118,32 +118,12 @@ struct ChartAxisMark: Hashable, Sendable {
   let time: Date
   let text: String
 
-  /// Months between labels on a year of monthly candles: one label a quarter.
-  static let quarterMonths = 3
-
-  /// The first candle (the left edge included) of each session over five days, of each week over a month, of each month
-  /// over three months or a year (of each quarter for monthly candles).
+  /// The first candle (the left edge included) of each session over five days, of each week over
+  /// a month, of each month over three months or a year (of each quarter for monthly candles).
   static func marks(starts: [Date], drawn: [Candle], range: ChartRange, timeframe: Timeframe) -> [ChartAxisMark] {
-    let calendar = WireDate.newYork
-    func period(_ date: Date) -> Int {
-      switch range {
-      case .oneDay, .fiveDays: return calendar.ordinality(of: .day, in: .era, for: date) ?? 0
-      case .oneMonth: return calendar.component(.weekOfYear, from: date)
-      case .threeMonths, .oneYear:
-        let month = calendar.component(.month, from: date) - 1
-        return timeframe == .mo1 ? month / quarterMonths : month
-      }
-    }
-    var marks: [ChartAxisMark] = []
-    var previous: Int?
-    for (index, start) in starts.enumerated() where drawn.indices.contains(index) {
-      let current = period(start)
-      if current != previous {
-        marks.append(ChartAxisMark(time: drawn[index].start, text: label(start, range: range)))
-      }
-      previous = current
-    }
-    return marks
+    ChartAxis.boundaries(starts, range: range, timeframe: timeframe)
+      .filter { drawn.indices.contains($0) }
+      .map { ChartAxisMark(time: drawn[$0].start, text: label(starts[$0], range: range)) }
   }
 
   private static func label(_ date: Date, range: ChartRange) -> String {
