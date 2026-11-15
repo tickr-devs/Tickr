@@ -11,8 +11,8 @@ struct DecisionsInspector: View {
   let hasSymbol: Bool
 
   /// Width of the inspector column, in points.
-  static let minWidth: CGFloat = 260
-  static let idealWidth: CGFloat = 320
+  static let minWidth: CGFloat = 240
+  static let idealWidth: CGFloat = 280
   static let maxWidth: CGFloat = 440
   /// Accessibility id of the inspector's content, for the UI tests.
   static let contentID = "chart-decisions-list"
@@ -21,7 +21,6 @@ struct DecisionsInspector: View {
     content
       .accessibilityIdentifier(Self.contentID)
       .inspectorColumnWidth(min: Self.minWidth, ideal: Self.idealWidth, max: Self.maxWidth)
-      .navigationTitle(Text(L10n.Chart.decisions))
   }
 
   @ViewBuilder private var content: some View {

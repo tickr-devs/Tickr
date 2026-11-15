@@ -118,9 +118,12 @@ final class ApertureUITests: XCTestCase {
     let toggle = app.descendants(matching: .any)[Self.decisionsToggle].firstMatch
     XCTAssertTrue(toggle.waitForExistence(timeout: Self.timeout))
     toggle.click()
-    // A check row reads as one accessibility element, so its rule is part of a longer label.
-    let check = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", Self.decisionRule))
+    // A check row reads as one accessibility element, so its rule is part of a longer value.
+    let check = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", Self.decisionRule))
     XCTAssertTrue(check.firstMatch.waitForExistence(timeout: Self.timeout), "decision check\n\(app.debugDescription)")
+    // The open inspector fits beside the chart: nothing is pushed off screen.
+    XCTAssertTrue(app.descendants(matching: .any)[Self.rowPrefix + Self.sections[0]].firstMatch.isHittable,
+      "sidebar pushed off screen\n\(app.debugDescription)")
   }
 
   @MainActor

@@ -100,74 +100,106 @@ struct ChartView: View {
 
   // MARK: Controls
 
+  /// One row of controls when the chart is wide; two when it is narrow (a small window, or the
+  /// decisions inspector open), so the controls never push the window past the screen.
   private var controls: some View {
-    HStack(spacing: Tokens.Space.m) {
-      Picker(selection: Binding(get: { symbol ?? picked }, set: { picked = $0 })) {
-        ForEach(symbols, id: \.self) { item in
-          Text(verbatim: item).tag(item)
-        }
-      } label: {
-        Text(L10n.Chart.symbol)
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: Tokens.Space.m) {
+        symbolPicker
+        timeframePicker
+        Divider().frame(height: Self.separatorHeight)
+        indicatorToggles
+        Spacer(minLength: Tokens.Space.m)
+        zoomButtons
+        decisionsToggle
       }
-      .frame(width: Self.pickerWidth)
-      .disabled(symbols.isEmpty)
-
-      Picker(selection: $timeframe) {
-        ForEach(Timeframe.allCases) { item in
-          Text(L10n.Chart.timeframe(item.rawValue)).tag(item)
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        HStack(spacing: Tokens.Space.m) {
+          symbolPicker
+          timeframePicker
+          Spacer(minLength: Tokens.Space.m)
+          decisionsToggle
         }
-      } label: {
-        Text(L10n.Chart.timeframeLabel)
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .fixedSize()
-      .help(Text(L10n.Chart.timeframeHelp))
-
-      Divider().frame(height: Self.separatorHeight)
-
-      HStack(spacing: Tokens.Space.xs) {
-        Toggle(isOn: $showVWAP) { Text(L10n.Chart.vwap) }
-        Toggle(isOn: $showFastEMA) { Text(L10n.Chart.ema(Indicators.fastEMAPeriod)) }
-        Toggle(isOn: $showSlowEMA) { Text(L10n.Chart.ema(Indicators.slowEMAPeriod)) }
-        Toggle(isOn: $showVolume) { Text(L10n.Chart.volume) }
-        Toggle(isOn: $showATR) { Text(L10n.Chart.atr(Indicators.atrPeriod)) }
-      }
-      .toggleStyle(.button)
-
-      Spacer(minLength: Tokens.Space.m)
-
-      ControlGroup {
-        Button { viewport.zoomOut(total: candleCount) } label: {
-          Label { Text(L10n.Chart.zoomOut) } icon: { Image(systemName: "minus.magnifyingglass") }
+        HStack(spacing: Tokens.Space.m) {
+          indicatorToggles
+          Spacer(minLength: Tokens.Space.m)
+          zoomButtons
         }
-        .keyboardShortcut(Viewport.zoomOutKey, modifiers: .command)
-        .help(Text(L10n.Chart.zoomOutHelp))
-        .disabled(viewport.visible == nil)
-        Button { viewport.fit() } label: {
-          Label { Text(L10n.Chart.fit) } icon: { Image(systemName: "arrow.left.and.right") }
-        }
-        .keyboardShortcut(Viewport.fitKey, modifiers: .command)
-        .help(Text(L10n.Chart.fitHelp))
-        Button { viewport.zoomIn(total: candleCount) } label: {
-          Label { Text(L10n.Chart.zoomIn) } icon: { Image(systemName: "plus.magnifyingglass") }
-        }
-        .keyboardShortcut(Viewport.zoomInKey, modifiers: .command)
-        .help(Text(L10n.Chart.zoomInHelp))
       }
-      .labelStyle(.iconOnly)
-      .disabled(candleCount == 0)
-
-      Toggle(isOn: $showDecisions) {
-        Label { Text(L10n.Chart.decisions) } icon: { Image(systemName: "sidebar.trailing") }
-      }
-      .toggleStyle(.button)
-      .labelStyle(.iconOnly)
-      .keyboardShortcut(Self.decisionsKey, modifiers: [.command, .option])
-      .help(Text(L10n.Chart.decisionsHelp))
-      .accessibilityIdentifier(Self.decisionsToggleID)
     }
     .animation(Tokens.Motion.quick, value: symbols)
+  }
+
+  private var symbolPicker: some View {
+    Picker(selection: Binding(get: { symbol ?? picked }, set: { picked = $0 })) {
+      ForEach(symbols, id: \.self) { item in
+        Text(verbatim: item).tag(item)
+      }
+    } label: {
+      Text(L10n.Chart.symbol)
+    }
+    .frame(width: Self.pickerWidth)
+    .disabled(symbols.isEmpty)
+  }
+
+  private var timeframePicker: some View {
+    Picker(selection: $timeframe) {
+      ForEach(Timeframe.allCases) { item in
+        Text(L10n.Chart.timeframe(item.rawValue)).tag(item)
+      }
+    } label: {
+      Text(L10n.Chart.timeframeLabel)
+    }
+    .pickerStyle(.segmented)
+    .labelsHidden()
+    .fixedSize()
+    .help(Text(L10n.Chart.timeframeHelp))
+  }
+
+  private var indicatorToggles: some View {
+    HStack(spacing: Tokens.Space.xs) {
+      Toggle(isOn: $showVWAP) { Text(L10n.Chart.vwap) }
+      Toggle(isOn: $showFastEMA) { Text(L10n.Chart.ema(Indicators.fastEMAPeriod)) }
+      Toggle(isOn: $showSlowEMA) { Text(L10n.Chart.ema(Indicators.slowEMAPeriod)) }
+      Toggle(isOn: $showVolume) { Text(L10n.Chart.volume) }
+      Toggle(isOn: $showATR) { Text(L10n.Chart.atr(Indicators.atrPeriod)) }
+    }
+    .toggleStyle(.button)
+  }
+
+  private var zoomButtons: some View {
+    ControlGroup {
+      Button { viewport.zoomOut(total: candleCount) } label: {
+        Label { Text(L10n.Chart.zoomOut) } icon: { Image(systemName: "minus.magnifyingglass") }
+      }
+      .keyboardShortcut(Viewport.zoomOutKey, modifiers: .command)
+      .help(Text(L10n.Chart.zoomOutHelp))
+      .disabled(viewport.visible == nil)
+      Button { viewport.fit() } label: {
+        Label { Text(L10n.Chart.fit) } icon: { Image(systemName: "arrow.left.and.right") }
+      }
+      .keyboardShortcut(Viewport.fitKey, modifiers: .command)
+      .help(Text(L10n.Chart.fitHelp))
+      Button { viewport.zoomIn(total: candleCount) } label: {
+        Label { Text(L10n.Chart.zoomIn) } icon: { Image(systemName: "plus.magnifyingglass") }
+      }
+      .keyboardShortcut(Viewport.zoomInKey, modifiers: .command)
+      .help(Text(L10n.Chart.zoomInHelp))
+    }
+    .labelStyle(.iconOnly)
+    .fixedSize()
+    .disabled(candleCount == 0)
+  }
+
+  private var decisionsToggle: some View {
+    Toggle(isOn: $showDecisions) {
+      Label { Text(L10n.Chart.decisions) } icon: { Image(systemName: "sidebar.trailing") }
+    }
+    .toggleStyle(.button)
+    .labelStyle(.iconOnly)
+    .keyboardShortcut(Self.decisionsKey, modifiers: [.command, .option])
+    .help(Text(L10n.Chart.decisionsHelp))
+    .accessibilityIdentifier(Self.decisionsToggleID)
   }
 
   // MARK: Content
