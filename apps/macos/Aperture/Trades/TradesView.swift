@@ -73,6 +73,10 @@ struct TradesView: View {
   /// replays.
   private var dayDetail: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.l) {
+      if let clean = model.days.first(where: { $0.day == model.shownDay })?.clean {
+        CleanBadge(clean: clean)
+          .rise(step: Order.stats.rawValue)
+      }
       DayStatsRow()
         .rise(step: Order.stats.rawValue)
       TradesTable(selection: $selection, showOnChart: showOnChart)
@@ -222,6 +226,7 @@ private struct DayRow: View {
           .foregroundStyle(Palette.textQuaternary)
       }
       Spacer(minLength: Tokens.Space.s)
+      CleanMark(clean: day.clean)
       if !day.hasBars {
         Image(systemName: "chart.bar.xaxis")
           .foregroundStyle(Palette.textQuaternary)
@@ -632,6 +637,9 @@ private struct CauseText: View {
           // A cause this app has no words for: the bot's own text, times made readable.
           Text(verbatim: cause.detail.isEmpty ? cause.code
             : cause.code + RefusalCause.separator + cause.readable(time: Format.marketMinute))
+        } else if let phrase = cause.phrase {
+          Text(verbatim: phrase)
+            .help(Text(verbatim: cause.readable(time: Format.marketMinute)))
         } else if !cause.detail.isEmpty {
           Text(verbatim: cause.readable(time: Format.marketMinute))
         }

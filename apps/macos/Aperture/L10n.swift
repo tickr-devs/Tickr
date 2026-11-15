@@ -1458,6 +1458,34 @@ enum L10n {
     static func repeatRange(_ first: String, _ last: String, _ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("trades.repeatRange", defaultValue: "\(first)–\(last) · ×\(count)", bundle: L10n.bundle)
     }
+    /// Tooltip of a clean day's mark.
+    static var cleanDay: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanDay", defaultValue: "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended flat.", bundle: L10n.bundle)
+    }
+    /// Tooltip of a day that was not clean, with what made it so.
+    static func notCleanDay(_ causes: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.notCleanDay", defaultValue: "Not clean: \(causes)", bundle: L10n.bundle)
+    }
+    /// Tooltip of a day whose clean-day verdict is unknown.
+    static func cleanUnknown(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("trades.cleanUnknown", defaultValue: "Verdict unknown: \(cause)", bundle: L10n.bundle)
+    }
+    /// Day header badge: the journal, the broker and the bot's records agreed.
+    static var cleanBadge: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day · broker and records agree", bundle: L10n.bundle)
+    }
+    /// Day header badge: the day was not clean.
+    static var needsLookBadge: LocalizedStringResource {
+      LocalizedStringResource("trades.needsLookBadge", defaultValue: "Needs a look", bundle: L10n.bundle)
+    }
+    /// Calendar legend of the green dot.
+    static var cleanLegend: LocalizedStringResource {
+      LocalizedStringResource("trades.cleanLegend", defaultValue: "clean day: broker and records agree", bundle: L10n.bundle)
+    }
+    /// Calendar legend of the amber dot.
+    static var needsLook: LocalizedStringResource {
+      LocalizedStringResource("trades.needsLook", defaultValue: "needs a look", bundle: L10n.bundle)
+    }
     /// A refusal with the end of its window (a cooldown), New York time.
     static func refusedUntil(_ message: String, _ time: String) -> LocalizedStringResource {
       LocalizedStringResource("trades.refusedUntil", defaultValue: "\(message) · until \(time)", bundle: L10n.bundle)
@@ -1697,6 +1725,22 @@ enum L10n {
     /// Configured daily loss limit.
     static var dailyLoss: LocalizedStringResource {
       LocalizedStringResource("risk.dailyLoss", defaultValue: "Daily loss limit", bundle: L10n.bundle)
+    }
+    /// Accessibility label of the position slot tiles.
+    static var slots: LocalizedStringResource {
+      LocalizedStringResource("risk.slots", defaultValue: "Position slots", bundle: L10n.bundle)
+    }
+    /// A free position slot.
+    static var freeSlot: LocalizedStringResource {
+      LocalizedStringResource("risk.freeSlot", defaultValue: "free", bundle: L10n.bundle)
+    }
+    /// An open position's size in its slot: "10 @ 12.34".
+    static func slotSize(_ quantity: String, _ entry: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.slotSize", defaultValue: "\(quantity) @ \(entry)", bundle: L10n.bundle)
+    }
+    /// An open position's stop in its slot.
+    static func slotStop(_ price: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.slotStop", defaultValue: "stop \(price)", bundle: L10n.bundle)
     }
     /// Configured position count.
     static var openPositions: LocalizedStringResource {

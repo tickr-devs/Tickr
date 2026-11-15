@@ -220,7 +220,7 @@ private struct Summary: View {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
           PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false),
-            event: model.status?.writtenAt.date)
+            event: text)
           Text(verbatim: text)
             .font(.subheadline.bold())
             .foregroundStyle(tint)
@@ -236,12 +236,11 @@ private struct Summary: View {
           // Each position's protection and the gate as glyphs; the words are in their hints.
           HStack(spacing: Tokens.Space.xs) {
             ForEach(status.positions, id: \.symbol) { position in
-              StopGlyph(state: position.stop.state, symbol: position.symbol,
-                read: status.freshness.lastBrokerReadAt?.date)
+              StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
             }
             if !status.tradingGate.open {
               StateGlyph(Self.gateClosedSymbol, tone: .warning,
-                label: L10n.Home.gateClosed(status.tradingGate.cause), style: .compact)
+                label: L10n.Home.gateClosed(ApiText.gate(status.tradingGate)), style: .compact)
             }
             Badge(verbatim: status.strategy.version, tone: .highlight)
           }
@@ -261,7 +260,7 @@ private struct Summary: View {
         : L10n.Home.stopIs(position.symbol, Board.stopStateTitle(position.stop.state)))
     }
     parts.append(L10n.Home.strategy(status.strategy.name, status.strategy.version))
-    if !status.tradingGate.open { parts.append(L10n.Home.gateClosed(status.tradingGate.cause)) }
+    if !status.tradingGate.open { parts.append(L10n.Home.gateClosed(ApiText.gate(status.tradingGate))) }
     return parts.map { String(localized: $0) }.joined(separator: " ")
   }
 }
@@ -285,8 +284,7 @@ private struct PositionRow: View {
       HStack(spacing: Tokens.Space.m) {
         VStack(alignment: .leading, spacing: Tokens.Space.xs) {
           HStack(spacing: Tokens.Space.s) {
-            StopGlyph(state: position.stop.state, symbol: position.symbol,
-              read: model.status?.freshness.lastBrokerReadAt?.date)
+            StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
             Text(verbatim: position.symbol)
               .font(.headline.monospaced())
               .foregroundStyle(Palette.textPrimary)
@@ -501,7 +499,7 @@ private struct LiveFlowCard: View {
         HStack(spacing: Tokens.Space.s) {
           StateGlyph(Self.streamSymbol, tone: streamTone,
             label: L10n.Flow.quotes(String(localized: status.freshness.stream.title)),
-            live: current && status.freshness.stream == .fresh, event: status.writtenAt.date, style: .compact)
+            live: current && status.freshness.stream == .fresh, event: status.freshness.stream, style: .compact)
           Label {
             Text(verbatim: Format.timeOrDash(status.freshness.lastBrokerReadAt))
           } icon: {
@@ -513,7 +511,7 @@ private struct LiveFlowCard: View {
         }
         .font(Tokens.Typography.annotation)
         ForEach(status.fences, id: \.kind) { fence in
-          Label { Text(verbatim: fence.text) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
+          Label { Text(verbatim: ApiText.fenceWithDetail(fence)) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
             .font(.caption)
             .foregroundStyle(Palette.warningText)
         }
@@ -667,7 +665,7 @@ private struct LatestEventLine: View {
     }
     let refusal = skipped?.signals.filter { $0.admission == .refused }.max { $0.at.date < $1.at.date }.map {
       LatestEventLine(time: $0.at.date, tag: String(localized: L10n.Flow.refusedTag),
-        text: [$0.symbol, $0.refusal?.message ?? $0.refusalCause].compactMap { $0 }.joined(separator: Self.gap),
+        text: [$0.symbol, $0.refusal.map(ApiText.refusal) ?? $0.refusalCause].compactMap { $0 }.joined(separator: Self.gap),
         color: Palette.warning)
     }
     guard let event, let refusal else { return event ?? refusal }
