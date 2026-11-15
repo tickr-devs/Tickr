@@ -49,6 +49,8 @@ contrast on `surface` in both appearances.
 | `warning` / `warningText` | Paused, blocked, stale, closed gate, environment chip | `#F59E0B` / `#B45309` | `#FBBF24` / `#FCD34D` |
 | `info` / `infoText` | Entries, orders, commands in flight | `#3B82F6` / `#1D4ED8` | `#60A5FA` / `#93C5FD` |
 | `highlight` / `highlightText` | Recorded day, BACKLOG, observers | `#8B5CF6` / `#6D28D9` | `#A78BFA` / `#C4B5FD` |
+| `accentFill` / `onAccent` | Primary button fill and its text | `#0B766F` / `#FFFFFF` | `#2DD4BF` / `#04131A` |
+| `sheen` | Light gradient across a filled control (at `Opacity.wash`) | `#FFFFFF` | `#FFFFFF` |
 | `seriesVWAP` | VWAP line | = `warning` | = `warning` |
 | `seriesFastEMA` | EMA 9 line | = `accent` | = `accent` |
 | `seriesSlowEMA` | EMA 20 line | = `highlight` | = `highlight` |
@@ -56,6 +58,7 @@ contrast on `surface` in both appearances.
 | `seriesUniverse` | Universe stage of the live flow | = `seriesATR` | = `seriesATR` |
 | `glowIndigo`, `glowTeal` | Light background corner glows (at `Opacity.glow`, reach 420 pt; teal centred on the right edge, a fifth down) | `#6366F1`, `#14B8A6` | not drawn |
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
+| `shine` | Highlight running along the brand mark's line while live (at `Opacity.medium`) | `#FFFFFF` | `#FFFFFF` |
 
 A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero.
 
@@ -102,6 +105,9 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `stageSymbol` | 20 pt semibold | SF Symbols in a live-flow stage |
 | `button` | `.body` semibold | Command buttons (bot controls) |
 | `chip` | `.callout` bold mono | Tabs and chips naming a symbol (position tabs) |
+| `buttonCompact` | `.callout` semibold | Compact buttons |
+| `chipValue` | `.headline` bold mono | Figures of metric chips, icon metrics, large delta tags |
+| `chevron` | `.caption2` bold | Chevrons and direction triangles |
 
 Sizes above are the Mac's (macOS has no Dynamic Type). On iOS every role follows a text style, so
 Dynamic Type scales it: `label`, `badge`, `annotation` → `.caption2`; `metric` → `.title2`; `hero`
@@ -117,6 +123,7 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `regular` | 1.5 pt | Indicator lines, outlines |
 | `bold` | 2 pt | Price lines, sparklines |
 | `ring` | 12 pt | Rings |
+| `gauge` | 5 pt | Small gauge ring (`MiniRing`) |
 | `dash` | 5 on, 4 off | Stop and entry levels |
 | `dashFine` | 3 on, 3 off | Crosshair, planned outlines |
 
@@ -141,14 +148,23 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `stage` | 52 | Stages of the live flow |
 | `dayResultWidth` | 300 | Overview's day result beside the header |
 | `gridColumnMin` | 300 | Narrowest column of a card grid before it stacks |
-| `logo` / `logoSmall` / `emptyMark` | 56 / 26 / 88 | Brand mark (`BrandMark`): the tick-shaped price line of the app icon |
+| `logo` / `logoSmall` / `emptyMark` | 64 / 26 / 88 | Brand mark (`BrandMark`): the tick-shaped price line of the app icon |
 | `sparkline` | 34 | Sparkline height |
 | `bar` | 8 | Progress bar height |
+| `barThin` | 4 | Thin progress bar inside a row (Watching closely) |
 | `ticker` | 22 | Ticker strip height |
+| `flowChip` | 96 | Least width of a live-flow symbol chip |
 | `sideColumn` | 320 | Side column of cards |
 | `contentMaxWidth` | 1500 | Content stops growing and centres |
 | `shadowRadius` / `shadowOffset` | 10 / 6 | Light card shadow |
 | `riseOffset` | 12 | Rise-in distance |
+| `touchTarget` | 44 | Least height of a large button |
+| `iconButton` / `iconButtonCompact` | 36 / 28 | Round icon buttons |
+| `glyph` / `glyphCompact` | 30 / 22 | State glyph tiles |
+| `rowSymbol` | 16 | Symbol column of a `ValueRow` |
+| `miniRing` | 52 | Small gauge ring |
+| `hintMaxWidth` | 260 | Widest hint bubble |
+| `glowRadius` | 8 | Glow under a primary button |
 | `ringHalo` | 60 | Reach of the halo behind a ring |
 
 ## Motion (`Tokens.Motion`)
@@ -161,11 +177,14 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | `fill` | spring 1.2 s, damping 0.9 | Rings, bars, counters filling |
 | `draw` | ease-out 1.4 s | Lines and charts drawing themselves |
 | `stagger` | 0.05 s | Delay between cards of a screen |
-| `pulseSeconds` / `pulseScale` | 2.4 s / ×2.2 | "Live" pulse ring |
-| `breatheSeconds` / `breatheScale` | 2.4 s / ×1.08 | Glows and alarms breathing |
+| `pulseSeconds` / `pulseScale` | 2.4 s / ×2.2 | One pulse ring per real event (never a loop) |
+| `breatheSeconds` / `breatheScale` | 2.4 s / ×1.08 | One swell of a glow when its value changes (never a loop) |
 | `rotationSeconds` | 4 s per turn | Radar sweep |
 | `tickerSpeed` | 22 pt/s | Event ticker (edges fade over 6% of its width) |
 | `pipelineSeconds` | 4.2 s | Light travelling the live flow |
+| `pressScale` | ×0.97 | Buttons and chips while pressed |
+| `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event |
+| `hintDelay` | 0.45 s | Hover before a hint appears (Mac) |
 
 ## Components
 
@@ -175,13 +194,45 @@ and `display` → `.largeTitle`; `title` and `subtitle` → `.title`; `symbol` �
 | Card grid (Mac) | `Grid` of cards | Fills the window's width: equal columns of at least `Size.gridColumnMin`, `Space.l` apart; a narrower window stacks into fewer columns |
 | Section label | `CardLabel` | `Typography.label`, uppercase, `textQuaternary` |
 | Stat row | label … value | label `callout` `textTertiary`, value `bodyMono` |
-| Badge | tag | `Typography.badge`, role text colour, `Opacity.wash` fill, `Opacity.border` stroke, `Radius.small` |
-| Command button | bot controls | `Typography.button`, `surfaceSunken` fill, `separatorStrong` stroke, `Radius.medium`; destructive: `lossText` on a `loss` wash and border |
+| Badge | `Badge` (ApertureDesign) | A fact (exit reason, environment, version): `Typography.badge`, tone text colour, `Opacity.wash` fill, `Opacity.border` stroke, `Radius.small`; `planned:` draws it dashed |
+| Command button | bot controls | `ActionButtonStyle` below |
+| Live-flow chips (Mac) | `Marquee` | The screeners' symbols scroll across the top of the live flow: symbol in `chip`, below it the screener and change % in `annotation`, coloured by screener (gainers `profitText`, top actives `infoText`, losers `seriesATRText`; left out of the universe `textQuaternary`, struck through); `surfaceSunken` fill, `separator` hairline, `Radius.medium`. The event ticker runs under the chips, alone while there are none |
+| Watching row (Mac) | `WatchingRow` | `surfaceSunken` box with `separator` hairline, `Radius.medium`: symbol in `chip`, verdict `Badge`, time in `annotation`; the deciding check in `captionMono`; closeness as a `barThin` capsule in the verdict colour, a dashed `dashFine` outline when unknown |
 | Live-flow stage | pipeline | `Size.stage` circle, `Stroke.bold` ring and a soft glow in the stage colour; name in the stage's text colour |
 | Accent | `.tint` | `info` for links, selection and system controls on both apps, never the system blue |
 | Planned tag | BACKLOG / NEEDS API | `highlightText`, dashed `dashFine` outline, `Radius.small` |
-| Pulse dot | `PulseDot` | `Size.dot`, ring per `pulseSeconds` while live |
+| Pulse dot | `PulseDot` | `Size.dot`; while `pulsing`, one ring of `pulseSeconds` each time its `event` changes (a new status read, a fill). Still without an event: nothing on screen moves except on real events |
 | Banner | headline | role text colour, `Opacity.wash` fill, `Radius.medium`, `Space.m` padding |
+
+## Controls (`Controls.swift`)
+
+Screens show states, figures and actions as these controls, not as bare text or system-styled
+buttons. Prefer a symbol, a gauge or a coloured shape to a word whenever the meaning is clear;
+the word then goes into the control's `hint` (tooltip) and its accessibility label, so VoiceOver
+still reads it. Every control takes a `Tone`.
+
+| Control | Use | Look |
+|---|---|---|
+| `Tone` | The meaning of a control | `neutral`, `accent`, `profit`, `loss`, `warning`, `info`, `highlight`: each maps to a role's fill and text colour; `Tone.result(_:)` for money |
+| `.buttonStyle(.action(.primary))` | The one main action of a view | `accentFill` with a `sheen` gradient on top, `onAccent` text, accent glow (`Size.glowRadius`), `Radius.medium` |
+| `.action(.secondary)` | Ordinary commands | `surfaceSunken`, `separatorStrong` border, accent border on hover; `role: .destructive` draws it destructive |
+| `.action(.ghost)` | Quiet link-like actions ("Open chart" + `Chevron`) | `accentText`, accent wash on hover or press |
+| `.action(.destructive)` | Flatten, stop, emergency | `lossText` on a `loss` wash and border |
+| sizes | `.compact` (inline), `.regular`, `.large` (phone sheets, at least `Size.touchTarget` tall) | `Typography.buttonCompact` / `button` |
+| `.buttonStyle(.icon(tone))` | One-symbol actions, the bot's command toolbar | `Size.iconButton` circle (`iconButtonCompact`), tone wash and border; needs a `hint` |
+| `IconToolbar` | A row of icon buttons | Sunken capsule, `separatorStrong` border |
+| `.buttonStyle(.chip(selected:))` | One of a few choices side by side (position tabs) | `Typography.chip`, `Radius.small`; selected: tone wash and border |
+| `StateGlyph` | A state without a word (stop verified, paused, stream fresh, gate closed) | SF Symbol on a `Size.glyph` tile in the tone, `Opacity.glow` fill; `live` pulses the outline (`Motion.glyphPulseScale`) |
+| `StatusPill` | A state that needs its word (bot running) | Capsule, `PulseDot` (pulsing while live), `Typography.badge` uppercase |
+| `IconMetric` | A figure named by a symbol (entry, stop, quantity, time) | Symbol in the tone, `Typography.chipValue` figure, sunken `Radius.medium` chip; the name is its hint |
+| `MetricChip` | A figure whose label must stay visible | Uppercase `label`, `chipValue` figure, unit in `captionMono`, tone rail on the leading edge |
+| `DeltaTag` | A money change | Triangle up or down, signed figure, `Tone.result` wash |
+| `MeterBar` | A share of a whole, a price between two levels | `Size.bar` capsule track, glowing gradient fill that grows on appear (`Motion.fill`), optional `MeterMark` figures under it |
+| `MiniRing` | A share in a small space | `Size.miniRing`, `Stroke.gauge` track and fill, figure inside |
+| `ValueRow` | "◷ label … value" rows | Symbol in a `Size.rowSymbol` column, `callout` label in `textTertiary`, `bodyMono` value |
+| `SectionHeader` | A section's heading with a count and an accessory | Glowing tone tick (`labelSize` tall), uppercase `label`, count capsule |
+| `InfoCaption` | Where a value comes from, why something is off | `caption` with a leading symbol |
+| `.hint(_:)` | The apps' tooltip | Mac: a `Radius.medium` bubble on `surface` above the view after `Motion.hintDelay` of hover, at most `Size.hintMaxWidth` wide. Phone: long press shows it in a context menu, which cancels the tap of the button it explains |
 
 ## Brand: app icon and launch screen
 
@@ -195,7 +246,11 @@ breaks upward, with a spark at its end.
   (`LaunchBackground` = `background`, `LaunchMark`). Change the script and run it; never edit the
   generated files. `tests/test_brand_assets.py` fails when they differ.
 - In the apps the same line is `BrandMark` (ApertureDesign): it draws itself on appear and its
-  spark then pulses while the bot's data is live; still otherwise and with Reduce Motion.
+  spark then pulses (a shine runs up the line, a ring leaves the spark) while the bot's data is
+  current (macOS Overview header, iOS Home bar); still otherwise and with Reduce Motion.
+- iOS opening (`LaunchHandoff`): the app starts exactly as the launch screen, flashes the spark
+  once, then flies the mark into Home's bar mark while the background fades (`launchHoldSeconds`,
+  `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`). macOS has no launch screen.
 - Empty screens (nothing yet, no trades, bot unreachable) use `BrandMark.empty()` as the
   `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors
   keep a warning SF Symbol, so they never look like a calm empty state.

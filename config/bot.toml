@@ -108,6 +108,16 @@ unknown_absent_reads = 3
 # the order's last such proof (never an extra broker read); read by the engine, and the rows by
 # api.history (the MAE/MFE window).
 stop_held_proof_seconds = 60
+# Least seconds between two `reconcile-checked` journal rows that say the same thing: after a
+# successful reconciliation the bot journals whether the broker agreed with its records when the
+# answer changed or the last such row is at least this old (no extra broker read); read by the
+# runtime, and the rows by api.cleanday (the clean-day verdict of GET /days).
+reconcile_proof_seconds = 300
+# Largest gap in seconds between two `reconcile-checked` rows (the last one before the regular open
+# and the first one after the regular close count as its edges) that a date can have and still be
+# clean: a longer stretch without a recorded reconciliation (bot down, hours of failed reads) makes
+# the date unknown. Must be above reconcile_proof_seconds; read by api.cleanday (GET /days).
+reconcile_max_gap_seconds = 900
 
 [probe]
 # Shares per probe order (owner 2026-11-14); read by the probe command.
@@ -177,6 +187,9 @@ replay_settings_file = "config/replay.toml"
 watching_max_rows = 8
 # Decimal places of GET /watching `closeness` (0..1, rounded down); read by the api server.
 watching_closeness_decimal_places = 4
+# Decimal places of the decisive check's measured and threshold values in GET /watching, each rounded
+# away from passing so a failed check never reads as met; read by the api server.
+watching_check_decimal_places = 4
 # Decimal places of GET /flow screener chips' `change_pct` (percent, rounded half-even); read by the api server.
 flow_change_pct_decimal_places = 2
 # Longest date range GET /performance accepts, in New York calendar days counting both ends; longer = 400 bad_request; read by the api server.
@@ -242,8 +255,21 @@ history_dir = "history"
 # a candidate has a fresh quote the minute the strategy first says ENTER; count. At most stream_max_symbols minus
 # stream_reserved_symbols (checked when config loads); read by runtime.market.
 candidate_subscriptions = 5
-# Seconds candidates stay off the stream after their subscribe was refused (the position and WATCH symbols are never
-# affected); read by runtime.market.
+# Most observer WATCH/ENTER symbols kept on the L1 stream after the position, the strategy's WATCH symbols and the
+# candidates, so observers can reach ENTER on their own symbols, and never more than the slots those leave free above
+# stream_reserved_symbols; count. candidate_subscriptions plus this is at most
+# stream_max_symbols minus stream_reserved_symbols (checked when config loads); read by runtime.market.
+observer_subscriptions = 20
+# Seconds between changes of the observer tier of the L1 stream (it shrinks at once when the position, WATCH symbols or
+# candidates need its slots), so observers cost at most one subscribe and one unsubscribe request per period on routes
+# shared with the active strategy's subscribes; read by runtime.market.
+observer_resync_seconds = 60
+# Subscribe (and unsubscribe) requests per budget window an observer-tier request must leave free for the position,
+# WATCH symbols and candidates, count; below the route limit (requests_per_route_per_minute, route_limits) the observer
+# tier waits. Read by runtime.market for broker.webull StreamSession.subscribe_optional.
+stream_reserved_subscribe_requests = 10
+# Seconds candidates, or observer symbols, stay off the stream after their subscribe was refused (the position and
+# WATCH symbols are never affected); read by runtime.market.
 candidate_retry_seconds = 300
 # Seconds before the L1 stream connects again after its loop ended (failed resubscribe or SDK gave up); read by broker.webull stream.
 stream_reconnect_delay_seconds = 10
@@ -251,9 +277,10 @@ stream_reconnect_delay_seconds = 10
 # subscribe past it is refused with HTTP 417 TOO_MANY_SYMBOLS_SUBSCRIPTION); never set above 100. A subscribe that would
 # pass it is refused before sending (SubscriptionLimit); read by broker.webull stream.
 stream_max_symbols = 100
-# Stream slots never used by discovery candidates, kept for open positions and the strategy's WATCH symbols, count
+# Stream slots never used by discovery candidates or observer symbols, kept for open positions and the strategy's WATCH
+# symbols, count
 # (position and WATCH symbols beyond stream_max_symbols get the same SubscriptionLimit refusal);
-# read by config (checks candidate_subscriptions <= stream_max_symbols - stream_reserved_symbols).
+# read by config (checks candidate_subscriptions + observer_subscriptions <= stream_max_symbols - stream_reserved_symbols).
 stream_reserved_symbols = 20
 # Seconds without a received quote, transport up, after which a subscribed symbol is quiet; read by data.health.
 quiet_after_seconds = 5
@@ -271,6 +298,9 @@ max_evaluation_seconds = 0.5
 # Evaluations waiting for the observer worker thread; when full, a new one is dropped and recorded (never blocks trading);
 # read by observers.runner.
 queue_size = 256
+# Seconds an observer's WATCH or ENTER keeps its symbol on the L1 stream, counted from the start of the bar it was decided
+# on (180 = that bar, the next one while the worker is mid-bar, and one minute of pass timing); read by runtime.service.
+watching_seconds = 180
 # Decision records folder relative to [run] data_dir; files go to <decisions_dir>/<environment>/<NY date>/decisions.jsonl;
 # written by observers.log for observer and active-strategy decisions (runtime.entries).
 decisions_dir = "decisions"
@@ -370,6 +400,49 @@ fence_alert_after_seconds = 30
 # NAME of the environment variable holding the owner's iMessage address (phone number or Apple ID email); the value is
 # personal data, set only in the owner's env file, never here; presence checked by preflight; read by runtime.alerts.
 imessage_recipient_variable = "APERTURE_IMESSAGE_TO"
+# The Tickr Mac app that shows the Mac notification with its own icon (path to the .app; empty = none). When it is
+# missing, not allowed to notify or fails, the notification goes through osascript instead; read by runtime.alerts.
+mac_app = "/Applications/Tickr.app"
+# Seconds to wait for the Tickr app to hand the notification over before osascript shows it instead (kept short: the
+# bot's loop waits for it); read by runtime.alerts.
+mac_app_timeout_seconds = 2
+
+[chart]
+# Serve GET /chart (the apps' chart: any US stock, M1 to monthly candles) from Webull market data. true makes the API
+# process build its own Webull client in the background (it then needs the app key and secret, never the account id,
+# and uses the environment's token folder next to the bot; until it is built GET /chart answers 503). Gate, per
+# docs/webull-facts.md section C: C1 and C2 must pass first, and C1 in the environment being enabled (a Sandbox pass
+# does not prove Production); C3 must pass before daily ranges (1m/3m/1y) are trusted, C4 before the newest minute and
+# half days are; C5 is optional. false = GET /chart answers 503 unavailable (the demo serves its simulated world
+# instead); read by the api server and the request budget.
+webull_enabled = false
+# Webull bars requests the API may send per 60 s for charts, count: the chart's own request budget, never the bot's;
+# exhausted = GET /chart answers 429 rate_limited, nothing is queued or retried. With webull_enabled the bot's budget for
+# the bars route is lowered by this many, so the two processes together stay within one route limit (in case Webull
+# counts per App Key); with webull_enabled it must be below the bars route limit of every environment, which must be
+# counted per 60 s (checked when the config is loaded); read by the request budget and the api server.
+requests_per_minute = 4
+# Most bars asked per chart bars request, count (SDK maximum 1200; one day with pre- and post-market is at most 960
+# minutes, so one request covers a day); read by the api server.
+bars_per_request = 1200
+# Seconds the M1 bars of a day still in progress, and the daily series while a session day is not over, are served from
+# memory before Webull is read again; closed days are kept on disk; read by the api server.
+live_ttl_seconds = 30
+# Seconds after a session's extended close (20:00 ET, 17:00 on half days) before its M1 bars count as final and are
+# written to the disk cache; until then they are served from memory and read again after live_ttl_seconds (Webull
+# returns only finalized minutes, so a read just after the close can miss the last one); a day without bars is never
+# written; read by the api server.
+closed_day_settle_seconds = 300
+# Chart cache folder relative to [run] data_dir; settled days' M1 bars go to <cache_dir>/<environment>/<symbol>/<NY
+# date>.json (minute bars are unadjusted, so a settled day never changes); read by the api server and maintain.
+cache_dir = "chart"
+# Days, counted back from today's New York date, a settled day's file stays in the chart cache; `aperture maintain`
+# deletes older ones (a later chart of that day reads it from Webull again). At least session_lookback_days; read by
+# maintain.
+cache_max_age_days = 30
+# Most calendar days walked back to find the sessions of a 1d or 5d chart range (weekends and holidays are skipped);
+# read by the api server.
+session_lookback_days = 14
 
 [environments.sandbox]
 # May this process send trading requests in this environment; read by the trading gate.

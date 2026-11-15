@@ -37,6 +37,9 @@ struct CandleChart: View {
   static let axisLabelWidth: CGFloat = 56
   /// Gridlines each pane asks for on its value axis.
   static let priceTicks = 6
+  /// Share of the price pane's height a tag covers on the scale (with a gap): an axis price
+  /// this close to a tag hides under it.
+  static let tagClearance = 0.05
   static let paneTicks = 3
   /// Length of the leader line of the high and low labels, in points.
   static let extremeLeader: CGFloat = 14
@@ -143,10 +146,15 @@ struct CandleChart: View {
           y: .value(Plot.price, level.price))
           .foregroundStyle(level.color)
           .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dash))
-          .annotation(position: .top, alignment: .leading) {
+          // At the right end, where the price is now, on a plate so candles under it never hide
+          // it (at the left end it sat on the day's first candle).
+          .annotation(position: .top, alignment: .trailing, overflowResolution: Self.keepInside) {
             Text(level.label)
               .font(Tokens.Typography.annotationBold)
               .foregroundStyle(level.textColor)
+              .padding(.horizontal, Tokens.Space.xxs)
+              .background(Palette.surface.opacity(Tokens.Opacity.overlay), in: .rect(cornerRadius: Tokens.Radius.small))
+              .fixedSize()
           }
       }
       ForEach(marks) { mark in
@@ -169,10 +177,13 @@ struct CandleChart: View {
               .font(Tokens.Typography.annotation)
               .foregroundStyle(mark.color)
           }
-          .annotation(position: .top) {
+          .annotation(position: .top, overflowResolution: Self.keepInside) {
             Text(mark.label)
               .font(Tokens.Typography.annotation)
               .foregroundStyle(mark.color)
+              .padding(.horizontal, Tokens.Space.xxs)
+              .background(Palette.surface.opacity(Tokens.Opacity.overlay), in: .rect(cornerRadius: Tokens.Radius.small))
+              .fixedSize()
           }
       }
       if let last = candles.last {
@@ -182,7 +193,7 @@ struct CandleChart: View {
       }
     }
     .chartYScale(domain: scale.domain)
-    .chartYAxis { valueAxis(ticks: Self.priceTicks) }
+    .chartYAxis { valueAxis(ticks: Self.priceTicks, hiding: priceTags.map(\.value), span: scale.domain) }
     .chartXAxis(studyPanes.isEmpty ? .automatic : .hidden)
     .chartXAxis { timeAxis }
     .modifier(SharedAxis(chart: self, pane: .price, showsTime: studyPanes.isEmpty, tags: priceTags))
@@ -228,8 +239,11 @@ struct CandleChart: View {
 
   /// The last close, tagged on the price axis in the colour of its candle.
   private var priceTags: [AxisTag] {
-    guard let last = candles.last else { return [] }
-    return [AxisTag(value: last.close, text: Self.price(last.close), color: color(last))]
+    var tags = levels.map { AxisTag(value: $0.price, text: Self.price($0.price), color: $0.color) }
+    if let last = candles.last {
+      tags.append(AxisTag(value: last.close, text: Self.price(last.close), color: color(last)))
+    }
+    return tags
   }
 
   // MARK: Study panes
@@ -320,6 +334,24 @@ struct CandleChart: View {
     }
   }
 
+  /// The price scale, its labels left out where a tag (last price, entry, stop) covers them:
+  /// within `tagClearance` of the pane's height from a tagged value.
+  private func valueAxis(ticks: Int, hiding tagged: [Double], span: ClosedRange<Double>) -> some AxisContent {
+    let clearance = (span.upperBound - span.lowerBound) * Self.tagClearance
+    return AxisMarks(position: .trailing, values: .automatic(desiredCount: ticks)) { value in
+      AxisGridLine()
+      AxisTick()
+      AxisValueLabel {
+        if let price = value.as(Double.self), !tagged.contains(where: { abs($0 - price) < clearance }) {
+          Text(verbatim: price.formatted(Self.valueFormat))
+            .frame(width: Self.axisLabelWidth, alignment: .leading)
+        } else {
+          Color.clear.frame(width: Self.axisLabelWidth)
+        }
+      }
+    }
+  }
+
   /// A value scale with gridlines at exactly `values` (an oscillator's band levels).
   private func valueAxis(values: [Double]) -> some AxisContent {
     AxisMarks(position: .trailing, values: values) { value in
@@ -386,6 +418,11 @@ struct CandleChart: View {
   }
 
   var xDomain: ClosedRange<Date> { firstStart...lastEnd }
+  /// The stretch on screen: the whole day, or the zoomed window.
+  var windowDomain: ClosedRange<Date> {
+    guard zoomed else { return xDomain }
+    return windowStart...windowStart.addingTimeInterval(visibleLength)
+  }
   var zoomed: Bool { viewport.visible != nil }
 
   var scrollPosition: Binding<Date> {
@@ -515,11 +552,7 @@ private struct SharedAxis: ViewModifier {
 
   func body(content: Content) -> some View {
     let pointer = chart.pointerModel
-    content
-      .chartXScale(domain: chart.xDomain)
-      .chartScrollableAxes(chart.zoomed ? .horizontal : [])
-      .chartXVisibleDomain(length: chart.visibleLength)
-      .chartScrollPosition(x: chart.scrollPosition)
+    scrolling(content)
       .chartXSelection(value: chart.selection)
       .onContinuousHover { phase in
         switch phase {
@@ -533,6 +566,26 @@ private struct SharedAxis: ViewModifier {
           Crosshair(pointer: pointer, candles: chart.plot.candles, pane: pane, showsTime: showsTime, proxy: proxy)
         }
       }
+  }
+}
+
+extension SharedAxis {
+  /// Only the price pane scrolls; the panes below draw the window it shows. A scrolling chart
+  /// is an AppKit scroll view, and three or four of them bound to one scroll position set each
+  /// other's position inside a layout pass until AppKit threw ("needs another Update
+  /// Constraints in Window pass"), on opening the chart with several panes.
+  @ViewBuilder func scrolling(_ content: Content) -> some View {
+    if pane == .price {
+      content
+        .chartXScale(domain: chart.xDomain)
+        .chartScrollableAxes(chart.zoomed ? .horizontal : [])
+        .chartXVisibleDomain(length: chart.visibleLength)
+        .chartScrollPosition(x: chart.scrollPosition)
+    } else {
+      content
+        .chartXScale(domain: chart.windowDomain)
+        .chartPlotStyle { $0.clipped() }
+    }
   }
 }
 

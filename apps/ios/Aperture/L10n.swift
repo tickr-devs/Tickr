@@ -231,6 +231,26 @@ enum L10n {
   }
 
   enum Home {
+    static var previousDay: LocalizedStringResource {
+      LocalizedStringResource("home.previousDay", defaultValue: "Previous trading day", bundle: L10n.bundle)
+    }
+    static var nextDay: LocalizedStringResource {
+      LocalizedStringResource("home.nextDay", defaultValue: "Next trading day", bundle: L10n.bundle)
+    }
+    static var backToToday: LocalizedStringResource {
+      LocalizedStringResource("home.backToToday", defaultValue: "Today", bundle: L10n.bundle)
+    }
+    static var recordedDay: LocalizedStringResource {
+      LocalizedStringResource("home.recordedDay", defaultValue: "Recorded day", bundle: L10n.bundle)
+    }
+    static var recordedNote: LocalizedStringResource {
+      LocalizedStringResource("home.recordedNote",
+        defaultValue: "Read-only from the bot's records. Commands are off for past days.", bundle: L10n.bundle)
+    }
+    static func pastDayNote(_ day: String) -> LocalizedStringResource {
+      LocalizedStringResource("home.pastDayNote",
+        defaultValue: "\(day) is a recorded day. Its trades are on the Activity tab.", bundle: L10n.bundle)
+    }
     static var noPosition: LocalizedStringResource {
       LocalizedStringResource("home.noPosition", defaultValue: "No open position.", bundle: L10n.bundle)
     }
@@ -242,7 +262,7 @@ enum L10n {
     }
     static func dayResult(_ result: String, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
       LocalizedStringResource("home.dayResult",
-        defaultValue: "Day result \(result), \(wins) wins, \(losses) losses",
+        defaultValue: "Day result \(result), wins: \(wins), losses: \(losses)",
         bundle: L10n.bundle)
     }
     static func protected(_ symbol: String) -> LocalizedStringResource {
@@ -460,6 +480,9 @@ enum L10n {
     }
     static var blocked: LocalizedStringResource {
       LocalizedStringResource("risk.blocked", defaultValue: "Blocked", bundle: L10n.bundle)
+    }
+    static var notNow: LocalizedStringResource {
+      LocalizedStringResource("risk.notNow", defaultValue: "Not now", bundle: L10n.bundle)
     }
     static var pausedByYou: LocalizedStringResource {
       LocalizedStringResource("risk.pausedByYou", defaultValue: "Operator pause", bundle: L10n.bundle)
@@ -722,6 +745,25 @@ enum L10n {
     }
   }
 
+  /// What VoiceOver says for states the screen shows only by colour or symbol.
+  enum Access {
+    static var proven: LocalizedStringResource {
+      LocalizedStringResource("access.proven", defaultValue: "proven", bundle: L10n.bundle)
+    }
+    static var notProven: LocalizedStringResource {
+      LocalizedStringResource("access.notProven", defaultValue: "not proven", bundle: L10n.bundle)
+    }
+    static var passed: LocalizedStringResource {
+      LocalizedStringResource("access.passed", defaultValue: "passed", bundle: L10n.bundle)
+    }
+    static var failed: LocalizedStringResource {
+      LocalizedStringResource("access.failed", defaultValue: "failed", bundle: L10n.bundle)
+    }
+    static var checking: LocalizedStringResource {
+      LocalizedStringResource("access.checking", defaultValue: "not checked yet", bundle: L10n.bundle)
+    }
+  }
+
   /// The "Watching closely" card (GET /watching).
   enum Watching {
     static var title: LocalizedStringResource {
@@ -749,6 +791,9 @@ enum L10n {
   }
 
   enum Lab {
+    static var noCause: LocalizedStringResource {
+      LocalizedStringResource("lab.noCause", defaultValue: "No cause recorded", bundle: L10n.bundle)
+    }
     static var refusals: LocalizedStringResource {
       LocalizedStringResource("lab.refusals", defaultValue: "Why signals were refused today", bundle: L10n.bundle)
     }
@@ -925,7 +970,7 @@ enum L10n {
       LocalizedStringResource("settings.failing", defaultValue: "\(count) failing", bundle: L10n.bundle)
     }
     static func brokerCounts(_ positions: Int, _ orders: Int) -> LocalizedStringResource {
-      LocalizedStringResource("settings.brokerCounts", defaultValue: "\(positions) pos · \(orders) orders", bundle: L10n.bundle)
+      LocalizedStringResource("settings.brokerCounts", defaultValue: "positions: \(positions) · orders: \(orders)", bundle: L10n.bundle)
     }
     static func stops(_ verified: Int, _ total: Int) -> LocalizedStringResource {
       LocalizedStringResource("settings.stops", defaultValue: "\(verified) of \(total) verified", bundle: L10n.bundle)

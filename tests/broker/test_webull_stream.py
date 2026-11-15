@@ -474,3 +474,145 @@ def test_rotation_at_the_cap_unsubscribes_before_subscribing():
     assert s._sync()
     assert provider.calls[-2:] == [("unsub", ["B"]), ("sub", ["E"])]
     assert provider.live == {"C", "D", "E"}
+
+
+def test_optional_subscribe_sends_only_its_symbols_and_joins_the_resubscribe():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)  # not connected: refused, nothing queued
+    s.on_connected()
+    s.subscribe_optional(["OBS", "AAA"], rec, 0)
+    assert sent == [("sub", ["AAA"]), ("sub", ["OBS"])] and s.symbols == {"AAA", "OBS"}
+    s.on_disconnected("blip")
+    s.on_connected()
+    assert sent[-1] == ("sub", ["AAA", "OBS"])
+
+
+def test_a_failed_optional_subscribe_never_reconnects():
+    s, sent, errors, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+
+    def refuse(symbols):
+        raise RuntimeError("HTTP 500")
+
+    s._send_subscribe = refuse
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    assert s.up and s.symbols == {"AAA"} and ("reconnect", []) not in sent
+    assert [where for where, _ in errors] == ["subscribe-optional"]
+    assert rec.transport == [(True, "connected, 1 symbol(s) subscribed")]
+
+
+def test_optional_requests_leave_the_budget_reserve_free():
+    s, sent, _, budget = session(limit=3)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()  # 1 of 3 subscribe requests used
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 2)  # would leave fewer than 2 free
+    s.subscribe_optional(["OBS"], rec, 1)
+    assert sent == [("sub", ["AAA"]), ("sub", ["OBS"])] and s.up
+
+
+def test_optional_subscribe_respects_the_symbol_limit():
+    s, sent, _, _ = session(max_symbols=1)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    with pytest.raises(SubscriptionLimit):
+        s.subscribe_optional(["OBS"], rec, 0)
+    assert sent == [("sub", ["AAA"])]
+
+
+def test_a_failed_optional_unsubscribe_drops_the_symbols_without_reconnecting():
+    s, sent, errors, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    s.subscribe_optional(["OBS"], rec, 0)
+
+    def refuse(symbols):
+        raise RuntimeError("HTTP 500")
+
+    s._send_unsubscribe = refuse
+    with pytest.raises(MarketDataError):
+        s.unsubscribe_optional(["OBS"], 0)
+    assert s.up and s.symbols == {"AAA"} and ("reconnect", []) not in sent
+    s.on_disconnected("blip")
+    s.on_connected()
+    assert sent[-1] == ("sub", ["AAA"])
+
+
+def test_after_a_failed_optional_send_the_next_optional_subscribe_cleans_up_first():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    good = s._send_subscribe
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    s._send_subscribe = lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    s.subscribe_optional(["OB2"], rec, 0)  # unsubscribes the maybe-held OBS first
+    assert sent[-2:] == [("unsub", ["OBS"]), ("sub", ["OB2"])] and s.up
+    assert s.symbols == {"AAA", "OB2"} and ("reconnect", []) not in sent
+
+
+def test_a_required_sync_never_sends_maybe_held_symbols():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+
+    def lost(symbols):
+        raise RuntimeError("timeout: answer lost")
+
+    good, s._send_subscribe = s._send_subscribe, lost
+    with pytest.raises(MarketDataError):
+        s.subscribe_optional(["OBS"], rec, 0)
+    s._send_subscribe = good
+    s.subscribe(["BBB"], rec)  # a failure here would reconnect: it must not carry OBS
+    assert sent[-1] == ("sub", ["BBB"]) and ("unsub", ["OBS"]) not in sent and s.up
+    s.on_disconnected("blip")
+    s.on_connected()  # a new connection forgets maybe-held symbols
+    s.subscribe_optional(["OB2"], rec, 0)
+    assert sent[-1] == ("sub", ["OB2"])
+
+
+def test_a_failed_cleanup_refuses_the_optional_subscribe_without_reconnecting():
+    s, sent, _, _ = session()
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    s.subscribe_optional(["OBS"], rec, 0)
+
+    def refuse(symbols):
+        raise RuntimeError("HTTP 500")
+
+    s._send_unsubscribe = refuse
+    with pytest.raises(MarketDataError):
+        s.unsubscribe_optional(["OBS"], 0)
+    with pytest.raises(MarketDataError):  # cleanup of OBS fails again: nothing new is sent
+        s.subscribe_optional(["OB2"], rec, 0)
+    assert ("sub", ["OB2"]) not in sent and s.up and ("reconnect", []) not in sent
+
+
+def test_a_refused_optional_unsubscribe_stays_counted_until_removed():
+    s, sent, _, _ = session(limit=3, max_symbols=2)
+    rec = Recorder()
+    s.subscribe(["AAA"], rec)
+    s.on_connected()
+    s.subscribe_optional(["OBS"], rec, 0)
+    with pytest.raises(MarketDataError):
+        s.unsubscribe_optional(["OBS"], 5)  # refused for the reserve: nothing sent
+    assert ("unsub", ["OBS"]) not in sent and s.symbols == {"AAA"}
+    with pytest.raises(MarketDataError):  # the cleanup is refused for the reserve too
+        s.subscribe_optional(["OB2"], rec, 5)

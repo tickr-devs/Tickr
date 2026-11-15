@@ -19,6 +19,16 @@ struct SkippedGroupsTests {
     return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
   }
 
+  /// A refusal the bot recorded without its cause.
+  func refusedWithoutCause(_ minute: Int, _ symbol: String) throws -> SkippedSignalV1 {
+    let json = """
+      {"at": "2026-11-13T16:\(String(format: "%02d", minute)):00.000Z", "symbol": "\(symbol)",
+       "strategy": {"name": "price-action", "version": "2"}, "admission": "refused", "refusal_cause": null, "refusal": null,
+       "entry_price": null, "stop_price": null, "checks": []}
+      """
+    return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
+  }
+
   @Test("A cause splits into its code and detail, and its times can be rewritten")
   func cause() throws {
     let cause = RefusalCause(Self.cooldown)
@@ -57,15 +67,48 @@ struct SkippedGroupsTests {
     #expect(groups[0].cause == nil)
   }
 
-  @Test("Refusals counted by cause, most first; signals not refused are left out")
+  /// A refused signal with only a structured refusal (no `refusal_cause` text).
+  func refused(_ minute: Int, _ symbol: String, code: String) throws -> SkippedSignalV1 {
+    let json = """
+      {"at": "2026-11-13T16:\(String(format: "%02d", minute)):00.000Z", "symbol": "\(symbol)",
+       "strategy": {"name": "price-action", "version": "2"}, "admission": "refused",
+       "refusal_cause": null,
+       "refusal": {"code": "\(code)", "message": "m\(minute)", "since": null, "until": null},
+       "entry_price": null, "stop_price": null, "checks": []}
+      """
+    return try Wire.decoder().decode(SkippedSignalV1.self, from: Data(json.utf8))
+  }
+
+  @Test("The structured refusal code groups signals whose messages differ")
+  func groupsByStructuredCode() throws {
+    let groups = SkippedGroup.make([
+      try refused(27, "MVLD", code: "SYMBOL_COOLDOWN"),
+      try refused(28, "MVLD", code: "SYMBOL_COOLDOWN"),
+      try refused(29, "MVLD", code: "QUOTE_STALE"),
+    ])
+    #expect(groups.map(\.count) == [1, 2])
+    #expect(groups.last?.first.refusal?.message == "m27")
+    // Without the cause text, the structured refusal is the row's cause.
+    #expect(groups.last?.cause?.code == "SYMBOL_COOLDOWN")
+    #expect(groups.last?.cause?.detail == "m28")
+    let counts = RefusalCount.make([
+      try refused(27, "MVLD", code: "SYMBOL_COOLDOWN"),
+      try refused(28, "MVLD", code: "SYMBOL_COOLDOWN"),
+    ])
+    #expect(counts.map(\.cause?.code) == ["SYMBOL_COOLDOWN"])
+    #expect(counts.map(\.count) == [2])
+  }
+
+  @Test("Refusals counted by cause, most first; one without a cause is kept; not refused are left out")
   func counts() throws {
     let counts = RefusalCount.make([
       try signal(27, "MVLD", cause: Self.cooldown),
       try signal(27, "BXVR", cause: "QUOTE_STALE: quote 9 s old > 5 s"),
       try signal(28, "MVLD", cause: Self.cooldown),
       try signal(29, "HLQN", cause: nil),
+      try refusedWithoutCause(30, "HLQN"),
     ])
-    #expect(counts.map(\.cause.code) == ["SYMBOL_COOLDOWN", "QUOTE_STALE"])
-    #expect(counts.map(\.count) == [2, 1])
+    #expect(counts.map(\.cause?.code) == ["SYMBOL_COOLDOWN", nil, "QUOTE_STALE"])
+    #expect(counts.map(\.count) == [2, 1, 1])
   }
 }
