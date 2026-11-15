@@ -174,6 +174,7 @@ public enum AdvisorWords {
   }
   public static var note: LocalizedStringResource {
     LocalizedStringResource("kit.advisor.note",
+      // swiftlint:disable:next line_length
       defaultValue: "The advisor never applies anything. Accept records your decision; running a version as an observer or active is a config edit on the Mac.",
       bundle: L10n.bundle)
   }
