@@ -87,7 +87,7 @@ private struct Header: View {
 
   var body: some View {
     HStack(alignment: .center, spacing: Tokens.Space.l) {
-      BrandMark(live: model.isCurrent)
+      BrandMark(event: model.isCurrent ? model.status?.activity : nil)
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.m) {
           HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {

@@ -49,9 +49,9 @@ struct HomeView: View {
       }
     }
     .toolbar {
-      // The mark the opening animation flies into (LaunchHandoff); it pulses while data is current.
+      // The mark the opening animation flies into (LaunchHandoff); it flashes once on each bot event.
       ToolbarItem(placement: .topBarLeading) {
-        BrandMark(size: Tokens.Size.logoSmall, live: model.isFresh)
+        BrandMark(size: Tokens.Size.logoSmall, event: model.isFresh ? model.status?.activity : nil)
           .onGeometryChange(for: CGPoint.self) { proxy in
             let frame = proxy.frame(in: .global)
             return CGPoint(x: frame.midX, y: frame.midY)

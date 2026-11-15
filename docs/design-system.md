@@ -197,8 +197,9 @@ breaks upward, with a spark at its end.
   (`LaunchBackground` = `background`, `LaunchMark`). Change the script and run it; never edit the
   generated files. `tests/test_brand_assets.py` fails when they differ.
 - In the apps the same line is `BrandMark` (ApertureDesign): it draws itself on appear and its
-  spark then pulses while the bot's data is current (macOS Overview header, iOS Home bar); still
-  otherwise and with Reduce Motion.
+  spark then sends one ring each time the bot does something (`StatusV1.activity` changes: state,
+  gate, fences, positions, trades, commands; never the clock). Nothing loops: motion only on a real
+  event (owner's rule, 2026-11-15). Still with Reduce Motion. macOS Overview header, iOS Home bar.
 - iOS opening (`LaunchHandoff`): the app starts exactly as the launch screen, flashes the spark
   once, then flies the mark into Home's bar mark while the background fades (`launchHoldSeconds`,
   `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`). macOS has no launch screen.

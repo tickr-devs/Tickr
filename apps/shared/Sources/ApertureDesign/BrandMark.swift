@@ -3,8 +3,9 @@ import SwiftUI
 /// The Tickr mark: a price line drawn as a tick that breaks upward, with a spark at its end. The
 /// app icon and the iOS launch screen draw the same line (apps/scripts/make_brand_assets.py).
 ///
-/// On appear the line draws itself and the area under it fades in. While `live` (the bot's data is
-/// current) the spark then keeps pulsing; otherwise, and with Reduce Motion, the mark stands still.
+/// On appear the line draws itself and the area under it fades in. After that it moves only on a
+/// real event: each time `event` changes (new bot activity) the spark sends out one ring. Nothing
+/// loops; with Reduce Motion the mark stands still.
 ///
 /// Empty screens show it as their illustration (`BrandMark.empty`): in brand colours when there is
 /// simply nothing yet, muted when the bot cannot be reached.
@@ -19,10 +20,12 @@ public struct BrandMark: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drawn: CGFloat = 0
-  @State private var breathing = false
+  @State private var ringScale: CGFloat = 1
+  @State private var ringOpacity = 0.0
   @State private var settled = false
   let size: CGFloat
-  let live: Bool
+  /// What the bot has done; a change flashes the spark once. Nil when nothing is known.
+  let event: AnyHashable?
   let tone: Tone
 
   /// Points of the line as shares of the mark's side, left to right (POINTS in make_brand_assets.py).
@@ -37,15 +40,15 @@ public struct BrandMark: View {
   public static let sparkDiameter = 0.09
   static let areaBottom = 0.86
 
-  public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand) {
+  public init(size: CGFloat = Tokens.Size.logo, event: AnyHashable?, tone: Tone = .brand) {
     self.size = size
-    self.live = live
+    self.event = event
     self.tone = tone
   }
 
   /// The illustration of an empty screen: large and still.
   public static func empty(_ tone: Tone = .brand) -> BrandMark {
-    BrandMark(size: Tokens.Size.emptyMark, live: false, tone: tone)
+    BrandMark(size: Tokens.Size.emptyMark, event: nil, tone: tone)
   }
 
   private var lineColor: Color { tone == .brand ? Palette.profit : Palette.textQuaternary }
@@ -65,16 +68,12 @@ public struct BrandMark: View {
         .stroke(
           LinearGradient(colors: [lineColor, lineEnd], startPoint: .topTrailing, endPoint: .bottomLeading),
           style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
-      if live && settled && !reduceMotion {
-        Circle()
-          .fill(lineColor.opacity(Tokens.Opacity.faint))
-          .frame(width: diameter, height: diameter)
-          .scaleEffect(breathing ? Tokens.Motion.pulseScale : 1)
-          .opacity(breathing ? 0 : 1)
-          .position(x: spark.x * size, y: spark.y * size)
-          .onAppear(perform: pulse)
-          .onDisappear { breathing = false }
-      }
+      Circle()
+        .fill(lineColor)
+        .frame(width: diameter, height: diameter)
+        .scaleEffect(ringScale)
+        .opacity(ringOpacity)
+        .position(x: spark.x * size, y: spark.y * size)
       Circle()
         .fill(lineColor)
         .frame(width: diameter, height: diameter)
@@ -83,6 +82,7 @@ public struct BrandMark: View {
     }
     .frame(width: size, height: size)
     .onAppear(perform: appear)
+    .onChange(of: event) { flash() }
     .accessibilityHidden(true)
   }
 
@@ -98,9 +98,18 @@ public struct BrandMark: View {
     }
   }
 
-  private func pulse() {
-    withAnimation(.easeOut(duration: Tokens.Motion.pulseSeconds).repeatForever(autoreverses: false)) {
-      breathing = true
+  /// One ring from the spark: a real event happened.
+  private func flash() {
+    guard settled, event != nil, !reduceMotion else { return }
+    var reset = Transaction()
+    reset.disablesAnimations = true
+    withTransaction(reset) {
+      ringScale = 1
+      ringOpacity = Tokens.Opacity.faint
+    }
+    withAnimation(.easeOut(duration: Tokens.Motion.pulseSeconds)) {
+      ringScale = Tokens.Motion.pulseScale
+      ringOpacity = 0
     }
   }
 }
@@ -133,7 +142,7 @@ struct TickArea: Shape {
 
 #Preview {
   HStack {
-    BrandMark(live: true)
+    BrandMark(event: 1)
     BrandMark.empty()
     BrandMark.empty(.muted)
   }
