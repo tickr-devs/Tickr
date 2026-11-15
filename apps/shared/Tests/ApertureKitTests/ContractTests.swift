@@ -76,6 +76,7 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(flow.chips.first?.sources == [.gainers, .topActives])
     #expect(flow.chips.first { $0.symbol == "SPY" }?.excludedCause?.hasPrefix("SECURITY_TYPE_NOT_ALLOWED") == true)
     #expect(flow.reconcile.agreement == .match)
+    #expect(flow.stops.map(\.state) == [.verified, .neverVerified, .pending])
     let empty = try Wire.decoder().decode(FlowV1.self, from: fixture("flow-v1.empty.json"))
     #expect(empty.reconcile.agreement == nil)
     #expect(empty.reconcile.agreementCause != nil)
