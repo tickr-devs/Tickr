@@ -35,6 +35,20 @@ struct AdvisorPathTests {
     #expect(all.lead?.id == proposal.id)
   }
 
+  @Test("A proposal judged only under another name has no judge result and is not judged")
+  func otherJudge() throws {
+    var raw = try #require(try JSONSerialization.jsonObject(with: fixture("advisor-runs-v1.json")) as? [String: Any])
+    var runs = try #require(raw["runs"] as? [[String: Any]])
+    var judges = try #require(runs[0]["judges"] as? [[String: Any]])
+    judges[0]["candidate"] = "price-action-v1 v9"
+    runs[0]["judges"] = judges
+    raw["runs"] = runs
+    let decoded = try Wire.decoder().decode(AdvisorRunsV1.self, from: JSONSerialization.data(withJSONObject: raw))
+    let proposal = decoded.runs[0]
+    #expect(proposal.judge == nil)
+    #expect(!proposal.reached(.judged, settings: nil))
+  }
+
   @Test("Numbers move up or down; a switch only changes")
   func directions() throws {
     let changes = try runs().runs[0].changes

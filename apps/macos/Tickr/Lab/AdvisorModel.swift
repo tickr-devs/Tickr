@@ -8,8 +8,8 @@ import Observation
 @MainActor
 @Observable
 final class AdvisorModel {
-  /// Seconds between two reads while a screen that shows the advisor is open: runs come from the
-  /// owner's own `python -m tickr.advisor`, a few a day at most.
+  /// Seconds between two reads of the runs (the main window reads them while it is open): runs
+  /// come from the owner's own `python -m tickr.advisor`, a few a day at most.
   static let refreshSeconds: Double = 60
 
   /// The runs of the bot at `source`, once read.
@@ -18,44 +18,49 @@ final class AdvisorModel {
   private(set) var failure: String?
   /// The run whose decision is on its way to the bot.
   private(set) var deciding: String?
-  /// Why the last decision was not recorded (the run is gone, or takes no decision).
-  private(set) var decisionFailure: String?
+  /// Why a decision was not recorded (the run is gone, or takes no decision), by run id, so one
+  /// run's failure never shows on another; cleared once that run's decision is recorded.
+  private(set) var decisionFailures: [String: String] = [:]
   /// The Lab shows the advisor page instead of its cards.
   var pageOpen = false
   /// The run the page shows; nil = the leading one.
   var selected: String?
   /// The bot the runs came from.
   @ObservationIgnored private var source: URL?
+  /// Bumped when a decision is sent and when its answer is in: a read started before then may
+  /// predate the decision and must not replace the answer's runs.
+  @ObservationIgnored private var decisionTurn = 0
 
   /// The run the page shows.
   var shown: AdvisorRunV1? {
     selected.flatMap { id in runs?.runs.first { $0.id == id } } ?? runs?.lead
   }
 
-  /// Open the page on `run` (the leading one when nil).
+  /// Open the page on `run` (the leading one when nil). The run is pinned, so a later read that
+  /// changes the leading run never moves the page to another one.
   func open(_ run: String? = nil) {
-    selected = run
-    decisionFailure = nil
+    selected = run ?? runs?.lead?.id
     pageOpen = true
   }
 
   /// Read the runs of the bot at `url`; another bot's runs are dropped first.
   func load(_ url: URL) async {
     reset(for: url)
+    let turn = decisionTurn
     do {
       let read = try await Container.shared.apiClient(APIClient.Endpoint(baseURL: url)).advisor()
-      guard url == source else { return }
+      guard url == source, turn == decisionTurn else { return }
       runs = read
       failure = nil
     } catch is CancellationError {
       return
     } catch {
-      guard url == source else { return }
+      guard url == source, turn == decisionTurn else { return }
       failure = AppModel.describe(error)
     }
   }
 
-  /// Read the runs until cancelled; used while a screen that shows them is open.
+  /// Read the runs until cancelled; used while the main window is open.
   func follow(_ url: URL) async {
     while !Task.isCancelled {
       await load(url)
@@ -67,21 +72,25 @@ final class AdvisorModel {
   func decide(_ url: URL, run: String, verdict: OwnerVerdict) async {
     reset(for: url)
     deciding = run
-    defer { deciding = nil }
+    decisionTurn += 1
+    defer {
+      deciding = nil
+      decisionTurn += 1
+    }
     do {
       let read = try await Container.shared.apiClient(APIClient.Endpoint(baseURL: url))
         .decideAdvisor(run: run, verdict: verdict)
       guard url == source else { return }
       runs = read
-      decisionFailure = nil
+      decisionFailures[run] = nil
     } catch APIError.refused(_, _, let cause) {
       guard url == source else { return }
-      decisionFailure = cause
+      decisionFailures[run] = cause
     } catch is CancellationError {
       return
     } catch {
       guard url == source else { return }
-      decisionFailure = AppModel.describe(error)
+      decisionFailures[run] = AppModel.describe(error)
     }
   }
 
@@ -89,7 +98,7 @@ final class AdvisorModel {
     guard source != url else { return }
     runs = nil
     failure = nil
-    decisionFailure = nil
+    decisionFailures = [:]
     selected = nil
     source = url
   }

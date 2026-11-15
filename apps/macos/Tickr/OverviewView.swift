@@ -1232,7 +1232,11 @@ private struct ObserversCard: View {
 
   var body: some View {
     Card(L10n.Observers.title) {
-      MoreButton(L10n.RiskRoom.details) { model.section = .lab }
+      MoreButton(L10n.RiskRoom.details) {
+        // The Lab's cards, where the observers are, not the advisor page left open earlier.
+        advisor.pageOpen = false
+        model.section = .lab
+      }
     } content: {
       if let observers = model.observers?.observers {
         if observers.isEmpty {

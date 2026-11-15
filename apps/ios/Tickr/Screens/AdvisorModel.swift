@@ -13,10 +13,14 @@ final class AdvisorModel {
   private(set) var failure: String?
   /// The run whose decision is on its way to the bot.
   private(set) var deciding: String?
-  /// Why the last decision was not recorded (the run is gone, or takes no decision).
-  private(set) var decisionFailure: String?
+  /// Why a decision was not recorded (the run is gone, or takes no decision), by run id, so one
+  /// run's failure never shows on another; cleared once that run's decision is recorded.
+  private(set) var decisionFailures: [String: String] = [:]
   /// The bot the runs came from.
   @ObservationIgnored private var source: URL?
+  /// Bumped when a decision is sent and when its answer is in: a read started before then may
+  /// predate the decision and must not replace the answer's runs.
+  @ObservationIgnored private var decisionTurn = 0
 
   /// The bot's API at `url`, from the container, with the paired token only where it may go.
   private func client(_ url: URL) -> APIClient {
@@ -31,15 +35,16 @@ final class AdvisorModel {
   /// Read the runs of the bot at `url`; another bot's runs are dropped first.
   func load(_ url: URL) async {
     reset(for: url)
+    let turn = decisionTurn
     do {
       let read = try await client(url).advisor()
-      guard url == source else { return }
+      guard url == source, turn == decisionTurn else { return }
       runs = read
       failure = nil
     } catch is CancellationError {
       return
     } catch {
-      guard url == source else { return }
+      guard url == source, turn == decisionTurn else { return }
       failure = AppModel.describe(error)
     }
   }
@@ -48,20 +53,24 @@ final class AdvisorModel {
   func decide(_ url: URL, run: String, verdict: OwnerVerdict) async {
     reset(for: url)
     deciding = run
-    defer { deciding = nil }
+    decisionTurn += 1
+    defer {
+      deciding = nil
+      decisionTurn += 1
+    }
     do {
       let read = try await client(url).decideAdvisor(run: run, verdict: verdict)
       guard url == source else { return }
       runs = read
-      decisionFailure = nil
+      decisionFailures[run] = nil
     } catch APIError.refused(_, _, let cause) {
       guard url == source else { return }
-      decisionFailure = cause
+      decisionFailures[run] = cause
     } catch is CancellationError {
       return
     } catch {
       guard url == source else { return }
-      decisionFailure = AppModel.describe(error)
+      decisionFailures[run] = AppModel.describe(error)
     }
   }
 
@@ -69,7 +78,7 @@ final class AdvisorModel {
     guard source != url else { return }
     runs = nil
     failure = nil
-    decisionFailure = nil
+    decisionFailures = [:]
     source = url
   }
 }

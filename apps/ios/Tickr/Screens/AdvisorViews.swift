@@ -49,7 +49,12 @@ enum AdvisorLook {
       case .active: activeSymbol
       }
       let state: PathStep.State = rejected ? .refused : run.reached(step, settings: settings) ? .done : .pending
-      return PathStep(id: step.rawValue, title: Text(step.words), systemImage: symbol, state: state)
+      let value = switch state {
+      case .done: AdvisorWords.stepDone
+      case .refused: AdvisorWords.stepRefused
+      case .pending: AdvisorWords.stepPending
+      }
+      return PathStep(id: step.rawValue, title: Text(step.words), systemImage: symbol, state: state, value: Text(value))
     }
   }
 
@@ -76,7 +81,10 @@ enum AdvisorLook {
         return IntervalRow(id: name, name: name, detail: detail, color: color,
           low: stats?.meanRIntervalLow.map { scale.fraction($0.value) },
           mean: mean.map(scale.fraction),
-          high: stats?.meanRIntervalHigh.map { scale.fraction($0.value) })
+          high: stats?.meanRIntervalHigh.map { scale.fraction($0.value) },
+          value: String(localized: AdvisorWords.interval(
+            stats?.meanRIntervalLow.map { r($0.value) } ?? Format.missing,
+            stats?.meanRIntervalHigh.map { r($0.value) } ?? Format.missing)))
       }
   }
 }
@@ -170,12 +178,29 @@ struct ChangeLine: View {
   let change: AdvisorChangeV1
 
   var body: some View {
-    HStack(spacing: Tokens.Space.s) {
-      Text(verbatim: change.path)
-        .font(Tokens.Typography.captionMono.weight(.semibold))
-        .lineLimit(1)
-        .truncationMode(.middle)
-      Spacer(minLength: Tokens.Space.xs)
+    // On one line while it fits; else the values go under the key, so neither is squeezed.
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: Tokens.Space.s) {
+        key
+        Spacer(minLength: Tokens.Space.xs)
+        values
+      }
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        key
+        values
+      }
+    }
+  }
+
+  private var key: some View {
+    Text(verbatim: change.path)
+      .font(Tokens.Typography.captionMono.weight(.semibold))
+      .lineLimit(1)
+      .truncationMode(.middle)
+  }
+
+  private var values: some View {
+    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       Text(verbatim: change.now)
         .font(Tokens.Typography.captionMono)
         .strikethrough()
@@ -217,6 +242,8 @@ struct AdvisorProposalView: View {
         InfoCaption(AdvisorWords.note)
         InfoCaption(AdvisorWords.tunedOn(run.tunedOn))
         InfoCaption(AdvisorWords.judgeOn(run.judgeOn))
+      } else if advisor.runs != nil {
+        InfoCaption(AdvisorWords.runGone)
       }
     }
     .safeAreaInset(edge: .bottom) {
@@ -323,7 +350,7 @@ struct AdvisorProposalView: View {
   @ViewBuilder private func decisionBar(_ run: AdvisorRunV1) -> some View {
     if run.status == .proposed || run.status == .idea {
       VStack(spacing: Tokens.Space.s) {
-        if let failure = ownerFailure ?? advisor.decisionFailure {
+        if let failure = ownerFailure ?? advisor.decisionFailures[run.id] {
           InfoCaption(AdvisorWords.decisionFailed(failure), systemImage: LabView.warningSymbol, tone: .warning)
         }
         if let decision = run.decision {
@@ -369,6 +396,7 @@ struct AdvisorProposalView: View {
 
   private func send(_ verdict: OwnerVerdict) async {
     guard let url else { return }
+    ownerFailure = nil
     await advisor.decide(url, run: runID, verdict: verdict)
   }
 }

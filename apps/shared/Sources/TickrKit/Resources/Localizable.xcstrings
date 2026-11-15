@@ -103,23 +103,6 @@
         }
       }
     },
-    "kit.advisor.changes" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld changes"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "изменений: %lld"
-          }
-        }
-      }
-    },
     "kit.advisor.confirmReason" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -426,6 +409,23 @@
         }
       }
     },
+    "kit.advisor.interval" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "interval %@ to %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "интервал от %@ до %@"
+          }
+        }
+      }
+    },
     "kit.advisor.judgeOn" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -681,6 +681,23 @@
         }
       }
     },
+    "kit.advisor.runGone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This run is no longer among the newest runs the bot lists."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этого запуска больше нет среди последних, которые показывает бот."
+          }
+        }
+      }
+    },
     "kit.advisor.simulated" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -817,6 +834,23 @@
         }
       }
     },
+    "kit.advisor.step.done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reached"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пройдено"
+          }
+        }
+      }
+    },
     "kit.advisor.step.judged" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -851,6 +885,23 @@
         }
       }
     },
+    "kit.advisor.step.pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not reached"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не пройдено"
+          }
+        }
+      }
+    },
     "kit.advisor.step.proposed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -864,6 +915,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Предложено"
+          }
+        }
+      }
+    },
+    "kit.advisor.step.refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rejected here"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "отклонено здесь"
           }
         }
       }
@@ -993,7 +1061,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld runs couldn't be read"
+            "value" : "Unreadable runs: %lld"
           }
         },
         "ru" : {

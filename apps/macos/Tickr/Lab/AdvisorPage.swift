@@ -55,7 +55,12 @@ enum AdvisorLook {
       case .active: activeSymbol
       }
       let state: PathStep.State = rejected ? .refused : run.reached(step, settings: settings) ? .done : .pending
-      return PathStep(id: step.rawValue, title: Text(step.words), systemImage: symbol, state: state)
+      let value = switch state {
+      case .done: AdvisorWords.stepDone
+      case .refused: AdvisorWords.stepRefused
+      case .pending: AdvisorWords.stepPending
+      }
+      return PathStep(id: step.rawValue, title: Text(step.words), systemImage: symbol, state: state, value: Text(value))
     }
   }
 
@@ -88,7 +93,10 @@ enum AdvisorLook {
       return IntervalRow(id: name, name: name, detail: detail, color: color,
         low: stats?.meanRIntervalLow.map { scale.fraction($0.value) },
         mean: mean.map(scale.fraction),
-        high: stats?.meanRIntervalHigh.map { scale.fraction($0.value) })
+        high: stats?.meanRIntervalHigh.map { scale.fraction($0.value) },
+        value: String(localized: AdvisorWords.interval(
+          stats?.meanRIntervalLow.map { r($0.value) } ?? Format.missing,
+          stats?.meanRIntervalHigh.map { r($0.value) } ?? Format.missing)))
     }
   }
 }
@@ -138,12 +146,29 @@ struct ChangeLine: View {
   let change: AdvisorChangeV1
 
   var body: some View {
-    HStack(spacing: Tokens.Space.s) {
-      Text(verbatim: change.path)
-        .font(Tokens.Typography.captionMono.weight(.semibold))
-        .lineLimit(1)
-        .truncationMode(.middle)
-      Spacer(minLength: Tokens.Space.xs)
+    // On one line while it fits; else the values go under the key, so neither is squeezed.
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: Tokens.Space.s) {
+        key
+        Spacer(minLength: Tokens.Space.xs)
+        values
+      }
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        key
+        values
+      }
+    }
+  }
+
+  private var key: some View {
+    Text(verbatim: change.path)
+      .font(Tokens.Typography.captionMono.weight(.semibold))
+      .lineLimit(1)
+      .truncationMode(.middle)
+  }
+
+  private var values: some View {
+    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       Text(verbatim: change.now)
         .font(Tokens.Typography.captionMono)
         .strikethrough()
@@ -166,31 +191,44 @@ struct ChangeLine: View {
 struct AdvisorPage: View {
   @Environment(AppModel.self) private var model
   @Environment(AdvisorModel.self) private var advisor
-  @State private var confirming = false
+  /// The run whose Accept is being confirmed, taken when Accept was clicked, so a read that
+  /// arrives while the dialog is open can never point the decision at another run.
+  @State private var accepting: AdvisorRunV1?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
       Divider()
-      HStack(alignment: .top, spacing: 0) {
-        list
-          .frame(width: Tokens.Size.sideColumn)
-        Divider()
-        if let run = advisor.shown {
-          detail(run)
-        } else {
-          Footnote(verbatim: advisor.runs?.cause ?? String(localized: AdvisorWords.noRuns))
-            .padding(Tokens.Space.xl)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      // The run list beside the run while the window has room for both, else the run alone.
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .top, spacing: 0) {
+          list
+            .frame(width: Tokens.Size.sideColumn)
+          Divider()
+          // An ideal width of one grid column: the run's long texts must not make the pair look
+          // too wide to fit.
+          shown
+            .frame(minWidth: Tokens.Size.gridColumnMin, idealWidth: Tokens.Size.gridColumnMin, maxWidth: .infinity)
         }
+        shown
       }
     }
-    .confirmationDialog(Text(AdvisorWords.confirmTitle(advisor.shown?.title ?? Format.missing)),
-      isPresented: $confirming) {
-      Button { decide(.accepted) } label: { Text(AdvisorWords.accept) }
+    .confirmationDialog(Text(AdvisorWords.confirmTitle(accepting?.title ?? Format.missing)),
+      isPresented: Binding { accepting != nil } set: { if !$0 { accepting = nil } }, presenting: accepting) { run in
+      Button { decide(run.id, .accepted) } label: { Text(AdvisorWords.accept) }
       Button(role: .cancel) {} label: { Text(AdvisorWords.cancel) }
-    } message: {
+    } message: { _ in
       Text(AdvisorWords.confirmText)
+    }
+  }
+
+  @ViewBuilder private var shown: some View {
+    if let run = advisor.shown {
+      detail(run)
+    } else {
+      Footnote(verbatim: advisor.runs?.cause ?? String(localized: AdvisorWords.noRuns))
+        .padding(Tokens.Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
   }
 
@@ -271,7 +309,7 @@ struct AdvisorPage: View {
       Group {
         if let decision = run.decision {
           Text(decision.verdict == .accepted ? AdvisorWords.acceptedNext : AdvisorWords.rejectedRecorded)
-        } else if let failure = advisor.decisionFailure {
+        } else if let failure = advisor.decisionFailures[run.id] {
           Text(AdvisorWords.decisionFailed(failure)).foregroundStyle(Palette.warningText)
         }
       }
@@ -279,11 +317,11 @@ struct AdvisorPage: View {
       .foregroundStyle(Palette.textTertiary)
       Spacer(minLength: Tokens.Space.s)
       if run.status == .proposed || run.status == .idea {
-        Button { decide(.rejected) } label: {
+        Button { decide(run.id, .rejected) } label: {
           Label { Text(AdvisorWords.reject) } icon: { Image(systemName: AdvisorLook.rejectedSymbol) }
         }
         .buttonStyle(.action(.destructive))
-        Button { confirming = true } label: {
+        Button { accepting = run } label: {
           Label { Text(AdvisorWords.accept) } icon: { Image(systemName: AdvisorLook.decidedSymbol) }
         }
         .buttonStyle(.action(.primary))
@@ -294,8 +332,7 @@ struct AdvisorPage: View {
     .tickrCard(radius: Tokens.Radius.large)
   }
 
-  private func decide(_ verdict: OwnerVerdict) {
-    guard let run = advisor.shown?.id else { return }
+  private func decide(_ run: String, _ verdict: OwnerVerdict) {
     let url = model.baseURL
     Task { await advisor.decide(url, run: run, verdict: verdict) }
   }

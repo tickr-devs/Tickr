@@ -42,9 +42,11 @@ extension AdvisorRunV1 {
     return String(proposed[..<space]) + Self.folderSeparator + String(proposed[proposed.index(after: space)...])
   }
 
-  /// The judge result of the proposed version, else the first one (an idea's module).
+  /// The judge result of the proposed version; for an idea (nothing proposed), its module's first.
+  /// A proposal judged only under another name has none: its verdict is not this version's.
   public var judge: AdvisorJudgeV1? {
-    judges.first { $0.candidate == proposed } ?? judges.first
+    guard let proposed else { return judges.first }
+    return judges.first { $0.candidate == proposed }
   }
 
   /// Whether the path has reached `step`. Observer and active need the bot's settings: nil
@@ -52,7 +54,7 @@ extension AdvisorRunV1 {
   public func reached(_ step: AdvisorStep, settings: SettingsV1?) -> Bool {
     switch step {
     case .proposed: status == .proposed || status == .idea
-    case .judged: !judges.isEmpty
+    case .judged: proposed == nil ? !judges.isEmpty : judge != nil
     case .decided: decision != nil
     case .observer: proposedFolder.map { settings?.observers.contains($0) ?? false } ?? false
     case .active: proposedFolder != nil && proposedFolder == settings?.activeStrategy

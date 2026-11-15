@@ -12,17 +12,22 @@ public struct PathStep: Identifiable {
   public let title: Text
   public let systemImage: String
   public let state: State
+  /// The state in words, for VoiceOver (the symbol does not change with it).
+  public let value: Text
 
-  public init(id: Int, title: Text, systemImage: String, state: State) {
+  public init(id: Int, title: Text, systemImage: String, state: State, value: Text) {
     self.id = id
     self.title = title
     self.systemImage = systemImage
     self.state = state
+    self.value = value
   }
 }
 
 /// Steps left to right, each a dot with its title under it; the line between two dots is
-/// coloured when both are reached. A step that changes state pops (an event, never a loop).
+/// coloured when both are reached. Where the titles do not fit side by side on one line each (a
+/// narrow phone, large text), the steps stack top to bottom instead, so no title breaks inside a
+/// word. A step that changes state pops (an event, never a loop).
 public struct StepPath: View {
   let steps: [PathStep]
 
@@ -31,6 +36,30 @@ public struct StepPath: View {
   }
 
   public var body: some View {
+    ViewThatFits(in: .horizontal) {
+      across
+      down
+    }
+  }
+
+  private var down: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.s) {
+      ForEach(steps) { step in
+        HStack(spacing: Tokens.Space.s) {
+          dot(step)
+          step.title
+            .font(Tokens.Typography.annotation)
+            .foregroundStyle(step.state == .pending ? Palette.textQuaternary : Palette.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(step.value)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var across: some View {
     HStack(alignment: .top, spacing: 0) {
       ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
         VStack(spacing: Tokens.Space.xs) {
@@ -46,10 +75,12 @@ public struct StepPath: View {
             .font(Tokens.Typography.annotation)
             .foregroundStyle(step.state == .pending ? Palette.textQuaternary : Palette.textPrimary)
             .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(1)
+            .fixedSize()
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(step.value)
       }
     }
   }
@@ -94,8 +125,11 @@ public struct IntervalRow: Identifiable {
   public let low: Double?
   public let mean: Double?
   public let high: Double?
+  /// The interval's bounds in words, for VoiceOver (the bar itself is not read).
+  public let value: String
 
-  public init(id: String, name: String, detail: String, color: Color, low: Double?, mean: Double?, high: Double?) {
+  public init(id: String, name: String, detail: String, color: Color, low: Double?, mean: Double?, high: Double?,
+    value: String) {
     self.id = id
     self.name = name
     self.detail = detail
@@ -103,6 +137,7 @@ public struct IntervalRow: Identifiable {
     self.low = low
     self.mean = mean
     self.high = high
+    self.value = value
   }
 }
 
@@ -137,6 +172,7 @@ public struct IntervalBars: View {
             .frame(height: Tokens.Size.glyphCompact)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityValue(Text(verbatim: row.value))
       }
       Text(verbatim: axis)
         .font(Tokens.Typography.annotation)

@@ -23,7 +23,12 @@ public enum AdvisorWords {
       bundle: L10n.bundle)
   }
   public static func unreadable(_ count: Int) -> LocalizedStringResource {
-    LocalizedStringResource("kit.advisor.unreadable", defaultValue: "\(count) runs couldn't be read", bundle: L10n.bundle)
+    LocalizedStringResource("kit.advisor.unreadable", defaultValue: "Unreadable runs: \(count)", bundle: L10n.bundle)
+  }
+  public static var runGone: LocalizedStringResource {
+    LocalizedStringResource("kit.advisor.runGone",
+      defaultValue: "This run is no longer among the newest runs the bot lists.",
+      bundle: L10n.bundle)
   }
   public static var stateAwaiting: LocalizedStringResource {
     LocalizedStringResource("kit.advisor.state.awaiting", defaultValue: "awaiting review", bundle: L10n.bundle)
@@ -49,9 +54,6 @@ public enum AdvisorWords {
   public static func ideaName(_ name: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.advisor.ideaName", defaultValue: "idea · \(name)", bundle: L10n.bundle)
   }
-  public static func changes(_ count: Int) -> LocalizedStringResource {
-    LocalizedStringResource("kit.advisor.changes", defaultValue: "\(count) changes", bundle: L10n.bundle)
-  }
   public static var stepProposed: LocalizedStringResource {
     LocalizedStringResource("kit.advisor.step.proposed", defaultValue: "Proposed", bundle: L10n.bundle)
   }
@@ -66,6 +68,18 @@ public enum AdvisorWords {
   }
   public static var stepActive: LocalizedStringResource {
     LocalizedStringResource("kit.advisor.step.active", defaultValue: "Active · config", bundle: L10n.bundle)
+  }
+  public static var stepDone: LocalizedStringResource {
+    LocalizedStringResource("kit.advisor.step.done", defaultValue: "reached", bundle: L10n.bundle)
+  }
+  public static var stepRefused: LocalizedStringResource {
+    LocalizedStringResource("kit.advisor.step.refused", defaultValue: "rejected here", bundle: L10n.bundle)
+  }
+  public static var stepPending: LocalizedStringResource {
+    LocalizedStringResource("kit.advisor.step.pending", defaultValue: "not reached", bundle: L10n.bundle)
+  }
+  public static func interval(_ low: String, _ high: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.advisor.interval", defaultValue: "interval \(low) to \(high)", bundle: L10n.bundle)
   }
   public static var path: LocalizedStringResource {
     LocalizedStringResource("kit.advisor.path", defaultValue: "Proposal path", bundle: L10n.bundle)
