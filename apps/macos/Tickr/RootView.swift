@@ -487,8 +487,11 @@ private struct DayStepper: View {
   static let nextGlyph = "›"
   /// Gap between the connection status and the stepper, in points (added to the items' gap).
   static let connectionGap: CGFloat = 10
-  /// Least width of the day label, in points, so the arrows keep their place from day to day.
-  static let dayMinWidth: CGFloat = 118
+  /// Least width of the day label, in points, so the arrows keep their place from day to day:
+  /// holds the widest live-day label in 11.5-point mono (`Typography.dayStepper`), the Russian
+  /// "Сб, 28 февр. · сегодня" (157 points; "сент." and "февр." are the longest month
+  /// abbreviations), as well as the English "Wed Jan 28 · today" (128).
+  static let dayMinWidth: CGFloat = 158
   /// Accessibility id of the DEMO chip, for the UI tests, and its symbol.
   static let demoChipID = "toolbar-demo"
   static let demoSymbol = "theatermasks.fill"
