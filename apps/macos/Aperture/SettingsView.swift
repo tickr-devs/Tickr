@@ -326,9 +326,9 @@ private struct JobsSection: View {
               .font(Tokens.Typography.bodyMono)
           } label: {
             Label {
-              Text(verbatim: job.name)
+              Text(verbatim: Self.title(job.name))
             } icon: {
-              StateGlyph(Self.launchdSymbol, tone: .info, label: Text(verbatim: job.name), style: .compact)
+              StateGlyph(Self.launchdSymbol, tone: .info, label: Text(verbatim: Self.title(job.name)), style: .compact)
             }
           }
         }
@@ -345,20 +345,37 @@ private struct JobsSection: View {
     }
   }
 
+  /// The bot's state as its status reports it; a stale status proves nothing about the bot now, so
+  /// it says so instead of repeating the last state.
   private func service(_ jobs: JobsV1) -> some View {
-    let running = jobs.botState == .running
-    let title = jobs.botState?.title ?? String(localized: L10n.Settings.notRunning)
+    let running = jobs.botState == .running && !jobs.statusStale
+    let tone: Tone = jobs.statusStale ? .warning : running ? .accent : .neutral
+    let title = jobs.statusStale ? String(localized: L10n.Settings.notReported)
+      : jobs.botState?.title ?? String(localized: L10n.Settings.notRunning)
     return LabeledContent {
-      StatusPill(verbatim: title, tone: running ? .accent : .neutral, live: running && !jobs.statusStale,
-        event: jobs.servedAt)
+      StatusPill(verbatim: title, tone: tone, live: running, event: jobs.servedAt)
     } label: {
       Label {
         Text(L10n.Settings.botService)
       } icon: {
-        StateGlyph(Self.serviceSymbol, tone: running ? .accent : .neutral, label: L10n.Settings.botService,
-          style: .compact)
+        StateGlyph(Self.serviceSymbol, tone: tone, label: L10n.Settings.botService, style: .compact)
       }
     }
+  }
+
+  /// A launchd job's name in the person's language; a job this app does not know reads as named.
+  static func title(_ name: String) -> String {
+    guard let job = LaunchdJob(rawValue: name) else { return name }
+    switch job {
+    case .preflight: return String(localized: L10n.Settings.jobPreflight)
+    case .bot: return String(localized: L10n.Settings.jobBot)
+    case .watchdog: return String(localized: L10n.Settings.jobWatchdog)
+    }
+  }
+
+  /// The launchd jobs the bot installs on the Mac, by their wire names in jobs-v1.
+  enum LaunchdJob: String {
+    case preflight, bot, watchdog
   }
 
   /// The next reconcile counting down while the bot runs, else when it last ran (New York time).

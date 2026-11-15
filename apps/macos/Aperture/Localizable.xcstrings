@@ -7507,6 +7507,57 @@
         }
       }
     },
+    "settings.job.bot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot start"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запуск бота"
+          }
+        }
+      }
+    },
+    "settings.job.preflight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preflight"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предстартовая проверка"
+          }
+        }
+      }
+    },
+    "settings.job.watchdog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchdog"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сторож"
+          }
+        }
+      }
+    },
     "settings.jobs" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7724,6 +7775,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Недоступен: %@"
+          }
+        }
+      }
+    },
+    "settings.notReported" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not reporting"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет данных"
           }
         }
       }

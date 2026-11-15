@@ -923,6 +923,18 @@ enum L10n {
     static var backupFooter: LocalizedStringResource {
       LocalizedStringResource("settings.backupFooter", defaultValue: "The bot copies its database every day and checks the copy; times are New York time.", bundle: L10n.bundle)
     }
+    static var notReported: LocalizedStringResource {
+      LocalizedStringResource("settings.notReported", defaultValue: "Not reporting", bundle: L10n.bundle)
+    }
+    static var jobPreflight: LocalizedStringResource {
+      LocalizedStringResource("settings.job.preflight", defaultValue: "Preflight", bundle: L10n.bundle)
+    }
+    static var jobBot: LocalizedStringResource {
+      LocalizedStringResource("settings.job.bot", defaultValue: "Bot start", bundle: L10n.bundle)
+    }
+    static var jobWatchdog: LocalizedStringResource {
+      LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
+    }
     static func lastAt(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.lastAt", defaultValue: "last \(time)", bundle: L10n.bundle)
     }
