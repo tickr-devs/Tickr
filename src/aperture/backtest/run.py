@@ -146,8 +146,8 @@ def last_sessions(calendar: SessionCalendar, pool: list[PoolEntry], count: int,
     if not pool:
         raise BacktestError("the pool is empty")
     last = max(e.session_date for e in pool)
-    sessions = [d.ny_date for d in sessions_before(calendar, last, count - 1,
-                                                   max_lookback_days)] + [last]
+    before = sessions_before(calendar, last, count - 1, max_lookback_days) if count > 1 else []
+    sessions = [d.ny_date for d in before] + [last]
     kept = set(sessions)
     return [e for e in pool if e.session_date in kept], sessions
 

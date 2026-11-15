@@ -167,6 +167,8 @@ def test_last_sessions_cuts_the_pool_to_the_latest_calendar_sessions():
     # Friday 11-13 back to Monday 11-09: five sessions, 11-06 is the sixth.
     assert window == [date(2026, 11, d) for d in (9, 10, 11, 12, 13)]
     assert kept == pool[2:]
+    kept, window = last_sessions(calendar, pool, 1, 30)  # only the pool's last day
+    assert window == [TODAY] and kept == pool[2:]
     kept, window = last_sessions(calendar, pool, 6, 30)
     assert window[0] == date(2026, 11, 6) and kept == pool[1:]
     for bad in (0, -1):
