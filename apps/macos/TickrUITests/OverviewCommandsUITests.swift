@@ -24,9 +24,11 @@ final class OverviewCommandsUITests: XCTestCase {
   static let confirmed = ["cancel", "flatten-ABCD", "flatten-all", "stop", "emergency"]
   /// The narrowest window (TickrMacApp.minWidth), in points.
   static let minWidth: CGFloat = 1000
-  /// Where the window's corner is dragged, as a fraction of the window: far past the least size,
-  /// which stops it there.
-  static let shrinkTo = 0.2
+  /// Identifier of the standard Window › Zoom item (its action), the same in every language.
+  static let zoomItem = "performZoom:"
+  /// How far the window's right and bottom edges are dragged in, as a fraction of the window:
+  /// past the least size, which stops them there.
+  static let shrinkShare = 0.8
   /// Seconds the corner is held before the drag, and points of room kept under the card after it
   /// is scrolled into view.
   static let dragSeconds: TimeInterval = 0.5
@@ -59,10 +61,16 @@ final class OverviewCommandsUITests: XCTestCase {
     app.launch()
     let window = app.windows.firstMatch
     XCTAssertTrue(window.waitForExistence(timeout: Self.timeout), "no window after launch")
-    // Drag the bottom-right corner up and left past the least size: the window stops there.
-    let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -1, dy: -1))
-    corner.press(forDuration: Self.dragSeconds,
-      thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: Self.shrinkTo, dy: Self.shrinkTo)))
+    // The first window can be larger than a small display (its edges off screen): Zoom fits it
+    // to the screen, then its right and bottom edges are dragged in past the least size.
+    app.menuBarItems.containing(.menuItem, identifier: Self.zoomItem).firstMatch.click()
+    app.menuItems[Self.zoomItem].click()
+    let right = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+    right.press(forDuration: Self.dragSeconds,
+      thenDragTo: right.withOffset(CGVector(dx: -window.frame.width * Self.shrinkShare, dy: 0)))
+    let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: -1))
+    bottom.press(forDuration: Self.dragSeconds,
+      thenDragTo: bottom.withOffset(CGVector(dx: 0, dy: -window.frame.height * Self.shrinkShare)))
     XCTAssertEqual(window.frame.width, Self.minWidth, accuracy: 1, "the window is not at its least width")
 
     let row = app.descendants(matching: .any)[Self.overviewRow].firstMatch
