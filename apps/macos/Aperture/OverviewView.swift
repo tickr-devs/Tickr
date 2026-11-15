@@ -272,7 +272,7 @@ private struct LiveFlowCard: View {
       // Live: a green dot and the New York time of the bot's last status write, as in the design.
       if model.isLive, let written = model.status?.writtenAt.date {
         HStack(spacing: Tokens.Space.xs) {
-          PulseDot(Palette.profit, size: Tokens.Size.dotSmall, event: written)
+          PulseDot(Palette.profit, size: Tokens.Size.dotSmall, event: model.status?.botState)
           Text(L10n.Risk.clock(Format.marketTime(written)))
         }
         .font(Tokens.Typography.captionMono)
@@ -1103,7 +1103,7 @@ private struct BotCard: View {
         let isCurrent = model.isLive && model.fetchError == nil && model.response?.stale == false
         StatusPill(verbatim: status.entryStop ? String(localized: L10n.Common.entriesPaused) : status.botState.title,
           tone: status.entryStop ? .warning : running ? .accent : .neutral,
-          live: running && isCurrent, event: status.writtenAt.date)
+          live: running && isCurrent, event: [AnyHashable(status.botState), AnyHashable(status.entryStop)])
       }
     } content: {
       BotControls()

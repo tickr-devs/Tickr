@@ -211,7 +211,7 @@ private struct Summary: View {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
           PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false),
-            event: model.status?.writtenAt.date)
+            event: text)
           Text(verbatim: text)
             .font(.subheadline.bold())
             .foregroundStyle(tint)
@@ -492,7 +492,7 @@ private struct LiveFlowCard: View {
         HStack(spacing: Tokens.Space.s) {
           StateGlyph(Self.streamSymbol, tone: streamTone,
             label: L10n.Flow.quotes(String(localized: status.freshness.stream.title)),
-            live: current && status.freshness.stream == .fresh, event: status.writtenAt.date, style: .compact)
+            live: current && status.freshness.stream == .fresh, event: status.freshness.stream, style: .compact)
           Label {
             Text(verbatim: Format.timeOrDash(status.freshness.lastBrokerReadAt))
           } icon: {
