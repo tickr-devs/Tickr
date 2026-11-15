@@ -53,11 +53,6 @@ final class ApertureUITests: XCTestCase {
   static let zoomItem = "Zoom"
   /// English label of the toolbar's sidebar button while the sidebar is hidden.
   static let showSidebar = "Show Sidebar"
-  /// Most scroll steps taken to bring an element into view, and the size of one, in points.
-  static let scrollSteps = 8
-  static let scrollStep: CGFloat = 120
-  /// How far above the window's bottom edge a scrolled-to element must be, in points.
-  static let scrollMargin: CGFloat = 160
   /// Chart settings (ChartView.Keys) passed as launch arguments: the decisions inspector open
   /// with every study, the set that once crashed the app in an endless layout loop.
   static let everyStudyWithInspector = ["-chart.decisions", "YES", "-chart.movingAverages", "YES",
@@ -78,23 +73,6 @@ final class ApertureUITests: XCTestCase {
 
   override func setUpWithError() throws {
     continueAfterFailure = false
-  }
-
-  /// Scrolls the screen, a step at a time, until `element` can be clicked.
-  @MainActor
-  private func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
-    // The sign of a scroll delta follows the Mac's scroll direction setting: try one way, then the other.
-    // Hittable is not enough: a row near the bottom edge is hittable while its table is partly off
-    // screen, and the click then fails to scroll the table. Bring it a margin above the edge.
-    let window = app.windows.firstMatch
-    func shown() -> Bool { element.isHittable && element.frame.maxY < window.frame.maxY - Self.scrollMargin }
-    for direction: CGFloat in [-1, 1] {
-      for _ in 0..<Self.scrollSteps where !shown() {
-        // Scrolled at the window's middle, over the screen's own scroll view: the first scroll
-        // view in the tree can be a small inner one (the table's) with no point to scroll at.
-        window.scroll(byDeltaX: 0, deltaY: direction * Self.scrollStep)
-      }
-    }
   }
 
   /// The app, started on the fixture API in English.
@@ -201,8 +179,6 @@ final class ApertureUITests: XCTestCase {
     // SwiftUI's Table reads as an outline; clicking the symbol's cell selects its row.
     let symbol = app.outlineRows.staticTexts.matching(NSPredicate(format: "value == %@", Self.tradeSymbol)).firstMatch
     XCTAssertTrue(symbol.waitForExistence(timeout: Self.timeout), "trade row\n\(app.debugDescription)")
-    // In a window as small as the runner's display the screen scrolls; bring the row into view.
-    scrollIntoView(symbol, in: app)
     symbol.click()
     let detail = app.descendants(matching: .any)[Self.tradeDetail].firstMatch
     XCTAssertTrue(detail.staticTexts[Self.stopConfirmedAfter].waitForExistence(timeout: Self.timeout),

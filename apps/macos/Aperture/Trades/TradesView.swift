@@ -58,21 +58,28 @@ struct TradesView: View {
     DaysColumn().rise(step: Order.days.rawValue)
   }
 
+  /// The shown day's figures, trades and replays. Beside the days column, the performance card
+  /// follows the figures as on the design; in the narrower stacked layout the trades come first
+  /// after the figures, so the day's trades are on the first screen of a small window.
   private var dayDetail: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.l) {
       DayStatsRow()
         .rise(step: Order.stats.rawValue)
-      PerformanceCard()
-        .rise(step: Order.performance.rawValue)
+      if sideBySide { performance }
       TradesTable(selection: $selection, showOnChart: showOnChart)
         .rise(step: Order.trades.rawValue)
       TradeDetailCard(trade: model.shownTrades.first { $0.id == selection })
         .rise(step: Order.detail.rawValue)
+      if !sideBySide { performance }
       NotTakenCard(showOnChart: showOnChart)
         .rise(step: Order.notTaken.rawValue)
       WhatIfCard()
         .rise(step: Order.whatIf.rawValue)
     }
+  }
+
+  private var performance: some View {
+    PerformanceCard().rise(step: Order.performance.rawValue)
   }
 
   /// Opens the Chart on `symbol` (the shown day stays).
