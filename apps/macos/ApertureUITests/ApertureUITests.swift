@@ -84,7 +84,9 @@ final class ApertureUITests: XCTestCase {
     // The sign of a scroll delta follows the Mac's scroll direction setting: try one way, then the other.
     for direction: CGFloat in [-1, 1] {
       for _ in 0..<Self.scrollSteps where !element.isHittable {
-        app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: direction * Self.scrollStep)
+        // Scrolled at the window's middle, over the screen's own scroll view: the first scroll
+        // view in the tree can be a small inner one (the table's) with no point to scroll at.
+        app.windows.firstMatch.scroll(byDeltaX: 0, deltaY: direction * Self.scrollStep)
       }
     }
   }
