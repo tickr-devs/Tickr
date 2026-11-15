@@ -511,7 +511,7 @@ private struct LiveFlowCard: View {
         }
         .font(Tokens.Typography.annotation)
         ForEach(status.fences, id: \.kind) { fence in
-          Label { Text(verbatim: fence.text) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
+          Label { Text(verbatim: ApiText.fenceWithDetail(fence)) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
             .font(.caption)
             .foregroundStyle(Palette.warningText)
         }

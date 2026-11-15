@@ -152,7 +152,7 @@ private struct GateCard: View {
           .contentTransition(.opacity)
       }
       if let block = status.entryBlock {
-        Text(verbatim: block.text)
+        Text(verbatim: ApiText.entryBlock(block))
           .font(Tokens.Typography.callout)
           .foregroundStyle(Palette.textPrimary)
           .fixedSize(horizontal: false, vertical: true)
@@ -191,7 +191,7 @@ private struct FencesCard: View {
         HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
           Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
           VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-            Text(verbatim: fence.text)
+            Text(verbatim: ApiText.fenceWithDetail(fence))
               .font(Tokens.Typography.callout)
               .foregroundStyle(Palette.textPrimary)
               .fixedSize(horizontal: false, vertical: true)
