@@ -8,13 +8,13 @@ from decimal import Decimal
 
 import pytest
 
-from aperture.backtest import fetch
-from aperture.backtest.errors import BacktestError
-from aperture.backtest.settings import load_settings
-from aperture.backtest.universe import read_pool, select_liquid, select_pool, write_pool
-from aperture.broker.base import RateLimited
-from aperture.broker.budget import BudgetExhausted, RequestBudget, RouteLimit
-from aperture.broker.webull import InstrumentPage
+from tickr.backtest import fetch
+from tickr.backtest.errors import BacktestError
+from tickr.backtest.settings import load_settings
+from tickr.backtest.universe import read_pool, select_liquid, select_pool, write_pool
+from tickr.broker.base import RateLimited
+from tickr.broker.budget import BudgetExhausted, RequestBudget, RouteLimit
+from tickr.broker.webull import InstrumentPage
 
 from .helpers import ROOT, UTC, FakeHistory, calendar, cfg, daily_bar, flat_bars, row
 

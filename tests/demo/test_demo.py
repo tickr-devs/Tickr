@@ -1,4 +1,4 @@
-"""`aperture demo`: the real bot on a simulated exchange, in its own folder, never Webull."""
+"""`tickr demo`: the real bot on a simulated exchange, in its own folder, never Webull."""
 
 from __future__ import annotations
 
@@ -15,14 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from aperture import config
-from aperture.api import contract as api
-from aperture.api.server import make_server, settings_from_config
-from aperture.calendar import SessionCalendar
-from aperture.data.base import ScreenerKind
-from aperture.demo import run as demo
-from aperture.demo.scenario import DemoCommand, ScenarioError, SymbolPlan, load
-from aperture.demo.world import Texture, day_bars, textured
+from tickr import config
+from tickr.api import contract as api
+from tickr.api.server import make_server, settings_from_config
+from tickr.calendar import SessionCalendar
+from tickr.data.base import ScreenerKind
+from tickr.demo import run as demo
+from tickr.demo.scenario import DemoCommand, ScenarioError, SymbolPlan, load
+from tickr.demo.world import Texture, day_bars, textured
 
 ROOT = Path(__file__).resolve().parents[2]
 SUNDAY = date(2026, 11, 15)  # the demo day falls back to Friday 2026-11-13

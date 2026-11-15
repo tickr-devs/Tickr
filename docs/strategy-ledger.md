@@ -6,7 +6,7 @@ comes first, then the results.
 
 ## Method (2026-11-15 run)
 
-- **Data:** the `aperture.backtest` fetch (`docs/backtest.md`) of regular-session M1 bars,
+- **Data:** the `tickr.backtest` fetch (`docs/backtest.md`) of regular-session M1 bars,
   2026-08-17 to 2026-11-13. Symbols A to S only (2400 of the pool's symbols), because the fetch
   was still running.
   - Gainer days: 9521 symbol-days from `pool.csv`, meaning the day high was at least 5% above
@@ -67,7 +67,7 @@ session without its 09:30 bar is refused all day.
 ## Reproducing
 
 The research scripts are offline and are not part of the bot. They live in the project's shared
-folder `aperture/edge-research/`: `prep.py` (gainer cache), `prep2.py` (loser days and market
+folder `tickr/edge-research/`: `prep.py` (gainer cache), `prep2.py` (loser days and market
 proxy), `prep3.py` (actives proxy), `lib.py`, `sim.py` (fixed: explicit entry price), `prep_tz.py` and `tz_check.py` (symbol hold-out), and one script per family. The
 pre-registrations are in `preregistered.txt`.
 

@@ -1,6 +1,6 @@
-@testable import ApertureMac
 import Foundation
 import Testing
+@testable import TickrMac
 
 @Suite("Menu bar position scale")
 struct MenuPositionTests {

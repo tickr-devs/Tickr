@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from aperture.lock import AlreadyRunning, SingleInstanceLock, recorded_holder
+from tickr.lock import AlreadyRunning, SingleInstanceLock, recorded_holder
 
 
 def test_second_instance_refused(tmp_path):

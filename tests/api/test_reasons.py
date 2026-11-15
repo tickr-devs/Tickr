@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from aperture.api import contract, reasons
-from aperture.engine.core import Fence
-from aperture.risk.daily import check_daily
-from aperture.risk.sizing import check_size
+from tickr.api import contract, reasons
+from tickr.engine.core import Fence
+from tickr.risk.daily import check_daily
+from tickr.risk.sizing import check_size
 
 CORE = Path(reasons.__file__).resolve().parent.parent / "engine" / "core.py"
 
