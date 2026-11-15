@@ -9,6 +9,12 @@ typed error (`BrokerError`, or `MarketDataError` for market data). Never a bare 
 TypeError, ValueError or InvalidOperation, never a defaulted value, and never a state other than
 UNKNOWN for a status outside the spec-v1 section 9 map.
 
+The oracle never pins acceptance of nonsense (hard rule 7). Where today's reader passes a value
+a stricter one may refuse or treat as absent (a blank string; a fill, stop or limit price, a bid
+or ask, or a position cost that is not positive), the oracle forks: the reading "as today" and
+the hardened one are both accepted, so hardening is never blocked. The clear violations are
+pinned as strict xfail bugs in tests/broker/test_bug_nonsense_values.py.
+
 Out-of-range epoch and bar times are left out of the market-data fuzz here: they escape as
 bare exceptions (tests/broker/test_bug_time_out_of_range.py).
 """
@@ -127,8 +133,65 @@ class Refuse(Exception):
     """The oracle says the body must be refused (a typed error)."""
 
 
+class _Refused:
+    def __repr__(self) -> str:
+        return "REFUSED"
+
+
+REFUSED = _Refused()  # a reading in which the body is refused
+
+
+class Choices:
+    """One path through the oracle: each doubtful point forks into today's reading (False)
+    and a hardened one (True); `readings` walks every path."""
+
+    def __init__(self, prefix: list[bool]) -> None:
+        self.prefix = prefix
+        self.made: list[bool] = []
+        self.forks: list[list[bool]] = []
+
+    def hardened(self) -> bool:
+        index = len(self.made)
+        if index < len(self.prefix):
+            pick = self.prefix[index]
+        else:
+            pick = False
+            self.forks.append([*self.made, True])
+        self.made.append(pick)
+        return pick
+
+
+def readings(oracle: Callable[[Choices], Any]) -> list[Any]:
+    """Every result the oracle allows: values, and REFUSED where a path refuses."""
+    found: list[Any] = []
+    pending: list[list[bool]] = [[]]
+    while pending:
+        choices = Choices(pending.pop())
+        try:
+            found.append(oracle(choices))
+        except Refuse:
+            found.append(REFUSED)
+        pending.extend(choices.forks)
+    return found
+
+
 def absent(value: Any) -> bool:
     return value is MISSING or value is None or value == ""
+
+
+def blank(value: Any) -> bool:
+    return isinstance(value, str) and value != "" and not value.strip()
+
+
+def missing(value: Any, choices: Choices | None = None) -> bool:
+    """Absent; or blank, where a hardened reader may treat blank as absent."""
+    return absent(value) or (choices is not None and blank(value) and choices.hardened())
+
+
+def implausible(choices: Choices) -> None:
+    """A nonsense value today's reader passes: a hardened reader may refuse it."""
+    if choices.hardened():
+        raise Refuse
 
 
 def get(obj: Mapping[str, Any], key: str) -> Any:
@@ -155,12 +218,20 @@ def number(value: Any) -> D:
     return result
 
 
-def optional_number(value: Any) -> D | None:
-    return None if absent(value) else number(value)
+def optional_number(value: Any, choices: Choices | None = None) -> D | None:
+    return None if missing(value, choices) else number(value)
 
 
-def text(value: Any) -> str:
-    if absent(value):
+def positive_price(value: Any, choices: Choices) -> D | None:
+    """An optional price: a present one that is not positive may be refused."""
+    price = optional_number(value, choices)
+    if price is not None and price <= 0:
+        implausible(choices)
+    return price
+
+
+def text(value: Any, choices: Choices | None = None) -> str:
+    if missing(value, choices):
         raise Refuse
     return str(value)
 
@@ -186,35 +257,55 @@ def check_account(obj: Any) -> None:
         raise Refuse
 
 
-def expected_order(row: Any) -> OrderDetail:
-    """What read_order may return for `row`; Refuse if it must be refused."""
+def expected_order(row: Any, choices: Choices) -> OrderDetail:
+    """What read_order may return for `row` on this path; Refuse if it must be refused."""
     if not isinstance(row, Mapping):
         raise Refuse
     check_account(row)
-    raw = text(get(row, "status")).strip()
+    raw = text(get(row, "status"), choices).strip()
     quantity = number(get(row, "total_quantity"))
     filled = number(get(row, "filled_quantity"))
-    side, order_type = text(get(row, "side")), text(get(row, "order_type"))
+    side = text(get(row, "side"), choices)
+    order_type = text(get(row, "order_type"), choices)
     if side not in {s.value for s in Side} or order_type not in {t.value for t in OrderType}:
         raise Refuse
+    fill_price = optional_number(get(row, "filled_price"), choices)
+    if fill_price is not None and fill_price <= 0 and filled > 0:
+        implausible(choices)  # a fill at no price: tests/broker/test_bug_nonsense_values.py
+    limit = get(row, "limit_price")  # not read today; a hardened reader may check it
+    if not missing(limit, choices):
+        try:
+            limit_ok = number(limit) > 0
+        except Refuse:
+            limit_ok = False
+        if not limit_ok:
+            implausible(choices)
     order_id = get(row, "order_id")
     return OrderDetail(
-        client_order_id=text(get(row, "client_order_id")),
-        symbol=text(get(row, "symbol")),
+        client_order_id=text(get(row, "client_order_id"), choices),
+        symbol=text(get(row, "symbol"), choices),
         side=Side(side),
         order_type=OrderType(order_type),
         quantity=quantity,
         filled_quantity=filled,
-        average_fill_price=optional_number(get(row, "filled_price")),
+        average_fill_price=fill_price,
         state=spec_state(raw, quantity, filled),
         raw_status=raw,
-        stop_price=optional_number(get(row, "stop_price")),
-        broker_order_id=None if absent(order_id) else str(order_id),
+        stop_price=positive_price(get(row, "stop_price"), choices),
+        broker_order_id=None if missing(order_id, choices) else str(order_id),
     )
 
 
-def assert_same_order(got: OrderDetail, want: OrderDetail) -> None:
-    assert got == want
+def assert_one_reading(body: Any, got: Any, error: BaseException | None,
+                       paths: list[Any]) -> None:
+    """The reader's answer is one the oracle allows: a refusal only where a path refuses."""
+    if error is not None:
+        assert isinstance(error, MalformedResponse) and REFUSED in paths, (body, error, paths)
+    else:
+        assert got in paths, (body, got, paths)
+
+
+def assert_order_types(got: OrderDetail) -> None:
     for value in (got.quantity, got.filled_quantity):
         assert type(value) is D and value.is_finite()
     if got.raw_status not in SPEC_STATUS:
@@ -362,25 +453,28 @@ def test_map_status_partial_fill_boundaries():
 
 def check_detail(body: Any) -> None:
     got, error = outcome(lambda: read_order_detail(body, CID, own_account))
-    try:
+
+    def oracle(choices: Choices) -> Any:
         if not isinstance(body, Mapping) or "orders" not in body:
             raise Refuse
         check_account(body)
         orders = body["orders"]
         if orders == []:
-            assert isinstance(error, BrokerReadFailed) and error.code == DETAIL_NOT_VISIBLE
-            return
+            return DETAIL_NOT_VISIBLE
         if not isinstance(orders, list):
             raise Refuse
         ours = [o for o in orders if isinstance(o, Mapping) and o.get("client_order_id") == CID]
         if len(ours) != 1:
             raise Refuse
-        want = expected_order(ours[0])
-    except Refuse:
-        assert isinstance(error, MalformedResponse), (body, got)
+        return expected_order(ours[0], choices)
+
+    paths = readings(oracle)
+    if paths == [DETAIL_NOT_VISIBLE]:
+        assert isinstance(error, BrokerReadFailed) and error.code == DETAIL_NOT_VISIBLE
         return
-    assert error is None, (body, error)
-    assert_same_order(got, want)
+    assert_one_reading(body, got, error, paths)
+    if error is None:
+        assert_order_types(got)
 
 
 def test_detail_every_field_mutated():
@@ -421,7 +515,8 @@ def test_detail_random_mutations():
 def check_rows(body: Any) -> None:
     """Open-orders page: every row is returned, or surfaced as unreadable, or the read fails."""
     got, error = outcome(lambda: read_order_rows(body, own_account, own_order, "open_orders"))
-    try:
+
+    def oracle(choices: Choices) -> tuple[list[OrderDetail], list[str]]:
         if isinstance(body, list):
             combos = body
         elif isinstance(body, Mapping) and isinstance(body.get("data"), list):
@@ -441,19 +536,21 @@ def check_rows(body: Any) -> None:
                 check_account(row)
                 cid = str(row.get("client_order_id") or "") if isinstance(row, Mapping) else ""
                 try:
-                    readable.append(expected_order(row))
+                    readable.append(expected_order(row, choices))
                 except Refuse:
                     if cid and own_order(cid):
                         raise
                     unreadable.append(cid)
-    except Refuse:
-        assert isinstance(error, MalformedResponse), (body, got)
+        return readable, unreadable
+
+    paths = readings(oracle)
+    if error is not None:
+        assert_one_reading(body, got, error, paths)
         return
-    assert error is None, (body, error)
     rows, bad = got
-    assert len(rows) == len(readable) and [u.client_order_id for u in bad] == unreadable
-    for row, want in zip(rows, readable, strict=True):
-        assert_same_order(row, want)
+    assert_one_reading(body, (rows, [u.client_order_id for u in bad]), error, paths)
+    for row in rows:
+        assert_order_types(row)
     for item in bad:
         assert item.reason  # one recorded cause per unreadable row
 
@@ -531,11 +628,30 @@ def test_open_orders_over_pages_surfaces_every_unreadable_row():
 # --------------------------------------------------------------------------------------------
 
 POSITION = {"symbol": "AAPL", "quantity": "3", "cost_price": "100.25"}
+SHORT = {"symbol": "MSFT", "quantity": "-2", "cost_price": "410.50"}
+
+
+def repeats(rows: Any) -> bool:
+    """A reading that lists one symbol twice (tests/broker/test_bug_duplicate_positions.py)."""
+    if rows is REFUSED:
+        return False
+    symbols = [row[0] for row in rows]
+    return len(symbols) != len(set(symbols))
+
+
+def one_row_per_symbol(got: list[tuple], want: list[tuple]) -> bool:
+    """An accepted fix of the duplicate-positions bug: each symbol once; a symbol the body
+    lists once keeps its own row, a repeated one may come back merged in any way."""
+    symbols = [row[0] for row in want]
+    once = [row for row in want if symbols.count(row[0]) == 1]
+    return (not repeats(got) and {row[0] for row in got} == set(symbols)
+            and all(row in once for row in got if symbols.count(row[0]) == 1))
 
 
 def check_positions(body: Any) -> None:
     got, error = outcome(lambda: read_positions(body, own_account))
-    try:
+
+    def oracle(choices: Choices) -> list[tuple]:
         if isinstance(body, list):
             rows = body
         elif isinstance(body, Mapping) and isinstance(body.get("data"), list):
@@ -547,25 +663,34 @@ def check_positions(body: Any) -> None:
             if not isinstance(row, Mapping):
                 raise Refuse
             check_account(row)
-            want.append((text(get(row, "symbol")), number(get(row, "quantity")),
-                         optional_number(get(row, "cost_price"))))
-    except Refuse:
-        assert isinstance(error, MalformedResponse), (body, got)
+            want.append((text(get(row, "symbol"), choices), number(get(row, "quantity")),
+                         positive_price(get(row, "cost_price"), choices)))
+        return want
+
+    paths = readings(oracle)
+    duplicated = [p for p in paths if repeats(p)]
+    if duplicated:  # a repeated symbol must be refused or come back once
+        paths = [*(p for p in paths if not repeats(p)), REFUSED]
+    if error is not None:
+        assert_one_reading(body, got, error, paths)
         return
-    assert error is None, (body, error)
-    assert [(p.symbol, p.quantity, p.average_cost) for p in got] == want
+    rows = [(p.symbol, p.quantity, p.average_cost) for p in got]
+    if duplicated and repeats(rows):
+        return  # today's reader: excluded here, pinned by the strict xfail bug test
+    assert rows in paths or any(one_row_per_symbol(rows, want) for want in duplicated), \
+        (body, rows, paths)
 
 
 def test_positions_every_field_mutated():
     for row in field_mutations({**POSITION, "account_id": OWN}):
         check_positions([row])
-        check_positions({"data": [row, POSITION]})
+        check_positions({"data": [row, SHORT]})
 
 
 def test_positions_random_mutations():
     rng = random.Random(31337)
     bases: list[Any] = [load("positions_empty.json"), [POSITION], {"data": [POSITION]},
-                        [POSITION, {**POSITION, "symbol": "MSFT", "quantity": "-2"}]]
+                        [POSITION, SHORT]]
     for _ in range(1000):
         check_positions(random_mutation(rng.choice(bases), rng, MUTANTS))
     for body in (None, "", 0, {}, {"data": None}, {"data": "x"}, [None], ["AAPL"], [[]]):
@@ -641,7 +766,9 @@ def test_replace_ack_mutated():
                 for key, value in (("client_order_id", got.client_order_id),
                                    ("order_id", got.broker_order_id)):
                     raw = get(candidate, key)
-                    assert value == (None if absent(raw) else str(raw))
+                    # blank may be read as absent by a hardened reader
+                    assert value == (None if absent(raw) else str(raw)) or (
+                        blank(raw) and value is None)
             else:
                 assert got == ReplaceAck(None, None)
 
@@ -800,35 +927,38 @@ SNAPSHOT = {"symbol": "AAPL", "instrument_id": "913256135", "bid": "10.00", "ask
 QUOTE_KEYS = ("bid", "ask", "bid_size", "ask_size", "quote_time")
 
 
-def expected_quote(row: Any) -> tuple | None:
+def expected_quote(row: Any, choices: Choices) -> tuple | None:
     if not isinstance(row, Mapping):
         raise Refuse
-    symbol = text(get(row, "symbol"))
-    if any(absent(get(row, k)) for k in QUOTE_KEYS):
+    symbol = text(get(row, "symbol"), choices)
+    if any(missing(get(row, k), choices) for k in QUOTE_KEYS):
         return None  # no quote: the caller records NO_QUOTE
     millis = number(get(row, "quote_time"))
     if millis != millis.to_integral_value() or millis <= 0:
         raise Refuse
-    return (symbol, *(number(row[k]) for k in QUOTE_KEYS[:4]),
+    bid, ask, bid_size, ask_size = (number(row[k]) for k in QUOTE_KEYS[:4])
+    if bid <= 0 or ask <= 0:
+        implausible(choices)
+    return (symbol, bid, ask, bid_size, ask_size,
             datetime.fromtimestamp(int(millis) / 1000, tz=UTC))
 
 
 def check_snapshot(body: Any) -> None:
     got, error = outcome(lambda: read_snapshot(body, RECEIPT))
-    try:
+
+    def oracle(choices: Choices) -> list[tuple]:
         if isinstance(body, list):
             rows = body
         elif isinstance(body, Mapping) and isinstance(body.get("data"), list):
             rows = body["data"]
         else:
             raise Refuse
-        want = [q for q in (expected_quote(r) for r in rows) if q is not None]
-    except Refuse:
-        assert isinstance(error, MalformedResponse), (body, got)
-        return
-    assert error is None, (body, error)
-    assert [(q.symbol, q.bid, q.ask, q.bid_size, q.ask_size, q.provider_time) for q in got] == want
-    assert all(q.receipt_time == RECEIPT for q in got)
+        return [q for q in (expected_quote(r, choices) for r in rows) if q is not None]
+
+    if error is None:
+        assert all(q.receipt_time == RECEIPT for q in got)
+        got = [(q.symbol, q.bid, q.ask, q.bid_size, q.ask_size, q.provider_time) for q in got]
+    assert_one_reading(body, got, error, readings(oracle))
 
 
 def test_snapshot_every_field_mutated():
@@ -857,24 +987,33 @@ BAR_FIXTURES = ("stocks_bars_list_aapl_m1.json",
 BAR_FIELDS = ("open", "high", "low", "close", "volume")
 
 
+BAR_TIME = "%Y-%m-%dT%H:%M:%S.%f%z"
+
+
 def recorded_starts() -> set[datetime]:
     starts = set()
     for name in BAR_FIXTURES:
         for series in recorded_bars(name)["result"]:
             for row in series["result"]:
-                starts.add(datetime.strptime(row["time"], "%Y-%m-%dT%H:%M:%S.%f%z"))
+                starts.add(datetime.strptime(row["time"], BAR_TIME))
     return starts
 
 
 def check_bar_reader(body: Any, read: Callable[[Any], list], starts: set[datetime]) -> None:
     """A bar reader returns one bar per input row with the row's own values and a recorded
-    start time (no mutant is a valid time), or a typed refusal."""
+    start time (no mutant is a valid time), or a typed refusal. A minute the body repeats may
+    instead come back once (a fix of tests/broker/test_bug_duplicate_bars.py)."""
     got, error = outcome(lambda: read(body))
     if error is not None:
         assert isinstance(error, MalformedResponse | DelayedData), (body, error)
         return
     rows = [r for s in body["result"] for r in s["result"]]
-    assert len(got) == len(rows)  # no row dropped, none invented
+    if len(got) != len(rows):  # rows dropped: only a repeated minute, kept once
+        minutes = [(str(s["symbol"]), datetime.strptime(r["time"].strip(), BAR_TIME))
+                   for s in body["result"] for r in s["result"]]
+        returned = [(b.bar if hasattr(b, "bar") else b) for b in got]
+        kept = sorted((b.symbol, getattr(b, "start", None) or b.time) for b in returned)
+        assert len(set(minutes)) < len(minutes) and kept == sorted(set(minutes)), body
     for item in got:
         bar = item.bar if hasattr(item, "bar") else item
         start = getattr(bar, "start", None) or bar.time
@@ -951,6 +1090,9 @@ def test_screener_random_mutations():
                 for r in rows):
             assert isinstance(error, MalformedResponse), body
             continue
+        if error is not None and any(blank(get(r, k)) for r in rows for k in identity):
+            assert isinstance(error, MalformedResponse)  # a blank identity may be refused
+            continue
         assert error is None, (body, error)
         assert [r.rank for r in got] == list(range(1, len(rows) + 1))
         for item, row in zip(got, rows, strict=True):
@@ -978,4 +1120,5 @@ def test_profiles_random_mutations():
             for row in by_id[iid]:  # every row of one id says the same thing
                 assert profile.symbol == str(row["symbol"])
                 raw = get(row, "sub_category")
-                assert profile.security_type == (None if absent(raw) else str(raw))
+                assert profile.security_type == (None if absent(raw) else str(raw)) or (
+                    blank(raw) and profile.security_type is None)
