@@ -571,7 +571,8 @@ a recorded whole quantity the trade is simulated for one share: `quantity` and
 ENTER without a trade has every price, time and result `null` and a `cause` of the form
 `<outcome>: <detail>`: `missed: ...`, `rejected: ...`, `not_simulated: ...` (no captured bars
 for the symbol, decision bar not captured), `skipped_overlap: an earlier simulated trade of
-<symbol> was still open`; otherwise `cause` is `null`. At most `[api] observer_trades_max_rows`
+<symbol> was still open`, `skipped_same_signal: the same signal (setup ..., trigger ...) already
+made a simulated trade of <symbol> that day`; otherwise `cause` is `null`. At most `[api] observer_trades_max_rows`
 are listed; `trades_truncated` is `true` when that cap left later ones out. An observer without
 an ENTER that day has `trades: []`. `trades` is `null` with `trades_cause` when the simulation
 could not run: the same cause as `result_cause` (no decisions, no captured bars, unreadable

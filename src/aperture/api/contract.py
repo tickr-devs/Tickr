@@ -687,7 +687,8 @@ class ObserverTradeV1:
     `at` is the decision bar's start. A filled trade has its entry, exit, `exit_reason` and
     `result_r` (per share); `quantity` and `result_gross_usd` only with a recorded whole
     quantity. Every null has `cause` (missed, rejected, not simulated, skipped because an
-    earlier simulated trade of the symbol was open, no recorded whole quantity); else null."""
+    earlier simulated trade of the symbol was open or the same signal already traded, no
+    recorded whole quantity); else null."""
 
     symbol: str
     at: datetime
