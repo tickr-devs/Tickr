@@ -226,6 +226,24 @@
                     }
                   ]
                 },
+                "latest_outcome": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "intent",
+                        "attempted",
+                        "acknowledged",
+                        "refused",
+                        "unknown",
+                        "absent"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "sends": {
                   "anyOf": [
                     {
@@ -253,6 +271,7 @@
                 "intent_at",
                 "sent_at",
                 "send_outcome",
+                "latest_outcome",
                 "sends",
                 "filled_at"
               ],
@@ -388,6 +407,24 @@
                   }
                 ]
               },
+              "latest_outcome": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "intent",
+                      "attempted",
+                      "acknowledged",
+                      "refused",
+                      "unknown",
+                      "absent"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sends": {
                 "anyOf": [
                   {
@@ -415,6 +452,7 @@
               "intent_at",
               "sent_at",
               "send_outcome",
+              "latest_outcome",
               "sends",
               "filled_at"
             ],
@@ -697,6 +735,24 @@
                   }
                 ]
               },
+              "latest_outcome": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "intent",
+                      "attempted",
+                      "acknowledged",
+                      "refused",
+                      "unknown",
+                      "absent"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sends": {
                 "anyOf": [
                   {
@@ -724,6 +780,7 @@
               "intent_at",
               "sent_at",
               "send_outcome",
+              "latest_outcome",
               "sends",
               "filled_at"
             ],

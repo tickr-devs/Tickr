@@ -103,6 +103,11 @@ broker_read_max_age_seconds = 30
 # Consecutive "order not found" Detail reads before an order with an unknown send outcome is
 # treated as never created; read by the engine.
 unknown_absent_reads = 3
+# Least seconds between two journal rows proving a working stop still had nothing filled: an
+# unchanged Detail read the engine already makes writes an `order-held` row once this long after
+# the order's last such proof (never an extra broker read); read by the engine, and the rows by
+# api.history (the MAE/MFE window).
+stop_held_proof_seconds = 60
 
 [probe]
 # Shares per probe order (owner 2026-11-14); read by the probe command.
@@ -168,6 +173,10 @@ status_recent_commands = 10
 idempotency_key_ttl_seconds = 86400
 # Replay settings file (fill model) the API uses to simulate each observer's day result at GET /observers, the same simulation as `python -m aperture.research observers`, relative to the repo root; read by the api server.
 replay_settings_file = "config/replay.toml"
+# Longest date range GET /performance accepts, in New York calendar days counting both ends; longer = 400 bad_request; read by the api server.
+performance_max_range_days = 366
+# Decimal places of GET /performance numbers that come from a division (R values, win rate, averages, profit factor), rounded half-even; read by the api server.
+performance_decimal_places = 4
 
 [market_data]
 # Seconds between discovery passes in the regular session; read by runtime (discovery scheduler).

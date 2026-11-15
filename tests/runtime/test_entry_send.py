@@ -36,7 +36,7 @@ def test_an_entry_is_sent_once_with_its_journal_times(tmp_path):
     assert position.entry_cause is None
     assert position.entry == api.EntrySend(
         cid, _at(rig, "order-intent", cid), _at(rig, "order-attempted", cid),
-        api.SendOutcome.ACKNOWLEDGED, 1, filled)
+        api.SendOutcome.ACKNOWLEDGED, api.SendOutcome.ACKNOWLEDGED, 1, filled)
     assert position.entry.intent_at <= position.entry.sent_at < position.entry.filled_at
     assert cid.startswith("ap-") and cid.endswith("-t1-e1")  # the bot's own id, nothing else
 
@@ -61,6 +61,7 @@ def test_an_unknown_send_outcome_shows_unknown_even_once_resolved(tmp_path):
     assert rig.engine.order(cid).send_state is SendState.ACKNOWLEDGED  # resolved by a read
     (position,) = _status(rig).positions
     assert position.entry.send_outcome is api.SendOutcome.UNKNOWN
+    assert position.entry.latest_outcome is api.SendOutcome.ACKNOWLEDGED  # confirmed by a read
     assert position.entry.sends == 1 and position.entry.filled_at is not None
     assert position.entry_cause is None
 
@@ -75,6 +76,7 @@ def test_a_second_attempt_row_is_shown_never_clamped(tmp_path):
     entry, cause = entry_send(rig.store, "t1")
     assert entry.sends == 2 and cause is None
     assert entry.send_outcome is api.SendOutcome.ACKNOWLEDGED  # the first attempt's outcome
+    assert entry.latest_outcome is api.SendOutcome.ATTEMPTED  # the last row
 
 
 def test_null_fields_carry_their_cause(tmp_path):
@@ -89,10 +91,11 @@ def test_null_fields_carry_their_cause(tmp_path):
     assert (entry.client_order_id, entry.sent_at, entry.sends, entry.filled_at) == (
         rig.entry(), None, 0, None)
     assert entry.send_outcome is api.SendOutcome.ABSENT and entry.intent_at is not None
+    assert entry.latest_outcome is api.SendOutcome.ABSENT
     assert cause == ("never attempted: no order-attempted row; "
                      "no order-observed row shows the entry filled")
     assert entry_send(rig.store, "t404") == (
-        api.EntrySend(None, None, None, None, None, None),
+        api.EntrySend(None, None, None, None, None, None, None),
         "trade t404 has 0 entry orders, expected 1")
 
 
@@ -102,6 +105,7 @@ def test_a_refused_entry_shows_refused(tmp_path):
     rig.run(2)
     entry, cause = entry_send(rig.store, "t1")
     assert entry.send_outcome is api.SendOutcome.REFUSED and entry.sends == 1
+    assert entry.latest_outcome is api.SendOutcome.REFUSED
     assert cause == "no order-observed row shows the entry filled"
 
 
@@ -118,7 +122,7 @@ def test_a_malformed_row_shows_null_journals_once_and_the_loop_goes_on(tmp_path)
     assert rig.passes == passes + 3  # the loop went on
     status = _status(rig)
     (position,) = status.positions
-    assert position.entry == api.EntrySend(None, None, None, None, None, None)
+    assert position.entry == api.EntrySend(None, None, None, None, None, None, None)
     assert position.entry_cause.startswith("journal unreadable: MalformedJournal: ")
     assert position.stop.state is api.StopState.VERIFIED  # protection untouched
     assert status.open_reservations_usd == reserved

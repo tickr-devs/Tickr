@@ -76,6 +76,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/days` | `200` `days-v1`: every New York date with records (closed trades, a bot run, captured data), newest first. |
 | GET | `/days/<YYYY-MM-DD>` | `200` `day-v1`: trades closed that New York date and the symbols with captured M1 bars. A date without records answers with empty lists. |
 | GET | `/bars?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `bars-v1`: captured M1 bars of one symbol on one date, oldest first. |
+| GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, and whether they matched its records. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). |
 | GET | `/explain?symbol=<ticker>` | `200` `explain-v1`: the latest decision of the active strategy recorded today for one symbol, with every check. `404 not_found` when none is recorded today. |
@@ -185,9 +186,16 @@ Computed by the reader from what the bot already records; `null` means unknown, 
     may hold prices from before the fill).
   - Window end ("held until"): for each stop or exit order that sold shares, the latest moment
     the journal proves it had not sold yet. For a close (MARKET exit) that is its send intent
-    (`order-intent` row, written before the send); for a stop, its last `order-observed` read
-    still showing nothing filled (in practice its working read). The earliest of these over
-    all orders that sold is the end. Its minute's bar is left out too.
+    (`order-intent` row, written before the send); for a stop, its last read still showing
+    nothing filled: an `order-observed` row (in practice its working read) or an `order-held`
+    row. The bot writes `order-held` from the Detail reads it already makes (no extra broker
+    request): when a read shows the stop working (`ACCEPTED` or `PARTIALLY_FILLED`) with
+    filled quantity 0 and no change, and the order's last `order-observed` or `order-held` row
+    is at least `[orders] stop_held_proof_seconds` (60) old, it journals
+    `{state, raw_status, filled_quantity}` keyed by the client order id, at the read's
+    journal time like `order-observed`. A held row with filled quantity above 0, or after a
+    read of the order that showed a fill, proves nothing. The earliest of these over all
+    orders that sold is the end. Its minute's bar is left out too.
   - Prices: the entry fill price (fill-weighted average), the fill price of each order that
     sold shares, and the low and high of the captured M1 bars that start after the start
     minute and before the end minute. If an order that sold has no proving row, no bar
@@ -199,9 +207,10 @@ Computed by the reader from what the bot already records; `null` means unknown, 
     shares sold must be in the capture file, as proof it covered the trade; their prices are
     not used.
 
-  So a stop-out at -1 R shows about -1 R (its fill), never the fall after it. A stop-out
-  usually shows its fill prices alone: a resting stop's only journaled unfilled read is its
-  working read, seconds after the fill. A restart between the last proving read and the read
+  So a stop-out at -1 R shows about -1 R (its fill), never the fall after it. A stop-out's
+  window ends at most about `stop_held_proof_seconds` (plus a Detail poll) before the read of
+  its fill, so up to two minutes before the stop-out are not counted; a stop-out within
+  that time of the entry shows its fill prices alone. A restart between the last proving read and the read
   of the fill changes nothing (the proven window is used). As the entry price is always
   included, MAE is at most 0 and MFE at least 0; no value is defaulted. `null` when either
   edge minute's bar is not captured, no entry fill read or no read of the sale is journaled.
@@ -223,7 +232,8 @@ retries it):
   "client_order_id": "ap-1a2b3c4d-t1-e1",
   "intent_at": "2026-11-16T15:00:00.123Z",
   "sent_at": "2026-11-16T15:00:00.125Z",
-  "send_outcome": "acknowledged",
+  "send_outcome": "unknown",
+  "latest_outcome": "acknowledged",
   "sends": 1,
   "filled_at": "2026-11-16T15:00:01.625Z"
 },
@@ -234,7 +244,7 @@ retries it):
   the first 8 hex characters of the random run id, trade id, leg and number). No account or
   broker id.
 - `intent_at`: the `order-intent` row, written before the send.
-- `sent_at`: the first `order-attempted` row, written just before the HTTP call.
+- `sent_at`: the first `order-attempted` row, written just before the HTTP call (see `sends`).
 - `send_outcome`: the engine's send state (`SendState`) that the send itself recorded:
   `acknowledged`, `refused` (no order exists) or `unknown` (may exist; never resent, resolved
   by broker reads), the row after the attempt. It is not changed by a later resolution: an
@@ -242,8 +252,14 @@ retries it):
   filled. With no attempt row it is the row after the intent (`absent`: never attempted, as
   recovery found it), and while nothing follows it is the last state (`intent` or
   `attempted`).
-- `sends`: the number of `order-attempted` rows of the entry order: 1. Shown as counted, never
-  clamped; anything else than 1 is something to look at.
+- `latest_outcome`: the latest send state of the entry order (same values; its last
+  `order-<state>` row). With `send_outcome` it says, for example, "unknown at send, confirmed
+  by a broker read" (`unknown` then `acknowledged`, as in the example above), or `absent`
+  when reads found no such order. Usually the same as `send_outcome`.
+- `sends`: the number of send attempts of the entry order (its `order-attempted` rows): 1.
+  Shown as counted, never clamped; anything else than 1 is something to look at. An attempt
+  is journaled before the request goes out, so an attempt that our own request budget refused
+  (`send_outcome` `refused`) counts as one although no HTTP call was made.
 - `filled_at`: the first `order-observed` row of the entry showing filled quantity > 0 (when
   the fill was seen, as in "Per-trade metrics").
 - `entry_cause`: `null` when every field is known; otherwise why each null one is, joined by
@@ -256,6 +272,45 @@ A journal row it cannot read makes every field `null` with `entry_cause` = `jour
 unreadable: <error>`; in the bot it is journaled once per trade (`entry-send-failed`) and the
 step goes on. The bot reads it again on every status write while the trade is open, and keeps
 it once the trade is closed (or a row is unreadable). `/days/<date>` computes it the same way.
+
+### GET /performance (read-only)
+
+`/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` (both required) summarizes the trades closed
+from `from` to `to`, New York dates, both included: the same closed trades as `day-v1` (bot
+database, this environment, a trade belongs to the date it closed), in close-time order.
+Everything is **gross**: fill prices only, no commissions or fees, as `result_gross_usd` in
+`day-v1`. It never reads the broker and is never used by the daily-loss check.
+
+- A trade's R is `result_gross_usd / planned_loss_usd`. A trade whose `planned_loss_usd` is not
+  positive has no 1 R: it is left out of **every** number below (USD ones too, so R and USD
+  describe the same trades) and counted in `exclusions` (`{cause, trades}`; empty when none).
+- `trades` counts the rest. `wins` have a result above 0, `losses` below 0, `scratches` exactly
+  0 (the same split as `days-v1`, which counts wins and losses by the same sign; no threshold).
+- `win_rate` = wins / trades, a ratio from 0 to 1. `expectancy_gross_r` and
+  `expectancy_gross_usd` are the mean R and mean USD per trade. `average_win_gross_r` is the
+  mean R of wins, `average_loss_gross_r` the mean R of losses (negative).
+  `profit_factor_gross` = USD won / USD lost (in USD, not R; `0` when there are losses and no
+  wins).
+- `max_drawdown_gross_r` / `max_drawdown_gross_usd`: the largest fall of the running total
+  (trade by trade, in close-time order) below its highest point so far, as a number >= 0. The
+  running total starts at 0 before the first trade, so a first trade at -1 R is a 1 R drawdown.
+- `result_gross_r` / `result_gross_usd`: the totals.
+- `days`: one entry per New York date with counted trades, oldest first: `day`, `trades`,
+  `result_gross_r`, `result_gross_usd` and `cumulative_gross_r` (the running R total at the
+  end of that day, from the first trade of the range). Dates without counted trades are left
+  out.
+
+Numbers that come from a division (every R value, `win_rate`, the expectancies, the averages,
+`profit_factor_gross`) are computed exactly and rounded half-even to
+`[api] performance_decimal_places` only in the answer; USD sums are exact. Each nullable number
+`x` has `x_cause`, `null` exactly when `x` is not: `no counted trades in the range` (every
+nullable number), `no winning trades in the range` (`average_win_gross_r`),
+`no losing trades in the range` (`average_loss_gross_r`, `profit_factor_gross`). Counts, totals
+and drawdowns are `0` for a range without trades, never `null`.
+
+`from` after `to`, a range longer than `[api] performance_max_range_days` days (both ends
+counted), a missing, repeated, extra or malformed parameter is `400 bad_request`. An
+unreadable database is `503 unavailable`, as for `/days`.
 
 ### GET /explain (read-only)
 

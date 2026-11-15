@@ -129,10 +129,9 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
         assert day_trade.mae_usd is not None and day_trade.mfe_usd is not None
         # Lower bound: the stop-out shows its 1 R loss, not the fall after the stop filled.
         assert day_trade.mae_usd == day_trade.result_gross_usd == -day_trade.planned_loss_usd
-        # The journal proves the shares held only until the stop's working read, seconds
-        # after the fill (reads are journaled on change), so no bar counts: the rise before
-        # the stop-out is not proven, and MFE is the entry itself.
-        assert day_trade.mfe_usd == 0
+        # The bot's periodic `order-held` rows prove the shares held until shortly before
+        # the stop-out, so the bars after the fill count: the rise is shown.
+        assert day_trade.mfe_usd > 0
         room = status.daily_room_usd
         assert room is not None and room < cfg.risk.max_daily_loss_usd
         assert [c.kind for c in status.recent_commands] == [
@@ -158,6 +157,13 @@ def test_demo_day_runs_the_real_bot_and_the_api_serves_it(tmp_path):
             ("price-action-v2", None)]
         assert any(d["action"] == "ENTER" for d in observers[0]["decisions"])
         assert D(observers[0]["result_gross_usd"]) != 0
+        # Performance over both demo sessions: one stop-out on each.
+        perf = _get(server, f"/performance?from=2026-11-12&to={FRIDAY.isoformat()}")
+        assert (perf["trades"], perf["losses"], perf["exclusions"]) == (2, 2, [])
+        assert [(d["day"], d["trades"]) for d in perf["days"]] == [
+            ("2026-11-12", 1), (FRIDAY.isoformat(), 1)]
+        assert D(perf["result_gross_r"]) == D(perf["days"][-1]["cumulative_gross_r"])
+        assert D(perf["max_drawdown_gross_usd"]) == -D(perf["result_gross_usd"]) > 0
     finally:
         if serving is not None:
             server.shutdown()

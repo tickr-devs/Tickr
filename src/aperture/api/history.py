@@ -19,11 +19,19 @@ from pathlib import Path
 from typing import Any
 
 from aperture.api import contract as api
+from aperture.api.performance import performance
 from aperture.archive import existing
 from aperture.calendar import ny_date_of
 from aperture.config import Config
 from aperture.data.capture import BARS_FILE, CaptureError, read_captured_bars
-from aperture.engine.core import Leg, OrderRow, SendState, order_from_row
+from aperture.engine.core import (
+    ORDER_HELD,
+    ORDER_OBSERVED,
+    Leg,
+    OrderRow,
+    SendState,
+    order_from_row,
+)
 from aperture.store import DATABASE_FILE, MIGRATIONS, Store
 from aperture.types import OrderState
 
@@ -47,7 +55,10 @@ def average_fill_price(orders: list[OrderRow]) -> Decimal | None:
 # The journal row that confirms a stop: a Detail read (`order-observed`) of one of the trade's
 # stop orders showing it working at the broker. The same row `protection-latency` records as
 # `stop_verified_at` (runtime/protection.py); the engine calls such a stop "verified".
-OBSERVED = "order-observed"
+OBSERVED = ORDER_OBSERVED
+# A later unchanged read of a stop still working with nothing filled (journaled at most once per
+# `[orders] stop_held_proof_seconds`): extends the window MAE/MFE prove the shares were held.
+HELD = ORDER_HELD
 INTENT = "order-intent"  # written before an order is sent
 _WORKING = (str(OrderState.ACCEPTED), str(OrderState.PARTIALLY_FILLED))
 
@@ -68,7 +79,8 @@ class FillTimes:
     last_exit_fill: datetime | None  # last sell read (stop or exit) showing more filled
     # Latest moment the journal proves no share had been sold yet: the earliest, over the sell
     # orders that sold shares, of a close's send intent or a stop's last read showing it
-    # unfilled. None when a sell order that sold has no such row.
+    # unfilled (`order-observed` or `order-held`, filled quantity 0 and no earlier read showing
+    # a fill). None when a sell order that sold has no such row.
     held_until: datetime | None
 
 
@@ -84,7 +96,7 @@ def _observed(row: Any, body: dict[str, Any]) -> tuple[Decimal, str]:
     try:
         return Decimal(str(body["filled_quantity"])), str(body["state"])
     except (KeyError, ArithmeticError) as exc:
-        raise MalformedJournal(f"journal row {row['seq']} ({OBSERVED} {row['key']}): "
+        raise MalformedJournal(f"journal row {row['seq']} ({row['kind']} {row['key']}): "
                                f"{type(exc).__name__}: {exc}") from exc
 
 
@@ -92,8 +104,8 @@ def fill_times(store: Store, orders: list[OrderRow]) -> FillTimes:
     """Raises MalformedJournal for a row it cannot read; callers show null instead."""
     legs = {o.client_order_id: o.leg for o in orders}
     rows = store.query(
-        f"SELECT seq, at_utc, kind, key, body FROM journal WHERE kind IN (?, ?) AND key IN "
-        f"({', '.join('?' for _ in legs)}) ORDER BY seq", (OBSERVED, INTENT, *legs)
+        f"SELECT seq, at_utc, kind, key, body FROM journal WHERE kind IN (?, ?, ?) AND key IN "
+        f"({', '.join('?' for _ in legs)}) ORDER BY seq", (OBSERVED, HELD, INTENT, *legs)
     ) if legs else []
     first = stop = last = None
     first_quantity = ZERO
@@ -107,6 +119,13 @@ def fill_times(store: Store, orders: list[OrderRow]) -> FillTimes:
             intent.setdefault(cid, at)
             continue
         quantity, state = _observed(row, body)
+        if row["kind"] == HELD:
+            # Proof only: never a fill, a confirmation or a change. After a read showing a
+            # fill it proves nothing about the full quantity.
+            if (legs[cid] is Leg.STOP and quantity == 0 and filled.get(cid, ZERO) == 0
+                    and state in _WORKING):
+                unfilled[cid] = at
+            continue
         more = quantity > filled.get(cid, ZERO)
         filled[cid] = quantity
         if legs[cid] is Leg.ENTRY:
@@ -176,7 +195,7 @@ def trade_metrics(store: Store, trade: api.DayTrade,
 # change of an order's send state: `order-intent` before the send, `order-attempted` just
 # before the HTTP call, then the outcome.
 _SEND_KINDS = {f"order-{state}": state for state in SendState}
-NO_ENTRY = api.EntrySend(None, None, None, None, None, None)
+NO_ENTRY = api.EntrySend(None, None, None, None, None, None, None)
 NOT_READ = "not read on this path"  # the daily-loss path never reads the journal
 
 
@@ -228,6 +247,7 @@ def entry_send(store: Store, trade_id: str) -> tuple[api.EntrySend, str | None]:
         (filled is None, "no order-observed row shows the entry filled")) if missing]
     entry = api.EntrySend(cid, intent, sent,
                           None if outcome is None else api.SendOutcome(outcome),
+                          api.SendOutcome(states[-1]) if states else None,
                           states.count(SendState.ATTEMPTED), filled)
     return entry, "; ".join(causes) or None
 
@@ -290,7 +310,8 @@ class HistoryPaths:
 
 
 class History:
-    """Answers GET /days, /days/<date> and /bars. Thread safe; caches the last bars file read."""
+    """Answers GET /days, /days/<date>, /bars and /performance. Thread safe; caches the last
+    bars file read."""
 
     def __init__(self, paths: HistoryPaths) -> None:
         self.paths = paths
@@ -405,3 +426,7 @@ class History:
         bars = self._bars_by_symbol(day, today).get(symbol, [])
         return api.BarsV1(environment=self.paths.environment, symbol=symbol, day=day,
                           bars=tuple(bars))
+
+    def performance(self, from_day: date, to_day: date, places: int) -> api.PerformanceV1:
+        trades, _ = self._read_db()
+        return performance(self.paths.environment, from_day, to_day, trades, places)

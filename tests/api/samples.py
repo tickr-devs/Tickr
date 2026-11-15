@@ -33,8 +33,8 @@ T0 = datetime(2026, 11, 16, 15, 0, 0, 123000, tzinfo=UTC)
 
 def entry(cid: str, at: datetime) -> EntrySend:
     """A clean entry send: journaled, attempted once 2 ms later, filled 1.5 s later."""
-    return EntrySend(cid, at, at + timedelta(milliseconds=2), SendOutcome.ACKNOWLEDGED, 1,
-                     at + timedelta(milliseconds=1502))
+    return EntrySend(cid, at, at + timedelta(milliseconds=2), SendOutcome.ACKNOWLEDGED,
+                     SendOutcome.ACKNOWLEDGED, 1, at + timedelta(milliseconds=1502))
 
 
 POSITION = Position("ABCD", Decimal("10"), Decimal("12.34"), T0,
@@ -57,9 +57,11 @@ def status(written_at: datetime = T0, **overrides) -> StatusV1:
         position=POSITION,
         trades_today=(Trade("WXYZ", Decimal("20"), Decimal("5.10"), Decimal("5.02"), T0, T0,
                             "stop", Decimal("-1.60"), Decimal("50"), Decimal("1.250"),
-                            # Send outcome unknown (timeout), the order then seen filled.
+                            # Send outcome unknown (timeout), then confirmed by a broker
+                            # read and seen filled.
                             EntrySend("ap-0002-e", T0, T0 + timedelta(milliseconds=2),
-                                      SendOutcome.UNKNOWN, 1, T0 + timedelta(seconds=4)),
+                                      SendOutcome.UNKNOWN, SendOutcome.ACKNOWLEDGED, 1,
+                                      T0 + timedelta(seconds=4)),
                             None),),
         result_today_gross_usd=Decimal("-1.60"),
         freshness=Freshness(T0, None, StreamHealth.FRESH),
