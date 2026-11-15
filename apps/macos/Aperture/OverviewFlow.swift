@@ -202,6 +202,7 @@ struct WatchingCard: View {
 /// the time on top, the deciding check below, and a thin bar of how close it is to passing.
 private struct WatchingRow: View {
   let row: WatchingRowV1
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
@@ -244,14 +245,18 @@ private struct WatchingRow: View {
     let share = row.closeness.map { min(max(NSDecimalNumber(decimal: $0.value).doubleValue, 0), 1) }
     return GeometryReader { proxy in
       ZStack(alignment: .leading) {
-        Capsule().fill(Palette.separator)
         if let share {
+          Capsule().fill(Palette.separator)
           Capsule().fill(row.verdict.color).frame(width: proxy.size.width * share)
+        } else {
+          // Unknown is a dashed outline, never an empty track that reads as 0 %.
+          Capsule().strokeBorder(Palette.separatorStrong,
+            style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
         }
       }
     }
     .frame(height: Tokens.Size.barThin)
-    .animation(Tokens.Motion.fill, value: share)
+    .animation(reduceMotion ? nil : Tokens.Motion.fill, value: share)
     .help(share == nil ? row.closenessCause.map { Text(verbatim: $0) } ?? Text(L10n.Watching.closeness)
       : Text(L10n.Watching.closeness))
     .accessibilityLabel(Text(L10n.Watching.closeness))
