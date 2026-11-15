@@ -47,8 +47,11 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
   }
 
+  /// Prefix of a tab button's accessibility id.
+  static let idPrefix = "settings-tab-"
+
   /// Accessibility id of the tab's button, for the screen tour.
-  var buttonID: String { SettingsTabBar.idPrefix + rawValue }
+  var buttonID: String { Self.idPrefix + rawValue }
 }
 
 /// The design's tab strip: a row of fixed-width buttons, a thin symbol over a small title; the
@@ -65,9 +68,6 @@ struct SettingsTabBar: View {
   static let symbolFont = Font.system(.title2, weight: .light)
   /// Font of a tab's title: 11-point medium (subheadline on the Mac), the design's tab label.
   static let titleFont = Font.system(.subheadline, weight: .medium)
-  /// Prefix of a tab button's accessibility id.
-  static let idPrefix = "settings-tab-"
-
   var body: some View {
     HStack(spacing: Tokens.Space.xs) {
       ForEach(SettingsTab.allCases) { tab in
@@ -207,5 +207,128 @@ struct ConfigSwitch: View {
           .padding(Tokens.Space.xxs)
       }
       .accessibilityHidden(true)
+  }
+}
+
+/// A switch of the app's own preferences with its title, in the design's switch colours.
+struct SwitchRow: View {
+  let title: LocalizedStringResource
+  @Binding var isOn: Bool
+
+  init(_ title: LocalizedStringResource, isOn: Binding<Bool>) {
+    self.title = title
+    self._isOn = isOn
+  }
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      Text(title)
+        .font(Tokens.Typography.callout)
+        .foregroundStyle(Palette.textSecondary)
+    }
+    .toggleStyle(.switch)
+    .controlSize(.small)
+    .tint(Palette.accent)
+  }
+}
+
+/// The design's segmented strip: the choices side by side on the sunken surface, the chosen one
+/// raised on the card colour with a hairline.
+struct SegmentStrip<Value: Hashable, Label: View>: View {
+  @Binding var selection: Value
+  let choices: [Value]
+  let label: (Value) -> Label
+
+  init(selection: Binding<Value>, choices: [Value], @ViewBuilder label: @escaping (Value) -> Label) {
+    self._selection = selection
+    self.choices = choices
+    self.label = label
+  }
+
+  var body: some View {
+    HStack(spacing: Tokens.Space.xs) {
+      ForEach(choices, id: \.self) { choice in
+        let chosen = choice == selection
+        Button { selection = choice } label: {
+          label(choice)
+            .font(Tokens.Typography.buttonCompact)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Tokens.Space.s)
+            .foregroundStyle(chosen ? Palette.textPrimary : Palette.textTertiary)
+            .background {
+              if chosen {
+                RoundedRectangle(cornerRadius: Tokens.Radius.small, style: .continuous)
+                  .fill(Palette.surface)
+                  .strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin)
+              }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
+      }
+    }
+    .padding(Tokens.Space.xs)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
+      .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
+    .animation(Tokens.Motion.quick, value: selection)
+  }
+}
+
+/// A small tile on the sunken surface: a figure in bold monospace over its label (History), or a
+/// dot, a label and a figure on one line (the bot's status timing).
+struct StatTile: View {
+  let value: String
+  let label: LocalizedStringResource
+  let dot: Color?
+
+  init(value: String, label: LocalizedStringResource) {
+    self.value = value
+    self.label = label
+    self.dot = nil
+  }
+
+  init(dot: Color, label: LocalizedStringResource, value: String) {
+    self.value = value
+    self.label = label
+    self.dot = dot
+  }
+
+  var body: some View {
+    Group {
+      if let dot {
+        HStack(spacing: Tokens.Space.s) {
+          PulseDot(dot, pulsing: false)
+          Text(label)
+            .font(Tokens.Typography.callout)
+            .foregroundStyle(Palette.textSecondary)
+          Spacer(minLength: Tokens.Space.s)
+          Text(verbatim: value)
+            .font(Tokens.Typography.calloutMono.weight(.bold))
+            .foregroundStyle(Palette.textPrimary)
+        }
+      } else {
+        VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+          Text(verbatim: value)
+            .font(Tokens.Typography.chipValue)
+            .foregroundStyle(Palette.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(Tokens.Shrink.standard)
+          Text(label)
+            .font(Tokens.Typography.callout)
+            .foregroundStyle(Palette.textTertiary)
+            .lineLimit(1)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, Tokens.Space.m)
+    .padding(.vertical, Tokens.Space.s)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
+      .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
+    .accessibilityElement(children: .combine)
   }
 }

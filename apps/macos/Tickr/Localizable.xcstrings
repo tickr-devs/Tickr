@@ -7305,6 +7305,23 @@
         }
       }
     },
+    "settings.addressFootnote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter an http address of the bot's local API, such as %@. Loopback or your Tailscale address only."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите http-адрес локального API бота, например %@. Только локальный адрес или адрес Tailscale."
+          }
+        }
+      }
+    },
     "settings.advanced" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7328,30 +7345,64 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bot crashed or did not start"
+            "value" : "Bot down"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Бот упал или не запустился"
+            "value" : "Бот не работает"
           }
         }
       }
     },
-    "settings.alertBrokerReads" : {
+    "settings.alertBotKinds" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Broker reads failing"
+            "value" : "Crashed, did not start or stop, down with an open trade"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сбой чтения у брокера"
+            "value" : "Упал, не запустился или не остановился, остановлен с открытой сделкой"
+          }
+        }
+      }
+    },
+    "settings.alertBroker" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker or quotes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Брокер или котировки"
+          }
+        }
+      }
+    },
+    "settings.alertBrokerKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown order status, foreign position, broker reads failing, quotes lost with a position"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестный статус ордера, чужая позиция, сбой чтения у брокера, нет котировок при открытой позиции"
           }
         }
       }
@@ -7373,36 +7424,36 @@
         }
       }
     },
-    "settings.alertExitRefused" : {
+    "settings.alertExit" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Closing order refused or not filled"
+            "value" : "A close failed"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Закрывающий ордер отклонён или не исполнен"
+            "value" : "Закрытие не удалось"
           }
         }
       }
     },
-    "settings.alertForeign" : {
+    "settings.alertExitKinds" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Foreign exposure"
+            "value" : "Exit refused or not filled, flatten after the close, not flat after the flatten time"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чужие позиции"
+            "value" : "Выход отклонён или не исполнен, закрытие после закрытия рынка, позиция осталась после времени закрытия"
           }
         }
       }
@@ -7424,6 +7475,23 @@
         }
       }
     },
+    "settings.alertLossLimitKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No new entries for the rest of the day"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новых входов до конца дня не будет"
+          }
+        }
+      }
+    },
     "settings.alertMorning" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7441,19 +7509,19 @@
         }
       }
     },
-    "settings.alertNotFlat" : {
+    "settings.alertMorningKinds" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not flat after flatten"
+            "value" : "Preflight failed"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не в нуле после закрытия"
+            "value" : "Предстартовая проверка не прошла"
           }
         }
       }
@@ -7475,6 +7543,23 @@
         }
       }
     },
+    "settings.alertObserversKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too much to evaluate: observers are off for the run, trading goes on"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слишком много работы: наблюдатели выключены до перезапуска, торговля продолжается"
+          }
+        }
+      }
+    },
     "settings.alerts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7492,70 +7577,19 @@
         }
       }
     },
-    "settings.alertsFooter" : {
+    "settings.alertsNote" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The bot decides and sends these itself: a Mac notification and, when a recipient is set in its env file, an iMessage. The same alert repeated within a short window is shown once."
+            "value" : "The bot sends these itself: a Mac notification and, when set, an iMessage; a repeat within a short window shows once."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Бот сам решает и отправляет оповещения: уведомление на Mac и, если получатель указан в его env-файле, iMessage. Одно и то же оповещение за короткое время показывается один раз."
-          }
-        }
-      }
-    },
-    "settings.alertsLegend" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "● on · ○ phone push comes with the iOS app"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "● включено · ○ пуш на телефон появится вместе с приложением iOS"
-          }
-        }
-      }
-    },
-    "settings.alertStopRejected" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop rejected"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Стоп отклонён"
-          }
-        }
-      }
-    },
-    "settings.alertStreamLost" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stream lost with a position"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Поток пропал при открытой позиции"
+            "value" : "Бот отправляет их сам: уведомление на Mac и, если настроено, iMessage; повтор за короткое время показывается один раз."
           }
         }
       }
@@ -7577,19 +7611,19 @@
         }
       }
     },
-    "settings.alertUnknownStatus" : {
+    "settings.alertTokenKinds" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unknown order status"
+            "value" : "The broker token must be confirmed before the open"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Неизвестный статус ордера"
+            "value" : "Токен брокера нужно подтвердить до открытия"
           }
         }
       }
@@ -7600,13 +7634,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Position without verified protection"
+            "value" : "Position without a working stop"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Позиция без подтверждённой защиты"
+            "value" : "Позиция без рабочего стопа"
+          }
+        }
+      }
+    },
+    "settings.alertUnprotectedKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No verified broker stop, or the broker rejected it"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стоп у брокера не подтверждён или отклонён"
           }
         }
       }
@@ -7624,6 +7675,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сторож"
+          }
+        }
+      }
+    },
+    "settings.alertWatchdogKinds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not flat after the close, could not check, restarted the bot or could not"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не всё закрыто после закрытия, не смог проверить, перезапустил бота или не смог"
+          }
+        }
+      }
+    },
+    "settings.alwaysDark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always dark, whatever the system uses"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всегда тёмная, что бы ни стояло в системе"
+          }
+        }
+      }
+    },
+    "settings.alwaysLight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always light, whatever the system uses"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всегда светлая, что бы ни стояло в системе"
+          }
+        }
+      }
+    },
+    "settings.alwaysOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "always on"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "всегда включён"
           }
         }
       }
@@ -7675,6 +7794,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Оформление"
+          }
+        }
+      }
+    },
+    "settings.appearanceTheme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appearance · theme"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оформление · тема"
+          }
+        }
+      }
+    },
+    "settings.backup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Резервная копия"
           }
         }
       }
@@ -7781,23 +7934,6 @@
         }
       }
     },
-    "settings.botAlerts" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alerts from the bot"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Оповещения бота"
-          }
-        }
-      }
-    },
     "settings.botConnection" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7828,6 +7964,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Служба бота"
+          }
+        }
+      }
+    },
+    "settings.botStatusInApp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot · status in this app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот · статус в приложении"
+          }
+        }
+      }
+    },
+    "settings.brokerEnvironment" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker environment"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Окружение брокера"
           }
         }
       }
@@ -7883,6 +8053,23 @@
         }
       }
     },
+    "settings.connected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "connected"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "подключено"
+          }
+        }
+      }
+    },
     "settings.connectedTo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7896,6 +8083,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Подключено к %@."
+          }
+        }
+      }
+    },
+    "settings.daily" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "daily"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ежедневно"
           }
         }
       }
@@ -8070,6 +8274,23 @@
         }
       }
     },
+    "settings.featureHalfDays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trade half days"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торговать в сокращённые дни"
+          }
+        }
+      }
+    },
     "settings.features" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8236,6 +8457,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "допуск закрыт"
+          }
+        }
+      }
+    },
+    "settings.gateOpen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "разрешена"
           }
         }
       }
@@ -8410,19 +8648,36 @@
         }
       }
     },
+    "settings.jobApi" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API"
+          }
+        }
+      }
+    },
     "settings.jobs" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jobs on the Mac"
+            "value" : "Jobs on the Mac · launchd"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Задачи на Mac"
+            "value" : "Задачи на Mac · launchd"
           }
         }
       }
@@ -8433,13 +8688,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Launch times are in the Mac's local time; other times are New York time."
+            "value" : "launch: Mac local time · other times ET"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Время запуска указано по часам Mac, остальное время нью-йоркское."
+            "value" : "запуск: по часам Mac · остальное по Нью-Йорку"
           }
         }
       }
@@ -8478,6 +8733,57 @@
         }
       }
     },
+    "settings.lastShort" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последняя %@"
+          }
+        }
+      }
+    },
+    "settings.legendOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "on"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "включено"
+          }
+        }
+      }
+    },
+    "settings.legendPhone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "phone push comes with the iOS app"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пуш на телефон появится вместе с приложением iOS"
+          }
+        }
+      }
+    },
     "settings.liveObservers" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8495,6 +8801,23 @@
         }
       }
     },
+    "settings.markClose" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ close"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ закрытие"
+          }
+        }
+      }
+    },
     "settings.marketTimezone" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8508,6 +8831,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Часовой пояс рынка"
+          }
+        }
+      }
+    },
+    "settings.markFlatten" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ flatten"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ закрытие позиций"
+          }
+        }
+      }
+    },
+    "settings.markLastEntry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ last entry"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ последний вход"
+          }
+        }
+      }
+    },
+    "settings.markOpen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ открытие"
           }
         }
       }
@@ -8559,6 +8933,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Строка меню"
+          }
+        }
+      }
+    },
+    "settings.menuBarNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day result, positions and bot actions one click away"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Итог дня, позиции и действия с ботом в один клик"
           }
         }
       }
@@ -8699,6 +9090,23 @@
         }
       }
     },
+    "settings.observers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Observers"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наблюдатели"
+          }
+        }
+      }
+    },
     "settings.ok" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8729,6 +9137,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Плановый убыток на сделку"
+          }
+        }
+      }
+    },
+    "settings.postBacklog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "POST · BACKLOG"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ПОСТ · BACKLOG"
+          }
+        }
+      }
+    },
+    "settings.preBacklog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PRE · BACKLOG"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ПРЕ · BACKLOG"
           }
         }
       }
@@ -8797,6 +9239,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сессия"
+          }
+        }
+      }
+    },
+    "settings.sessionTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session · %@ · NYSE calendar known"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сессия · %@ · календарь NYSE известен"
           }
         }
       }
@@ -8920,6 +9379,91 @@
         }
       }
     },
+    "settings.themeDark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dark"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тёмная"
+          }
+        }
+      }
+    },
+    "settings.themeLight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Светлая"
+          }
+        }
+      }
+    },
+    "settings.themeSystem" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Как в системе"
+          }
+        }
+      }
+    },
+    "settings.thisMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this Mac"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "этот Mac"
+          }
+        }
+      }
+    },
+    "settings.timesET" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "times ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "время ET"
+          }
+        }
+      }
+    },
     "settings.traded" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8954,6 +9498,40 @@
         }
       }
     },
+    "settings.tradingGate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trading gate"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Допуск к торговле"
+          }
+        }
+      }
+    },
+    "settings.unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not reachable"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "недоступен"
+          }
+        }
+      }
+    },
     "settings.useDefault" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8967,6 +9545,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "По умолчанию"
+          }
+        }
+      }
+    },
+    "settings.verified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "verified"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "проверена"
+          }
+        }
+      }
+    },
+    "settings.whileBotRuns" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "while the bot runs"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пока работает бот"
           }
         }
       }
