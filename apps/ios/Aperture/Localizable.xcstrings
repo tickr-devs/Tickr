@@ -3078,6 +3078,23 @@
         }
       }
     },
+    "positions.excursion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MAE / MFE"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MAE / MFE"
+          }
+        }
+      }
+    },
     "positions.filled" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3163,6 +3180,40 @@
         }
       }
     },
+    "positions.last" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последняя %@"
+          }
+        }
+      }
+    },
+    "positions.lastAndR" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last %@ · %@ now"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "последняя %@ · сейчас %@"
+          }
+        }
+      }
+    },
     "positions.levels" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3214,23 +3265,6 @@
         }
       }
     },
-    "positions.priceLineLater" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "price line comes with chart data"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "линия цены появится с данными графика"
-          }
-        }
-      }
-    },
     "positions.protected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3244,6 +3278,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "под защитой"
+          }
+        }
+      }
+    },
+    "positions.reconciled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconciled with broker"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сверено с брокером"
           }
         }
       }
@@ -3295,23 +3346,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "занято слотов: %lld из %lld"
-          }
-        }
-      }
-    },
-    "positions.stop" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "stop"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "стоп"
           }
         }
       }
@@ -3380,6 +3414,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "до стопа"
+          }
+        }
+      }
+    },
+    "positions.waitingForBars" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "price line waits for bars"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "линия цены ждёт баров"
           }
         }
       }
