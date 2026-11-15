@@ -6,7 +6,7 @@ lost reply, cancel-vs-fill race, unmapped status, "not found"), and a record of 
 `strategy_exits` makes the active strategy answer EXIT for a held symbol from a given minute
 (price-action-v1 has no exit rule of its own; the platform path is what is under test).
 Nothing here changes product code: the exchange is swapped in through `world.exchange`, which
-the harness reads when `aperture run` builds its adapters, and the strategy through monkeypatch.
+the harness reads when `tickr run` builds its adapters, and the strategy through monkeypatch.
 """
 
 from __future__ import annotations
@@ -19,13 +19,13 @@ from decimal import Decimal
 
 import pytest
 
-from aperture import cli
-from aperture.broker.base import Acknowledgement, OutcomeUnknown
-from aperture.strategy.base import Check, Decision, SymbolContext, Verdict
-from aperture.strategy.price_action_v1 import PriceActionV1
-from aperture.types import OrderDetail, OrderRequest, OrderState, OrderType, Side
 from rehearsal.harness import DAY, Rehearsal, history
 from rehearsal.world import Exchange, World, build_day, ny
+from tickr import cli
+from tickr.broker.base import Acknowledgement, OutcomeUnknown
+from tickr.strategy.base import Check, Decision, SymbolContext, Verdict
+from tickr.strategy.price_action_v1 import PriceActionV1
+from tickr.types import OrderDetail, OrderRequest, OrderState, OrderType, Side
 
 HOT = Decimal(30000)
 QUIET = Decimal(3000)
@@ -225,14 +225,14 @@ def fence_names(r: Rehearsal) -> list[str]:
 
 
 def clear_fence(r: Rehearsal, monkeypatch: pytest.MonkeyPatch, name: str) -> int:
-    """The operator's `aperture clear-fence <name>` between two runs, against the world's
+    """The operator's `tickr clear-fence <name>` between two runs, against the world's
     exchange (the command reconciles before it clears)."""
     monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: r.world.exchange)
     return cli.main(["--config", str(r.bot_toml), "clear-fence", name])
 
 
 def run_until_crash(r: Rehearsal, clock: str) -> None:
-    """`aperture run` until a hook raises Crash (kill -9); the world's pending events are
+    """`tickr run` until a hook raises Crash (kill -9); the world's pending events are
     dropped (the SIGTERM of `run_until` belongs to the dead process)."""
     try:
         r.run_until(clock)

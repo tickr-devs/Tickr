@@ -15,7 +15,6 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.types import OrderRequest, OrderType
 from rehearsal.harness import Rehearsal
 from rehearsal.kit import (
     Crash,
@@ -29,6 +28,7 @@ from rehearsal.kit import (
     strategy_exits,
     without_fsync,
 )
+from tickr.types import OrderRequest, OrderType
 
 
 @pytest.fixture(autouse=True)

@@ -1,4 +1,4 @@
-"""More rehearsals through the real `aperture run`: partial fills, the exit teardown and its
+"""More rehearsals through the real `tickr run`: partial fills, the exit teardown and its
 cancel-vs-fill races, the daily ceiling over a day with a win, the per-symbol pause, the
 unprotected-position safeguard and a partial entry at the end of the day. Restarts are in
 test_scenarios_restarts.py, odd broker answers in test_scenarios_broker.py.
@@ -15,7 +15,6 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.types import OrderState, OrderType, Side
 from rehearsal.harness import Rehearsal
 from rehearsal.kit import (
     HOT,
@@ -34,6 +33,7 @@ from rehearsal.kit import (
     strategy_exits,
     without_fsync,
 )
+from tickr.types import OrderState, OrderType, Side
 
 
 @pytest.fixture(autouse=True)

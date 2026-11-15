@@ -5,7 +5,7 @@ Spec 9, Reconciliation: "Quantity mismatch: broker wins, entries blocked until e
 stop is made to cover the broker quantity." Spec 9, Session flatten: "position closed by the
 flatten time"; spec 1: the bot "ends every day flat".
 
-The engine (src/aperture/engine/core.py, `_advance` sets QUANTITY_MISMATCH, `_protect` sizes
+The engine (src/tickr/engine/core.py, `_advance` sets QUANTITY_MISMATCH, `_protect` sizes
 on Detail only, `_exit_step` sends no close while `held != expected`) keeps the stop at the
 Detail quantity and, at the flatten time, sends no closing order at all while the broker holds
 more than Detail explains. So after someone buys 10 AAA by hand while the bot holds 26, the
@@ -22,9 +22,9 @@ from decimal import Decimal as D
 
 import pytest
 
-from aperture.types import OrderType
 from rehearsal.harness import Rehearsal
 from rehearsal.kit import add, breakout, scripted, without_fsync
+from tickr.types import OrderType
 
 
 @pytest.fixture(autouse=True)
