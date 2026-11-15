@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import tomllib
+import warnings
 from dataclasses import dataclass, fields
 from decimal import Decimal
 from pathlib import Path
@@ -26,6 +27,33 @@ PLAIN_FOLDER = re.compile(r"^[A-Za-z0-9_-]+$")
 
 class ConfigError(ValueError):
     """The configuration is invalid; the bot must not start."""
+
+
+class RenamedKeyWarning(UserWarning):
+    """A config key was read under its old name; rename it in `config/bot.toml`."""
+
+
+# Keys renamed after release: (section, old name) -> new name. An old local
+# `config/bot.toml` keeps loading with a warning; giving both names is refused.
+RENAMED_KEYS: dict[tuple[str, str], str] = {
+    ("api", "watching_check_decimal_places"): "check_decimal_places",
+}
+
+
+def apply_renamed_keys(name: str, table: Any) -> Any:
+    """Return `table` with old key names moved to their new names, warning once per key."""
+    if not isinstance(table, dict):
+        return table
+    table = dict(table)
+    for (section, old), new in RENAMED_KEYS.items():
+        if section != name or old not in table:
+            continue
+        if new in table:
+            raise ConfigError(f"[{name}] has both {old} (old name) and {new}; keep only {new}")
+        warnings.warn(f"[{name}] {old} is the old name of {new}; rename it in config/bot.toml",
+                      RenamedKeyWarning, stacklevel=2)
+        table[new] = table.pop(old)
+    return table
 
 
 @dataclass(frozen=True)
@@ -407,7 +435,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if missing:
         raise ConfigError(f"missing sections: {', '.join(missing)}")
 
-    built = {name: build_section(name, data[name], cls) for name, cls in _SECTIONS.items()}
+    built = {name: build_section(name, apply_renamed_keys(name, data[name]), cls)
+             for name, cls in _SECTIONS.items()}
 
     envs_raw = data["environments"]
     if not isinstance(envs_raw, dict) or not envs_raw:
