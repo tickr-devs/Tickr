@@ -58,8 +58,32 @@ def test_close_beyond_the_band_is_watch_with_the_band_level():
     decision = make().evaluate(ctx(today(41, jump_at=40)))
     assert decision.verdict is Verdict.WATCH
     assert decision.setup == nb.SETUP and decision.trigger == d("20.4")
-    # max(band level 20 x 1.01 = 20.2, session VWAP) is the stop level
-    assert decision.invalidation >= d("20.2")
+    # VWAP of 40 flat bars at typical price (20.05 + 19.95 + 20) / 3 = 20 and one at 20.4 is
+    # below the band level 20 x 1.01 = 20.2, so the band level is the stop level
+    assert decision.invalidation == d("20.20")
+
+
+def test_vwap_below_the_close_and_above_the_band_raises_the_stop_level():
+    bars = [bar(TODAY, i, 20.3, 20.35, 20.25, 20.3, 5_000) for i in range(30)]
+    bars.append(bar(TODAY, 30, 20.3, 20.45, 20.3, 20.4, 5_000))
+    bars[0] = bar(TODAY, 0, 20.0, 20.35, 19.95, 20.3, 5_000)
+    decision = make().evaluate(ctx(bars))
+    assert decision.verdict is Verdict.WATCH
+    assert d("20.2") < decision.invalidation < decision.trigger
+
+
+def test_vwap_above_the_close_is_not_a_stop_level():
+    bars = [bar(TODAY, i, 20.0, 20.05, 19.95, 20.0, 5_000) for i in range(30)]
+    bars[5] = bar(TODAY, 5, 20.0, 23.0, 22.0, 22.5, 200_000)  # early spike lifts VWAP
+    bars[0] = bar(TODAY, 0, 20.0, 20.05, 19.95, 20.0, 5_000)
+    bars.append(bar(TODAY, 30, 20.3, 20.45, 20.3, 20.4, 5_000))
+    decision = make().evaluate(ctx(bars))
+    assert decision.verdict is Verdict.WATCH
+    assert decision.invalidation == d("20.20")
+
+
+def test_after_the_latest_minute_is_no_signal():
+    assert rules(make().evaluate(ctx(today(332, jump_at=331))))[-1] == ("signal", False)
 
 
 def test_enter_has_the_admission_shape():
@@ -134,7 +158,8 @@ def test_a_full_day_evaluates_well_inside_the_observer_time_limit():
 
 
 @pytest.mark.parametrize("section,key,value", [
-    ("signal", "earliest_minutes_after_open", 400),
+    ("signal", "earliest_minutes_after_open", 340),
+    ("signal", "latest_minutes_after_open", 390),
     ("signal", "band_multiple", 0),
     ("signal", "extra", 1),
 ])

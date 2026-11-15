@@ -11,11 +11,13 @@ Values come from `strategies/noise-band-v1/strategy.toml`. On the last completed
 2. Band = mean over the `prior_sessions` prior sessions of |close of their bar at the same New
    York minute / their 09:30 open - 1|. Every prior session must have both bars.
 3. The close is above session open x (1 + `band_multiple` x band).
-4. This is the first bar of the session where 1-3 hold.
+4. This is the first bar of the session where 1-3 hold. An earlier bar whose band is unknown
+   (a prior session lacks that minute) counts as not fired.
 
 That is one signal bar per symbol and session: if the quote does not allow an entry during
 that minute, the session is spent. Then ENTER with the stop at the higher of the band level
-and the session VWAP (or lower, at the minimum stop distance below the entry window), and the
+and the session VWAP (VWAP only while it is below the close), or lower, at the minimum stop
+distance below the entry window, and the
 exit left to the platform's session flatten. A half day among the prior sessions has no bar
 after its early close, so later minutes get no band and no signal until it leaves the window.
 The history test (L2) is positive only on days that later became gainers, which is
@@ -40,6 +42,7 @@ NAME = "noise-band-v1"
 SETUP = "noise_band"
 REGULAR_OPEN = time(9, 30)
 MINUTES_PER_HOUR = 60
+REGULAR_SESSION_MINUTES = 390  # 09:30 to 16:00, minute bars 0..389
 
 _SIGNAL: simple.Schema = {
     "signal": {
@@ -141,7 +144,8 @@ class NoiseBandV1:
         assert last_band is not None  # the signal fired on this bar
         level = session_open * (simple.ONE + s.band_multiple * last_band)
         vwap = ind.vwap_series(session)[-1]
-        stop_level = level if vwap is None else max(level, vwap)
+        # VWAP raises the stop only while it is below the close; above it, it is no support.
+        stop_level = level if vwap is None or vwap >= last.close else max(level, vwap)
         return simple.enter(self, c, context, checks, SETUP, last.close, stop_level)
 
 
@@ -149,6 +153,8 @@ def create(values: Mapping[str, Any]) -> NoiseBandV1:
     """Build the strategy from parsed strategy.toml values (ValueError on any key problem)."""
     flat = simple.parse(values, _SIGNAL, NAME)
     signal = Signal(**{k: flat[k] for k in Signal.__dataclass_fields__})
+    if signal.latest_minutes_after_open >= REGULAR_SESSION_MINUTES:
+        raise ValueError("[signal] latest_minutes_after_open must be inside the regular session")
     if signal.earliest_minutes_after_open > signal.latest_minutes_after_open:
         raise ValueError("[signal] earliest_minutes_after_open must not exceed "
                          "latest_minutes_after_open")
