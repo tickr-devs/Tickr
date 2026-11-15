@@ -256,9 +256,9 @@ def _spawn_daemon(target: Callable[[], None]) -> threading.Thread:
 class Channels:
     """Every alert through every channel; a failing channel never stops the others.
 
-    `channels` run in the caller's thread (the Mac notification is quick). `background`
-    channels (iMessage) each run once on a daemon thread, so the bot's loop never waits on
-    Messages.app; each reports its result through `done` exactly once. Never retried."""
+    `channels` run in the caller's thread. `background` channels each run once on a daemon
+    thread, so the bot's loop never waits on the Tickr app, osascript or Messages.app; each
+    reports its result through `done` exactly once. Never retried."""
 
     def __init__(self, channels: tuple[tuple[str, Notifier], ...],
                  background: tuple[tuple[str, Notifier], ...] = (),
@@ -317,11 +317,12 @@ def _once(channel: Notifier, name: str, title: str, text: str, done: Done) -> Ca
 
 def default_notifier(config: AlertsConfig, platform: str = sys.platform,
                      environ: Mapping[str, str] = os.environ) -> Notifier | None:
-    """The channels for this machine (Mac notification now, iMessage in the background), or
-    None where there are none (CI, Linux)."""
+    """The channels for this machine (Mac notification and iMessage, both in the background:
+    the Tickr app and osascript can each take seconds, and the bot's loop must not wait for
+    them), or None where there are none (CI, Linux)."""
     if platform == DARWIN:
-        return Channels(((MACOS, mac_notifier(config)),),
-                        ((IMESSAGE, IMessageNotifier(config, environ)),))
+        return Channels((), ((MACOS, mac_notifier(config)),
+                             (IMESSAGE, IMessageNotifier(config, environ))))
     return None
 
 
@@ -363,7 +364,9 @@ class Alerter:
     """Shows alerts with repeat suppression. One instance per process.
 
     An alert counts as shown (for repeat suppression) once any channel delivered it, so a
-    channel that keeps failing does not repeat the others on every occurrence. Background
+    channel that keeps failing does not repeat the others on every occurrence. While a
+    background send of the same alert is still running it is a repeat too, so a condition
+    raised on every loop pass starts one send, not one per pass. Background
     results arrive through `completed()`, which the owner of the journal calls regularly (the
     bot once per loop pass), and `flush()` before a short-lived process exits."""
 
@@ -380,6 +383,8 @@ class Alerter:
                           else Channels(((NOTIFIER, notifier),)))
         self._clock = clock
         self._last_shown: dict[tuple[AlertKind, str], datetime] = {}
+        # Background sends of each alert not yet collected by completed().
+        self._sending: dict[tuple[AlertKind, str], int] = {}
         self._done: queue.SimpleQueue[tuple[AlertKind, str, str, str | None]] = \
             queue.SimpleQueue()
 
@@ -389,7 +394,7 @@ class Alerter:
         now = self._clock()
         key = (kind, text)
         last = self._last_shown.get(key)
-        if last is not None and now - last < self._window:
+        if (last is not None and now - last < self._window) or key in self._sending:
             return AlertOutcome(kind, text, now, Delivery.SUPPRESSED_REPEAT, None)
         if self._channels is None:
             return AlertOutcome(kind, text, now, Delivery.NO_NOTIFIER, None)
@@ -397,8 +402,10 @@ class Alerter:
         def done(name: str, error: str | None) -> None:  # on a background thread
             self._done.put((kind, text, name, error))
 
-        results = self._channels.send(f"{self._title}: {kind.value}", text, done)
         pending = self._channels.background
+        if pending:
+            self._sending[key] = len(pending)
+        results = self._channels.send(f"{self._title}: {kind.value}", text, done)
         failed = [error if name == NOTIFIER else f"{name}: {error}"
                   for name, error in results if error is not None]
         if len(failed) < len(results):
@@ -419,6 +426,11 @@ class Alerter:
             except queue.Empty:
                 return outcomes
             now = self._clock()
+            left = self._sending.get((kind, text), 1) - 1
+            if left > 0:
+                self._sending[(kind, text)] = left
+            else:
+                self._sending.pop((kind, text), None)
             if error is None:
                 self._last_shown[(kind, text)] = now
             outcomes.append(AlertOutcome(kind, text, now,
