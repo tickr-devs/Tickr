@@ -15,7 +15,7 @@ struct SettingsView: View {
   /// Width of the Settings window, in points (the design's compact 680).
   static let width: CGFloat = 680
   /// Tallest the pane area grows to its content before it scrolls, in points.
-  static let maxPaneHeight: CGFloat = 620
+  static let maxPaneHeight: CGFloat = 600
 
   var body: some View {
     VStack(spacing: 0) {
@@ -275,6 +275,7 @@ private struct TradingSettings: View {
       Text(L10n.Settings.configFootnote)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
+        .padding(.horizontal, Tokens.Space.m)  // level with the text inside the cards
       FeaturesCard(settings: settings)
     } else {
       SettingsCard(L10n.Common.strategy) {
@@ -367,8 +368,8 @@ private struct NotificationSettings: View {
             Text(group.kinds)
               .font(Tokens.Typography.captionMono)
               .foregroundStyle(Palette.textQuaternary)
+              .fixedSize(horizontal: false, vertical: true)
           }
-          .lineLimit(1)
           Spacer(minLength: Tokens.Space.s)
           MacDot()
           PhoneDot()
@@ -533,7 +534,7 @@ struct JobsSection: View {
 
   /// Widths of the name and "when" columns, in points (the design's 86 and 130, the name widened
   /// for the Russian names).
-  static let nameWidth: CGFloat = 104
+  static let nameWidth: CGFloat = 150
   static let whenWidth: CGFloat = 112
   /// Days in a week; launchd numbers them 0 (or 7) Sunday, 1 Monday … 6 Saturday.
   static let week = 7

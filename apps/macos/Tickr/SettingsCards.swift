@@ -60,8 +60,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 struct SettingsTabBar: View {
   @Binding var selection: SettingsTab
 
-  /// Width of one tab button, in points (the design's compact 76).
-  static let tabWidth: CGFloat = 76
+  /// Narrowest a tab button gets, in points (the design's compact 64); a longer title (Russian
+  /// "Дополнительно") makes its tab wider rather than being cut.
+  static let tabMinWidth: CGFloat = 64
   /// Height of a tab's symbol row, in points, so every symbol sits on one line.
   static let symbolSize: CGFloat = 16
   /// Font of a tab's symbol: thin, about 15 points (title3 on the Mac), as the design's line icons.
@@ -77,9 +78,10 @@ struct SettingsTabBar: View {
             Image(systemName: tab.symbol)
               .font(Self.symbolFont)
               .frame(height: Self.symbolSize)
-            Text(tab.title).font(Self.titleFont).lineLimit(1)
+            Text(tab.title).font(Self.titleFont).lineLimit(1).fixedSize()
           }
-          .frame(width: Self.tabWidth)
+          .padding(.horizontal, Tokens.Space.s)
+          .frame(minWidth: Self.tabMinWidth)
           .padding(.vertical, Tokens.Space.xs)
           .foregroundStyle(chosen ? Palette.infoText : Palette.textTertiary)
           .background(chosen ? Palette.selection : .clear,
@@ -93,8 +95,7 @@ struct SettingsTabBar: View {
     }
     .frame(maxWidth: .infinity)
     .padding(.horizontal, Tokens.Space.m)
-    .padding(.top, Tokens.Space.s)
-    .padding(.bottom, Tokens.Space.s)
+    .padding(.vertical, Tokens.Space.xs)
     .background(Palette.titleBar)
     .overlay(alignment: .bottom) { Rectangle().fill(Palette.separator).frame(height: Tokens.Stroke.thin) }
     .animation(Tokens.Motion.quick, value: selection)
