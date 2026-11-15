@@ -32,6 +32,8 @@ final class OverviewCommandsUITests: XCTestCase {
   /// padding, beside the cards, so no card's own scroll view takes the wheel.
   static let topRoom: CGFloat = 96
   static let gutter: CGFloat = 4
+  /// Most turns of the wheel that bring the card into view.
+  static let scrollTurns = 4
   /// How long an element may take to appear, and how long a moving element must keep still
   /// before it is read or clicked, polled every `settlePoll`, in seconds.
   static let timeout: TimeInterval = 10
@@ -73,8 +75,11 @@ final class OverviewCommandsUITests: XCTestCase {
     waitUntilStill(card, "safety card", in: app)
     // Bring the card to the top of the window, clear of the Dock that can cover a window's foot
     // on a small display (the least window is taller than the space above the Dock there).
-    let below = card.frame.minY - window.frame.minY - Self.topRoom
-    if below > 0 {
+    // The wheel moves the page by up to its own distance per turn (the first turn after launch
+    // can move it less), so turn it until the card is there, at most `scrollTurns` times.
+    for _ in 0..<Self.scrollTurns {
+      let below = card.frame.minY - window.frame.minY - Self.topRoom
+      guard below > 0, card.frame.maxY > window.frame.maxY - Self.topRoom else { break }
       screen.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: Self.gutter, dy: 0))
         .scroll(byDeltaX: 0, deltaY: -below)
       waitUntilStill(card, "safety card", in: app)
