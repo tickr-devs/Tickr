@@ -1416,7 +1416,8 @@ enum L10n {
     }
     /// Trades of a day with wins and losses.
     static func closedWinsLosses(_ trades: Int, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
-      LocalizedStringResource("trades.closedWinsLosses", defaultValue: "\(trades) · \(wins) W · \(losses) L", bundle: L10n.bundle)
+      LocalizedStringResource("trades.closedWinsLosses",
+        defaultValue: "\(trades) · \(wins) W · \(losses) L", bundle: L10n.bundle)
     }
     /// Tooltip: a day without bars.
     static var noBarsHelp: LocalizedStringResource {
