@@ -234,7 +234,7 @@ def test_an_impossible_wire_time_stays_as_written_and_never_raises(text, codes):
 
 
 def test_a_status_with_an_odd_cause_writes_and_reads_back():
-    from tests.api.samples import status as sample_status
+    from .samples import status as sample_status
     status = sample_status()
     trade = status.trades_today[0]
     odd = replace(trade, entry_cause="the session ended at 2026-13-45T25:61:61.000Z")
