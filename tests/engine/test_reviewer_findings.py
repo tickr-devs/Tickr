@@ -9,12 +9,12 @@ it is deliberate.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal as D
 
 import pytest
 
-from aperture.broker.base import BrokerError, OutcomeUnknown
+from aperture.broker.base import BrokerError, OrderNotFound, OutcomeUnknown
 from aperture.broker.fake import FakeBroker
 from aperture.engine.core import Engine, Fence, SendState
 from aperture.store import Store
@@ -58,19 +58,74 @@ def sent(broker: FakeBroker, order_type: OrderType) -> int:
 # --- A ---------------------------------------------------------------------------------------
 
 
-class StopDetailUnreadable(FakeBroker):
-    """The stop works at the broker, its Detail cannot be parsed, a cancel takes."""
+@dataclass
+class TeardownWatch(FakeBroker):
+    """FakeBroker that watches spec 9's exit teardown (cancel stop -> confirm CANCELLED ->
+    re-read held quantity -> close) from the broker's side. Subclasses answer Detail in
+    `read_detail` and take a cancel in `take_cancel`."""
+
+    failing: set[str] = field(default_factory=set)  # orders whose latest Detail read failed
+    shown_ended: set[str] = field(default_factory=set)  # orders Detail showed ended
+    stop_cancels: list[str] = field(default_factory=list)  # stop cancels sent
+    blind_cancels: list[str] = field(default_factory=list)  # ... while its last read failed
+    early_closes: list[str] = field(default_factory=list)  # stops cancelled, not shown ended,
+    # when a MARKET order was sent: a possible double sale
+
+    def read_detail(self, client_order_id):
+        return FakeBroker.order_detail(self, client_order_id)
+
+    def take_cancel(self, client_order_id):
+        order = FakeBroker.order_detail(self, client_order_id)
+        self.orders[client_order_id] = replace(order, state=OrderState.CANCELLED,
+                                               raw_status="CANCELLED")
 
     def order_detail(self, client_order_id):
+        try:
+            order = self.read_detail(client_order_id)
+        except OrderNotFound:
+            self.failing.discard(client_order_id)
+            raise
+        except BrokerError:
+            self.failing.add(client_order_id)
+            raise
+        self.failing.discard(client_order_id)
+        if order.state.terminal:
+            self.shown_ended.add(client_order_id)
+        return order
+
+    def cancel(self, client_order_id):
+        if FakeBroker.order_detail(self, client_order_id).order_type is OrderType.STOP_LOSS:
+            self.stop_cancels.append(client_order_id)
+            if client_order_id in self.failing:
+                self.blind_cancels.append(client_order_id)
+        self.take_cancel(client_order_id)
+
+    def place(self, request):
+        if request.order_type is OrderType.MARKET:
+            self.early_closes += [c for c in self.stop_cancels if c not in self.shown_ended]
+        return FakeBroker.place(self, request)
+
+
+def assert_unreadable_stop_kept(broker: TeardownWatch, engine: Engine, quantity: D) -> None:
+    """Hard rule 2 and spec 9 teardown with a stop whose Detail cannot be read: the stop is
+    not cancelled while its latest Detail read failed, so it keeps working for the shares;
+    a cancel sent while it was readable is followed by no MARKET order until Detail shows the
+    stop ended (else stop and close could both sell); and entries are fenced (alerted)."""
+    assert not broker.blind_cancels, "stop cancelled while its Detail could not be read"
+    assert not broker.early_closes, "close sent before the cancelled stop was shown ended"
+    if not broker.stop_cancels:
+        assert working_stops(broker) >= quantity
+    assert engine.fences(), "held shares with an unreadable stop, and no fence"
+
+
+class StopDetailUnreadable(TeardownWatch):
+    """The stop works at the broker, its Detail cannot be parsed, a cancel takes."""
+
+    def read_detail(self, client_order_id):
         order = FakeBroker.order_detail(self, client_order_id)
         if order.order_type is OrderType.STOP_LOSS:
             raise Unreadable("malformed")
         return order
-
-    def cancel(self, client_order_id):
-        order = FakeBroker.order_detail(self, client_order_id)
-        self.orders[client_order_id] = replace(order, state=OrderState.CANCELLED,
-                                               raw_status="CANCELLED")
 
 
 @pytest.mark.xfail(strict=True, reason="bug A: after max_unprotected_seconds the exit cancels "
@@ -86,8 +141,7 @@ def test_bug_a_unreadable_stop_is_not_cancelled_into_a_bare_position(store):
     loop(engine, 50)  # 180 s: past max_unprotected_seconds, the exit was requested
     assert engine.trade(trade).exit_requested == "unprotected-too-long"
     assert held(broker) == {"ABC": D(2)}
-    # Hard rule 2 / spec 9 teardown: the shares keep a working stop or get their close.
-    assert working_stops(broker) >= 2 or sent(broker, OrderType.MARKET) == 1
+    assert_unreadable_stop_kept(broker, engine, D(2))
 
 
 # --- B ---------------------------------------------------------------------------------------
