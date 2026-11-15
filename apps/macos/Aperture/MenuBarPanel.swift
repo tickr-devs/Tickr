@@ -192,7 +192,7 @@ struct MenuPosition: View {
       }
       StopTargetBar(progress: progress, muted: row?.isStale ?? false)
       HStack {
-        StopBadge(state: position.stop.state, compact: true, read: model.status?.freshness.lastBrokerReadAt?.date)
+        StopBadge(state: position.stop.state, compact: true)
         Spacer()
         Text(L10n.MenuBar.entry(Format.price(position.entryPrice.value)))
         Spacer()
