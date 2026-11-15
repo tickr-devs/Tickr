@@ -3,9 +3,14 @@ import ApertureKit
 import SwiftUI
 
 /// A recorded day's clean-day verdict as a small mark: a seal for clean, a warning for not clean,
-/// nothing while unknown (the tooltip then says why). The verdict is the bot's, from its journal.
+/// nothing while unknown. The verdict is the bot's, from its journal.
 struct CleanMark: View {
   let clean: CleanDay
+
+  /// SF Symbol of a clean day.
+  static let cleanSymbol = "checkmark.seal.fill"
+  /// SF Symbol of a day that was not clean.
+  static let notCleanSymbol = "exclamationmark.triangle.fill"
 
   var body: some View {
     Group {

@@ -8040,13 +8040,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clean day · records agree"
+            "value" : "Clean day · broker and records agree"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чистый день · записи сходятся"
+            "value" : "Чистый день · брокер и записи сходятся"
           }
         }
       }
@@ -8057,13 +8057,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended clean."
+            "value" : "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended flat."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чистый день: брокер и записи бота сходились, у каждой позиции был стоп, день закрыт чисто."
+            "value" : "Чистый день: брокер и записи бота сходились, у каждой позиции был стоп, день закрыт без позиций."
           }
         }
       }
@@ -8074,13 +8074,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "clean day: journal, broker and records agree"
+            "value" : "clean day: broker and records agree"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "чистый день: журнал, брокер и записи сходятся"
+            "value" : "чистый день: брокер и записи сходятся"
           }
         }
       }
@@ -8091,13 +8091,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clean or not is unknown: %@"
+            "value" : "Verdict unknown: %@"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чистый ли день, неизвестно: %@"
+            "value" : "Оценка неизвестна: %@"
           }
         }
       }
@@ -8380,13 +8380,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Needs a look · records differ"
+            "value" : "Needs a look"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нужна проверка · записи расходятся"
+            "value" : "Нужна проверка"
           }
         }
       }

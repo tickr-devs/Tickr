@@ -1452,7 +1452,7 @@ enum L10n {
     }
     /// Tooltip of a clean day's mark.
     static var cleanDay: LocalizedStringResource {
-      LocalizedStringResource("trades.cleanDay", defaultValue: "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended clean.", bundle: L10n.bundle)
+      LocalizedStringResource("trades.cleanDay", defaultValue: "Clean day: the broker and the bot's records agreed, every position had its stop, and the day ended flat.", bundle: L10n.bundle)
     }
     /// Tooltip of a day that was not clean, with what made it so.
     static func notCleanDay(_ causes: String) -> LocalizedStringResource {
@@ -1460,19 +1460,19 @@ enum L10n {
     }
     /// Tooltip of a day whose clean-day verdict is unknown.
     static func cleanUnknown(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("trades.cleanUnknown", defaultValue: "Clean or not is unknown: \(cause)", bundle: L10n.bundle)
+      LocalizedStringResource("trades.cleanUnknown", defaultValue: "Verdict unknown: \(cause)", bundle: L10n.bundle)
     }
     /// Day header badge: the journal, the broker and the bot's records agreed.
     static var cleanBadge: LocalizedStringResource {
-      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day · records agree", bundle: L10n.bundle)
+      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day · broker and records agree", bundle: L10n.bundle)
     }
     /// Day header badge: the day was not clean.
     static var needsLookBadge: LocalizedStringResource {
-      LocalizedStringResource("trades.needsLookBadge", defaultValue: "Needs a look · records differ", bundle: L10n.bundle)
+      LocalizedStringResource("trades.needsLookBadge", defaultValue: "Needs a look", bundle: L10n.bundle)
     }
     /// Calendar legend of the green dot.
     static var cleanLegend: LocalizedStringResource {
-      LocalizedStringResource("trades.cleanLegend", defaultValue: "clean day: journal, broker and records agree", bundle: L10n.bundle)
+      LocalizedStringResource("trades.cleanLegend", defaultValue: "clean day: broker and records agree", bundle: L10n.bundle)
     }
     /// Calendar legend of the amber dot.
     static var needsLook: LocalizedStringResource {
