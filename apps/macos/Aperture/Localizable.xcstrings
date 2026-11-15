@@ -3624,6 +3624,23 @@
         }
       }
     },
+    "flow.verified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld verified"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "подтверждено: %lld"
+          }
+        }
+      }
+    },
     "flow.waiting" : {
       "extractionState" : "manual",
       "localizations" : {

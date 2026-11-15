@@ -461,6 +461,10 @@ enum L10n {
     static func filled(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.filled", defaultValue: "\(count) filled", bundle: L10n.bundle)
     }
+    /// Under the broker-stop stage: the day's trades whose stop was confirmed, "7 verified".
+    static func verified(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.verified", defaultValue: "\(count) verified", bundle: L10n.bundle)
+    }
     static var chipGainers: LocalizedStringResource {
       LocalizedStringResource("flow.chipGainers", defaultValue: "gainers", bundle: L10n.bundle)
     }
