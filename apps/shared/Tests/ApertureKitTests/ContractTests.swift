@@ -222,7 +222,8 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(day.trades.last?.resultR == Decimal(string: "0.082"))
     #expect(day.barSymbols == ["ABCD", "WXYZ"])
     let days = try Wire.decoder().decode(DaysV1.self, from: fixture("days-v1.json"))
-    #expect(days.days.map(\.hasBars) == [true, false])
+    #expect(days.days.map(\.hasBars) == [true, false, true, true])
+    #expect(days.days.map(\.clean.verdict) == [.unknown, .clean, .notClean, .unknown])
   }
 
   @Test func dailyMoneyAndPositionsValues() throws {
