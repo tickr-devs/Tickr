@@ -49,6 +49,8 @@ struct CandleChart: View {
   /// Candles drawn beyond each side of the window while zoomed, as a share of the window, so a
   /// fast scroll never shows a bare edge before the next redraw. Farther candles are not drawn.
   static let drawnMargin = 1.0
+  /// Annotations near an edge move inside the chart instead of being cut off.
+  static let keepInside = AnnotationOverflowResolution(x: .fit(to: .chart), y: .fit(to: .chart))
   /// Colours of the moving-average lines, in the order of `Studies.movingAveragePeriods`.
   static let movingAverageColors = [Palette.info, Palette.warning, Palette.highlight]
 
@@ -185,14 +187,14 @@ struct CandleChart: View {
     .modifier(SharedAxis(chart: self, pane: .price, showsTime: studyPanes.isEmpty, tags: priceTags))
   }
 
-  /// The close as a line with a fill fading down to the bottom of the pane, coloured by whether
+  /// The close as a line with a fill fading down to the volume bars, coloured by whether
   /// the visible stretch ended above where it began.
   @ChartContentBuilder private func lineArea(_ scale: PriceScale) -> some ChartContent {
     let tint = visibleTrendUp ? Palette.profit : Palette.loss
     ForEach(candles[drawn]) { candle in
       AreaMark(
         x: .value(Plot.time, candle.middle),
-        yStart: .value(Plot.price, scale.domain.lowerBound),
+        yStart: .value(Plot.price, scale.volumeBase + scale.volumeHeight),
         yEnd: .value(Plot.price, candle.close))
         .foregroundStyle(
           LinearGradient(
@@ -212,12 +214,12 @@ struct CandleChart: View {
     if let found = candles.extremes(in: visibleIndices) {
       PointMark(x: .value(Plot.time, candles[found.high].middle), y: .value(Plot.price, candles[found.high].high))
         .symbolSize(0)
-        .annotation(position: .top, spacing: Tokens.Space.xxs) {
+        .annotation(position: .top, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
           ExtremeLabel(price: candles[found.high].high)
         }
       PointMark(x: .value(Plot.time, candles[found.low].middle), y: .value(Plot.price, candles[found.low].low))
         .symbolSize(0)
-        .annotation(position: .bottom, spacing: Tokens.Space.xxs) {
+        .annotation(position: .bottom, spacing: Tokens.Space.xxs, overflowResolution: Self.keepInside) {
           ExtremeLabel(price: candles[found.low].low)
         }
     }
@@ -616,6 +618,7 @@ private struct ExtremeLabel: View {
     }
     .font(Tokens.Typography.annotation)
     .foregroundStyle(Palette.textTertiary)
+    .fixedSize()
   }
 }
 
