@@ -265,6 +265,7 @@ private struct LimitsCard: View {
   var body: some View {
     Card(L10n.Risk.limits) {
       if let risk = model.settings?.risk {
+        PositionSlots(limit: risk.maxOpenPositions, positions: model.positions)
         VStack(spacing: Tokens.Space.s) {
           StatLine(L10n.Risk.plannedLoss, value: Format.usd(risk.plannedLossUsd.value))
           StatLine(L10n.Risk.notionalCap, value: Format.usd(risk.positionNotionalCapUsd.value))
@@ -277,6 +278,73 @@ private struct LimitsCard: View {
         Footnote(model.settingsError == nil ? L10n.Common.unavailable : L10n.Risk.settingsUnavailable)
       }
     }
+  }
+}
+
+/// One tile per position the config allows, as on the design: an open position's symbol, size,
+/// entry and stop (green once the broker confirmed it), and a dashed tile for each free slot. More
+/// positions than the limit (a broker mismatch) still show every one.
+private struct PositionSlots: View {
+  let limit: Int
+  let positions: [PositionRow]
+
+  /// Narrowest a tile gets before the tiles wrap to another row, in points.
+  static let tileMinWidth: CGFloat = 84
+  /// Height of a tile, so free and taken tiles line up, in points.
+  static let tileHeight: CGFloat = 64
+  /// Smallest scale a tile's text shrinks to before it truncates.
+  static let textMinimumScale = 0.8
+
+  private var free: Int { max(0, limit - positions.count) }
+
+  var body: some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.tileMinWidth), spacing: Tokens.Space.s)],
+      spacing: Tokens.Space.s) {
+      ForEach(positions) { row in
+        taken(row)
+      }
+      ForEach(0..<free, id: \.self) { _ in
+        freeTile
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(Text(L10n.Risk.slots))
+  }
+
+  private func taken(_ row: PositionRow) -> some View {
+    let verified = row.position.stop.state == .verified
+    return VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+      Text(verbatim: row.position.symbol)
+        .font(Tokens.Typography.calloutMono.weight(.bold))
+        .foregroundStyle(Palette.textPrimary)
+      Text(L10n.Risk.slotSize(Format.quantity(row.quantity), Format.price(row.entry)))
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+      Text(L10n.Risk.slotStop(Format.price(row.stop)))
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(verified ? Palette.profitText : Palette.warningText)
+    }
+    .lineLimit(1)
+    .minimumScaleFactor(Self.textMinimumScale)
+    .padding(Tokens.Space.s)
+    .frame(maxWidth: .infinity, minHeight: Self.tileHeight, alignment: .topLeading)
+    .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.medium))
+    .overlay {
+      RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+        .strokeBorder(verified ? Palette.accent : Palette.warning, lineWidth: Tokens.Stroke.thin)
+    }
+  }
+
+  private var freeTile: some View {
+    Text(L10n.Risk.freeSlot)
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(Palette.textQuaternary)
+      .frame(maxWidth: .infinity, minHeight: Self.tileHeight)
+      .overlay {
+        RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+          .strokeBorder(Palette.separatorStrong,
+            style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
+      }
   }
 }
 
