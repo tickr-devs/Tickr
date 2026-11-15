@@ -962,6 +962,8 @@ to the broker.
   file (`tickr.lock` under `data_dir`): a fresh `stopped` is written before the process has
   ended, and `tickr trade` holds the same lock. The kickstart would do nothing, or the job
   would end on `AlreadyRunning`, with the owner's stop already gone.
+  A crashed bot leaves its pid in the file; should macOS reuse that pid for another process,
+  Start answers `409` until that process ends. A lock file that cannot be read is `503`.
 - The operator stop marker left by stop-bot is removed first (pressing Start is the decision
   to trade again, as `tickr clear-stop`), because preflight refuses while it exists. If the
   command then fails (`503`, cause with the exit code, the exception or the timeout

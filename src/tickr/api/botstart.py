@@ -88,7 +88,11 @@ def start_bot(settings: StartSettings, state: StatusResponseV1, now: datetime,
     status = state.status
     if status is not None and not state.stale and status.bot_state is not BotState.STOPPED:
         raise StartRefused("conflict", f"the bot is {status.bot_state.value}: nothing to start")
-    pid = recorded_holder(settings.lock_file) or recorded_holder(settings.legacy_lock_file)
+    try:
+        pid = recorded_holder(settings.lock_file) or recorded_holder(settings.legacy_lock_file)
+    except OSError as exc:
+        raise StartRefused("unavailable", f"the bot's lock file could not be read "
+                           f"({type(exc).__name__}): nothing was started") from exc
     if pid is not None:
         raise StartRefused("conflict", f"a bot process (pid {pid}) still holds the lock: wait "
                            "for it to end, then start again")
