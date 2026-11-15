@@ -281,7 +281,7 @@ enum L10n {
   static var environmentProduction: LocalizedStringResource {
     LocalizedStringResource("kit.environment.production", defaultValue: "Production", bundle: bundle)
   }
-  /// Where the bot trades, when the bot names an environment this app does not know.
+  /// Where the bot trades, when the bot sends no environment name.
   static var environmentUnknown: LocalizedStringResource {
     LocalizedStringResource("kit.environment.unknown", defaultValue: "Unknown environment", bundle: bundle)
   }
