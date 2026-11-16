@@ -9,8 +9,6 @@ import TickrKit
 struct MenuBarPanel: View {
   /// Width of the panel, in points: the design's 420-point board less its 14-point margins.
   static let width: CGFloat = 392
-  /// Lines the headline may wrap to.
-  static let headlineLines = 2
 
   /// Entrance order of the panel's parts.
   private enum Order: Int {
@@ -63,7 +61,6 @@ private struct StatusBanner: View {
       Text(verbatim: model.headline.text)
         .font(Tokens.Typography.body.weight(.semibold))
         .foregroundStyle(tone.text)
-        .lineLimit(MenuBarPanel.headlineLines)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
     }
@@ -334,7 +331,6 @@ private struct FlowDots: View {
           Text(stage.name)
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(Palette.textTertiary)
-            .lineLimit(1)
             .fixedSize()
         }
       }
@@ -353,7 +349,6 @@ private struct MenuFooter: View {
 
   /// Symbols of the footer's actions and of the broker read.
   static let openSymbol = "macwindow"
-  static let settingsSymbol = "gearshape"
   static let quitSymbol = "power"
   static let readSymbol = "building.columns"
 
@@ -433,7 +428,9 @@ private struct MenuFooter: View {
   private var icons: some View {
     HStack(spacing: Tokens.Space.xs + Tokens.Space.xxs) {
       SettingsLink {
-        Label { Text(L10n.App.settings) } icon: { Image(systemName: Self.settingsSymbol) }
+        Label { Text(L10n.App.settings) } icon: {
+          DesignGlyphView(.settings, side: Tokens.Size.menuGlyph, gridStroke: Tokens.Stroke.glyphHeavy)
+        }
       }
       .buttonStyle(.icon(compact: true))
       .hint(L10n.App.settings)
@@ -455,7 +452,6 @@ private struct EnvironmentChip: View {
     Text(verbatim: text)
       .textCase(.lowercase)
       .font(Tokens.Typography.captionMono.weight(.bold))
-      .lineLimit(1)
       .foregroundStyle(Palette.accentText)
       .padding(.horizontal, Tokens.Space.xs + Tokens.Space.xxs)
       .padding(.vertical, Tokens.Space.xxs)

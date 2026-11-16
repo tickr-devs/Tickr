@@ -315,8 +315,6 @@ struct HeaderIcon: View {
 
   /// Diameter of the glass circle at the default text size, in points (the boards' `.gbtn`).
   static let glassSide: CGFloat = 40
-  /// How far a header control shrinks while pressed.
-  static let pressScale: CGFloat = 0.95
 
   /// The glyph and the glass grow with the text, as the system's own bar buttons do.
   @ScaledMetric(relativeTo: .title3) private var side = Tokens.Size.headerGlyph
@@ -419,11 +417,12 @@ struct TitleRow<Leading: View, Actions: View>: View {
     .padding(.top, Tokens.Space.s)
   }
 
-  /// The actions' touch targets (`HeaderIcon`) carry their own room, so they sit close.
+  /// The actions' touch targets (`HeaderIcon`) carry their own room, so they sit close; a glyph
+  /// without its own colour takes `infoText`, the apps' link colour.
   private var actionRow: some View {
     HStack(spacing: Tokens.Space.xs) { actions }
-      .buttonStyle(.borderless)
-      .tint(Palette.infoText)
+      .buttonStyle(.glyph)
+      .foregroundStyle(Palette.infoText)
   }
 }
 
@@ -537,8 +536,6 @@ struct TickrTabBar: View {
         DesignGlyphView(tab.glyph, side: Tokens.Size.tabGlyph)
         Text(tab.title)
           .font(Tokens.Typography.tabLabel)
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
       }
       .foregroundStyle(selected ? Palette.infoText : Palette.textSecondary)
       .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
@@ -612,13 +609,9 @@ struct StatTile: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       CardLabel(label)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.slight)
       Text(verbatim: value)
         .font(.subheadline.monospaced().bold())
         .foregroundStyle(color)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
         .contentTransition(.numericText())
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

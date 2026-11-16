@@ -12,7 +12,9 @@ struct OverviewView: View {
   private enum Order: Int { case header = 0, result, flow, watching, positions, middle, right }
 
   /// Positions of the cards in the screen's `CardGrid`.
-  private enum Slot: Int { case header = 0, result, flow, watching, positions, safety, riskRoom, observers, journal }
+  private enum Slot: Int {
+    case header = 0, result, flow, watching, positions, safety, riskRoom, observers, fastMovers, journal
+  }
 
   /// Narrowest screen, in points, with the day's result beside the header: the mark, the name,
   /// its badges and the result column.
@@ -21,9 +23,9 @@ struct OverviewView: View {
   /// sit in two columns.
   static let threeColumnsMinWidth: CGFloat = 1040
   /// The design's column widths (CSS fr units): Watching closely, Positions, Safety and the bot;
-  /// then Risk room, Observers, the journal.
+  /// then Risk room, Observers, Fast movers, the journal.
   static let middleRowWeights: [CGFloat] = [1, 1.4, 1]
-  static let bottomRowWeights: [CGFloat] = [1, 1, 1.4]
+  static let bottomRowWeights: [CGFloat] = [1, 1, 1.2, 1.4]
   /// Two equal columns on a narrower screen.
   static let twoColumnWeights: [CGFloat] = [1, 1]
   /// Least height of the design's middle row (Watching closely, Positions, Safety and the bot),
@@ -44,7 +46,8 @@ struct OverviewView: View {
       headerBesideResult,
       single(.flow),
       weighted(middleRowWeights, [.watching, .positions, .safety], height: .atLeast(middleRowHeight)),
-      weighted(bottomRowWeights, [.riskRoom, .observers, .journal], height: .fillsRest(atLeast: bottomRowMinHeight)),
+      weighted(bottomRowWeights, [.riskRoom, .observers, .fastMovers, .journal],
+        height: .fillsRest(atLeast: bottomRowMinHeight)),
     ]),
     CardArrangement(minWidth: headerBesideResultMinWidth - padding * CardArrangement.paddedEdges,
       rows: [headerBesideResult] + twoColumnRows),
@@ -65,7 +68,7 @@ struct OverviewView: View {
     single(.positions),
     weighted(twoColumnWeights, [.watching, .safety], height: .atLeast(middleRowHeight)),
     weighted(twoColumnWeights, [.riskRoom, .observers]),
-    single(.journal),
+    weighted(twoColumnWeights, [.fastMovers, .journal]),
   ]
 
   private static func single(_ slot: Slot) -> CardRow {
@@ -93,6 +96,7 @@ struct OverviewView: View {
             Group {
               RiskRoomCard().filling()
               ObserversCard().filling()
+              FastMoversCard().filling()
               JournalCard().filling()
             }
             .rise(step: Order.right.rawValue)
@@ -148,7 +152,6 @@ private struct Header: View {
             Text(L10n.Common.operatorTitle).font(Tokens.Typography.subtitle).foregroundStyle(Palette.textPrimary)
           }
           // The product name never wraps ("Tickr Operat / or" in a narrow window): badges give way first.
-          .lineLimit(1)
           .fixedSize()
           #if DEBUG
           // Fixture data looks live; say so on the screen it would be mistaken on.
@@ -182,7 +185,6 @@ private struct Header: View {
     return HStack(spacing: Tokens.Space.m) {
       PulseDot(content.color, pulsing: model.isLive, event: content.pulse)
       Text(verbatim: content.title).font(Tokens.Typography.button).foregroundStyle(content.color)
-        .lineLimit(1)
         .fixedSize()
       if let detail = content.detail {
         // Wraps to as many lines as it needs: a narrow window cut the cause of a block mid-sentence.
@@ -260,8 +262,6 @@ private struct DayResult: View {
     VStack(alignment: .trailing, spacing: Tokens.Space.xxs) {
       CardLabel(L10n.Overview.dayResult)
       MoneyText(value: counted, usd: true, font: Tokens.Typography.display)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       Text(verbatim: subtitle).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
       if model.shownResultBeforeFees {
         // Wraps rather than cuts, in either language.
@@ -348,6 +348,11 @@ private struct LiveFlowCard: View {
         glyph: .screeners, color: Palette.accent, text: Palette.accentText),
       .init(id: .universe, name: L10n.Flow.universe, value: count(.universe, L10n.Flow.stocks),
         glyph: .universe, color: Palette.seriesUniverse, text: Palette.seriesATRText),
+      // Quote and bars come from GET /symbols only (the flow keeps its six stages for older apps).
+      .init(id: .quote, name: L10n.Flow.quote, value: reached(.quote, L10n.Flow.quoted), note: model.symbolsError,
+        glyph: .quote, color: Palette.accent, text: Palette.accentText),
+      .init(id: .bars, name: L10n.Flow.bars, value: reached(.bars, L10n.Flow.liquid), note: model.symbolsError,
+        glyph: .bars, color: Palette.info, text: Palette.infoText),
       .init(id: .strategy, name: L10n.Common.strategy,
         value: count(.strategy, L10n.Flow.decided) ?? status.map { Format.strategy($0.strategy) },
         glyph: .strategy, color: Palette.highlight, text: Palette.highlightText),
@@ -378,6 +383,12 @@ extension LiveFlowCard {
   /// without a flow.
   fileprivate func count(_ stage: FlowStage, _ word: (Int) -> LocalizedStringResource) -> String? {
     model.flow?.stages.first { $0.stage == stage }.map { String(localized: word($0.count)) }
+  }
+
+  /// "141 quoted": how many symbols got to `stage` (GET /symbols), in the stage's word; nil
+  /// before the symbols are read.
+  fileprivate func reached(_ stage: SymbolStage, _ word: (Int) -> LocalizedStringResource) -> String? {
+    model.symbols?.stages.first { $0.stage == stage }.map { String(localized: word($0.count)) }
   }
 
   fileprivate var reconcile: FlowStages.Reconcile {
@@ -414,14 +425,16 @@ extension Board.Event.Tone {
 /// The stages a setup passes through, on one line, with today's symbols as dots under the stage
 /// each reached. Nothing moves on a timer: a dot flies to its new stage only when a read of the
 /// bot's flow moves it there, a refused symbol drops into its stage's tray, and a stage pulses
-/// once when its value changes. Hovering a stage highlights it; a click opens what it did today
-/// (`StageDetailView`) in a popover anchored to it.
+/// once when its value changes. Hovering a stage highlights it; a click on a symbol stage opens
+/// the Symbols screen on that stage's tab (every symbol, no caps); reconcile, which holds no
+/// symbols, opens its detail (`StageDetailView`) in a popover anchored to it.
 private struct Pipeline: View {
   /// The stages, in the order a setup passes them.
   enum StageID: Hashable {
-    case screeners, universe, strategy, risk, order, stop, reconcile
+    case screeners, universe, quote, bars, strategy, risk, order, stop, reconcile
 
-    /// The flow stage whose symbols sit under this one; nil for reconcile.
+    /// The flow stage whose symbols sit under this one; nil for quote, bars (GET /flow has no
+    /// such stage) and reconcile.
     var flowStage: FlowStage? {
       switch self {
       case .screeners: .screeners
@@ -430,7 +443,7 @@ private struct Pipeline: View {
       case .risk: .risk
       case .order: .order
       case .stop: .stop
-      case .reconcile: nil
+      case .quote, .bars, .reconcile: nil
       }
     }
 
@@ -439,6 +452,8 @@ private struct Pipeline: View {
       switch self {
       case .screeners: .screeners
       case .universe: .universe
+      case .quote: .quote
+      case .bars: .bars
       case .strategy: .strategy
       case .risk: .risk
       case .order: .order
@@ -473,8 +488,9 @@ private struct Pipeline: View {
   @Namespace private var board
   /// The stage under the pointer, highlighted.
   @State private var hovered: StageID?
-  /// The stage whose detail popover is open.
+  /// The stage whose detail popover is open (reconcile only).
   @State private var open: StageID?
+  @Environment(AppModel.self) private var model
 
   /// Most dots a stage shows, as in the design; the rest are counted ("+404").
   static let poolCap = 8
@@ -507,11 +523,15 @@ private struct Pipeline: View {
     }
   }
 
-  /// A stage as a button: hovering highlights it, a click opens its detail anchored to it.
+  /// A stage as a button: hovering highlights it, a click opens its symbols (or reconcile's detail).
   private func column(_ stage: Stage) -> some View {
     let lit = hovered == stage.id || open == stage.id
     return Button {
-      open = stage.id
+      if let tab = SymbolsTab(stage.id.pipeline) {
+        withAnimation(reduceMotion ? nil : Tokens.Motion.standard) { model.symbolsTab = tab }
+      } else {
+        open = stage.id
+      }
     } label: {
       columnBody(stage, lit: lit)
         .padding(.vertical, Tokens.Space.xs)
@@ -563,12 +583,10 @@ private struct Pipeline: View {
         .font(Tokens.Typography.annotationBold)
         .tracking(Tokens.Typography.labelTracking)
         .foregroundStyle(reported ? stage.text : Palette.textQuaternary)
-        .lineLimit(1)
       if let value = stage.value {
         Text(verbatim: value)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textTertiary)
-          .lineLimit(1)
           .contentTransition(.numericText())
       } else {
         Text(verbatim: Format.missing)
@@ -623,7 +641,6 @@ private struct Pipeline: View {
       Text(verbatim: text).foregroundStyle(Palette.textTertiary)
     }
     .font(Tokens.Typography.annotation)
-    .lineLimit(1)
     .padding(.horizontal, Tokens.Space.s)
     .padding(.vertical, Tokens.Space.xxs)
     .overlay {
@@ -825,9 +842,7 @@ private struct PositionDetail: View {
         }
         figures
       }
-      // A long figure ("Once · acknowledged") shrinks to the column the design gives it.
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.tight)
+      // A long figure ("Once · acknowledged") wraps inside the column the design gives it.
       .frame(width: Self.figuresWidth)
     }
   }
@@ -1070,7 +1085,8 @@ private struct EmptyPositions: View {
       }
       Spacer()
     }
-    .frame(minHeight: Self.minHeight)
+    // Fills the card the row stretches, centred in it, never a band of blank under the words.
+    .frame(maxWidth: .infinity, minHeight: Self.minHeight, maxHeight: .infinity)
   }
 }
 
@@ -1275,6 +1291,7 @@ private struct SafetyTile: View {
           .foregroundStyle(tone.text)
           .contentTransition(.numericText())
       }
+      // As tall as its words need: a long name wraps, never cut.
       .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
     }
@@ -1412,8 +1429,6 @@ private struct LatestSizeLine: View {
     Text(L10n.RiskRoom.latestSize(size.symbol, Format.quantity(size.quantity.value), binding))
       .font(Tokens.Typography.captionMono)
       .foregroundStyle(Palette.warningText)
-      .lineLimit(1)
-      .truncationMode(.middle)
       .help(Text(verbatim: [String(localized: L10n.Watching.decidedAt(Format.marketMinute(size.at.date))),
         size.bindingCause].compactMap { $0 }.joined(separator: Format.lineSeparator)))
   }
@@ -1457,23 +1472,19 @@ private struct AdvisorRow: View {
   @Environment(AdvisorModel.self) private var advisor
 
   var body: some View {
-    HStack(spacing: Tokens.Space.s) {
-      Image(systemName: AdvisorLook.symbol).foregroundStyle(Palette.highlightText)
-      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-        Text(L10n.Observers.advisor).font(Tokens.Typography.callout)
-        if let lead = advisor.runs?.lead {
-          Text(verbatim: lead.title)
-            .font(Tokens.Typography.captionMono)
-            .foregroundStyle(Palette.textQuaternary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        }
+    // On one line while everything fits whole; in a narrow column the pill and the link go on
+    // a line of their own, so no word is broken or cut.
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: Tokens.Space.s) {
+        words.fixedSize()
+        Spacer(minLength: Tokens.Space.s)
+        actions
       }
-      Spacer(minLength: Tokens.Space.s)
-      if let count = advisor.runs?.awaitingReview, count > 0 {
-        StatusPill(AdvisorWords.awaiting(count), tone: .highlight)
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        words
+        actions
       }
-      HeaderLink(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, tone: .highlight, action: open)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
     // The design's violet strip at the foot of the card; all of it opens the Lab.
     .padding(.horizontal, Tokens.Space.m)
@@ -1484,6 +1495,30 @@ private struct AdvisorRow: View {
     .overlay {
       RoundedRectangle(cornerRadius: Tokens.Radius.medium)
         .strokeBorder(Palette.highlight.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.thin)
+    }
+  }
+
+  private var words: some View {
+    HStack(spacing: Tokens.Space.s) {
+      Image(systemName: AdvisorLook.symbol).foregroundStyle(Palette.highlightText)
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        Text(L10n.Observers.advisor).font(Tokens.Typography.callout)
+        if let lead = advisor.runs?.lead {
+          Text(verbatim: lead.title)
+            .font(Tokens.Typography.captionMono)
+            .foregroundStyle(Palette.textQuaternary)
+        }
+      }
+    }
+  }
+
+  private var actions: some View {
+    HStack(spacing: Tokens.Space.s) {
+      if let count = advisor.runs?.awaitingReview, count > 0 {
+        StatusPill(AdvisorWords.awaiting(count), tone: .highlight).fixedSize()
+      }
+      HeaderLink(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, tone: .highlight, action: open)
+        .fixedSize()
     }
   }
 
@@ -1507,8 +1542,6 @@ private struct OverviewObserverRow: View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       HStack(spacing: Tokens.Space.s) {
         Text(verbatim: "\(observer.name)\(Format.itemSeparator)\(observer.version)")
-          .lineLimit(1)
-          .truncationMode(.middle)
         Spacer(minLength: Tokens.Space.s)
         if let result {
           Text(verbatim: Money.signed(result)).foregroundStyle(Palette.result(result))
@@ -1567,12 +1600,11 @@ private struct JournalCard: View {
                 .arrivalFlash(new, color: event.tone.color, outset: Self.cellOutset)
               Text(verbatim: event.tag).fontWeight(.bold).foregroundStyle(event.tone.color)
                 .arrivalFlash(new, color: event.tone.color, outset: Self.cellOutset)
-              Text(verbatim: event.text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
+              Text(verbatim: event.text).foregroundStyle(Palette.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .arrivalFlash(new, color: event.tone.color, outset: Self.cellOutset)
             }
             .font(Tokens.Typography.captionMono)
-            .lineLimit(1)
             .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
           }
         }

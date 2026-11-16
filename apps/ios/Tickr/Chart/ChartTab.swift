@@ -216,10 +216,6 @@ struct ChartTab: View {
 /// one row, the day under it (a menu of every recorded day), and plain blue arrows to the
 /// previous and next day. At large text sizes the price goes under the symbol.
 private struct DayBar: View {
-  /// Symbols of the arrows to the previous and next day.
-  static let previousSymbol = "chevron.left"
-  static let nextSymbol = "chevron.right"
-
   @Environment(AppModel.self) private var app
   @Environment(\.dynamicTypeSize) private var typeSize
   let chart: ChartModel
@@ -233,7 +229,6 @@ private struct DayBar: View {
             Text(symbol)
               .font(Tokens.Typography.metric)
               .foregroundStyle(Palette.textPrimary)
-              .lineLimit(1)
               .fixedSize()
           }
           quote
@@ -248,20 +243,20 @@ private struct DayBar: View {
         Button {
           if let day = chart.previousDay { Task { await chart.show(day, from: url) } }
         } label: {
-          arrow(Self.previousSymbol)
+          arrow(Symbols.previous)
         }
         .disabled(!arrows.canGoBack)
         .accessibilityLabel(Text(ChartText.previousDay))
         Button {
           if let day = chart.nextDay { Task { await chart.show(day, from: url) } }
         } label: {
-          arrow(Self.nextSymbol)
+          arrow(Symbols.next)
         }
         .disabled(!arrows.canGoForward)
         .accessibilityLabel(Text(ChartText.nextDay))
       }
     }
-    .buttonStyle(.borderless)
+    .buttonStyle(.glyph)
   }
 
   private var arrows: DayArrows {
@@ -290,7 +285,6 @@ private struct DayBar: View {
         }
       }
       .font(Tokens.Typography.annotation)
-      .lineLimit(1)
       .fixedSize()
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(Text(ChartText.dayStats(rows[0].1, rows[1].1, rows[2].1)))
@@ -312,8 +306,6 @@ private struct DayBar: View {
           .font(Tokens.Typography.captionMono)
       }
       .foregroundStyle(tone)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
       .accessibilityElement(children: .combine)
     }
   }
@@ -328,7 +320,6 @@ private struct DayBar: View {
         Text(ChartText.todayLive)
       }
     }
-    .lineLimit(1)
     .fixedSize()
   }
 
@@ -357,8 +348,6 @@ private struct DayBar: View {
           dayLabel(live: false)
         }
       }
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.textTertiary)
     }
@@ -532,7 +521,7 @@ private struct ChartControls: View {
           .accessibilityLabel(Text(ChartText.zoomIn))
       }
       .foregroundStyle(Palette.textPrimary)
-      .buttonStyle(.borderless)
+      .buttonStyle(.glyph)
       if chart.isToday {
         let following = viewport.showsEnd(series)
         Button {
@@ -564,7 +553,7 @@ private struct ChartControls: View {
         .padding(.horizontal, Tokens.Space.s)
         .background(Palette.info.opacity(TickrTabBar.selectedWash), in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
-        .contentShape(Capsule())
+        .touchTarget()
     }
     .buttonStyle(.plain)
     .fixedSize()
@@ -585,7 +574,9 @@ private struct ChartControls: View {
   }
 }
 
-/// The design's capsule chip: monospaced, with a coloured border and wash while it is on.
+/// The design's capsule chip: monospaced, with a coloured border and wash while it is on (the iOS
+/// Chart board draws its chips as capsules, the Mac boards as `.chip` rectangles). Like every chip
+/// on the phone it answers taps over `Size.touchTarget` (`touchTarget()`).
 private struct ChipLook: ViewModifier {
   let on: Bool
   let tint: Color
@@ -594,7 +585,6 @@ private struct ChipLook: ViewModifier {
   func body(content: Content) -> some View {
     content
       .font(Tokens.Typography.captionMono)
-      .lineLimit(1)
       .fixedSize()
       .foregroundStyle(on ? text : Palette.textSecondary)
       .padding(.horizontal, Tokens.Space.m)
@@ -603,7 +593,7 @@ private struct ChipLook: ViewModifier {
       .overlay {
         Capsule().strokeBorder(on ? tint : Palette.separatorStrong, lineWidth: Tokens.Stroke.thin)
       }
-      .contentShape(Capsule())
+      .touchTarget()
   }
 }
 
