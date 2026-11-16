@@ -445,9 +445,10 @@ enum Format {
     String(localized: L10n.Format.seconds(secondsNumber(value)))
   }
 
-  /// "5" for 5.00, "0.5" for 0.50: a setting in seconds without trailing zeros.
+  /// "5" for 5.00, "0.5" for 0.50: a setting in seconds without trailing zeros (`DurationText`,
+  /// shared with the live flow's stage details).
   static func secondsNumber(_ value: Decimal) -> String {
-    NSDecimalNumber(decimal: value).stringValue
+    DurationText.number(value)
   }
 
   /// "4 s": an age or duration in whole seconds, rounded.
