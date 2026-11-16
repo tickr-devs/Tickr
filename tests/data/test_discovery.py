@@ -328,6 +328,26 @@ def test_refused_symbol_is_not_asked_again_this_session_but_is_next_session():
     assert any("S02" in a for m, a in md.calls if m == "snapshot")
 
 
+def test_refused_symbol_is_asked_again_after_the_recheck_period():
+    md = Unknown(snapshot={"S02"})
+    five(md)
+    memory = RefusedSymbols()
+    recheck = timedelta(seconds=900)
+    discover(md, settings(refused_symbol_recheck=recheck), Screen(), OPEN, lambda: NOW, None,
+             memory)
+    md.calls.clear()
+    just_before = NOW + recheck - timedelta(seconds=1)
+    discover(md, settings(refused_symbol_recheck=recheck), Screen(), OPEN, lambda: just_before,
+             None, memory)
+    assert all("S02" not in a for _, a in md.calls)  # still remembered
+    md.calls.clear()
+    md.unknown["snapshot"] = set()  # the provider knows the symbol now
+    third = discover(md, settings(refused_symbol_recheck=recheck), Screen(), OPEN,
+                     lambda: NOW + recheck, None, memory)
+    assert any("S02" in a for m, a in md.calls if m == "snapshot")  # asked again
+    assert not [r for r in third.rejections if r.cause is Cause.SYMBOL_REFUSED]
+
+
 def test_budget_during_a_split_still_stops_the_pass_visibly():
     md = Unknown(snapshot={"S02"})
     five(md)
@@ -366,7 +386,9 @@ def test_every_bars_read_is_kept_with_the_time_it_was_sent():
     kept = TodayBars()
     discover(md, settings(bars_symbols_per_request=3), Screen(), OPEN, lambda: next(times),
              None, None, kept)
-    minute_end = NOW + timedelta(seconds=2)  # the clock before the first bars request
+    # The clock is read at the pass start, for the refused-symbol memory, by the snapshot
+    # stage and then before the first bars request.
+    minute_end = NOW + timedelta(seconds=3)
     for symbol in ("S00", "S01", "S02", "S03"):
         assert len(kept.complete(OPEN, symbol, minute_end) or ()) == 30
     assert kept.complete(OPEN, "S00", minute_end + timedelta(seconds=1)) is None  # sent before
