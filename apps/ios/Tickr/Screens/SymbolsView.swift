@@ -163,6 +163,8 @@ struct SymbolsView: View {
             .padding(Tokens.Space.l)
         }
       }
+      // One list per tab: rows of one tab never stay on screen under another tab's layout.
+      .id(tab)
       Text(L10n.Symbols.showingAll(count))
         .font(Tokens.Typography.captionMono)
         .foregroundStyle(Palette.textQuaternary)
