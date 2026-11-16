@@ -235,10 +235,13 @@ private struct SymbolRow: View {
       }
       SourceChips(row.sourceChips)
       StageTrack(colors: row.trackColors, title: row.furthest.title)
-      Text(verbatim: outcome.text)
-        .font(Tokens.Typography.captionMono)
-        .foregroundStyle(outcome.tone.color)
-        .fixedSize(horizontal: false, vertical: true)
+      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+        Badge(verbatim: outcome.badge, color: outcome.tone.color)
+        Text(verbatim: outcome.detail)
+          .font(Tokens.Typography.captionMono)
+          .foregroundStyle(Palette.textSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
@@ -321,10 +324,13 @@ private struct SymbolDetailSheet: View {
         }
         if let row {
           let outcome = SymbolsBoard.outcome(row)
-          Text(verbatim: outcome.text)
-            .font(Tokens.Typography.captionMono)
-            .foregroundStyle(outcome.tone.color)
-            .fixedSize(horizontal: false, vertical: true)
+          HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+            Badge(verbatim: outcome.badge, color: outcome.tone.color)
+            Text(verbatim: outcome.detail)
+              .font(Tokens.Typography.captionMono)
+              .foregroundStyle(Palette.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
           SourceChips(row.sourceChips)
         }
         if let mover {
