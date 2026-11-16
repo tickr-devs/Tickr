@@ -295,7 +295,7 @@ then cannot start blocks it even after the position is closed by hand in the Web
 3. Repoint `live` at the previous release by hand (`R=~/Development/Tickr-releases`):
    ```sh
    cd $R && old=$(readlink live) && back=$(readlink previous)
-   ln -sfn "$back" live.new && mv -f live.new live && ln -sfn "$old" previous.new && mv -f previous.new previous
+   ln -sfh "$back" live && ln -sfh "$old" previous   # -h: replace the link, never write into its folder
    readlink live   # the previous commit
    ```
 4. Run its preflight (`$R/live/.venv/bin/python -m tickr.runtime --config
