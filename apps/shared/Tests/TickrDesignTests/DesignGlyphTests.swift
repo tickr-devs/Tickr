@@ -43,11 +43,13 @@ import Testing
     #expect(path.boundingRect == CGRect(x: 8, y: 8, width: 32, height: 32))
   }
 
-  @Test("The settings gear is the design's: teeth out to 2.87...21.13 and a closed hub ring")
+  @Test("The settings gear is the design's: its tooth tops on the 9.3 circle round the centre")
   func settingsGearSpansItsTeeth() {
+    // Each tooth top is an arc of radius 9.3 about (12, 12) between points 2.87 from the edge, so
+    // the arcs bulge out to 12 ± 9.3 = 2.7...21.3 (chords cut that by under a tenth).
     let bounds = SVGPath.parse(DesignGlyph.settingsPath).boundingRect
-    #expect(abs(bounds.minX - 2.87) < 0.1 && abs(bounds.maxX - 21.13) < 0.1)
-    #expect(abs(bounds.minY - 2.87) < 0.1 && abs(bounds.maxY - 21.13) < 0.1)
+    #expect(abs(bounds.minX - 2.7) < 0.1 && abs(bounds.maxX - 21.3) < 0.1)
+    #expect(abs(bounds.minY - 2.7) < 0.1 && abs(bounds.maxY - 21.3) < 0.1)
     #expect(DesignGlyph.settings.gridStroke == Tokens.Stroke.gear)
   }
 }
