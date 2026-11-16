@@ -41,7 +41,13 @@ from tickr.engine.manual import flatten_deadline
 from tickr.risk.admission import Admission, AdmissionLimits, session_refusal
 from tickr.risk.causes import AdmissionCause
 from tickr.runtime import stopmarker
-from tickr.runtime.account import AccountReads, account_document, exact_amount, record_reconcile
+from tickr.runtime.account import (
+    AccountReads,
+    account_document,
+    exact_amount,
+    record_exact_fills,
+    record_reconcile,
+)
 from tickr.runtime.alerts import AlertKind
 from tickr.runtime.dayend import DayEnd
 from tickr.runtime.protection import LatencyLog, busy
@@ -845,11 +851,18 @@ class Service:
             self.engine.step()
         elif ok:
             self._disagreed = record_reconcile(self.engine, self._disagreed)
+            self._record_exact_fills()
             self.write_account()
         else:
             self._disagreed = False  # a failed read: the next two must agree again
         if ok and not self._broker_read_failing():
             self.last_broker_read_at = self.now()
+
+    def _record_exact_fills(self) -> None:
+        """After a successful reconciliation: our finished orders' exact fill prices from the
+        display reads' latest snapshot (read on their thread, written here on the loop's)."""
+        if self.account_reads is not None:
+            record_exact_fills(self.engine, self.account_reads.snapshot())
 
     def _broker_read_failing(self) -> bool:
         """A positions or open-orders read is failing (the fence, plain or keyed)."""
@@ -868,6 +881,7 @@ class Service:
         self._disagreed = record_reconcile(self.engine, False)
         if not self._broker_read_failing():
             self.last_broker_read_at = self.now()
+            self._record_exact_fills()
             self.write_account()
         self.state = api.BotState.RUNNING
         last_reconcile = monotonic()
