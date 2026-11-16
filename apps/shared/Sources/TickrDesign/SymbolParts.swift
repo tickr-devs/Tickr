@@ -23,6 +23,8 @@ public struct MoverFigure: View {
       .fontWeight(fired ? .bold : .regular)
       .foregroundStyle(fired ? color : Palette.textQuaternary)
       .fixedSize(horizontal: false, vertical: true)
+      .padding(.horizontal, Tokens.Space.xs)
+      .background(fired ? color.opacity(Tokens.Opacity.wash) : .clear, in: Capsule())
   }
 }
 
@@ -82,7 +84,7 @@ public struct StageTrack: View {
   }
 
   public var body: some View {
-    ChipFlow(spacing: Tokens.Space.s) {
+    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       HStack(spacing: Tokens.Space.xxs) {
         ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
           Circle()

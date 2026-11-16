@@ -106,12 +106,12 @@ extension L10n {
   static func moverDollars(_ amount: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.mover.dollars", defaultValue: "\(amount)/min", bundle: bundle)
   }
-  /// The fast mover thresholds of the active strategy.
+  /// The fast mover thresholds of the active strategy: a bar above the floor that meets any one signal.
   static func moverRules(
     _ volume: String, _ move: String, _ dollars: String, _ floor: String, _ bars: Int
   ) -> LocalizedStringResource {
     LocalizedStringResource("kit.mover.rules",
-      defaultValue: "vol ≥ \(volume)× · move ≥ \(move) ATR · $ vol ≥ \(dollars)× · bar ≥ \(floor) · vs last \(bars) bars",
+      defaultValue: "bar ≥ \(floor), any of: vol ≥ \(volume)× · move ≥ \(move) ATR · $ vol ≥ \(dollars)× · vs last \(bars) bars",
       bundle: bundle)
   }
 }
