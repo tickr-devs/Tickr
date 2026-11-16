@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sqlite3
 import sys
@@ -37,6 +38,7 @@ from tickr.lock import (
 )
 from tickr.runtime import stopmarker
 from tickr.store import DATABASE_FILE, MIGRATIONS, EnvironmentMismatch, Store
+from tickr.version import CodeVersionUnknown, running_code_version
 
 if TYPE_CHECKING:
     from tickr.observers.runner import ObserverSet
@@ -47,6 +49,12 @@ if TYPE_CHECKING:
 def data_paths(cfg: config_module.Config) -> tuple[Path, Path]:
     data = cfg.root / cfg.run.data_dir
     return data / DATABASE_FILE, data / LOCK_FILE
+
+
+def _code_version(cfg: config_module.Config) -> str:
+    """The running code version, once per command, before its run starts: every run and
+    every trade it opens is tagged with it. CodeVersionUnknown refuses the start."""
+    return running_code_version(os.environ, cfg.run.code_version_timeout_seconds)
 
 
 def _require_environment(store: Store, cfg: config_module.Config) -> None:
@@ -177,12 +185,13 @@ def _engine(path: Path, broker: Broker | None = None,
     """Lock, open the store, recover. `precheck` runs on the records before recovery (which
     may already send cancels or orders)."""
     cfg = config_module.load(path)
+    version = _code_version(cfg)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds)
         _require_environment(store, cfg)
         run_id = store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
-                                 strategy="manual", strategy_version="-", code_version="-")
+                                 strategy="manual", strategy_version="-", code_version=version)
         cause = "crashed"
         try:
             try:
@@ -462,6 +471,7 @@ def _run(path: Path) -> int:
         print(f"refused: {stopped}", file=sys.stderr)
         return 3
     strategy = service.strategy_id(cfg)
+    version = _code_version(cfg)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds,
@@ -469,7 +479,7 @@ def _run(path: Path) -> int:
         _require_environment(store, cfg)
         run_id = store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
                                  strategy=strategy.name, strategy_version=strategy.version,
-                                 code_version="-")
+                                 code_version=version)
         stop = StopRequest()
         previous = install_stop_handler(stop)
         cause = "crashed"
@@ -655,6 +665,9 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     except EnvironmentMismatch as exc:
         print(f"refused: {exc}", file=sys.stderr)
+        return 3
+    except CodeVersionUnknown as exc:
+        print(f"refused: code version unknown: {exc}", file=sys.stderr)
         return 3
     except AlreadyRunning:
         print("refused: another tickr process holds the lock", file=sys.stderr)

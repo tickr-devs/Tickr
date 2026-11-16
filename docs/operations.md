@@ -82,6 +82,10 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 
 1. Config valid: loads, every key commented, active strategy file present, launchd schedule valid,
    and `[orders] shutdown_deadline_seconds` < `stop_alert_after_seconds` < `bot_exit_timeout_seconds`.
+1b. The running code version is known (cause `code-version-unknown`): on the Mac the git commit
+   of the checkout the code runs from (`-dirty` when a tracked file differs from it), in the Docker image the
+   `TICKR_CODE_VERSION` it was built with (`docs/deploy-server.md`). `tickr run` and the manual
+   commands refuse to start without it too: every run and every trade records it.
 2. Data folder exists; free disk on it at least `[runtime] min_free_disk_mb`.
 3. Calendar knows today (New York date).
 4. Credential variables named in the active `[environments.*]` table are set. Only the names are

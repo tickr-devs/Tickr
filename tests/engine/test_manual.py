@@ -140,6 +140,33 @@ def test_cli_trade_end_to_end(tmp_path, monkeypatch, capsys):
     assert cli.main(["--config", str(bot), "trade", "ABC", "--limit", "10.00"]) == 3
 
 
+def test_cli_trade_records_the_code_version_and_refuses_without_one(tmp_path, monkeypatch,
+                                                                    capsys):
+    from tests.conftest import TEST_CODE_VERSION
+
+    bot = copy_config(tmp_path)
+    market = Market()
+    monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: market)
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    monkeypatch.setattr(cli, "SLEEP", lambda s: market.tick())
+    monkeypatch.setattr(cli.time, "monotonic", iter(range(0, 10**6, 5)).__next__)
+    assert cli.main(["--config", str(bot), "trade", "ABC", "--limit", "10.00"]) == 0
+    database, _ = cli.data_paths(config.load(bot))
+    store = Store.open(database, busy_timeout_seconds=0)
+    (opened,) = store.journal("trade-opened")
+    assert opened.body["code_version"] == TEST_CODE_VERSION
+    assert store.run_code_version(opened.run_id) == TEST_CODE_VERSION
+    runs = store.run_count()
+    store.close()
+
+    monkeypatch.delenv("TICKR_CODE_VERSION")
+    assert cli.main(["--config", str(bot), "trade", "ABC", "--limit", "10.00"]) == 3
+    assert "code version unknown" in capsys.readouterr().err
+    store = Store.open(database, busy_timeout_seconds=0)
+    assert store.run_count() == runs  # refused before a run was recorded
+    store.close()
+
+
 def test_cli_exit_closes_open_trade_after_restart(tmp_path, monkeypatch, capsys):
     bot = copy_config(tmp_path)
     cfg = config.load(bot)
