@@ -257,22 +257,24 @@ private struct BotCommandQuestions: ViewModifier {
   func body(content: Content) -> some View {
     let question = model.confirming.flatMap { $0.place == place ? $0 : nil }
     content
+      // The alert closes its binding around its buttons' actions, in an order SwiftUI does not
+      // promise; the question is closed by its buttons instead (Escape is the cancel button), so
+      // the yes is always read against the question still open.
       .alert(Text(verbatim: question?.action.question ?? ""), isPresented: Binding(get: { question != nil },
-        set: { shown in if !shown, let question { model.withdraw(question) } }),
-        presenting: question) { asked in
+        set: { _ in }), presenting: question) { asked in
         Button(role: asked.action.isDestructive ? .destructive : nil) {
-          Task { await model.confirm(asked) }
+          model.accept(asked)
         } label: { Text(verbatim: asked.action.title) }
-        Button(String(localized: L10n.Common.cancel), role: .cancel) {}
+        Button(String(localized: L10n.Common.cancel), role: .cancel) { model.withdraw(asked) }
       } message: { asked in
         // Where the command goes, named in every confirmation: a demo switch left on must never
         // swallow a real command unnoticed.
         Text(BotControls.confirmation(asked.action.explanation, demo: model.demoDay))
       }
-      // Close an open question as soon as commands are no longer safe to send.
-      .onChange(of: model.commandsEnabled) { _, enabled in
-        if !enabled, let open = model.confirming, open.place == place { model.withdraw(open) }
-      }
+      // A question lives only while its window or panel does: closed, or opened anew, it holds no
+      // question from before (a question never reappears without a new press).
+      .onAppear { model.withdrawQuestion(in: place) }
+      .onDisappear { model.withdrawQuestion(in: place) }
   }
 }
 
