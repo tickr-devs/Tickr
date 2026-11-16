@@ -25,7 +25,7 @@ from tickr.api.performance import performance
 from tickr.archive import existing
 from tickr.calendar import NEW_YORK, CalendarRefused, SessionCalendar, ny_date_of
 from tickr.config import Config
-from tickr.data.capture import BARS_FILE, CaptureError, read_captured_bars
+from tickr.data.capture import BARS_FILE, CapturedBarsDays, CaptureError
 from tickr.engine.core import (
     ORDER_HELD,
     ORDER_OBSERVED,
@@ -36,7 +36,7 @@ from tickr.engine.core import (
     order_from_row,
 )
 from tickr.store import DATABASE_FILE, MIGRATIONS, Store
-from tickr.types import OrderState
+from tickr.types import Bar, OrderState
 from tickr.version import recorded
 
 ZERO = Decimal(0)
@@ -68,6 +68,28 @@ def recorded_fees(orders: list[OrderRow]) -> Decimal | None:
             if order.fees_usd is None:
                 return None
             total += order.fees_usd
+    return total
+
+
+def trade_net(orders: list[OrderRow], gross: Decimal) -> Decimal | None:
+    """A closed trade's result after the broker's fees, as the daily loss counts it: the sum
+    of its filled orders' settled cash amounts once every one is proven by the account's cash
+    activity (the broker's own figure); before that, `gross` (fill prices, exact where
+    recorded) less the recorded fees; None while any filled order's fees are not recorded."""
+    filled = [o for o in orders if o.filled_quantity > 0]
+    if filled and all(o.net_cash_usd is not None for o in filled):
+        return sum((o.net_cash_usd for o in filled if o.net_cash_usd is not None), ZERO)
+    fees = recorded_fees(orders)
+    return None if fees is None else gross - fees
+
+
+def total_net(trades: Iterable[api.DayTrade]) -> Decimal | None:
+    """The sum of the trades' results after fees; None while any of them is unknown."""
+    total = ZERO
+    for trade in trades:
+        if trade.result_net_usd is None:
+            return None
+        total += trade.result_net_usd
     return total
 
 
@@ -331,6 +353,7 @@ def closed_trades(store: Store, environment: str | None = None,
             exit_reason=row["close_cause"], stop_price=stops[0] if stops else None,
             planned_loss_usd=Decimal(row["planned_loss_usd"]),
             result_gross_usd=(exit_price - entry_price) * quantity,
+            result_net_usd=trade_net(orders, (exit_price - entry_price) * quantity),
             # Display metrics are never read here (see `trade_metrics`): this path feeds the
             # daily-loss check and stays as it was.
             stop_confirmed_after_seconds=None, mae_usd=None, mfe_usd=None,
@@ -362,13 +385,13 @@ class History:
     """Answers GET /days, /days/<date>, /bars and /performance. Thread safe; caches the last
     bars file read. Without `after`, day-v1 trades carry no prices after and no overshoot."""
 
-    def __init__(self, paths: HistoryPaths, after: AfterSettings | None = None) -> None:
+    def __init__(self, paths: HistoryPaths, after: AfterSettings | None = None,
+                 bars: CapturedBarsDays | None = None) -> None:
         self.paths = paths
+        self.captured_bars = bars or CapturedBarsDays()  # the server's shared reader
         self.after = after
         self.closes = None if after is None else Closes(after.calendar)
         self._lock = threading.Lock()
-        self._bars_key: tuple[str, int, int, bool] | None = None
-        self._bars: dict[str, list[api.BarV1]] = {}
         self._session_calendar: SessionCalendar | None = None
 
     # ------------------------------------------------------------ sources
@@ -465,7 +488,7 @@ class History:
         except MalformedJournal:
             strategy = None
         trade = replace(trade, entry=entry, entry_cause=cause, strategy=strategy)
-        bars = self._bars_by_symbol(day, today).get(trade.symbol, [])
+        bars = self._bars_of(trade.symbol, day, today)
         if self.after is not None and self.closes is not None:
             trade = trade_after(trade, bars, self.closes.close(day), self.after)
         try:
@@ -482,27 +505,19 @@ class History:
     def _bars_file(self, day: date) -> Path:
         return self.paths.capture / day.isoformat() / BARS_FILE
 
-    def _bars_by_symbol(self, day: date, today: date) -> dict[str, list[api.BarV1]]:
+    def _bars_by_symbol(self, day: date, today: date) -> dict[str, tuple[Bar, ...]]:
         path = existing(self._bars_file(day))  # plain or archived (.gz)
         if path is None:
             return {}
-        stat = path.stat()
-        key = (str(path), stat.st_mtime_ns, stat.st_size, day == today)
-        with self._lock:
-            if self._bars_key == key:
-                return self._bars
         try:
             # Today's file may be half way through a line the bot is writing.
-            read = read_captured_bars(path, open_tail=day == today)
+            return self.captured_bars.by_symbol(path, open_tail=day == today)
         except (CaptureError, OSError) as exc:
             raise HistoryUnavailable(f"capture file unreadable: {exc}") from exc
-        by_symbol: dict[str, list[api.BarV1]] = {}
-        for (symbol, _), bar in sorted(read.bars.items()):
-            by_symbol.setdefault(symbol, []).append(api.BarV1(
-                bar.start, bar.open, bar.high, bar.low, bar.close, bar.volume))
-        with self._lock:
-            self._bars_key, self._bars = key, by_symbol
-        return by_symbol
+
+    def _bars_of(self, symbol: str, day: date, today: date) -> list[api.BarV1]:
+        return [api.BarV1(bar.start, bar.open, bar.high, bar.low, bar.close, bar.volume)
+                for bar in self._bars_by_symbol(day, today).get(symbol, ())]
 
     # ------------------------------------------------------------ answers
 
@@ -545,6 +560,7 @@ class History:
                 wins=sum(1 for t in of_day if t.result_gross_usd > 0),
                 losses=sum(1 for t in of_day if t.result_gross_usd < 0),
                 result_gross_usd=sum((t.result_gross_usd for t in of_day), ZERO),
+                result_net_usd=total_net(of_day),
                 has_bars=existing(self._bars_file(day)) is not None, clean=clean[day]))
         return api.DaysV1(environment=self.paths.environment, days=tuple(summaries))
 
@@ -554,10 +570,10 @@ class History:
         symbols = tuple(sorted(self._bars_by_symbol(day, today)))
         return api.DayV1(environment=self.paths.environment, day=day, trades=tuple(of_day),
                          result_gross_usd=sum((t.result_gross_usd for t in of_day), ZERO),
-                         bar_symbols=symbols)
+                         bar_symbols=symbols, result_net_usd=total_net(of_day))
 
     def bars(self, symbol: str, day: date, today: date) -> api.BarsV1:
-        bars = self._bars_by_symbol(day, today).get(symbol, [])
+        bars = self._bars_of(symbol, day, today)
         return api.BarsV1(environment=self.paths.environment, symbol=symbol, day=day,
                           bars=tuple(bars))
 
