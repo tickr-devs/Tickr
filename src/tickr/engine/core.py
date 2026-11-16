@@ -318,20 +318,36 @@ class Engine:
     # --- fences ----------------------------------------------------------------------------
 
     def foreign_symbols(self) -> frozenset[str] | None:
-        """Symbols of the positions and open orders the bot does not own, from their fences
-        and the latest complete reconcile. None when a foreign order's symbol is not known
-        (no complete reconcile read since it was seen): the caller must assume any symbol."""
+        """Symbols of the positions and open orders the bot does not own: positions from their
+        fences, orders from every open order of the latest complete reconcile that is not in
+        our records (a manual order may carry no client order id, so several share one fence).
+        None while a foreign order is fenced but no complete reconcile read is at hand: the
+        caller must assume any symbol."""
         names = [name.partition(":") for name in self.fences()]
         symbols = {key for fence, _, key in names if fence == Fence.FOREIGN_POSITION}
-        order_ids = {key for fence, _, key in names if fence == Fence.FOREIGN_ORDER}
-        if order_ids:
+        if any(fence == Fence.FOREIGN_ORDER for fence, _, _ in names):
             if self.broker_view is None:
                 return None
-            by_id = {o.client_order_id: o.symbol for o in self.broker_view.open_orders}
-            if not order_ids <= by_id.keys():
+            ours = {o.client_order_id for o in self.orders()}
+            foreign = [o for o in self.broker_view.open_orders if o.client_order_id not in ours]
+            if not foreign or any(not o.symbol for o in foreign):
                 return None
-            symbols |= {by_id[cid] for cid in order_ids}
+            symbols |= {o.symbol for o in foreign}
         return frozenset(symbols)
+
+    def entry_fences(self, symbol: str | None) -> dict[str, str]:
+        """The fences that refuse a new entry in `symbol` (hard rule 1, narrowed by the owner
+        2026-11-16: manual trades are ignored). Every fence blocks, except a foreign position
+        or order in another known symbol; while a foreign order's symbol is unknown, foreign
+        fences block every symbol. `symbol` None asks what blocks an entry in any symbol
+        without foreign exposure (the status line). One rule for admission, `open_trade`, the
+        working-entry guard and the status."""
+        fences = self.fences()
+        foreign = self.foreign_symbols()
+        if foreign is None or (symbol is not None and symbol in foreign):
+            return fences
+        return {n: c for n, c in fences.items()
+                if n.partition(":")[0] not in (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)}
 
     def fences(self) -> dict[str, str]:
         return {r["name"]: r["cause"] for r in self.store.query("SELECT name, cause FROM fences")}
@@ -471,13 +487,7 @@ class Engine:
         gate = self.gate()
         if not gate.open:
             raise EntryRefused(f"trading gate closed: {gate.cause}")
-        fences = self.fences()
-        foreign = self.foreign_symbols()
-        if foreign is not None and symbol not in foreign:
-            # Manual trades in other symbols are ignored (owner 2026-11-16); their fences
-            # stay set and alert, but do not block this entry.
-            fences = {n: c for n, c in fences.items()
-                      if n.partition(":")[0] not in (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)}
+        fences = self.entry_fences(symbol)
         if fences:
             raise EntryRefused("entries fenced: " + ", ".join(sorted(fences)))
         trades = self.trades()
