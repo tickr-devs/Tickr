@@ -66,17 +66,20 @@ public struct StatusPill: View {
   }
 }
 
-/// A fact in a small tag: an exit reason, an environment, a verdict, a version's role, the trading
-/// gate, a day's clean-day verdict. The apps' one badge (`.u-badge` of the boards' shared spec):
+/// A fact in a small tag: an exit reason, a verdict, a version's role, the trading gate, a day's
+/// clean-day verdict; the environment is the `EnvironmentBadge`, drawn by this. The apps' one badge
+/// (`.u-badge` of the boards' shared spec):
 /// `badge` type (10.5 pt bold mono, uppercase, `badgeTracking`), `Radius.small` (6 pt) corners,
 /// `Space.xs` × `Space.s` padding, its colour at `Opacity.badgeFill` inside and `Opacity.border` around,
 /// the words in the colour's text role. Words only, never a symbol. `planned` draws it dashed
-/// (BACKLOG).
+/// (BACKLOG); `dashed` gives the usual wash a dashed edge (the demo day).
 public struct Badge: View {
   let text: Text
   let fill: Color
   let color: Color
   let planned: Bool
+  /// A dashed edge on the usual wash (the demo day's `EnvironmentBadge`); `planned` drops the wash too.
+  let dashed: Bool
   /// Badges are capitals; a value whose case means something (a version, "v1") keeps its own.
   var textCase: Text.Case? = .uppercase
 
@@ -90,7 +93,7 @@ public struct Badge: View {
     textCase = nil
   }
 
-  /// A badge showing data (an environment name, a protocol value), not a sentence.
+  /// A badge showing data (a protocol value), not a sentence.
   public init(verbatim text: String, tone: Tone, planned: Bool = false) {
     self.init(Text(verbatim: text), fill: tone.fill, color: tone.text, planned: planned)
   }
@@ -106,11 +109,12 @@ public struct Badge: View {
     if keepingCase { textCase = nil }
   }
 
-  init(_ text: Text, fill: Color, color: Color, planned: Bool) {
+  init(_ text: Text, fill: Color, color: Color, planned: Bool, dashed: Bool = false) {
     self.text = text
     self.fill = fill
     self.color = color
     self.planned = planned
+    self.dashed = dashed
   }
 
   public var body: some View {
@@ -124,7 +128,7 @@ public struct Badge: View {
       .foregroundStyle(color)
       .background(planned ? Color.clear : fill.opacity(Tokens.Opacity.badgeFill), in: shape)
       .overlay(shape.strokeBorder(fill.opacity(planned ? 1 : Tokens.Opacity.border),
-        style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: planned ? Tokens.Stroke.dashFine : [])))
+        style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: planned || dashed ? Tokens.Stroke.dashFine : [])))
       .fixedSize()
   }
 }
