@@ -40,7 +40,11 @@ On an open market day (half days too: a position after the flatten time is wrong
   `<data_dir>/<watchdog_entry_restart_file>` (so the flatten restart above stays available):
   the broker order is a DAY limit, so it could fill with no stop until the bot starts; the
   started bot cancels every working entry at startup and protects any fill. Same refusals
-  (operator stop marker, unreadable record, wrong day) and alerts.
+  (operator stop marker, unreadable record, wrong day) and alerts. That run takes no new entry:
+  at startup the bot reads this record and, when it is today's, sets the `watchdog-started`
+  fence, which only the operator clears (runtime/service.py), so a bot started unattended
+  still never opens a trade on its own. After an early restart, a later not-flat check alerts
+  `watchdog-not-flat` (the "after a restart" rule above reads the flatten restart record only).
 Every broker check, every "bot down" finding and every alert is one JSON line on stdout (the
 job log) and in `<data_dir>/<watchdog_journal_file>`.
 """
@@ -166,8 +170,7 @@ def open_trades(database: Path) -> int:
 
 
 # An entry that may still work at the broker: sent (or maybe sent) and not shown ended.
-_WORKING = tuple(s.value for s in (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED,
-                                   OrderState.UNKNOWN))
+_WORKING = tuple(s.value for s in OrderState if not s.terminal)
 _SENT = tuple(s.value for s in (SendState.ATTEMPTED, SendState.ACKNOWLEDGED,
                                 SendState.UNKNOWN))
 
