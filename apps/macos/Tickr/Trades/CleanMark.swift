@@ -7,18 +7,13 @@ import TickrKit
 struct CleanMark: View {
   let clean: CleanDay
 
-  /// SF Symbol of a clean day.
-  static let cleanSymbol = "checkmark.seal.fill"
-  /// SF Symbol of a day that was not clean.
-  static let notCleanSymbol = "exclamationmark.triangle.fill"
-
   var body: some View {
     Group {
       switch clean.verdict {
       case .clean:
-        Image(systemName: Self.cleanSymbol).foregroundStyle(Palette.profitText)
+        Image(systemName: Symbols.cleanDay).foregroundStyle(Palette.profitText)
       case .notClean:
-        Image(systemName: Self.notCleanSymbol).foregroundStyle(Palette.warningText)
+        Image(systemName: Symbols.notCleanDay).foregroundStyle(Palette.warningText)
       case .unknown:
         EmptyView()
       }
