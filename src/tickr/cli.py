@@ -454,7 +454,7 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     from tickr.observers.errors import ObserverError
     from tickr.observers.loader import load_active, load_observers
     from tickr.observers.log import DecisionLog
-    from tickr.observers.runner import ObserverSet
+    from tickr.observers.runner import ObserverSet, ProcessSpec
     from tickr.runtime.entries import EntryDesk
     from tickr.runtime.evaluation import Evaluator
 
@@ -472,9 +472,13 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     except ObserverError as exc:
         observers_refused(str(exc))
         shadows = ()
+    # The observers run in a child process the bot owns, built again there from their folders
+    # (observers.runner), so they never share the trading thread's interpreter lock.
     observers = ObserverSet(shadows, log, cfg.observers.max_evaluation_seconds,
                             cfg.observers.queue_size, cfg.risk.max_quote_age_seconds,
-                            cfg.risk.max_clock_skew_seconds)
+                            cfg.risk.max_clock_skew_seconds,
+                            process=ProcessSpec(cfg.root, tuple(cfg.observers.strategy_modules),
+                                                log.directory))
     return evaluator, observers
 
 

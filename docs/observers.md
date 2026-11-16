@@ -134,45 +134,28 @@ Notes for both candidates (from the trading-core review of `strategy/simple.py`)
   trade per signal (`skipped_same_signal`); the `outcomes` research command still measures
   every ENTER record.
 
-## Engine wiring (to do in the engine, not here)
+## Where observers run
 
-```python
-from tickr.observers.loader import load_observers
-from tickr.observers.log import DecisionLog
-from tickr.observers.runner import ObserverSet
+The bot builds the observers again in a child process it owns (`ObserverSet(...,
+process=ProcessSpec(...))` in `cli.py`; `observers/runner.py`), so their evaluation never
+competes with the trading thread for Python's interpreter lock. Measured on 150 symbols with 6
+observers (2026-11-16, synthetic M1 bars, 5 prior sessions): with the old worker thread the
+trading thread ran about 2x slower while observers worked and handing over a pass took about
+1.2 s; with the process it takes about 0.05 s and the trading thread is not slowed.
 
-settings = config.observers
-observers = ObserverSet(load_observers(config), DecisionLog.from_config(config),
-                        settings.max_evaluation_seconds, settings.queue_size,
-                        config.risk.max_quote_age_seconds, config.risk.max_clock_skew_seconds)
-
-# per evaluation, right after the active strategy decided on `context` at time `now`:
-for failure in observers.on_evaluation(context, now):   # only "queue full: dropped"
-    journal("observer-dropped", failure)
-# on every engine step:
-for failure in observers.take_failures():
-    journal("observer-off", failure)                     # and alert once
-# at shutdown:
-observers.close(timeout)                                  # False = a hung observer
-```
-
-- `on_evaluation` never evaluates on the caller's thread and never blocks: it freezes the
-  context (bars as tuples, position removed) and puts it on a bounded queue (`queue_size`).
-  One worker thread evaluates the observers in order and writes their records. When the queue
-  is full the evaluation is dropped and returned as a failure.
-- On the worker, an exception, a contract break (wrong tag or symbol) or an evaluation slower
-  than `max_evaluation_seconds` switches that observer off for the run; a failed log write
-  switches all of them off. `take_failures()` hands these to the trading thread. A hung
-  observer keeps the worker busy; the queue then overflows and further evaluations are dropped
-  and recorded, still without blocking trading.
-- The active decision should be written through the same log, `observers.log.append(record)`
-  (role `active`, admission `taken` / `refused` + cause, `not_applicable` for non-ENTER), so the
-  daily report has both sides in one file. The log is thread-safe (one lock, whole lines).
-- `on_evaluation` raises ValueError only for a caller bug (decision time before the bar ended).
-- The log flushes each line but does not fsync: research data, not trading state.
-
-Files: `<data_dir>/<decisions_dir>/<environment>/<NY date>/decisions.jsonl`, one decision record
-per line (format in `docs/research.md`).
+- Per evaluation the bot sends only the bars of the symbol the child does not have yet (all of
+  them again when an earlier bar changed, a provider revision) and the prior sessions only when
+  they changed, so the first pass of the day carries the history and later ones one bar each.
+- The child appends its records to the same `decisions.jsonl` (each line is one unbuffered
+  append, so the bot's and the child's lines never interleave) and reports back which observers
+  it switched off and which symbols each one is watching.
+- A full queue (`[observers] queue_size`) drops the rest of that pass for the observers and
+  writes one `observers-dropped` journal row with the count; they go on with the next pass.
+- An exception, a contract break or a slow evaluation switches that one observer off
+  (`observer-failure` row), as before. A child that ends on its own switches the observers off
+  for the run with one `observers-stopped` row and alert; trading goes on.
+- The child exits when the bot stops it at shutdown or when the bot's process is gone.
+- `ObserverSet` without `process` runs the same worker on a thread (tests).
 
 ## Daily report
 

@@ -20,7 +20,7 @@ from tickr.observers.loader import (
     parse_modules,
 )
 from tickr.observers.log import DecisionLog
-from tickr.observers.runner import ObserverSet
+from tickr.observers.runner import ObserverSet, ProcessSpec, _Encoder
 from tickr.research.records import Admission, load_records
 from tickr.strategy.base import Decision, PositionView, Role, SymbolContext, Verdict
 from tickr.types import Bar
@@ -414,3 +414,84 @@ def test_watching_empties_once_evaluation_stops(tmp_path):
     # after the close no new bars arrive
     assert observers.watching(START + 10 * M1, WINDOW) == frozenset()
     assert observers.close(5)
+
+
+# ------------------------------------------------------------------ worker: bars sent once
+
+
+def test_the_worker_gets_only_new_bars_and_rebuilds_the_same_context(tmp_path):
+    fake = Fake()
+    observers, _ = observer_set(tmp_path, fake)
+    prior = (bars(2, "ABC"),)
+    first = SymbolContext("ABC", bars(3), prior)
+    encoder = _Encoder()  # what on_evaluation does, step by step
+    sent, commit = encoder.message(first, START + 3 * M1)
+    assert sent[4] == prior and sent[5:] == (0, first.bars)  # everything, the first time
+    commit()
+    grown = SymbolContext("ABC", bars(5), prior)
+    sent, _ = encoder.message(grown, START + 5 * M1)
+    assert sent[4] is None and sent[5:] == (3, grown.bars[3:])  # only the two new bars
+    revised = list(bars(5))
+    revised[1] = replace(revised[1], close=Decimal(11))  # the provider revised an old bar
+    sent, _ = encoder.message(SymbolContext("ABC", tuple(revised), prior), START + 5 * M1)
+    assert sent[5:] == (0, tuple(revised))  # all again
+    for ctx, at in ((first, START + 3 * M1), (grown, START + 5 * M1),
+                    (SymbolContext("ABC", tuple(revised), prior), START + 5 * M1)):
+        assert observers.on_evaluation(ctx, at) == ()
+    assert settle(observers) == () and observers.close(5)
+    assert [s.bars for s in fake.seen] == [first.bars, grown.bars, tuple(revised)]
+    assert all(s.prior_sessions == prior for s in fake.seen)
+
+
+def test_a_dropped_evaluation_is_sent_whole_next_time(tmp_path):
+    hung = Blocking()
+    observers, _ = observer_set(tmp_path, hung, queue_size=1)
+    assert observers.on_evaluation(context(3), START + 3 * M1) == ()
+    assert hung.entered.wait(5)
+    assert observers.on_evaluation(context(4), START + 4 * M1) == ()  # waits in the queue
+    (dropped,) = observers.on_evaluation(context(5), START + 5 * M1)
+    assert dropped.cause.startswith("queue full (1)")
+    hung.release.set()
+    assert observers.wait_idle(5)
+    assert observers.on_evaluation(context(6), START + 6 * M1) == ()
+    assert observers.wait_idle(5) and observers.close(5)
+    assert [len(s.bars) for s in hung.seen] == [3, 4, 6]
+
+
+# ------------------------------------------------------------------ worker process
+
+
+def _process_set(tmp_path, folder="pa-lookback-8"):
+    cfg = _config(tmp_path, [folder])
+    _variant(tmp_path, folder, "2")
+    log = DecisionLog(tmp_path / "decisions")
+    return ObserverSet(load_observers(cfg), log, Decimal(5), cfg.observers.queue_size,
+                       cfg.risk.max_quote_age_seconds, cfg.risk.max_clock_skew_seconds,
+                       process=ProcessSpec(tmp_path, tuple(cfg.observers.strategy_modules),
+                                           log.directory)), log
+
+
+def test_a_real_strategy_runs_in_the_observer_process(tmp_path):
+    observers, log = _process_set(tmp_path)
+    assert observers._process is not None
+    for n in (3, 4, 5):
+        assert observers.on_evaluation(context(n), START + n * M1) == ()
+    assert settle(observers) == ()
+    assert observers.close(10) and not observers._process.is_alive()
+    records = load_records([log.path(date(2026, 11, 10))])
+    assert [(r.decision.strategy, r.decision.version, r.role) for r in records] == [
+        ("price-action-v1", "2", Role.OBSERVER)] * 3
+    assert [r.bar_start for r in records] == [START + i * M1 for i in (2, 3, 4)]
+
+
+def test_an_observer_process_that_ends_is_reported_once(tmp_path):
+    observers, _ = _process_set(tmp_path)
+    observers._process.kill()
+    observers._process.join(10)
+    assert not observers.alive
+    (failure,) = observers.take_failures()
+    assert failure.identity == "all observers" and "observer process ended" in failure.cause
+    assert observers.take_failures() == ()
+    assert observers.on_evaluation(context(), START + 3 * M1) == ()  # nothing is sent
+    assert observers.enabled == ()
+    observers.close(1)
