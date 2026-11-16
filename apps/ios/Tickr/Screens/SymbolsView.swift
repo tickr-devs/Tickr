@@ -228,6 +228,7 @@ struct SymbolsView: View {
 
 /// The Symbols list while its rows load (mockup v102): two-line skeleton rows, the symbol, its
 /// badge, price, change and time over the stage track, the stage and the outcome.
+@MainActor
 private enum SymbolsSkeleton {
   /// Skeleton rows in the list, as the board's.
   static let rows = 9

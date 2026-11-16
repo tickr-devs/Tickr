@@ -138,10 +138,10 @@ final class SpinnerRingView: PlatformView {
     let inset = Tokens.Loading.spinnerStroke / 2
     let box = CGRect(x: 0, y: 0, width: side, height: side)
     // Starting at the top and running clockwise on screen (y downward).
-    let start = -Self.fullTurn / Self.quarterTurns
+    let top = -Self.fullTurn / Self.quarterTurns
     let path = CGMutablePath()
     path.addArc(center: CGPoint(x: box.midX, y: box.midY), radius: max(side / 2 - inset, 0),
-      startAngle: start, endAngle: start + Self.fullTurn, clockwise: false)
+      startAngle: top, endAngle: top + Self.fullTurn, clockwise: false)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     for shape in [track, arc] {

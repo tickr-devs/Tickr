@@ -274,6 +274,7 @@ struct SymbolsView: View {
 
 /// The Symbols screen while its rows load (mockup v102): skeleton rows in the rows' own column
 /// grid, and a skeleton of the detail card.
+@MainActor
 private enum SymbolsSkeleton {
   /// Skeleton rows in the list, as the board's.
   static let rows = 18
