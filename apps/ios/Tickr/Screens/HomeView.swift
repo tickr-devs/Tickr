@@ -301,10 +301,10 @@ private struct Summary: View {
         lineWidth: Self.ringLine) {
         VStack(spacing: Tokens.Space.xxs) {
           CardLabel(L10n.Home.day)
-          Text(verbatim: Money.signed(result))
+          // Counts up from zero as the ring appears and on to each new result (the board's count).
+          CountingText(NSDecimalNumber(decimal: result).doubleValue) { Money.signed(Decimal($0)) }
             .font(Tokens.Typography.metric)
             .foregroundStyle(result < 0 ? Palette.seriesATRText : Palette.profitText)
-            .contentTransition(.numericText(value: NSDecimalNumber(decimal: result).doubleValue))
             .minimumScaleFactor(Tokens.Shrink.tight)
             .lineLimit(1)
           Group {
@@ -367,7 +367,7 @@ private struct Summary: View {
           AgeLine()
         }
       }
-      .animation(.default, value: pulse)
+      .animation(Tokens.Motion.standard, value: pulse)
     }
   }
 
@@ -938,8 +938,10 @@ private struct RefusedList: View {
 }
 
 /// The day's events as the design's ticker strip: each event's tag in its tone and what happened,
-/// newest first (a risk refusal counts as an event), on a sunken strip faded at both ends. It holds
-/// still: a finger scrolls it, nothing moves on its own (docs/design-system.md, rule 5).
+/// newest first (a risk refusal counts as an event), on a sunken strip faded at both ends. As on
+/// the board it scrolls, the whole row once every `Motion.tickerLoopSeconds`: the scroll is
+/// ornament (docs/design-system.md, rule 5); its items change only on real events. Under Reduce
+/// Motion it holds still and a finger scrolls it.
 private struct EventStrip: View {
   /// Most events the strip carries.
   static let maxEvents = 12
@@ -959,7 +961,7 @@ private struct EventStrip: View {
   }
 
   var body: some View {
-    Ticker(items, moving: false)
+    Ticker(items, loopSeconds: Tokens.Motion.tickerLoopSeconds)
       // The first tag starts clear of the faded edge.
       .contentMargins(.horizontal, Tokens.Space.l, for: .scrollContent)
       .padding(.vertical, Tokens.Space.s)
