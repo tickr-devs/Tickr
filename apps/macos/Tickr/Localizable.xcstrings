@@ -245,13 +245,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@\n\nSent to: the DEMO day, not the bot."
+            "value" : "%@\n\nDEMO day: nothing is sent, the app only plays its recording."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@\n\nКуда: ДЕМО-день, не бот."
+            "value" : "%@\n\nДЕМО-день: ничего не отправляется, приложение только проигрывает запись."
           }
         }
       }
@@ -609,6 +609,59 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Приостановить новые входы?"
+          }
+        }
+      }
+    },
+    "bot.positionCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld position"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld positions"
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиции"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиций"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиция"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиции"
+                }
+              }
+            }
           }
         }
       }
@@ -6624,13 +6677,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Demo day: commands go to the demo, not the bot"
+            "value" : "Demo day: commands are not sent to the bot"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Демо-день: команды уходят в демо, не боту"
+            "value" : "Демо-день: команды не уходят боту"
           }
         }
       }
@@ -6873,6 +6926,23 @@
         }
       }
     },
+    "overview.beforeFees" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "before broker fees"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "до комиссий брокера"
+          }
+        }
+      }
+    },
     "overview.dayCounts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7073,40 +7143,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запланировано, ещё не сделано (docs/backlog.md)."
-          }
-        }
-      }
-    },
-    "planned.needsAPI" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "NEEDS API"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "НУЖЕН API"
-          }
-        }
-      }
-    },
-    "planned.needsAPIHelp" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Needs a new local-API read or command."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Нужно новое чтение или новая команда локального API."
           }
         }
       }
@@ -8003,6 +8039,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Капитал"
+          }
+        }
+      }
+    },
+    "risk.feesToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "broker fees today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "комиссии брокера за день"
           }
         }
       }
@@ -10869,13 +10922,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows the made-up demo day from this Mac, and only that day; the bot's address stays as it is."
+            "value" : "Shows the made-up demo day this app carries, and only that day; the bot's address stays as it is."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показывает придуманный демо-день с этого Mac, и только его; адрес бота остаётся прежним."
+            "value" : "Показывает придуманный демо-день, который приложение носит с собой, и только его; адрес бота остаётся прежним."
           }
         }
       }
@@ -15552,57 +15605,6 @@
         }
       }
     },
-    "watching.filterAll" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All %lld"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Все %lld"
-          }
-        }
-      }
-    },
-    "watching.filterIgnore" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ignore %lld"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Пропуск %lld"
-          }
-        }
-      }
-    },
-    "watching.filterWatch" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watch %lld"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Наблюдение %lld"
-          }
-        }
-      }
-    },
     "watching.live" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15660,30 +15662,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The strategy is not watching any symbol on this day."
+            "value" : "Nothing armed right now. A symbol shows here while the strategy waits for its setup."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "В этот день стратегия ни за чем не следит."
-          }
-        }
-      }
-    },
-    "watching.noneFiltered" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No watched symbol has this verdict."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Нет тикеров с таким решением."
+            "value" : "Сейчас ничего не взведено. Символ появляется здесь, пока стратегия ждёт его сетап."
           }
         }
       }
@@ -15728,13 +15713,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show all %lld"
+            "value" : "Show all"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показать все %lld"
+            "value" : "Показать все"
           }
         }
       }

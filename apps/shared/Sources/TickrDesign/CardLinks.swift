@@ -7,23 +7,35 @@ import SwiftUI
 
 /// A card header's link: a capsule in its tone (`info`; `highlight` in the advisor's box) holding an
 /// optional leading symbol, the title and the chevron. `Size.headerLink` tall; on iOS its touch
+<<<<<<< HEAD
 /// target is at least `Size.touchTarget`. The title wraps rather than being cut.
 public struct HeaderLink: View {
   let title: Text
   let systemImage: String?
+=======
+/// target is at least `Size.touchTarget`. The title wraps rather than being cut. A link that
+/// pushes a screen is a `NavigationLink` with a `HeaderLinkLabel`, styled `.headerLink()`.
+public struct HeaderLink: View {
+  let label: HeaderLinkLabel
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
   let tone: Tone
   let action: () -> Void
 
   public init(
     _ title: LocalizedStringResource, systemImage: String? = nil, tone: Tone = .info, action: @escaping () -> Void
   ) {
+<<<<<<< HEAD
     self.title = Text(title)
     self.systemImage = systemImage
+=======
+    self.label = HeaderLinkLabel(title, systemImage: systemImage)
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
     self.tone = tone
     self.action = action
   }
 
   public var body: some View {
+<<<<<<< HEAD
     Button(action: action) {
       HStack(spacing: Tokens.Space.xs) {
         if let systemImage {
@@ -46,6 +58,48 @@ struct HeaderLinkStyle: ButtonStyle {
   @State private var hovered = false
 
   func makeBody(configuration: Configuration) -> some View {
+=======
+    Button(action: action) { label }
+      .buttonStyle(.headerLink(tone))
+  }
+}
+
+/// What a header link says: the optional symbol, the title (wrapping, never cut) and the chevron,
+/// in `Typography.link`. The face of a `HeaderLink`, or of a `NavigationLink` styled `.headerLink()`.
+public struct HeaderLinkLabel: View {
+  let title: Text
+  let systemImage: String?
+
+  public init(_ title: LocalizedStringResource, systemImage: String? = nil) {
+    self.title = Text(title)
+    self.systemImage = systemImage
+  }
+
+  public var body: some View {
+    HStack(spacing: Tokens.Space.xs) {
+      if let systemImage {
+        Image(systemName: systemImage).accessibilityHidden(true)
+      }
+      title
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
+      Chevron()
+    }
+    .font(Tokens.Typography.link)
+  }
+}
+
+/// The look of a header link: the tinted capsule, darker under the pointer, pressed in while held.
+public struct HeaderLinkStyle: ButtonStyle {
+  let tone: Tone
+  @State private var hovered = false
+
+  public init(_ tone: Tone = .info) {
+    self.tone = tone
+  }
+
+  public func makeBody(configuration: Configuration) -> some View {
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
     let shape = Capsule()
     configuration.label
       .foregroundStyle(tone.text)
@@ -55,10 +109,14 @@ struct HeaderLinkStyle: ButtonStyle {
       .frame(minHeight: Tokens.Size.headerLink)
       .background(tone.fill.opacity(hovered ? Tokens.Opacity.linkHover : Tokens.Opacity.wash), in: shape)
       .overlay(shape.strokeBorder(tone.fill.opacity(Tokens.Opacity.linkOutline), lineWidth: Tokens.Stroke.thin))
+<<<<<<< HEAD
       #if os(iOS)
       .frame(minHeight: Tokens.Size.touchTarget)
       #endif
       .contentShape(Rectangle())
+=======
+      .touchTarget()
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
       .scaleEffect(configuration.isPressed ? Tokens.Motion.pressScale : 1)
       .onHover { hovered = $0 }
       .animation(Tokens.Motion.quick, value: hovered)
@@ -66,6 +124,16 @@ struct HeaderLinkStyle: ButtonStyle {
   }
 }
 
+<<<<<<< HEAD
+=======
+public extension ButtonStyle where Self == HeaderLinkStyle {
+  /// `.buttonStyle(.headerLink())`: a header link's capsule (`HeaderLink`), for a `NavigationLink`.
+  static func headerLink(_ tone: Tone = .info) -> HeaderLinkStyle {
+    HeaderLinkStyle(tone)
+  }
+}
+
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
 /// A card's footer link ("Show all"): the last row of the card, across its whole width under a
 /// hairline: the title and a count capsule on the left, an optional hint ("closest 3 of 7") and a
 /// round chevron chip on the right. The whole row is one button, `Size.footerLink` tall (on iOS

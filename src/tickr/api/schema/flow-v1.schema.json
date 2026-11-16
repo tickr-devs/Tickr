@@ -91,8 +91,7 @@
           "sources",
           "change_pct",
           "change_cause",
-          "excluded_cause",
-          "ranks"
+          "excluded_cause"
         ],
         "additionalProperties": false
       }
@@ -238,9 +237,7 @@
                 "required": [
                   "kind",
                   "since",
-                  "text",
-                  "code",
-                  "params"
+                  "text"
                 ],
                 "additionalProperties": false
               }

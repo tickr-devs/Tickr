@@ -149,7 +149,7 @@ struct ActivityView: View {
       switch activity.phase {
       case .failed(let cause):
         ContentUnavailableView {
-          Label { Text(L10n.Activity.dayFailed) } icon: { Image(systemName: "exclamationmark.triangle") }
+          Label { Text(L10n.Activity.dayFailed) } icon: { Image(systemName: Symbols.failure) }
         } description: {
           Text(verbatim: cause)
         } actions: {
@@ -159,7 +159,7 @@ struct ActivityView: View {
           } label: {
             Text(L10n.Activity.retry)
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.action(.secondary, size: .compact))
         }
         .rise()
       default:
@@ -220,7 +220,7 @@ extension ActivityView {
       .pickerStyle(.menu)
       .frame(maxWidth: .infinity, alignment: .leading)
     } else {
-      SegmentChips(options: Pane.allCases.map { ($0, Text($0.title)) }, selection: $section, style: .raised,
+      SegmentSwitch(options: Pane.allCases.map { ($0, Text($0.title)) }, selection: $section,
         identifier: AccessibilityID.activitySection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(L10n.Activity.show))
@@ -231,9 +231,6 @@ extension ActivityView {
 /// The calendar of recorded days: one month of Monday-to-Friday weeks, each day tinted by its net
 /// result. Tapping a recorded day shows it; tapping today goes back to the live view.
 private struct DayPicker: View {
-  /// Lines the month and year may take in the header ("Ноябрь 2026 г." at large text sizes).
-  static let monthLines = 2
-
   let activity: ActivityModel
   let url: URL
 
@@ -258,8 +255,6 @@ private struct DayPicker: View {
           Text(verbatim: name)
             .font(Tokens.Typography.label)
             .foregroundStyle(Palette.textQuaternary)
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.most)
             .frame(maxWidth: .infinity)
         }
       }
@@ -302,7 +297,7 @@ private struct DayPicker: View {
         Button {
           if let month = activity.previousMonth { activity.month = month }
         } label: {
-          HeaderIcon(symbol: "chevron.backward", glass: false)
+          monthArrow(Symbols.previous)
         }
         .disabled(activity.previousMonth == nil)
         .accessibilityLabel(Text(L10n.Activity.previousMonth))
@@ -312,10 +307,8 @@ private struct DayPicker: View {
         Text(first, format: .dateTime.month(.wide).year())
           .font(Tokens.Typography.calloutMono.bold())
           .foregroundStyle(Palette.textPrimary)
-          // The month and year wrap to a second line before they shrink or get cut.
-          .lineLimit(Self.monthLines)
+          // The month and year wrap ("Ноябрь 2026 г." at large text sizes), never shrink or get cut.
           .multilineTextAlignment(.center)
-          .minimumScaleFactor(Tokens.Shrink.standard)
           .contentTransition(.opacity)
       }
       // At accessibility sizes the button takes its own row under the month.
@@ -327,20 +320,22 @@ private struct DayPicker: View {
         Button {
           if let month = activity.nextMonth { activity.month = month }
         } label: {
-          HeaderIcon(symbol: "chevron.forward", glass: false)
+          monthArrow(Symbols.next)
         }
         .disabled(activity.nextMonth == nil)
         .accessibilityLabel(Text(L10n.Activity.nextMonth))
       }
     }
-    .buttonStyle(.borderless)
+    .buttonStyle(.glyph)
+  }
+
+  /// A month arrow: the bare glyph in the link colour, dimmed while it leads nowhere.
+  private func monthArrow(_ symbol: String) -> some View {
+    HeaderIcon(symbol: symbol, glass: false).foregroundStyle(Palette.infoText).dimmedWhenDisabled()
   }
 
   private var backToToday: some View {
-    Button { activity.showToday() } label: { Text(L10n.Activity.backToToday) }
-      .buttonStyle(.bordered)
-      .buttonBorderShape(.capsule)
-      .font(Tokens.Typography.captionMono)
+    TodayButton(L10n.Activity.backToToday) { activity.showToday() }
       .transition(.scale.combined(with: .opacity))
   }
 
@@ -370,16 +365,12 @@ private struct DayCell: View {
       VStack(spacing: Tokens.Space.xxs) {
         Text(cell.day.day, format: .number)
           .font(Tokens.Typography.calloutMono.bold())
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.most)
           // Inset from the cell's edges, so neighbouring day numbers never touch.
           .padding(.horizontal, Tokens.Space.xxs)
         if let result {
           Text(verbatim: Money.signed(result, fractionDigits: 0))
             .font(Tokens.Typography.annotation)
             .foregroundStyle(Palette.result(result))
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.tight)
         } else if isToday {
           PulseDot(Palette.accent, size: Tokens.Size.dotSmall, event: todayEvent)
         }
@@ -429,7 +420,7 @@ private struct DayFigures: Equatable {
   /// Today, live from the status.
   init(_ status: StatusV1) {
     let stats = Board.dayStats(status)
-    result = stats.resultGrossUsd
+    result = stats.resultUsd
     counts = L10n.Activity.counts(stats.trades, stats.wins, stats.losses, status.positions.count)
     tally = Tally(closed: stats.trades, wins: stats.wins, losses: stats.losses, open: status.positions.count)
     curve = Self.curve(status.tradesToday.map { ($0.closedAt.date, $0.resultGrossUsd.value) })
@@ -502,8 +493,6 @@ private struct DayCard: View {
         Text(verbatim: Money.signedUSD(shown))
           .font(.title.monospaced().bold())
           .foregroundStyle(Palette.result(figures.result))
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
           .contentTransition(.numericText(value: NSDecimalNumber(decimal: shown).doubleValue))
           .accessibilityLabel(Text(verbatim: Money.signedUSD(figures.result)))
         // As on the design: the day's counts as chips; VoiceOver reads the sentence.
@@ -738,7 +727,7 @@ private struct TradesList: View {
       Image(systemName: Self.anotherSymbol)
         .foregroundStyle(Tone.highlight.text)
     }
-    .buttonStyle(.borderless)
+    .buttonStyle(.glyph)
     // The row is one VoiceOver element and offers this as its named action instead.
     .accessibilityHidden(true)
   }
@@ -802,24 +791,18 @@ private struct TradesList: View {
   private func headerText(_ symbol: String) -> some View {
     Text(verbatim: symbol)
       .font(Tokens.Typography.calloutMono.bold())
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   private func timeText(_ time: String) -> some View {
     Text(verbatim: time)
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.textQuaternary)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   private func resultText(_ result: String, tone: Tone) -> some View {
     Text(verbatim: result)
       .font(Tokens.Typography.calloutMono.bold())
       .foregroundStyle(tone.text)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   private func row(
@@ -981,8 +964,6 @@ private struct SkippedRow: View {
     Text(verbatim: symbol)
       .font(Tokens.Typography.bodyMono.bold())
       .foregroundStyle(Palette.textPrimary)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   private var tagPill: some View {
@@ -1047,7 +1028,6 @@ private struct SkippedRow: View {
 /// 15m —". Each change in its direction's colour; a minute with no captured bar shows a dash.
 /// Nothing when the bot sent no prices.
 struct AfterLine: View {
-  @Environment(\.dynamicTypeSize) private var typeSize
   let prices: [PriceAfterV1]
 
   private var line: AttributedString { Self.line(prices) }
@@ -1071,11 +1051,9 @@ struct AfterLine: View {
 
   var body: some View {
     if !prices.isEmpty {
-      // Small and on one line, as on the design; it wraps only at large text sizes.
+      // Small, as on the design; it wraps when the line is too narrow, never cut.
       Text(line)
         .font(Tokens.Typography.annotation)
-        .lineLimit(typeSize.stacksRows ? nil : 1)
-        .minimumScaleFactor(typeSize.stacksRows ? 1 : Tokens.Shrink.standard)
         .fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -1230,8 +1208,6 @@ private struct Journal: View {
     Text(verbatim: Format.clock(event.time))
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.textQuaternary)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   private func dot(_ event: Board.Event) -> some View {
@@ -1242,8 +1218,6 @@ private struct Journal: View {
     Text(verbatim: event.tag)
       .font(Tokens.Typography.annotationBold)
       .foregroundStyle(event.tone.color)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   private func text(_ event: Board.Event) -> some View {

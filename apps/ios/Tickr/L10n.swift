@@ -258,8 +258,8 @@ enum L10n {
     }
     /// A command confirmation's message with where the command goes: the demo day.
     static func toDemo(_ message: String) -> LocalizedStringResource {
-      LocalizedStringResource("control.toDemo", defaultValue: "\(message)\n\nSent to: the DEMO day, not the bot.",
-        bundle: L10n.bundle)
+      LocalizedStringResource("control.toDemo",
+        defaultValue: "\(message)\n\nDEMO day: nothing is sent, the app only plays its recording.", bundle: L10n.bundle)
     }
     /// A command confirmation's message with where the command goes: the real bot.
     static func toBot(_ message: String) -> LocalizedStringResource {
@@ -291,6 +291,10 @@ enum L10n {
   }
 
   enum Home {
+    /// Beside the day's result while it does not count the broker's fees yet.
+    static var beforeFees: LocalizedStringResource {
+      LocalizedStringResource("home.beforeFees", defaultValue: "Day result before broker fees", bundle: L10n.bundle)
+    }
     /// The latest event's New York time on Home: "14:06:09 ET".
     static func clockET(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("home.clockET", defaultValue: "\(time) ET", bundle: L10n.bundle)
@@ -305,7 +309,7 @@ enum L10n {
       LocalizedStringResource("home.backToToday", defaultValue: "Today", bundle: L10n.bundle)
     }
     static var demoTitle: LocalizedStringResource {
-      LocalizedStringResource("home.demoTitle", defaultValue: "Demo day: commands go to the demo, not the bot",
+      LocalizedStringResource("home.demoTitle", defaultValue: "Demo day: commands are not sent to the bot",
         bundle: L10n.bundle)
     }
     static var demoDetail: LocalizedStringResource {
@@ -691,6 +695,10 @@ enum L10n {
     }
     static var resultToday: LocalizedStringResource {
       LocalizedStringResource("risk.resultToday", defaultValue: "Net result today", bundle: L10n.bundle)
+    }
+    /// The broker's fees on today's fills; a dash until every fill is read.
+    static var feesToday: LocalizedStringResource {
+      LocalizedStringResource("risk.feesToday", defaultValue: "Broker fees today", bundle: L10n.bundle)
     }
     static func roomNote(_ amount: String) -> LocalizedStringResource {
       LocalizedStringResource("risk.roomNote",
@@ -1152,16 +1160,21 @@ enum L10n {
       LocalizedStringResource("watching.title", defaultValue: "Watching closely", bundle: L10n.bundle)
     }
     static var none: LocalizedStringResource {
-      LocalizedStringResource("watching.none", defaultValue: "The strategy is not watching any symbol closely.",
+      LocalizedStringResource("watching.none",
+        defaultValue: "Nothing armed right now. A symbol shows here while the strategy waits for its setup.",
         bundle: L10n.bundle)
     }
     static var closeness: LocalizedStringResource {
       LocalizedStringResource("watching.closeness", defaultValue: "How close the deciding check is to passing",
         bundle: L10n.bundle)
     }
-    /// Link on the card: opens the sheet with all `count` rows the bot sent.
-    static func showAll(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("watching.showAll", defaultValue: "Show all \(count)", bundle: L10n.bundle)
+    /// The card's footer link (`CardFooterLink`): opens every row the bot sent; the count stands beside it.
+    static var showAll: LocalizedStringResource {
+      LocalizedStringResource("watching.showAll", defaultValue: "Show all", bundle: L10n.bundle)
+    }
+    /// Hint in the footer link: the card shows the closest `shown` of `total` watched symbols.
+    static func closestOf(_ shown: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("watching.closestOf", defaultValue: "closest \(shown) of \(total)", bundle: L10n.bundle)
     }
     /// The sheet's caption: how many symbols it holds.
     static func symbols(_ count: Int) -> LocalizedStringResource {
@@ -1542,7 +1555,7 @@ enum L10n {
     static var demoDayFooter: LocalizedStringResource {
       LocalizedStringResource("settings.demoDayFooter",
         // swiftlint:disable:next line_length
-        defaultValue: "Shows the made-up demo day from the Mac, and only that day, through the same connection; the address and pairing stay as they are.",
+        defaultValue: "Shows the made-up demo day this app carries, and only that day; it needs neither the Mac nor the bot. The address and pairing stay as they are.",
         bundle: L10n.bundle)
     }
     static var jobs: LocalizedStringResource {

@@ -8,9 +8,12 @@ import SwiftUI
 /// Symbols screen can take it for its "‹ Overview". Use it as a button's label with
 /// `.buttonStyle(.backCapsule)`.
 public struct BackCapsule: View {
+<<<<<<< HEAD
   /// Symbol of the way back.
   public static let symbol = "chevron.left"
 
+=======
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
   let title: Text
 
   public init(_ title: LocalizedStringResource) {
@@ -19,7 +22,11 @@ public struct BackCapsule: View {
 
   public var body: some View {
     HStack(spacing: Tokens.Space.xs) {
+<<<<<<< HEAD
       Image(systemName: Self.symbol)
+=======
+      Image(systemName: Symbols.previous)
+>>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
         .font(Tokens.Typography.backChevron)
         .accessibilityHidden(true)
       title
