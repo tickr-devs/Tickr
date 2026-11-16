@@ -136,8 +136,6 @@ public struct APIClient: Sendable {
   static let performancePath = "/performance"
   static let flowPath = "/flow"
   static let watchingPath = "/watching"
-  static let symbolsPath = "/symbols"
-  static let moversPath = "/movers"
   static let chartPath = "/chart"
   /// Query item names of the bars read.
   static let symbolQuery = "symbol"
@@ -214,16 +212,6 @@ public struct APIClient: Sendable {
   /// The symbols the strategy is watching closely on `day`, closest to an entry first.
   public func watching(day: WireDate) async throws -> WatchingV1 {
     try await perform(request(path: Self.watchingPath, query: [(Self.dateQuery, day.text)], body: nil), expect: Self.ok)
-  }
-
-  /// Every symbol of `day` with the furthest stage it got to and where and why it stands now.
-  public func symbols(day: WireDate) async throws -> SymbolsV1 {
-    try await perform(request(path: Self.symbolsPath, query: [(Self.dateQuery, day.text)], body: nil), expect: Self.ok)
-  }
-
-  /// The fast movers of `day`, newest bar first, with the active strategy's thresholds.
-  public func movers(day: WireDate) async throws -> MoversV1 {
-    try await perform(request(path: Self.moversPath, query: [(Self.dateQuery, day.text)], body: nil), expect: Self.ok)
   }
 
   /// Candles of any US stock from market data, `interval` long over `range`, oldest first.
@@ -374,7 +362,7 @@ public struct APIClient: Sendable {
     return request
   }
 
-  private func perform<T: Decodable>(_ request: URLRequest, expect: Int) async throws -> T {
+  func perform<T: Decodable>(_ request: URLRequest, expect: Int) async throws -> T {
     let data: Data
     let response: URLResponse
     do {
