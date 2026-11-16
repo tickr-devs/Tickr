@@ -58,7 +58,7 @@ public struct SkeletonRows: View {
   static let names: [CGFloat] = [64, 48, 80, 56, 72]
   static let figures: [CGFloat] = [44, 36, 52, 40, 30]
   /// Width of a row's pill (a badge or a state), in points.
-  static let pill: CGFloat = 52
+  public static let pill: CGFloat = 52
 
   /// - Parameters:
   ///   - count: how many rows.
