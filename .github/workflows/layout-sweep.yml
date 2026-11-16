@@ -80,9 +80,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install the bot
+        run: python -m pip install -q -e .
+      # A fresh runner has no demo fixture (it is never committed; docs/demo.md): build it here,
+      # as its own step, so the start below only copies it and serves within seconds.
+      - name: Build the demo fixture
+        run: tickr demo --build-fixture
       - name: Start the demo bot API (port 8776, bot.toml [api] demo_port)
         run: |
-          python -m pip install -q -e .
           tickr demo > "$RUNNER_TEMP/demo.log" 2>&1 &
           for _ in $(seq 60); do
             curl -sf http://127.0.0.1:8776/status > /dev/null && exit 0
