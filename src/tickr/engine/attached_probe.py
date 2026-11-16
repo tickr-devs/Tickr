@@ -91,6 +91,7 @@ SHAPES = (
 # Verdicts beyond the F7 probe's.
 LEG_ENDED_WITH_MASTER = "ended-with-master"
 LEG_OUTLIVED_MASTER = "still-working-after-master-cancel"
+LEG_WORKING_AFTER_FILL = "working-after-the-fill (cancelled before the close)"
 STOP_WORKING = "working"
 STOP_NOT_WORKING = "NOT-working-after-the-fill"
 LISTED = "listed-in-open-orders"
@@ -156,16 +157,18 @@ class AttachedProbe(Probe):
     def leg_name(self, name: str, role: ComboRole) -> str:
         return f"{name}-{role.value.lower()}"
 
-    def end_attached(self, name: str, legs: Legs) -> dict[str, str]:
+    def end_attached(self, name: str, legs: Legs,
+                     alive: str = LEG_OUTLIVED_MASTER) -> dict[str, str]:
         """After the MASTER is finished: each attached leg either ended with it or is
-        cancelled here and proven finished (Unresolved otherwise)."""
+        cancelled here and proven finished (Unresolved otherwise); `alive` names a leg that
+        was still working."""
         verdicts: dict[str, str] = {}
         for role, request in legs[1:]:
             leg = self.leg_name(name, role)
             row, absent = self.settle(leg, request.client_order_id,
                                       float(self.config.probe.attached_observe_seconds))
             ended = absent or (row is not None and row.state.terminal)
-            verdicts[leg] = LEG_ENDED_WITH_MASTER if ended else LEG_OUTLIVED_MASTER
+            verdicts[leg] = LEG_ENDED_WITH_MASTER if ended else alive
             self.finish(leg, request.client_order_id, row, absent)
         return verdicts
 
@@ -250,7 +253,9 @@ class AttachedProbe(Probe):
             result["entry"] = NOT_FILLED
         row = self.finish("fill-master", master, row, absent)
         result["entry_detail"] = leg_verdict(row, absent)
-        result["legs_after_master"] = self.end_attached("fill", legs)
+        result["legs_after_master"] = self.end_attached(
+            "fill", legs, LEG_WORKING_AFTER_FILL if result["entry"] == FILLED
+            else LEG_OUTLIVED_MASTER)
         self.out(f"fill ({name}, BUY LIMIT {entry}, stop {stop}): {result}")
         return result
 
