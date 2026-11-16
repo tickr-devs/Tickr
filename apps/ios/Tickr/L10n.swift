@@ -688,6 +688,10 @@ enum L10n {
     static var resultToday: LocalizedStringResource {
       LocalizedStringResource("risk.resultToday", defaultValue: "Net result today", bundle: L10n.bundle)
     }
+    /// The broker's fees on today's fills; a dash until every fill is read.
+    static var feesToday: LocalizedStringResource {
+      LocalizedStringResource("risk.feesToday", defaultValue: "Broker fees today", bundle: L10n.bundle)
+    }
     static func roomNote(_ amount: String) -> LocalizedStringResource {
       LocalizedStringResource("risk.roomNote",
         // swiftlint:disable:next line_length

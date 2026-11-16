@@ -2475,6 +2475,10 @@ enum L10n {
     static var resultToday: LocalizedStringResource {
       LocalizedStringResource("risk.resultToday", defaultValue: "net day result", bundle: L10n.bundle)
     }
+    /// The broker's fees on today's fills; a dash until every fill is read.
+    static var feesToday: LocalizedStringResource {
+      LocalizedStringResource("risk.feesToday", defaultValue: "broker fees today", bundle: L10n.bundle)
+    }
     /// How the daily limit works.
     static var lossRoomNote: LocalizedStringResource {
       LocalizedStringResource("risk.lossRoomNote",

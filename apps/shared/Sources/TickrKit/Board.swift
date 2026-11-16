@@ -19,7 +19,7 @@ public enum Board {
       trades: results.count,
       wins: results.filter { $0 > 0 }.count,
       losses: results.filter { $0 < 0 }.count,
-      resultGrossUsd: status.resultTodayGrossUsd.value)
+      resultGrossUsd: status.resultTodayUsd.value)
   }
 
   /// A recorded day's numbers, as GET /days summarizes it.
