@@ -710,6 +710,22 @@ class Service:
             return None
         return balance.day_profit_loss - balance.unrealized_profit_loss
 
+    def _broker_result_today(self, closed: list[api.DayTrade]) -> Decimal | None:
+        """Today's realized result as the broker counts it: its day profit or loss less the
+        unrealized part, from the display reads' latest balance read (display only). The
+        broker prices fills to the sub-cent and charges the fees, which the order rows do not
+        show exactly (sub-dollar fill prices come back rounded to cents, probe 2026-11-16).
+        None until a balance read made after the last of today's trades closed."""
+        if self.account_reads is None:
+            return None
+        snapshot = self.account_reads.snapshot()
+        balance, read_at = snapshot.balance, snapshot.read_at
+        if balance is None or read_at is None:
+            return None
+        if any(trade.closed_at > read_at for trade in closed):
+            return None
+        return balance.day_profit_loss - balance.unrealized_profit_loss
+
     def _fees_today(self, closed: list[api.DayTrade]) -> Decimal | None:
         """The broker's fees on the fills of today's closed trades, from the display reads'
         latest list of today's fills (display only). None (unknown) until every filled order
