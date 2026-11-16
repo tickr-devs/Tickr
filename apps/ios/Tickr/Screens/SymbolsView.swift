@@ -441,22 +441,11 @@ private struct SymbolDetailSheet: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         if let row { path(row) }
-        Button {
+        HeaderLink(L10n.Symbols.openChart, systemImage: Self.chartSymbol) {
           model.selectedSymbol = symbol
           model.selectedTab = .chart
           dismiss()
-        } label: {
-          HStack(spacing: Tokens.Space.xs) {
-            Image(systemName: Self.chartSymbol)
-            Text(L10n.Symbols.openChart)
-            Chevron()
-          }
-          .font(Tokens.Typography.callout.weight(.semibold))
-          .foregroundStyle(Palette.infoText)
-          .frame(minHeight: Tokens.Size.touchTarget)
-          .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
       }
       .padding(Tokens.Space.l)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -526,31 +515,15 @@ private struct SymbolDetailSheet: View {
 struct FastMoversCard: View {
   let movers: MoversV1?
   let failure: String?
+  /// The Symbols screen on its Fast movers tab is pushed.
+  @State private var showsAll = false
 
   /// Rows the card shows; the rest are on the Symbols screen.
   static let rowCap = 3
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      RowStack {
-        CardLabel(L10n.FastMovers.title)
-        Spacer()
-        if let movers, !movers.movers.isEmpty {
-          NavigationLink {
-            SymbolsView(tab: .fastMovers)
-          } label: {
-            HStack(spacing: Tokens.Space.xxs) {
-              Text(L10n.FastMovers.showAll(movers.movers.count))
-              Chevron()
-            }
-            .font(Tokens.Typography.callout.weight(.semibold))
-            .foregroundStyle(Palette.infoText)
-            .frame(minHeight: Tokens.Size.touchTarget)
-            .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-        }
-      }
+      CardLabel(L10n.FastMovers.title)
       if let movers {
         if movers.movers.isEmpty {
           Text(verbatim: movers.rulesCause ?? String(localized: L10n.FastMovers.none))
@@ -575,12 +548,16 @@ struct FastMoversCard: View {
           .foregroundStyle(Palette.warningText)
           .fixedSize(horizontal: false, vertical: true)
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
+      }
+      if let movers, !movers.movers.isEmpty {
+        CardFooterLink(L10n.FastMovers.showAll, count: movers.movers.count) { showsAll = true }
       }
     }
     .padding(Tokens.Space.l)
     .frame(maxWidth: .infinity, alignment: .leading)
     .tickrCard()
+    .navigationDestination(isPresented: $showsAll) { SymbolsView(tab: .fastMovers) }
   }
 }
 

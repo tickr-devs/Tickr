@@ -4482,13 +4482,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show all %lld"
+            "value" : "Show all"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показать все %lld"
+            "value" : "Показать все"
           }
         }
       }

@@ -1233,8 +1233,8 @@ enum L10n {
       LocalizedStringResource("fastMovers.title", defaultValue: "Fast Movers", bundle: L10n.bundle)
     }
     /// Link under the rows: opens the Symbols screen on its Fast movers tab.
-    static func showAll(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("fastMovers.showAll", defaultValue: "Show all \(count)", bundle: L10n.bundle)
+    static var showAll: LocalizedStringResource {
+      LocalizedStringResource("fastMovers.showAll", defaultValue: "Show all", bundle: L10n.bundle)
     }
     /// The card with no fast mover.
     static var none: LocalizedStringResource {
