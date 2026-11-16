@@ -5027,23 +5027,6 @@
         }
       }
     },
-    "lab.activeLine" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · active"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · активная"
-          }
-        }
-      }
-    },
     "lab.activeRole" : {
       "extractionState" : "manual",
       "localizations" : {
