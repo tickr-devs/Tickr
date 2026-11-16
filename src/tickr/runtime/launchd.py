@@ -20,6 +20,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from tickr.config import Config, ConfigError, RuntimeConfig
+from tickr.engine.core import MAX_STOPS_PER_TRADE
 
 TEMPLATE_SUFFIX = ".plist.template"
 # The nightly fetch writes its outcome here, in [runtime] nightly_fetch_out (backtest/nightly.py);
@@ -120,7 +121,8 @@ def check_timings(config: Config) -> None:
     with a restart command and a positive timeout for it;
     and unless the session flatten can still send its close, for every slot:
     0 <= [session] close_order_cutoff_seconds < flatten_minutes_before_close (in seconds) and
-    max_open_positions x 2 x detail_poll_seconds <= that time minus the cutoff."""
+    max_open_positions x 2 x MAX_STOPS_PER_TRADE x detail_poll_seconds <= that time minus
+    the cutoff."""
     schedule(config.runtime)
     drain = config.orders.shutdown_deadline_seconds
     alert_after = config.runtime.stop_alert_after_seconds
@@ -153,14 +155,16 @@ def check_timings(config: Config) -> None:
     if not 0 <= cutoff < window:
         raise ConfigError(f"[session] close_order_cutoff_seconds ({cutoff}) must be from 0 to "
                           f"below the flatten-to-close time ({window} s)")
-    # The session flatten closes one position at a time, two Detail reads each (the stop's
-    # cancel, then the close goes out): every slot must be closed before the cutoff.
-    flatten = config.risk.max_open_positions * 2 * config.orders.detail_poll_seconds
+    # The session flatten closes one position at a time, at most two Detail polls per stop
+    # (each stop's cancel is read, then its close goes out; with split stops the first close
+    # is read before the second goes out): every slot must be closed before the cutoff.
+    flatten = (config.risk.max_open_positions * 2 * MAX_STOPS_PER_TRADE
+               * config.orders.detail_poll_seconds)
     if flatten > window - cutoff:
         raise ConfigError(
-            f"[risk] max_open_positions x 2 x [orders] detail_poll_seconds ({flatten} s) must "
-            f"fit between the flatten and [session] close_order_cutoff_seconds "
-            f"({window - cutoff} s)")
+            f"[risk] max_open_positions x 2 x {MAX_STOPS_PER_TRADE} stops x [orders] "
+            f"detail_poll_seconds ({flatten} s) must fit between the flatten and [session] "
+            f"close_order_cutoff_seconds ({window - cutoff} s)")
     restart = runtime.watchdog_restart_before_flatten_seconds
     entry_gap = (config.session.last_entry_minutes_before_close
                  - config.session.flatten_minutes_before_close) * SECONDS_PER_MINUTE

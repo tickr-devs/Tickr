@@ -301,6 +301,12 @@ def _detail_priority(row: OrderRow, poll_seconds: float) -> float:
     return (row.last_detail_at or 0.0) - boost * poll_seconds
 
 
+# The most stops a trade holds: one, or two split at its scale-out boundary (`_stop_pieces`).
+# Its teardown reads each stop's cancel and each close but the last, so the session flatten
+# takes at most 2 x this many Detail polls per position (`runtime.launchd.check_timings`).
+MAX_STOPS_PER_TRADE = 2
+
+
 def _stop_pieces(trade: TradeRow, covered: Decimal, quantity: Decimal) -> list[Decimal]:
     """The stops to place for `quantity` more shares above `covered`: one, or two when the
     trade's planned scale-out boundary falls inside, so that the stops placed first cover
@@ -1190,7 +1196,9 @@ class Engine:
             due += self._lost_fill_suspects(held)
             self._note_moved(held)
         poll = float(self.config.orders.detail_poll_seconds)
-        due.sort(key=lambda row: (self._read_first(row), _detail_priority(row, poll)))
+        cancelling = {row.symbol for row in due if self._awaits_cancel_read(row)}
+        due.sort(key=lambda row: (self._read_first(row, cancelling),
+                                  _detail_priority(row, poll)))
         for row in due[:self.config.orders.detail_reads_per_step]:
             try:
                 if row.send_state is SendState.ABSENT:
@@ -1216,20 +1224,44 @@ class Engine:
                 *pair, self.clock())
         self._moved = moved
 
-    def _read_first(self, row: OrderRow) -> int:
+    def _read_first(self, row: OrderRow, cancelling: set[str]) -> int:
         """Where this order's Detail read goes, so the delay from a fill or a stop-out to its
-        Detail does not grow with the number of open orders: 0, first, a stop whose cancel
-        waits for Detail, not read since that cancel (its position may have no stop until the
-        read confirms it, and its close waits for it); 1, a live order in a symbol whose
-        broker position moved away from Detail, not read since that was first seen; 2, the
-        common queue. Once each per event: after that read the order is back in the common
-        queue, so a lasting disagreement (shares bought by hand) never starves the others."""
-        last = row.last_detail_at or 0.0
-        if (row.leg is Leg.STOP and row.cancel_state in _CANCEL_AWAITING
-                and row.cancel_at is not None and last < row.cancel_at):
-            return 0
+        Detail does not grow with the number of open orders. 0, first: a live order in a
+        symbol whose broker position moved away from Detail, not read since that was first
+        seen, when a stop of that symbol waits for its cancel's Detail (`cancelling`): a fill
+        or a stop-out Detail has not shown yet changes what that cancel's confirmation leads
+        to (a kept stop filling while a scale-out's stops are released). 1: a stop whose
+        cancel waits for Detail, not read since that cancel (its position may have no stop
+        until the read confirms it, and its close waits for it), and a sent closing order
+        never read while its trade holds more than its live closes sell (with split stops a
+        trade sends one close per stop whose cancel is confirmed, and the next close waits
+        for this one's fill while its shares have no stop). 2: the other live orders in a
+        moved symbol, not read since the move. 3: the common queue. Once each per event:
+        after that read the order is back in the common queue, so a lasting disagreement
+        (shares bought by hand) never starves the others. A read stamped at the same instant
+        as the event may have come before it (a step reads, then cancels): it does not count
+        as the read after it."""
+        if self._awaits_cancel_read(row):
+            return 1
+        if (row.leg is Leg.EXIT and row.live and row.send_state is not SendState.INTENT
+                and row.last_detail_at is None and self._close_waits(row.trade_id)):
+            return 1
         moved = self._moved.get(row.symbol)
-        return 1 if moved is not None and row.live and last < moved[2] else 2
+        if moved is not None and row.live and (row.last_detail_at or 0.0) <= moved[2]:
+            return 0 if row.symbol in cancelling else 2
+        return 3
+
+    @staticmethod
+    def _awaits_cancel_read(row: OrderRow) -> bool:
+        return (row.leg is Leg.STOP and row.cancel_state in _CANCEL_AWAITING
+                and row.cancel_at is not None and (row.last_detail_at or 0.0) <= row.cancel_at)
+
+    def _close_waits(self, trade_id: str) -> bool:
+        """Whether the trade holds shares (Detail) that its live closing orders do not sell:
+        a further close of it waits for those orders' Detail."""
+        orders = self.orders(trade_id)
+        selling = sum((o.open_quantity for o in orders if o.leg is Leg.EXIT and o.live), ZERO)
+        return selling < self.expected_quantity(orders)
 
     def _lost_fill_suspects(self, held: dict[str, Decimal]) -> list[OrderRow]:
         """Orders we gave up on whose fill would explain the position: any in a symbol
