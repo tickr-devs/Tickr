@@ -84,7 +84,7 @@ struct SettingsTabBar: View {
               }
             }
             .frame(height: Self.symbolSize)
-            Text(tab.title).font(Self.titleFont).lineLimit(1).fixedSize()
+            Text(tab.title).font(Self.titleFont).fixedSize()
           }
           .padding(.horizontal, Tokens.Space.s)
           .frame(minWidth: Self.tabMinWidth)
@@ -189,7 +189,6 @@ struct SettingsRow<Value: View>: View {
       value
         .font(Tokens.Typography.calloutMono)
         .foregroundStyle(Palette.textPrimary)
-        .lineLimit(1)
         .fixedSize()
     }
     .accessibilityElement(children: .combine)
@@ -249,7 +248,6 @@ struct SegmentStrip<Value: Hashable, Label: View>: View {
         Button { selection = choice } label: {
           label(choice)
             .font(Tokens.Typography.buttonCompact)
-            .lineLimit(1)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Tokens.Space.s)
             .foregroundStyle(chosen ? Palette.textPrimary : Palette.textTertiary)
@@ -311,12 +309,9 @@ struct StatTile: View {
           Text(verbatim: value)
             .font(Tokens.Typography.metric)
             .foregroundStyle(Palette.textPrimary)
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.standard)
           Text(label)
             .font(Tokens.Typography.callout)
             .foregroundStyle(Palette.textTertiary)
-            .lineLimit(1)
         }
       }
     }
