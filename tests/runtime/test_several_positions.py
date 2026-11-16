@@ -224,6 +224,24 @@ def test_at_the_most_slots_a_fill_gets_a_verified_stop_in_two_polls(tmp_path, fi
     assert steps * POLL < float(CFG.orders.max_unprotected_seconds) / 2
 
 
+def test_entries_filling_in_the_same_poll_get_their_stops_in_turn(tmp_path):
+    """Every working entry fills at once: each fill is read, then its new stop, before the
+    next fill, so the k-th fill has a verified stop after 2 k polls. At the slot count the
+    start-time check allows, the last one stays within `max_unprotected_seconds`."""
+    desk = full(tmp_path, filled=0)
+    for symbol in SYMBOLS:
+        entry = desk.engine.orders(desk.trade_of(symbol).trade_id)[0]
+        desk.broker.fill(entry.client_order_id, D(10), D("10.05"))
+    verified: list[int] = []
+    for step in range(1, 2 * MAX + 1):
+        desk.step()
+        verified += [step] * (sum(any(s.verified for s in desk.stops(symbol))
+                                  for symbol in SYMBOLS) - len(verified))
+    assert verified == [2 * k for k in range(1, MAX + 1)]
+    allowed = int(float(CFG.orders.max_unprotected_seconds) / (2 * POLL))
+    assert verified[allowed - 1] * POLL <= float(CFG.orders.max_unprotected_seconds)
+
+
 def test_at_the_most_slots_a_stop_out_is_seen_in_one_poll(tmp_path):
     desk = full(tmp_path, filled=MAX)
     symbol = SYMBOLS[MAX // 2]
@@ -346,3 +364,18 @@ def test_config_refuses_a_poll_too_slow_for_the_flatten_of_every_slot(tmp_path):
     path.write_text(text, "utf-8")
     with pytest.raises(config.ConfigError, match="close_order_cutoff_seconds"):
         launchd.check_timings(config.load(path, ROOT))
+
+
+def test_config_refuses_more_slots_than_fills_it_can_protect_in_time(tmp_path):
+    text = (ROOT / "config" / "bot.toml").read_text("utf-8")
+    slots = int(float(CFG.orders.max_unprotected_seconds) / (2 * POLL))
+    for count, refused in ((slots, False), (slots + 1, True)):
+        changed = re.sub(r"(?m)^max_open_positions = \d+", f"max_open_positions = {count}", text)
+        (tmp_path / "config").mkdir(exist_ok=True)
+        path = tmp_path / "config" / "bot.toml"
+        path.write_text(changed, "utf-8")
+        if refused:
+            with pytest.raises(config.ConfigError, match="max_unprotected_seconds"):
+                launchd.check_timings(config.load(path, ROOT))
+        else:
+            launchd.check_timings(config.load(path, ROOT))

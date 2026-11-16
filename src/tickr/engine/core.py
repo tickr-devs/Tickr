@@ -1235,7 +1235,9 @@ class Engine:
         until the read confirms it, and its close waits for it), and a sent closing order
         never read while its trade holds more than its live closes sell (with split stops a
         trade sends one close per stop whose cancel is confirmed, and the next close waits
-        for this one's fill while its shares have no stop). 2: the other live orders in a
+        for this one's fill while its shares have no stop), and a stop never read (entries
+        filling in the same poll each get their stop verified before the next entry is read,
+        so the first fills are not left waiting behind the last). 2: the other live orders in a
         moved symbol, not read since the move. 3: the common queue. Once each per event:
         after that read the order is back in the common queue, so a lasting disagreement
         (shares bought by hand) never starves the others. A read stamped at the same instant
@@ -1245,6 +1247,8 @@ class Engine:
             return 1
         if (row.leg is Leg.EXIT and row.live and row.send_state is not SendState.INTENT
                 and row.last_detail_at is None and self._close_waits(row.trade_id)):
+            return 1
+        if row.leg is Leg.STOP and row.live and not row.verified and row.last_detail_at is None:
             return 1
         moved = self._moved.get(row.symbol)
         if moved is not None and row.live and (row.last_detail_at or 0.0) <= moved[2]:

@@ -122,7 +122,9 @@ def check_timings(config: Config) -> None:
     and unless the session flatten can still send its close, for every slot:
     0 <= [session] close_order_cutoff_seconds < flatten_minutes_before_close (in seconds) and
     max_open_positions x 2 x MAX_STOPS_PER_TRADE x detail_poll_seconds <= that time minus
-    the cutoff."""
+    the cutoff;
+    and unless every slot's entry can fill in the same poll and still have its stop verified
+    in time: max_open_positions x 2 x detail_poll_seconds <= [orders] max_unprotected_seconds."""
     schedule(config.runtime)
     drain = config.orders.shutdown_deadline_seconds
     alert_after = config.runtime.stop_alert_after_seconds
@@ -165,6 +167,15 @@ def check_timings(config: Config) -> None:
             f"[risk] max_open_positions x 2 x {MAX_STOPS_PER_TRADE} stops x [orders] "
             f"detail_poll_seconds ({flatten} s) must fit between the flatten and [session] "
             f"close_order_cutoff_seconds ({window - cutoff} s)")
+    # Entries of every slot may fill in the same poll (resting limits). One Detail read per
+    # poll serves them in turn, two reads each (the entry's fill, then its new stop, which is
+    # read before the next entry): the last fill waits that long for its verified stop.
+    burst = config.risk.max_open_positions * 2 * config.orders.detail_poll_seconds
+    if burst > config.orders.max_unprotected_seconds:
+        raise ConfigError(
+            f"[risk] max_open_positions x 2 x [orders] detail_poll_seconds ({burst} s) must not "
+            f"exceed [orders] max_unprotected_seconds ({config.orders.max_unprotected_seconds} "
+            "s): fills arriving together are protected one at a time")
     restart = runtime.watchdog_restart_before_flatten_seconds
     entry_gap = (config.session.last_entry_minutes_before_close
                  - config.session.flatten_minutes_before_close) * SECONDS_PER_MINUTE
