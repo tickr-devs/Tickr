@@ -3,11 +3,17 @@ entry desk with exactly the bar and quote the strategy saw.
 
 Per completed minute, in the regular session: the open positions' symbols, then the WATCH
 symbols, then the latest discovery candidates. Today's completed regular-session M1 bars come
-from `MarketData.bars`, the prior sessions from `HistoryReader` (once per symbol per day, then
-cached). A history refusal is not an error here: the strategy gets no prior sessions and
-refuses with its own cause, and the decision is recorded like any other. A budget refusal,
-delayed data or a failed read stops the remaining symbols for this minute (journaled); a
-strategy exception is journaled and that symbol skipped. As soon as a decision leaves an order
+from `TodayBars` when discovery read the symbol after the minute was over (data/todaybars.py),
+else from `MarketData.bars` (only the symbols missing, 20 per request). The prior sessions come
+from `HistoryReader`, asked once per minute for all symbols that have bars (positions first; the
+symbols already known for the day cost nothing, the new ones go 20 per request), then cached.
+Before the open, `HistoryPreload` (runtime/preload.py) loads the screeners' symbols' history.
+A history refusal is not an error here: the strategy gets no prior sessions and refuses with
+its own cause, and the decision is recorded like any other. A budget refusal, delayed data or
+a failed read of bars stops the symbols not read for this minute (journaled); the symbols read
+are still evaluated. A history error stops the minute at the first symbol, in order, whose
+history it left unknown (journaled). A strategy exception is journaled and that symbol skipped.
+As soon as a decision leaves an order
 needing the loop (an entry sent, an exit asked; runtime/protection.py), the rest of the minute
 waits (journaled with the symbols left and their quotes at that moment), so the fill and its
 stop are not kept waiting behind more reads. On the first pass the service runs the strategy
@@ -29,10 +35,12 @@ from tickr.broker.base import BrokerError
 from tickr.calendar import NEW_YORK, CalendarRefused, SessionCalendar
 from tickr.config import Config
 from tickr.data.base import MarketData, MarketDataError
-from tickr.data.history import HistoryReader, HistoryUnavailable, SessionHistory
+from tickr.data.history import HistoryRead, HistoryReader, SessionHistory
+from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine, Leg
 from tickr.runtime.entries import EntryDesk, daily_loss_room
 from tickr.runtime.market import StreamInbox
+from tickr.runtime.preload import HistoryPreload
 from tickr.runtime.protection import busy
 from tickr.strategy.base import PositionView, Strategy, SymbolContext, Verdict
 from tickr.types import Bar, Quote
@@ -70,7 +78,7 @@ def _chunks(items: Sequence[str], size: int) -> list[Sequence[str]]:
 class Evaluator:
     def __init__(self, engine: Engine, config: Config, source: MarketData, *,
                  strategy: Strategy, desk: EntryDesk, history: HistoryReader,
-                 inbox: StreamInbox, calendar: SessionCalendar,
+                 inbox: StreamInbox, calendar: SessionCalendar, today_bars: TodayBars,
                  now: Callable[[], datetime]) -> None:
         self.engine = engine
         self.config = config
@@ -78,6 +86,8 @@ class Evaluator:
         self.strategy = strategy
         self.desk = desk
         self.history = history
+        self.today_bars = today_bars  # shared with discovery
+        self.preload = HistoryPreload(engine, config, source, history)
         self.inbox = inbox
         self.calendar = calendar
         self.now = now
@@ -139,6 +149,9 @@ class Evaluator:
             day = self.calendar.day_at(now)
         except CalendarRefused:
             return
+        if now < day.regular_open:
+            self.preload.tick(day, now)  # reads only; nothing before the open decides
+            return
         if not day.in_regular_session(now):
             return
         bar_start = now.replace(second=0, microsecond=0) - M1
@@ -175,38 +188,67 @@ class Evaluator:
         today = bar_start.astimezone(NEW_YORK).date()
         md = self.config.market_data
         stage = "remainder-" if late is not None else ""
-        for n, chunk in enumerate(_chunks(ordered, md.bars_symbols_per_request)):
-            left = ordered[n * md.bars_symbols_per_request:]
+        read = self._today_bars(ordered, bar_start, regular_open, late)
+        owns: dict[str, list[Bar]] = {}
+        for symbol in [s for s in ordered if s in read]:
+            own = [b for b in read[symbol]
+                   if regular_open <= b.start <= bar_start and b.start + M1 <= now]
+            if own:
+                owns[symbol] = own
+            elif late is not None:
+                self._stopped(late, {"bar_start": bar_start.isoformat(),
+                                     "stage": "remainder-no-bars"}, [symbol])
+        if not owns:
+            return
+        histories = self.history.prior_sessions(list(owns), today, md.history_sessions)
+        symbols = list(owns)
+        for i, symbol in enumerate(symbols):
+            error, history = self._history(histories, symbol, today)
+            if error is not None:
+                self._stopped(late, {"bar_start": bar_start.isoformat(),
+                                     "stage": stage + "history", "symbol": symbol,
+                                     "error": error}, symbols[i:])
+                return
+            if late is not None:
+                self._evaluate(symbol, owns[symbol], history, positions.get(symbol), now,
+                               late_quote=late.get(symbol), late=True)
+                continue
+            self._evaluate(symbol, owns[symbol], history, positions.get(symbol), now)
+            cause = busy(self.engine)
+            if cause is not None:  # an entry or exit just went out: protect it first
+                self._put_aside(bar_start, symbol, cause, symbols[i + 1:])
+                return
+
+    def _today_bars(self, ordered: list[str], bar_start: datetime, regular_open: datetime,
+                    late: dict[str, Quote | None] | None) -> dict[str, tuple[Bar, ...]]:
+        """Today's bars per symbol: discovery's read when it was sent after the minute was
+        over, else read here (missing symbols only, in order, 20 per request; each read is kept
+        for later minutes and remainders too). A failed read journals the symbols not read and
+        stops reading; those read are returned."""
+        md = self.config.market_data
+        stage = "remainder-" if late is not None else ""
+        found: dict[str, tuple[Bar, ...]] = {}
+        missing: list[str] = []
+        for symbol in ordered:
+            kept = self.today_bars.complete(regular_open, symbol, bar_start + M1)
+            if kept is None:
+                missing.append(symbol)
+            else:
+                found[symbol] = kept
+        for n, chunk in enumerate(_chunks(missing, md.bars_symbols_per_request)):
+            sent = self.now()  # before the request (see TodayBars)
             try:
                 bars = self.source.bars(list(chunk), md.bars_per_symbol)
             except (MarketDataError, BrokerError) as exc:  # RateLimited, DelayedData included
+                unread = set(missing[n * md.bars_symbols_per_request:])
                 self._stopped(late, {"bar_start": bar_start.isoformat(),
                                      "stage": stage + "bars", "error": type(exc).__name__},
-                              left)
-                return
-            for i, symbol in enumerate(chunk):
-                own = [b for b in bars if b.symbol == symbol
-                       and regular_open <= b.start <= bar_start and b.start + M1 <= now]
-                if not own:
-                    if late is not None:
-                        self._stopped(late, {"bar_start": bar_start.isoformat(),
-                                             "stage": "remainder-no-bars"}, [symbol])
-                    continue
-                error, history = self._history(symbol, today)
-                if error is not None:
-                    self._stopped(late, {"bar_start": bar_start.isoformat(),
-                                         "stage": stage + "history", "symbol": symbol,
-                                         "error": error}, left[i:])
-                    return
-                if late is not None:
-                    self._evaluate(symbol, own, history, positions.get(symbol), now,
-                                   late_quote=late.get(symbol), late=True)
-                    continue
-                self._evaluate(symbol, own, history, positions.get(symbol), now)
-                cause = busy(self.engine)
-                if cause is not None:  # an entry or exit just went out: protect it first
-                    self._put_aside(bar_start, symbol, cause, left[i + 1:])
-                    return
+                              [s for s in ordered if s in unread])
+                break
+            self.today_bars.put(regular_open, chunk, bars, sent)
+            for symbol in chunk:
+                found[symbol] = tuple(b for b in bars if b.symbol == symbol)
+        return found
 
     def _stopped(self, late: dict[str, Quote | None] | None, body: dict[str, object],
                  left: list[str]) -> None:
@@ -226,21 +268,23 @@ class Evaluator:
         if remaining:
             self._remainder = (bar_start, quotes, self._budget)
 
-    def _history(self, symbol: str, today: date) -> tuple[str | None, SessionHistory | None]:
-        """(error type, prior sessions). History None when refused (recorded once a day); an
-        error (budget, delayed data, a failed or malformed read) stops this minute: the next
-        minute tries again."""
-        try:
-            return None, self.history.prior_sessions(symbol, today,
-                                                     self.config.market_data.history_sessions)
-        except HistoryUnavailable as exc:
+    def _history(self, read: HistoryRead, symbol: str,
+                 today: date) -> tuple[str | None, SessionHistory | None]:
+        """(error type, prior sessions) of `symbol` in this minute's history read. History
+        None when refused (recorded once a day); an error (budget, delayed data, a failed or
+        malformed read) that left it unknown stops this minute: the next minute tries again."""
+        found = read.found.get(symbol)
+        if found is not None:
+            return None, found
+        refused = read.refused.get(symbol)
+        if refused is not None:
             if (symbol, today) not in self._history_refused:
                 self._history_refused.add((symbol, today))
-                self._journal(HISTORY_REFUSED, {"symbol": symbol, "cause": exc.cause,
-                                                "detail": exc.detail})
+                self._journal(HISTORY_REFUSED, {"symbol": symbol, "cause": refused.cause,
+                                                "detail": refused.detail})
             return None, None
-        except (MarketDataError, BrokerError) as exc:  # RateLimited, DelayedData included
-            return type(exc).__name__, None
+        assert read.error is not None  # neither found nor refused: the error stopped it
+        return type(read.error).__name__, None
 
     def _evaluate(self, symbol: str, today_bars: list[Bar], history: SessionHistory | None,
                   position: PositionView | None, now: datetime, *,

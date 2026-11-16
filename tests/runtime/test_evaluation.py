@@ -13,8 +13,9 @@ from tickr.broker.fake import FakeBroker
 from tickr.broker.webull import BrokerReadFailed, MalformedResponse
 from tickr.calendar import NEW_YORK, SessionCalendar
 from tickr.config import GateResult
-from tickr.data.base import FakeMarketData, MarketDataError
-from tickr.data.history import HistoryReader, HistorySettings, HistoryUnavailable
+from tickr.data.base import FakeMarketData, MarketDataError, ScreenerKind, ScreenerRow
+from tickr.data.history import HistoryRead, HistoryReader, HistorySettings, HistoryUnavailable
+from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine
 from tickr.observers.log import DecisionLog
 from tickr.research.records import Admission as RecordAdmission
@@ -30,6 +31,7 @@ from tickr.runtime.evaluation import (
     Evaluator,
 )
 from tickr.runtime.market import StreamInbox
+from tickr.runtime.preload import PRELOAD
 from tickr.store import Store
 from tickr.strategy.base import Check, Decision, SymbolContext, Verdict
 from tickr.types import Bar, Quote
@@ -97,9 +99,11 @@ class Rig:
                          log=DecisionLog(self.dir))
         reader = history or HistoryReader(self.source, CALENDAR, HistorySettings.from_config(CFG),
                                           None)
+        self.today_bars = TodayBars()
         self.evaluator = Evaluator(self.engine, CFG, self.source, strategy=self.strategy,
                                    desk=desk, history=reader, inbox=self.inbox,
-                                   calendar=CALENDAR, now=lambda: self.now)
+                                   calendar=CALENDAR, today_bars=self.today_bars,
+                                   now=lambda: self.now)
 
     def symbol(self, symbol: str, with_quote: bool = True) -> None:
         self.source.add_bars(prior_bars(symbol))
@@ -230,7 +234,7 @@ def restarted(rig: Rig) -> Evaluator:
                      log=DecisionLog(rig.dir))
     return Evaluator(rig.engine, CFG, rig.source, strategy=rig.strategy, desk=desk,
                      history=rig.evaluator.history, inbox=rig.inbox, calendar=CALENDAR,
-                     now=lambda: rig.now)
+                     today_bars=rig.today_bars, now=lambda: rig.now)
 
 
 @pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
@@ -324,6 +328,7 @@ def test_a_remainder_that_cannot_be_read_is_journaled_never_silent(tmp_path):
     rig = breakout(tmp_path)
     protect(rig)
     rig.source.delay_bars(D(15))
+    rig.evaluator.today_bars = TodayBars()  # as after a restart: the kept reads are gone
     rig.now += timedelta(seconds=20)
     rig.evaluator.tick(list(BREAKOUT))
     row = rig.store.journal(EVALUATION_STOPPED)[-1]
@@ -347,9 +352,11 @@ class RefusingHistory:
         self.error = error
         self.calls = 0
 
-    def prior_sessions(self, symbol, before, sessions):
+    def prior_sessions(self, symbols, before, sessions, *, budget_reserve=0):
         self.calls += 1
-        raise self.error
+        if isinstance(self.error, HistoryUnavailable):
+            return HistoryRead({}, {s: self.error for s in symbols}, None, 0)
+        return HistoryRead({}, {}, self.error, 0)
 
 
 def test_history_refusal_is_recorded_once_a_day_and_the_strategy_still_decides(tmp_path):
@@ -385,7 +392,7 @@ def test_a_failed_history_read_stops_the_minute_and_is_retried(tmp_path, error):
     rig.symbol("ABC")
     healthy = rig.source.bars_before
 
-    def broken(symbol, end, count):
+    def broken(symbols, end, count, *, budget_reserve=0):
         raise error
 
     rig.source.bars_before = broken  # type: ignore[method-assign]
@@ -451,3 +458,132 @@ def test_a_slow_bar_read_cannot_hide_the_age_of_the_quote(tmp_path):
     assert record.admission is RecordAdmission.REFUSED
     assert record.refusal_cause.startswith(AdmissionCause.QUOTE_STALE)
     assert rig.broker.sent == []
+
+
+# --- one bars read shared with discovery, history in batches, pre-open preload ---------------
+
+
+def bars_calls(rig: Rig, method: str = "bars") -> list[tuple[str, ...]]:
+    return [args for name, args in rig.source.calls if name == method]
+
+
+def test_bars_discovery_read_after_the_minute_closed_are_not_read_again(tmp_path):
+    rig = Rig(tmp_path)
+    for symbol in ("ABC", "DEF", "GHI"):
+        rig.symbol(symbol)
+    after = datetime(2026, 11, 16, 9, 35, 0, 500000, tzinfo=NEW_YORK)  # 09:34 was over
+    before = datetime(2026, 11, 16, 9, 34, 59, tzinfo=NEW_YORK)  # 09:34 still forming
+    rig.today_bars.put(OPEN, ["ABC"], rig.source.bars(["ABC"], 390), after)
+    rig.today_bars.put(OPEN, ["DEF"], rig.source.bars(["DEF"], 390), before)
+    rig.source.calls.clear()
+    rig.evaluator.tick(["ABC", "DEF", "GHI"])
+    assert bars_calls(rig) == [("DEF", "GHI")]  # ABC came from discovery's read
+    assert [c.symbol for c in rig.strategy.seen] == ["ABC", "DEF", "GHI"]
+    abc = [b.start.strftime("%H:%M") for b in rig.strategy.seen[0].bars
+           if b.start.date() == MONDAY]
+    assert abc == ["09:30", "09:31", "09:32", "09:33", "09:34"]  # never the forming 09:35
+
+
+def test_bars_kept_for_another_session_are_dropped(tmp_path):
+    rig = Rig(tmp_path)
+    rig.symbol("ABC")
+    rig.today_bars.put(OPEN - timedelta(days=3), ["ABC"], rig.source.bars(["ABC"], 390), NOW)
+    rig.source.calls.clear()
+    rig.evaluator.tick(["ABC"])
+    assert bars_calls(rig) == [("ABC",)]
+
+
+def test_history_for_all_new_symbols_of_a_minute_goes_twenty_per_request(tmp_path):
+    rig = Rig(tmp_path)
+    symbols = [f"S{i:02d}" for i in range(45)]
+    for symbol in symbols:
+        rig.symbol(symbol)
+    rig.evaluator.watch = {"S44"}
+    rig.evaluator.tick(symbols)
+    history = bars_calls(rig, "bars_before")
+    # ceil(45 / 20) = 3 requests: three sessions of 3 bars each fit one page per symbol;
+    # the WATCH symbol comes first, then the candidates in discovery order.
+    assert [len(c) for c in history] == [20, 20, 5]
+    assert history[0][:2] == ("S44", "S00")
+    assert len(rig.strategy.seen) == 45 and rig.store.journal(EVALUATION_STOPPED) == []
+    rig.now += timedelta(minutes=1)
+    rig.evaluator.tick(symbols)
+    assert len(bars_calls(rig, "bars_before")) == 3  # the next minute: history from memory
+
+
+def test_a_history_budget_stop_evaluates_the_symbols_it_found_in_order(tmp_path):
+    rig = Rig(tmp_path)
+    symbols = [f"S{i:02d}" for i in range(25)]
+    for symbol in symbols:
+        rig.symbol(symbol)
+    rig.source.limit("bars_before", 1)  # the first batch of 20 only
+    rig.evaluator.tick(symbols)
+    assert [c.symbol for c in rig.strategy.seen] == symbols[:20]
+    (row,) = rig.store.journal(EVALUATION_STOPPED)
+    assert row.body["stage"] == "history" and row.body["symbol"] == "S20"
+    assert row.body["error"] == "RateLimited"
+
+
+PRE = datetime(2026, 11, 16, 8, 59, 59, tzinfo=NEW_YORK)  # one second before the window
+
+
+def screener(rig: Rig, symbols: list[str], kind: ScreenerKind = ScreenerKind.GAINERS,
+             security: str = "COMMON_STOCK") -> None:
+    rig.source.set_screener(kind, [ScreenerRow(kind, n, f"id-{s}", s, "NSQ", "USD", security)
+                                   for n, s in enumerate(symbols, start=1)])
+
+
+def test_preload_loads_screener_history_before_the_open_in_bounded_batches(tmp_path):
+    rig = Rig(tmp_path)
+    symbols = [f"P{i:02d}" for i in range(25)]
+    for symbol in symbols:
+        rig.source.add_bars(prior_bars(symbol))
+    screener(rig, symbols)
+    screener(rig, ["ETF1"], ScreenerKind.TOP_ACTIVES, security="ETF")  # not in the universe
+    rig.now = PRE
+    rig.evaluator.tick([])
+    assert rig.source.calls == []  # before the window: nothing
+    rig.now += timedelta(seconds=1)  # 09:00:00
+    rig.evaluator.tick([])
+    assert [n for n, _ in rig.source.calls] == ["screener"] * 3  # this pass: screeners only
+    for _ in range(3):
+        rig.now += timedelta(seconds=1)
+        rig.evaluator.tick([])
+    loads = bars_calls(rig, "bars_before")
+    assert [len(c) for c in loads] == [20, 5]  # one batch per pass, then nothing left
+    assert rig.source.bars_reserves == [CFG.market_data.discovery_bars_reserve_requests] * 2
+    assert [r.body for r in rig.store.journal(PRELOAD)] == [
+        {"symbols": 20, "loaded": 20, "refused": 0, "requests": 1, "queued": 5},
+        {"symbols": 5, "loaded": 5, "refused": 0, "requests": 1, "queued": 0}]
+    assert rig.strategy.seen == []  # nothing decides before the open
+    rig.now = NOW  # 09:35:20: the strategy runs on the preloaded history
+    for symbol in symbols[:2]:
+        rig.source.add_bars(bars(symbol, OPEN, 6))
+    rig.evaluator.tick(symbols[:2])
+    assert len(bars_calls(rig, "bars_before")) == 2  # no new history request
+    assert [len(c.prior_sessions) for c in rig.strategy.seen] == [5, 5]
+
+
+def test_preload_pauses_after_a_budget_refusal_and_stops_at_the_open(tmp_path):
+    rig = Rig(tmp_path)
+    rig.source.add_bars(prior_bars("AAA"))
+    screener(rig, ["AAA"])
+    rig.source.limit("bars_before", 0)
+    rig.now = datetime(2026, 11, 16, 9, 10, tzinfo=NEW_YORK)
+    rig.evaluator.tick([])  # screeners
+    rig.now += timedelta(seconds=1)
+    rig.evaluator.tick([])  # refused by the budget: no row, a pause
+    rig.now += timedelta(seconds=1)
+    rig.evaluator.tick([])
+    assert rig.store.journal(PRELOAD) == []
+    rig.source.limit("bars_before", 100)
+    assert bars_calls(rig, "bars_before") == []
+    rig.now += timedelta(seconds=float(CFG.market_data.history_preload_retry_seconds))
+    rig.evaluator.tick([])
+    assert bars_calls(rig, "bars_before") == [("AAA",)]
+    assert rig.store.journal(PRELOAD)[-1].body["loaded"] == 1
+    screener(rig, ["BBB"])
+    rig.source.add_bars(prior_bars("BBB"))
+    rig.now = OPEN  # the window ends at the open, whatever is queued
+    rig.evaluator.tick([])
+    assert [n for n, _ in rig.source.calls].count("screener") == 3

@@ -13,6 +13,7 @@ from tickr.config import GateResult
 from tickr.data.base import FakeMarketData, ScreenerKind, ScreenerRow
 from tickr.data.discovery import NoStrategy
 from tickr.data.health import StreamHealth
+from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine
 from tickr.observers.loader import load_active
 from tickr.runtime.market import (
@@ -50,7 +51,8 @@ class Rig:
         self.inbox = StreamInbox()
         self.market = MarketRuntime(self.engine, CFG, self.source,
                                     health=StreamHealth.from_config(CFG), inbox=self.inbox,
-                                    capture=None, calendar=CALENDAR, now=lambda: self.now,
+                                    capture=None, calendar=CALENDAR,
+                                    today_bars=TodayBars(), now=lambda: self.now,
                                     monotonic=lambda: self.clock)
         self.market.screen = load_active(CFG).strategy  # set by the caller once loaded
 
@@ -145,6 +147,18 @@ def test_discovery_runs_on_its_interval_in_the_session(tmp_path):
     rig.market.tick()
     assert len(rig.store.journal(DISCOVERY)) == 2
     assert rig.market.discovery is not None
+
+
+def test_discovery_passes_start_at_the_start_of_a_minute(tmp_path):
+    rig = Rig(tmp_path, now=MONDAY_11 + timedelta(seconds=25))  # first pass mid-minute
+    rig.market.tick()
+    assert len(rig.store.journal(DISCOVERY)) == 1
+    rig.advance(INTERVAL - 25 - 1)  # 11:00:59
+    rig.market.tick()
+    assert len(rig.store.journal(DISCOVERY)) == 1
+    rig.advance(1)  # 11:01:00: the minute just completed, so its reads serve the evaluation
+    rig.market.tick()
+    assert len(rig.store.journal(DISCOVERY)) == 2
 
 
 def test_discovery_waits_while_protection_needs_the_loop(tmp_path):

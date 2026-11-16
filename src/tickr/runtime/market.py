@@ -1,5 +1,7 @@
 """Market data for the bot loop (spec 6): the L1 stream's events, the subscription set, stream
-health, discovery on its interval, and the market exit when the stream is lost with a position.
+health, discovery on its interval (each pass starting at a minute's start, its bars reads kept in
+`TodayBars` for the strategy's evaluation), and the market exit when the stream is lost with a
+position.
 
 Stream callbacks arrive on the provider's thread. They only touch `StreamInbox` (a lock and a
 few dicts); everything that writes the database happens on the trading loop in `tick()`.
@@ -29,6 +31,7 @@ from tickr.data.discovery import (
     discover,
 )
 from tickr.data.health import FanOut, StreamHealth, StreamState
+from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine, Leg
 from tickr.strategy.base import Liquidity
 from tickr.types import Quote
@@ -103,8 +106,8 @@ class DiscoveryState:
 class MarketRuntime:
     def __init__(self, engine: Engine, config: Config, source: MarketData, *,
                  health: StreamHealth, inbox: StreamInbox, capture: CaptureWriter | None,
-                 calendar: SessionCalendar | None, now: Callable[[], datetime],
-                 monotonic: Callable[[], float]) -> None:
+                 calendar: SessionCalendar | None, today_bars: TodayBars,
+                 now: Callable[[], datetime], monotonic: Callable[[], float]) -> None:
         self.engine = engine
         self.config = config
         self.source = source
@@ -112,6 +115,7 @@ class MarketRuntime:
         self.inbox = inbox
         self.capture = capture
         self.calendar = calendar
+        self.today_bars = today_bars  # discovery's bars reads, shared with the evaluation
         self.now = now
         self.monotonic = monotonic
         listeners: list[QuoteListener] = [health, inbox]
@@ -343,11 +347,15 @@ class MarketRuntime:
         regular, session_open = self._in_regular_session(now)
         if not regular or session_open is None:
             return
-        self._next_discovery = (self.monotonic()
+        # Counted from the start of this minute: with a 60 s interval every pass starts in the
+        # first loop pass of a minute, so its bars reads were sent after the minute just
+        # completed and the strategy's evaluation of that minute reuses them (TodayBars).
+        into_minute = (now - now.replace(second=0, microsecond=0)).total_seconds()
+        self._next_discovery = (self.monotonic() - into_minute
                                 + float(self.config.market_data.discovery_interval_seconds))
         try:
             result = discover(self.source, self.settings, self.screen, session_open,
-                              self.now, self.capture, self._refused_symbols)
+                              self.now, self.capture, self._refused_symbols, self.today_bars)
         except (MarketDataError, BrokerError) as exc:  # MalformedResponse is a BrokerError
             # `detail` is the error's own text: the route, HTTP status and provider error code
             # for a failed read (never a body, credential or account id).

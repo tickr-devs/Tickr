@@ -19,6 +19,7 @@ from tickr.data.discovery import (
     discover,
     merge,
 )
+from tickr.data.todaybars import TodayBars
 
 G, L, A = ScreenerKind.GAINERS, ScreenerKind.LOSERS, ScreenerKind.TOP_ACTIVES
 ROOT = Path(__file__).resolve().parents[2]
@@ -356,3 +357,18 @@ def test_every_discovery_bars_read_leaves_the_configured_reserve():
     five(md)
     run(md, bars_symbols_per_request=2)
     assert md.bars_reserves == [3, 3, 3]
+
+
+def test_every_bars_read_is_kept_with_the_time_it_was_sent():
+    md = Unknown(bars={"S04"})
+    five(md)
+    times = iter(NOW + timedelta(seconds=i) for i in range(100))
+    kept = TodayBars()
+    discover(md, settings(bars_symbols_per_request=3), Screen(), OPEN, lambda: next(times),
+             None, None, kept)
+    minute_end = NOW + timedelta(seconds=2)  # the clock before the first bars request
+    for symbol in ("S00", "S01", "S02", "S03"):
+        assert len(kept.complete(OPEN, symbol, minute_end) or ()) == 30
+    assert kept.complete(OPEN, "S00", minute_end + timedelta(seconds=1)) is None  # sent before
+    assert kept.complete(OPEN, "S04", minute_end) is None  # refused: nothing kept
+    assert kept.complete(OPEN + timedelta(days=1), "S00", minute_end) is None  # next session
