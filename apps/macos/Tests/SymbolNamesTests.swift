@@ -15,7 +15,7 @@ struct SymbolNamesTests {
   static let sourceFolders = ["shared/Sources", "macos/Tickr", "ios/Tickr"]
   /// Names that must be found, so a change that breaks the reading fails here instead of
   /// passing with nothing checked: one per source folder.
-  static let knownNames: Set<String> = ["text.magnifyingglass", "checkmark.circle.fill", "clock.arrow.circlepath"]
+  static let knownNames: Set<String> = ["questionmark.circle", "checkmark.circle.fill", "clock.arrow.circlepath"]
 
   /// `apps/`, from this file's place in `apps/macos/Tests/`.
   static var apps: URL {

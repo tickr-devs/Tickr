@@ -394,12 +394,12 @@ private struct LiveFlowCard: View {
     let stopText = stopVerified ? Palette.profitText : Palette.lossText
     return [
       .init(id: .screeners, name: L10n.Flow.screeners, value: count(.screeners, L10n.Flow.seen),
-        symbol: FlowStageSymbols.screenersSymbol, color: Palette.accent, text: Palette.accentText),
+        glyph: .screeners, color: Palette.accent, text: Palette.accentText),
       .init(id: .universe, name: L10n.Flow.universe, value: count(.universe, L10n.Flow.stocks),
-        symbol: FlowStageSymbols.universeSymbol, color: Palette.seriesUniverse, text: Palette.seriesATRText),
+        glyph: .universe, color: Palette.seriesUniverse, text: Palette.seriesATRText),
       .init(id: .strategy, name: L10n.Common.strategy,
         value: count(.strategy, L10n.Flow.decided) ?? status.map { Format.strategy($0.strategy) },
-        symbol: FlowStageSymbols.strategySymbol, color: Palette.highlight, text: Palette.highlightText),
+        glyph: .strategy, color: Palette.highlight, text: Palette.highlightText),
       // The day's count, as in the design; only an entry block that needs the operator outranks
       // it. A calm pause ("not now") shows only when there is no count yet.
       .init(id: .risk, name: L10n.Common.risk,
@@ -407,17 +407,17 @@ private struct LiveFlowCard: View {
           ?? count(.risk, L10n.Flow.passed)
           ?? status?.entryBlock.map { _ in String(localized: L10n.Flow.waiting) }
           ?? status.map { _ in String(localized: L10n.Flow.entriesAllowed) },
-        symbol: FlowStageSymbols.riskSymbol, color: Palette.warning, text: Palette.warningText),
+        glyph: .risk, color: Palette.warning, text: Palette.warningText),
       .init(id: .order, name: L10n.Flow.order,
         value: count(.order, L10n.Flow.filled) ?? status.map { String(localized: L10n.Flow.closedCount($0.tradesToday.count)) },
-        symbol: FlowStageSymbols.orderSymbol, color: Palette.info, text: Palette.infoText),
+        glyph: .order, color: Palette.info, text: Palette.infoText),
       .init(id: .stop, name: L10n.Flow.brokerStop,
         value: unprotected.map { $0.stop.state.title } ?? count(.stop, L10n.Flow.verified)
           ?? positions.first.map { $0.stop.state.title }
           ?? status.map { _ in String(localized: L10n.Common.noPosition) },
-        symbol: FlowStageSymbols.stopSymbol, color: stopColor, text: stopText),
+        glyph: .brokerStop, color: stopColor, text: stopText),
       .init(id: .reconcile, name: L10n.Flow.reconcile, value: reconcile.value, note: reconcile.note,
-        symbol: FlowStageSymbols.reconcileSymbol, color: Palette.info, text: Palette.infoText),
+        glyph: .reconcile, color: Palette.infoText, text: Palette.infoText),
     ]
   }
 }
@@ -490,7 +490,8 @@ private struct Pipeline: View {
     let value: String?
     /// Why the value is missing, shown as its tooltip; nil = the API does not report it.
     var note: String?
-    let symbol: String
+    /// The stage's line glyph, as on the board.
+    let glyph: DesignGlyph
     /// Fill colour of the stage (ring, glow) and the colour of its name.
     let color: Color
     let text: Color
@@ -542,8 +543,7 @@ private struct Pipeline: View {
         // The design's tint: the stage colour over the card.
         Circle().fill(stage.color.opacity(Tokens.Opacity.glow * strength))
         Circle().strokeBorder(stage.color.opacity(strength), lineWidth: Tokens.Stroke.bold)
-        Image(systemName: stage.symbol)
-          .font(Tokens.Typography.stageSymbol)
+        DesignGlyphView(stage.glyph, side: Tokens.Size.stageGlyph)
           .foregroundStyle(stage.color.opacity(reported ? 1 : Tokens.Opacity.border))
       }
       .frame(width: Tokens.Size.stage, height: Tokens.Size.stage)
