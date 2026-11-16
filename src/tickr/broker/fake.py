@@ -11,6 +11,7 @@ from tickr.broker.base import (
     AccountSnapshot,
     Acknowledgement,
     BrokerError,
+    BrokerFill,
     OrderNotFound,
     OutcomeUnknown,
     RateLimited,
@@ -50,6 +51,11 @@ class FakeBroker:
 
     def account(self) -> AccountSnapshot:
         return AccountSnapshot(self.account_present, self.trading_permitted, self.account_label)
+
+    def fills_today(self) -> list[BrokerFill]:
+        return [BrokerFill(o.client_order_id, o.symbol, str(o.side), str(o.order_type),
+                           o.filled_quantity, o.average_fill_price, None, None)
+                for o in self.orders.values() if o.filled_quantity > 0]
 
     def balance(self) -> AccountBalance:
         self.balance_reads += 1

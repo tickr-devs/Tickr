@@ -252,7 +252,14 @@ was written, just after the reads. `age_seconds` = `served_at - account.read_at`
 the cause.
 
 - `positions`: every non-zero position the broker listed (`avg_price` null when the broker row
-  does not show it).
+  does not show it). `last_price`, `market_value_usd`, `unrealized_pl_usd` and `day_pl_usd` are
+  the broker's own figures for the position, display only (null when absent or unreadable).
+- `fills`: today's orders with a fill, oldest first, from the broker's order history
+  (`GET /trading/orders/historical-orders/list`, no `start_time`), read with the balance and
+  under the same rules (`fills_read_at`, `fills-read-failed` journaled once per stretch, never
+  blocks anything). Each has the broker's `side` and `type`, the filled `quantity`, the
+  average fill `price`, `filled_at`, `fees_usd` (the sum of the broker's actual fees, null when
+  one is unreadable) and `ours`.
 - `orders`: every open order the broker listed. `side`, `type` and `status` are the bot's names
   (`BUY`/`SELL`; `MARKET`/`LIMIT`/`STOP_LOSS`; `ACCEPTED`, `PARTIALLY_FILLED`, ...). `ours` is
   true when the client order id is one of the bot's own. `limit_price` is the broker's, read on

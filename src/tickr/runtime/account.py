@@ -16,13 +16,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from tickr.api import contract as api
-from tickr.broker.base import AccountBalance, BrokerError
+from tickr.broker.base import AccountBalance, BrokerError, BrokerFill
 from tickr.engine.core import Engine, Fence
 from tickr.runtime.dayend import records_agree
 from tickr.runtime.protection import busy
 
 # Journal row when a balance read fails: one per stretch of failures (the next success ends it).
 BALANCE_READ_FAILED = "balance-read-failed"
+# The same for the read of today's fills (order history).
+FILLS_READ_FAILED = "fills-read-failed"
 
 
 @dataclass
@@ -33,16 +35,20 @@ class Balances:
     read_at: datetime | None = None
     label: str | None = None
     _label_read: bool = False  # the accounts list was read once (label may still be None)
+    fills: tuple[BrokerFill, ...] = ()
+    fills_read_at: datetime | None = None
     _attempt_at: datetime | None = None
     _failing: bool = False
+    _fills_failing: bool = False
 
     def refresh(self, engine: Engine, now: datetime) -> None:
-        """Read the balance when the last attempt is at least `[orders] balance_read_seconds`
-        old, and the account's kind until one accounts read succeeds. Skipped while a trade
-        needs the loop (`protection.busy`: an entry working, an exit in progress, a fill not
-        yet covered by a verified stop), so a slow balance route never delays protection.
-        A failed balance read keeps the last good one (the document carries its time) and is
-        journaled once per stretch; a failed accounts read only leaves the kind unknown."""
+        """Read the balance and today's fills when the last attempt is at least
+        `[orders] balance_read_seconds` old, and the account's kind until one accounts read
+        succeeds. Skipped while a trade needs the loop (`protection.busy`: an entry working,
+        an exit in progress, a fill not yet covered by a verified stop), so a slow display
+        route never delays protection. A failed balance or fills read keeps the last good one
+        (the document carries its time) and is journaled once per stretch; a failed accounts
+        read only leaves the kind unknown."""
         interval = timedelta(seconds=float(engine.config.orders.balance_read_seconds))
         if self._attempt_at is not None and now - self._attempt_at < interval:
             return
@@ -58,15 +64,27 @@ class Balances:
         try:
             balance = engine.broker.balance()
         except BrokerError as exc:
-            if not self._failing:
-                with engine.store.transaction():
-                    engine.store.append(BALANCE_READ_FAILED,
-                                        {"error": type(exc).__name__, "detail": str(exc)},
-                                        run_id=engine.run_id)
-            self._failing = True
-            return
-        self._failing = False
-        self.balance, self.read_at = balance, now
+            self._failing = _journal_once(engine, BALANCE_READ_FAILED, exc, self._failing)
+        else:
+            self._failing = False
+            self.balance, self.read_at = balance, now
+        try:
+            fills = engine.broker.fills_today()
+        except BrokerError as exc:
+            self._fills_failing = _journal_once(engine, FILLS_READ_FAILED, exc,
+                                                self._fills_failing)
+        else:
+            self._fills_failing = False
+            self.fills, self.fills_read_at = tuple(fills), now
+
+
+def _journal_once(engine: Engine, kind: str, exc: BrokerError, failing: bool) -> bool:
+    """Journal a failed display read once per stretch of failures; returns True (failing)."""
+    if not failing:
+        with engine.store.transaction():
+            engine.store.append(kind, {"error": type(exc).__name__, "detail": str(exc)},
+                                run_id=engine.run_id)
+    return True
 
 
 # Fences that say the broker and the bot's records disagree, or that an order's state is not
@@ -150,7 +168,9 @@ def account_document(engine: Engine, read_at: datetime,
         read_at=read_at,
         equity_usd=None if b is None else b.net_liquidation,
         buying_power_usd=None if b is None else b.day_buying_power,
-        positions=tuple(api.AccountPosition(p.symbol, p.quantity, p.average_cost)
+        positions=tuple(api.AccountPosition(p.symbol, p.quantity, p.average_cost,
+                                            p.last_price, p.market_value,
+                                            p.unrealized_profit_loss, p.day_profit_loss)
                         for p in view.positions if p.quantity != 0),
         orders=tuple(api.AccountOrder(
             client_order_id=o.client_order_id or None, symbol=o.symbol, side=str(o.side),
@@ -169,4 +189,9 @@ def account_document(engine: Engine, read_at: datetime,
         margin_calls=None if b is None else b.margin_calls,
         day_trades_left=None if b is None else b.day_trades_left,
         account_label=balances.label,
+        fills_read_at=balances.fills_read_at,
+        fills=tuple(api.AccountFill(
+            client_order_id=f.client_order_id, symbol=f.symbol, side=f.side, type=f.order_type,
+            quantity=f.filled_quantity, price=f.filled_price, filled_at=f.filled_at,
+            fees_usd=f.fees, ours=f.client_order_id in ours) for f in balances.fills),
     )

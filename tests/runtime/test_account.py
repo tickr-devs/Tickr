@@ -351,3 +351,38 @@ def test_a_failed_accounts_read_never_blocks_the_balance(tmp_path):
     doc = read(bot)
     assert doc.equity_usd == D("1000.50") and doc.account_label is None
     assert balance_rows(bot) == []
+
+
+def test_positions_values_and_todays_fills_reach_the_document(tmp_path):
+    broker = FakeBroker(funds=FUNDS)
+    broker.holdings["XYZ"] = Position("XYZ", D(5), D(3), last_price=D("3.10"),
+                                      market_value=D("15.50"), unrealized_profit_loss=D("0.50"),
+                                      day_profit_loss=D("0.50"))
+    broker.orders["manual-3"] = OrderDetail("manual-3", "XYZ", Side.BUY, OrderType.LIMIT, D(5),
+                                            D(5), D(3), OrderState.FILLED, "FILLED")
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    doc = read(bot)
+    (position,) = doc.positions
+    assert (position.last_price, position.market_value_usd) == (D("3.10"), D("15.50"))
+    assert (position.unrealized_pl_usd, position.day_pl_usd) == (D("0.50"), D("0.50"))
+    (fill,) = doc.fills
+    assert (fill.client_order_id, fill.symbol, fill.quantity, fill.price, fill.ours) == (
+        "manual-3", "XYZ", D(5), D(3), False)
+    assert doc.fills_read_at == bot.now
+
+
+def test_a_failed_fills_read_never_blocks_the_balance(tmp_path):
+    class NoHistory(FakeBroker):
+        def fills_today(self):
+            raise BrokerError("history route paused")
+
+    bot = with_account(Bot(tmp_path, broker=NoHistory(funds=FUNDS)), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    doc = read(bot)
+    assert doc.equity_usd == D("1000.50") and doc.fills == () and doc.fills_read_at is None
+    rows = bot.engine.store.query("SELECT body FROM journal WHERE kind = ?",
+                                  (account_module.FILLS_READ_FAILED,))
+    assert len(rows) == 1

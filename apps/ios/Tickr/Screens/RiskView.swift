@@ -182,7 +182,33 @@ private struct AccountCard: View {
           .font(Tokens.Typography.annotation)
           .foregroundStyle(b.marginCalls > 0 ? Palette.warningText : Palette.textQuaternary)
           .fixedSize(horizontal: false, vertical: true)
-      } else {
+      }
+      if let account {
+        CardLabel(L10n.Risk.brokerPositions)
+          .padding(.top, Tokens.Space.xs)
+        if account.positions.isEmpty {
+          none
+        }
+        ForEach(account.positions, id: \.self) { position in
+          row(position.symbol, detail: position.quantity.text + Format.separator + (position.lastPrice?.text ?? Format.missing),
+            value: position.unrealizedPlUsd.map { Money.signedUSD($0.value) } ?? Format.missing,
+            color: position.unrealizedPlUsd.map { Palette.result($0.value) } ?? Palette.textQuaternary)
+        }
+        CardLabel(L10n.Risk.fillsToday)
+          .padding(.top, Tokens.Space.xs)
+        if account.fills.isEmpty {
+          none
+        }
+        ForEach(account.fills, id: \.self) { fill in
+          row(fill.symbol,
+            detail: [Format.timeOrDash(fill.filledAt), ApiText.orderSide(fill.side), fill.quantity.text]
+              .joined(separator: Format.separator),
+            value: (fill.price?.text ?? Format.missing) + Format.separator
+              + String(localized: L10n.Risk.fees(fill.feesUsd.map { RiskFormat.amount($0.value) } ?? Format.missing)),
+            color: Palette.textPrimary)
+        }
+      }
+      if account?.balances == nil {
         Text(failure == nil || response != nil ? L10n.Risk.balanceNote : L10n.Risk.accountUnavailable)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
@@ -190,6 +216,32 @@ private struct AccountCard: View {
       }
     }
     .animation(Tokens.Motion.standard, value: response?.state)
+  }
+
+  private var none: some View {
+    Text(L10n.Risk.none)
+      .font(Tokens.Typography.callout)
+      .foregroundStyle(Palette.textQuaternary)
+  }
+
+  /// A broker row: the symbol with its detail under it, and its figure on the right.
+  private func row(_ symbol: String, detail: String, value: String, color: Color) -> some View {
+    RowStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xxs) {
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        Text(verbatim: symbol)
+          .font(Tokens.Typography.calloutMono.bold())
+        Text(verbatim: detail)
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(Palette.textTertiary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: Tokens.Space.s)
+      Text(verbatim: value)
+        .font(Tokens.Typography.calloutMono)
+        .foregroundStyle(color)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .accessibilityElement(children: .combine)
   }
 }
 
