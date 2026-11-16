@@ -5938,6 +5938,40 @@
         }
       }
     },
+    "lab.replayAvailableAfter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available after %@ ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступно после %@ ET"
+          }
+        }
+      }
+    },
+    "lab.replayAvailableIn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "in"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "через"
+          }
+        }
+      }
+    },
     "lab.replayBotTrades" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10074,23 +10108,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ · %2$@ ET · найдено скринерами: %3$lld"
-          }
-        }
-      }
-    },
-    "symbols.moverLine" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fast mover at %1$@: %2$@ · %3$@ · %4$@"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Быстрое движение в %1$@: %2$@ · %3$@ · %4$@"
           }
         }
       }

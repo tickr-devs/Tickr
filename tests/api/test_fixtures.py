@@ -86,6 +86,7 @@ from tickr.api.contract import (
     RiskSettings,
     SessionSettings,
     SessionTimesV1,
+    SettingDifferenceV1,
     SettingsV1,
     SizeBinding,
     SkippedSignalV1,
@@ -328,7 +329,8 @@ def documents() -> dict[str, object]:
         "lab-replay-v1.failed": LabReplayV1(
             LabReplayState.FAILED, "3f0c9a1e5b7d4c2a8e6f1b0d9c7a5e3f", "price-action-v1", "1",
             20, T0 + timedelta(days=5), T0 + timedelta(days=5, seconds=2),
-            "backtest/minutes is missing: run fetch first", None, folder="price-action-v1",
+            "backtest refused: backtest/minutes is missing: run fetch first", None,
+            folder="price-action-v1",
             versions=LAB_VERSIONS, days=LAB_DAYS),
         # Trades "Another strategy…": price-action-v2 on ABCD's day, SIMULATED.
         "trade-whatif-v1": TradeWhatIfV1(
@@ -400,14 +402,18 @@ def documents() -> dict[str, object]:
                 ObserverTradeV1("ABCD", T0.replace(microsecond=0) + timedelta(minutes=4), None,
                                 None, None, None, None, None, None, None,
                                 "skipped_overlap: an earlier simulated trade of ABCD was still "
-                                "open")), None, False),
+                                "open")), None, False,
+                watching_since=T0.replace(microsecond=0) - timedelta(seconds=58),
+                settings_differences=(SettingDifferenceV1(
+                    "indicators.minimum_relative_volume", "1.5", "2.0"),)),
             ObserverV1("price-action-v2", "1", (), None, "no decisions recorded that day", None,
                        "no decisions recorded that day", False),
             ObserverV1("price-action-v2", "2", (
                 ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=2), "WXYZ",
                                    Verdict.ENTER, ()),), None,
                 "no captured bars for 2026-11-16", None, "no captured bars for 2026-11-16",
-                False))),
+                False, watching_since=T0.replace(microsecond=0) + timedelta(minutes=2, seconds=1),
+                settings_differences=()))),
         "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
         "decisions-v1": DecisionsV1("ABCD", DAY, (
             DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,

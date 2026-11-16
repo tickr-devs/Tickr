@@ -1241,12 +1241,6 @@ enum L10n {
     static var rowHint: LocalizedStringResource {
       LocalizedStringResource("symbols.rowHint", defaultValue: "Shows the symbol's path today", bundle: L10n.bundle)
     }
-    /// Detail: the symbol's fast mover bar.
-    static func moverLine(_ time: String, _ volume: String, _ move: String, _ dollars: String) -> LocalizedStringResource {
-      LocalizedStringResource("symbols.moverLine",
-        defaultValue: "Fast mover at \(time): \(volume) · \(move) · \(dollars)",
-        bundle: L10n.bundle)
-    }
   }
   enum FastMovers {
     /// Card title: symbols with a sudden jump against the bars before.
@@ -1445,6 +1439,14 @@ enum L10n {
     /// The replay could not be read (its cause is behind Details).
     static var replayFailed: LocalizedStringResource {
       LocalizedStringResource("lab.replayFailed", defaultValue: "Replay not read", bundle: L10n.bundle)
+    }
+    /// Why the replay button rests: the regular session is open until this New York time.
+    static func replayAvailableAfter(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.replayAvailableAfter", defaultValue: "Available after \(time) ET", bundle: L10n.bundle)
+    }
+    /// Before the countdown to the time the replay is available again.
+    static var replayAvailableIn: LocalizedStringResource {
+      LocalizedStringResource("lab.replayAvailableIn", defaultValue: "in", bundle: L10n.bundle)
     }
     /// Replay running, with its New York start time.
     static func replayRunningSince(_ time: String) -> LocalizedStringResource {
