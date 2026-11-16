@@ -38,7 +38,7 @@ from tickr.lock import (
 )
 from tickr.runtime import stopmarker
 from tickr.store import DATABASE_FILE, MIGRATIONS, EnvironmentMismatch, Store
-from tickr.version import CodeVersionUnknown, running_code_version
+from tickr.version import UNRECORDED, CodeVersionUnknown, running_code_version
 
 if TYPE_CHECKING:
     from tickr.observers.runner import ObserverSet
@@ -181,11 +181,22 @@ class _Interrupt:
 
 @contextmanager
 def _engine(path: Path, broker: Broker | None = None,
-            precheck: Callable[[Engine], None] | None = None) -> Iterator[Engine]:
+            precheck: Callable[[Engine], None] | None = None, *,
+            opens_trades: bool) -> Iterator[Engine]:
     """Lock, open the store, recover. `precheck` runs on the records before recovery (which
-    may already send cancels or orders)."""
+    may already send cancels or orders). A command that can open a trade (`opens_trades`)
+    refuses without a code version; one that only manages, exits or unfences existing trades
+    (resume, exit-all, clear-fence) is never blocked by it: it records "-" (shown as null) and
+    prints the cause, because closing a position must always work."""
     cfg = config_module.load(path)
-    version = _code_version(cfg)
+    try:
+        version = _code_version(cfg)
+    except CodeVersionUnknown as exc:
+        if opens_trades:
+            raise
+        print(f"warning: code version unknown ({exc}); this run is recorded without one",
+              file=sys.stderr)
+        version = UNRECORDED
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds)
@@ -262,7 +273,7 @@ def _trade(args: argparse.Namespace) -> int:
     flatten_at = check_window(cfg, calendar, NOW())
     print(f"plan: BUY {plan.quantity} {plan.symbol} limit {plan.limit_price}, "
           f"stop {plan.stop_price}, planned loss {plan.planned_loss_usd} USD")
-    with _engine(args.config) as engine:
+    with _engine(args.config, opens_trades=True) as engine:
         engine.open_trade(plan.symbol, plan.quantity, plan.limit_price, plan.stop_price,
                           plan.planned_loss_usd,
                           None if args.stop is not None else cfg.probe.stop_percent_below_fill)
@@ -279,7 +290,7 @@ def _resume(args: argparse.Namespace, *, exit_all: bool) -> int:
     except CalendarRefused as exc:
         print(f"calendar unreadable ({exc}): closing open trades now", file=sys.stderr)
         flatten_at = NOW()
-    with _engine(args.config) as engine:
+    with _engine(args.config, opens_trades=False) as engine:
         if exit_all:
             for trade in engine.trades():
                 engine.request_exit(trade.trade_id, "operator-exit")
@@ -300,7 +311,7 @@ def _probe_replace_stop(args: argparse.Namespace) -> int:
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
     check_window(cfg, calendar, NOW())
     broker, market = PROBE_ADAPTERS(cfg)
-    with _engine(args.config, broker, replace_probe.precheck) as engine:
+    with _engine(args.config, broker, replace_probe.precheck, opens_trades=True) as engine:
         plan = replace_probe.plan_replace(engine, market, args.to, NOW())
         print(f"plan: stop {plan.stop.client_order_id} ({plan.stop.quantity} {plan.symbol}) "
               f"from {plan.current} to {plan.new}; bid {plan.bid}")
@@ -399,7 +410,7 @@ def _clear_stop(path: Path) -> int:
 
 
 def _clear_fence(args: argparse.Namespace) -> int:
-    with _engine(args.config) as engine:
+    with _engine(args.config, opens_trades=False) as engine:
         if not engine.clear_operator_fence(args.name):
             print(f"not an operator fence or not set: {args.name}", file=sys.stderr)
             return 1

@@ -5,8 +5,10 @@ preflight as a check), for the checkout the running code is loaded from (`CODE_R
 above `src/`), never the config's folder (`tickr demo` runs the bot on a copied config folder):
 
 - in a git checkout (that folder holds `.git`, a folder or, in a worktree, a file): the full
-  commit SHA from `git rev-parse HEAD`, with `-dirty` when a TRACKED file differs from HEAD
-  (`git status --porcelain --untracked-files=no`); untracked files never count;
+  commit SHA from `git rev-parse HEAD`, with `-dirty` when a TRACKED file under src/ or
+  strategies/ differs from HEAD (`git status --porcelain --untracked-files=no -- src
+  strategies`); untracked files, docs, apps and config/ never count (the config is tagged by
+  the run's config_digest);
 - with no `.git` (the Docker image, docs/deploy-server.md): the `TICKR_CODE_VERSION`
   environment variable the image bakes in from its build argument;
 - neither: `CodeVersionUnknown`, and the bot refuses to start (every trade is tagged).
@@ -40,6 +42,9 @@ class CodeVersionUnknown(Exception):
     """The running code version cannot be determined; the message is the single cause."""
 
 
+CODE_PATHS = ("src", "strategies")  # tracked folders whose changes mark a version dirty
+
+
 def _git(root: Path, timeout: float, *args: str) -> str:
     argv = ["git", "--no-optional-locks", "-C", str(root), *args]
     try:
@@ -68,7 +73,10 @@ def code_version(root: Path, environ: Mapping[str, str], timeout_seconds: Decima
         if not _COMMIT.match(commit):
             raise CodeVersionUnknown(f"git rev-parse HEAD in {root} gave {commit!r}, "
                                      "not a commit id")
-        changed = _git(root, timeout, "status", "--porcelain", "--untracked-files=no").strip()
+        # Only the code that runs (src/, strategies/) makes it dirty: the config is tagged by
+        # the run's own config_digest, and docs or app sources do not run in the bot.
+        changed = _git(root, timeout, "status", "--porcelain", "--untracked-files=no", "--",
+                       *CODE_PATHS).strip()
         return commit + (DIRTY_SUFFIX if changed else "")
     baked = environ.get(ENV_VARIABLE, "")
     if not baked:

@@ -25,8 +25,11 @@ def repo(tmp_path: Path) -> Path:
     _git(tmp_path, "config", "user.email", "test@example.invalid")
     _git(tmp_path, "config", "user.name", "test")
     _git(tmp_path, "config", "commit.gpgsign", "false")
-    (tmp_path / "tracked.txt").write_text("one\n")
-    _git(tmp_path, "add", "tracked.txt")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "src" / "tracked.py").write_text("one\n")
+    (tmp_path / "config" / "bot.toml").write_text("a = 1\n")
+    _git(tmp_path, "add", "src", "config")
     _git(tmp_path, "commit", "-q", "-m", "first")
     return tmp_path
 
@@ -42,10 +45,16 @@ def test_untracked_files_never_make_it_dirty(repo):
 
 @pytest.mark.parametrize("change", ["edit", "stage"])
 def test_a_changed_tracked_file_makes_it_dirty(repo, change):
-    (repo / "tracked.txt").write_text("two\n")
+    (repo / "src" / "tracked.py").write_text("two\n")
     if change == "stage":
-        _git(repo, "add", "tracked.txt")
+        _git(repo, "add", "src/tracked.py")
     assert code_version(repo, {}, TIMEOUT) == _git(repo, "rev-parse", "HEAD") + "-dirty"
+
+
+def test_a_config_edit_never_makes_it_dirty(repo):
+    """The config is tagged by the run's config_digest; only src/ and strategies/ count."""
+    (repo / "config" / "bot.toml").write_text("a = 2\n")
+    assert code_version(repo, {}, TIMEOUT) == _git(repo, "rev-parse", "HEAD")
 
 
 def test_the_environment_is_ignored_in_a_git_checkout(repo):
