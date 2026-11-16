@@ -60,6 +60,30 @@
                 "type": "null"
               }
             ]
+          },
+          "ranks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "GAINERS",
+                    "LOSERS",
+                    "TOP_ACTIVES"
+                  ]
+                },
+                "rank": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "rank"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -213,9 +237,7 @@
                 "required": [
                   "kind",
                   "since",
-                  "text",
-                  "code",
-                  "params"
+                  "text"
                 ],
                 "additionalProperties": false
               }

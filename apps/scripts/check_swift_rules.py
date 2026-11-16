@@ -49,6 +49,22 @@ truncation  No text is ever cut (owner rule 2026-11-16, docs/design-system.md "T
          `.allowsTightening`. A text that does not fit wraps or its layout adapts; one that must
          stay on one line takes its whole width with `.fixedSize()`.
 
+One look per element (owner rule 2026-11-16: the same element looks the same on every screen of
+both apps; docs/design-system.md "One look per element"). Checked in the apps (apps/macos,
+apps/ios), not in TickrDesign, where the shared looks live:
+styles   No `ButtonStyle`, `PrimitiveButtonStyle`, `ToggleStyle` or `LabelStyle` of an app's own:
+         every control look is a TickrDesign component.
+system-buttons  No system button look: `.buttonStyle(.bordered | .borderedProminent | .borderless
+         | .link)`, their `…ButtonStyle()` types or `.buttonBorderShape`. A label that is its own
+         face takes `.buttonStyle(.glyph)`; other buttons `.action`, `.icon`, `.chip`.
+symbols  One SF Symbol per meaning: a symbol that competes with one of TickrDesign's `Symbols`
+         (`chevron.left` for `Symbols.previous`, an outlined triangle for `Symbols.failure`) fails.
+components  No view or style type name declared in both apps (a cross-file pass): a component
+         drawn on both lives once in TickrDesign. A screen or a card of one app (a name ending
+         in View, Card, Page, Sheet, Panel, Section, Screen or Chart) is that app's own
+         arrangement; the few pairs written before the rule are listed in KNOWN_TWINS until they
+         move.
+
 Usage: check_swift_rules.py
 """
 
@@ -503,9 +519,8 @@ def loop_violations(path: Path) -> list[tuple[int, str]]:
 
 # MARK: - one meaning, one look (apps/macos and apps/ios only)
 
-# Folders whose files the rules below check: the apps, never the shared package that holds the
-# one map each rule points to.
-APP_ROOTS = ("apps/macos", "apps/ios")
+# The rules below check the apps only (`is_app_file`, `APP_RULES`), never the shared package
+# that holds the one map each rule points to.
 # A result's sign picking profit or loss by hand: `x >= 0 ? Palette.profitText : Palette.lossText`,
 # `value < 0 ? .loss : .profit`.
 RESULT_SIGN = re.compile(r"(?:>=?|<=?)\s*0\s*\?\s*(?:Palette\.|Tone\.|\.)?(?:profit|loss)\w*")
@@ -519,15 +534,6 @@ ACCESSIBILITY_VALUE = "accessibilityValue"
 # An SF Symbol name with a shield (a string literal's whole text).
 SHIELD_SYMBOL = re.compile(r"(?:[a-z]+\.)*shield(?:\.[a-z]+)*")
 SYMBOL_MARKER = "// symbol:"
-
-
-def is_app_file(path: Path) -> bool:
-    """A file of one of the apps (not the shared package, not a test target)."""
-    try:
-        relative = path.resolve().relative_to(REPO).as_posix()
-    except ValueError:
-        return False
-    return relative.startswith(tuple(root + "/" for root in APP_ROOTS))
 
 
 def _code_lines(path: Path) -> list[tuple[int, str, str]]:
@@ -580,6 +586,112 @@ def catalog_form_violations(path: Path) -> list[tuple[int, str]]:
     return [(1, "not in Xcode's form; run apps/scripts/format_xcstrings.py")]
 
 
+# MARK: - one look per element
+
+
+APPS = ("apps/macos", "apps/ios")
+# An app's own control look: a type conforming to one of SwiftUI's style protocols.
+STYLE_CONFORMANCE = re.compile(
+    r"\b(?:struct|class|enum|extension)\s+[\w.]+(?:<[^{]*?>)?\s*:[^{]*?"
+    r"\b(?:PrimitiveButtonStyle|ButtonStyle|ToggleStyle|LabelStyle)\b")
+SYSTEM_BUTTONS = re.compile(
+    r"\.buttonStyle\(\s*\.(?:bordered|borderedProminent|borderless|link)\s*\)"
+    r"|\b(?:Bordered|BorderedProminent|Borderless|Link)ButtonStyle\s*\("
+    r"|\.buttonBorderShape\s*\(")
+# Symbols that compete with TickrDesign's `Symbols` (apps/shared/Sources/TickrDesign/Symbols.swift)
+# for a meaning, and the shared one to use instead.
+COMPETING_SYMBOLS = {
+    "chevron.left": "Symbols.previous",
+    "chevron.right": "Symbols.next",
+    "exclamationmark.triangle": "Symbols.failure",
+    "xmark.octagon": "Symbols.failed",
+    "xmark.octagon.fill": "Symbols.failed",
+    "checkmark.seal": "Symbols.passed",
+    "pause.circle.fill": "Symbols.pause",
+}
+
+
+def is_app_file(path: Path) -> bool:
+    """A file of the macOS or the iOS app (not the shared package)."""
+    try:
+        relative = path.relative_to(REPO).as_posix()
+    except ValueError:
+        return False
+    return any(relative.startswith(app + "/") for app in APPS)
+
+
+def style_violations(path: Path) -> list[tuple[int, str]]:
+    """A control look of the app's own (comments ignored)."""
+    found, in_block = [], False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        if STYLE_CONFORMANCE.search(code):
+            found.append((number, code.strip()))
+    return found
+
+
+def system_button_violations(path: Path) -> list[tuple[int, str]]:
+    """A system button look (comments ignored)."""
+    found, in_block = [], False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        if SYSTEM_BUTTONS.search(code):
+            found.append((number, code.strip()))
+    return found
+
+
+def symbol_violations(path: Path) -> list[tuple[int, str]]:
+    """A string literal naming a symbol that competes with a shared `Symbols` one."""
+    source = path.read_text(encoding="utf-8")
+    return [(number, f"{literal} -> {COMPETING_SYMBOLS[literal]}")
+            for number, literal, _ in string_literals(source) if literal in COMPETING_SYMBOLS]
+
+
+# A view or style type: `struct Name<…>: …View…` (private ones too).
+COMPONENT = re.compile(
+    r"^\s*(?:@\w+\s+)*(?:(?:public|package|internal|fileprivate|private|final)\s+)*struct\s+(\w+)"
+    r"(?:<[^{]*?>)?\s*:[^{]*?\b(?:View|ViewModifier|ButtonStyle|ToggleStyle|LabelStyle)\b")
+# Names of one app's own arrangements, which the other app may name alike.
+ARRANGEMENT = re.compile(r"(?:View|Card|Page|Sheet|Panel|Section|Screen|Chart)$")
+# Components written in both apps before the rule (2026-11-16), each to move into TickrDesign
+# (or be renamed) in its own change; never add a name here.
+KNOWN_TWINS = {
+    "CauseText", "ChangeLine", "EventStrip", "ObserverRow", "PositionDetail", "SettingsRow",
+    "SkippedRow", "StatTile", "WatchingRow",
+}
+
+
+def component_names(path: Path) -> dict[str, int]:
+    """Component type names declared in a file, with the line of each (comments ignored)."""
+    found: dict[str, int] = {}
+    in_block = False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        match = COMPONENT.match(code)
+        if match and not ARRANGEMENT.search(match.group(1)):
+            found.setdefault(match.group(1), number)
+    return found
+
+
+def twin_violations(files: list[Path]) -> dict[str, list[tuple[int, str]]]:
+    """Component names declared in both apps, at each declaration."""
+    declared: dict[str, dict[str, list[tuple[Path, int]]]] = {app: {} for app in APPS}
+    for path in files:
+        relative = path.relative_to(REPO).as_posix()
+        app = next((app for app in APPS if relative.startswith(app + "/")), None)
+        if app is None:
+            continue
+        for name, number in component_names(path).items():
+            declared[app].setdefault(name, []).append((path, number))
+    found: dict[str, list[tuple[int, str]]] = {}
+    twins = set.intersection(*(set(names) for names in declared.values())) - KNOWN_TWINS
+    for name in sorted(twins):
+        for app in APPS:
+            for path, number in declared[app][name]:
+                found.setdefault(path.relative_to(REPO).as_posix(), []).append((number, name))
+    return found
+
+
 RULES = {
     "text": (text_violations, "words in code; define them in L10n.swift, translated to Russian"),
     "numbers": (number_violations, "magic number; use a token or a documented constant"),
@@ -592,18 +704,23 @@ RULES = {
     "loop": (loop_violations,
       "motion on its own clock; move only on a real data change, "
       "or mark it `// decorative: <why>`"),
-}
-
-
-# Rules of the apps only (`is_app_file`).
-APP_RULES = {
-    "result": (result_violations,
+  "styles": (style_violations,
+      "a control look of the app's own; use or add a TickrDesign style (docs/design-system.md)"),
+  "system-buttons": (system_button_violations,
+      "a system button look; use .glyph, .action, .icon or .chip (TickrDesign)"),
+  "symbols": (symbol_violations, "a symbol competing with a shared one; use TickrDesign's Symbols"),
+  "components": (lambda path: [],
+      "a component written in both apps; move it into TickrDesign (or name each app's own)"),
+  "result": (result_violations,
       "result colour by hand; use Palette.result or Tone.result (zero is neutral)"),
-    "format": (format_violations,
+  "format": (format_violations,
       "number formatted outside TickrDesign; use Money, Percent or Volume (Formatting.swift)"),
-    "stopsymbol": (stop_symbol_violations,
+  "stopsymbol": (stop_symbol_violations,
       "stop symbol written by hand; use StopState's symbols, or mark another meaning `// symbol:`"),
 }
+# Rules of the apps only: TickrDesign is where the shared looks and the one map of each meaning
+# are defined.
+APP_RULES = {"styles", "system-buttons", "symbols", "result", "format", "stopsymbol"}
 
 
 def swift_files() -> list[Path]:
@@ -641,14 +758,18 @@ def plist_files() -> list[Path]:
 
 
 def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
-    result: dict[str, dict[str, list[tuple[int, str]]]] = {rule: {} for rule in RULES | APP_RULES}
-    for path in swift_files():
+    result: dict[str, dict[str, list[tuple[int, str]]]] = {rule: {} for rule in RULES}
+    files = swift_files()
+    for path in files:
         key = path.relative_to(REPO).as_posix()
-        rules = RULES | APP_RULES if is_app_file(path) else RULES
-        for rule, (check, _) in rules.items():
+        app = is_app_file(path)
+        for rule, (check, _) in RULES.items():
+            if rule in APP_RULES and not app:
+                continue
             found = check(path)
             if found:
                 result[rule][key] = found
+    result["components"].update(twin_violations(files))
     for path in test_swift_files():
         found = legacy_violations(path)
         if found:
@@ -671,7 +792,7 @@ def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
 def main(argv: list[str]) -> int:
     found = collect()
     failures = 0
-    for rule, (_, message) in (RULES | APP_RULES).items():
+    for rule, (_, message) in RULES.items():
         for path, items in sorted(found[rule].items()):
             for line, detail in items:
                 failures += 1
