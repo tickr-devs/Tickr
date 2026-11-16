@@ -4850,6 +4850,23 @@
         }
       }
     },
+    "home.beforeFees" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day result before broker fees"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Результат дня до комиссий брокера"
+          }
+        }
+      }
+    },
     "home.cleanDay" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7936,6 +7953,23 @@
         }
       }
     },
+    "risk.feesToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker fees today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Комиссии брокера за день"
+          }
+        }
+      }
+    },
     "risk.fences" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9914,13 +9948,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The strategy is not watching any symbol closely."
+            "value" : "Nothing armed right now. A symbol shows here while the strategy waits for its setup."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стратегия сейчас ни за одним символом пристально не следит."
+            "value" : "Сейчас ничего не взведено. Символ появляется здесь, пока стратегия ждёт его сетап."
           }
         }
       }
