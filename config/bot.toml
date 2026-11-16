@@ -182,6 +182,10 @@ extended_observe_seconds = 9
 extended_trigger_seconds = 180
 # probe-extended: the closing SELL LIMIT lies this many percent below the bid, so it fills at the bid in a thin book; read by the probe-extended command.
 extended_close_percent = 2
+# probe-extended: seconds the positions read may take to agree with the fills Detail proved, read once per
+# [orders] detail_poll_seconds, before a SELL, the close or the final verdict; still different = the probe stops and
+# exits 4; read by the probe-extended command.
+extended_position_agree_seconds = 15
 
 [api]
 # Local API bind address; loopback only; read by the api server.

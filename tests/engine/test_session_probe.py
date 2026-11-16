@@ -51,7 +51,19 @@ class World:
         self.lines: list[str] = []
         self.folder = tmp_path / "evidence"
         self.folder.mkdir()
+        self.history: list[tuple[datetime, list[Position]]] = []
         self._quote()
+
+    def lag_positions(self, seconds: float) -> None:
+        """The positions read shows the broker's holdings as they were `seconds` ago."""
+        real = self.broker.positions
+
+        def lagging() -> list[Position]:
+            seen = [p for at, p in self.history if at <= self.at - timedelta(seconds=seconds)]
+            return seen[-1] if seen else []
+
+        self._real_positions = real
+        self.broker.positions = lagging  # type: ignore[method-assign]
 
     def _quote(self) -> None:
         self.market.set_quote(Quote(SYMBOL, self.bid, self.ask, Decimal(100), Decimal(100),
@@ -64,6 +76,8 @@ class World:
         self.at += timedelta(seconds=seconds)
         if self.hook is not None:
             self.hook(self)
+        real = getattr(self, "_real_positions", self.broker.positions)
+        self.history.append((self.at, [replace(p) for p in real()]))
         self._quote()
 
     def working(self, side: Side, order_type: OrderType) -> list[str]:
@@ -115,7 +129,7 @@ def test_answers_every_question_and_records_each_order_before_sending(tmp_path: 
     assert summary["trigger-stop-all"].startswith(sp.TRIGGERED)
     assert summary["trigger-stop-limit-all"] == sp.NOT_TESTED  # nothing held any more
     assert summary["close"] == sp.CLOSED
-    assert summary["broker_after"] == {"readable": True, "position": "0",
+    assert summary["broker_after"] == {"readable": True, "position": "0", "detail_says": "0",
                                        "working_probe_orders": []}
     intents = [s["client_order_id"] for s in world.steps() if s["step"] == "intent"]
     assert intents == [r.client_order_id for r in world.broker.sent]
@@ -264,18 +278,49 @@ def test_a_sell_stop_detail_never_shows_blocks_every_later_sell(tmp_path: Path) 
     assert len(_sells(world)) == 1
 
 
-def test_sell_quantity_comes_from_the_broker_position(tmp_path: Path) -> None:
+def test_a_fill_detail_never_showed_stops_before_any_sell(tmp_path: Path) -> None:
     def market(world: World) -> None:
-        # The entry fill is never shown by Detail, but the broker holds the share.
+        # The broker holds a share that no Detail row of this run explains.
         if world.working(Side.BUY, OrderType.LIMIT) and SYMBOL not in world.broker.holdings:
             world.broker.add_foreign_position(SYMBOL, Decimal(1), world.ask)
-        for cid in world.working(Side.SELL, OrderType.LIMIT):
-            world.broker.fill(cid, Decimal(1), world.bid)
 
     world = World(tmp_path, market)
+    code, summary = world.run()
+    assert code == sp.EXIT_OPERATOR
+    assert "holds 1 ABCD, Detail of this run's orders says 0" in summary["unresolved"]
+    assert _sells(world) == []
+
+
+def test_positions_lagging_the_entry_fill_are_waited_for(tmp_path: Path) -> None:
+    world = World(tmp_path, fill_entry_and_close)
+    world.lag_positions(6)
     world.broker.script("refuse", "refuse", "refuse")  # no stop type: straight to the close
     code, summary = world.run()
     assert summary["entry"] == sp.FILLED
-    closes = _sells(world)
-    assert [(r.order_type, r.quantity) for r in closes] == [(OrderType.LIMIT, Decimal(1))]
+    assert [(r.order_type, r.quantity) for r in _sells(world)] == [(OrderType.LIMIT, 1)]
     assert summary["close"] == sp.CLOSED and code == sp.EXIT_ANSWERED
+
+
+def test_positions_lagging_too_long_never_count_as_flat(tmp_path: Path) -> None:
+    world = World(tmp_path, fill_entry_and_close)
+    world.lag_positions(CFG.probe.extended_position_agree_seconds + 30)
+    world.broker.script("refuse", "refuse", "refuse")
+    code, summary = world.run()
+    assert code == sp.EXIT_OPERATOR
+    assert "holds 0 ABCD, Detail of this run's orders says 1" in summary["unresolved"]
+    assert _sells(world) == []  # never a SELL on a disagreement
+
+
+def test_positions_lagging_a_triggered_stop_send_no_second_sell(tmp_path: Path) -> None:
+    def market(world: World) -> None:
+        fill_entry_and_close(world)
+        for cid in world.working(Side.SELL, OrderType.STOP_LOSS):
+            world.broker.fill(cid, Decimal(1), world.bid - Decimal("0.02"))
+
+    world = World(tmp_path, market)
+    world.lag_positions(6)
+    code, summary = world.run()
+    assert summary["trigger-stop-all"].startswith(sp.TRIGGERED)
+    assert summary["trigger-stop-limit-all"] == sp.NOT_TESTED
+    assert len(_sells(world)) == 1
+    assert code == sp.EXIT_ANSWERED

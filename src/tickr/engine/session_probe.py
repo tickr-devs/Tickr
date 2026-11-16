@@ -188,6 +188,8 @@ class Probe:
     sleep: Sleep
     out: Out
     run_tag: str
+    # Net shares this run's orders filled, as Detail proved them (buys less sells).
+    expected: Decimal = Decimal(0)
     _sequence: int = 0
 
     # -- plumbing ---------------------------------------------------------------------------
@@ -212,16 +214,37 @@ class Probe:
             raise ManualRefused(f"no valid quote: bid {quote.bid} ask {quote.ask}")
         return quote
 
-    def held(self) -> Decimal:
-        """The broker's position in the symbol (the source of truth, never our own count)."""
+    def _position(self) -> Decimal:
         try:
             held = sum((p.quantity for p in self.broker.positions() if p.symbol == self.symbol),
                        Decimal(0))
         except BrokerError as exc:
             self._log("position-read-failed", error=str(exc))
             raise Unresolved(f"positions cannot be read ({type(exc).__name__})") from exc
-        self._log("position", quantity=held)
+        self._log("position", quantity=held, expected=self.expected)
         return held
+
+    def held(self) -> Decimal:
+        """The quantity both authenticated reads agree on: the broker's position in the symbol
+        must equal what Detail proved this run filled. The positions read may lag a fill, so it
+        is repeated for `[probe] extended_position_agree_seconds`; still different, nothing
+        more is sent (Unresolved, with both numbers)."""
+        held = self._position()
+        polls = int(self.config.probe.extended_position_agree_seconds
+                    // float(self.config.orders.detail_poll_seconds))
+        for _ in range(polls):
+            if held == self.expected:
+                break
+            self.sleep(float(self.config.orders.detail_poll_seconds))
+            held = self._position()
+        if held != self.expected:
+            raise Unresolved(f"the broker holds {held} {self.symbol}, Detail of this run's "
+                             f"orders says {self.expected}")
+        return held
+
+    def _count(self, row: OrderDetail | None) -> None:
+        if row is not None and row.filled_quantity:
+            self.expected += row.filled_quantity if row.side is Side.BUY else -row.filled_quantity
 
     def place(self, name: str, request: OrderRequest) -> str:
         """Record, send once. Returns ACCEPTED, REFUSED, NOT_SENT or UNKNOWN (resolved by
@@ -286,6 +309,7 @@ class Probe:
         """Make sure the order is over: cancel it unless Detail shows it terminal or proves it
         absent, then require that proof. Raises Unresolved otherwise."""
         if absent or (row is not None and row.state.terminal):
+            self._count(row)
             return row
         self._log("cancel-intent", case=name, client_order_id=cid)
         try:
@@ -297,6 +321,7 @@ class Probe:
         after, absent = self.settle(name, cid, float(self.config.orders.max_exit_seconds))
         row = after or row
         if absent or (row is not None and row.state.terminal):
+            self._count(row)
             return row
         state = "never shown by Detail" if row is None else f"still {row.raw_status}"
         raise Unresolved(f"{name} order {cid} is {state} after its cancel")
@@ -352,8 +377,8 @@ class Probe:
         if sent in (REFUSED, NOT_SENT):
             return sent
         row, absent = self.settle("entry", cid, float(self.config.probe.entry_wait_seconds))
-        self.finish("entry", cid, row, absent)
-        verdict = FILLED if self.held() > 0 else NOT_FILLED
+        row = self.finish("entry", cid, row, absent)
+        verdict = FILLED if row is not None and row.filled_quantity > 0 else NOT_FILLED
         self.out(f"entry (BUY LIMIT ALL at {price}): {verdict}")
         return verdict
 
@@ -421,18 +446,24 @@ class Probe:
         return CLOSED if self.held() <= 0 else NOT_CLOSED
 
     def leftovers(self) -> dict[str, Any]:
-        """Broker truth at the end: the symbol's position and every working probe order."""
+        """Broker truth at the end: the symbol's position (which must agree with what Detail
+        proved, see `held`) and every working probe order."""
         prefix = self.config.orders.probe_client_order_id_prefix
         try:
-            held = sum((p.quantity for p in self.broker.positions() if p.symbol == self.symbol),
-                       Decimal(0))
+            held = self.held()
+            agree = True
+        except Unresolved as exc:
+            self._log("final-disagrees", error=str(exc))
+            held, agree = None, False
+        try:
             orders = [o.client_order_id for o in self.broker.open_orders()
                       if o.client_order_id.startswith(prefix) and not o.state.terminal]
         except BrokerError as exc:
             self._log("final-read-failed", error=str(exc))
-            return {"readable": False}
+            return {"readable": False, "position": held, "detail_says": self.expected}
         self._log("final", position=held, working_probe_orders=orders)
-        return {"readable": True, "position": held, "working_probe_orders": orders}
+        return {"readable": agree, "position": held, "detail_says": self.expected,
+                "working_probe_orders": orders}
 
 
 def require_flat(broker: Broker) -> None:
@@ -492,8 +523,9 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
         probe.evidence.summary(summary)
     clean = (after["readable"] and after["position"] == 0 and not after["working_probe_orders"])
     if unresolved is not None or summary.get("close") != CLOSED or not clean:
-        out(f"OPERATOR: the broker shows {after}: cancel the probe orders and sell what is "
-            f"held in the Webull app now")
+        first = f"{unresolved}; " if unresolved is not None else ""
+        out(f"OPERATOR: {first}the broker shows {after}: cancel the probe orders first, then "
+            f"sell what is held in the Webull app now")
         return EXIT_OPERATOR
     return EXIT_ANSWERED
 
