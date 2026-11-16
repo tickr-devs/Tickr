@@ -30,6 +30,7 @@ from tickr.archive import existing, open_text
 from tickr.calendar import CalendarRefused, MarketDay, SessionCalendar, ny_date_of
 from tickr.config import Config
 from tickr.data.base import (
+    InstrumentProfile,
     MarketData,
     QuoteListener,
     ScreenerKind,
@@ -52,6 +53,7 @@ from tickr.data.health import FanOut, StreamHealth, StreamState
 from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine, Leg
 from tickr.observers.ignition import Ignition
+from tickr.runtime.profiles import ProfileRecorder
 from tickr.runtime.screeners import ScreenerRecorder
 from tickr.store import Store
 from tickr.strategy.base import Liquidity
@@ -68,6 +70,7 @@ CAPTURE_FAILED = "capture-failed"
 IGNITION_FAILED = "ignition-failed"
 # `[observers] ignition` could not be loaded at start (the bot runs without it).
 IGNITION_NOT_LOADED = "ignition-not-loaded"
+PROFILE_RECORDER = "profile-recorder"  # its `what` for the profile recorder after a pass
 # The day's discovery.jsonl could not seed the refused-symbol memory (the bot starts with it empty).
 REFUSED_SYMBOLS_UNREAD = "refused-symbols-unread"
 STREAM_SUBSCRIPTIONS = "stream-subscriptions"
@@ -161,6 +164,11 @@ class _StopsBetweenRequests:
         self._check()
         return self._source.snapshot(symbols)
 
+    def profiles(self, symbols: Sequence[str], *,
+                 budget_reserve: int = 0) -> list[InstrumentProfile]:
+        self._check()
+        return self._source.profiles(symbols, budget_reserve=budget_reserve)
+
     def bars(self, symbols: Sequence[str], count: int, *, budget_reserve: int = 0) -> list[Bar]:
         self._check()
         return self._source.bars(symbols, count, budget_reserve=budget_reserve)
@@ -197,6 +205,11 @@ class _Tee:
         if self.capture is not None:
             self.capture.screener(rows, provider, receipt_time)
         self._observe(lambda: self.ignition.screener(rows, provider, receipt_time))
+
+    def screener_skipped(self, kinds: Sequence[ScreenerKind], cause: str, source: str,
+                         receipt_time: datetime) -> None:
+        if self.capture is not None:
+            self.capture.screener_skipped(kinds, cause, source, receipt_time)
 
     def bars(self, bars: Sequence[Bar], provider: str, receipt_time: datetime) -> None:
         if self.capture is not None:
@@ -322,6 +335,7 @@ class MarketRuntime:
         self._discovery_anchor: datetime | None = None  # interval counted from here
         self._worker = DiscoveryWorker(spawn)  # the discovery pass in flight, if any
         self.recorder = ScreenerRecorder(config, source, capture)
+        self.profiles = ProfileRecorder(config, source, capture, now, spawn)
         self._started = now()
         self._seed_refused_symbols()
 
@@ -380,8 +394,10 @@ class MarketRuntime:
     def close(self, timeout_seconds: float) -> bool:
         """At the end of the run: no new pass; a pass in flight ends before its next request
         and is waited for at most `timeout_seconds`, then abandoned (a daemon thread). True
-        when none is left running. Never collected: the loop has stopped."""
-        return self._worker.stop(timeout_seconds)
+        when none is left running. Never collected: the loop has stopped. The profile round
+        in flight ends the same way, after the pass (each waited for at most the timeout)."""
+        passes = self._worker.stop(timeout_seconds)
+        return self.profiles.stop(timeout_seconds) and passes
 
     def candidates(self) -> list[str]:
         """The symbols of the latest discovery's candidates, best first."""
@@ -559,12 +575,16 @@ class MarketRuntime:
         """Outside the regular session: one screener round when due (runtime.screeners). A
         capture that cannot be written is journaled (`capture-failed`) and the round counts as
         not read."""
+        cap = self.config.market_data.failure_detail_max_chars
         try:
-            return self.recorder.tick(day, now)
+            rows = self.recorder.tick(day, now)
         except CaptureError as exc:
             journal_capture_failed(self.engine.store, self.engine.run_id, "screener-recorder",
-                                   exc, self.config.market_data.failure_detail_max_chars)
+                                   exc, cap)
             return None
+        if rows is not None:
+            self.profiles.submit(rows)  # read on their own thread: the loop never waits
+        return rows
 
     def _exit_on_stream_loss(self) -> None:
         """Transport lost with a position open, in the regular session: market exit through
@@ -643,7 +663,11 @@ class MarketRuntime:
     def collect(self) -> None:
         """On the loop thread, never waiting: journal a finished pass, if any. A failure is
         `discovery-failed` (tried again at the next interval); a pass is `discovery` with its
-        `seconds`, after its discovery.jsonl record, and its candidates become the list."""
+        `seconds`, after its discovery.jsonl record, and its candidates become the list.
+        Failures of the profile thread's rounds are journaled here too (`capture-failed`)."""
+        for exc in self.profiles.take_errors():
+            journal_capture_failed(self.engine.store, self.engine.run_id, PROFILE_RECORDER,
+                                   exc, self.config.market_data.failure_detail_max_chars)
         outcome = self._worker.take()
         if outcome is None:
             return
@@ -659,6 +683,7 @@ class MarketRuntime:
             assert outcome.error is not None
             self._journal_failure(outcome.error)
             return
+        self.profiles.submit(result.screened)  # read on their own thread, after the pass
         candidates, kept = self._with_earlier(result)
         summary = result.summary()
         if kept:

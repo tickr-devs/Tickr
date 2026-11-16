@@ -34,8 +34,8 @@ variant_trail_percents = [10, 30]
 flat_minutes_before_close = 6
 # Seconds after the flat time a discovery pass ends a paper trade that saw no quote since then, at the last bid seen, seconds. Read by observers.ignition.
 flat_grace_seconds = 120
-# Notional of one paper trade for the dollar results, USD. Read by observers.ignition.
-paper_notional_usd = 2500
+# Notional of one paper trade for the dollar results, USD; every signal is taken, no cap on open trades (owner, 2026-11-16). Read by observers.ignition.
+paper_notional_usd = 1000
 
 [record]
 # A pause between two quotes of a paper trade at least this long is recorded as a gap (halt, quiet book or no stream slot), seconds. Read by observers.ignition.
