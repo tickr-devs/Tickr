@@ -81,7 +81,7 @@ struct VersionsCard: View {
           .foregroundStyle(Palette.textTertiary)
       }
       ForEach(curves) { curve in
-        // The name, its role as a pill and the total in one row; at large text sizes each takes
+        // The name, its role as a `Badge` and the total in one row; at large text sizes each takes
         // its own line, so the name wraps whole instead of breaking letter by letter.
         RowStack(spacing: Tokens.Space.s) {
           HStack(spacing: Tokens.Space.s) {
@@ -92,8 +92,7 @@ struct VersionsCard: View {
               .fixedSize(horizontal: false, vertical: true)
           }
           .layoutPriority(1)
-          StatusPill(curve.observer ? L10n.Lab.observerRole : L10n.Lab.trades,
-            systemImage: curve.observer ? LabView.observerSymbol : LabView.tradesSymbol,
+          Badge(curve.observer ? L10n.Lab.observerRole : L10n.Lab.trades,
             tone: curve.observer ? .highlight : .accent)
           Spacer(minLength: 0)
           if let total = curve.total {

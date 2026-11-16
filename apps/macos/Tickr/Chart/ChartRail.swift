@@ -210,12 +210,15 @@ private struct PositionCard: View {
     }
   }
 
+  /// The stop's price, then its state as a `Badge` (as on the iOS position chain): green
+  /// VERIFIED, amber otherwise.
   @ViewBuilder private var stop: some View {
     if let price = row.stop {
-      if row.position.stop.state == .verified {
-        Text(L10n.Chart.positionStopVerified(Format.price(price))).foregroundStyle(Palette.lossText)
-      } else {
-        Text(L10n.Chart.positionStopUnverified(Format.price(price))).foregroundStyle(Palette.warningText)
+      let state = row.position.stop.state
+      HStack(spacing: Tokens.Space.xs) {
+        Text(verbatim: Format.price(price)).foregroundStyle(Palette.lossText)
+        Badge(verbatim: Board.stopStateTitle(state),
+          color: state == .verified ? Palette.profitText : Palette.warningText)
       }
     } else {
       Text(L10n.Chart.positionNoStop).foregroundStyle(Palette.lossText)

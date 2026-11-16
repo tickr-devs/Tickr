@@ -278,14 +278,8 @@ private struct SymbolColumns: View {
       SourceChips(row.sourceChips).frame(maxWidth: .infinity, alignment: .leading)
       StageTrack(colors: row.trackColors, title: row.furthest.title)
         .frame(width: Self.trackWidth, alignment: .leading)
-      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
-        if row.verdict == .watch { VerdictTag(verdict: .watch) }
-        Text(verbatim: outcome.text)
-          .font(Tokens.Typography.captionMono)
-          .foregroundStyle(outcome.tone.color)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      OutcomeLine(outcome: outcome, watching: row.verdict == .watch)
+        .frame(maxWidth: .infinity, alignment: .leading)
       Text(verbatim: Format.marketTime(row.firstSeen?.date))
         .font(Tokens.Typography.captionMono)
         .foregroundStyle(Palette.textQuaternary)
@@ -403,13 +397,13 @@ private struct SymbolDetail: View {
           Text(verbatim: symbol)
             .font(Tokens.Typography.heading)
             .foregroundStyle(Palette.textPrimary)
+          if let row { Badge(verbatim: SymbolsBoard.outcome(row).badge, color: SymbolsBoard.outcome(row).tone.color) }
           if row?.verdict == .watch || mover?.watching == true { VerdictTag(verdict: .watch) }
         }
         if let row {
-          let outcome = SymbolsBoard.outcome(row)
-          Text(verbatim: outcome.text)
+          Text(verbatim: SymbolsBoard.outcome(row).detail)
             .font(Tokens.Typography.captionMono)
-            .foregroundStyle(outcome.tone.color)
+            .foregroundStyle(Palette.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
           SourceChips(row.sourceChips)
         }
@@ -579,13 +573,34 @@ extension SymbolsTab {
 }
 
 extension SymbolsBoard.Tone {
-  /// The colour of an outcome: passed green, waiting blue, dropped red, not reached amber.
+  /// The colour of an outcome's badge, as on the Symbols boards: passed green, at a stage blue,
+  /// dropped pink, not reached amber.
   var color: Color {
     switch self {
     case .passed: Palette.profitText
     case .waiting: Palette.infoText
-    case .dropped: Palette.lossText
+    case .dropped: Palette.seriesATRText
     case .notReached: Palette.warningText
+    }
+  }
+}
+
+/// A symbol's outcome as the Symbols boards draw it: the outcome `Badge` (and WATCH when the
+/// strategy watches it), then the detail in plain text.
+private struct OutcomeLine: View {
+  let outcome: (badge: String, detail: String, tone: SymbolsBoard.Tone)
+  let watching: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+      HStack(spacing: Tokens.Space.xs) {
+        Badge(verbatim: outcome.badge, color: outcome.tone.color)
+        if watching { VerdictTag(verdict: .watch) }
+      }
+      Text(verbatim: outcome.detail)
+        .font(Tokens.Typography.captionMono)
+        .foregroundStyle(Palette.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 }

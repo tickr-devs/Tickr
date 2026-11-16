@@ -62,8 +62,9 @@ struct SymbolsBoardTests {
     #expect(SymbolsBoard.outcome(abcd).tone == .passed)
     let wxyz = try #require(rows["WXYZ"])
     let spread = SymbolsBoard.checkText(try #require(wxyz.check))
-    #expect(SymbolsBoard.outcome(wxyz).text
-      == String(localized: L10n.symbolsDropped(String(localized: L10n.symbolStageQuote), spread)))
+    #expect(SymbolsBoard.outcome(wxyz).badge
+      == String(localized: L10n.symbolsDropped(String(localized: L10n.symbolStageQuote))))
+    #expect(SymbolsBoard.outcome(wxyz).detail == spread)
     #expect(spread.contains("0.0031") && spread.contains("0.002"))
     let spy = try #require(rows["SPY"])
     #expect(SymbolsBoard.reason(spy)
