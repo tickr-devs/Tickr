@@ -104,6 +104,12 @@ extension View {
     environment(\.cardFills, true)
   }
 
+  /// Cards in this view hug their content even inside a filling grid: a card whose content is
+  /// short stays short instead of growing to its row's height with an empty lower half.
+  func hugsContent() -> some View {
+    environment(\.cardFills, false)
+  }
+
   /// Cards in this view label themselves plainly, without the tone tick.
   func plainCardLabels() -> some View {
     environment(\.cardTicks, false)
@@ -455,8 +461,8 @@ extension AppModel {
     guard let status, isLive else {
       return shownTrades.map {
         TickerItem(id: $0.tradeId, tag: Board.exitReasonTitle($0.exitReason).uppercased(),
-          text: "\($0.symbol) \(Money.signed($0.resultGrossUsd.value))",
-          tone: Board.exitTone($0.exitReason, result: $0.resultGrossUsd.value).tickerTone)
+          text: "\($0.symbol) \(Money.signed($0.resultUsd.value))",
+          tone: Board.exitTone($0.exitReason, result: $0.resultUsd.value).tickerTone)
       }
     }
     let events = Board.events(status)

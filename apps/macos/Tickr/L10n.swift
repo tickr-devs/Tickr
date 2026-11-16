@@ -2947,10 +2947,6 @@ enum L10n {
         defaultValue: "Gross USD by trade close · each line ends at the version's reported result · dashed: trade list incomplete · no line: the reason",
         bundle: L10n.bundle)
     }
-    /// Legend row of the active strategy's line.
-    static func activeLine(_ name: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.activeLine", defaultValue: "\(name) · active", bundle: L10n.bundle)
-    }
     /// Chart axis: time of day.
     static var curveTime: LocalizedStringResource {
       LocalizedStringResource("lab.curveTime", defaultValue: "Time", bundle: L10n.bundle)
@@ -2998,6 +2994,14 @@ enum L10n {
     /// Replay result label: largest drawdown in R.
     static var replayMaxDrawdown: LocalizedStringResource {
       LocalizedStringResource("lab.replayMaxDrawdown", defaultValue: "max drawdown", bundle: L10n.bundle)
+    }
+    /// Why the replay button rests: the regular session is open until this New York time.
+    static func replayAvailableAfter(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.replayAvailableAfter", defaultValue: "Available after \(time) ET", bundle: L10n.bundle)
+    }
+    /// Before the countdown to the time the replay is available again.
+    static var replayAvailableIn: LocalizedStringResource {
+      LocalizedStringResource("lab.replayAvailableIn", defaultValue: "in", bundle: L10n.bundle)
     }
     /// Replay running, with its start time.
     static func replayRunningSince(_ time: String) -> LocalizedStringResource {
