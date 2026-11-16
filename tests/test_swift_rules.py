@@ -714,3 +714,21 @@ def test_the_radar_stays_in_the_empty_positions_state(tmp_path, monkeypatch):
 
 def test_the_loader_rule_is_an_app_rule():
     assert "loaders" in load().APP_RULES
+
+
+def test_cause_rule_flags_a_coded_cause_shown_in_the_bots_words(tmp_path):
+    module = load()
+    assert {"rulesCause", "sessionCause", "unavailableCause", "agreementCause", "excludedCause",
+            "changeCause", "bindingCause", "fencesCause"} <= module.coded_causes()
+    module.RAW_CAUSE = module.raw_cause_pattern({"rulesCause", "sessionCause"})
+    source = (
+        "Text(verbatim: movers.rulesCause ?? Format.missing)\n"
+        "let note = jobs?.sessionCause\n"
+        "Text(verbatim: movers.rulesCauseText ?? Format.missing)\n"
+        "if movers.rulesCause == nil { }\n"
+        "rulesCause = try c.decodeNullable(String.self, forKey: .rulesCause)\n"
+        "ApiText.prose(movers.rulesCauseCodes, text: movers.rulesCause)\n"
+        "// movers.rulesCause in a comment\n"
+    )
+    found = module.cause_violations(write(tmp_path, source))
+    assert [line for line, _ in found] == [1, 2]
