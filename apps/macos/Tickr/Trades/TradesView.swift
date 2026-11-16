@@ -504,9 +504,9 @@ private struct TradesTable: View {
             .accessibilityLabel(Text(L10n.Trades.openPosition(position.id)))
             .accessibilityIdentifier(TradeRow.openID)
           case .closed(let trade):
-            // Coloured as the event ticker colours the exit: by its result, amber when forced.
-            Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
-              color: Tone.exit(trade.exitReason, result: trade.resultGrossUsd.value).text)
+            // The reason's own tone, as on the iPhone (v99: strategy exit teal, stopped out pink, other
+            // closes grey, a protection failure red).
+            Badge(verbatim: Board.exitReasonTitle(trade.exitReason), tone: Tone.exit(trade.exitReason))
           }
         }
       }
@@ -1061,9 +1061,9 @@ private struct SkippedRow: View {
 
   @ViewBuilder private var admission: some View {
     if group.latest.admission == .refused {
-      Badge(L10n.Trades.refused, color: Palette.warningText)
+      Badge(L10n.Trades.refused, tone: Tone.refused)
     } else {
-      Badge(L10n.Trades.notEvaluated, color: Palette.textTertiary)
+      Badge(L10n.Trades.notEvaluated, tone: Tone.notEvaluated)
     }
   }
 }

@@ -203,6 +203,26 @@ public enum Board {
     }
   }
 
+  /// How a closed trade's reason tag reads (mockup v99, MacTrades and IOSActivity): the
+  /// strategy's own exit, a stop hit, a failure to keep the position protected, or any other close
+  /// (end of day, a plain close, the operator, a lost stream, an entry that never filled, a hold
+  /// that ran out, a reason this app does not know). TickrDesign maps it to the tag's tone.
+  public enum ExitLook: Sendable, Equatable, CaseIterable {
+    case strategy
+    case stoppedOut
+    case protectionFailure
+    case other
+  }
+
+  public static func exitLook(_ raw: String) -> ExitLook {
+    switch ExitReason(rawValue: raw) {
+    case .strategyExit: .strategy
+    case .stoppedOut: .stoppedOut
+    case .stopRejected, .unprotectedTooLong: .protectionFailure
+    default: .other
+    }
+  }
+
   /// An exit event's tone: amber for a forced close and red for a protection failure whatever the
   /// result; an ordinary exit by its result's sign.
   public static func exitTone(_ raw: String, result: Decimal) -> Event.Tone {

@@ -687,7 +687,7 @@ private struct TradesList: View {
         // stop said in the tag.
         row(symbol: position.symbol, time: nil,
           tag: String(localized: state == .verified ? L10n.Activity.openVerifiedTag : L10n.Activity.openTag),
-          tagSymbol: Self.openSymbol, tone: .accent,
+          tagSymbol: Self.openSymbol, tone: Tone.openPosition,
           result: String(localized: L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value))),
           figures: openFigures(position), stopState: state.isProtected ? nil : state, open: true)
           .rise(step: ActivityView.Order.list.rawValue)
@@ -697,9 +697,9 @@ private struct TradesList: View {
           time: Format.time(trade.openedAt) + Format.timeRange + Format.time(trade.closedAt),
           tag: Board.exitReasonTitle(trade.exitReason).uppercased(),
           tagSymbol: Board.exitReasonSymbol(trade.exitReason),
-          // The exit's own tone (forced amber, protection failure red), as the Mac's Trades; the
-          // result keeps its sign's.
-          tagTone: Tone.exit(trade.exitReason, result: trade.result),
+          // The reason's own tone (v99: strategy exit teal, stopped out pink, other closes grey),
+          // as the Mac's Trades; the result keeps its sign's.
+          tagTone: Tone.exit(trade.exitReason),
           tone: Tone.result(trade.result),
           result: Money.signed(trade.result),
           figures: figures(trade), metrics: metrics(trade), metricsText: trade.metrics, after: trade.pricesAfter,
@@ -970,7 +970,7 @@ private struct SkippedRow: View {
 
   private var tagPill: some View {
     StatusPill(refused ? L10n.Activity.refusedTag : L10n.Activity.tooLateTag,
-      systemImage: refused ? Self.refusedSymbol : Self.tooLateSymbol, tone: refused ? .warning : .neutral)
+      systemImage: refused ? Self.refusedSymbol : Self.tooLateSymbol, tone: refused ? Tone.refused : Tone.notEvaluated)
   }
 
   private var whenLabel: some View {

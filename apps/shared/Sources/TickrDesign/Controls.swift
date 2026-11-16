@@ -25,6 +25,8 @@ public enum Tone: Sendable, Hashable, CaseIterable {
   case info
   /// Recorded days, observers, planned work.
   case highlight
+  /// The series pink: a stop-out's tag (mockup v99), the ATR line.
+  case series
 
   /// Strokes, dots, rails and washes.
   public var fill: Color {
@@ -36,6 +38,7 @@ public enum Tone: Sendable, Hashable, CaseIterable {
     case .warning: return Palette.warning
     case .info: return Palette.info
     case .highlight: return Palette.highlight
+    case .series: return Palette.seriesATR
     }
   }
 
@@ -49,6 +52,7 @@ public enum Tone: Sendable, Hashable, CaseIterable {
     case .warning: return Palette.warningText
     case .info: return Palette.infoText
     case .highlight: return Palette.highlightText
+    case .series: return Palette.seriesATRText
     }
   }
 
@@ -63,6 +67,7 @@ public enum Tone: Sendable, Hashable, CaseIterable {
     case .warning: return .warningText
     case .info: return .infoText
     case .highlight: return .highlightText
+    case .series: return .seriesATRText
     }
   }
 

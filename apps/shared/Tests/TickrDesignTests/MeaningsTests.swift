@@ -53,23 +53,28 @@ import TickrKit
 
   @Test("A tone's text colour and its swatch name the same role")
   func toneTexts() {
-    let tones: [Tone] = [.neutral, .accent, .profit, .loss, .warning, .info, .highlight]
+    let tones: [Tone] = [.neutral, .accent, .profit, .loss, .warning, .info, .highlight, .series]
     #expect(tones.map(\.text) == [Palette.textTertiary, Palette.accentText, Palette.profitText, Palette.lossText,
-      Palette.warningText, Palette.infoText, Palette.highlightText])
+      Palette.warningText, Palette.infoText, Palette.highlightText, Palette.seriesATRText])
     #expect(tones.map(\.textSwatch) == [.textTertiary, .accentText, .profitText, .lossText, .warningText, .infoText,
-      .highlightText])
+      .highlightText, .seriesATRText])
     #expect(Palette.result(0) == Palette.textTertiary)
     #expect(Palette.result(d("-1")) == Palette.lossText)
   }
 
-  @Test("Exits: forced amber and protection failures red whatever the result, the rest by the result")
+  @Test("Trade tags by reason (v99): strategy exit and open teal, stopped out pink, other closes grey")
   func exits() {
-    #expect(Tone.exit("session-flatten", result: 5) == .warning)
-    #expect(Tone.exit("stream-lost", result: -5) == .warning)
-    #expect(Tone.exit("stop-rejected", result: 5) == .loss)
-    #expect(Tone.exit("strategy-exit", result: 5) == .profit)
-    #expect(Tone.exit("stopped-out", result: -5) == .loss)
-    #expect(Tone.exit("strategy-exit", result: 0) == .neutral)
+    #expect(Tone.exit("strategy-exit") == .accent)
+    #expect(Tone.exit("stopped-out") == .series)
+    #expect(Tone.exit("closed") == .neutral)
+    #expect(Tone.exit("session-flatten") == .neutral)
+    #expect(Tone.exit("stream-lost") == .neutral)
+    #expect(Tone.exit("stop-rejected") == .loss)
+    #expect(Tone.exit("unprotected-too-long") == .loss)
+    #expect(Tone.exit("a-reason-not-known-yet") == .neutral)
+    #expect(Tone.openPosition == .accent)
+    #expect(Tone.refused == .warning)
+    #expect(Tone.notEvaluated == .neutral)
   }
 
   @Test("Every bot tone maps to one design tone")

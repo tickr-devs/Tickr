@@ -158,8 +158,24 @@ extension Tone {
     }
   }
 
-  /// The tone of a closed trade's exit reason: `Board.exitTone`.
-  public static func exit(_ reason: String, result: Decimal) -> Tone {
-    Tone(Board.exitTone(reason, result: result))
+  /// The tone of a trade's reason tag, both apps (mockup v99, MacTrades and IOSActivity), by the
+  /// reason alone, never by the result: the strategy's exit in the accent, a stop-out in the
+  /// series pink, a protection failure (stop rejected, unprotected too long) in loss, every
+  /// other close (end of day, a plain close, the operator, a lost stream, a reason this app does
+  /// not know) neutral.
+  public static func exit(_ reason: String) -> Tone {
+    switch Board.exitLook(reason) {
+    case .strategy: .accent
+    case .stoppedOut: .series
+    case .protectionFailure: .loss
+    case .other: .neutral
+    }
   }
+
+  /// The tag of an open position (OPEN), in the accent like the strategy's exit.
+  public static let openPosition = Tone.accent
+  /// The tag of a signal the risk layer refused (REFUSED).
+  public static let refused = Tone.warning
+  /// The tag of a signal never evaluated, made too late to act on (NOT EVALUATED).
+  public static let notEvaluated = Tone.neutral
 }
