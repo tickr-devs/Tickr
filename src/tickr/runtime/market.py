@@ -30,6 +30,7 @@ from tickr.data.discovery import (
     NoStrategy,
     RefusedSymbols,
     discover,
+    pass_record,
 )
 from tickr.data.health import FanOut, StreamHealth, StreamState
 from tickr.data.todaybars import TodayBars
@@ -395,6 +396,9 @@ class MarketRuntime:
         if kept:
             summary += f"; kept {len(kept)} earlier candidates not reached"
         self.discovery = DiscoveryState(now, summary, candidates)
+        if self.capture is not None:
+            finished = self.now()
+            self.capture.discovery(pass_record(result, finished), finished)
         with self.engine.store.transaction():
             self.engine.store.append(DISCOVERY, {
                 "summary": summary, "evaluated": result.evaluated,

@@ -227,8 +227,6 @@ idempotency_key_ttl_seconds = 86400
 replay_settings_file = "config/replay.toml"
 # Most simulated trades (ENTERs, oldest first) GET /observers lists per observer; more = cut, with `trades_truncated` true; read by the api server (api/observer_results.py).
 observer_trades_max_rows = 100
-# Most rows GET /watching returns (the closest first; the answer's `total` counts them all); read by the api server.
-watching_max_rows = 8
 # Latest journal rows GET /journal returns (oldest first; `last_seq` is the newest row's number); read by the api server.
 journal_rows = 40
 # Command POST /commands/start-bot runs to start the bot job through launchd ("{uid}" = this user's id); kickstart
@@ -386,7 +384,7 @@ capture_dir = "capture"
 [observers]
 # Strategy module per strategy NAME, as "name=importable.module" (the module exposes create(values)); an observer folder
 # strategies/<folder>/strategy.toml names its strategy in [strategy] name; read by observers.loader.
-strategy_modules = ["price-action-v1=tickr.strategy.price_action_v1", "price-action-v2=tickr.strategy.price_action_v2", "volume-shock-v1=tickr.strategy.volume_shock_v1", "noise-band-v1=tickr.strategy.noise_band_v1"]
+strategy_modules = ["price-action-v1=tickr.strategy.price_action_v1", "price-action-v2=tickr.strategy.price_action_v2", "price-action-v3=tickr.strategy.price_action_v3", "volume-shock-v1=tickr.strategy.volume_shock_v1", "noise-band-v1=tickr.strategy.noise_band_v1"]
 # Most observer strategies [strategy] observers may list (each one costs loop time per bar); read by observers.loader.
 max_observers = 4
 # Seconds one observer evaluation may take; slower = that observer is switched off for the run with a cause; read by observers.runner.
