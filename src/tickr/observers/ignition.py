@@ -305,6 +305,18 @@ class Ignition:
         self._row_time: datetime | None = None
         self._quotes: dict[str, Quote] = {}
         self._count = 0
+        # Records made under the lock, written after it is released, so the stream thread
+        # never waits on a file append (the writer lock keeps their order).
+        self._out: list[tuple[datetime, dict[str, Any]]] = []
+        self._write_lock = threading.Lock()
+
+    def _flush(self) -> None:
+        """Write the records queued under the state lock (called after releasing it)."""
+        with self._write_lock:
+            with self._lock:
+                out, self._out = self._out, []
+            for at, record in out:
+                self.log.write(at, record)
 
     # -- the loop ----------------------------------------------------------------------------
 
@@ -318,8 +330,12 @@ class Ignition:
     def on_quote(self, quote: Quote) -> None:
         with self._lock:
             trade = self._trades.get(quote.symbol)
-            if trade is not None:
-                self._tick(trade, quote, STREAM)
+            if trade is None:
+                return
+            self._tick(trade, quote, STREAM)
+            if not self._out:
+                return
+        self._flush()
 
     def on_notice(self, notice: StreamNotice) -> None:
         """Gaps between quotes are what the records keep."""
@@ -369,6 +385,7 @@ class Ignition:
             if now >= self._flat_at + self.rules.flat_grace:
                 for trade in list(self._trades.values()):
                     self._flat_without_quote(trade, now)
+        self._flush()
 
     # -- inside the lock ---------------------------------------------------------------------
 
@@ -429,7 +446,7 @@ class Ignition:
             record.update(outcome=ENTERED, trade_id=trade.trade_id, entry_price=str(quote.ask),
                           entry_at=quote.provider_time.isoformat(),
                           spread_percent=str(spread_percent(quote).quantize(CENTS)))
-        self.log.write(at, record)
+        self._out.append((at, record))
 
     def _tick(self, trade: PaperTrade, quote: Quote, source: str) -> None:
         last = trade.last_quote
@@ -437,11 +454,11 @@ class Ignition:
             return
         trade.counts[source] += 1
         if last is not None and quote.provider_time - last.provider_time >= self.rules.quote_gap:
-            self.log.write(quote.provider_time, {
+            self._out.append((quote.provider_time, {
                 "record": GAP, "trade_id": trade.trade_id, "symbol": trade.symbol,
                 "after": last.provider_time.isoformat(), "next": quote.provider_time.isoformat(),
                 "seconds": int((quote.provider_time - last.provider_time).total_seconds()),
-                "source": source})
+                "source": source}))
         trade.last_quote = quote
         assert self._flat_at is not None
         for leg in trade.legs:
@@ -483,7 +500,7 @@ class Ignition:
                 spread_percent=str(spread_percent(quote).quantize(CENTS)),
                 result_percent=str((result * PERCENT).quantize(CENTS)),
                 result_usd=str((result * self.rules.notional).quantize(CENTS)))
-        self.log.write(at, record)
+        self._out.append((at, record))
 
     def _resume(self, now: datetime) -> None:
         """Open paper trades of today's file (entered, a trail not exited yet). The highest

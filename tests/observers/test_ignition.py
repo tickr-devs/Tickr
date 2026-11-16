@@ -247,3 +247,32 @@ def test_each_entry_records_how_many_paper_trades_are_open(tmp_path):
     first, second = world.records(ig.SIGNAL)
     assert (first["open_paper_trades"], first["open_main_trails"]) == (1, 1)
     assert (second["open_paper_trades"], second["open_main_trails"]) == (2, 2)
+
+
+def test_a_slow_record_write_never_holds_the_stream_thread(tmp_path):
+    import threading
+
+    world = World(tmp_path)
+    world.ignite()  # THIN has an open paper trade
+    entered, release = threading.Event(), threading.Event()
+    write = world.log.write
+
+    def slow(at, record):
+        entered.set()
+        assert release.wait(5)
+        write(at, record)
+
+    world.log.write = slow  # type: ignore[method-assign]
+    gap = T0 + RULES.quote_gap + timedelta(seconds=1)  # a gap record: a write
+    writer = threading.Thread(target=world.obs.on_quote, args=(quote("1.30", "1.32", gap),))
+    writer.start()
+    assert entered.wait(5)  # the gap record's write is hanging ...
+    done = threading.Event()
+    other = threading.Thread(target=lambda: (world.obs.on_quote(
+        quote("1.31", "1.33", gap + timedelta(seconds=1))), done.set()))
+    other.start()
+    assert done.wait(5)  # ... and the next quote was handled all the same
+    release.set()
+    writer.join(5)
+    other.join(5)
+    assert [r["record"] for r in world.records(ig.GAP)] == [ig.GAP]
