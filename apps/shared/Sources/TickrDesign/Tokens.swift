@@ -317,6 +317,11 @@ public enum Tokens {
     public static let bumpSeconds = 0.6
     /// Each half of a bump (grow, then settle), so the whole takes `bumpSeconds`.
     public static let bump = Animation.easeInOut(duration: bumpSeconds / 2)
+    /// How far a calendar tile's outline grows in its one pulse (today's tile, once per change of
+    /// today's trading): a ring just past the tile, as the design's 12-point glow.
+    public static let cellPulseScale: CGFloat = 1.12
+    /// Seconds of one pass of the light across the Lab's advisor title (ornament, `OrnamentGate`).
+    public static let shineSeconds = 3.5
     /// Seconds of one breath of a glow (rings, alarms).
     public static let breatheSeconds = 2.4
     /// How much a breathing glow grows.
