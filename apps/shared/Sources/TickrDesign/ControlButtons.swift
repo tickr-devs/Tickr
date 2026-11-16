@@ -281,30 +281,6 @@ public struct ControlLabelStyle: LabelStyle {
   }
 }
 
-/// A card link's label: an optional symbol, the title and the disclosure chevron, the only sign
-/// that it leads somewhere ("Open chart ›", "Details ›"); its title never carries an arrow.
-public struct ChevronLabel: View {
-  let title: Text
-  let systemImage: String?
-
-  public init(_ title: Text, systemImage: String? = nil) {
-    self.title = title
-    self.systemImage = systemImage
-  }
-
-  public init(_ title: LocalizedStringResource, systemImage: String? = nil) {
-    self.init(Text(title), systemImage: systemImage)
-  }
-
-  public var body: some View {
-    HStack(spacing: Tokens.Space.xs) {
-      if let systemImage { Image(systemName: systemImage).accessibilityHidden(true) }
-      title
-      Chevron()
-    }
-  }
-}
-
 /// A trailing chevron after a ghost button's title: "Open chart ›".
 public struct Chevron: View {
   /// SF Symbol of the chevron.

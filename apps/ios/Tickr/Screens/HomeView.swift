@@ -303,7 +303,7 @@ private struct Summary: View {
 
   var body: some View {
     let stats = past.map(Board.dayStats) ?? model.status.map(Board.dayStats)
-    let result = stats?.resultGrossUsd ?? 0
+    let result = stats?.resultUsd ?? 0
     let headline = model.headline
     // A recorded day says so, in the highlight colour and without a pulse; the live headline is about today.
     // Without any status the connection card above shows the failure; the headline does not repeat it.
@@ -357,6 +357,13 @@ private struct Summary: View {
           Text(verbatim: text)
             .font(.subheadline.bold())
             .foregroundStyle(tint)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        if stats?.beforeFees == true {
+          // The ring's result does not count the broker's fees yet; wraps rather than cuts.
+          Text(L10n.Home.beforeFees)
+            .font(.footnote)
+            .foregroundStyle(Palette.warningText)
             .fixedSize(horizontal: false, vertical: true)
         }
         if let past {

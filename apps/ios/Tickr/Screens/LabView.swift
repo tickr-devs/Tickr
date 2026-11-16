@@ -56,14 +56,14 @@ struct LabView: View {
             .layoutPriority(1)
             Spacer(minLength: 0)
             VStack(alignment: typeSize.stacksRows ? .leading : .trailing, spacing: Tokens.Space.xs) {
-              Text(verbatim: Money.signedUSD(status.resultTodayGrossUsd.value))
+              Text(verbatim: Money.signedUSD(status.resultTodayUsd.value))
                 .font(Tokens.Typography.metric)
-                .foregroundStyle(Palette.result(status.resultTodayGrossUsd.value))
+                .foregroundStyle(Palette.result(status.resultTodayUsd.value))
                 .contentTransition(.numericText())
                 .fixedSize()
               let curve = Self.curve(status)
               if curve.count > 1 {
-                DrawnSparkline(values: curve, color: Palette.result(status.resultTodayGrossUsd.value))
+                DrawnSparkline(values: curve, color: Palette.result(status.resultTodayUsd.value))
                   .frame(width: Self.curveWidth, height: Self.curveHeight)
                   .accessibilityHidden(true)
               }
@@ -108,7 +108,7 @@ struct LabView: View {
   /// The trading strategy's line, then each observer's whose trades the bot could list.
   private func curves(_ status: StatusV1) -> [VersionCurve] {
     [VersionCurve.active(name: status.strategy.name, version: status.strategy.version, trades: status.tradesToday,
-      total: status.resultTodayGrossUsd.value)]
+      total: status.resultTodayUsd.value)]
       + (lab.observers?.observers.compactMap(VersionCurve.simulated) ?? [])
   }
 
@@ -209,7 +209,7 @@ private struct RefusalsCard: View {
           .accessibilityElement(children: .combine)
         }
       } else if failure == nil {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)
@@ -249,7 +249,7 @@ private struct ObserversCard: View {
       } else if let failure = lab.failure {
         ReadFailureNote(L10n.Lab.failed, detail: failure)
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)

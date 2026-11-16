@@ -159,7 +159,10 @@ struct ChartTab: View {
   }
 
   private var loadingView: some View {
-    ProgressView { Text(ChartText.loading) }
+    TickrLoader(
+      chart.symbol.map { ChartText.loadingBars($0, interval: String(localized: ChartFormat.title(chart.timeframe))) }
+        ?? L10n.Common.loading,
+      size: .large, caption: true)
       .frame(maxWidth: .infinity)
       .padding(.top, Tokens.Space.xxl)
       .transition(.opacity)
@@ -658,7 +661,7 @@ private struct RangePicker: View {
   let chart: ChartModel
 
   var body: some View {
-    SegmentChips(options: ChartRange.allCases.map { ($0, Text(Self.title($0))) },
+    SegmentSwitch(options: ChartRange.allCases.map { ($0, Text(Self.title($0))) },
       selection: Binding(get: { chart.range }, set: { chart.choose(range: $0) }))
       .accessibilityElement(children: .contain)
       .accessibilityLabel(Text(ChartText.range))

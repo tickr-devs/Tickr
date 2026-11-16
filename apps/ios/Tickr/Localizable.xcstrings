@@ -3065,19 +3065,19 @@
         }
       }
     },
-    "chart.loading" : {
+    "chart.loadingBars" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading the chart…"
+            "value" : "Loading %1$@ · %2$@ bars"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Загружаю график…"
+            "value" : "Загрузка %1$@ · свечи %2$@"
           }
         }
       }
@@ -3809,6 +3809,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Отмена"
+          }
+        }
+      }
+    },
+    "common.loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузка…"
           }
         }
       }
@@ -4846,6 +4863,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сегодня"
+          }
+        }
+      }
+    },
+    "home.beforeFees" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day result before broker fees"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Результат дня до комиссий брокера"
           }
         }
       }
@@ -7449,13 +7483,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "open full chart"
+            "value" : "Full chart"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "открыть график"
+            "value" : "Полный график"
           }
         }
       }
@@ -7932,6 +7966,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "комиссии %@"
+          }
+        }
+      }
+    },
+    "risk.feesToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker fees today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Комиссии брокера за день"
           }
         }
       }
@@ -9914,13 +9965,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The strategy is not watching any symbol closely."
+            "value" : "Nothing armed right now. A symbol shows here while the strategy waits for its setup."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стратегия сейчас ни за одним символом пристально не следит."
+            "value" : "Сейчас ничего не взведено. Символ появляется здесь, пока стратегия ждёт его сетап."
           }
         }
       }

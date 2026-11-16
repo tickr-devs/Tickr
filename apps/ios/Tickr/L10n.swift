@@ -32,6 +32,10 @@ enum L10n {
   }
 
   enum Common {
+    /// VoiceOver's name of the loader (`TickrLoader`) while a card's data is read.
+    static var loading: LocalizedStringResource {
+      LocalizedStringResource("common.loading", defaultValue: "Loading…", bundle: L10n.bundle)
+    }
     /// A pushed screen's way back: VoiceOver's name of the back button (its value is the screen
     /// under it), and its title when that screen has no name to show.
     static var back: LocalizedStringResource {
@@ -287,6 +291,10 @@ enum L10n {
   }
 
   enum Home {
+    /// Beside the day's result while it does not count the broker's fees yet.
+    static var beforeFees: LocalizedStringResource {
+      LocalizedStringResource("home.beforeFees", defaultValue: "Day result before broker fees", bundle: L10n.bundle)
+    }
     /// The latest event's New York time on Home: "14:06:09 ET".
     static func clockET(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("home.clockET", defaultValue: "\(time) ET", bundle: L10n.bundle)
@@ -540,7 +548,7 @@ enum L10n {
         bundle: L10n.bundle)
     }
     static var openChart: LocalizedStringResource {
-      LocalizedStringResource("positions.openChart", defaultValue: "open full chart", bundle: L10n.bundle)
+      LocalizedStringResource("positions.openChart", defaultValue: "Full chart", bundle: L10n.bundle)
     }
     static var riskBand: LocalizedStringResource {
       LocalizedStringResource("positions.riskBand", defaultValue: "Risk band", bundle: L10n.bundle)
@@ -687,6 +695,10 @@ enum L10n {
     }
     static var resultToday: LocalizedStringResource {
       LocalizedStringResource("risk.resultToday", defaultValue: "Net result today", bundle: L10n.bundle)
+    }
+    /// The broker's fees on today's fills; a dash until every fill is read.
+    static var feesToday: LocalizedStringResource {
+      LocalizedStringResource("risk.feesToday", defaultValue: "Broker fees today", bundle: L10n.bundle)
     }
     static func roomNote(_ amount: String) -> LocalizedStringResource {
       LocalizedStringResource("risk.roomNote",
@@ -1148,7 +1160,8 @@ enum L10n {
       LocalizedStringResource("watching.title", defaultValue: "Watching closely", bundle: L10n.bundle)
     }
     static var none: LocalizedStringResource {
-      LocalizedStringResource("watching.none", defaultValue: "The strategy is not watching any symbol closely.",
+      LocalizedStringResource("watching.none",
+        defaultValue: "Nothing armed right now. A symbol shows here while the strategy waits for its setup.",
         bundle: L10n.bundle)
     }
     static var closeness: LocalizedStringResource {
@@ -1799,8 +1812,10 @@ enum L10n {
 /// Every text of the Chart tab, in Localizable.xcstrings with the rest.
 enum ChartText {
   static let title = LocalizedStringResource("chart.title", defaultValue: "Chart")
-  static let loading = LocalizedStringResource("chart.loading",
-    defaultValue: "Loading the chart…")
+  /// The loader's caption while a symbol's bars load: the symbol and the interval ("1m").
+  static func loadingBars(_ symbol: String, interval: String) -> LocalizedStringResource {
+    LocalizedStringResource("chart.loadingBars", defaultValue: "Loading \(symbol) · \(interval) bars")
+  }
   static let noDaysTitle = LocalizedStringResource("chart.noDays.title",
     defaultValue: "No recorded days yet")
   static let noDaysBody = LocalizedStringResource("chart.noDays.body",

@@ -163,7 +163,7 @@ struct ActivityView: View {
         }
         .rise()
       default:
-        ProgressView { Text(L10n.Activity.loadingDay) }
+        TickrLoader(L10n.Activity.loadingDay, size: .large, caption: true)
           .frame(maxWidth: .infinity)
           .padding(.top, Tokens.Space.xl)
       }
@@ -220,7 +220,7 @@ extension ActivityView {
       .pickerStyle(.menu)
       .frame(maxWidth: .infinity, alignment: .leading)
     } else {
-      SegmentChips(options: Pane.allCases.map { ($0, Text($0.title)) }, selection: $section, style: .raised,
+      SegmentSwitch(options: Pane.allCases.map { ($0, Text($0.title)) }, selection: $section,
         identifier: AccessibilityID.activitySection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(L10n.Activity.show))
@@ -418,7 +418,7 @@ private struct DayFigures: Equatable {
   /// Today, live from the status.
   init(_ status: StatusV1) {
     let stats = Board.dayStats(status)
-    result = stats.resultGrossUsd
+    result = stats.resultUsd
     counts = L10n.Activity.counts(stats.trades, stats.wins, stats.losses, status.positions.count)
     tally = Tally(closed: stats.trades, wins: stats.wins, losses: stats.losses, open: status.positions.count)
     curve = Self.curve(status.tradesToday.map { ($0.closedAt.date, $0.resultGrossUsd.value) })
@@ -933,7 +933,7 @@ private struct NotTaken: View {
       ReadFailureNote(L10n.Activity.notTakenFailed, detail: failure)
         .frame(maxWidth: .infinity, alignment: .leading)
     } else {
-      ProgressView().frame(maxWidth: .infinity).padding(.top, Tokens.Space.xl)
+      TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity).padding(.top, Tokens.Space.xl)
     }
   }
 }
