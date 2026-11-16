@@ -1,0 +1,21 @@
+name: tmp-record-demo
+on:
+  pull_request:
+    branches: [demo-day-in-app]
+permissions:
+  contents: read
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: tickr demo --record
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-day
+          path: apps/shared/Sources/TickrKit/Resources/DemoDay.jsonl.xz
