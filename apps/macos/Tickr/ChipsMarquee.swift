@@ -253,10 +253,11 @@ final class ChipsMarqueeView: NSView {
   private var page: (Range<Int>) -> AnyView = { _ in AnyView(EmptyView()) }
   /// What the pages draw now (`ChipsMarqueeShows`).
   private var shows: AnyHashable?
-  private var count = 0
+  /// Number of distinct chips.
+  private var chipCount = 0
   private var leastChipWidth: CGFloat = 0
   private var pages = MarqueePages(stripWidth: 0, leastChipWidth: 0)
-  /// Slot of the lead page's first chip, below `count`.
+  /// Slot of the lead page's first chip, below `chipCount`.
   private var first = 0
   private var speed = 0.0
   private var held = false
@@ -294,16 +295,16 @@ final class ChipsMarqueeView: NSView {
 
   /// The slots drawn and how far the lead page is shifted to the left, in points.
   var shown: (slots: Range<Int>, shift: CGFloat)? {
-    count > 0 ? (first..<(first + pages.size * Self.pagesDrawn), current) : nil
+    chipCount > 0 ? (first..<(first + pages.size * Self.pagesDrawn), current) : nil
   }
 
   func show(
     _ page: @escaping (Range<Int>) -> AnyView, shows: AnyHashable, count: Int, leastChipWidth: CGFloat, speed: Double
   ) {
     self.page = page
-    self.count = count
+    chipCount = count
     self.leastChipWidth = leastChipWidth
-    first = count > 0 ? first % count : 0
+    first = chipCount > 0 ? first % chipCount : 0
     let restart = speed != self.speed
     self.speed = speed
     if shows != self.shows {
@@ -349,12 +350,12 @@ final class ChipsMarqueeView: NSView {
   /// the next page becomes the lead and the old lead is drawn again as the page after it.
   private func turnOrScroll(from shift: CGFloat) {
     let width = pageWidth
-    guard width > 0, shift >= width, count > 0 else {
+    guard width > 0, shift >= width, chipCount > 0 else {
       scroll(from: shift)
       return
     }
     swap(&lead, &next)
-    first = (first + pages.size) % count
+    first = (first + pages.size) % chipCount
     next.rootView = page(pages.slots(from: first + pages.size))
     place()
     scroll(from: shift - width)
