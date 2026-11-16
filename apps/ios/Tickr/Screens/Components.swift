@@ -315,8 +315,6 @@ struct HeaderIcon: View {
 
   /// Diameter of the glass circle at the default text size, in points (the boards' `.gbtn`).
   static let glassSide: CGFloat = 40
-  /// How far a header control shrinks while pressed.
-  static let pressScale: CGFloat = 0.95
 
   /// The glyph and the glass grow with the text, as the system's own bar buttons do.
   @ScaledMetric(relativeTo: .title3) private var side = Tokens.Size.headerGlyph
@@ -383,12 +381,6 @@ extension Screen where Leading == EmptyView, Actions == EmptyView {
   }
 }
 
-/// Layout constants of `SegmentChips` (a generic type cannot keep its own).
-enum SegmentLayout {
-  /// Largest text size of the segments' titles.
-  static let largestText = DynamicTypeSize.xxxLarge
-}
-
 /// A tab screen's title row as on the design: the title in `Typography.title`, the screen's
 /// actions as plain icons at the end of the same row. At large text sizes the actions take the line
 /// under the title, which shrinks to fit its one line.
@@ -425,11 +417,12 @@ struct TitleRow<Leading: View, Actions: View>: View {
     .padding(.top, Tokens.Space.s)
   }
 
-  /// The actions' touch targets (`HeaderIcon`) carry their own room, so they sit close.
+  /// The actions' touch targets (`HeaderIcon`) carry their own room, so they sit close; a glyph
+  /// without its own colour takes `infoText`, the apps' link colour.
   private var actionRow: some View {
     HStack(spacing: Tokens.Space.xs) { actions }
-      .buttonStyle(.borderless)
-      .tint(Palette.infoText)
+      .buttonStyle(.glyph)
+      .foregroundStyle(Palette.infoText)
   }
 }
 
@@ -543,8 +536,6 @@ struct TickrTabBar: View {
         DesignGlyphView(tab.glyph, side: Tokens.Size.tabGlyph)
         Text(tab.title)
           .font(Tokens.Typography.tabLabel)
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
       }
       .foregroundStyle(selected ? Palette.infoText : Palette.textSecondary)
       .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
@@ -563,82 +554,6 @@ struct TickrTabBar: View {
     }
     .accessibilityAddTraits(selected ? [.isSelected] : [])
     .accessibilityIdentifier(tab.identifier)
-  }
-}
-
-/// One of a few choices side by side as the design draws them, as equal segments on a card:
-/// `tinted` washes the chosen one in `info` with its text in `infoText` (the chart's range),
-/// `raised` sets it on a sunken tile with a hairline (Activity's panes), `filled` draws it solid in
-/// `info` (the Lab's replay span).
-struct SegmentChips<Value: Hashable>: View {
-  enum Style { case tinted, raised, filled }
-
-  let options: [(value: Value, title: Text)]
-  @Binding var selection: Value
-  var style = Style.tinted
-  /// Accessibility identifier of each segment (UI tests find the panes by it).
-  var identifier: String?
-
-  var body: some View {
-    HStack(spacing: Tokens.Space.xs) {
-      ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-        let chosen = option.value == selection
-        Button {
-          selection = option.value
-        } label: {
-          option.title
-            .font(font)
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.standard)
-            .foregroundStyle(chosen ? chosenText : Palette.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: Tokens.Size.iconButton)
-            .padding(.horizontal, Tokens.Space.xs)
-            .background {
-              if chosen {
-                let shape = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
-                shape.fill(chosenFill)
-                  .overlay { if style == .raised { shape.strokeBorder(Palette.separator) } }
-              }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(chosen ? [.isSelected] : [])
-        .accessibilityIdentifier(identifier ?? "")
-      }
-    }
-    .padding(Tokens.Space.xs)
-    .background(Palette.surface, in: RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous)
-      .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
-    .animation(Tokens.Motion.quick, value: selection)
-    // Equal segments in one row: past this size a title would be cut ("Де…"), as a system
-    // segmented control's titles stop growing too.
-    .dynamicTypeSize(...SegmentLayout.largestText)
-  }
-
-  private var font: Font {
-    switch style {
-    case .tinted: return Tokens.Typography.captionMono.bold()
-    case .raised: return .footnote.weight(.semibold)
-    case .filled: return Tokens.Typography.buttonCompact
-    }
-  }
-
-  private var chosenText: Color {
-    switch style {
-    case .tinted: return Palette.infoText
-    case .raised: return Palette.textPrimary
-    case .filled: return Palette.onAccent
-    }
-  }
-
-  private var chosenFill: Color {
-    switch style {
-    case .tinted: return Palette.info.opacity(Tokens.Opacity.wash)
-    case .raised: return Palette.surfaceSunken
-    case .filled: return Palette.info
-    }
   }
 }
 
@@ -694,13 +609,9 @@ struct StatTile: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       CardLabel(label)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.slight)
       Text(verbatim: value)
         .font(.subheadline.monospaced().bold())
         .foregroundStyle(color)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
         .contentTransition(.numericText())
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

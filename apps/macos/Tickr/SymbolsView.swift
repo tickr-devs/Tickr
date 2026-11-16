@@ -114,28 +114,18 @@ struct SymbolsView: View {
   private var controls: some View {
     ChipFlow(spacing: Tokens.Space.m) {
       if case .stage = tab {
-        Picker(selection: $filter) {
-          ForEach(SymbolsFilter.allCases) { Text($0.title).tag($0) }
-        } label: {
-          Text(L10n.Symbols.show)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
+        SegmentSwitch(options: SymbolsFilter.allCases.map { ($0, Text($0.title)) }, selection: $filter)
+          .fixedSize()
+          .accessibilityLabel(Text(L10n.Symbols.show))
         HStack(spacing: Tokens.Space.s) {
           Text(L10n.Symbols.sort)
             .textCase(.uppercase)
             .font(Tokens.Typography.label)
             .tracking(Tokens.Typography.labelTracking)
             .foregroundStyle(Palette.textQuaternary)
-          Picker(selection: $sort) {
-            ForEach(SymbolsSort.allCases) { Text($0.title).tag($0) }
-          } label: {
-            Text(L10n.Symbols.sort)
-          }
-          .pickerStyle(.segmented)
-          .labelsHidden()
-          .fixedSize()
+          SegmentSwitch(options: SymbolsSort.allCases.map { ($0, Text($0.title)) }, selection: $sort)
+            .fixedSize()
+            .accessibilityLabel(Text(L10n.Symbols.sort))
         }
       } else {
         Text(verbatim: moverRules)
@@ -285,8 +275,9 @@ private struct SymbolColumns: View {
         .font(Tokens.Typography.chip)
         .foregroundStyle(Palette.textPrimary)
         .frame(width: Self.symbolWidth, alignment: .leading)
-      SourceChips(row: row).frame(maxWidth: .infinity, alignment: .leading)
-      StageTrack(row: row).frame(width: Self.trackWidth, alignment: .leading)
+      SourceChips(row.sourceChips).frame(maxWidth: .infinity, alignment: .leading)
+      StageTrack(colors: row.trackColors, title: row.furthest.title)
+        .frame(width: Self.trackWidth, alignment: .leading)
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
         if row.verdict == .watch { VerdictTag(verdict: .watch) }
         Text(verbatim: outcome.text)
@@ -345,12 +336,16 @@ private struct MoverColumns: View {
       MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
         .frame(width: Self.dollarsWidth, alignment: .leading)
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
-        if let row { SourceChips(row: row) }
+        if let row { SourceChips(row.sourceChips) }
         if mover.watching { VerdictTag(verdict: .watch) }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       Group {
-        if let row { StageTrack(row: row) } else { Text(verbatim: Format.missing) }
+        if let row {
+          StageTrack(colors: row.trackColors, title: row.furthest.title)
+        } else {
+          Text(verbatim: Format.missing)
+        }
       }
       .frame(width: Self.trackWidth, alignment: .leading)
       Text(verbatim: Format.marketTime(mover.at.date))
@@ -362,19 +357,16 @@ private struct MoverColumns: View {
   }
 }
 
-/// One figure of a fast mover: bright when its signal fired, quiet when it did not.
-struct MoverFigure: View {
-  let text: String
-  let fired: Bool
-  var color: Color = Palette.textPrimary
+/// The signals named in `FastMoverV1.fired` (protocol constants of the API).
+enum FastMoverSignal: String {
+  case volume = "volume_ratio"
+  case move = "move_atr"
+  case dollars = "dollar_volume_ratio"
+}
 
-  var body: some View {
-    Text(verbatim: text)
-      .font(Tokens.Typography.captionMono)
-      .fontWeight(fired ? .bold : .regular)
-      .foregroundStyle(fired ? color : Palette.textQuaternary)
-      .fixedSize(horizontal: false, vertical: true)
-  }
+extension FastMoverV1 {
+  /// Whether `signal` reached its threshold on the mover's bar.
+  func fired(_ signal: FastMoverSignal) -> Bool { fired.contains(signal.rawValue) }
 }
 
 /// A column's title above the rows.
@@ -390,63 +382,6 @@ private struct ColumnTitle: View {
       .tracking(Tokens.Typography.labelTracking)
       .foregroundStyle(Palette.textQuaternary)
       .fixedSize(horizontal: false, vertical: true)
-  }
-}
-
-/// A symbol's screeners as small chips: "Gainers #3 +18.2%".
-struct SourceChips: View {
-  let row: SymbolRowV1
-
-  var body: some View {
-    ChipFlow(spacing: Tokens.Space.xs) {
-      ForEach(Array(row.sources.enumerated()), id: \.offset) { index, source in
-        HStack(spacing: Tokens.Space.xs) {
-          Text(verbatim: SymbolsBoard.source(source))
-          // The change belongs to the symbol, so it shows once, on the first chip.
-          if index == 0, let change = row.changePct {
-            Text(verbatim: SymbolsBoard.change(change))
-              .foregroundStyle(change.isNegative ? Palette.lossText : Palette.profitText)
-          }
-        }
-        .font(Tokens.Typography.annotationBold)
-        .foregroundStyle(Palette.textSecondary)
-        .padding(.horizontal, Tokens.Space.xs)
-        .padding(.vertical, Tokens.Space.xxs)
-        .background(Palette.chipFill, in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
-        .overlay {
-          RoundedRectangle(cornerRadius: Tokens.Radius.small).strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin)
-        }
-      }
-    }
-  }
-}
-
-/// How far a symbol got: one dot per stage, lit in each stage's colour up to the furthest, the one
-/// it was dropped at in red; the furthest stage's name beside the dots.
-struct StageTrack: View {
-  let row: SymbolRowV1
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-      HStack(spacing: Tokens.Space.xxs) {
-        ForEach(SymbolStage.allCases, id: \.self) { stage in
-          Circle()
-            .fill(color(stage))
-            .frame(width: Tokens.Size.flowMark, height: Tokens.Size.flowMark)
-        }
-      }
-      Text(row.furthest.title)
-        .font(Tokens.Typography.annotation)
-        .foregroundStyle(Palette.textTertiary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(Text(row.furthest.title))
-  }
-
-  private func color(_ stage: SymbolStage) -> Color {
-    if stage == row.stage, row.state == .dropped { return Palette.loss }
-    return stage.order <= row.furthest.order ? stage.color : Palette.separatorStrong
   }
 }
 
@@ -476,7 +411,7 @@ private struct SymbolDetail: View {
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(outcome.tone.color)
             .fixedSize(horizontal: false, vertical: true)
-          SourceChips(row: row)
+          SourceChips(row.sourceChips)
         }
         if let mover {
           Text(L10n.Symbols.moverLine(Format.marketTime(mover.at.date), SymbolsBoard.volume(mover),
@@ -571,6 +506,25 @@ private struct SymbolDetail: View {
 }
 
 // MARK: - colours and glyphs
+
+extension SymbolRowV1 {
+  /// The symbol's screeners as chips; the change shows once, on the first.
+  var sourceChips: [SourceChips.Item] {
+    sources.enumerated().map { index, source in
+      let change = index == 0 ? changePct : nil
+      return SourceChips.Item(text: SymbolsBoard.source(source), change: change.map(SymbolsBoard.change),
+        changeColor: change?.isNegative == true ? Palette.lossText : Palette.profitText)
+    }
+  }
+
+  /// One colour per stage: the stage's own up to the furthest, red where it was dropped.
+  var trackColors: [Color] {
+    SymbolStage.allCases.map { stage in
+      if stage == self.stage, state == .dropped { return Palette.loss }
+      return stage.order <= furthest.order ? stage.color : Palette.separatorStrong
+    }
+  }
+}
 
 extension SymbolStage {
   /// The stage's colour, as the funnel draws it.

@@ -142,8 +142,8 @@ struct LabReplayCard: View {
       }
       // Segments while both labels fit; at large text sizes a menu, which wraps nothing away.
       ViewThatFits(in: .horizontal) {
-        SegmentChips(options: [(false, Text(L10n.Lab.replayLastSessions(replay?.sessions ?? .zero))),
-          (true, Text(L10n.Lab.replayOneDay))], selection: $oneDay, style: .filled)
+        SegmentSwitch(options: [(false, Text(L10n.Lab.replayLastSessions(replay?.sessions ?? .zero))),
+          (true, Text(L10n.Lab.replayOneDay))], selection: $oneDay)
           .fixedSize(horizontal: false, vertical: true)
         daysPicker.pickerStyle(.menu)
       }
@@ -178,7 +178,6 @@ struct LabReplayCard: View {
   private func menuLabel(_ title: String, tone: Tone) -> some View {
     HStack(spacing: Tokens.Space.xs) {
       Text(verbatim: title)
-        .lineLimit(1)
       Image(systemName: Self.menuSymbol)
         .imageScale(.small)
     }
@@ -188,6 +187,8 @@ struct LabReplayCard: View {
     .padding(.vertical, Tokens.Space.s)
     .background(tone.fill.opacity(Tokens.Opacity.wash), in: Capsule())
     .overlay(Capsule().strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
+    // A chip that opens a menu answers taps over the whole touch target, as every chip does.
+    .touchTarget()
   }
 
   /// "price-action-v2 v2 · observer": a version as the pickers name it.

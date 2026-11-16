@@ -88,38 +88,40 @@ struct MonthCalendar: View {
     return HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       if let first = shown.firstDay {
         CardLabel(L10n.Trades.monthLabel(first.formatted(.dateTime.month(.wide).year())))
-          .lineLimit(1)
           .contentTransition(.opacity)
       }
       // Only with another month to step to; the arrow that leads nowhere is dimmed (its own
       // colour kept it looking active).
       if previous != nil || next != nil {
         HStack(spacing: Tokens.Space.xxs) {
-          Button { month = previous } label: { Image(systemName: "chevron.backward").dimmedWhenDisabled() }
+          Button { month = previous } label: { arrow(Symbols.previous) }
             .disabled(previous == nil)
             .help(Text(L10n.Trades.previousMonth))
             .accessibilityLabel(Text(L10n.Trades.previousMonth))
-          Button { month = next } label: { Image(systemName: "chevron.forward").dimmedWhenDisabled() }
+          Button { month = next } label: { arrow(Symbols.next) }
             .disabled(next == nil)
             .help(Text(L10n.Trades.nextMonth))
             .accessibilityLabel(Text(L10n.Trades.nextMonth))
         }
         .font(Tokens.Typography.chevron)
-        .foregroundStyle(Palette.textQuaternary)
-        .buttonStyle(.borderless)
+        .buttonStyle(.glyph)
       }
       Spacer(minLength: Tokens.Space.s)
       if let total {
         Text(L10n.Trades.monthTotal(Money.signed(total)))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.result(total))
-          .lineLimit(1)
           .fixedSize()
       }
     }
   }
 
   /// Sum of the month's recorded day results; nil when the month has none.
+  /// A month arrow: the chevron in `textQuaternary`, dimmed while it leads nowhere.
+  private func arrow(_ symbol: String) -> some View {
+    Image(systemName: symbol).foregroundStyle(Palette.textQuaternary).dimmedWhenDisabled()
+  }
+
   private func monthTotal(_ shown: DayCalendar.Month) -> Decimal? {
     let results = model.days.filter { DayCalendar.Month($0.day) == shown }.map(\.resultGrossUsd.value)
     return results.isEmpty ? nil : results.reduce(0, +)
@@ -159,7 +161,7 @@ struct CleanDot: View {
 /// One weekday tile: its number and clean dot on top, then, when the bot recorded it, its gross
 /// result to the cent and its trade count.
 private struct CalendarDay: View {
-  /// Height of a day's tile, in points.
+  /// Least height of a day's tile, in points: a tile grows when its text needs more.
   static let height: CGFloat = 62
 
   let cell: DayCalendar.Cell
@@ -200,10 +202,8 @@ private struct CalendarDay: View {
             .foregroundStyle(Palette.textQuaternary)
         }
       }
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.tight)
       .padding(Tokens.Space.xs + Tokens.Space.xxs)
-      .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height, alignment: .topLeading)
+      .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .topLeading)
       .background {
         if let result {
           shape.fill(Palette.result(result).opacity(Tokens.Opacity.wash))

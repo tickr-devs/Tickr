@@ -112,10 +112,10 @@ public final class AppModel {
   /// The bot's own API address (Settings › General). The demo day never replaces it: switched
   /// off, the app is back on this very address.
   public private(set) var address: URL
-  /// The "Demo day" switch (Settings › General): the app shows the demo day the bot's API
-  /// forwards to under /demo (TickrKit `DemoDay`), and no other day.
+  /// The "Demo day" switch (Settings › General): the app shows the demo day it carries (TickrKit
+  /// `DemoDay`, played from its recording, never the network), and no other day.
   public private(set) var demoDay: Bool
-  /// The address the app talks to: `address`, or the demo day behind it.
+  /// The address the app talks to: `address`, or the demo day's (`DemoDay.address`).
   public var baseURL: URL { DemoDay.address(address, demo: demoDay) }
   @ObservationIgnored private var client: APIClient
   /// The current moment (Container.now; tests pin it).
@@ -338,8 +338,15 @@ public final class AppModel {
   }
 
   public var shownResult: Decimal {
-    if isLive { return status?.resultTodayGrossUsd.value ?? 0 }
+    if isLive { return status?.resultTodayUsd.value ?? 0 }
     return dayDocument?.resultGrossUsd.value ?? 0
+  }
+
+  /// The shown result does not count the broker's fees yet: today before the bot has read every
+  /// fill's fees, or a recorded day (its document is gross).
+  public var shownResultBeforeFees: Bool {
+    if isLive { return status?.resultBeforeFees ?? false }
+    return !(dayDocument?.trades.isEmpty ?? true)
   }
 
   /// Running sum of trade results through the day, starting at 0, for the sparkline.

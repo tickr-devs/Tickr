@@ -80,4 +80,16 @@ import Testing
     #expect(decoded.account.fills.isEmpty)
     #expect(decoded.account.positions.first?.lastPrice == nil)
   }
+
+  /// Today's result is shown after the broker's fees once the bot reports them.
+  @Test func statusResultAfterFees() throws {
+    let response = try Wire.decoder().decode(StatusResponseV1.self, from: fixture("status-response-v1.json"))
+    let status = try #require(response.status)
+    #expect(status.feesTodayUsd?.text == "0.07")
+    #expect(status.resultTodayNetUsd?.text == "-1.67")
+    #expect(status.resultTodayUsd.text == "-1.64")  // the broker's own result wins once read
+    #expect(status.resultTodayGrossUsd.text == "-1.60")
+    #expect(!status.resultBeforeFees)
+    #expect(!Board.dayStats(status).beforeFees)
+  }
 }

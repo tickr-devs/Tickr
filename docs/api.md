@@ -122,7 +122,6 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | POST | `/commands/stop-bot` | Body `{}`. Graceful stop that sticks. `202` `command-accepted-v1`. |
 | POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. `202` `command-accepted-v1`. |
 | POST | `/commands/start-bot` | Body `{}`. Starts the bot job through launchd (not a bot command, see "Start-bot"). `202` `bot-start-v1`; `409 conflict` while a fresh status says the bot is starting, running or stopping, or a live process holds the bot's lock; `503 unavailable` when no start command is configured, the stop marker cannot be removed, or the command fails. |
-| GET, POST | `/demo/<route>` | The demo day (docs/demo.md): the request goes to the demo's own API on `[api] demo_port` of this loopback host, path after `/demo`, query, body, `Content-Type` and `Idempotency-Key` only (with a `Content-Length` of the body actually sent; a GET forwards no body headers), and its answer comes back as it came (an HTML page with this API's own page headers: CSP, `X-Frame-Options`, `Referrer-Policy`). This API's checks run first (Host guard; the paired token on the remote port), and the token, cookies and every other header stay here. Nothing under `/demo/` is handled by this API's own routes: a command there reaches the demo's inbox, never the bot's. A path with a `.` or `..` segment or an encoded separator, decoded as often as it decodes (`%2e%2e`, `%252e`, `%2f`, `%5c`), is refused with `400 bad_request`, never forwarded or normalised. `404` when `demo_port` is 0, `503 unavailable` when the demo is not answering within `[api] demo_timeout_seconds`. |
 
 Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1}`:
 `forbidden_host` / `forbidden_origin` 403, `not_found` 404, `method_not_allowed` 405,
@@ -231,6 +230,18 @@ unknown (a trade closed today has fills without a known price), never zero:
 `[risk] max_daily_loss_usd` - realized - reserved (may be negative). Entries are refused while the
 room is below `settings.risk.min_daily_room_usd`. `positions` lists every open position the bot
 tracks; `position` is its first element or `null`, kept for older clients.
+
+`result_today_gross_usd` sums today's closed trades before fees. `fees_today_usd` is the broker's
+actual fees on the fills of those trades, from the display reads' list of today's fills (the
+account file's `fills`), and `result_today_net_usd` = gross - fees, the figure the broker's day
+P&L shows. Both are `null` until every filled order of today's closed trades is in that list
+with its filled quantity and readable fees. `result_today_broker_usd` is the broker's own
+realized result for today: its day P&L less the unrealized part, from the latest balance read,
+`null` until a balance read made after the last of today's trades closed. It is exact where
+the order rows are not (Webull returns sub-dollar fill prices rounded to cents, 2026-11-16),
+and covers the whole account (manual trades too). The apps show it as today's result when
+present, else the net, else the gross. Display only: the daily loss rule above counts neither
+fees nor this figure.
 
 Each `trades_today` entry also has `planned_loss_usd` (1 R as recorded when the trade was opened)
 and `stop_confirmed_after_seconds` (see "Per-trade metrics" below). MAE and MFE are only in
@@ -975,9 +986,9 @@ is an unreadable database.
 ### GET /watching (read-only)
 
 `/watching?date=` (date optional, default today in New York) is "Watching closely": from the
-decision file, the latest record per symbol of the active strategy (role `active`) that day,
-left out when its verdict is `ENTER`, `HOLD` or `EXIT` (entering, or in a position), so a past
-day shows the state at the close. Each row: `symbol`, `at` (bar start), `strategy`, `verdict`
+decision file, the symbols whose latest record of the active strategy (role `active`) that day
+is `WATCH`: the strategy is waiting for its setup. A symbol whose latest verdict is `IGNORE`,
+`ENTER`, `HOLD` or `EXIT` is left out. A past day shows the state at the close. Each row: `symbol`, `at` (bar start), `strategy`, `verdict`
 (explain-v1 enum), `decisive_check` (explain-v1 check shape: the first failed check in the
 order evaluated, the same as explain-v1 `first_failed_check`; `null` when every recorded check
 passed, as for a `WATCH` made without a quote), `closeness`, `closeness_cause`,

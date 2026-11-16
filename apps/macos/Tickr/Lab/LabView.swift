@@ -211,8 +211,6 @@ private struct VersionsCard: View {
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.textQuaternary)
       }
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
       Spacer(minLength: Tokens.Space.s)
       tag
     }
@@ -304,13 +302,9 @@ private struct CurvesCard: View {
         CurveSwatch(color: color, curve: curve)
         name
           .foregroundStyle(Palette.textPrimary)
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.most)
         Spacer(minLength: Tokens.Space.xs)
         figures
           .foregroundStyle(Palette.textQuaternary)
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
           .frame(width: Self.figuresWidth, alignment: .leading)
         Group {
           if let result {
@@ -461,8 +455,6 @@ private struct RefusalsCard: View {
       title(count.cause)
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(1)
-        .truncationMode(.tail)
         .frame(width: Self.labelWidth, alignment: .leading)
       Capsule()
         .fill(Palette.surfaceSunken)
@@ -504,17 +496,13 @@ private struct PlannedLine: View {
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
-      PlannedTag(.backlog)
+      Badge.backlog
       Text(text)
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(Self.lines)
       Spacer(minLength: 0)
     }
   }
-
-  /// Lines the planned feature may take before it is cut.
-  static let lines = 2
 }
 
 /// One observer: name and version, how many decisions it made, the latest one and its result.
@@ -537,7 +525,7 @@ struct ObserverRow: View {
           PulseDot(Palette.highlight, size: Tokens.Size.dotSmall, pulsing: live, event: observer.decisions.count)
         }
         Text(verbatim: observer.name).font(Tokens.Typography.calloutMono)
-        Badge(verbatim: observer.version, color: Palette.accentText)
+        Badge(verbatim: observer.version, color: Palette.accentText, keepingCase: true)
         Spacer()
         if let result = observer.resultGrossUSD {
           MoneyText(value: result.value, usd: true, font: Tokens.Typography.calloutMono)
@@ -821,7 +809,7 @@ private struct ReplayCard: View {
   private func chip(_ title: String, color: Color, text: Color) -> some View {
     HStack(spacing: Tokens.Space.xs) {
       Circle().fill(color).frame(width: Tokens.Size.dot, height: Tokens.Size.dot)
-      Text(verbatim: title).lineLimit(1)
+      Text(verbatim: title)
       Image(systemName: Self.menuSymbol).font(Tokens.Typography.annotation)
     }
     .font(Tokens.Typography.annotationBold)
@@ -909,8 +897,6 @@ private struct ReplayCard: View {
           }
         }
         .font(Tokens.Typography.annotation)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
         compareRow(L10n.Lab.replayTrades, Decimal(summary.trades), other.map { Decimal($0.trades) },
           compared: other != nil, colored: false,
           format: { Money.plain($0, fractionDigits: .zero) },
@@ -958,8 +944,6 @@ private struct ReplayCard: View {
       Text(title)
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.most)
         .gridColumnAlignment(.leading)
       cell(first, format, colored: colored)
       if compared {
@@ -979,8 +963,6 @@ private struct ReplayCard: View {
   private func cell(_ value: Decimal?, _ format: (Decimal) -> String, colored: Bool) -> some View {
     Text(verbatim: value.map(format) ?? Format.missing)
       .foregroundStyle(value == nil ? Palette.textQuaternary : Palette.textPrimary)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
   }
 
   /// "mean R · 95%: −0.21 … +0.57", or nil without an interval.
@@ -1109,12 +1091,10 @@ private struct ExplainCard: View {
       Text(verbatim: ApiText.rule(check.rule))
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(1)
       Spacer(minLength: Tokens.Space.s)
       Text(verbatim: check.valueText)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
-        .lineLimit(1)
     }
     .help(check.note.isEmpty ? Text(verbatim: ApiText.rule(check.rule)) : Text(verbatim: check.note))
     .accessibilityElement(children: .combine)

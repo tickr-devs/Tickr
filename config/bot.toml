@@ -182,10 +182,8 @@ remote_hosts_file = "remote-hosts.txt"
 remote_port = 8767
 # File holding the SHA-256 (hex) of the paired phone's bearer token, relative to data_dir; written by `python -m tickr.api pair`, never the token itself; read by the api server.
 remote_token_hash_file = "remote-token.sha256"
-# Local port of the demo day's API (`tickr demo`, docs/demo.md): it serves there, and this API forwards GET and POST under /demo/ to it on the same loopback host, so the apps reach the demo day through their usual address (the phone through its paired connection; its token stays here and is never forwarded); 0 = no forwarding (the demo's own copy of this file); read by the api server and `tickr demo`.
+# Local port `tickr demo` serves its made-up day's API on (docs/demo.md), for looking at it from a browser, `curl`, the layout sweep and the macOS screen tour; the apps' "Demo day" switch never uses it (the apps carry the demo day as a recording); 0 = no demo port (the demo's own copy of this file); read by the api server's config check and `tickr demo`.
 demo_port = 8776
-# Seconds this API waits for the demo day's API to connect and answer one forwarded request before answering 503; read by the api server.
-demo_timeout_seconds = 10
 # Random bytes in a newly made bearer token and in a one-time pairing code (URL-safe text is about 4/3 as long), at least 16 (128 bits); read by `python -m tickr.api pair` and the api server (POST /pair).
 remote_token_bytes = 32
 # File where `pair` leaves the pairing link (it holds the one-time pairing code, never the token) for the owner to move to the phone, relative to data_dir; written 0600, never printed, deleted by the api server when the phone redeems the code or the code has expired; read by `pair` and the api server.
@@ -485,13 +483,26 @@ watchdog_restart_timeout_seconds = 10
 # Record of the watchdog's one restart a day (New York date), relative to data_dir; written before the command runs and
 # never removed, so a day never gets a second attempt; read by runtime.watchdog.
 watchdog_restart_file = "watchdog-restart.json"
-# Seconds one loop pass may spend on market upkeep, discovery and the strategy before an
-# evaluation-slow journal row (the next Detail read waits for it; keep it near
-# [orders] detail_poll_seconds); read by runtime.service.
+# Seconds one loop pass may spend on market upkeep and the strategy before an evaluation-slow journal row (the next
+# Detail read waits for it; keep it near [orders] detail_poll_seconds). Discovery runs on its own thread and is not part
+# of it: its duration is the `seconds` of each discovery journal row; read by runtime.service.
 evaluation_budget_seconds = 3
+# At the end of a run, seconds to wait for a discovery pass in flight, which stops before its next request (one market
+# data request takes about 0.3 s); after that it is abandoned (a daemon thread) and the capture files close; read by
+# cli (run) through runtime.market.
+discovery_stop_seconds = 2
 # Stop marker the bot writes when it obeys a stop-bot command, relative to data_dir; while it exists preflight fails and
 # `tickr run` refuses, until `tickr clear-stop`; read by runtime.stopmarker (bot, preflight, cli).
 stop_marker_file = "stopped-by-operator.json"
+# Seconds one outside step of `python -m tickr.runtime release` may take (git fetch and worktree, `uv sync`, the new
+# release's preflight, which may wait [environments.*] token_check_duration_seconds for the token); must be above that
+# wait; read by runtime.release.
+release_step_timeout_seconds = 900
+# Seconds `release` waits for a stopped job (bot, watchdog, api) to end before it reports the restart failed; must be
+# above bot_exit_timeout_seconds, when launchd kills the bot job; read by runtime.release.
+release_stop_wait_seconds = 150
+# Seconds between `release` checks that a stopped job has ended; read by runtime.release.
+release_poll_seconds = 1
 
 [alerts]
 # Same alert (kind + text) repeated within this many seconds is not shown again (still returned for the journal); read by runtime.alerts.

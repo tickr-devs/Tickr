@@ -24,7 +24,7 @@ struct StageDetailView: View {
   }
 
   var body: some View {
-    // Text at reading size, never the card's shrunk or redacted styles; content too tall for the
+    // Text at reading size, never the card's redacted style; content too tall for the
     // popover (a long day, large Dynamic Type) scrolls.
     ViewThatFits(in: .vertical) {
       content
@@ -32,8 +32,6 @@ struct StageDetailView: View {
     }
     // Its content's width up to the token, narrower where the screen is: it wraps, never clips.
     .frame(idealWidth: Tokens.Size.popover, maxWidth: Tokens.Size.popover)
-    .lineLimit(nil)
-    .minimumScaleFactor(1)
     .unredacted()
     .task {
       guard stage == .strategy || stage == .risk, let url = model.connection.url else { return }
@@ -129,22 +127,5 @@ struct StageDetailView: View {
     .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium))
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
-  }
-}
-
-/// A live-flow stage while a finger is on it: the stage's colour as a wash behind it and the
-/// design's press scale, so a tap reads before its popover opens.
-struct StagePressStyle: ButtonStyle {
-  let color: Color
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .background {
-        RoundedRectangle(cornerRadius: Tokens.Radius.medium)
-          .fill(color.opacity(configuration.isPressed ? Tokens.Opacity.wash : 0))
-      }
-      .scaleEffect(configuration.isPressed && !reduceMotion ? Tokens.Motion.pressScale : 1)
-      .animation(reduceMotion ? nil : Tokens.Motion.quick, value: configuration.isPressed)
   }
 }

@@ -4431,13 +4431,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@\n\nSent to: the DEMO day, not the bot."
+            "value" : "%@\n\nDEMO day: nothing is sent, the app only plays its recording."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@\n\nКуда: ДЕМО-день, не бот."
+            "value" : "%@\n\nДЕМО-день: ничего не отправляется, приложение только проигрывает запись."
           }
         }
       }
@@ -5054,6 +5054,23 @@
         }
       }
     },
+    "home.beforeFees" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day result before broker fees"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Результат дня до комиссий брокера"
+          }
+        }
+      }
+    },
     "home.cleanDay" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5196,13 +5213,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Demo day: commands go to the demo, not the bot"
+            "value" : "Demo day: commands are not sent to the bot"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Демо-день: команды уходят в демо, не боту"
+            "value" : "Демо-день: команды не уходят боту"
           }
         }
       }
@@ -8140,6 +8157,23 @@
         }
       }
     },
+    "risk.feesToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker fees today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Комиссии брокера за день"
+          }
+        }
+      }
+    },
     "risk.fences" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9336,13 +9370,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows the made-up demo day from the Mac, and only that day, through the same connection; the address and pairing stay as they are."
+            "value" : "Shows the made-up demo day this app carries, and only that day; it needs neither the Mac nor the bot. The address and pairing stay as they are."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показывает придуманный демо-день с Mac, и только его, через то же подключение; адрес и связка остаются прежними."
+            "value" : "Показывает придуманный демо-день, который приложение носит с собой, и только его; не нужны ни Mac, ни бот. Адрес и связка остаются прежними."
           }
         }
       }
@@ -10333,6 +10367,23 @@
         }
       }
     },
+    "watching.closestOf" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "closest %1$lld of %2$lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ближайшие %1$lld из %2$lld"
+          }
+        }
+      }
+    },
     "watching.failed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10373,13 +10424,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The strategy is not watching any symbol closely."
+            "value" : "Nothing armed right now. A symbol shows here while the strategy waits for its setup."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стратегия сейчас ни за одним символом пристально не следит."
+            "value" : "Сейчас ничего не взведено. Символ появляется здесь, пока стратегия ждёт его сетап."
           }
         }
       }
@@ -10390,13 +10441,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show all %lld"
+            "value" : "Show all"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показать все %lld"
+            "value" : "Показать все"
           }
         }
       }

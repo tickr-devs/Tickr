@@ -22,9 +22,8 @@ struct SymbolsView: View {
 
   /// Accessibility id of the screen, for the UI tests.
   static let id = "symbols"
-  /// SF Symbol of the search field and the sort menu.
+  /// SF Symbol of the search field.
   static let searchSymbol = "magnifyingglass"
-  static let sortSymbol = "arrow.up.arrow.down"
 
   var body: some View {
     Screen(L10n.Symbols.title, back: L10n.App.home) {
@@ -104,29 +103,11 @@ struct SymbolsView: View {
   @ViewBuilder
   private var controls: some View {
     if case .stage = tab {
-      RowStack {
-        Picker(selection: $filter) {
-          ForEach(SymbolsFilter.allCases) { Text($0.title).tag($0) }
-        } label: {
-          Text(L10n.Symbols.show)
-        }
-        .pickerStyle(.segmented)
-        Menu {
-          Picker(selection: $sort) {
-            ForEach(SymbolsSort.allCases) { Text($0.title).tag($0) }
-          } label: {
-            Text(L10n.Symbols.sort)
-          }
-        } label: {
-          HStack(spacing: Tokens.Space.xxs) {
-            Image(systemName: Self.sortSymbol)
-            Text(sort.title)
-          }
-          .font(Tokens.Typography.callout.weight(.semibold))
-          .foregroundStyle(Palette.infoText)
-          .frame(minHeight: Tokens.Size.touchTarget)
-        }
-        .accessibilityLabel(Text(L10n.Symbols.sort))
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        SegmentSwitch(options: SymbolsFilter.allCases.map { ($0, Text($0.title)) }, selection: $filter)
+          .accessibilityLabel(Text(L10n.Symbols.show))
+        SegmentSwitch(options: SymbolsSort.allCases.map { ($0, Text($0.title)) }, selection: $sort)
+          .accessibilityLabel(Text(L10n.Symbols.sort))
       }
     } else {
       Text(verbatim: moverRules)
@@ -244,14 +225,14 @@ private struct SymbolRow: View {
         Text(verbatim: row.symbol)
           .font(Tokens.Typography.chip)
           .foregroundStyle(Palette.textPrimary)
-        if row.verdict == .watch { WatchPill() }
+        if row.verdict == .watch { Badge(Verdict.watch.title, color: Palette.infoText) }
         Spacer(minLength: 0)
         Text(verbatim: row.firstSeen.map { Format.time($0.date) } ?? Format.missing)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       }
-      SourceChips(row: row)
-      StageTrack(row: row)
+      SourceChips(row.sourceChips)
+      StageTrack(colors: row.trackColors, title: row.furthest.title)
       Text(verbatim: outcome.text)
         .font(Tokens.Typography.captionMono)
         .foregroundStyle(outcome.tone.color)
@@ -273,8 +254,8 @@ private struct MoverRow: View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       FastMoverLine(mover: mover)
       if let row {
-        SourceChips(row: row)
-        StageTrack(row: row)
+        SourceChips(row.sourceChips)
+        StageTrack(colors: row.trackColors, title: row.furthest.title)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -293,7 +274,7 @@ struct FastMoverLine: View {
         Text(verbatim: mover.symbol)
           .font(Tokens.Typography.chip)
           .foregroundStyle(Palette.textPrimary)
-        if mover.watching { WatchPill() }
+        if mover.watching { Badge(Verdict.watch.title, color: Palette.infoText) }
         Spacer(minLength: 0)
         Text(verbatim: Format.time(mover.at.date))
           .font(Tokens.Typography.annotation)
@@ -306,94 +287,6 @@ struct FastMoverLine: View {
         MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
       }
     }
-  }
-}
-
-/// One figure of a fast mover: bright when its signal fired, quiet when it did not.
-private struct MoverFigure: View {
-  let text: String
-  let fired: Bool
-  var color: Color = Palette.textPrimary
-
-  var body: some View {
-    Text(verbatim: text)
-      .font(Tokens.Typography.captionMono)
-      .fontWeight(fired ? .bold : .regular)
-      .foregroundStyle(fired ? color : Palette.textQuaternary)
-      .fixedSize(horizontal: false, vertical: true)
-  }
-}
-
-/// "WATCH": the strategy waits for this symbol's setup; small mono capitals in a blue outline.
-struct WatchPill: View {
-  var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.small, style: .continuous)
-    Text(Verdict.watch.title)
-      .textCase(.uppercase)
-      .font(Tokens.Typography.badge)
-      .padding(.horizontal, Tokens.Space.xs)
-      .padding(.vertical, Tokens.Space.xxs)
-      .foregroundStyle(Palette.infoText)
-      .overlay(shape.strokeBorder(Palette.infoText, lineWidth: Tokens.Stroke.thin))
-      .fixedSize()
-  }
-}
-
-/// A symbol's screeners as small chips: "Gainers #3 +18.2%".
-private struct SourceChips: View {
-  let row: SymbolRowV1
-
-  var body: some View {
-    ChipFlow(spacing: Tokens.Space.xs) {
-      ForEach(Array(row.sources.enumerated()), id: \.offset) { index, source in
-        HStack(spacing: Tokens.Space.xs) {
-          Text(verbatim: SymbolsBoard.source(source))
-          // The change belongs to the symbol, so it shows once, on the first chip.
-          if index == 0, let change = row.changePct {
-            Text(verbatim: SymbolsBoard.change(change))
-              .foregroundStyle(change.isNegative ? Palette.lossText : Palette.profitText)
-          }
-        }
-        .font(Tokens.Typography.annotationBold)
-        .foregroundStyle(Palette.textSecondary)
-        .padding(.horizontal, Tokens.Space.xs)
-        .padding(.vertical, Tokens.Space.xxs)
-        .background(Palette.chipFill, in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
-        .overlay {
-          RoundedRectangle(cornerRadius: Tokens.Radius.small)
-            .strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin)
-        }
-      }
-    }
-  }
-}
-
-/// How far a symbol got: one dot per stage, lit in each stage's colour up to the furthest, the one
-/// it was dropped at in red, and the furthest stage's name.
-private struct StageTrack: View {
-  let row: SymbolRowV1
-
-  var body: some View {
-    HStack(spacing: Tokens.Space.s) {
-      HStack(spacing: Tokens.Space.xxs) {
-        ForEach(SymbolStage.allCases, id: \.self) { stage in
-          Circle()
-            .fill(color(stage))
-            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
-        }
-      }
-      Text(row.furthest.title)
-        .font(Tokens.Typography.annotation)
-        .foregroundStyle(Palette.textTertiary)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(Text(row.furthest.title))
-  }
-
-  private func color(_ stage: SymbolStage) -> Color {
-    if stage == row.stage, row.state == .dropped { return Palette.loss }
-    return stage.order <= row.furthest.order ? stage.color : Palette.separatorStrong
   }
 }
 
@@ -423,7 +316,7 @@ private struct SymbolDetailSheet: View {
           Text(verbatim: symbol)
             .font(Tokens.Typography.heading)
             .foregroundStyle(Palette.textPrimary)
-          if row?.verdict == .watch || mover?.watching == true { WatchPill() }
+          if row?.verdict == .watch || mover?.watching == true { Badge(Verdict.watch.title, color: Palette.infoText) }
         }
         if let row {
           let outcome = SymbolsBoard.outcome(row)
@@ -431,7 +324,7 @@ private struct SymbolDetailSheet: View {
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(outcome.tone.color)
             .fixedSize(horizontal: false, vertical: true)
-          SourceChips(row: row)
+          SourceChips(row.sourceChips)
         }
         if let mover {
           Text(L10n.Symbols.moverLine(Format.time(mover.at.date), SymbolsBoard.volume(mover),
@@ -562,6 +455,25 @@ struct FastMoversCard: View {
 }
 
 // MARK: - colours and glyphs
+
+extension SymbolRowV1 {
+  /// The symbol's screeners as chips; the change shows once, on the first.
+  var sourceChips: [SourceChips.Item] {
+    sources.enumerated().map { index, source in
+      let change = index == 0 ? changePct : nil
+      return SourceChips.Item(text: SymbolsBoard.source(source), change: change.map(SymbolsBoard.change),
+        changeColor: change?.isNegative == true ? Palette.lossText : Palette.profitText)
+    }
+  }
+
+  /// One colour per stage: the stage's own up to the furthest, red where it was dropped.
+  var trackColors: [Color] {
+    SymbolStage.allCases.map { stage in
+      if stage == self.stage, state == .dropped { return Palette.loss }
+      return stage.order <= furthest.order ? stage.color : Palette.separatorStrong
+    }
+  }
+}
 
 extension SymbolStage {
   /// The stage's colour, as the funnel draws it.
