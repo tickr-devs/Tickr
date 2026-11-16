@@ -203,17 +203,6 @@ struct WatchingCard: View {
                 .rise(step: index)
             }
           }
-<<<<<<< HEAD
-          HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-            if WatchingList.hasMore(watching.rows) {
-              HeaderLink(L10n.Watching.showAll(watching.rows.count)) { openWatchingAll() }
-            }
-            Spacer(minLength: 0)
-            // How many of all the watched symbols the card shows.
-            if watching.total > rows.count {
-              Footnote(L10n.Watching.closestOf(rows.count, watching.total))
-            }
-=======
           // "Show all N · closest 3 of N ›": the card's footer link, last in the card, as on the
           // Controls board; without more rows, only how many of all the watched symbols it shows.
           let closest = watching.total > rows.count ? L10n.Watching.closestOf(rows.count, watching.total) : nil
@@ -221,7 +210,6 @@ struct WatchingCard: View {
             CardFooterLink(L10n.Watching.showAll, count: watching.rows.count, hint: closest) { openWatchingAll() }
           } else if let closest {
             Footnote(closest)
->>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
           }
         }
       } else if let error = model.watchingError {

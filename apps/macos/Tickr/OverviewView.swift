@@ -1484,11 +1484,7 @@ private struct AdvisorRow: View {
         words
         actions
       }
-<<<<<<< HEAD
-      HeaderLink(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, tone: .highlight, action: open)
-=======
       .frame(maxWidth: .infinity, alignment: .leading)
->>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
     }
     // The design's violet strip at the foot of the card; all of it opens the Lab.
     .padding(.horizontal, Tokens.Space.m)

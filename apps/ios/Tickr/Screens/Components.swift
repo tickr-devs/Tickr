@@ -315,11 +315,6 @@ struct HeaderIcon: View {
 
   /// Diameter of the glass circle at the default text size, in points (the boards' `.gbtn`).
   static let glassSide: CGFloat = 40
-<<<<<<< HEAD
-  /// How far a header control shrinks while pressed.
-  static let pressScale: CGFloat = 0.95
-=======
->>>>>>> origin/claude/project-thread-mu45jr-symbols-apps
 
   /// The glyph and the glass grow with the text, as the system's own bar buttons do.
   @ScaledMetric(relativeTo: .title3) private var side = Tokens.Size.headerGlyph
