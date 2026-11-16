@@ -529,3 +529,46 @@ def test_broker_flat_command_reports_a_failed_read(world, monkeypatch, capsys):
     assert main(["--config", str(world.config_path), release.BROKER_FLAT]) == 1
     row = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert row["error"] == "request budget exhausted"
+
+
+def test_a_release_takes_a_verified_backup_before_the_switch_and_keeps_only_the_latest(world):
+    """2026-11-16: the operator's backup ran through code older than the database and refused;
+    the release itself now backs up schema-agnostically, after the flat proof."""
+    import sqlite3
+
+    backups = world.data / world.cfg.run.backups_dir
+    backups.mkdir(exist_ok=True)
+    stale = backups / "pre-release-20261115T000000Z-aaaaaaaaaaaa.sqlite3"
+    stale.write_bytes(b"old")
+    daily = backups / "tickr-2026-11-16.sqlite3"
+    daily.write_bytes(b"daily")
+    release.release(world.context(), "origin/main")
+    (made,) = backups.glob("pre-release-*.sqlite3")
+    assert made.name.endswith(world.first[:12] + ".sqlite3")
+    check = sqlite3.connect(made)
+    assert check.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    check.close()
+    assert daily.exists() and not stale.exists()  # the daily backup is not this tool's
+    lines = "\n".join(world.lines)
+    assert lines.index("backup ") < lines.index("live -> ")
+
+
+def test_a_failed_backup_refuses_before_any_link_moves(world, monkeypatch):
+    def broken(*args, **kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    import sqlite3
+
+    real = sqlite3.connect
+
+    def connect(target, *args, **kwargs):
+        if str(target).startswith("file:"):
+            return real(target, *args, **kwargs)
+        broken()
+
+    monkeypatch.setattr(release.sqlite3, "connect", connect)
+    with pytest.raises(release.ReleaseRefused, match="pre-release backup failed"):
+        release.release(world.context(), "origin/main")
+    assert world.live() is None
+    backups = world.data / world.cfg.run.backups_dir
+    assert not list(backups.glob("*.sqlite3")) and not list(backups.glob(".tmp-*"))

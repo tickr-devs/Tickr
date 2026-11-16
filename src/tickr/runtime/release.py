@@ -46,6 +46,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -138,6 +139,7 @@ class Context:
     releases: Path
     data: Path  # THE data folder, resolved
     data_dir: Path  # [run] data_dir: the link's name inside a release
+    backups: Path  # <data>/<[run] backups_dir>: the verified pre-release backup goes here
     config_rel: Path  # the config inside a release, relative to its root
     account_file: Path
     env_file: Path
@@ -195,6 +197,7 @@ def context(cfg: config_module.Config, config_path: Path, releases: Path, env_fi
         raise ReleaseRefused(f"the data folder {data} and {releases} must not contain each other")
     config_rel = config_path.resolve().relative_to(cfg.root)
     return Context(repo=cfg.root, releases=releases, data=data, data_dir=data_dir,
+                   backups=data / cfg.run.backups_dir,
                    config_rel=config_rel, account_file=data / cfg.api.account_file,
                    env_file=env_file, runtime=runtime, uid=os.getuid(), run=run,
                    environ=environ, say=say,
@@ -514,8 +517,56 @@ def _prune(ctx: Context, keep: set[str]) -> None:
                 f"keep {folder}: git worktree remove failed: {_first(done.err)}")
 
 
+PRE_RELEASE_PREFIX = "pre-release-"
+BACKUP_SUFFIX = ".sqlite3"
+TEMP_PREFIX = ".tmp-"
+
+
+def _backup(ctx: Context, sha: str) -> Path:
+    """A verified copy of the database, taken right before the switch, while the running bot
+    may still write: SQLite's online backup from a read-only connection, so no code's schema
+    knowledge is involved (2026-11-16: a backup through the developer checkout's Store refused a
+    schema newer than its code, and the release went on without one). Written under a temporary
+    name, `integrity_check` must say ok, then renamed; older pre-release backups are removed
+    (keep only the latest). Any failure refuses the release before a link moves."""
+    stamp = ctx.now().astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+    target = ctx.backups / f"{PRE_RELEASE_PREFIX}{stamp}-{sha[:12]}{BACKUP_SUFFIX}"
+    temporary = ctx.backups / f"{TEMP_PREFIX}{target.name}"
+    try:
+        ctx.backups.mkdir(parents=True, exist_ok=True)
+        temporary.unlink(missing_ok=True)
+        source = sqlite3.connect(f"file:{ctx.data / DATABASE_FILE}?mode=ro", uri=True)
+        try:
+            copy = sqlite3.connect(temporary)
+            try:
+                source.backup(copy)
+                result = copy.execute("PRAGMA integrity_check").fetchone()[0]
+                version = copy.execute("PRAGMA user_version").fetchone()[0]
+            finally:
+                copy.close()
+        finally:
+            source.close()
+        if result != "ok":
+            raise ReleaseRefused(f"the pre-release backup failed integrity_check: {result}")
+        os.replace(temporary, target)
+    except ReleaseRefused:
+        temporary.unlink(missing_ok=True)
+        raise
+    except (OSError, sqlite3.Error) as exc:
+        temporary.unlink(missing_ok=True)
+        raise ReleaseRefused(f"the pre-release backup failed ({type(exc).__name__}: {exc})") \
+            from exc
+    ctx.say(f"backup {target} (integrity ok, schema {version})")
+    for old in ctx.backups.glob(f"{PRE_RELEASE_PREFIX}*{BACKUP_SUFFIX}"):
+        if old != target:
+            old.unlink()
+            ctx.say(f"removed older backup {old.name}")
+    return target
+
+
 def _switch(ctx: Context, folder: Path, sha: str, running: str | None) -> None:
     _require_broker_flat(ctx, folder)  # read now: preflight may have taken minutes
+    _backup(ctx, sha)  # after the last flat proof, before any link moves
     try:
         if running is not None:
             _point(ctx.previous, running)
