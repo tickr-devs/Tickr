@@ -270,7 +270,7 @@ private struct CurvesCard: View {
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.profitText)
     } else if let day = model.observers?.day {
-      Text(verbatim: Format.dayLabel(day))
+      Text(verbatim: DayText.day(day))
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
     }
@@ -797,7 +797,7 @@ private struct ReplayCard: View {
             day = item
             oneDay = true
           } label: {
-            Text(verbatim: Format.dayLabel(item))
+            Text(verbatim: DayText.day(item))
           }
         }
       } label: {
@@ -819,7 +819,7 @@ private struct ReplayCard: View {
   }
 
   private var oneDayTitle: Text {
-    if let chosenDay { return Text(L10n.Lab.replayOneDayOn(Format.dayLabel(chosenDay))) }
+    if let chosenDay { return Text(L10n.Lab.replayOneDayOn(DayText.day(chosenDay))) }
     return Text(L10n.Lab.replayOneDay)
   }
 
@@ -899,7 +899,7 @@ private struct ReplayCard: View {
           table(replay, summary)
         }
         if let cause = replay.causeText { Footnote(verbatim: cause) }
-        if let day = replay.day { Footnote(L10n.Lab.replayOneDayNote(Format.dayLabel(day))) }
+        if let day = replay.day { Footnote(L10n.Lab.replayOneDayNote(DayText.day(day))) }
       case .failed:
         Text(verbatim: replay.causeText ?? Format.missing)
           .font(Tokens.Typography.caption)
@@ -938,7 +938,7 @@ private struct ReplayCard: View {
           format: { Money.plain($0, fractionDigits: .zero) },
           delta: { Money.signed($0, fractionDigits: .zero) })
         compareRow(L10n.Lab.replayWinRate, summary.winRatePercent?.value, other?.winRatePercent?.value, compared: other != nil,
-          format: { String(localized: L10n.Trades.percent(Money.plain($0, fractionDigits: StatDigits.percent))) },
+          format: { Percent.plain(points: $0) },
           delta: { String(localized: L10n.Lab.replayPoints(Money.signed($0, fractionDigits: StatDigits.percent))) })
         compareRow(L10n.Lab.replayMeanR, summary.meanR?.value, other?.meanR?.value, compared: other != nil,
           format: { Risk.text($0, fractionDigits: StatDigits.r) },
@@ -953,7 +953,7 @@ private struct ReplayCard: View {
         compareRow(L10n.Lab.replayWithBotLimits, summary.botTotalUsd.value, other?.botTotalUsd.value, compared: other != nil,
           format: { Money.signedUSD($0) }, delta: { Money.signedUSD($0) })
       }
-      Text(L10n.Lab.replayData(Format.dayLabel(summary.firstDay), Format.dayLabel(summary.lastDay), summary.sessions))
+      Text(L10n.Lab.replayData(DayText.day(summary.firstDay), DayText.day(summary.lastDay), summary.sessions))
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
       if let interval = interval(summary) {

@@ -133,9 +133,6 @@ enum L10n {
     static func seconds(_ value: String) -> LocalizedStringResource {
       LocalizedStringResource("format.seconds", defaultValue: "\(value) s", bundle: L10n.bundle)
     }
-    static func usd(_ amount: String) -> LocalizedStringResource {
-      LocalizedStringResource("format.usd", defaultValue: "\(amount) USD", bundle: L10n.bundle)
-    }
   }
 
   enum Stream {
@@ -2111,10 +2108,6 @@ enum L10n {
     static var maxDrawdown: LocalizedStringResource {
       LocalizedStringResource("trades.maxDrawdown", defaultValue: "Max drawdown", bundle: L10n.bundle)
     }
-    /// A percentage.
-    static func percent(_ value: String) -> LocalizedStringResource {
-      LocalizedStringResource("trades.percent", defaultValue: "\(value)%", bundle: L10n.bundle)
-    }
     /// The performance counts, and that the figures are gross.
     static func performanceLine(_ trades: Int, _ wins: Int, _ losses: Int, _ scratches: Int) -> LocalizedStringResource {
       LocalizedStringResource("trades.performanceLine",
@@ -3570,15 +3563,15 @@ enum L10n {
     }
     /// Column title: the bar's volume against the average.
     static var columnVolume: LocalizedStringResource {
-      LocalizedStringResource("symbols.columnVolume", defaultValue: "Last bar vol", bundle: L10n.bundle)
+      LocalizedStringResource("symbols.columnVolume", defaultValue: "Vol ×", bundle: L10n.bundle)
     }
     /// Column title: the bar's move in ATR.
     static var columnMove: LocalizedStringResource {
-      LocalizedStringResource("symbols.columnMove", defaultValue: "Move", bundle: L10n.bundle)
+      LocalizedStringResource("symbols.columnMove", defaultValue: "ATR", bundle: L10n.bundle)
     }
-    /// Column title: the bar's dollar volume.
+    /// Column title: the bar's dollar volume against the average.
     static var columnDollars: LocalizedStringResource {
-      LocalizedStringResource("symbols.columnDollars", defaultValue: "$ volume", bundle: L10n.bundle)
+      LocalizedStringResource("symbols.columnDollars", defaultValue: "$vol ×", bundle: L10n.bundle)
     }
     /// Column title.
     static var columnScreeners: LocalizedStringResource {

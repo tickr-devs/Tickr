@@ -48,7 +48,7 @@ struct SymbolsView: View {
   /// "Mon Nov 16 · 10:48 ET · 412 screened": the day, the end of the latest discovery pass and how
   /// many symbols the screeners listed; the bot's cause when no pass is recorded.
   private var context: String {
-    let day = Format.day(model.today.noonInNewYork)
+    let day = DayText.day(model.today.noonInNewYork)
     guard let symbols = model.symbols else {
       return [day, model.symbolsError.map { String(localized: L10n.Symbols.unavailable($0)) }]
         .compactMap { $0 }.joined(separator: Format.separator)
@@ -163,6 +163,8 @@ struct SymbolsView: View {
             .padding(Tokens.Space.l)
         }
       }
+      // One list per tab: rows of one tab never stay on screen under another tab's layout.
+      .id(tab)
       Text(L10n.Symbols.showingAll(count))
         .font(Tokens.Typography.captionMono)
         .foregroundStyle(Palette.textQuaternary)
@@ -282,8 +284,7 @@ struct FastMoverLine: View {
       }
       ChipFlow(spacing: Tokens.Space.s) {
         MoverFigure(text: SymbolsBoard.volume(mover), fired: mover.fired(.volume))
-        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move),
-          color: mover.moveAtr.isNegative ? Palette.lossText : Palette.profitText)
+        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move))
         MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
       }
     }
@@ -522,7 +523,7 @@ extension SymbolsTab {
   /// The entry order.
   static let orderSymbol = "paperplane"
   /// The broker stop.
-  static let stopSymbol = "checkmark.shield"
+  static let stopSymbol = StopState.levelSymbol
   /// A fast mover's jump.
   static let fastMoversSymbol = "bolt"
 }
