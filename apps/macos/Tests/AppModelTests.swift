@@ -242,6 +242,48 @@ struct AppModelTests {
     #expect(keys.count == 2 && Set(keys).count == 2)
   }
 
+  /// Commands sent so far (each POST carries one idempotency key).
+  static func sentCount() -> Int { RouteProtocol.routes.withLock { $0.idempotencyKeys.count } }
+
+  @Test("A flatten press only asks; the model holds the question, and only the yes sends it, once")
+  func flattenAsksBeforeSending() async throws {
+    RouteProtocol.routes.withLock { $0.bodies["/commands/flatten"] = try? Data(contentsOf:
+      fixturesDir.appendingPathComponent("command-accepted-v1.json")) }
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    model.press(.flatten(symbol: "ABCD"), in: .window)
+    let question = try #require(model.confirming, "a press opens its question")
+    #expect(question.action == .flatten(symbol: "ABCD") && question.place == .window)
+    // The question lives in the model, not in the view that asked: status reads (which redraw
+    // and can rebuild Overview's cards) leave it open, and nothing is sent meanwhile.
+    await model.refreshStatus()
+    await model.refreshStatus()
+    #expect(model.confirming == question)
+    #expect(Self.sentCount() == 0, "nothing is sent before the yes")
+    await model.confirm(question)
+    #expect(model.confirming == nil)
+    #expect(Self.sentCount() == 1)
+  }
+
+  @Test("Cancel sends nothing; each press is its own question; nothing is asked while commands are off")
+  func withdrawnQuestionsSendNothing() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    model.press(.flatten(symbol: "ABCD"), in: .window)
+    #expect(model.confirming == nil, "no status yet: commands are off, so nothing is asked")
+    await model.refreshStatus()
+    model.press(.emergency, in: .menuBar)
+    let first = try #require(model.confirming)
+    model.withdraw(first)
+    #expect(model.confirming == nil)
+    model.press(.emergency, in: .menuBar)
+    let second = try #require(model.confirming)
+    #expect(second != first, "a second press is a new question")
+    model.withdraw(first)
+    #expect(model.confirming == second, "closing an old question leaves the newer one open")
+    model.withdraw(second)
+    #expect(Self.sentCount() == 0)
+  }
+
   @Test("Start is offered only when no current status says the bot is alive; it is sent once")
   func startBot() async throws {
     RouteProtocol.routes.withLock { $0.bodies["/commands/start-bot"] = try? Data(contentsOf:

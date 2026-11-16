@@ -208,6 +208,10 @@ public final class AppModel {
   public private(set) var sending = false
   public private(set) var sent: [SentCommand] = []
   public private(set) var toast: SentCommand?
+  /// The bot command waiting for the operator's yes, and where it was asked (`BotControls`).
+  /// Held here, not in the view that asked: SwiftUI drops a view's own state whenever it rebuilds
+  /// the view (Overview's cards change columns at a width breakpoint), and the question went with it.
+  private(set) var confirming: PendingConfirmation?
 
   private var tasks: [Task<Void, Never>] = []
 
@@ -783,6 +787,30 @@ public final class AppModel {
       botStart = .refused(ErrorText.text(error))
     }
     await refreshStatus()
+  }
+
+  /// A press of a bot command in `place`: a command that asks first only opens its question
+  /// (`confirming`); pausing and resuming are sent at once. Nothing is asked or sent while
+  /// commands are off.
+  func press(_ action: BotAction, in place: CommandPlace) {
+    guard commandsEnabled else { return }
+    if action.needsConfirmation {
+      confirming = PendingConfirmation(action: action, place: place)
+    } else {
+      Task { await send(action.command, title: action.title) }
+    }
+  }
+
+  /// The operator's yes to `question`: the question closes and its command is sent (`send`
+  /// checks again that commands are on). The command is the one the question named, never another.
+  func confirm(_ question: PendingConfirmation) async {
+    withdraw(question)
+    await send(question.action.command, title: question.action.title)
+  }
+
+  /// Closes `question` unanswered (Cancel, Escape, or commands turned off); a newer question stays.
+  func withdraw(_ question: PendingConfirmation) {
+    if confirming == question { confirming = nil }
   }
 
   public func send(_ command: OperatorCommand, title: String) async {
