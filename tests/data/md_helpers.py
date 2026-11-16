@@ -63,6 +63,7 @@ def settings(**overrides: object) -> DiscoverySettings:
         bars_symbols_per_request=20,
         bars_per_symbol=390,
         refused_symbol_recheck=timedelta(seconds=900),
+        bars_budget_reserve=3,
     )
     values.update(overrides)
     return DiscoverySettings(**values)  # type: ignore[arg-type]

@@ -125,6 +125,7 @@ class OrdersConfig:
     stop_held_proof_seconds: Decimal
     reconcile_proof_seconds: Decimal
     reconcile_max_gap_seconds: Decimal
+    balance_read_seconds: Decimal
 
 
 @dataclass(frozen=True)
@@ -210,6 +211,7 @@ class MarketDataConfig:
     snapshot_symbols_per_request: int
     bars_symbols_per_request: int
     bars_per_symbol: int
+    discovery_bars_reserve_requests: int
     history_bars_per_request: int
     history_max_pages_per_symbol: int
     history_max_lookback_days: int
@@ -518,6 +520,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[orders] detail_unreadable_seconds must be above 0")
     if built["orders"].stop_held_proof_seconds <= 0:
         raise ConfigError("[orders] stop_held_proof_seconds must be above 0")
+    if built["orders"].balance_read_seconds <= 0:
+        raise ConfigError("[orders] balance_read_seconds must be above 0")
     if built["orders"].reconcile_proof_seconds <= 0:
         raise ConfigError("[orders] reconcile_proof_seconds must be above 0")
     if not built["orders"].reconcile_max_gap_seconds > built["orders"].reconcile_proof_seconds:
@@ -543,6 +547,15 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.webull_enabled:
         for name, env in environments.items():
             check_chart_slice(chart, name, env)
+    reserve = built["market_data"].discovery_bars_reserve_requests
+    for name, env in environments.items():
+        count, _ = env.route_limits.get(BARS_ROUTE,
+                                        (env.requests_per_route_per_minute, SECONDS_PER_MINUTE))
+        bot_count = count - (chart.requests_per_minute if chart.webull_enabled else 0)
+        if not 0 <= reserve < bot_count:
+            raise ConfigError(f"[market_data] discovery_bars_reserve_requests must be at least 0 "
+                              f"and below the bot's bars route limit of [environments.{name}] "
+                              f"({bot_count}), or discovery could never read bars")
     orders, api = built["orders"], built["api"]
     if not orders.reconcile_interval_seconds < api.broker_read_warn_seconds \
             < orders.broker_read_max_age_seconds:
