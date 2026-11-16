@@ -139,7 +139,8 @@ def test_an_armed_v1_setup_wins_over_a_spike():
 
 
 def _renamed(decision):
-    return replace(decision, strategy=v3.NAME, version=values("price-action-v3")["strategy"]["version"])
+    version = values("price-action-v3")["strategy"]["version"]
+    return replace(decision, strategy=v3.NAME, version=version)
 
 
 def test_session_liquidity_admits_a_thin_symbol_only_while_it_spikes():
