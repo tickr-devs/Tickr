@@ -14,6 +14,7 @@ from tickr.strategy.base import Verdict
 
 from .test_decisions import BAR, DAY, FAIL, PASS, _cfg, _get, _serve, _write
 from .test_flow import _capture, _watch
+from .test_server import doc, request
 
 STARTED = BAR - timedelta(minutes=5)
 
@@ -182,3 +183,26 @@ def test_the_capture_is_read_incrementally(cfg):
     assert day.read(path, open_tail=True).latest["ABCD"].state is contract.SymbolState.WAITING
     _discovery(cfg, _pass(1, rejections=(_refused("ABCD", "snapshot", "NO_QUOTE"),)))
     assert day.read(path, open_tail=True).latest["ABCD"].state is contract.SymbolState.DROPPED
+
+
+def test_a_malformed_mover_is_a_clean_refusal(api, cfg):
+    bad = _mover("ABCD", 0)
+    bad["move_atr"] = {"value": "not a number", "threshold": "2", "fired": True}
+    _discovery(cfg, _pass(0, movers=(bad,)))
+    for path in ("/movers", "/symbols"):
+        resp, payload = request(api, "GET", path)
+        body = doc(payload)
+        assert resp.status == 503 and body["error"] == "unavailable"
+        assert "capture file unreadable" in body["cause"] and "move_atr" in body["cause"]
+
+
+def test_a_read_hands_out_a_snapshot_a_later_fold_leaves_alone(cfg):
+    day = symbols.DiscoveryDay()
+    path = CaptureWriter.from_config(cfg, "webull").path(DAY, "discovery.jsonl")
+    _discovery(cfg, _pass(0, candidates=("ABCD",), movers=(_mover("ABCD", 0),)))
+    first = day.read(path, open_tail=True)
+    _discovery(cfg, _pass(1, rejections=(_refused("ABCD", "snapshot", "NO_QUOTE"),),
+                          movers=(_mover("EFGH", 1),)))
+    second = day.read(path, open_tail=True)
+    assert first.latest["ABCD"].state is contract.SymbolState.WAITING and "EFGH" not in first.movers
+    assert second.latest["ABCD"].state is contract.SymbolState.DROPPED and "EFGH" in second.movers

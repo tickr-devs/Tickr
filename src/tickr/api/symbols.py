@@ -88,6 +88,33 @@ class _Outcome:
     check: Check | None = None
 
 
+@dataclass(frozen=True)
+class _Mover:
+    """A fast mover's latest bar, parsed when its pass is folded."""
+
+    at: datetime
+    close: Decimal
+    bar_dollar_volume: Decimal
+    volume_ratio: Decimal
+    move_atr: Decimal
+    dollar_volume_ratio: Decimal
+    fired: tuple[str, ...]
+    spike_up: bool
+
+    @staticmethod
+    def parse(m: dict[str, Any]) -> _Mover:
+        for signal in SIGNALS:
+            if not isinstance(m[signal]["fired"], bool):
+                raise ValueError(f"{signal} fired is not true or false")
+        if not isinstance(m["spike_up"], bool):
+            raise ValueError("spike_up is not true or false")
+        return _Mover(
+            _time(m["bar_start"], "bar_start"), _decimal(m["close"], "close"),
+            _decimal(m["bar_dollar_volume"], "bar_dollar_volume"),
+            *(_decimal(m[s]["value"], s) for s in SIGNALS),
+            tuple(s for s in SIGNALS if m[s]["fired"]), m["spike_up"])
+
+
 @dataclass
 class DiscoveryFolded:
     """What the passes folded so far say, per symbol."""
@@ -95,7 +122,7 @@ class DiscoveryFolded:
     first_seen: dict[str, datetime] = field(default_factory=dict)
     furthest: dict[str, S] = field(default_factory=dict)
     latest: dict[str, _Outcome] = field(default_factory=dict)
-    movers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    movers: dict[str, _Mover] = field(default_factory=dict)
     measured: bool | None = None  # of the latest pass
     as_of: datetime | None = None
 
@@ -128,9 +155,18 @@ class DiscoveryFolded:
             self.latest[symbol] = _Outcome(stage, api.SymbolState.NOT_REACHED, finished, cause,
                                            None if stopped is None else stopped["detail"])
         for m in raw["movers"]:
-            self.movers[m["symbol"]] = m
-        self.measured = bool(raw["movers_measured"])
+            if not isinstance(m["symbol"], str):
+                raise ValueError("a mover's symbol is not text")
+            self.movers[m["symbol"]] = _Mover.parse(m)
+        if not isinstance(raw["movers_measured"], bool):
+            raise ValueError("movers_measured is not true or false")
+        self.measured = raw["movers_measured"]
         self.as_of = finished
+
+    def snapshot(self) -> DiscoveryFolded:
+        """A copy whose maps a later fold never changes (their values are never mutated)."""
+        return DiscoveryFolded(dict(self.first_seen), dict(self.furthest), dict(self.latest),
+                               dict(self.movers), self.measured, self.as_of)
 
 
 class DiscoveryDay:
@@ -163,7 +199,7 @@ class DiscoveryDay:
             except CaptureError:
                 self._reset(None)
                 raise
-            return self._day
+            return self._day.snapshot()  # requests run on threads: never hand out the live fold
 
     def _read(self, path: Path, open_tail: bool) -> None:
         if path.name.endswith(GZ_SUFFIX):  # archived: read once, never appended to
@@ -265,14 +301,9 @@ def movers_document(day: date, folded: DiscoveryFolded, rules: api.FastMoverRule
     for symbol, m in folded.movers.items():
         record = latest.get(symbol)
         movers.append(api.FastMoverV1(
-            symbol=symbol, at=_time(m["bar_start"], "bar_start"),
-            close=_decimal(m["close"], "close"),
-            bar_dollar_volume=_decimal(m["bar_dollar_volume"], "bar_dollar_volume"),
-            volume_ratio=_decimal(m["volume_ratio"]["value"], "volume_ratio"),
-            move_atr=_decimal(m["move_atr"]["value"], "move_atr"),
-            dollar_volume_ratio=_decimal(m["dollar_volume_ratio"]["value"],
-                                         "dollar_volume_ratio"),
-            fired=tuple(s for s in SIGNALS if m[s]["fired"]), spike_up=bool(m["spike_up"]),
+            symbol=symbol, at=m.at, close=m.close, bar_dollar_volume=m.bar_dollar_volume,
+            volume_ratio=m.volume_ratio, move_atr=m.move_atr,
+            dollar_volume_ratio=m.dollar_volume_ratio, fired=m.fired, spike_up=m.spike_up,
             watching=record is not None and record.decision.verdict is Verdict.WATCH))
     movers.sort(key=lambda m: (-m.at.timestamp(), m.symbol))
     return api.MoversV1(day, rules, None if rules else NO_RULES, tuple(movers))
