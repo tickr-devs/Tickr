@@ -86,6 +86,8 @@ STOP_TIMING_FAILED = "stop-timing-failed"  # one row per trade whose stop timing
 ENTRY_SEND_FAILED = "entry-send-failed"  # one row per trade whose entry send is unreadable
 RESTART_ENTRY_CANCEL = "bot restarted: a working entry is never resumed"
 FENCE_SET = "fence-set"
+WATCHDOG_FENCE_TAIL = ("no new entry until the operator clears this "
+                       "(tickr clear-fence watchdog-started)")
 NOT_WIRED = api.EntryBlock("entries_not_wired",
                            "This build does not open trades on its own yet.")
 ZERO = Decimal(0)
@@ -870,13 +872,17 @@ class Service:
         except FileNotFoundError:
             return
         except (OSError, ValueError, KeyError, TypeError) as exc:
-            cause = (f"the watchdog's early restart record {path.name} is unreadable "
-                     f"({type(exc).__name__}): no new entry until the operator clears this")
+            cause = (f"the watchdog's early restart record is unreadable ({type(exc).__name__})"
+                     f": {WATCHDOG_FENCE_TAIL}")
         else:
             if day != ny_date_of(self.now()):
                 return
-            cause = (f"the watchdog started the bot at {at} for a resting entry: no new entry "
-                     "until the operator clears this")
+            try:
+                started = datetime.fromisoformat(at).astimezone(NEW_YORK).strftime("%H:%M")
+            except (ValueError, TypeError):
+                started = "an unreadable time"
+            cause = (f"the watchdog started the bot at {started} for a resting entry: "
+                     f"{WATCHDOG_FENCE_TAIL}")
         name = str(Fence.WATCHDOG_STARTED)
         if any(row.body.get("cause") == cause
                for row in self.engine.store.journal(FENCE_SET, key=name)):

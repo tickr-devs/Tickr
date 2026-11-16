@@ -428,7 +428,9 @@ class Watchdog:
                        f"close the position by hand before {_ny(self.day.regular_close)}")
         else:
             purpose = ("an entry with a rest time may still work at the broker; the bot "
-                       "cancels it at startup and protects any fill" if early else
+                       "cancels it at startup and protects any fill. New entries stay "
+                       "blocked (fence watchdog-started) until you look and run: tickr "
+                       "clear-fence watchdog-started" if early else
                        "so it flattens at the flatten time")
             self.alert(AlertKind.WATCHDOG_RESTARTED_BOT,
                        f"the bot was not running ({why}) with {count} open trade(s): the "
