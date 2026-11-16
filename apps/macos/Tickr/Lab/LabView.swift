@@ -691,15 +691,18 @@ private struct ReplayCard: View {
   /// document (never found out by a refused start).
   private var waitsUntil: Date? { replay?.waitsUntil(now: model.botNow) }
 
-  /// Why the button rests: "Available after 16:00 ET · in 1:12:03", counting down.
+  /// Why the button rests: "Available after 16:00 ET · in 1:12:03", counting down; the parts
+  /// wrap whole in a narrow card.
   private func availability(_ until: Date) -> some View {
     Label {
-      HStack(spacing: Tokens.Space.xs) {
+      ChipFlow {
         Text(L10n.Lab.replayAvailableAfter(Format.marketMinute(until)))
-        Text(verbatim: Format.itemSeparator)
-        Text(L10n.Lab.replayAvailableIn)
-        Text(timerInterval: Date.now...Date.now.addingTimeInterval(until.timeIntervalSince(model.botNow)))
-          .monospacedDigit()
+        HStack(spacing: Tokens.Space.xs) {
+          Text(verbatim: Format.itemSeparator)
+          Text(L10n.Lab.replayAvailableIn)
+          Text(timerInterval: Date.now...Date.now.addingTimeInterval(until.timeIntervalSince(model.botNow)))
+            .monospacedDigit()
+        }
       }
     } icon: {
       Image(systemName: Self.waitSymbol)
