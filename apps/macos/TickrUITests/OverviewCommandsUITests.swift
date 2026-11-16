@@ -95,7 +95,7 @@ final class OverviewCommandsUITests: XCTestCase {
         button.click()
         XCTAssertFalse(app.sheets.firstMatch.waitForExistence(timeout: Self.noQuestion),
           "a plain click on the emergency stop asks")
-        button.click(forDuration: Self.hold)
+        button.click(forDuration: Self.hold, thenDragTo: button)
       } else {
         button.click()
       }
