@@ -107,6 +107,7 @@ class Scenario:
     commands: tuple[DemoCommand, ...]
     past: tuple[tuple[SymbolPlan, ...], ...]
     faults: tuple[DemoFault, ...] = ()
+    answer_within_seconds: int = 0  # [demo]: start to the API's first answer (tests)
     live: LiveLoop | None = None  # already folded into `today` and `commands` by `load`
     # (symbol, New York time "HH:MM:SS") of symbols only the live loop moves: the simulated
     # screeners list them from then on, so the fast part of the day does not evaluate them.
@@ -364,7 +365,7 @@ def load(path: Path) -> Scenario:
     plan = _keys("[scenario]", top["scenario"], {"today", "commands", "past", "faults"})
     demo = _keys("[demo]", top["demo"], {
         "root_dir", "environment", "observers", "provider",
-        "bot_start", "past_stop", "clock", "live_until"})
+        "bot_start", "past_stop", "clock", "live_until", "answer_within_seconds"})
     market = _keys("[market]", top["market"], {
         "half_spread_usd", "quote_size_shares", "wick_usd", "history_volume", "texture_drift",
         "texture_pull", "texture_wick", "texture_move", "texture_move_cap", "texture_volume",
@@ -412,4 +413,6 @@ def load(path: Path) -> Scenario:
         past=tuple(_day(f"past[{n}]", day) for n, day in enumerate(plan["past"])),
         faults=tuple(_fault(f"faults[{n}]", f, today) for n, f in enumerate(plan["faults"])),
         live=_loop(top["live"], today),
+        answer_within_seconds=_count("[demo] answer_within_seconds",
+                                     demo["answer_within_seconds"]),
     ))
