@@ -211,7 +211,7 @@ private struct DayLine: View {
   }
 
   private var demoChip: some View {
-    Badge(L10n.Home.demoChip, tone: .warning)
+    Badge(L10n.Home.demoChip, tone: .highlight)
   }
 
   /// The shown day: a recorded one, today or the last session.

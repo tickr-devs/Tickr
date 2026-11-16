@@ -473,8 +473,9 @@ struct DayStepper: View {
       ConnectionStatus()
         .padding(.trailing, Self.connectionGap)
       if model.dayLocked {
-        // The same badge as Settings' and the iPhone's day line (the one demo chip of both apps).
-        Badge(L10n.Toolbar.demoChip, tone: .warning)
+        // The one demo chip of both apps (Settings, the iPhone's day line): violet, as the boards
+        // draw the demo; it becomes the dashed demo `EnvironmentBadge` once that is shared (#499).
+        Badge(L10n.Toolbar.demoChip, tone: .highlight)
           .help(Text(L10n.Toolbar.demoHelp))
           .accessibilityIdentifier(Self.demoChipID)
       }

@@ -214,6 +214,7 @@ Which component shows which fact, on both apps:
 | The shown day's clean-day verdict (Mac) | `Badge(_:color:systemImage:)`: with the verdict's symbol in the Trades header, without it in the Overview header | MacTrades, Main |
 | "Show all N" under a card's rows | `CardFooterLink` with the count and the hint "closest 3 of N" (Mac Overview and iOS Home Watching closely) | Controls, Main |
 | A link in a card's header | `HeaderLink`; one that pushes a screen is a `NavigationLink` with a `HeaderLinkLabel`, styled `.headerLink()` (iOS Home live flow "slots 2 of 3 ›") | Controls, IOSHome (`.hlink`) |
+| The demo day's chip (Mac title bar, Mac Settings, iOS Home day line) | `Badge(_:tone: .highlight)`, the boards' violet demo (IOSHome `envLabel` DEMO); to become the dashed demo `EnvironmentBadge` when that is shared | IOSHome, Controls (`.demo-tag`) |
 | Retry after a failed read | `.action(.secondary, size: .compact)` | Controls, IOSPosition |
 | The way back to today | `TodayButton`: the Mac title bar's Today, the iPhone's Home day line and Activity calendar | Mac boards (`.tbtn`) |
 | The way back from a pushed screen | `BackCapsule` + `.backCapsule` (iOS `BackButton`, the Mac Lab's advisor page) | Controls |

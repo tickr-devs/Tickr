@@ -252,7 +252,7 @@ private struct DemoDaySection: View {
         Spacer(minLength: Tokens.Space.s)
       }
     } trailing: {
-      if model.demoDay { Badge(L10n.Toolbar.demoChip, tone: .warning) }
+      if model.demoDay { Badge(L10n.Toolbar.demoChip, tone: .highlight) }
     }
     .animation(Tokens.Motion.quick, value: model.demoDay)
   }
