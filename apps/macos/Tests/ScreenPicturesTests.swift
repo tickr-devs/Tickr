@@ -10,7 +10,7 @@ import TickrKit
 /// content at those widths, the Chart with its inspector and every study too, every Settings pane
 /// and the menu-bar panel, on the contract fixtures, drawn offscreen in windows that are never
 /// shown. `apps/scripts/find_truncated_text.swift` then reads them for an ellipsis
-/// (.github/workflows/macos-app.yml, job `no-truncated-text`). Runs only with
+/// (.github/workflows/ui-tests.yml, job `no-truncated-text`). Runs only with
 /// `TICKR_SCREEN_PICTURES=<folder>`; `TICKR_SCREEN_PICTURES_LANGUAGE` (en, ru) picks the language,
 /// so run it once per language, each in its own process:
 ///   TICKR_SCREEN_PICTURES=/tmp/pictures TICKR_SCREEN_PICTURES_LANGUAGE=ru \
