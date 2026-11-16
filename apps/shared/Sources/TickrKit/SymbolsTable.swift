@@ -83,6 +83,13 @@ public struct SymbolsLine: Identifiable, Hashable, Sendable {
   public let mover: FastMoverV1?
   public let position: Bool
 
+  public init(symbol: String, row: SymbolRowV1?, mover: FastMoverV1?, position: Bool) {
+    self.symbol = symbol
+    self.row = row
+    self.mover = mover
+    self.position = position
+  }
+
   public var id: String { symbol }
 
   /// The strategy's latest decision is WATCH.
