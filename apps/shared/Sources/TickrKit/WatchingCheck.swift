@@ -95,8 +95,8 @@ public enum WatchingCheck {
   /// a level missing): the bot's cause in the person's language. Nil when the bar shows, or when
   /// no check failed (`state` already says why).
   public static func unmeasured(_ row: WatchingRowV1) -> String? {
-    guard row.closeness == nil, row.decisiveCheck != nil, let cause = row.closenessCause else { return nil }
-    return ApiText.prose(row.closenessCauseCodes, text: cause)
+    guard row.closeness == nil, row.decisiveCheck != nil else { return nil }
+    return ApiText.prose(row.closenessCauseCodes, text: row.closenessCause)
   }
 
   /// What the bar's ends mean: "Empty at the invalidation 56.80, full at the trigger 57.11" for a
