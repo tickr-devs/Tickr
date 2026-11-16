@@ -815,3 +815,20 @@ def test_an_unreadable_discovery_record_is_journaled_and_the_memory_starts_empty
     (row,) = rig.store.journal(REFUSED_SYMBOLS_UNREAD)
     assert "discovery.jsonl:1" in row.body["detail"]
     assert rig.market._refused_symbols.remembered() == ()
+
+
+def test_a_truncated_archived_discovery_record_never_stops_the_start(tmp_path):
+    import gzip
+
+    from tickr.calendar import ny_date_of
+    from tickr.data.capture import DISCOVERY_FILE, CaptureWriter
+
+    writer = CaptureWriter(tmp_path / "capture", "webull")
+    plain = writer.path(ny_date_of(MONDAY_11), DISCOVERY_FILE)
+    plain.parent.mkdir(parents=True, exist_ok=True)
+    whole = gzip.compress(b'{"session_open": "x"}\n' * 50)
+    plain.with_name(plain.name + ".gz").write_bytes(whole[: len(whole) // 2])  # truncated
+    rig = Rig(tmp_path, capture=writer)
+    (row,) = rig.store.journal(REFUSED_SYMBOLS_UNREAD)
+    assert row.body["detail"]
+    assert rig.market._refused_symbols.remembered() == ()

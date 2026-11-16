@@ -288,7 +288,8 @@ class MarketRuntime:
         try:
             with open_text(path) as handle:
                 found = latest_refusals(handle.readlines(), str(path))
-        except (OSError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001 - any unreadable record (a truncated .gz twin
+            # raises EOFError) must never stop the bot from starting; it only costs requests
             with self.engine.store.transaction():
                 self.engine.store.append(REFUSED_SYMBOLS_UNREAD,
                                          {"detail": str(exc)[
