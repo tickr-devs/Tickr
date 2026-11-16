@@ -438,6 +438,10 @@ enum L10n {
   }
 
   enum Overview {
+    /// Under the day's result while it does not count the broker's fees yet.
+    static var beforeFees: LocalizedStringResource {
+      LocalizedStringResource("overview.beforeFees", defaultValue: "before broker fees", bundle: L10n.bundle)
+    }
     static var fixtures: LocalizedStringResource {
       LocalizedStringResource("overview.fixtures", defaultValue: "Fixtures", bundle: L10n.bundle)
     }

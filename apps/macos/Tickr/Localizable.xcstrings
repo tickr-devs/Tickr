@@ -6584,6 +6584,23 @@
         }
       }
     },
+    "overview.beforeFees" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "before broker fees"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "до комиссий брокера"
+          }
+        }
+      }
+    },
     "overview.dayCounts" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -274,6 +274,10 @@ enum L10n {
   }
 
   enum Home {
+    /// Beside the day's result while it does not count the broker's fees yet.
+    static var beforeFees: LocalizedStringResource {
+      LocalizedStringResource("home.beforeFees", defaultValue: "Day result before broker fees", bundle: L10n.bundle)
+    }
     /// The latest event's New York time on Home: "14:06:09 ET".
     static func clockET(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("home.clockET", defaultValue: "\(time) ET", bundle: L10n.bundle)

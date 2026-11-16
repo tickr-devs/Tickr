@@ -88,5 +88,7 @@ import Testing
     #expect(status.feesTodayUsd?.text == "0.07")
     #expect(status.resultTodayUsd.text == "-1.67")
     #expect(status.resultTodayGrossUsd.text == "-1.60")
+    #expect(!status.resultBeforeFees)
+    #expect(!Board.dayStats(status).beforeFees)
   }
 }

@@ -154,6 +154,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
 
   /// Today's result as shown: after the broker's fees once they are read, else before them.
   public var resultTodayUsd: DecimalString { resultTodayNetUsd ?? resultTodayGrossUsd }
+  /// Today's result shown does not count the broker's fees yet (trades closed, fees unread).
+  public var resultBeforeFees: Bool { resultTodayNetUsd == nil && !tradesToday.isEmpty }
 
   enum CodingKeys: String, CodingKey {
     case environment, strategy, fences, position, freshness, positions
