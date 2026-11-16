@@ -150,9 +150,9 @@ fill while the bot is down is protected without the bot. Webull has no expiring 
 force is DAY or GTC only), so there is no GTD fallback to test. Details:
 `src/tickr/engine/attached_probe.py`.
 
-When: in the regular session inside the `[probe]` window, bot stopped, account flat. It can run
-in the same sitting as the extended-hours probe (F7), one after the other: F7 in the pre-market,
-this one after `[probe] window_start`.
+When: in the regular session inside the `[probe]` window, bot stopped, account flat. It is a
+short sitting of its own (the F7 probe runs in the post-market): stop and disable the bot, run
+the probe, then enable and kickstart the bot, so the day loses only those few minutes.
 
 1. Stop the bot and keep its job from starting, as in step 1 of the F7 probe above; re-enable
    and kickstart it after step 4. The account must be flat.
