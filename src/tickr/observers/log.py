@@ -97,6 +97,12 @@ class DecisionLog:
         data = (line + "\n").encode("utf-8")
         written = os.write(self._fd, data)
         if written != len(data):
+            # End the fragment (best effort) so the next line, of either process, never joins
+            # it; readers then refuse only that one malformed line.
+            try:
+                os.write(self._fd, b"\n")
+            except OSError:
+                pass
             raise OSError(f"decision line written partly ({written} of {len(data)} bytes)")
 
     def close(self) -> None:

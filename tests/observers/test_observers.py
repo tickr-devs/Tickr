@@ -20,7 +20,7 @@ from tickr.observers.loader import (
     parse_modules,
 )
 from tickr.observers.log import DecisionLog
-from tickr.observers.runner import ObserverSet, ProcessSpec, _Encoder
+from tickr.observers.runner import Limits, ObserverSet, ProcessSpec, _Encoder
 from tickr.research.records import Admission, load_records
 from tickr.strategy.base import Decision, PositionView, Role, SymbolContext, Verdict
 from tickr.types import Bar
@@ -424,17 +424,17 @@ def test_the_worker_gets_only_new_bars_and_rebuilds_the_same_context(tmp_path):
     observers, _ = observer_set(tmp_path, fake)
     prior = (bars(2, "ABC"),)
     first = SymbolContext("ABC", bars(3), prior)
-    encoder = _Encoder()  # what on_evaluation does, step by step
+    encoder = _Encoder(timedelta.max)  # what on_evaluation does, step by step
     sent, commit = encoder.message(first, START + 3 * M1)
-    assert sent[4] == prior and sent[5:] == (0, first.bars)  # everything, the first time
+    assert sent[4] == prior and sent[5:7] == (0, first.bars)  # everything, the first time
     commit()
     grown = SymbolContext("ABC", bars(5), prior)
     sent, _ = encoder.message(grown, START + 5 * M1)
-    assert sent[4] is None and sent[5:] == (3, grown.bars[3:])  # only the two new bars
+    assert sent[4] is None and sent[5:7] == (3, grown.bars[3:])  # only the two new bars
     revised = list(bars(5))
     revised[1] = replace(revised[1], close=Decimal(11))  # the provider revised an old bar
     sent, _ = encoder.message(SymbolContext("ABC", tuple(revised), prior), START + 5 * M1)
-    assert sent[5:] == (0, tuple(revised))  # all again
+    assert sent[5:7] == (0, tuple(revised))  # all again
     for ctx, at in ((first, START + 3 * M1), (grown, START + 5 * M1),
                     (SymbolContext("ABC", tuple(revised), prior), START + 5 * M1)):
         assert observers.on_evaluation(ctx, at) == ()
@@ -479,9 +479,10 @@ def test_a_real_strategy_runs_in_the_observer_process(tmp_path):
     assert settle(observers) == ()
     assert observers.close(10) and not observers._process.is_alive()
     records = load_records([log.path(date(2026, 11, 10))])
-    assert [(r.decision.strategy, r.decision.version, r.role) for r in records] == [
-        ("price-action-v1", "2", Role.OBSERVER)] * 3
-    assert [r.bar_start for r in records] == [START + i * M1 for i in (2, 3, 4)]
+    # Three bars, refused for the same cause each time: one compact record.
+    assert [(r.decision.strategy, r.decision.version, r.role, r.decision.verdict)
+            for r in records] == [("price-action-v1", "2", Role.OBSERVER, Verdict.IGNORE)]
+    assert records[0].bar_start == START + 2 * M1
 
 
 def test_an_observer_process_that_ends_is_reported_once(tmp_path):
@@ -495,3 +496,52 @@ def test_an_observer_process_that_ends_is_reported_once(tmp_path):
     assert observers.on_evaluation(context(), START + 3 * M1) == ()  # nothing is sent
     assert observers.enabled == ()
     observers.close(1)
+
+
+def test_a_repeated_ignore_is_written_once_until_the_decision_changes(tmp_path):
+    fake = Fake("i", verdict=Verdict.IGNORE)
+    observers, log = observer_set(tmp_path, fake)
+    for n, verdict in ((3, Verdict.IGNORE), (4, Verdict.IGNORE), (5, Verdict.IGNORE),
+                       (6, Verdict.WATCH), (7, Verdict.IGNORE), (8, Verdict.IGNORE)):
+        fake.verdict = verdict
+        assert observers.on_evaluation(context(n), START + n * M1) == ()
+        assert settle(observers) == ()
+    assert observers.close(5)
+    records = load_records([log.path(date(2026, 11, 10))])
+    assert [(r.bar_start, r.decision.verdict) for r in records] == [
+        (START + 2 * M1, Verdict.IGNORE), (START + 5 * M1, Verdict.WATCH),
+        (START + 6 * M1, Verdict.IGNORE)]
+    assert len(fake.seen) == 6  # every bar was evaluated
+
+
+def test_a_symbol_not_sent_for_a_while_is_forgotten_on_both_sides(tmp_path):
+    fake = Fake()
+    log = DecisionLog(tmp_path / "decisions")
+    observers = ObserverSet([LoadedStrategy("f", fake)], log, Decimal(5), 8, Decimal(5),
+                            Decimal(1), lambda: 0.0,
+                            limits=Limits(timedelta(minutes=10), 8))
+    xyz = lambda n: SymbolContext("XYZ", bars(n, "XYZ"))  # noqa: E731
+    assert observers.on_evaluation(context(3), START + 3 * M1) == ()
+    assert observers.on_evaluation(xyz(15), START + 15 * M1) == ()  # ABC idle 12 minutes
+    assert settle(observers) == ()
+    assert not observers._encoder.held("ABC") and observers._encoder.held("XYZ")
+    assert observers.on_evaluation(context(16), START + 16 * M1) == ()  # sent whole again
+    assert settle(observers) == () and observers.close(5)
+    assert [len(s.bars) for s in fake.seen] == [3, 15, 16]
+
+
+def test_whole_histories_per_pass_are_capped_and_the_rest_wait(tmp_path):
+    fake = Fake()
+    log = DecisionLog(tmp_path / "decisions")
+    observers = ObserverSet([LoadedStrategy("f", fake)], log, Decimal(5), 8, Decimal(5),
+                            Decimal(1), lambda: 0.0, limits=Limits(timedelta.max, 1))
+    at = START + 3 * M1
+    other = SymbolContext("XYZ", bars(3, "XYZ"))
+    assert observers.on_evaluation(context(3), at) == ()
+    (dropped,) = observers.on_evaluation(other, at)
+    assert dropped.cause.startswith("queue full (1 whole histories this pass)")
+    later = START + 4 * M1
+    assert observers.on_evaluation(context(4), later) == ()  # a delta does not count
+    assert observers.on_evaluation(SymbolContext("XYZ", bars(4, "XYZ")), later) == ()
+    assert settle(observers) == (dropped,) and observers.close(5)
+    assert [s.symbol for s in fake.seen] == ["ABC", "ABC", "XYZ"]

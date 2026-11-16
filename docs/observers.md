@@ -146,6 +146,13 @@ trading thread ran about 2x slower while observers worked and handing over a pas
 - Per evaluation the bot sends only the bars of the symbol the child does not have yet (all of
   them again when an earlier bar changed, a provider revision) and the prior sessions only when
   they changed, so the first pass of the day carries the history and later ones one bar each.
+- Observer records are compact: an observer's IGNORE of a symbol is written only when its
+  cause (the first failed rule) differs from that observer's previous record of the symbol, so a
+  symbol refused all day for one reason is one line, not one a minute (6 variants on about 150
+  symbols would otherwise add about 350k lines a day). Every WATCH, ENTER, HOLD and EXIT is
+  written. A bar with no observer record therefore means "IGNORE for the cause last written";
+  the diff against the active strategy already treats an absent bar like an IGNORE, and
+  observer IGNORE counts in the daily report count these changes, not bars.
 - The child appends its records to the same `decisions.jsonl` (each line is one unbuffered
   append, so the bot's and the child's lines never interleave) and reports back which observers
   it switched off and which symbols each one is watching.
@@ -154,7 +161,21 @@ trading thread ran about 2x slower while observers worked and handing over a pas
 - An exception, a contract break or a slow evaluation switches that one observer off
   (`observer-failure` row), as before. A child that ends on its own switches the observers off
   for the run with one `observers-stopped` row and alert; trading goes on.
-- The child exits when the bot stops it at shutdown or when the bot's process is gone.
+- The child forgets a symbol it has not been sent for `[observers] forget_symbol_seconds`
+  (the bot forgets it too and sends the whole history again if it comes back), so memory follows
+  the symbols in play, not every symbol seen today.
+- At most `[observers] history_sends_per_pass` whole histories go out in one pass; the rest of
+  that pass is dropped (`observers-dropped`) and those symbols get their history in a later pass,
+  so the first pass of the day never holds the trading thread on one large hand-over.
+- The trading thread never waits on the child: answers come back over a one-way pipe read by a
+  separate thread of the bot, so a child that dies in the middle of a message only makes that
+  thread see the end of the pipe. The inbox never holds the bot's exit (its feeder thread is not
+  joined), and a child that does not stop at shutdown is killed.
+- The child exits when the bot stops it at shutdown or when the bot's process is gone (it
+  watches a pipe whose other end only the bot holds). It starts without the credential
+  variables in its environment and never talks to the broker.
+- `decisions.jsonl` must be on a local file system: the bot and the child rely on appends
+  being atomic. A partial write is ended with a newline so the next line stays readable.
 - `ObserverSet` without `process` runs the same worker on a thread (tests).
 
 ## Daily report

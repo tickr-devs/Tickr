@@ -69,7 +69,7 @@ EMERGENCY_STEPS = ("entry-stop-on", "cancel-own-orders", "flatten")
 CLOSE_IN_PROGRESS = "a close is in progress; send stop-bot again after it completes"
 OBSERVER_FAILURE = "observer-failure"
 OBSERVERS_STOPPED = "observers-stopped"
-OBSERVERS_DROPPED = "observers-dropped"  # one row per pass whose rest the full queue dropped
+OBSERVERS_DROPPED = "observers-dropped"  # one row per pass with evaluations the observers dropped
 OBSERVERS_NOT_LOADED = "observers-not-loaded"
 EVALUATION_FAILED = "evaluation-failed"
 EVALUATION_SKIPPED = "evaluation-skipped"  # one row per protect-first episode
@@ -468,11 +468,11 @@ class Service:
 
     def _feed_observers(self) -> None:
         """The contexts the active strategy just saw go to the observers, after all broker
-        work of this pass. Failures are journaled every pass. A full queue (the worker is
-        behind) drops the rest of this pass for the observers, journaled as one
-        `observers-dropped` row with the count; they go on with the next pass. A worker process
-        that ended, or any error here, switches the observers off for the run, with one alert;
-        trading goes on."""
+        work of this pass. Failures are journaled every pass. What the observers cannot take now
+        (a full queue: the worker is behind; or the pass's cap on whole histories) is dropped,
+        journaled as one `observers-dropped` row with the count; they go on with the next pass.
+        A worker process that ended, or any error here, switches the observers off for the run,
+        with one alert; trading goes on."""
         observers, evaluator = self.observers, self.evaluator
         if observers is None or evaluator is None:
             return
@@ -489,16 +489,14 @@ class Service:
                                  "observer process ended: observers switched off for this run")
 
     def _hand_over(self, observers: ObserverSet, evaluator: Evaluator) -> None:
-        """Queue this pass's contexts (the rest of the pass is dropped once the queue is full)
-        and journal the drops and the worker's failures."""
+        """Queue this pass's contexts (those the observers cannot take now are dropped) and
+        journal the drops (one row with the count) and the worker's failures."""
         at = evaluator.evaluated_at
         dropped = 0
         if at is not None:
-            contexts = list(evaluator.contexts)
-            for index, context in enumerate(contexts):
+            for context in evaluator.contexts:
                 if observers.on_evaluation(context, at):
-                    dropped = len(contexts) - index
-                    break
+                    dropped += 1
         failures = [f for f in observers.take_failures() if not f.cause.startswith(DROPPED)]
         if failures or dropped:
             store = self.engine.store

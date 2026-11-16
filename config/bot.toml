@@ -398,6 +398,13 @@ watching_seconds = 180
 # Decision records folder relative to [run] data_dir; files go to <decisions_dir>/<environment>/<NY date>/decisions.jsonl;
 # written by observers.log for observer and active-strategy decisions (runtime.entries).
 decisions_dir = "decisions"
+# Seconds a symbol may go unevaluated before the bot and the observer process forget its bars (it is sent whole again
+# if it comes back), so their memory stays bounded over the day; read by observers.runner.
+forget_symbol_seconds = 600
+# Most symbols per pass whose whole history (prior sessions and today's bars) is sent to the observer process; the
+# others wait for a later pass (recorded as dropped), so the first passes of the day never send everything at once;
+# count; read by observers.runner.
+history_sends_per_pass = 30
 
 [advisor]
 # NAME of the environment variable holding the Anthropic API key (the SDK reads it itself; only ANTHROPIC_API_KEY works);
