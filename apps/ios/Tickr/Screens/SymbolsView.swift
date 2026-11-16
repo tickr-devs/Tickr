@@ -175,6 +175,8 @@ struct SymbolsView: View {
             .padding(Tokens.Space.l)
         }
       }
+      // One list per tab: rows of one tab never stay on screen under another tab's layout.
+      .id(tab)
       Text(L10n.Symbols.showingAll(count))
         .font(Tokens.Typography.captionMono)
         .foregroundStyle(Palette.textQuaternary)
@@ -341,8 +343,7 @@ struct FastMoverLine: View {
       }
       ChipFlow(spacing: Tokens.Space.s) {
         MoverFigure(text: SymbolsBoard.volume(mover), fired: mover.fired(.volume))
-        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move),
-          color: mover.moveAtr.isNegative ? Palette.lossText : Palette.profitText)
+        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move))
         MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
       }
     }
