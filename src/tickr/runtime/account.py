@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 
 from tickr.api import contract as api
 from tickr.broker.base import AccountBalance, BrokerError, BrokerFill
+from tickr.calendar import ny_date_of
 from tickr.engine.core import Engine, Fence
 from tickr.runtime.dayend import records_agree
 from tickr.runtime.protection import busy
@@ -69,7 +70,7 @@ class Balances:
             self._failing = False
             self.balance, self.read_at = balance, now
         try:
-            fills = engine.broker.fills_today()
+            fills = engine.broker.fills_today(ny_date_of(now))
         except BrokerError as exc:
             self._fills_failing = _journal_once(engine, FILLS_READ_FAILED, exc,
                                                 self._fills_failing)

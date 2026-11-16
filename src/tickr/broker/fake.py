@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field, replace
+from datetime import date
 from decimal import Decimal
 
 from tickr.broker.base import (
@@ -52,7 +53,7 @@ class FakeBroker:
     def account(self) -> AccountSnapshot:
         return AccountSnapshot(self.account_present, self.trading_permitted, self.account_label)
 
-    def fills_today(self) -> list[BrokerFill]:
+    def fills_today(self, day: date) -> list[BrokerFill]:  # noqa: ARG002 - one fake day
         return [BrokerFill(o.client_order_id, o.symbol, str(o.side), str(o.order_type),
                            o.filled_quantity, o.average_fill_price, None, None)
                 for o in self.orders.values() if o.filled_quantity > 0]

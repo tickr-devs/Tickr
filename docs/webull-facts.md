@@ -32,7 +32,7 @@ A fact marked UNPROVEN must not be relied on by trading code until a probe prove
 | Cancel | POST `/trading/orders/cancel` | by `client_order_id` |
 | Detail | GET `/trading/orders/get` | by `client_order_id` |
 | Open orders | GET `/trading/orders/open-orders/list` | empty account returns `{"data": []}` (probe) |
-| History | GET `/trading/orders/historical-orders/list` | no `start_time` = today (probe 2026-11-16); `start_time` format UNPROVEN (one format got 417) |
+| History | GET `/trading/orders/historical-orders/list` | no `start_time` = last 7 days (SDK; UNPROVEN); `start_time` format UNPROVEN (one format got 417) |
 | Accounts | GET `/trading/accounts/list` | bare array; rows `account_id, account_number, account_type, account_label, account_class, user_id` (probe 2026-11-16) |
 | Balance | GET `/trading/assets/balances/get` | `total_asset_currency=USD`; shape below (probe 2026-11-16) |
 | Positions | GET `/trading/assets/positions/list` | bare array; long row recorded 2026-11-16 |
@@ -48,9 +48,7 @@ Not usable for US accounts: per-execution list (HK only), position details (JP o
 ## First position, working stop and fill (probe 2026-11-16 15:17 UTC, the bot's TSCO trade)
 - Positions row (`positions_one_long.json`), all strings: `symbol, quantity, cost, cost_price` (average cost), `currency, instrument_type, last_price, market_value, proportion, position_id, unrealized_profit_loss, unrealized_profit_loss_rate, day_profit_loss, day_realized_profit_loss`.
 - Working stop (`open_orders_working_stop.json`): STOP_LOSS SELL DAY CORE listed with `status` SUBMITTED, `filled_quantity` "0", `stop_price`, no `limit_price`, and `fees[]` already filled with the broker's estimate (`SEC_FEE` 0.06, `FINRA_FEE` 0.01: `type, actual_value, receivable_value`); `commission` is `{}`. Listed about 3 s after the entry filled.
-- Filled LIMIT BUY in history (`historical_orders_fill_and_stop.json`): `status` FILLED, `filled_quantity` = `total_quantity`, `filled_price` (average), `filled_time`/`filled_time_at`, `limit_price`, `fees` empty (no fee on a buy), `commission` `{}`. Placed 15:17:02.993, filled 15:17:03.293 UTC. History without `start_time` lists today's orders (the cancelled 2026-11-04 probe order was not in it).
-
-## Order vocabulary (SDK)
+- Filled LIMIT BUY in history (`historical_orders_fill_and_stop.json`): `status` FILLED, `filled_quantity` = `total_quantity`, `filled_price` (average), `filled_time`/`filled_time_at`, `limit_price`, `fees` empty (no fee on a buy), `commission` `{}`. Placed 15:17:02.993, filled 15:17:03.293 UTC. History without `start_time`: the SDK says the window defaults to the last 7 days (`order_operation_v3.get_order_history`); the 2026-11-04 probe order (12 days old) was not listed, which fits either. The bot keeps only rows whose `filled_time_at` falls on the New York date it asks for. Pages: `pagination_key`, absent on the last page (SDK `list_order_history`, same route); no multi-page body recorded yet.
 
 ## Order vocabulary (SDK)
 - Types: MARKET, LIMIT, STOP_LOSS, STOP_LOSS_LIMIT, TRAILING_STOP_LOSS. Sides: BUY, SELL, SHORT. TIF: DAY, GTC, IOC. Entrust type: QTY, AMOUNT. Combo types exist (OTO, OCO, OTOCO): all UNPROVEN.

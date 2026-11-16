@@ -478,10 +478,12 @@ def _fees(row: Mapping[str, Any], where: str) -> Decimal | None:
     return total
 
 
-def read_fills(body: Any, is_own: IsOwnAccount) -> list[BrokerFill]:
+def read_fills(body: Any, is_own: IsOwnAccount, day: date) -> list[BrokerFill]:
     """Order history page `{"data": [combo{..., "orders": [row...]}]}` (recorded,
-    tests/fixtures/webull/historical_orders_fill_and_stop.json) -> the rows with a fill.
-    `symbol` and `filled_quantity` are required; price, time and fees are display only."""
+    tests/fixtures/webull/historical_orders_fill_and_stop.json) -> the rows filled on New York
+    date `day` (the route's default window is several days, SDK). `symbol`,
+    `filled_quantity` and, on a filled row, `filled_time_at` are required (the day of a fill
+    whose time is unreadable is unknown); price and fees are display only."""
     where = "history"
     result: list[BrokerFill] = []
     for index, combo in enumerate(_unwrap_list(body, where)):
@@ -496,6 +498,12 @@ def read_fills(body: Any, is_own: IsOwnAccount) -> list[BrokerFill]:
             filled = _decimal_field(row, "filled_quantity", row_where)
             if filled <= 0:
                 continue
+            filled_at = _display_time(row, "filled_time_at")
+            if filled_at is None:
+                raise MalformedResponse(f"{row_where}: filled row without a readable "
+                                        "'filled_time_at'")
+            if ny_date_of(filled_at) != day:
+                continue
             cid = _optional(row, "client_order_id")
             result.append(BrokerFill(
                 client_order_id=None if cid is None else str(cid),
@@ -504,7 +512,7 @@ def read_fills(body: Any, is_own: IsOwnAccount) -> list[BrokerFill]:
                 order_type=str(_optional(row, "order_type") or ""),
                 filled_quantity=filled,
                 filled_price=_display_decimal(row, "filled_price", row_where),
-                filled_at=_display_time(row, "filled_time_at"),
+                filled_at=filled_at,
                 fees=_fees(row, row_where),
             ))
     return result
@@ -768,18 +776,19 @@ class WebullBroker:
     def positions(self) -> list[Position]:
         return read_positions(self._read(Route.POSITIONS, {}), self._transport.is_own_account)
 
-    def fills_today(self) -> list[BrokerFill]:
-        """Today's history (no `start_time`: the broker's default is today, probe
-        2026-11-16), every page up to `open_orders_max_pages`; a partial list refuses."""
+    def fills_today(self, day: date) -> list[BrokerFill]:
+        """The history's default window (no `start_time`; its format is unproven), every page
+        by `pagination_key` (SDK `list_order_history`) up to `open_orders_max_pages`, kept to
+        the fills of `day`; a partial list refuses."""
         fills: list[BrokerFill] = []
         params: dict[str, Any] = {}
         seen_keys: set[str] = set()
         for _page in range(self._open_orders_max_pages):
             body = self._read(Route.HISTORY, params)
-            fills.extend(read_fills(body, self._transport.is_own_account))
+            fills.extend(read_fills(body, self._transport.is_own_account, day))
             next_key = _optional(body, "pagination_key") if isinstance(body, Mapping) else None
             if next_key is None:
-                return sorted(fills, key=lambda f: (f.filled_at is None, f.filled_at))
+                return sorted(fills, key=lambda f: f.filled_at or datetime.min.replace(tzinfo=UTC))
             if str(next_key) in seen_keys:
                 raise BrokerReadFailed(Route.HISTORY.name, None, "PAGINATION_REPEATED")
             seen_keys.add(str(next_key))

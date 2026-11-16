@@ -7,7 +7,7 @@ No other module may import a broker SDK. Implementations return typed results an
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol
 
@@ -100,9 +100,9 @@ class Broker(Protocol):
         """One read of the account's balances. Raises BrokerError when it cannot be read."""
         ...
 
-    def fills_today(self) -> list[BrokerFill]:
-        """Today's orders with a fill, oldest first. Raises BrokerError when they cannot be
-        read in full."""
+    def fills_today(self, day: date) -> list[BrokerFill]:
+        """The orders filled on New York date `day`, oldest first. Raises BrokerError when
+        they cannot be read in full."""
         ...
 
     def positions(self) -> list[Position]: ...

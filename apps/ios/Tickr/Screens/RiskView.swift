@@ -190,9 +190,10 @@ private struct AccountCard: View {
           none
         }
         ForEach(account.positions, id: \.self) { position in
-          row(position.symbol, detail: position.quantity.text + Format.separator + (position.lastPrice?.text ?? Format.missing),
-            value: position.unrealizedPlUsd.map { Money.signedUSD($0.value) } ?? Format.missing,
-            color: position.unrealizedPlUsd.map { Palette.result($0.value) } ?? Palette.textQuaternary)
+          let last: String = position.lastPrice?.text ?? Format.missing
+          let result: String = position.unrealizedPlUsd.map { Money.signedUSD($0.value) } ?? Format.missing
+          row(position.symbol, detail: [position.quantity.text, last].joined(separator: Format.separator),
+            value: result, color: position.unrealizedPlUsd.map { Palette.result($0.value) } ?? Palette.textQuaternary)
         }
         CardLabel(L10n.Risk.fillsToday)
           .padding(.top, Tokens.Space.xs)
@@ -200,12 +201,13 @@ private struct AccountCard: View {
           none
         }
         ForEach(account.fills, id: \.self) { fill in
+          let price: String = fill.price?.text ?? Format.missing
+          let feeAmount: String = fill.feesUsd.map { RiskFormat.amount($0.value) } ?? Format.missing
+          let fees: String = String(localized: L10n.Risk.fees(feeAmount))
           row(fill.symbol,
             detail: [Format.timeOrDash(fill.filledAt), ApiText.orderSide(fill.side), fill.quantity.text]
               .joined(separator: Format.separator),
-            value: (fill.price?.text ?? Format.missing) + Format.separator
-              + String(localized: L10n.Risk.fees(fill.feesUsd.map { RiskFormat.amount($0.value) } ?? Format.missing)),
-            color: Palette.textPrimary)
+            value: [price, fees].joined(separator: Format.separator), color: Palette.textPrimary)
         }
       }
       if account?.balances == nil {

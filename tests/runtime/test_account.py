@@ -375,7 +375,7 @@ def test_positions_values_and_todays_fills_reach_the_document(tmp_path):
 
 def test_a_failed_fills_read_never_blocks_the_balance(tmp_path):
     class NoHistory(FakeBroker):
-        def fills_today(self):
+        def fills_today(self, day):
             raise BrokerError("history route paused")
 
     bot = with_account(Bot(tmp_path, broker=NoHistory(funds=FUNDS)), tmp_path)

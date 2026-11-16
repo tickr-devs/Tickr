@@ -565,7 +565,8 @@ http_read_timeout_seconds = 10
 token_check_duration_seconds = 300
 # Seconds between token approval checks while waiting; read by the broker adapter.
 token_check_interval_seconds = 5
-# Maximum pages read when listing open orders; more pages = refuse as incomplete; read by the broker adapter.
+# Maximum pages read when listing open orders or the order history (today's fills); more pages = refuse as
+# incomplete; read by the broker adapter.
 open_orders_max_pages = 20
 # Route-specific limits "<route path>" = [requests, window seconds]; empty = every route uses requests_per_route_per_minute; read by the request budget.
 route_limits = {}
@@ -609,7 +610,8 @@ http_read_timeout_seconds = 10
 token_check_duration_seconds = 300
 # Seconds between token approval checks while waiting; read by the broker adapter.
 token_check_interval_seconds = 5
-# Maximum pages read when listing open orders; more pages = refuse as incomplete; read by the broker adapter.
+# Maximum pages read when listing open orders or the order history (today's fills); more pages = refuse as
+# incomplete; read by the broker adapter.
 open_orders_max_pages = 20
 # Route-specific limits "<route path>" = [requests, window seconds] (docs, unverified; never assume the looser value); read by the request budget.
 route_limits = { "/trading/accounts/list" = [10, 30], "/trading/orders/get" = [2, 2], "/trading/orders/open-orders/list" = [2, 2], "/trading/assets/positions/list" = [2, 2], "/trading/orders/place" = [600, 60], "/trading/orders/cancel" = [600, 60], "/trading/orders/replace" = [600, 60] }
