@@ -65,6 +65,7 @@ from tickr.data.base import (
     QuoteListener,
     ScreenerKind,
     ScreenerRow,
+    ScreenerSession,
     SessionBar,
     StreamNotice,
     SubscriptionLimit,
@@ -349,11 +350,11 @@ def read_order(item: Any, is_own: IsOwnAccount, where: str) -> OrderDetail:
     quantity = _decimal_field(item, "total_quantity", where)
     filled = _decimal_field(item, "filled_quantity", where)
     order_type = _enum_field(item, "order_type", OrderType, where)
-    # Display only: read on LIMIT rows, the one type it was recorded on, and an unreadable
-    # value is shown as unknown: nothing decides on it, so it can never make one of our
-    # orders unreadable.
+    # Display only: read on LIMIT rows, the one type it was recorded on (and STOP_LOSS_LIMIT
+    # rows, sent only by the F7 probe), and an unreadable value is shown as unknown: nothing
+    # decides on it, so it can never make one of our orders unreadable.
     limit_price = _display_decimal(item, "limit_price", where) \
-        if order_type is OrderType.LIMIT else None
+        if order_type in (OrderType.LIMIT, OrderType.STOP_LOSS_LIMIT) else None
     return OrderDetail(
         client_order_id=str(_require(item, "client_order_id", where)),
         symbol=str(_require(item, "symbol", where)),
@@ -648,8 +649,8 @@ def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> 
     q = request.quantity
     if not q.is_finite() or q <= 0 or q != q.to_integral_value():
         raise Refused("LOCAL_QUANTITY", "quantity must be a positive whole number")
-    needs_limit = request.order_type is OrderType.LIMIT
-    needs_stop = request.order_type is OrderType.STOP_LOSS
+    needs_limit = request.order_type in (OrderType.LIMIT, OrderType.STOP_LOSS_LIMIT)
+    needs_stop = request.order_type in (OrderType.STOP_LOSS, OrderType.STOP_LOSS_LIMIT)
     if needs_limit != (request.limit_price is not None):
         raise Refused("LOCAL_LIMIT_PRICE", f"limit_price does not fit {request.order_type}")
     if needs_stop != (request.stop_price is not None):
@@ -1155,8 +1156,12 @@ class WebullMarketData:
         utc_now: Callable[[], datetime],
         clock: Callable[[], float] = time.monotonic,
         stream: QuoteStream | None = None,
+        extended_rank_types: Mapping[ScreenerSession, str] | None = None,
     ) -> None:
         self._stream = stream
+        # Gainers/losers rank_type per session; REGULAR is gainers_losers_rank_type.
+        self._rank_types = {**(extended_rank_types or {}),
+                            ScreenerSession.REGULAR: gainers_losers_rank_type}
         if profile_symbols_per_request < 1:
             raise AdapterConfigError("profile_symbols_per_request must be at least 1")
         self._profile_chunk = profile_symbols_per_request
@@ -1165,7 +1170,6 @@ class WebullMarketData:
         self._transport = transport
         self._budget = budget
         self._category = category
-        self._gainers_losers_rank_type = gainers_losers_rank_type
         self._top_actives_rank_type = top_actives_rank_type
         self._utc_now = utc_now
         self._clock = clock
@@ -1182,7 +1186,10 @@ class WebullMarketData:
             raise BrokerReadFailed(route.name, response.status, response.error_code)
         return response.body
 
-    def screener(self, kind: ScreenerKind) -> list[ScreenerRow]:
+    def screener(self, kind: ScreenerKind,
+                 session: ScreenerSession = ScreenerSession.REGULAR) -> list[ScreenerRow]:
+        """One list. The gainers and losers rank by `session`'s change (its configured
+        rank_type; a session without one is refused); the top actives have one ranking."""
         if kind is ScreenerKind.TOP_ACTIVES:
             body = self._read(Route.TOP_ACTIVES, {
                 "category": self._category, "rank_type": self._top_actives_rank_type})
@@ -1190,10 +1197,16 @@ class WebullMarketData:
             direction = DIRECTION_GAINERS if kind is ScreenerKind.GAINERS else DIRECTION_LOSERS
             body = self._read(Route.GAINERS_LOSERS, {
                 "category": self._category,
-                "rank_type": self._gainers_losers_rank_type,
+                "rank_type": self._rank_type(session),
                 "direction": direction,
             })
         return self._with_types(read_screener(body, kind))
+
+    def _rank_type(self, session: ScreenerSession) -> str:
+        rank_type = self._rank_types.get(session)
+        if rank_type is None:
+            raise AdapterConfigError(f"no gainers/losers rank_type for the {session} session")
+        return rank_type
 
     def _with_types(self, rows: list[ScreenerRow]) -> list[ScreenerRow]:
         """Fill each row's security type from the instrument profile with the SAME instrument_id,
@@ -2301,6 +2314,8 @@ def market_data_from_config(
         md.profile_symbols_per_request,
         utc_now=lambda: datetime.now(UTC),
         stream=stream,
+        extended_rank_types={ScreenerSession.PRE: md.premarket_gainers_losers_rank_type,
+                             ScreenerSession.POST: md.postmarket_gainers_losers_rank_type},
     )
 
 

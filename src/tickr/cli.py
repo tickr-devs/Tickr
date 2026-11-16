@@ -349,6 +349,32 @@ def _probe_replace_stop(args: argparse.Namespace) -> int:
     return 3 if verdict is replace_probe.Verdict.NOT_SENT else 4
 
 
+def _probe_extended(args: argparse.Namespace) -> int:
+    """Probe F7 in the pre-market or post-market: which stops Webull accepts, fills and
+    triggers there (engine/session_probe.py). Exit 0 answered, 3 refused, 4 the operator must
+    close a leftover position in the Webull app."""
+    from tickr.engine import session_probe
+
+    cfg = config_module.load(args.config)
+    gate = config_module.trading_gate(cfg)
+    if not gate.open:
+        raise ManualRefused(f"trading gate closed: {gate.cause}")
+    if not session_probe.SYMBOL.match(args.symbol):
+        raise ManualRefused(f"{args.symbol!r} is not a ticker")
+    calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+    session, end = session_probe.check_time(cfg, calendar, NOW())
+    _, lock_path = data_paths(cfg)
+    with SingleInstanceLock(lock_path):
+        broker, market = PROBE_ADAPTERS(cfg)
+        folder = session_probe.evidence_folder(cfg, NOW())
+        print(f"probe-extended {args.symbol} in the {session} (ends {end.isoformat()}); "
+              f"evidence in {folder}")
+        code = session_probe.run(cfg, broker, market, args.symbol, folder, now=NOW,
+                                 sleep=SLEEP, out=print, session=session, session_end=end)
+        print(f"summary: {folder / 'summary.json'}")
+        return code
+
+
 def _check_quote(args: argparse.Namespace) -> int:
     """Read-only: one snapshot quote through the probes' market-data path, and whether its age
     passes the check `probe-replace-stop` applies. Sends no orders. Exit 0 fresh, 3 not."""
@@ -497,14 +523,14 @@ def _run(path: Path) -> int:
     """The launchd bot job (via `tickr.runtime run-bot`): run until SIGTERM, then drain.
     Exit 0 after a clean drain (SIGTERM or a stop-bot command), 3 refused while the operator's
     stop marker exists, 5 when the drain hit its deadline."""
-    from tickr.data.capture import CaptureWriter
+    from tickr.data.capture import BOT_START, BOT_STOP, CaptureError, CaptureWriter
     from tickr.data.health import StreamHealth
     from tickr.data.todaybars import TodayBars
     from tickr.observers.errors import ObserverError
     from tickr.runtime import service
     from tickr.runtime.account import AccountReads
     from tickr.runtime.alerts import Alerter, AlertKind, token_pending_text
-    from tickr.runtime.market import MarketRuntime, StreamInbox
+    from tickr.runtime.market import MarketRuntime, StreamInbox, journal_capture_failed
     from tickr.runtime.signals import StopRequest, install_stop_handler, restore_handlers
     from tickr.runtime.watch import ALERT, Watch
 
@@ -550,6 +576,13 @@ def _run(path: Path) -> int:
                             clock=lambda: NOW().timestamp(),
                             close_refusal=lambda: close_refusal(cfg, calendar, NOW()))
             capture = CaptureWriter.from_config(cfg, adapters.market.provider)
+            # Marks the start in the capture, so a gap in the screener lists is visibly downtime.
+            # Best effort: a capture that cannot be written never keeps the bot from starting.
+            try:
+                capture.event(BOT_START, NOW(), run_id=str(run_id), code_version=version)
+            except CaptureError as exc:
+                journal_capture_failed(store, run_id, BOT_START, exc,
+                                       cfg.market_data.failure_detail_max_chars)
             today_bars = TodayBars()  # one bars read shared by discovery and evaluation
             market = MarketRuntime(engine, cfg, adapters.market,
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
@@ -602,6 +635,8 @@ def _run(path: Path) -> int:
                           else None),
                          ((lambda: market.close(discovery_stop)) if market is not None
                           else None),
+                         ((lambda: capture.event(BOT_STOP, NOW(), run_id=str(run_id),
+                                                 cause=cause)) if capture is not None else None),
                          (capture.close if capture is not None else None),
                          (_closer(observers, cfg) if observers is not None else None),
                          (watch.flush_alerts if watch is not None else None),
@@ -664,6 +699,10 @@ def main(argv: list[str] | None = None) -> int:
     replace = sub.add_parser("probe-replace-stop",
                              help="probe F5: tighten the open trade's stop once by replace")
     replace.add_argument("--to", type=_decimal, required=True, help="new stop price, USD")
+    extended = sub.add_parser("probe-extended", help="probe F7 in the pre-market or "
+                              "post-market, bot stopped, account flat: which stops Webull "
+                              "accepts and triggers there")
+    extended.add_argument("symbol")
     sub.add_parser("run", help="the bot service (launchd): protect, obey commands, drain on "
                    "SIGTERM")
     sub.add_parser("resume", help="recover after a crash and keep protecting open trades")
@@ -702,6 +741,8 @@ def main(argv: list[str] | None = None) -> int:
             return _resume(args, exit_all=True)
         if args.command == "probe-replace-stop":
             return _probe_replace_stop(args)
+        if args.command == "probe-extended":
+            return _probe_extended(args)
         if args.command == "check-quote":
             return _check_quote(args)
         if args.command == "explain":

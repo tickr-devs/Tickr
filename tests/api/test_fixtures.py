@@ -86,6 +86,7 @@ from tickr.api.contract import (
     RiskSettings,
     SessionSettings,
     SessionTimesV1,
+    SettingDifferenceV1,
     SettingsV1,
     SizeBinding,
     SkippedSignalV1,
@@ -288,7 +289,7 @@ def documents() -> dict[str, object]:
             ReconcileJobV1(Decimal("10"), T0 + timedelta(days=4, hours=6), None),
             BackupJobV1(T0 + timedelta(days=4), T0 + timedelta(days=4, hours=7),
                         "OperationalError", None),
-            _LAUNCHD, None, "2026-11-21 is a weekend",
+            _LAUNCHD, None, "WEEKEND: 2026-11-21 is a weekend",
             # Friday night stopped before the 429 window cleared: the data still ends Thursday.
             NightlyFetchJobV1(T0 + timedelta(days=4, hours=21), None, 0,
                               "stopped at 2026-11-23T12:30:00+00:00, before the next session "
@@ -401,14 +402,18 @@ def documents() -> dict[str, object]:
                 ObserverTradeV1("ABCD", T0.replace(microsecond=0) + timedelta(minutes=4), None,
                                 None, None, None, None, None, None, None,
                                 "skipped_overlap: an earlier simulated trade of ABCD was still "
-                                "open")), None, False),
+                                "open")), None, False,
+                watching_since=T0.replace(microsecond=0) - timedelta(seconds=58),
+                settings_differences=(SettingDifferenceV1(
+                    "indicators.minimum_relative_volume", "1.5", "2.0"),)),
             ObserverV1("price-action-v2", "1", (), None, "no decisions recorded that day", None,
                        "no decisions recorded that day", False),
             ObserverV1("price-action-v2", "2", (
                 ObserverDecisionV1(T0.replace(microsecond=0) + timedelta(minutes=2), "WXYZ",
                                    Verdict.ENTER, ()),), None,
                 "no captured bars for 2026-11-16", None, "no captured bars for 2026-11-16",
-                False))),
+                False, watching_since=T0.replace(microsecond=0) + timedelta(minutes=2, seconds=1),
+                settings_differences=()))),
         "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
         "decisions-v1": DecisionsV1("ABCD", DAY, (
             DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,
