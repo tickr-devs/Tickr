@@ -85,7 +85,9 @@ struct ObserverLabelTests {
     #expect(DayCurve(closes: [], reported: nil, complete: true).line(start: open, end: end).first?.at == open)
     let early = DayCurve(closes: [], reported: nil, complete: true, since: open.addingTimeInterval(-60))
     #expect(early.line(start: open, end: end).first?.at == open)
-    #expect(try #require(DayCurve.observer(try lateObserver())).since == try lateObserver().watchingSince?.date)
+    let observer = try lateObserver()
+    let curve = try #require(DayCurve.observer(observer))
+    #expect(curve.since == observer.watchingSince?.date)
   }
 
   @Test("The phone's line starts at the observer's start too, with its label and notes")

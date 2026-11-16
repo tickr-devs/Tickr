@@ -68,7 +68,7 @@ struct LabView: View {
 
   private var versions: some View { VersionsCard().gridColumn().rise(step: Order.versions.rawValue) }
   /// Sized to its content: a few rows under the chart, never an empty lower half.
-  private var curves: some View { CurvesCard().hugging().gridColumn().rise(step: Order.curves.rawValue) }
+  private var curves: some View { CurvesCard().hugsContent().gridColumn().rise(step: Order.curves.rawValue) }
   private var replay: some View { ReplayCard().gridColumn().rise(step: Order.replay.rawValue) }
   private var advisorCard: some View { AdvisorCard().gridColumn().rise(step: Order.advisor.rawValue) }
   private var refusals: some View { RefusalsCard().gridColumn().rise(step: Order.refusals.rawValue) }

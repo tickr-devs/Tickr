@@ -125,7 +125,7 @@ extension View {
 
   /// Cards in this view hug their content even inside a filling grid: a card whose content is
   /// short stays short instead of growing to its row's height with an empty lower half.
-  func hugging() -> some View {
+  func hugsContent() -> some View {
     environment(\.cardFills, false)
   }
 
