@@ -97,7 +97,8 @@ func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale(identif
     let day = try WireDate("2026-11-16")
     #expect(DayText.day(day, locale: Locale(identifier: "en_US")) == "Mon Nov 16")
     let russian = DayText.day(day, locale: Locale(identifier: "ru_RU"))
-    #expect(russian.hasPrefix("пн "))
+    // The weekday's case is the language's own (ICU may capitalise a standalone "Пн").
+    #expect(russian.lowercased().hasPrefix("пн "), "\(russian)")
     #expect(russian.contains("16"))
     #expect(russian.contains("нояб"))
     #expect(!russian.contains(","))
