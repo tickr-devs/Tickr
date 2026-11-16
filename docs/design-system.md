@@ -115,7 +115,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `annotation` / `annotationBold` | 10.5 pt mono | Chart axes, ticker, pipeline values |
 | `symbol` | `Size.iconWellSymbol` semibold | SF Symbols in icon wells |
 | `symbolCompact` | 13 pt semibold | SF Symbols in compact round icon buttons |
-| `stageSymbol` | 20 pt semibold | SF Symbols in a live-flow stage |
+| `stageSymbol` | 20 pt semibold | SF Symbols in a live-flow stage (names in `FlowStageSymbols`, TickrDesign) |
 | `button` | `.body` semibold | Command buttons (bot controls) |
 | `chip` | `.callout` bold mono | Tabs and chips naming a symbol (position tabs) |
 | `buttonCompact` | `.callout` semibold | Compact buttons |
