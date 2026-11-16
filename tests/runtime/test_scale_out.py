@@ -79,3 +79,9 @@ def test_the_first_fill_seen_is_what_the_position_view_carries(tmp_path):
     desk.broker.fill(entry.client_order_id, D(6), D("10.05"))
     desk.engine.step()
     assert _first_fill_seen(desk.engine, entry.client_order_id) == seen
+
+
+def test_the_simulator_refuses_a_scale_out_entry():
+    from tickr.replay.engine import _entry_problem
+
+    assert _entry_problem(decision(scale_out=D(5))) == "scale-out (partial exits) is not modelled"
