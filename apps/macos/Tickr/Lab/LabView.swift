@@ -889,10 +889,13 @@ private struct ReplayCard: View {
       Grid(alignment: .trailing, horizontalSpacing: Tokens.Space.m, verticalSpacing: Tokens.Space.xs) {
         GridRow {
           Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+          // A version's name wider than its column wraps onto a second line, never cut.
           Text(verbatim: firstName).foregroundStyle(Palette.accentText)
+            .fixedSize(horizontal: false, vertical: true)
           if let second = replay.compare, other != nil {
             Text(verbatim: String(localized: L10n.Lab.versionName(second.strategy, second.version)))
               .foregroundStyle(Palette.highlightText)
+              .fixedSize(horizontal: false, vertical: true)
             Text(L10n.Lab.replayDifference).foregroundStyle(Palette.textQuaternary)
           }
         }

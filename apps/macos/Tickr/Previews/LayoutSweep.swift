@@ -108,8 +108,11 @@ enum LayoutSweep {
     let skipped = named.filter { !allowed($0.1, least: smallest) }
     named.removeAll { !allowed($0.1, least: smallest) }
     note(skipped, in: folder)
-    for (sizeName, size) in named {
+    for (wanted, size) in named {
       resize(window, to: size)
+      // The least size is the content's; AppKit adds the title bar to it, so that picture is named
+      // by the window's own size.
+      let sizeName = wanted == name(of: smallest) ? name(of: window.frame.size) : wanted
       for section in AppSection.allCases {
         for inspector in section == .chart ? [false, true] : [false] {
           fullChart(inspector)
