@@ -163,7 +163,7 @@ def detail_row(d: OrderDetail) -> dict[str, Any]:
             "side": d.side, "type": d.order_type, "status": d.raw_status, "state": d.state,
             "quantity": d.quantity, "filled": d.filled_quantity,
             "fill_price": d.average_fill_price, "stop_price": d.stop_price,
-            "limit_price": d.limit_price}
+            "limit_price": d.limit_price, "trailing_stop_step": d.trailing_stop_step}
 
 
 def quote_row(q: Quote) -> dict[str, Any]:
@@ -188,6 +188,8 @@ class Probe:
     sleep: Sleep
     out: Out
     run_tag: str
+    # The session of every order this run builds unless a step names one.
+    order_session: TradingSession = TradingSession.ALL
     # Net shares this run's orders filled, as Detail proved them (buys less sells).
     expected: Decimal = Decimal(0)
     _sequence: int = 0
@@ -206,7 +208,10 @@ class Probe:
 
     def quote(self) -> Quote:
         quote = read_quote(self.market, self.symbol)
-        age, stale = stale_cause(self.config, quote, self.now())
+        # Outside the regular session quotes change rarely (minutes apart even for active
+        # names, 2026-11-16): the probe has its own age limit, not the entry rule's.
+        age, stale = stale_cause(self.config, quote, self.now(),
+                                 self.config.probe.extended_max_quote_age_seconds)
         self._log("quote", age_seconds=age, stale=stale, **quote_row(quote))
         if stale is not None:
             raise ManualRefused(f"{stale}: the snapshot quote is not live in this session")
@@ -252,7 +257,7 @@ class Probe:
         self._log("intent", case=name, client_order_id=request.client_order_id,
                   side=request.side, type=request.order_type, session=request.session,
                   quantity=request.quantity, limit_price=request.limit_price,
-                  stop_price=request.stop_price)
+                  stop_price=request.stop_price, trailing_stop_step=request.trailing_stop_step)
         try:
             ack = self.broker.place(request)
         except Refused as exc:
@@ -327,12 +332,15 @@ class Probe:
         raise Unresolved(f"{name} order {cid} is {state} after its cancel")
 
     def request(self, cid: str, side: Side, order_type: OrderType, quantity: Decimal,
-                *, session: TradingSession = TradingSession.ALL, limit: Decimal | None = None,
-                stop: Decimal | None = None) -> OrderRequest:
+                *, session: TradingSession | None = None, limit: Decimal | None = None,
+                stop: Decimal | None = None,
+                trailing_step: Decimal | None = None) -> OrderRequest:
         return OrderRequest(client_order_id=cid, symbol=self.symbol, side=side,
                             order_type=order_type, quantity=quantity,
-                            time_in_force=TimeInForce.DAY, session=session,
-                            limit_price=limit, stop_price=stop)
+                            time_in_force=TimeInForce.DAY,
+                            session=self.order_session if session is None else session,
+                            limit_price=limit, stop_price=stop,
+                            trailing_stop_step=trailing_step)
 
     # -- steps ------------------------------------------------------------------------------
 
@@ -530,8 +538,8 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
     return EXIT_ANSWERED
 
 
-def evidence_folder(config: Config, at: datetime) -> Path:
+def evidence_folder(config: Config, at: datetime, kind: str = "extended") -> Path:
     folder = (config.root / config.run.data_dir / config.probe.evidence_dir
-              / ny_date_of(at).isoformat() / f"extended-{at.astimezone(UTC):%H%M%S}")
+              / ny_date_of(at).isoformat() / f"{kind}-{at.astimezone(UTC):%H%M%S}")
     folder.mkdir(parents=True, exist_ok=False)
     return folder

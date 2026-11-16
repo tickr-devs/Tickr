@@ -259,6 +259,20 @@ GROUPS = [
                 "проверьте приложение Webull (торги остановлены? нет покупателей?)",
             ),
             (
+                "watchdog_started",
+                "The watchdog started the bot at {time} for a resting entry; no new entry "
+                "until you clear this (tickr clear-fence watchdog-started)",
+                "Сторож запустил бота в {time} из-за висящей лимитной заявки; новых входов "
+                "не будет, пока вы не снимете блокировку (tickr clear-fence watchdog-started)",
+            ),
+            (
+                "watchdog_record_unreadable",
+                "The watchdog's restart record is unreadable ({error}); no new entry until "
+                "you clear this (tickr clear-fence watchdog-started)",
+                "Запись сторожа о перезапуске не читается ({error}); новых входов не будет, "
+                "пока вы не снимете блокировку (tickr clear-fence watchdog-started)",
+            ),
+            (
                 "close_not_sent",
                 "Close of {quantity} of {expected} {symbol} not sent outside the regular "
                 "session; the stop stays. Close it in the Webull app, or clear this in the "
@@ -581,6 +595,22 @@ GROUPS = [
                 "check_contradicts_record",
                 "{rule}: recorded as failed but the measured value meets the threshold",
                 "{rule}: записана как не пройденная, но измерение проходит порог",
+            ),
+            (
+                "no_invalidation",
+                "{rule}: no invalidation level recorded, so the distance to the trigger "
+                "has no scale",
+                "{rule}: уровень отмены не записан, расстояние до триггера не с чем сравнить",
+            ),
+            (
+                "invalidation_wrong_side",
+                "{rule}: the invalidation level is not on the far side of the trigger",
+                "{rule}: уровень отмены не по другую сторону от триггера",
+            ),
+            (
+                "past_invalidation",
+                "{rule}: the measured price is already past the invalidation level",
+                "{rule}: измеренная цена уже за уровнем отмены",
             ),
             (
                 "planned_loss_not_positive_r",

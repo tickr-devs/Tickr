@@ -217,58 +217,12 @@ struct SwitchRow: View {
     HStack(spacing: Tokens.Space.m) {
       Toggle(isOn: $isOn) { Text(title) }
         .labelsHidden()
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .tint(Palette.accent)
+        .toggleStyle(.designSwitch(tint: Palette.accent))
       Text(title)
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
         .accessibilityHidden(true)
     }
-  }
-}
-
-/// The design's segmented strip: the choices side by side on the sunken surface, the chosen one
-/// raised on the card colour with a hairline.
-struct SegmentStrip<Value: Hashable, Label: View>: View {
-  @Binding var selection: Value
-  let choices: [Value]
-  let label: (Value) -> Label
-
-  init(selection: Binding<Value>, choices: [Value], @ViewBuilder label: @escaping (Value) -> Label) {
-    self._selection = selection
-    self.choices = choices
-    self.label = label
-  }
-
-  var body: some View {
-    HStack(spacing: Tokens.Space.xs) {
-      ForEach(choices, id: \.self) { choice in
-        let chosen = choice == selection
-        Button { selection = choice } label: {
-          label(choice)
-            .font(Tokens.Typography.buttonCompact)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Tokens.Space.s)
-            .foregroundStyle(chosen ? Palette.textPrimary : Palette.textTertiary)
-            .background {
-              if chosen {
-                RoundedRectangle(cornerRadius: Tokens.Radius.small, style: .continuous)
-                  .fill(Palette.surface)
-                  .strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin)
-              }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
-      }
-    }
-    .padding(Tokens.Space.xs)
-    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
-      .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
-    .animation(Tokens.Motion.quick, value: selection)
   }
 }
 

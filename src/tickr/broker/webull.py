@@ -74,6 +74,7 @@ from tickr.data.base import (
 )
 from tickr.types import (
     Bar,
+    ComboRole,
     OrderDetail,
     OrderRequest,
     OrderType,
@@ -106,6 +107,9 @@ ORDER_COMBO_TYPE = "NORMAL"
 ORDER_ENTRUST_TYPE = "QTY"
 ORDER_INSTRUMENT_TYPE = "EQUITY"
 ORDER_MARKET = "US"
+# Trailing stop parts, from the SDK v3 sample only (NOT probed: engine/trailing_probe.py).
+ORDER_TRAILING_TYPE = "PERCENTAGE"
+ORDER_TRIGGER_PRICE_TYPE = "PRICE"
 
 SDK_API_VERSION = "v3"
 SDK_LOGGER_PREFIX = "webull"
@@ -181,7 +185,7 @@ class AdapterConfigError(BrokerError):
 
 @dataclass(frozen=True)
 class UnreadableOrder:
-    """A foreign order row outside our vocabulary (e.g. SHORT, TRAILING_STOP_LOSS)."""
+    """A foreign order row outside our vocabulary (e.g. SHORT, TRAILING_STOP_LOSS_LIMIT)."""
 
     client_order_id: str
     symbol: str
@@ -370,6 +374,10 @@ def read_order(item: Any, is_own: IsOwnAccount, where: str) -> OrderDetail:
         limit_price=limit_price,
         broker_order_id=None if _optional(item, "order_id") is None else str(item["order_id"]),
         fees=_fees(item, where),
+        trailing_stop_step=_display_decimal(item, "trailing_stop_step", where)
+        if order_type is OrderType.TRAILING_STOP_LOSS else None,
+        row_keys=tuple(sorted(str(k) for k in item))
+        if order_type is OrderType.TRAILING_STOP_LOSS else None,
     )
 
 
@@ -641,9 +649,11 @@ def _wire_decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
-def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> dict[str, Any]:
-    """OrderRequest -> one `new_orders[]` element. Raises Refused for requests Webull must
-    never see; the code names the rule, and nothing is sent."""
+def build_order_body(request: OrderRequest, client_order_id_max_length: int,
+                     combo_type: str = ORDER_COMBO_TYPE) -> dict[str, Any]:
+    """OrderRequest -> one `new_orders[]` element (`combo_type` NORMAL, or a combo leg's role).
+    Raises Refused for requests Webull must never see; the code names the rule, and nothing is
+    sent."""
     cid = request.client_order_id
     if not cid or len(cid) > client_order_id_max_length:
         raise Refused("LOCAL_CLIENT_ORDER_ID", "empty or longer than the broker limit")
@@ -652,16 +662,20 @@ def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> 
         raise Refused("LOCAL_QUANTITY", "quantity must be a positive whole number")
     needs_limit = request.order_type in (OrderType.LIMIT, OrderType.STOP_LOSS_LIMIT)
     needs_stop = request.order_type in (OrderType.STOP_LOSS, OrderType.STOP_LOSS_LIMIT)
+    trailing = request.order_type is OrderType.TRAILING_STOP_LOSS
     if needs_limit != (request.limit_price is not None):
         raise Refused("LOCAL_LIMIT_PRICE", f"limit_price does not fit {request.order_type}")
     if needs_stop != (request.stop_price is not None):
         raise Refused("LOCAL_STOP_PRICE", f"stop_price does not fit {request.order_type}")
-    for price in (request.limit_price, request.stop_price):
+    if trailing != (request.trailing_stop_step is not None):
+        raise Refused("LOCAL_TRAILING_STEP",
+                      f"trailing_stop_step does not fit {request.order_type}")
+    for price in (request.limit_price, request.stop_price, request.trailing_stop_step):
         if price is not None and (not price.is_finite() or price <= 0):
             raise Refused("LOCAL_PRICE", "prices must be positive")
     body: dict[str, Any] = {
         "client_order_id": cid,
-        "combo_type": ORDER_COMBO_TYPE,
+        "combo_type": combo_type,
         "entrust_type": ORDER_ENTRUST_TYPE,
         "instrument_type": ORDER_INSTRUMENT_TYPE,
         "market": ORDER_MARKET,
@@ -676,6 +690,11 @@ def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> 
         body["limit_price"] = _wire_decimal(request.limit_price)
     if request.stop_price is not None:
         body["stop_price"] = _wire_decimal(request.stop_price)
+    if request.trailing_stop_step is not None:
+        # SDK v3 sample (trade_client_v3.py, trailing stop loss): PERCENTAGE step, PRICE trigger.
+        body["trailing_type"] = ORDER_TRAILING_TYPE
+        body["trailing_stop_step"] = _wire_decimal(request.trailing_stop_step)
+        body["trigger_price_type"] = ORDER_TRIGGER_PRICE_TYPE
     return body
 
 
@@ -909,6 +928,36 @@ class WebullBroker:
         if response.error_code in PLACE_REFUSAL_CODES:
             raise Refused(response.error_code or "", response.message)
         raise OutcomeUnknown(f"PLACE: HTTP {response.status} {response.error_code or ''}".strip())
+
+    def place_combo(self, combo_id: str,
+                    legs: Sequence[tuple[ComboRole, OrderRequest]]) -> Acknowledgement:
+        """One combo in one place request (Webull docs: `client_combo_order_id` and one
+        `new_orders[]` element per leg, each with its own `client_order_id` and its role as
+        `combo_type`). UNPROVEN: the attached-stop probe is its only caller. The
+        acknowledgement must echo the MASTER leg; any other success body is OutcomeUnknown,
+        with its top-level keys named so the probe's evidence records the shape."""
+        self._require_gate()
+        if not combo_id or len(combo_id) > self._client_order_id_max_length:
+            raise Refused("LOCAL_CLIENT_ORDER_ID", "combo id empty or longer than the limit")
+        masters = [r for role, r in legs if role is ComboRole.MASTER]
+        if len(masters) != 1 or len(legs) < 2:
+            raise Refused("LOCAL_COMBO", "a combo is one MASTER and at least one attached leg")
+        bodies = [build_order_body(r, self._client_order_id_max_length, role.value)
+                  for role, r in legs]
+        response = self._send(Route.PLACE, {"client_combo_order_id": combo_id,
+                                             "new_orders": bodies})
+        if response.ok:
+            try:
+                return read_acknowledgement(
+                    response.body, masters[0].client_order_id, self._transport.is_own_account)
+            except MalformedResponse as exc:
+                keys = sorted(response.body) if isinstance(response.body, Mapping) else []
+                raise OutcomeUnknown(
+                    f"PLACE combo: unreadable acknowledgement ({exc}); keys {keys}") from None
+        if response.error_code in PLACE_REFUSAL_CODES:
+            raise Refused(response.error_code or "", response.message)
+        raise OutcomeUnknown(
+            f"PLACE combo: HTTP {response.status} {response.error_code or ''}".strip())
 
     def can_place(self, count: int) -> bool:
         return self._budget.can_take(Route.PLACE.path, count)

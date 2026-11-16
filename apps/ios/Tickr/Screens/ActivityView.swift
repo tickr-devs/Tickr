@@ -657,7 +657,6 @@ private struct TradesList: View {
   static let maeSymbol = "arrow.down"
   static let mfeSymbol = "arrow.up"
   static let codeSymbol = "chevron.left.forwardslash.chevron.right"
-  static let openSymbol = "circle"
   /// Symbol of a closed trade's "Another strategy" button.
   static let anotherSymbol = "arrow.triangle.branch"
 
@@ -691,7 +690,7 @@ private struct TradesList: View {
         // below); the OPEN tag, then the stop's own state beside it (VERIFIED green, PENDING amber…).
         row(symbol: position.symbol, time: nil,
           tag: String(localized: L10n.Activity.openTag),
-          tagSymbol: Self.openSymbol, tone: Tone.openPosition,
+          tone: Tone.openPosition,
           result: String(localized: L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value))),
           figures: openFigures(position), stopState: state, open: true)
           .rise(step: ActivityView.Order.list.rawValue)
@@ -700,7 +699,6 @@ private struct TradesList: View {
         row(symbol: trade.symbol,
           time: Format.time(trade.openedAt) + Format.timeRange + Format.time(trade.closedAt),
           tag: Board.exitReasonTitle(trade.exitReason).uppercased(),
-          tagSymbol: Board.exitReasonSymbol(trade.exitReason),
           // The reason's own tone (v99: strategy exit teal, stopped out pink, other closes grey),
           // as the Mac's Trades; the result keeps its sign's.
           tagTone: Tone.exit(trade.exitReason),
@@ -815,17 +813,16 @@ private struct TradesList: View {
   /// A row's tag, and for an open position its stop's state as a tag of its own beside it (the
   /// board's OPEN, then VERIFIED): two meanings, two tags, never one "OPEN · VERIFIED".
   @ViewBuilder
-  private func tags(_ tag: String, symbol: String, tone: Tone, stopState: StopState?) -> some View {
-    StatusPill(verbatim: tag, systemImage: symbol, tone: tone)
+  private func tags(_ tag: String, tone: Tone, stopState: StopState?) -> some View {
+    Badge(verbatim: tag, tone: tone)
     if let stopState {
-      StatusPill(verbatim: Board.stopStateTitle(stopState).uppercased(), systemImage: stopState.symbol,
-        tone: stopState.tone)
+      Badge(verbatim: Board.stopStateTitle(stopState), tone: stopState.tone)
         .hint(L10n.Activity.hintStop)
     }
   }
 
   private func row(
-    symbol: String, time: String?, tag: String, tagSymbol: String, tagTone: Tone? = nil, tone: Tone, result: String,
+    symbol: String, time: String?, tag: String, tagTone: Tone? = nil, tone: Tone, result: String,
     figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil,
     open: Bool = false, after: [PriceAfterV1] = [], another: TradeLine? = nil
   ) -> some View {
@@ -837,7 +834,7 @@ private struct TradesList: View {
           headerText(symbol)
           if let time { timeText(time) }
           Spacer(minLength: Tokens.Space.s)
-          tags(tag, symbol: tagSymbol, tone: tagTone ?? tone, stopState: stopState)
+          tags(tag, tone: tagTone ?? tone, stopState: stopState)
           resultText(result, tone: tone)
           if let another { anotherButton(another) }
         }
@@ -850,7 +847,7 @@ private struct TradesList: View {
           }
           ChipFlow {
             if let time { timeText(time) }
-            tags(tag, symbol: tagSymbol, tone: tagTone ?? tone, stopState: stopState)
+            tags(tag, tone: tagTone ?? tone, stopState: stopState)
           }
         }
         // The largest sizes: the result ("53 @ 24.69") gets a line of its own too.
@@ -863,7 +860,7 @@ private struct TradesList: View {
           resultText(result, tone: tone)
           ChipFlow {
             if let time { timeText(time) }
-            tags(tag, symbol: tagSymbol, tone: tagTone ?? tone, stopState: stopState)
+            tags(tag, tone: tagTone ?? tone, stopState: stopState)
           }
         }
       }
@@ -954,9 +951,7 @@ private struct NotTaken: View {
 }
 
 private struct SkippedRow: View {
-  /// Symbols of a refusal, a signal made too late, and the time.
-  static let refusedSymbol = "hand.raised.fill"
-  static let tooLateSymbol = "hourglass"
+  /// Symbol of the time.
   static let whenSymbol = "clock"
 
   let group: SkippedGroup
@@ -980,8 +975,9 @@ private struct SkippedRow: View {
   }
 
   private var tagPill: some View {
-    StatusPill(refused ? L10n.Activity.refusedTag : L10n.Activity.tooLateTag,
-      systemImage: refused ? Self.refusedSymbol : Self.tooLateSymbol, tone: refused ? Tone.refused : Tone.notEvaluated)
+    // The reason tag, as every reason tag on both apps: a `Badge` (REFUSED amber, too late grey).
+    Badge(refused ? L10n.Activity.refusedTag : L10n.Activity.tooLateTag,
+      tone: refused ? Tone.refused : Tone.notEvaluated)
   }
 
   private var whenLabel: some View {

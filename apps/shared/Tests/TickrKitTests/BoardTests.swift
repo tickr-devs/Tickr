@@ -126,12 +126,5 @@ import Testing
     #expect(Board.exitLook("flatten") == .other)
     #expect(Board.exitLook("end_of_data") == .other)
     #expect(Board.exitKind("flatten") == .forced)
-    #expect(Board.exitReasonSymbol("stop") == ExitReason.stoppedOutSymbol)
-  }
-
-  @Test func everyKnownExitReasonHasItsOwnSymbolUnknownGetsTheQuestionMark() {
-    #expect(Board.exitReasonSymbol("stopped-out") == ExitReason.stoppedOutSymbol)
-    #expect(Board.exitReasonSymbol("hold-elapsed") == ExitReason.holdSymbol)
-    #expect(Board.exitReasonSymbol("something-new") == ExitReason.unknownSymbol)
   }
 }
