@@ -148,6 +148,10 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let positions: [Position]
   /// The code version the running bot's run records; nil when not recorded. See `CodeVersion`.
   public let codeVersion: String?
+  /// Today's broker fees, the result after them, and the broker's own realized result (docs/api.md); nil while unknown.
+  public let feesTodayUsd: DecimalString?
+  public let resultTodayNetUsd: DecimalString?
+  public let resultTodayBrokerUsd: DecimalString?
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -165,6 +169,9 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case realizedLossTodayUsd = "realized_loss_today_usd"
     case openReservationsUsd = "open_reservations_usd"
     case dailyRoomUsd = "daily_room_usd"
+    case feesTodayUsd = "fees_today_usd"
+    case resultTodayNetUsd = "result_today_net_usd"
+    case resultTodayBrokerUsd = "result_today_broker_usd"
     case schemaVersion = "schema_version"
   }
 
@@ -189,8 +196,11 @@ public struct StatusV1: Codable, Hashable, Sendable {
     openReservationsUsd = try c.decodeNullable(DecimalString.self, forKey: .openReservationsUsd)
     dailyRoomUsd = try c.decodeNullable(DecimalString.self, forKey: .dailyRoomUsd)
     positions = try c.decode([Position].self, forKey: .positions)
-    // Added after version 1 shipped: an older bot's status has no such key.
+    // Added after version 1 shipped: an older bot's status has none of these keys.
     codeVersion = try c.decodeIfPresent(String.self, forKey: .codeVersion)
+    feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
+    resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
+    resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -215,6 +225,9 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(dailyRoomUsd, forKey: .dailyRoomUsd)
     try c.encode(positions, forKey: .positions)
     try c.encodeNullable(codeVersion, forKey: .codeVersion)
+    try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
+    try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
+    try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
   }
 }
 

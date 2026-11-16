@@ -39,24 +39,11 @@ extension Severity {
   }
 }
 
-/// A small marker for something that is not built yet: BACKLOG (planned) or NEEDS API (a
-/// proposal that needs a new local-API read or command).
-struct PlannedTag: View {
-  enum Kind { case backlog, needsAPI }
-  let kind: Kind
-
-  init(_ kind: Kind = .backlog) { self.kind = kind }
-
-  var body: some View {
-    Text(kind == .backlog ? L10n.Planned.backlog : L10n.Planned.needsAPI)
-      .font(Tokens.Typography.badge)
-      .padding(.horizontal, Tokens.Space.xs)
-      .padding(.vertical, Tokens.Space.xxs)
-      .foregroundStyle(Palette.highlightText)
-      .overlay(
-        RoundedRectangle(cornerRadius: Tokens.Radius.small)
-          .strokeBorder(Palette.highlight, style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine)))
-      .help(Text(kind == .backlog ? L10n.Planned.backlogHelp : L10n.Planned.needsAPIHelp))
+extension Badge {
+  /// BACKLOG: something planned and not built yet (docs/backlog.md), the shared dashed `planned`
+  /// badge in `highlight`; its meaning in the hint.
+  static var backlog: some View {
+    Badge(L10n.Planned.backlog, tone: .highlight, planned: true).hint(L10n.Planned.backlogHelp)
   }
 }
 
@@ -186,7 +173,6 @@ struct Card<Trailing: View, Content: View>: View {
             .font(Tokens.Typography.label)
             .tracking(Tokens.Typography.labelTracking)
             .foregroundStyle(Palette.textQuaternary)
-            .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
           Spacer(minLength: Tokens.Space.s)
           trailing
@@ -290,31 +276,6 @@ struct ChartLink<Label: View>: View {
     } label: {
       label
     }
-  }
-}
-
-/// A quiet "Details ›" action in a card header or under a message: the ghost button with a
-/// chevron, optionally led by a symbol.
-struct MoreButton: View {
-  let title: Text
-  var systemImage: String?
-  let action: () -> Void
-
-  init(_ title: LocalizedStringResource, systemImage: String? = nil, action: @escaping () -> Void) {
-    self.title = Text(title)
-    self.systemImage = systemImage
-    self.action = action
-  }
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: Tokens.Space.xs) {
-        if let systemImage { Image(systemName: systemImage) }
-        title
-        Chevron()
-      }
-    }
-    .buttonStyle(.action(.ghost, size: .compact))
   }
 }
 

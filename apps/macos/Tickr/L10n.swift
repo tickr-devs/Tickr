@@ -53,6 +53,10 @@ enum L10n {
   }
 
   enum Common {
+    /// VoiceOver's name of the loader (`TickrLoader`) while a card's data is read.
+    static var loading: LocalizedStringResource {
+      LocalizedStringResource("common.loading", defaultValue: "Loading…", bundle: L10n.bundle)
+    }
     /// Hint of a row or chip that opens the Chart on its symbol.
     static func openOnChart(_ symbol: String) -> LocalizedStringResource {
       LocalizedStringResource("common.openOnChart", defaultValue: "Opens \(symbol) on the chart", bundle: L10n.bundle)
@@ -183,17 +187,9 @@ enum L10n {
     static var backlog: LocalizedStringResource {
       LocalizedStringResource("planned.backlog", defaultValue: "BACKLOG", bundle: L10n.bundle)
     }
-    static var needsAPI: LocalizedStringResource {
-      LocalizedStringResource("planned.needsAPI", defaultValue: "NEEDS API", bundle: L10n.bundle)
-    }
     static var backlogHelp: LocalizedStringResource {
       LocalizedStringResource("planned.backlogHelp",
         defaultValue: "Planned, not built yet (docs/backlog.md).",
-        bundle: L10n.bundle)
-    }
-    static var needsAPIHelp: LocalizedStringResource {
-      LocalizedStringResource("planned.needsAPIHelp",
-        defaultValue: "Needs a new local-API read or command.",
         bundle: L10n.bundle)
     }
   }
@@ -202,7 +198,7 @@ enum L10n {
     /// A command confirmation's message with where the command goes: the demo day.
     static func confirmToDemo(_ explanation: String) -> LocalizedStringResource {
       LocalizedStringResource("bot.confirmToDemo",
-        defaultValue: "\(explanation)\n\nSent to: the DEMO day, not the bot.", bundle: L10n.bundle)
+        defaultValue: "\(explanation)\n\nDEMO day: nothing is sent, the app only plays its recording.", bundle: L10n.bundle)
     }
     /// A command confirmation's message with where the command goes: the real bot.
     static func confirmToBot(_ explanation: String) -> LocalizedStringResource {
@@ -222,6 +218,10 @@ enum L10n {
     }
     static var flattenAll: LocalizedStringResource {
       LocalizedStringResource("bot.flattenAll", defaultValue: "Close all", bundle: L10n.bundle)
+    }
+    /// How many positions Close all closes, after its title in the menu bar ("2 positions").
+    static func positionCount(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("bot.positionCount", defaultValue: "\(count) positions", bundle: L10n.bundle)
     }
     static var stopBot: LocalizedStringResource {
       LocalizedStringResource("bot.stopBot", defaultValue: "Stop bot", bundle: L10n.bundle)
@@ -473,6 +473,10 @@ enum L10n {
   }
 
   enum Overview {
+    /// Under the day's result while it does not count the broker's fees yet.
+    static var beforeFees: LocalizedStringResource {
+      LocalizedStringResource("overview.beforeFees", defaultValue: "before broker fees", bundle: L10n.bundle)
+    }
     static var fixtures: LocalizedStringResource {
       LocalizedStringResource("overview.fixtures", defaultValue: "Fixtures", bundle: L10n.bundle)
     }
@@ -618,7 +622,7 @@ enum L10n {
 
   enum Position {
     static var openChart: LocalizedStringResource {
-      LocalizedStringResource("position.openChart", defaultValue: "Open chart →", bundle: L10n.bundle)
+      LocalizedStringResource("position.openChart", defaultValue: "Open chart", bundle: L10n.bundle)
     }
     static var picker: LocalizedStringResource {
       LocalizedStringResource("position.picker", defaultValue: "Position", bundle: L10n.bundle)
@@ -768,7 +772,7 @@ enum L10n {
       LocalizedStringResource("riskRoom.title", defaultValue: "Risk room today", bundle: L10n.bundle)
     }
     static var details: LocalizedStringResource {
-      LocalizedStringResource("riskRoom.details", defaultValue: "Details →", bundle: L10n.bundle)
+      LocalizedStringResource("riskRoom.details", defaultValue: "Details", bundle: L10n.bundle)
     }
     static func left(_ limit: String) -> LocalizedStringResource {
       LocalizedStringResource("riskRoom.left", defaultValue: "of \(limit) USD left", bundle: L10n.bundle)
@@ -982,7 +986,7 @@ enum L10n {
     }
     static var demoDayExplanation: LocalizedStringResource {
       LocalizedStringResource("settings.demoDayExplanation",
-        defaultValue: "Shows the made-up demo day from this Mac, and only that day; the bot's address stays as it is.",
+        defaultValue: "Shows the made-up demo day this app carries, and only that day; the bot's address stays as it is.",
         bundle: L10n.bundle)
     }
     static var showInMenuBar: LocalizedStringResource {
@@ -1645,9 +1649,9 @@ enum L10n {
       LocalizedStringResource("chart.barsUnavailableDetail", defaultValue: "The bot's API did not return bars",
         bundle: L10n.bundle)
     }
-    /// While bars load.
-    static var loading: LocalizedStringResource {
-      LocalizedStringResource("chart.loading", defaultValue: "Loading Bars…", bundle: L10n.bundle)
+    /// The loader's caption while a symbol's bars load: the symbol and the interval ("1m").
+    static func loadingBars(_ symbol: String, interval: String) -> LocalizedStringResource {
+      LocalizedStringResource("chart.loadingBars", defaultValue: "Loading \(symbol) · \(interval) bars", bundle: L10n.bundle)
     }
     /// The symbol has no bars on the day.
     static var noBars: LocalizedStringResource {
@@ -2469,6 +2473,10 @@ enum L10n {
     static var resultToday: LocalizedStringResource {
       LocalizedStringResource("risk.resultToday", defaultValue: "net day result", bundle: L10n.bundle)
     }
+    /// The broker's fees on today's fills; a dash until every fill is read.
+    static var feesToday: LocalizedStringResource {
+      LocalizedStringResource("risk.feesToday", defaultValue: "broker fees today", bundle: L10n.bundle)
+    }
     /// How the daily limit works.
     static var lossRoomNote: LocalizedStringResource {
       LocalizedStringResource("risk.lossRoomNote",
@@ -3242,7 +3250,7 @@ enum L10n {
   }
   enum MenuBar {
     static var demoTitle: LocalizedStringResource {
-      LocalizedStringResource("menuBar.demoTitle", defaultValue: "Demo day: commands go to the demo, not the bot",
+      LocalizedStringResource("menuBar.demoTitle", defaultValue: "Demo day: commands are not sent to the bot",
         bundle: L10n.bundle)
     }
     static var demoDetail: LocalizedStringResource {
@@ -3313,9 +3321,9 @@ enum L10n {
     static var title: LocalizedStringResource {
       LocalizedStringResource("watching.title", defaultValue: "Watching Closely", bundle: L10n.bundle)
     }
-    /// Link under the card's rows: opens the full list (`WatchingAllPanel`) of `count` symbols.
-    static func showAll(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("watching.showAll", defaultValue: "Show all \(count)", bundle: L10n.bundle)
+    /// The card's footer link (`CardFooterLink`): opens every row the bot sent; the count stands beside it.
+    static var showAll: LocalizedStringResource {
+      LocalizedStringResource("watching.showAll", defaultValue: "Show all", bundle: L10n.bundle)
     }
     /// Caption beside "Show all": the card shows the closest `shown` of `total` watched symbols.
     static func closestOf(_ shown: Int, _ total: Int) -> LocalizedStringResource {
@@ -3333,42 +3341,25 @@ enum L10n {
     static var live: LocalizedStringResource {
       LocalizedStringResource("watching.live", defaultValue: "live", bundle: L10n.bundle)
     }
-    /// Label before the sort chips.
+    /// VoiceOver name of the sort switch.
     static var sortLabel: LocalizedStringResource {
       LocalizedStringResource("watching.sortLabel", defaultValue: "Sort", bundle: L10n.bundle)
     }
-    /// Sort chip: closest to entering first.
+    /// Sort segment: closest to entering first.
     static var sortClosest: LocalizedStringResource {
       LocalizedStringResource("watching.sortClosest", defaultValue: "Closest", bundle: L10n.bundle)
     }
-    /// Sort chip: by symbol, A to Z.
+    /// Sort segment: by symbol, A to Z.
     static var sortSymbol: LocalizedStringResource {
       LocalizedStringResource("watching.sortSymbol", defaultValue: "Symbol", bundle: L10n.bundle)
     }
-    /// Sort chip: oldest quote first.
+    /// Sort segment: oldest quote first.
     static var sortQuoteAge: LocalizedStringResource {
       LocalizedStringResource("watching.sortQuoteAge", defaultValue: "Quote age", bundle: L10n.bundle)
     }
-    /// Sort chip: latest decision first.
+    /// Sort segment: latest decision first.
     static var sortLatest: LocalizedStringResource {
       LocalizedStringResource("watching.sortLatest", defaultValue: "Latest", bundle: L10n.bundle)
-    }
-    /// Filter chip: every verdict, with the count.
-    static func filterAll(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("watching.filterAll", defaultValue: "All \(count)", bundle: L10n.bundle)
-    }
-    /// Filter chip: WATCH rows only, with the count.
-    static func filterWatch(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("watching.filterWatch", defaultValue: "Watch \(count)", bundle: L10n.bundle)
-    }
-    /// Filter chip: IGNORE rows only, with the count.
-    static func filterIgnore(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("watching.filterIgnore", defaultValue: "Ignore \(count)", bundle: L10n.bundle)
-    }
-    /// The full list has no row with the chosen verdict.
-    static var noneFiltered: LocalizedStringResource {
-      LocalizedStringResource("watching.noneFiltered", defaultValue: "No watched symbol has this verdict.",
-        bundle: L10n.bundle)
     }
     /// VoiceOver name of the full list's close button.
     static var close: LocalizedStringResource {
@@ -3384,7 +3375,8 @@ enum L10n {
     }
     /// Watching card is empty.
     static var none: LocalizedStringResource {
-      LocalizedStringResource("watching.none", defaultValue: "The strategy is not watching any symbol on this day.",
+      LocalizedStringResource("watching.none",
+        defaultValue: "Nothing armed right now. A symbol shows here while the strategy waits for its setup.",
         bundle: L10n.bundle)
     }
     /// Watching read failed.

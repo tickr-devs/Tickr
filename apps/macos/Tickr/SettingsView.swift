@@ -9,7 +9,7 @@ import TickrKit
 /// because it lives in config/bot.toml, not in the app.
 struct SettingsView: View {
   @Environment(AppModel.self) private var model
-  @State private var tab: SettingsTab = .general
+  @State private var tab: SettingsTab
   @State private var contentHeight: CGFloat = 0
   /// Height of the title bar the window still reserves above the content (measured): the tab
   /// strip is drawn into it, so the pane asks for that much less height.
@@ -19,6 +19,11 @@ struct SettingsView: View {
   static let width: CGFloat = 680
   /// Tallest the pane area grows to its content before it scrolls, in points.
   static let maxPaneHeight: CGFloat = 600
+
+  /// The window opens on General; previews and the layout checks open another pane.
+  init(tab: SettingsTab = .general) {
+    _tab = State(initialValue: tab)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -247,7 +252,7 @@ private struct DemoDaySection: View {
         Spacer(minLength: Tokens.Space.s)
       }
     } trailing: {
-      if model.demoDay { Badge(L10n.Toolbar.demoChip, tone: .warning) }
+      if model.demoDay { Badge(L10n.Toolbar.demoChip, tone: .highlight) }
     }
     .animation(Tokens.Motion.quick, value: model.demoDay)
   }
@@ -273,7 +278,6 @@ private struct TradingSettings: View {
               Text(verbatim: observer)
                 .font(Tokens.Typography.annotation)
                 .foregroundStyle(Palette.textTertiary)
-                .lineLimit(1)
             }
           }
         }
@@ -325,10 +329,10 @@ private struct FeaturesCard: View {
 
   var body: some View {
     SettingsCard(L10n.Settings.features, footnote: Text(L10n.Settings.featuresFootnote)) {
-      row(L10n.Settings.featureTrailing, on: false) { PlannedTag().fixedSize() }
-      row(L10n.Settings.featureExtendedHours, on: false) { PlannedTag().fixedSize() }
-      row(L10n.Settings.featureShort, on: false) { PlannedTag().fixedSize() }
-      row(L10n.Settings.featureChase, on: false) { PlannedTag().fixedSize() }
+      row(L10n.Settings.featureTrailing, on: false) { Badge.backlog }
+      row(L10n.Settings.featureExtendedHours, on: false) { Badge.backlog }
+      row(L10n.Settings.featureShort, on: false) { Badge.backlog }
+      row(L10n.Settings.featureChase, on: false) { Badge.backlog }
       row(L10n.Settings.featureHalfDays, on: settings.session.halfDaysEnabled) {
         Text(settings.session.halfDaysEnabled ? L10n.Settings.traded : L10n.Settings.notTraded)
       }
@@ -710,13 +714,14 @@ private struct ConfigCard: View {
       } else if let error = model.configError {
         ReadFailureNote(L10n.ReadFailed.config, detail: error)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     } trailing: {
       HStack(spacing: Tokens.Space.xs) {
         if let config = model.config {
-          Badge(config.valid ? L10n.Settings.configValid : L10n.Settings.configInvalid,
-            tone: config.valid ? .profit : .loss)
+          // Valid or not: a state with its word, as on both apps' Settings boards ("✓ VALID").
+          StatusPill(config.valid ? L10n.Settings.configValid : L10n.Settings.configInvalid,
+            systemImage: config.valid ? Symbols.passed : Symbols.failed, tone: config.valid ? .profit : .loss)
           if config.changedSinceStart {
             Badge(L10n.Settings.configChanged, tone: .warning).hint(L10n.Settings.configChangedHint)
           } else {
@@ -803,7 +808,7 @@ struct JobsSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     } trailing: {
       Text(L10n.Settings.timesET)
@@ -848,7 +853,6 @@ struct JobsSection: View {
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
     }
-    .lineLimit(1)
     .accessibilityElement(children: .combine)
   }
 
@@ -1068,9 +1072,8 @@ struct SessionStrip: View {
 private struct BackupSection: View {
   @Environment(AppModel.self) private var model
 
-  /// Symbols of the states and of the clean-up note.
-  static let verifiedSymbol = "checkmark.circle.fill"
-  static let failedSymbol = "xmark.circle.fill"
+  /// Symbols of the unknown state and of the clean-up note (verified and failed draw
+  /// `Symbols.passed` and `Symbols.failed`).
   static let unknownSymbol = "circle.dashed"
   static let cleanupSymbol = "trash"
   /// Separates the day from the time.
@@ -1081,12 +1084,12 @@ private struct BackupSection: View {
       if let job = model.jobs?.backup {
         let failed = job.lastFailedAt.map { failure in job.lastAt.map { failure.date > $0.date } ?? true } ?? false
         if failed, let at = job.lastFailedAt {
-          state(Self.failedSymbol, tone: .loss, Text(L10n.Settings.backupFailed(Self.when(at.date))))
+          state(Symbols.failed, tone: .loss, Text(L10n.Settings.backupFailed(Self.when(at.date))))
           if let error = job.lastFailedError {
             Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.lossText)
           }
         } else if let at = job.lastAt {
-          state(Self.verifiedSymbol, tone: .profit, Text(L10n.Settings.backupVerified))
+          state(Symbols.passed, tone: .profit, Text(L10n.Settings.backupVerified))
           Text(L10n.Settings.backupLast(Self.when(at.date)))
             .font(Tokens.Typography.annotation)
             .foregroundStyle(Palette.textQuaternary)
@@ -1099,7 +1102,7 @@ private struct BackupSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
       Label {
         Text(L10n.Settings.cleanup)

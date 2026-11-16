@@ -12,7 +12,7 @@ Steps:
 2. Each past session runs from `bot_start` to `past_stop` on a fast clock.
 3. The demo day (today if it is a session, else the latest session before it) runs fast up to
    `clock`, then in real time with the local API on bot.toml `[api] demo_port`, until
-   `live_until` (then it exits 0, and the launchd job starts a fresh one) or Ctrl-C.
+   `live_until` (then it exits 0) or Ctrl-C.
 Steps 2 and 3 up to `clock` are replayed once per change of their inputs into the fixture
 (`demo-fixture/`, `build_fixture`); a start copies it and serves within seconds.
 """
@@ -249,15 +249,18 @@ class Session:
         def stream_stop() -> None:
             world.stream_up = False
 
-        saved = (cli.RUN_ADAPTERS, cli.NOW, cli.SLEEP, cli.MONOTONIC, cli.NOTIFIER)
+        saved = (cli.RUN_ADAPTERS, cli.NOW, cli.SLEEP, cli.MONOTONIC, cli.NOTIFIER,
+                 cli.DISCOVERY_SPAWN)
         cli.RUN_ADAPTERS = lambda cfg, on_error, on_token: cli.RunAdapters(
             world.exchange, world.feed, stream_start, stream_stop)
         cli.NOW, cli.SLEEP, cli.MONOTONIC = world.clock, world.sleep, world.mono
         cli.NOTIFIER = lambda alerts: Notifier()
+        cli.DISCOVERY_SPAWN = cli.run_in_place  # the fake clock: no discovery thread
         try:
             return cli.main(["--config", str(self.config_path), "run"])
         finally:
-            cli.RUN_ADAPTERS, cli.NOW, cli.SLEEP, cli.MONOTONIC, cli.NOTIFIER = saved
+            (cli.RUN_ADAPTERS, cli.NOW, cli.SLEEP, cli.MONOTONIC, cli.NOTIFIER,
+             cli.DISCOVERY_SPAWN) = saved
 
 
 def _stop_self() -> None:
@@ -652,7 +655,7 @@ def _swap_when_built(builder: Builder, world: World, ending: threading.Event,
             "until the inputs change)")
 
 
-def main(repo: Path, scenario_path: Path, *, build: bool = False) -> int:
+def main(repo: Path, scenario_path: Path, *, build: bool = False, record: bool = False) -> int:
     from tickr.demo.scenario import ScenarioError, load
 
     # Flushed at once: under launchd stdout is a file, and a buffered line would show up only
@@ -662,6 +665,11 @@ def main(repo: Path, scenario_path: Path, *, build: bool = False) -> int:
 
     try:
         scenario = load(scenario_path)
+        if record:
+            from tickr.demo.record import record as record_day
+
+            record_day(repo, scenario, ny_date_of(cli.NOW()), log)
+            return 0
         if build:
             build_fixture(repo, scenario, ny_date_of(cli.NOW()), log)
             return 0

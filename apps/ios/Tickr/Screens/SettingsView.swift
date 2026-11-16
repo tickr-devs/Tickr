@@ -161,11 +161,12 @@ struct SettingsView: View {
         ConfigView()
       } label: {
         SettingsRow(L10n.Settings.configuration, systemImage: Self.configSymbol, tone: .neutral) {
+          // Valid or not: a state with its word, as on both apps' Settings boards ("✓ VALID").
           if let config = model.config {
             if config.valid {
-              Badge(L10n.Settings.configValid, tone: .profit)
+              StatusPill(L10n.Settings.configValid, systemImage: Symbols.passed, tone: .profit)
             } else {
-              Badge(L10n.Settings.configInvalid, tone: .loss)
+              StatusPill(L10n.Settings.configInvalid, systemImage: Symbols.failed, tone: .loss)
             }
           }
         }
@@ -174,18 +175,12 @@ struct SettingsView: View {
       // exception, as it stops every entry (the open gate and the strategy are on Home and Lab).
       if !status.tradingGate.open {
         SettingsRow(L10n.Settings.gate, systemImage: Self.gateClosedSymbol, tone: .warning) {
-          // One pulse each time the closed gate changes (its cause), still in between.
-          StatusPill(Text(L10n.Settings.gateClosed), tone: .warning, live: true, event: Self.gateEvent(status))
+          // The gate as a fact, the same badge as the Mac Overview's header (GATE CLOSED).
+          Badge(L10n.Settings.gateClosed, tone: .warning)
         }
         InfoCaption(verbatim: ApiText.gate(status.tradingGate), tone: .warning)
       }
     }
-  }
-
-  /// What the closed gate's dot pulses on: the gate itself, so a new cause (or the gate closing
-  /// again) pulses once; nil while it is open, when the row is not shown.
-  static func gateEvent(_ status: StatusV1) -> Gate? {
-    status.tradingGate.open ? nil : status.tradingGate
   }
 
   /// Where the bot is: the address, the connection's state, pairing.
@@ -239,9 +234,6 @@ struct SettingsView: View {
 
 /// Paste the pairing link the Mac left in its pairing file. Opening the link on the phone works too.
 private struct PairingSheet: View {
-  /// Lines the pasted link may take before the field scrolls.
-  static let linkLines = 3...6
-
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var text = ""
@@ -257,7 +249,6 @@ private struct PairingSheet: View {
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
           .font(.footnote.monospaced())
-          .lineLimit(Self.linkLines)
           PasteButton(payloadType: String.self) { strings in
             if let first = strings.first { text = first }
           }

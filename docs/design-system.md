@@ -21,7 +21,7 @@ the approved design canvas. Code follows it one to one:
    - Protocol values from the bot (`exit_reason`, fence `kind`) are shown through a localized title and never translated in place.
 3. **System appearance only.** Light and dark follow macOS/iOS; there is no theme switch. Light is designed on its own (soft glows and a tinted shadow), not as an inverted dark.
 4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
-5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop, marked `// decorative: <why>` in code: the brand mark's spark halo, the empty-positions radar (sweep and blips), the event ticker's and the screener chips' scroll, the Lab's AI advisor title shine (owner wants the design's motion, 2026-11-16), and the Settings session card's drifting pre/post-market stripes (owner's request, 2026-11-16). Each loops only while `OrnamentGate` holds (macOS and iOS: Reduce Motion off, the live day shown, fresh status, the bot running), still otherwise; the `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
+5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop, marked `// decorative: <why>` in code: the brand mark's spark halo, the empty-positions radar (sweep and blips), the event ticker's and the screener chips' scroll, the Lab's AI advisor title shine (owner wants the design's motion, 2026-11-16), and the Settings session card's drifting pre/post-market stripes (owner's request, 2026-11-16). Each loops only while `OrnamentGate` holds (macOS and iOS: Reduce Motion off, the live day shown, fresh status, the bot running), still otherwise. The one exception is the loader (`TickrLoader`, owner, 2026-11-16): it marks only that a read is in flight and is on screen only while one is, so it turns whenever it shows, in Core Animation like the brand halo and `ShineBand`; under Reduce Motion its beam stands still and its rings pulse gently in opacity (nothing moves) instead. The `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
 6. **Formatting: Swift uses 2-space indentation.**
    - `.editorconfig`, SwiftLint's `indentation_width` (every app) and the rules check (rule `indent`, every app) enforce it.
    - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
@@ -31,6 +31,13 @@ the approved design canvas. Code follows it one to one:
 
 Each meaning has a fill colour (strokes, fills, glows) and a text colour, which keeps at least 4.5:1
 contrast on `surface` in both appearances.
+
+**Text on a solid fill passes WCAG AA too (4.5:1, normal text), in both appearances**, with any
+opacity the text is drawn at and any shade over the fill (pressed, a hold's sweep, a tag)
+blended in first. A meaning's fill colour (`loss` and the like) is for strokes, washes, halos and
+charts; when text or a symbol sits on a solid red, the fill is `lossFill`, with `onLoss` on it.
+`PaletteContrastTests` (apps/shared) computes every text and fill pair of the destructive and
+emergency command tiers from the palette's values (`Swatch`) and fails below 4.5:1.
 
 | Role | Use | Light | Dark |
 |---|---|---|---|
@@ -50,6 +57,7 @@ contrast on `surface` in both appearances.
 | `accent` / `accentText` | Live, brand, running bot, focus | `#0EA5A0` / `#0B766F` | `#2DD4BF` / `#5EEAD4` |
 | `profit` / `profitText` | Gains, verified stop, healthy | `#10B981` / `#047857` | `#34D399` / `#6EE7B7` |
 | `loss` / `lossText` | Losses, missing stop, alarm, destructive | `#EF4444` / `#B91C1C` | `#F87171` / `#FCA5A5` |
+| `lossFill` / `onLoss` | A solid red with text or a symbol on it: the emergency stop, a destructive command's glyph tile (white on it 6.5:1 light, 8.3:1 dark) | `#B91C1C` / `#FFFFFF` | `#991B1B` / `#FFFFFF` |
 | `warning` / `warningText` | Paused, blocked, stale, closed gate, environment chip | `#F59E0B` / `#B45309` | `#FBBF24` / `#FCD34D` |
 | `info` / `infoText` | Entries, orders, commands in flight | `#3B82F6` / `#1D4ED8` | `#60A5FA` / `#93C5FD` |
 | `highlight` / `highlightText` | Recorded day, BACKLOG, observers | `#8B5CF6` / `#6D28D9` | `#A78BFA` / `#C4B5FD` |
@@ -63,7 +71,7 @@ contrast on `surface` in both appearances.
 | `seriesUniverse` | Universe stage of the live flow | = `seriesATR` | = `seriesATR` |
 | `glowIndigo`, `glowTeal` | Light background corner glows (at `Opacity.glow`, reach 420 pt; teal centred on the right edge, a fifth down) | `#6366F1`, `#14B8A6` | not drawn |
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
-| `scrim` | Dimmed backdrop behind a Mac overlay panel (at `Opacity.faint`) and that panel's shadow | `#080C1E` | `#080C1E` |
+| `scrim` | Dimmed backdrop behind a Mac overlay panel (at `Opacity.faint`) and that panel's shadow; the emergency stop's hold sweep (at `Command.sweepOpacity`) | `#080C1E` | `#080C1E` |
 
 A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero.
 
@@ -121,11 +129,14 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `buttonCompact` | `.callout` semibold | Compact buttons |
 | `chipValue` | `.headline` bold mono | Figures of metric chips, icon metrics, large delta tags |
 | `chevron` | `.caption2` bold | Chevrons and direction triangles |
+| `link` | 12 pt semibold | A card header link (`HeaderLink`) |
+| `footerLink` | 12.5 pt semibold | A card footer link's title (`CardFooterLink`) |
+| `backTitle` / `backChevron` | 15 pt medium / 17 pt semibold | The back capsule's name and chevron (`BackCapsule`) |
 
 Sizes above are the Mac's (macOS has no Dynamic Type). On iOS every role follows a text style, so
 Dynamic Type scales it: `label`, `badge`, `annotation` → `.caption2`; `metric` → `.title2`; `hero`
 and `display` → `.largeTitle`; `heading` → `.title2`; `quote` → `.title3`; `figure` → `.headline`; `title` and `subtitle` → `.title`; `symbol` → `.subheadline`;
-`panelFigure` → `.largeTitle`; `symbolCompact` → `.footnote`. At the default text size these match the design within a point or two.
+`panelFigure` → `.largeTitle`; `symbolCompact` → `.footnote`; `link` → `.footnote`; `footerLink` and `backTitle` → `.subheadline`; `backChevron` → `.body`. At the default text size these match the design within a point or two.
 
 ## Lines (`Tokens.Stroke`)
 
@@ -153,18 +164,88 @@ and `display` → `.largeTitle`; `heading` → `.title2`; `quote` → `.title3`;
 | `medium` | 0.70 | Inactive elements, pulse start |
 | `overlay` | 0.85 | Readouts over content |
 | `flash` | 0.22 | A new row's tint as it arrives (`arrivalFlash`) |
+| `rowHover` | 0.06 | A footer link's row under the pointer (`CardFooterLink`) |
+| `tint` | 0.14 | A tinted chip's fill (the footer link's chevron chip) |
+| `linkHover` / `linkOutline` | 0.20 / 0.22 | A header link's fill under the pointer and its tinted outline (`HeaderLink`) |
 
-## Text shrink (`Tokens.Shrink`)
+## Text is never cut
 
-How far a line of text may shrink to fit (`minimumScaleFactor`) before it truncates. A screen picks
-a step; it does not define its own factor.
+Owner rule (2026-11-16): no truncated or clipped text anywhere in the apps, in English and Russian.
+A text that does not fit wraps, or its layout adapts (a row stacks, a column widens, a card grows
+or its pane scrolls); a font never shrinks below its token, and nothing is hidden to make room.
+A text that must stay on one line (a chip, a badge, a figure) takes its whole width with
+`.fixedSize()`, and the layout around it makes the room. So the apps use no `.lineLimit`,
+`.truncationMode`, `.minimumScaleFactor` or `.allowsTightening`: rule `truncation` of
+`apps/scripts/check_swift_rules.py` rejects them on every pull request, and the layout sweep
+(`.github/workflows/layout-sweep.yml`) reads every picture with `apps/scripts/find_truncated_text.swift`
+and fails on any text that ends in an ellipsis the String Catalogs do not have.
 
-| Token | Value | Use |
+A card link ("Open chart", "Details") ends only with the disclosure chevron (`HeaderLink`,
+`CardFooterLink` in TickrDesign); its title carries no arrow. "→" stays only inside data
+("7.15 → 7.48").
+
+## One look per element
+
+Owner rule (2026-11-16): the same element looks the same on every screen of both apps, and the
+apps follow the design boards. A control drawn on both apps is one TickrDesign component; an app
+arranges components and never restyles them. `apps/scripts/check_swift_rules.py` checks it in
+apps/macos and apps/ios on every pull request:
+
+- rule `styles`: no `ButtonStyle`, `PrimitiveButtonStyle`, `ToggleStyle` or `LabelStyle` of an
+  app's own; every control look lives in TickrDesign;
+- rule `system-buttons`: no system button look (`.bordered`, `.borderedProminent`,
+  `.borderless`, `.link`, `.buttonBorderShape`). A button whose label is its own face (a
+  `HeaderIcon`, a bare glyph in a row, a calendar's arrows) takes `.buttonStyle(.glyph)`;
+- rule `symbols`: one SF Symbol per meaning (`Symbols` below); a symbol competing with a shared
+  one (`chevron.left` for "previous", the outlined triangle for "failed") fails;
+- rule `components`: no view or style type name declared in both apps. A screen or card of one
+  app (a name ending in View, Card, Page, Sheet, Panel, Section, Screen or Chart) is that app's own
+  arrangement; the pairs written before the rule are listed in the script (`KNOWN_TWINS`) until
+  they move into TickrDesign, and a test keeps that list from going stale.
+
+Which component shows which fact, on both apps:
+
+| Fact | Component | Board |
 |---|---|---|
-| `slight` | 0.8 | Button titles, tile text |
-| `standard` | 0.7 | Figures, values and day labels in cards, chips and charts |
-| `tight` | 0.6 | Results in tight cells: calendar day cells, the day ring, the day's figures (Trades) |
-| `most` | 0.5 | A large amount inside a ring |
+| Configuration valid / invalid | `StatusPill` with `Symbols.passed` / `Symbols.failed` (Mac Settings › Config, iOS Settings and Configuration) | MacSystem, IOSSystem ("✓ VALID") |
+| Trading gate open / closed | `Badge` (`profitText` open, `warning` closed; the cause in the hint or the caption under it): Mac Overview header, iOS Settings | Main ("GATE OPEN") |
+| A strategy version ("v3") | `Badge(verbatim:color:keepingCase: true)` / `Badge(keepingCase:)`: a version keeps its own case, never "V3" | MacLab, IOSHome |
+| Planned, not built yet | `Badge(_:tone: .highlight, planned: true)` (the Mac's `Badge.backlog` adds the BACKLOG hint) | every board's `.bl` |
+| The shown day's clean-day verdict (Mac) | `Badge(_:color:systemImage:)`: with the verdict's symbol in the Trades header, without it in the Overview header | MacTrades, Main |
+| "Show all N" under a card's rows | `CardFooterLink` with the count and the hint "closest 3 of N" (Mac Overview and iOS Home Watching closely) | Controls, Main |
+| A link in a card's header | `HeaderLink`; one that pushes a screen is a `NavigationLink` with a `HeaderLinkLabel`, styled `.headerLink()` (iOS Home live flow "slots 2 of 3 ›") | Controls, IOSHome (`.hlink`) |
+| The demo day's chip (Mac title bar, Mac Settings, iOS Home day line) | `Badge(_:tone: .highlight)`, the boards' violet demo (IOSHome `envLabel` DEMO); to become the dashed demo `EnvironmentBadge` when that is shared | IOSHome, Controls (`.demo-tag`) |
+| Retry after a failed read | `.action(.secondary, size: .compact)` | Controls, IOSPosition |
+| The way back to today | `TodayButton`: the Mac title bar's Today, the iPhone's Home day line and Activity calendar | Mac boards (`.tbtn`) |
+| The way back from a pushed screen | `BackCapsule` + `.backCapsule` (iOS `BackButton`, the Mac Lab's advisor page) | Controls |
+| The Mac title bar's buttons (sidebar, ‹ ›, Today) | `TitleBarButtonStyle` (`.titleBar(square:)`), one size: `width` × `height` 32 × 28 pt (macOS's regular control height), radius 7 | Mac boards (`.tbtn`) |
+| A header's icon button (iOS) | `HeaderIcon` in a `.glyph` button: the 40 pt glass circle in a 44 pt touch target | iOS boards (`.gbtn`) |
+
+Not yet one look, because the boards themselves draw the element more than one way (the owner
+picks; nothing is changed until then):
+
+- segmented switches: the Activity board's switch (raised sunken tile, the iOS `SegmentSwitch`),
+  the Mac Settings theme switch (inverted: card tile on a sunken track, the Mac `SegmentStrip`),
+  the Lab replay span on both Lab boards (joined segments, solid `info` selection: the Mac
+  `daySwitch`; the iPhone's replay span already uses `SegmentSwitch`) and the Symbols boards'
+  system-like switch;
+- chips: the Mac boards' `.chip` (8 px corners, `chipFill`), the iOS Chart board's capsule chip
+  (card fill), the Controls board's 6 px chip; the Lab version pickers (Mac: a chip with a dot,
+  iOS: a pill without one);
+- the Lab version role (Mac: dot and square tag; iOS: a pill with a symbol);
+- the clean day (Mac: a badge; iOS Home: a plain line "clean day · records agree").
+
+On iOS every chip and every link answers taps over `Size.touchTarget` (`touchTarget()`), drawn
+size unchanged.
+
+## Symbols (`Symbols`, TickrDesign)
+
+| Symbol | SF Symbol | Meaning |
+|---|---|---|
+| `previous` / `next` | `chevron.backward` / `chevron.forward` | One step back or on (days, months, the back capsule, a link's disclosure chevron); turn with the reading direction |
+| `pause` | `pause.fill` | Paused: entries paused, the Pause command |
+| `failure` | `exclamationmark.triangle.fill` | A read or an action that failed (a failed day, chart bars that did not load) |
+| `passed` / `failed` | `checkmark.circle.fill` / `xmark.circle.fill` | A check that passed or failed: a valid configuration, a verified backup, a command done or refused |
 
 ## Sizes (`Tokens.Size`)
 
@@ -174,6 +255,7 @@ a step; it does not define its own factor.
 | `iconWell` / `iconWellSymbol` | 44 / 15 | Round icon wells |
 | `stage` | 52 | Stages of the live flow |
 | `stageGlyph` | 22 | The line glyph in a live-flow stage (`DesignGlyph`, the board's own paths, 2 grid units = 1.8 pt stroke) |
+| `menuGlyph` | 13 | The settings gear (`DesignGlyph.settings`) in the macOS menu-bar panel, at `Stroke.glyphHeavy` (2.2 grid units); elsewhere the gear is stroked at `Stroke.gear` (1.9). Both apps draw this one gear for Settings (iOS Home header, Mac menu bar, Mac Settings General tab), never an SF Symbol |
 | `dayResultWidth` | 300 | Overview's day result beside the header |
 | `gridColumnMin` | 300 | Narrowest column of a card grid before it stacks |
 | `logo` / `logoSmall` / `emptyMark` | 64 / 26 / 88 | Brand mark (`BrandMark`): the tick-shaped price line of the app icon |
@@ -196,6 +278,11 @@ a step; it does not define its own factor.
 | `popover` | 340 | Widest a detail popover grows (a live-flow stage's details); it narrows and wraps where the screen is narrower, never clips |
 | `glowRadius` | 8 | Glow under a primary button |
 | `ringHalo` | 60 | Reach of the halo behind a ring |
+| `glassShadowRadius` / `glassShadowOffset` | 7 / 4 | Soft shadow under a glass control (`glassSurface`: back capsule, header icons) |
+| `headerLink` | 24 (Mac) / 30 (iOS) | A card header link's capsule (`HeaderLink`); on iOS its touch target is `touchTarget` |
+| `footerLink` / `footerChip` | 36 (Mac) / 44 (iOS), 22 | A card footer link's row and its round chevron chip (`CardFooterLink`) |
+| `loader` / `loaderLarge` | 28 (Mac) / 32 (iOS), 56 | The loader inside a card and over a whole pane (`TickrLoader`) |
+| `loaderDot` / `loaderDotLarge` | 5 / 7 | The loader's ping dot |
 
 ## Motion (`Tokens.Motion`)
 
@@ -221,6 +308,10 @@ a step; it does not define its own factor.
 | `pop` / `popStagger` | spring 0.5 s, damping 0.55 / 0.4 s | A dot popping in (`popIn`): the protection chain's steps, one after another, and again when a step changes |
 | `bump` / `bumpSeconds` / `bumpScale` | ease-in-out, two halves of 0.6 s / ×1.35 (iPhone), ×1.25 (Mac) | A count growing and settling once when it rises (`bumps(on:)`: Lab refusal counts), never when it falls or first appears |
 | `pressScale` | ×0.97 | Buttons and chips while pressed |
+| `rowPressScale` / `backPressScale` | ×0.99 / ×0.96 | A footer link's row and the back capsule while pressed |
+| `linkNudge` | 2 pt | A footer link's chevron chip moving on under the pointer |
+| `loaderTurnSeconds` / `loaderPingScale` / `loaderTail` | 1.4 s / ×1.7 / 0.32 of a turn | The loader's beam turning (ornament), its dot's ping once a turn, the beam's tail |
+| `loaderPulseSeconds` / `loaderPulseLow` / `loaderPulseLagSeconds` | 2.4 s / 0.3 / 0.4 s | The loader under Reduce Motion: each ring's opacity pulse, its faintest, each inner ring's lag |
 | `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event; also today's Trades calendar tile, once per change of today's trading (a trade closed, a position opened or closed) |
 | `shineSeconds` | 3.5 s | One pass of the light across the Lab's AI advisor title (ornament, `OrnamentGate`); Core Animation runs the sweep (`ShineBand`), like the brand halo and the ticker |
 | `hintDelay` | 0.45 s | Hover before a hint appears (Mac) |
@@ -242,6 +333,12 @@ a step; it does not define its own factor.
 | `volumeShare` | 0.22 | Height of the volume bars, share of the price range |
 | `zoomStep` | ×1.5 | Candles shown per zoom step |
 
+The price scale holds the candles on screen, the levels drawn across the chart (an open
+position's entry and stop) and every line that is switched on over them (VWAP, the EMAs, the
+moving averages, the Bollinger bands), so a VWAP far above the price is drawn, not cut
+(`ChartPriceSpan`). Every series and marker is clipped to the plot: a value off the scale ends at
+the plot's edge and never draws over the controls around the chart.
+
 Statistics on the Lab and performance cards use `StatDigits` (`Formatting.swift`): mean R and
 profit factor with 2 decimals, win rate and confidence in whole percents.
 
@@ -252,16 +349,20 @@ profit factor with 2 decimals, win rate and confidence in whole percents.
 | Card | `tickrCard()` + `CardLabel` | `surface` (`surfaceSunken` for the Mac journal's console), `Radius.card` (iOS) or `Radius.large` (Mac), `Space.l` padding, `separator` border; light mode adds `shadow`. Cards sharing a grid row are one height (`filling()` on the Mac); in a row of a set height a card scrolls under its header when its content is taller (`ScrollsWhenTall`) |
 | Card grid (Mac) | `Grid` of cards | Fills the window's width: equal columns of at least `Size.gridColumnMin`, `Space.l` apart; a narrower window stacks into fewer columns |
 | Overview grid (Mac) | `WeightedColumns` | As the Main board: Live flow across the width; Watching closely, Positions, Safety with the bot at 1 : 1.4 : 1 in a 298-point row (cards scroll inside). The "Safety · bot" card has the bot's state pill in its header, the safety facts as `surfaceSunken` tiles in two columns (compact glyph, name in `caption`, value in `annotation` in its tone), then every command as small labelled buttons in two columns; the tiles scroll when the card is short, the commands never do; Risk room, Observers, the journal at 1 : 1 : 1.4 filling the rest of the window's height (at least 150 points). Below a 1040-point screen: Positions across, then the cards in two equal columns |
+| Header link | `HeaderLink` (TickrDesign); `HeaderLinkLabel` + `.headerLink()` for a `NavigationLink` | A card header's way elsewhere (Details, Lab, Open chart, Full chart, Review, the iOS live flow's "slots 2 of 3"): a capsule `Size.headerLink` tall, its tone (`info`; `highlight` in the advisor's box) at `Opacity.wash` fill (`linkHover` under the pointer) and `linkOutline` stroke, text in the tone's text colour in `Typography.link`, an optional leading symbol, the disclosure chevron last (never an arrow) |
+| Footer link | `CardFooterLink` (TickrDesign) | A card's "Show all" (Watching closely on both apps): the card's last row, across its whole width under a `separator` hairline, `Size.footerLink` tall and one button: title in `footerLink` `textPrimary`, a count capsule (`annotationBold`, `surfaceSunken`), an optional hint right-aligned in `annotation` `textQuaternary`, then a `footerChip` circle of `info` at `Opacity.tint` holding the chevron in `infoText`; under the pointer the row tints `info` at `rowHover` and the chip moves on `linkNudge` |
+| Back capsule | `BackCapsule` + `.backCapsule` (TickrDesign) | The way back from a pushed screen (iOS `BackButton`, the Mac Lab's advisor page; available to the Mac's Symbols screen): glass capsule `Size.iconButton` tall, chevron and name both `textPrimary`; pressed ×`backPressScale`, dimmed to `Opacity.medium` |
+| Loader | `TickrLoader` (TickrDesign) | Every wait for data, never the system spinner: three `separatorStrong` rings, an `accent` beam turning and an `accent` dot pinging at the top; `.compact` (`Size.loader`) in cards, `.large` (`loaderLarge`) with a caption over a whole pane ("Loading ABCD · 1m bars" on the Chart); one VoiceOver element named by its label |
 | Section label | `CardLabel` | `Typography.label`, uppercase, `textLabel` |
 | Stat row | label … value | label `callout` `textTertiary`, value `bodyMono` |
-| Badge | `Badge` (TickrDesign) | A fact (exit reason, environment, version): `Typography.badge`, tone text colour, `Opacity.wash` fill, `Opacity.border` stroke, `Radius.small`; `planned:` draws it dashed |
+| Badge | `Badge` (TickrDesign) | A fact (exit reason, environment, version, the trading gate, a day's clean verdict): `Typography.badge`, tone text colour, `Opacity.wash` fill, `Opacity.border` stroke, `Radius.small`; `planned:` draws it dashed; `systemImage:` puts a symbol before the words; a version keeps its own case (`keepingCase`) |
 | Command button | bot controls | `ActionButtonStyle` below |
 | Live-flow chips (Mac) | `Marquee` | The screeners' symbols scroll across the top of the live flow: symbol in `chip`, below it the screener and change % in `annotation`, coloured by screener (gainers `profitText`, top actives `infoText`, losers `seriesATRText`; left out of the universe "skipped" in `textQuaternary`, struck through, the cause on hover); `surfaceSunken` fill, `separator` hairline, `Radius.medium`, at least `Size.flowChip` wide. Still on a recorded day. The latest event sits in the card's header before the clock, cut first when the title needs the room |
 | Watching row (Mac) | `WatchingRow` | `surfaceSunken` box with `separator` hairline, `Radius.medium`: symbol in `chip`, verdict as an outlined tag (`badge` font, `Stroke.thin` outline, no fill; IGNORE in `seriesATRText`), time in `annotation`; the deciding check in `captionMono`; closeness as a `barThin` capsule in the tag's colour, a dashed `dashFine` outline when unknown |
 | Live-flow board (Mac) | `Pipeline` dots | Under each stage's value, today's symbols whose furthest stage it is (`FlowBoard`), as `flowMark` dots in the stage colour, at most 8 then "+N", wrapping within 104 points; amber while the broker stop waits, red if never confirmed. Universe and risk have a dashed tray, "left out" (`textQuaternary`) or "refused" (`seriesATRText`), naming the first two symbols and how many more, each one's reason on hover. A stage with no symbols shows nothing under it. A dot flies to its new stage (`matchedGeometryEffect`, `Motion.standard`) only when a new read moves it; hover names the symbol and the reason |
 | Live-flow stage | pipeline | `Size.stage` circle filled with the stage colour at `Opacity.glow` over the card, `Stroke.bold` ring and a soft glow in the stage colour; name in the stage's text colour |
 | Accent | `.tint` | `info` for links, selection and system controls on both apps, never the system blue |
-| Planned tag | BACKLOG / NEEDS API | `highlightText`, dashed `dashFine` outline, `Radius.small` |
+| Planned tag | `Badge(planned: true)` (Mac: `Badge.backlog`) | BACKLOG: the `Badge` in `highlight`, dashed `dashFine` outline, no fill, `Radius.small` |
 | Planned stretch | `Hatch` (TickrDesign) | `highlight` stripes running down to the right, 6 pt (Mac) or 4 pt (iPhone) wide with gaps as wide, at 18% (Mac) or 25% (iPhone); `moving:` drifts them right at 28.3 pt/s (the design's 34 px per 1.2 s, Core Animation), an owner-requested ornament only while the bot runs with live, fresh status (`OrnamentGate`) |
 | Pulse dot | `PulseDot` | `Size.dot`; while `pulsing`, one ring of `pulseSeconds` each time its `event` changes (a new status read, a fill). Still without an event: nothing on screen moves except on real events |
 | Banner | headline | role text colour, `Opacity.wash` fill, `Radius.medium`, `Space.m` padding |
@@ -282,10 +383,15 @@ still reads it. Every control takes a `Tone`.
 | `.action(.destructive)` | Destructive actions outside the bot's commands | `lossText` on a `loss` wash and border |
 | sizes | `.compact` (inline), `.regular`, `.large` (phone sheets, at least `Size.touchTarget` tall) | `Typography.buttonCompact` / `button` |
 | `.buttonStyle(.icon(tone))` | One-symbol actions | `Size.iconButton` circle (`iconButtonCompact`), tone wash and border; needs a `hint` |
-| `.buttonStyle(.command(tier))` | The bot's commands (both apps): `.secondary(tone)` pause, resume, cancel orders; `.destructive` close a position, Close all, stop the bot; `.primary` start the bot | A `Command.glyph` tile (`Command.glyphRadius`) then the title left-aligned, wrapping, never cut; `Command.height` (36 pt Mac, 50 pt iOS; `compact` 32 pt), `Command.radius`, soft shadow. Secondary: `surface`, `separatorStrong` border, glyph in its tone on an `Opacity.glow` tile. Destructive: `loss` wash, `loss` border, `lossText`, solid `loss` tile with an `onLoss` glyph. `tag:` puts a violet `CommandTag` ("DEMO") at the end. A trailing "…" in a title means it asks first |
-| `EmergencyButton` | The emergency stop, always last, after a `LastResortDivider` | Full width, solid `loss`, `onLoss` bold title with a second line (`Command.detailOpacity`), `Command.halo` ring. With `hold:` (Mac) it acts only after `Command.holdSeconds` held, a sweep filling from its glyph; release or moving away cancels; the accessibility action skips the hold; Reduce Motion stills the sweep |
+| `.buttonStyle(.glyph)` | A button whose label is its own face (`HeaderIcon`, a bare glyph in a row, a calendar's arrows); never the system's borderless look | No chrome or colour of its own; pressed ×`pressScale` and dimmed to `Opacity.medium`; a label that fades while disabled takes `dimmedWhenDisabled()` |
+| `.buttonStyle(.washPress(color))` | A tile that opens its details (the iOS live flow's stages) | Its colour at `Opacity.wash` behind it while held, ×`pressScale` (none under Reduce Motion) |
+| `.buttonStyle(.titleBar(square:))` (Mac) | The title bar's sidebar, ‹ › and Today | `chipFill`, `separatorStrong` hairline, label `textTertiary`; 32 × 28 pt, radius 7; a titled one as tall with `Space.s` sides |
+| `TodayButton` | The way back to today, wherever a day can be changed | Mac: a titled `.titleBar`; iOS: `.action(.ghost, size: .compact)` |
+| `.buttonStyle(.command(tier))` | The bot's commands (both apps): `.secondary(tone)` pause, resume, cancel orders; `.destructive` close a position, Close all, stop the bot; `.primary` start the bot | A `Command.glyph` tile (`Command.glyphRadius`) then the title left-aligned, wrapping, never cut; `Command.height` (36 pt Mac, 50 pt iOS; `compact` 32 pt), `Command.radius`, soft shadow. Secondary: `surface`, `separatorStrong` border, glyph in its tone on an `Opacity.glow` tile. Destructive: `loss` wash, `loss` border, `lossText`, solid `lossFill` tile with an `onLoss` glyph. `detail:` puts a few mono words after the title in the command's colour, always whole (the menu bar's Close all: "2 positions", plural forms from the String Catalog). `tag:` puts a violet `CommandTag` ("DEMO") at the end. A trailing "…" in a title means it asks first |
+| `EmergencyButton` | The emergency stop, always last, after a `LastResortDivider` | Full width, solid `lossFill`, `onLoss` bold title with a second line (`Command.detailOpacity`), `loss` `Command.halo` ring. With `hold:` (Mac) it acts only after `Command.holdSeconds` held, a dark `scrim` sweep filling from its glyph; release or moving away cancels; the accessibility action skips the hold; Reduce Motion stills the sweep |
 | `CommandColumns(columns:)` | A row of commands | Equal columns, as many as fit each title on one line, down to one per row; one height per row |
-| `.buttonStyle(.chip(selected:))` | One of a few choices side by side (position tabs, the Chart's ranges and intervals) | `Typography.label` in `textTertiary` on `chipFill`, `separatorStrong` hairline, `Radius.chip`, `Space.s` × 6 pt padding; selected: `textPrimary` on `selection` with a tone outline |
+| `.buttonStyle(.chip(selected:))` | One of a few choices side by side (position tabs, the Chart's ranges and intervals) | `Typography.label` in `textTertiary` on `chipFill`, `separatorStrong` hairline, `Radius.chip`, `Space.s` × 6 pt padding; selected: `textPrimary` on `selection` with a tone outline; on iOS it answers taps over `Size.touchTarget` |
+| `SegmentSwitch` | The one segmented switch of both apps (the iOS Activity panes, the Chart range on iPhone, the Lab replay span, Watching closely sort and filter); never `Picker(.segmented)` | Equal segments on `surface` in a `Radius.large` card with a `separator` hairline, `Space.xs` padding; titles footnote semibold in `textSecondary`, wrapping rather than cut; chosen: `textPrimary` on a `surfaceSunken` `Radius.medium` tile with a hairline; each segment answers taps over the full 44 pt height |
 | `.toggleStyle(.chip)` | An on/off choice among chips (the Chart's studies, trade marks) | The chip above, title uppercase; on: `textPrimary` on `selection` with the `separatorStrong` hairline; off: the plain chip at `Opacity.muted` |
 | `StateGlyph` | A state without a word (stop verified, paused, stream fresh, gate closed) | SF Symbol on a `Size.glyph` tile in the tone, `Opacity.glow` fill; `live` pulses the outline (`Motion.glyphPulseScale`) |
 | `StatusPill` | A state that needs its word (bot running, an exit reason) | Capsule, `PulseDot` (one pulse per `event` while live) or a `systemImage` in its place, `Typography.badge` uppercase |

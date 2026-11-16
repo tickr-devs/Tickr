@@ -238,9 +238,7 @@
                 "required": [
                   "kind",
                   "since",
-                  "text",
-                  "code",
-                  "params"
+                  "text"
                 ],
                 "additionalProperties": false
               }

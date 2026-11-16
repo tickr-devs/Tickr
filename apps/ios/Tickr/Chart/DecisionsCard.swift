@@ -38,13 +38,13 @@ struct DecisionsCard: View {
           } label: {
             Text(showsAll ? ChartText.keyDecisions : ChartText.allDecisions(list.total))
           }
-          .buttonStyle(.borderless)
-          .font(Tokens.Typography.captionMono)
+          // A quiet in-card action, the apps' ghost button (never the system's borderless look).
+          .buttonStyle(.action(.ghost, size: .compact))
         }
       } else if let failure {
         ReadFailureNote(ChartText.decisionsFailed, detail: failure)
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)
@@ -103,16 +103,13 @@ private struct DecisionRow: View {
             Text(decision.action.title)
               .font(.footnote.weight(.semibold))
               .foregroundStyle(Palette.textPrimary)
-              .lineLimit(1)
             Text(ChartText.strategy(decision.strategy.name, decision.strategy.version))
               .font(.footnote)
               .foregroundStyle(Palette.textSecondary)
-              .lineLimit(1)
             if decision.observer {
               Text(ChartText.observer)
                 .font(Tokens.Typography.annotation)
                 .foregroundStyle(Palette.highlightText)
-                .lineLimit(1)
             }
           }
           if run.count > 1 {
@@ -125,7 +122,6 @@ private struct DecisionRow: View {
         Text(decision.at.date, format: ChartFormat.time)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-          .lineLimit(1)
           .fixedSize()
       }
     }
@@ -140,9 +136,9 @@ private struct CheckLine: View {
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
       if check.passed {
-        Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.profit)
+        Image(systemName: Symbols.passed).foregroundStyle(Palette.profit)
       } else {
-        Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.loss)
+        Image(systemName: Symbols.failed).foregroundStyle(Palette.loss)
       }
       VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
         Text(verbatim: ApiText.rule(check.rule))

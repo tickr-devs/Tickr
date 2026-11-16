@@ -79,7 +79,7 @@ private struct PlannedCard: View {
 
   var body: some View {
     Card(title, tone: .highlight, trailing: {
-      PlannedTag(.backlog)
+      Badge.backlog
     }, content: {
       (Text(L10n.Risk.notServed) + Text(verbatim: Format.itemSeparator) + Text(note))
         .font(Tokens.Typography.caption)
@@ -135,14 +135,11 @@ private struct FigureRow: View {
   var symbol: String?
   var symbolColor: Color = Palette.textQuaternary
   var color: Color = Palette.textSecondary
-  /// Lines the label may wrap to in a narrow column, the value keeping its one line.
-  var labelLines = 1
 
   init(
     _ label: LocalizedStringResource, value: String, symbol: String? = nil,
-    symbolColor: Color = Palette.textQuaternary, color: Color = Palette.textSecondary, labelLines: Int = 1
+    symbolColor: Color = Palette.textQuaternary, color: Color = Palette.textSecondary
   ) {
-    self.labelLines = labelLines
     self.label = Text(label)
     self.value = value
     self.symbol = symbol
@@ -161,17 +158,14 @@ private struct FigureRow: View {
       }
       label
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(labelLines)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Tokens.Space.s)
       Text(verbatim: value)
         .foregroundStyle(color)
         .monospacedDigit()
-        .lineLimit(1)
         .layoutPriority(1)
     }
     .font(Tokens.Typography.calloutMono)
-    .minimumScaleFactor(Tokens.Shrink.slight)
     .accessibilityElement(children: .combine)
   }
 }
@@ -182,11 +176,10 @@ private struct PlannedLine: View {
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
-      PlannedTag(.backlog)
+      Badge.backlog
       Text(text)
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(1)
       Spacer(minLength: 0)
     }
   }
@@ -198,8 +191,9 @@ private struct LossRoomCard: View {
   @Environment(AppModel.self) private var model
 
   private var limit: Decimal? { model.settings?.risk.maxDailyLossUsd.value }
-  /// Today's net result; nil while the bot's status is unknown. The limit counts the live day only.
-  private var result: Decimal? { model.status?.resultTodayGrossUsd.value }
+  /// Today's net result after the broker's fees once read (before them until then); nil while
+  /// the bot's status is unknown. The limit counts the live day only.
+  private var result: Decimal? { model.status?.resultTodayUsd.value }
   /// The bot's own number; the app never computes a room the bot did not report.
   private var room: Decimal? { model.dailyRoom }
 
@@ -210,6 +204,7 @@ private struct LossRoomCard: View {
 
   /// Symbols of the loss-room figures.
   static let resultSymbol = "chart.line.uptrend.xyaxis"
+  static let feesSymbol = "building.columns"
   static let realizedSymbol = "arrow.down.right"
   static let reservationsSymbol = "lock"
   static let plannedSymbol = "shield"
@@ -264,6 +259,9 @@ private struct LossRoomCard: View {
           FigureRow(L10n.Risk.resultToday, value: result.map { Money.signed($0) } ?? Format.missing,
             symbol: Self.resultSymbol, symbolColor: result.map(Palette.result) ?? Palette.textQuaternary,
             color: result.map(Self.resultText) ?? Palette.textQuaternary)
+          FigureRow(L10n.Risk.feesToday,
+            value: model.status?.feesTodayUsd.map { Money.plain($0.value) } ?? Format.missing,
+            symbol: Self.feesSymbol, symbolColor: Palette.warning, color: Palette.textSecondary)
           FigureRow(L10n.Risk.realizedLoss, value: loss(model.status?.realizedLossTodayUsd),
             symbol: Self.realizedSymbol, symbolColor: Palette.loss, color: Palette.lossText)
           FigureRow(L10n.Risk.reservations, value: amount(model.status?.openReservationsUsd),
@@ -568,13 +566,9 @@ private struct ReconciliationCard: View {
       text
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(Self.checkLines)
     }
     .accessibilityElement(children: .combine)
   }
-
-  /// Lines a check may take before it is cut.
-  static let checkLines = 2
 
   /// The design's small tinted square around a symbol.
   private func glyph(_ symbol: String, color: Color) -> some View {
@@ -614,7 +608,6 @@ private struct ReconciliationCard: View {
       title
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(1)
       Spacer(minLength: Tokens.Space.s)
       Group {
         if switched {
@@ -680,7 +673,7 @@ private struct LimitsCard: View {
             value: String(localized: L10n.Risk.seconds(Format.secondsNumber(risk.maxQuoteAgeSeconds.value))),
             symbol: Self.quoteSymbol)
         }
-        SectionHeader(Text(L10n.Risk.sizingTitle)) { PlannedTag(.backlog) }
+        SectionHeader(Text(L10n.Risk.sizingTitle)) { Badge.backlog }
       } else {
         Footnote(model.settingsError == nil ? L10n.Common.unavailable : L10n.Risk.settingsUnavailable)
       }
@@ -775,8 +768,6 @@ private struct PositionSlots: View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       content()
     }
-    .lineLimit(1)
-    .minimumScaleFactor(Tokens.Shrink.standard)
     .padding(Tokens.Space.s)
     .frame(maxWidth: .infinity, minHeight: Self.tileHeight, alignment: .topLeading)
     .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.medium))
@@ -796,8 +787,6 @@ private struct SessionCard: View {
   static let clockWidth: CGFloat = 132
   /// Least width of the times beside the clock, in points: narrower, they go under it.
   static let figuresMinWidth: CGFloat = 180
-  /// Lines a time's label may take beside the clock ("Last / entry", as the design wraps it).
-  static let labelLines = 2
 
   /// Today's regular session, when the bot reported it for today.
   private var session: SessionTimesV1? {
@@ -855,11 +844,9 @@ private struct SessionCard: View {
   private func figures(_ settings: SessionSettings) -> some View {
     VStack(spacing: Tokens.Space.xs) {
       FigureRow(L10n.Risk.lastEntry,
-        value: String(localized: L10n.Risk.minutesBeforeClose(settings.lastEntryMinutesBeforeClose)),
-        labelLines: Self.labelLines)
+        value: String(localized: L10n.Risk.minutesBeforeClose(settings.lastEntryMinutesBeforeClose)))
       FigureRow(L10n.Risk.flatten,
-        value: String(localized: L10n.Risk.minutesBeforeClose(settings.flattenMinutesBeforeClose)),
-        labelLines: Self.labelLines)
+        value: String(localized: L10n.Risk.minutesBeforeClose(settings.flattenMinutesBeforeClose)))
       FigureRow(L10n.Risk.halfDays, value: String(localized: settings.halfDaysEnabled ? L10n.Common.on : L10n.Common.off))
     }
   }
@@ -949,8 +936,6 @@ private struct AccountCard: View {
             .foregroundStyle(position.unrealizedPlUsd.map { Palette.result($0.value) } ?? Palette.textQuaternary)
         }
         .font(Tokens.Typography.calloutMono)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       }
       SectionHeader(Text(L10n.Risk.brokerOrders)) { note(L10n.Risk.ordersOpen) }
         .padding(.top, Tokens.Space.xs)
@@ -973,8 +958,6 @@ private struct AccountCard: View {
           }
         }
         .font(Tokens.Typography.calloutMono)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       }
       SectionHeader(Text(L10n.Risk.fillsToday)) { note(L10n.Risk.fillsColumns) }
         .padding(.top, Tokens.Space.xs)
@@ -998,8 +981,6 @@ private struct AccountCard: View {
           }
         }
         .font(Tokens.Typography.calloutMono)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       }
       Spacer(minLength: 0)
       Text(L10n.Risk.readAt(Format.marketTime(account.readAt.date), Format.wholeSeconds(response.ageSeconds.value)))
