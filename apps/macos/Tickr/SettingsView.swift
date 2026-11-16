@@ -571,6 +571,7 @@ private struct BotServiceCard: View {
         // Start is the card's main action; Stop is a destructive bot command, as on Overview.
         .buttonStyle(.action(.primary, size: .compact))
         .disabled(!model.canStartBot)
+        .inFlight(model.botStarting ? Text(InFlightText.startBot) : nil)
         .hint(L10n.Settings.startBotHint)
         Button(role: .destructive) { question = .stop } label: {
           Label { Text(L10n.Settings.stopBotAction) } icon: { Image(systemName: BotAction.stopSymbol) }
@@ -578,6 +579,7 @@ private struct BotServiceCard: View {
         .buttonStyle(.command(.destructive, tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
         .fixedSize()
         .disabled(!model.canStopBot)
+        .inFlight(model.inFlight == .stopBot ? Text(OperatorCommand.stopBot.inFlightTitle) : nil)
         .hint(verbatim: BotAction.stopBot.explanation)
       }
       if let question {
@@ -709,7 +711,7 @@ private struct ConfigCard: View {
       } else if let error = model.configError {
         ReadFailureNote(L10n.ReadFailed.config, detail: error)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonLines(Tokens.Loading.manyLines) }
       }
     } trailing: {
       HStack(spacing: Tokens.Space.xs) {
@@ -803,7 +805,7 @@ struct JobsSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonRows(Tokens.Loading.rows, badge: true) }
       }
     } trailing: {
       Text(L10n.Settings.timesET)
@@ -1097,7 +1099,7 @@ private struct BackupSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonLines(Tokens.Loading.fewLines) }
       }
       Label {
         Text(L10n.Settings.cleanup)

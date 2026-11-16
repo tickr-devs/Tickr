@@ -146,7 +146,19 @@ struct SymbolsView: View {
     let byRow = rowsBySymbol
     return VStack(alignment: .leading, spacing: 0) {
       LazyVStack(alignment: .leading, spacing: 0) {
-        if isMovers {
+        if loading {
+          // Two-line rows in the rows' own padding (mockup v102).
+          Skeleton(L10n.Common.loading) {
+            VStack(alignment: .leading, spacing: 0) {
+              ForEach(0..<SymbolsSkeleton.rows, id: \.self) { index in
+                SymbolsSkeleton.row(index)
+                  .padding(.horizontal, Tokens.Space.l)
+                  .padding(.vertical, Tokens.Space.m)
+                  .overlay(alignment: .top) { SkeletonGridLine() }
+              }
+            }
+          }
+        } else if isMovers {
           ForEach(moverRows, id: \.symbol) { mover in
             rowButton(mover.symbol) { MoverRow(mover: mover, row: byRow[mover.symbol]) }
           }
@@ -155,7 +167,7 @@ struct SymbolsView: View {
             rowButton(row.symbol) { SymbolRow(row: row) }
           }
         }
-        if count == 0 {
+        if count == 0 && !loading {
           Text(verbatim: emptyText)
             .font(Tokens.Typography.callout)
             .foregroundStyle(Palette.textTertiary)
@@ -172,6 +184,12 @@ struct SymbolsView: View {
     }
     .tickrCard()
     .accessibilityElement(children: .contain)
+  }
+
+  /// Whether the shown tab's rows are being read: none yet and no failure.
+  private var loading: Bool {
+    tab == .fastMovers ? model.movers == nil && model.moversError == nil
+      : model.symbols == nil && model.symbolsError == nil
   }
 
   private var emptyText: String {
@@ -203,6 +221,47 @@ struct SymbolsView: View {
     }
     .buttonStyle(.plain)
     .accessibilityHint(Text(L10n.Symbols.rowHint))
+  }
+}
+
+/// The Symbols list while its rows load (mockup v102): two-line skeleton rows, the symbol, its
+/// badge, price, change and time over the stage track, the stage and the outcome.
+private enum SymbolsSkeleton {
+  /// Skeleton rows in the list, as the board's.
+  static let rows = 9
+  /// Widths that differ row to row, in points, repeating: the symbol, its badge, the price, the
+  /// change and the outcome.
+  static let symbols: [CGFloat] = [44, 38, 50, 42, 36]
+  static let badges: [CGFloat] = [48, 56, 40, 60, 52]
+  static let prices: [CGFloat] = [46, 40, 52, 44, 38]
+  static let changes: [CGFloat] = [38, 44, 34, 40, 46]
+  static let outcomes: [CGFloat] = [110, 84, 130, 96, 72]
+  /// Fixed blocks of a row, in points: the symbol's height, the price's, the time, the stage
+  /// track (and its height) and the stage's name.
+  static let symbolHeight: CGFloat = 14
+  static let priceHeight: CGFloat = 12
+  static let time: CGFloat = 32
+  static let track: CGFloat = 57
+  static let trackHeight: CGFloat = 10
+  static let stage: CGFloat = 58
+
+  static func row(_ index: Int) -> some View {
+    let pick = { (widths: [CGFloat]) in widths[index % widths.count] }
+    return VStack(alignment: .leading, spacing: Tokens.Space.s) {
+      HStack(spacing: Tokens.Space.s) {
+        SkeletonBlock(.block(height: symbolHeight), width: pick(symbols))
+        SkeletonBlock(.pill, width: pick(badges))
+        Spacer(minLength: Tokens.Space.s)
+        SkeletonBlock(.block(height: priceHeight), width: pick(prices))
+        SkeletonBlock(.line, width: pick(changes))
+        SkeletonBlock(.line, width: time)
+      }
+      HStack(spacing: Tokens.Space.s) {
+        SkeletonBlock(.block(height: trackHeight), width: track)
+        SkeletonBlock(.line, width: stage)
+        SkeletonBlock(.line, width: pick(outcomes))
+      }
+    }
   }
 }
 
@@ -441,7 +500,7 @@ struct FastMoversCard: View {
           .foregroundStyle(Palette.warningText)
           .fixedSize(horizontal: false, vertical: true)
       } else {
-        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
+        Skeleton(L10n.Common.loading) { SkeletonRows(Tokens.Loading.fewRows) }
       }
       if let movers, !movers.movers.isEmpty {
         CardFooterLink(L10n.FastMovers.showAll, count: movers.movers.count) { showsAll = true }

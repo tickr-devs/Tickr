@@ -171,7 +171,19 @@ struct SymbolsView: View {
       .padding(.bottom, Tokens.Space.s)
       ScrollView(.vertical) {
         LazyVStack(alignment: .leading, spacing: 0) {
-          if isMovers {
+          if loading {
+            // Rows in the very column grid of the rows to come (mockup v102).
+            Skeleton(L10n.Common.loading) {
+              VStack(alignment: .leading, spacing: 0) {
+                ForEach(0..<SymbolsSkeleton.rows, id: \.self) { index in
+                  SymbolsSkeleton.row(index, movers: isMovers)
+                    .padding(.horizontal, Tokens.Space.m)
+                    .padding(.vertical, Tokens.Space.s)
+                    .overlay(alignment: .top) { SkeletonGridLine() }
+                }
+              }
+            }
+          } else if isMovers {
             ForEach(moverRows, id: \.symbol) { mover in
               rowButton(mover.symbol) { MoverColumns(mover: mover, row: byRow[mover.symbol]) }
             }
@@ -180,7 +192,7 @@ struct SymbolsView: View {
               rowButton(row.symbol) { SymbolColumns(row: row) }
             }
           }
-          if shown.isEmpty {
+          if shown.isEmpty && !loading {
             Footnote(verbatim: emptyText)
               .padding(Tokens.Space.m)
           }
@@ -197,6 +209,12 @@ struct SymbolsView: View {
     .tickrCard(radius: Tokens.Radius.large)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(Text(L10n.Symbols.listLabel))
+  }
+
+  /// Whether the shown tab's rows are being read: none yet and no failure.
+  private var loading: Bool {
+    tab == .fastMovers ? model.movers == nil && model.moversError == nil
+      : model.symbols == nil && model.symbolsError == nil
   }
 
   private var emptyText: String {
@@ -242,7 +260,112 @@ struct SymbolsView: View {
     let symbol = selected ?? firstSymbol
     let row = symbol.flatMap { rowsBySymbol[$0] }
     let mover = symbol.flatMap { name in model.movers?.movers.first { $0.symbol == name } }
-    return SymbolDetail(symbol: symbol, row: row, mover: mover)
+    return Group {
+      if loading {
+        SymbolsSkeleton.detail
+      } else {
+        SymbolDetail(symbol: symbol, row: row, mover: mover)
+      }
+    }
+  }
+}
+
+/// The Symbols screen while its rows load (mockup v102): skeleton rows in the rows' own column
+/// grid, and a skeleton of the detail card.
+private enum SymbolsSkeleton {
+  /// Skeleton rows in the list, as the board's.
+  static let rows = 18
+  /// Widths of the blocks that differ row to row, in points, repeating: the symbol, its
+  /// screener pill, and the outcome's words.
+  static let symbols: [CGFloat] = [44, 38, 50, 42, 36, 48]
+  static let pills: [CGFloat] = [56, 70, 48, 62, 52, 66]
+  static let outcomes: [CGFloat] = [120, 90, 140, 104, 80, 128]
+  /// Fixed blocks of a row, in points: the stage track and its stage's name, the outcome's pill,
+  /// the time, and a fast mover's figures.
+  static let track: CGFloat = 57
+  static let trackHeight: CGFloat = 10
+  static let stage: CGFloat = 52
+  static let outcomePill: CGFloat = 64
+  static let time: CGFloat = 34
+  static let figure: CGFloat = 40
+  /// The detail card's blocks, in points: the symbol and its badge, the price, the sparkline,
+  /// the outcome's words, the path's title and steps, and the notes under them.
+  static let detailSymbol: CGFloat = 72
+  static let detailSymbolHeight: CGFloat = 20
+  static let detailBadge: CGFloat = 62
+  static let detailPrice: CGFloat = 120
+  static let detailPriceHeight: CGFloat = 22
+  static let sparklineHeight: CGFloat = 40
+  static let detailOutcome: CGFloat = 170
+  static let pathTitle: CGFloat = 90
+  static let stepGlyph: CGFloat = 16
+  static let steps: [CGFloat] = [150, 120, 170, 110, 140, 100, 160, 130, 90]
+  static let stepFigure: CGFloat = 34
+  static let notesTitle: CGFloat = 120
+  static let notes: [CGFloat] = [210, 170]
+
+  /// One skeleton row: a stage row's columns, or a fast mover row's.
+  @ViewBuilder static func row(_ index: Int, movers: Bool) -> some View {
+    let pick = { (widths: [CGFloat]) in widths[index % widths.count] }
+    HStack(spacing: Tokens.Space.m) {
+      SkeletonBlock(.line, width: pick(symbols))
+        .frame(width: movers ? MoverColumns.symbolWidth : SymbolColumns.symbolWidth, alignment: .leading)
+      if movers {
+        ForEach([MoverColumns.volumeWidth, MoverColumns.moveWidth, MoverColumns.dollarsWidth], id: \.self) { width in
+          SkeletonBlock(.line, width: figure).frame(width: width, alignment: .leading)
+        }
+      }
+      SkeletonBlock(.pill, width: pick(pills)).frame(maxWidth: .infinity, alignment: .leading)
+      HStack(spacing: Tokens.Space.xs) {
+        SkeletonBlock(.block(height: trackHeight), width: track)
+        SkeletonBlock(.line, width: stage)
+      }
+      .frame(width: movers ? MoverColumns.trackWidth : SymbolColumns.trackWidth, alignment: .leading)
+      if !movers {
+        HStack(spacing: Tokens.Space.xs) {
+          SkeletonBlock(.pill, width: outcomePill)
+          SkeletonBlock(.line, width: pick(outcomes))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      SkeletonBlock(.line, width: time)
+        .frame(width: movers ? MoverColumns.timeWidth : SymbolColumns.seenWidth, alignment: .trailing)
+    }
+  }
+
+  /// The detail card's skeleton, in the card's own frame.
+  static var detail: some View {
+    Skeleton(nil) {
+      VStack(alignment: .leading, spacing: Tokens.Space.m) {
+        HStack(spacing: Tokens.Space.s) {
+          SkeletonBlock(.block(height: detailSymbolHeight), width: detailSymbol)
+          SkeletonBlock(.pill, width: detailBadge)
+        }
+        SkeletonBlock(.block(height: detailPriceHeight), width: detailPrice)
+        SkeletonBlock(.block(height: sparklineHeight))
+        HStack(spacing: Tokens.Space.s) {
+          SkeletonBlock(.pill, width: outcomePill)
+          SkeletonBlock(.line, width: detailOutcome)
+        }
+        SkeletonBlock(.line, width: pathTitle)
+        ForEach(Array(steps.enumerated()), id: \.offset) { _, width in
+          HStack(spacing: Tokens.Space.s) {
+            SkeletonBlock(.block(height: stepGlyph), width: stepGlyph)
+            SkeletonBlock(.line, width: width)
+            Spacer(minLength: Tokens.Space.s)
+            SkeletonBlock(.line, width: stepFigure)
+          }
+        }
+        SkeletonBlock(.line, width: notesTitle)
+        ForEach(Array(notes.enumerated()), id: \.offset) { _, width in
+          SkeletonBlock(.line, width: width)
+        }
+        Spacer(minLength: 0)
+      }
+    }
+    .padding(Tokens.Space.l)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .tickrCard(radius: Tokens.Radius.large)
   }
 }
 

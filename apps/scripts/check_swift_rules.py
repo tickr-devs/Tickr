@@ -47,6 +47,12 @@ system-buttons  No system button look: `.buttonStyle(.bordered | .borderedPromin
          face takes `.buttonStyle(.glyph)`; other buttons `.action`, `.icon`, `.chip`.
 symbols  One SF Symbol per meaning: a symbol that competes with one of TickrDesign's `Symbols`
          (`chevron.left` for `Symbols.previous`, an outlined triangle for `Symbols.failure`) fails.
+loaders  Loading only through TickrDesign's three components (mockup v102, docs/design-system.md
+         "Loading"): `Skeleton` for content, `.inFlight(_:)`'s spinner in a command's button,
+         `ProgressLine` for an operation of known length. So no `ProgressView` (the system
+         spinner), no `TickrLoader` (the radar loader, removed), no `.redacted(reason:
+         .placeholder)`, no type of the app's own named …Shimmer…, …Spinner… or …Loader…, and no
+         radar (`Radar…(`) outside the empty "no positions" state (RADAR_HOMES).
 components  No view or style type name declared in both apps (a cross-file pass): a component
          drawn on both lives once in TickrDesign. A screen or a card of one app (a name ending
          in View, Card, Page, Sheet, Panel, Section, Screen or Chart) is that app's own
@@ -594,6 +600,31 @@ KNOWN_TWINS = {
 }
 
 
+# Loading pieces an app may not draw itself: the system spinner, the removed radar loader, the
+# system placeholder look, and a shimmer, spinner or loader type of its own.
+LOADER = re.compile(
+    r"\bProgressView\b|\bTickrLoader\b|\.redacted\(\s*reason:\s*\.placeholder\b"
+    r"|\b(?:struct|class|enum|actor)\s+\w*(?:Shimmer|Spinner|Loader)\w*")
+# The radar is the empty "no positions" state's ornament only (mockup v102).
+RADAR = re.compile(r"\bRadar\w*\s*\(")
+RADAR_HOMES = {"apps/macos/Tickr/OverviewView.swift", "apps/macos/Tickr/RadarSweep.swift"}
+
+
+def loader_violations(path: Path) -> list[tuple[int, str]]:
+    """A loader that is not one of TickrDesign's three (comments ignored)."""
+    try:
+        relative = path.relative_to(REPO).as_posix()
+    except ValueError:
+        relative = path.as_posix()
+    radar_home = relative in RADAR_HOMES
+    found, in_block = [], False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        if LOADER.search(code) or (RADAR.search(code) and not radar_home):
+            found.append((number, code.strip()))
+    return found
+
+
 def component_names(path: Path) -> dict[str, int]:
     """Component type names declared in a file, with the line of each (comments ignored)."""
     found: dict[str, int] = {}
@@ -642,11 +673,14 @@ RULES = {
   "system-buttons": (system_button_violations,
       "a system button look; use .glyph, .action, .icon or .chip (TickrDesign)"),
   "symbols": (symbol_violations, "a symbol competing with a shared one; use TickrDesign's Symbols"),
+  "loaders": (loader_violations,
+      "a loader of the app's own; use Skeleton, .inFlight(_:) or ProgressLine "
+      "(docs/design-system.md)"),
   "components": (lambda path: [],
       "a component written in both apps; move it into TickrDesign (or name each app's own)"),
 }
 # Rules of the apps only: TickrDesign is where the shared looks are defined.
-APP_RULES = {"styles", "system-buttons", "symbols"}
+APP_RULES = {"styles", "system-buttons", "symbols", "loaders"}
 
 
 def swift_files() -> list[Path]:
