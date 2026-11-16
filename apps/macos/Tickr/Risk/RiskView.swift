@@ -889,12 +889,12 @@ private struct AccountCard: View {
   static let equityFont = Font.system(.title3, design: .monospaced, weight: .bold)
 
   var body: some View {
-    Card(L10n.Risk.account, tint: tint, trailing: {
+    // The account kind sits under the title, not beside it: beside it the title gets cut.
+    Card(L10n.Risk.account, tint: tint, content: {
       if let label = model.account?.account.accountLabel {
         Badge(verbatim: label, color: Palette.textSecondary)
           .help(Text(L10n.Risk.accountKindHelp))
       }
-    }, content: {
       if let response = model.account {
         content(response)
       } else if model.accountError != nil {
