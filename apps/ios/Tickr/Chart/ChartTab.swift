@@ -19,6 +19,9 @@ struct ChartTab: View {
           content(url).lastKnown(app.connectionState.isLastKnown)
         }
       }
+      // The design's gap between the top bar and the symbol chips: without it the chips sat
+      // right under the bar's glass.
+      .padding(.top, Tokens.Space.m)
       .padding(.horizontal, Tokens.Space.l)
       .padding(.bottom, Tokens.Space.xl)
       .animation(Tokens.Motion.standard, value: chart.phase)
@@ -74,18 +77,19 @@ struct ChartTab: View {
   @ViewBuilder
   private func loaded(_ url: URL) -> some View {
     switch chart.phase {
-    case .failed where app.connectionState.failure != nil:
-      // The link to the bot is down: the connection notice above says so once, for every screen.
-      EmptyView()
     case .failed(let cause):
-      ContentUnavailableView {
-        Label { Text(ChartText.failedTitle) } icon: { Image(systemName: "exclamationmark.triangle") }
-      } description: {
-        Text(cause)
-      } actions: {
-        Button { Task { await chart.load(url, preferring: chart.symbol) } } label: { Text(ChartText.retry) }
-          .buttonStyle(.borderedProminent)
+      // Plain words, the cause behind Details; while the link is down the card waits calmly and
+      // the connection banner above speaks (and retries) for every screen.
+      VStack(alignment: .leading, spacing: Tokens.Space.m) {
+        ReadFailureNote(ChartText.failedTitle, detail: cause)
+        if app.connectionState.failure == nil {
+          Button { Task { await chart.load(url, preferring: chart.symbol) } } label: { Text(ChartText.retry) }
+            .buttonStyle(.action(.secondary, size: .compact))
+        }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(Tokens.Space.l)
+      .tickrCard()
       .rise()
     default:
       if chart.days.isEmpty {
@@ -117,12 +121,9 @@ struct ChartTab: View {
           } else if chart.range != .oneDay {
             RangePicker(chart: chart)
             if let failure = chart.rangeFailure {
-              ContentUnavailableView {
-                Label { Text(ChartText.failedTitle) } icon: { Image(systemName: "wifi.exclamationmark") }
-              } description: {
-                Text(ChartText.candlesUnavailable(failure))
-              }
-              .rise()
+              ReadFailureNote(ChartText.candlesUnavailable, detail: failure)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .rise()
             } else if let answer = chart.rangeChart, answer.symbol == chart.symbol, answer.range == chart.range,
               answer.interval == chart.timeframe {
               ContentUnavailableView {
@@ -238,29 +239,34 @@ private struct DayBar: View {
       }
       Spacer(minLength: 0)
       if !typeSize.stacksRows { dayStats }
-      // The demo day is the only day: no arrows to step away from it.
-      if !chart.dayLocked {
+      // The demo day is the only day, and a single recorded day has no neighbour: no arrows
+      // then. Otherwise the arrow that leads nowhere is dimmed and refuses taps.
+      if arrows.visible {
         Button {
           if let day = chart.previousDay { Task { await chart.show(day, from: url) } }
         } label: {
           arrow(Self.previousSymbol)
         }
-        .disabled(chart.previousDay == nil)
+        .disabled(!arrows.canGoBack)
         .accessibilityLabel(Text(ChartText.previousDay))
         Button {
           if let day = chart.nextDay { Task { await chart.show(day, from: url) } }
         } label: {
           arrow(Self.nextSymbol)
         }
-        .disabled(chart.nextDay == nil)
+        .disabled(!arrows.canGoForward)
         .accessibilityLabel(Text(ChartText.nextDay))
       }
     }
     .buttonStyle(.borderless)
   }
 
+  private var arrows: DayArrows {
+    DayArrows(locked: chart.dayLocked, canGoBack: chart.previousDay != nil, canGoForward: chart.nextDay != nil)
+  }
+
   private func arrow(_ symbol: String) -> some View {
-    HeaderIcon(symbol: symbol).foregroundStyle(Palette.textPrimary)
+    HeaderIcon(symbol: symbol).foregroundStyle(Palette.textPrimary).dimmedWhenDisabled()
   }
 
   /// The shown candles' high, low and volume, small and dim beside the arrows, as on the design.
@@ -353,7 +359,9 @@ private struct DayBar: View {
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.textTertiary)
     }
-    .disabled(chart.dayLocked)
+    // One day to choose from (the demo day, or the only recorded day): the menu would list just
+    // the shown day, so it stays a label.
+    .disabled(!arrows.visible)
   }
 }
 
@@ -512,10 +520,11 @@ private struct ChartControls: View {
   private var following: some View {
     HStack(spacing: Tokens.Space.s) {
       Group {
-        Button { zoom(by: Tokens.Chart.zoomStep) } label: { HeaderIcon(symbol: "minus") }
+        // Dimmed at the zoom's limit: the explicit colour below kept them looking tappable.
+        Button { zoom(by: Tokens.Chart.zoomStep) } label: { HeaderIcon(symbol: "minus").dimmedWhenDisabled() }
           .disabled(!viewport.canZoomOut(series))
           .accessibilityLabel(Text(ChartText.zoomOut))
-        Button { zoom(by: 1 / Tokens.Chart.zoomStep) } label: { HeaderIcon(symbol: "plus") }
+        Button { zoom(by: 1 / Tokens.Chart.zoomStep) } label: { HeaderIcon(symbol: "plus").dimmedWhenDisabled() }
           .disabled(!viewport.canZoomIn)
           .accessibilityLabel(Text(ChartText.zoomIn))
       }
