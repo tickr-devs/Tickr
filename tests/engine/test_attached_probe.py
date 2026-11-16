@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from tickr import config
-from tickr.broker.base import Refused
+from tickr.broker.base import Acknowledgement, Refused
 from tickr.broker.fake import FakeBroker
 from tickr.data.base import FakeMarketData
 from tickr.engine import attached_probe as ap
@@ -148,3 +149,39 @@ def test_the_webull_combo_body_carries_each_leg_with_its_role():
     assert body["combo_type"] == "STOP_LOSS" and body["client_order_id"] == "p-stop"
     with pytest.raises(Refused, match="longer"):
         build_order_body(leg, 3, ComboRole.STOP_LOSS.value)
+
+
+class OwnLegIds(FakeBroker):
+    """Books attached legs under ids of the broker's own and never ends them with the MASTER:
+    absence by a leg's client id then proves nothing."""
+
+    def place_combo(self, combo_id, legs):
+        self.sent.extend(r for _, r in legs)
+        for number, (role, request) in enumerate(legs):
+            if role is not ComboRole.MASTER:
+                request = replace(request, client_order_id=f"broker-{combo_id}-{number}")
+            self._book(request)
+        master = next(r for role, r in legs if role is ComboRole.MASTER)
+        return Acknowledgement(master.client_order_id, f"fake-combo-{combo_id}")
+
+
+def test_legs_kept_under_broker_ids_stop_the_run_and_are_named(tmp_path):
+    world = World(tmp_path, marketable)
+    world.broker = OwnLegIds()
+    code, summary = world.run()
+    assert code == sp.EXIT_OPERATOR
+    assert "still lists working orders" in summary["unresolved"]
+    assert "stop-only" not in summary.get("shapes", {})  # no verdict stands on absence
+    leftover = summary["broker_after"]["working_probe_orders"]
+    assert leftover and all(o.startswith("broker-") for o in leftover)
+    assert any("open-orders" == s["step"] and s["orders"] for s in world.steps())
+
+
+def test_a_stale_quote_in_the_regular_session_is_refused(tmp_path):
+    world = World(tmp_path, marketable)
+    world.at = NOON + timedelta(seconds=float(CFG.risk.max_quote_age_seconds) + 1)
+    world.market.set_quote(Quote(SYMBOL, world.bid, world.ask, Decimal(100), Decimal(100),
+                                 NOON, NOON))
+    world.sleep = lambda seconds: None  # type: ignore[method-assign]
+    code, summary = world.run()
+    assert "stopped" in summary and world.broker.sent == []

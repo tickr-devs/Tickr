@@ -46,6 +46,7 @@ from tickr.broker.base import Broker, BrokerError, RateLimited, Refused
 from tickr.config import Config
 from tickr.data.base import MarketData
 from tickr.engine.manual import ManualRefused
+from tickr.engine.replace_probe import read_quote, stale_cause
 from tickr.engine.session_probe import (
     ACCEPTED,
     CLOSED,
@@ -67,7 +68,9 @@ from tickr.engine.session_probe import (
     Probe,
     Sleep,
     Unresolved,
+    detail_row,
     floor_tick,
+    quote_row,
     require_flat,
     tick,
 )
@@ -91,6 +94,7 @@ SHAPES = (
 # Verdicts beyond the F7 probe's.
 LEG_ENDED_WITH_MASTER = "ended-with-master"
 LEG_OUTLIVED_MASTER = "still-working-after-master-cancel"
+LEG_FILLED = "filled"
 LEG_WORKING_AFTER_FILL = "working-after-the-fill (cancelled before the close)"
 STOP_WORKING = "working"
 STOP_NOT_WORKING = "NOT-working-after-the-fill"
@@ -161,16 +165,68 @@ class AttachedProbe(Probe):
                      alive: str = LEG_OUTLIVED_MASTER) -> dict[str, str]:
         """After the MASTER is finished: each attached leg either ended with it or is
         cancelled here and proven finished (Unresolved otherwise); `alive` names a leg that
-        was still working."""
+        was still working. Absence by a leg's own id proves nothing while the broker may keep
+        legs under ids of its own, so the open orders must then list nothing working
+        (`require_no_open_orders`) before any verdict stands."""
         verdicts: dict[str, str] = {}
         for role, request in legs[1:]:
             leg = self.leg_name(name, role)
             row, absent = self.settle(leg, request.client_order_id,
                                       float(self.config.probe.attached_observe_seconds))
-            ended = absent or (row is not None and row.state.terminal)
-            verdicts[leg] = LEG_ENDED_WITH_MASTER if ended else alive
+            if row is not None and row.state is OrderState.FILLED:
+                verdicts[leg] = LEG_FILLED
+            elif absent or (row is not None and row.state.terminal):
+                verdicts[leg] = LEG_ENDED_WITH_MASTER
+            else:
+                verdicts[leg] = alive
             self.finish(leg, request.client_order_id, row, absent)
+        self.require_no_open_orders(f"{name}-after-legs")
         return verdicts
+
+    def open_orders_read(self, case: str) -> list[OrderDetail]:
+        """Every open order the broker lists that is not terminal, whatever its id (the
+        account was proven flat with none at the start), recorded with its row. Unresolved
+        when the read fails: nothing is proven then."""
+        try:
+            orders = self.broker.open_orders()
+        except BrokerError as exc:
+            self._log("open-orders-failed", case=case, error=str(exc))
+            raise Unresolved(f"open orders cannot be read ({type(exc).__name__})") from exc
+        working = [o for o in orders if not o.state.terminal]
+        self._log("open-orders", case=case,
+                  orders=[{"symbol": o.symbol, **detail_row(o)} for o in working])
+        return working
+
+    def require_no_open_orders(self, case: str) -> None:
+        working = self.open_orders_read(case)
+        if working:
+            raise Unresolved(f"the broker still lists working orders after {case}: "
+                             + ", ".join(f"{o.client_order_id} {o.side} {o.order_type} "
+                                         f"{o.raw_status}" for o in working))
+
+    def quote(self) -> Quote:
+        """The regular session's rule (`[risk] max_quote_age_seconds`), not the F7 probe's
+        extended-hours limit: in the regular session a quote minutes old means a fault."""
+        quote = read_quote(self.market, self.symbol)
+        age, stale = stale_cause(self.config, quote, self.now())
+        self._log("quote", age_seconds=age, stale=stale, **quote_row(quote))
+        if stale is not None:
+            raise ManualRefused(f"{stale}: the snapshot quote is not fresh")
+        if not 0 < quote.bid <= quote.ask:
+            raise ManualRefused(f"no valid quote: bid {quote.bid} ask {quote.ask}")
+        return quote
+
+    def leftovers(self) -> dict[str, Any]:
+        """The F7 probe's final read, with every working open order counted whatever its id
+        (combo legs may be kept under broker ids)."""
+        after = super().leftovers()
+        try:
+            working = self.open_orders_read("final-any-id")
+        except Unresolved:
+            return {**after, "readable": False}
+        return {**after, "working_probe_orders": [
+            f"{o.client_order_id} {o.symbol} {o.side} {o.order_type} {o.raw_status}"
+            for o in working]}
 
     def shape(self, name: str, roles: tuple[ComboRole, ...], quote: Quote) -> dict[str, str]:
         far = self.config.probe.attached_far_percent / PERCENT
@@ -214,9 +270,9 @@ class AttachedProbe(Probe):
                 row = read
             try:
                 listed = any(o.client_order_id == stop.client_order_id
-                             for o in self.broker.open_orders())
-            except BrokerError as exc:
-                self._log("open-orders-failed", error=str(exc))
+                             for o in self.open_orders_read("fill-stop"))
+            except Unresolved:
+                listed = False
             working = (row is not None and row.state is OrderState.ACCEPTED
                        and row.quantity - row.filled_quantity >= filled)
             if working and listed:
@@ -286,6 +342,7 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
         except ManualRefused as exc:
             summary["stopped"] = str(exc)
             out(f"stopped: {exc}")
+        probe.require_no_open_orders("before-close")  # an unseen stop would hold the share
         summary["close"] = probe.close()
     except Unresolved as exc:
         unresolved = str(exc)
