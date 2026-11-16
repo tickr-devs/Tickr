@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from tickr import config
-from tickr.broker.base import OutcomeUnknown, Refused
+from tickr.broker.base import BrokerError, OutcomeUnknown, Refused
 from tickr.broker.fake import FakeBroker
 from tickr.broker.webull import build_order_body, read_order
 from tickr.calendar import SessionCalendar
@@ -20,6 +20,7 @@ from tickr.data.base import FakeMarketData
 from tickr.engine import session_probe as sp
 from tickr.engine.manual import ManualRefused
 from tickr.types import (
+    OrderDetail,
     OrderRequest,
     OrderType,
     Position,
@@ -210,7 +211,7 @@ def test_order_body_and_row_of_a_stop_limit() -> None:
         OrderType.STOP_LOSS_LIMIT, Decimal("9.99"), Decimal("9.80"))
 
 
-def test_a_probe_order_left_working_asks_the_operator(tmp_path: Path) -> None:
+def test_a_probe_order_left_working_stops_everything_after_it(tmp_path: Path) -> None:
     world = World(tmp_path)
 
     def cancel_lost(client_order_id: str) -> None:
@@ -219,5 +220,62 @@ def test_a_probe_order_left_working_asks_the_operator(tmp_path: Path) -> None:
     world.broker.cancel = cancel_lost  # type: ignore[method-assign]
     code, summary = world.run()
     assert code == sp.EXIT_OPERATOR
-    assert summary["broker_after"]["working_probe_orders"]
-    assert len(world.broker.sent) == 4  # three stops and the entry, each sent once
+    assert "still SUBMITTED" in summary["unresolved"]
+    assert summary["close"] == sp.NOT_SENT_UNRESOLVED
+    assert summary["broker_after"]["working_probe_orders"] == ["probe-x2200001"]
+    assert len(world.broker.sent) == 1  # nothing after the unresolved order
+
+
+def _sells(world: World) -> list[OrderRequest]:
+    return [r for r in world.broker.sent if r.side is Side.SELL]
+
+
+def test_a_sell_stop_whose_cancel_does_not_take_blocks_every_later_sell(tmp_path: Path) -> None:
+    world = World(tmp_path, fill_entry_and_close)
+    real_cancel = world.broker.cancel
+
+    def cancel(client_order_id: str) -> None:
+        order = world.broker.orders[client_order_id]
+        if order.side is Side.SELL and order.order_type is not OrderType.LIMIT:
+            return  # the broker says nothing and the stop keeps working
+        real_cancel(client_order_id)
+
+    world.broker.cancel = cancel  # type: ignore[method-assign]
+    code, summary = world.run()
+    assert code == sp.EXIT_OPERATOR
+    assert len(_sells(world)) == 1  # one stop; no second stop and no close for the same share
+    assert summary["close"] == sp.NOT_SENT_UNRESOLVED
+    assert summary["broker_after"]["position"] == "1"
+
+
+def test_a_sell_stop_detail_never_shows_blocks_every_later_sell(tmp_path: Path) -> None:
+    world = World(tmp_path, fill_entry_and_close)
+    real_detail = world.broker.order_detail
+
+    def detail(client_order_id: str) -> OrderDetail:
+        if world.broker.orders[client_order_id].side is Side.SELL:
+            raise BrokerError("scripted: Detail read failed")
+        return real_detail(client_order_id)
+
+    world.broker.order_detail = detail  # type: ignore[method-assign]
+    code, summary = world.run()
+    assert code == sp.EXIT_OPERATOR
+    assert "never shown" in summary["unresolved"]
+    assert len(_sells(world)) == 1
+
+
+def test_sell_quantity_comes_from_the_broker_position(tmp_path: Path) -> None:
+    def market(world: World) -> None:
+        # The entry fill is never shown by Detail, but the broker holds the share.
+        if world.working(Side.BUY, OrderType.LIMIT) and SYMBOL not in world.broker.holdings:
+            world.broker.add_foreign_position(SYMBOL, Decimal(1), world.ask)
+        for cid in world.working(Side.SELL, OrderType.LIMIT):
+            world.broker.fill(cid, Decimal(1), world.bid)
+
+    world = World(tmp_path, market)
+    world.broker.script("refuse", "refuse", "refuse")  # no stop type: straight to the close
+    code, summary = world.run()
+    assert summary["entry"] == sp.FILLED
+    closes = _sells(world)
+    assert [(r.order_type, r.quantity) for r in closes] == [(OrderType.LIMIT, Decimal(1))]
+    assert summary["close"] == sp.CLOSED and code == sp.EXIT_ANSWERED

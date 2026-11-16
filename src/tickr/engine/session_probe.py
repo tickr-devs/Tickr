@@ -10,8 +10,9 @@ answers the facts the extended-hours design waits for (docs/webull-facts.md F7):
 2. Fill: a BUY LIMIT DAY ALL for `[probe] quantity` shares at the ask. Unfilled within
    `[probe] entry_wait_seconds`, it is cancelled and the probe ends (the broker does not fill
    outside the regular session, or not at that price).
-3. Trigger, holding the shares: each stop type accepted in step 1 is placed as a SELL with
-   session ALL one tick below the bid and watched for `[probe] extended_trigger_seconds`,
+3. Trigger, holding the shares (the quantity is the broker's position, read before each
+   SELL): each stop type accepted in step 1 is placed as a SELL with session ALL one tick
+   below the bid and watched for `[probe] extended_trigger_seconds`,
    with a quote read each poll; still working afterwards, it is cancelled. A bid below the stop
    while the stop kept working says it does not trigger in this session.
 4. Close: whatever is still held is sold with a LIMIT DAY ALL `[probe] extended_close_percent`
@@ -23,6 +24,10 @@ fill, the probe holds `[probe] quantity` share(s) without a broker stop for at m
 minutes: proving whether a stop works in this session is what the probe is for, and the extended
 sessions stay closed to the bot until it has answered. It is the one sender besides the engine
 (tests/test_invariants.py names it).
+
+No SELL is sent while an earlier order of the run is not proven finished: an order still working
+after its cancel, or never shown by Detail (and not proven absent), stops the run at once, the
+close included, and the probe exits 4 with the order ids for the owner.
 
 Hard rule 3 holds: every order is written to the evidence file (flushed to disk) before its one
 request, never resent; an unknown outcome is read back by Detail. The probe holds the bot's lock
@@ -44,14 +49,7 @@ from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 from typing import Any
 
-from tickr.broker.base import (
-    Broker,
-    BrokerError,
-    OrderNotFound,
-    OutcomeUnknown,
-    RateLimited,
-    Refused,
-)
+from tickr.broker.base import Broker, BrokerError, OrderNotFound, RateLimited, Refused
 from tickr.calendar import CalendarRefused, MarketDay, SessionCalendar, ny_date_of
 from tickr.config import Config
 from tickr.data.base import MarketData, MarketDataError
@@ -92,6 +90,7 @@ NOT_TRIGGERED = "not-triggered-price-never-reached"
 NOT_TESTED = "not-tested"
 CLOSED = "closed"
 NOT_CLOSED = "NOT-CLOSED-close-it-in-the-webull-app"
+NOT_SENT_UNRESOLVED = "NOT-SENT-an-order-is-unresolved-close-it-in-the-webull-app"
 
 EXIT_ANSWERED = 0
 EXIT_OPERATOR = 4
@@ -172,6 +171,12 @@ def quote_row(q: Quote) -> dict[str, Any]:
             "provider_time": q.provider_time.isoformat()}
 
 
+class Unresolved(Exception):
+    """An order of this run is not proven finished (still working after its cancel, or never
+    shown by Detail), or the position cannot be read: nothing more is sent, the close
+    included, and the operator gets the order ids."""
+
+
 @dataclass
 class Probe:
     config: Config
@@ -183,7 +188,6 @@ class Probe:
     sleep: Sleep
     out: Out
     run_tag: str
-    held: Decimal = Decimal(0)
     _sequence: int = 0
 
     # -- plumbing ---------------------------------------------------------------------------
@@ -208,9 +212,20 @@ class Probe:
             raise ManualRefused(f"no valid quote: bid {quote.bid} ask {quote.ask}")
         return quote
 
+    def held(self) -> Decimal:
+        """The broker's position in the symbol (the source of truth, never our own count)."""
+        try:
+            held = sum((p.quantity for p in self.broker.positions() if p.symbol == self.symbol),
+                       Decimal(0))
+        except BrokerError as exc:
+            self._log("position-read-failed", error=str(exc))
+            raise Unresolved(f"positions cannot be read ({type(exc).__name__})") from exc
+        self._log("position", quantity=held)
+        return held
+
     def place(self, name: str, request: OrderRequest) -> str:
         """Record, send once. Returns ACCEPTED, REFUSED, NOT_SENT or UNKNOWN (resolved by
-        Detail)."""
+        Detail). A refusal by our request budget or by the broker proves nothing was created."""
         self._log("intent", case=name, client_order_id=request.client_order_id,
                   side=request.side, type=request.order_type, session=request.session,
                   quantity=request.quantity, limit_price=request.limit_price,
@@ -225,39 +240,53 @@ class Probe:
             self._log("not-sent", case=name, error=str(exc))
             self.out(f"{name}: not sent, our request budget is spent")
             return NOT_SENT
-        except OutcomeUnknown as exc:
+        except BrokerError as exc:  # OutcomeUnknown or anything else: it may exist
             self._log("unknown", case=name, error=str(exc))
             self.out(f"{name}: answer {exc}; reading Detail, never resending")
             return UNKNOWN
         self._log("acknowledged", case=name, order_id=ack.broker_order_id)
         return ACCEPTED
 
-    def detail(self, name: str, cid: str) -> OrderDetail | None:
+    def detail(self, name: str, cid: str) -> OrderDetail | None | bool:
+        """The row, False when Detail says the order is not present, None when the read
+        failed."""
         try:
             d = self.broker.order_detail(cid)
         except OrderNotFound:
             self._log("detail", case=name, client_order_id=cid, found=False)
-            return None
+            return False
         except BrokerError as exc:
             self._log("detail-failed", case=name, client_order_id=cid, error=str(exc))
             return None
         self._log("detail", case=name, found=True, **detail_row(d))
         return d
 
-    def settle(self, name: str, cid: str, seconds: float) -> OrderDetail | None:
-        """Detail every poll for `seconds`; the last row read (None: never shown)."""
+    def settle(self, name: str, cid: str, seconds: float) -> tuple[OrderDetail | None, bool]:
+        """Detail every poll for `seconds`, stopping at a terminal row. Returns the last row
+        read and whether the order is proven absent (only "not present" answers, at least
+        `[orders] unknown_absent_reads` of them in a row)."""
         last: OrderDetail | None = None
+        absent = 0
         polls = max(1, int(seconds // float(self.config.orders.detail_poll_seconds)))
         for _ in range(polls):
             self.sleep(float(self.config.orders.detail_poll_seconds))
             row = self.detail(name, cid)
-            last = row if row is not None else last
+            if row is False:
+                absent += 1
+                continue
+            absent = 0
+            if isinstance(row, OrderDetail):
+                last = row
             if last is not None and last.state.terminal:
                 break
-        return last
+        return last, last is None and absent >= self.config.orders.unknown_absent_reads
 
-    def cancel(self, name: str, cid: str) -> OrderDetail | None:
-        """Cancel once (recorded first), then read until terminal."""
+    def finish(self, name: str, cid: str, row: OrderDetail | None,
+               absent: bool) -> OrderDetail | None:
+        """Make sure the order is over: cancel it unless Detail shows it terminal or proves it
+        absent, then require that proof. Raises Unresolved otherwise."""
+        if absent or (row is not None and row.state.terminal):
+            return row
         self._log("cancel-intent", case=name, client_order_id=cid)
         try:
             self.broker.cancel(cid)
@@ -265,16 +294,18 @@ class Probe:
             self._log("cancel-not-found", case=name)
         except BrokerError as exc:
             self._log("cancel-answer", case=name, error=str(exc))
-        return self.settle(name, cid, float(self.config.orders.max_exit_seconds))
+        after, absent = self.settle(name, cid, float(self.config.orders.max_exit_seconds))
+        row = after or row
+        if absent or (row is not None and row.state.terminal):
+            return row
+        state = "never shown by Detail" if row is None else f"still {row.raw_status}"
+        raise Unresolved(f"{name} order {cid} is {state} after its cancel")
 
-    def _filled_now(self, d: OrderDetail | None, side: Side) -> None:
-        if d is not None and d.filled_quantity:
-            self.held += d.filled_quantity if side is Side.BUY else -d.filled_quantity
-
-    def request(self, cid: str, side: Side, order_type: OrderType, session: TradingSession,
-                *, limit: Decimal | None = None, stop: Decimal | None = None) -> OrderRequest:
+    def request(self, cid: str, side: Side, order_type: OrderType, quantity: Decimal,
+                *, session: TradingSession = TradingSession.ALL, limit: Decimal | None = None,
+                stop: Decimal | None = None) -> OrderRequest:
         return OrderRequest(client_order_id=cid, symbol=self.symbol, side=side,
-                            order_type=order_type, quantity=Decimal(self.config.probe.quantity),
+                            order_type=order_type, quantity=quantity,
                             time_in_force=TimeInForce.DAY, session=session,
                             limit_price=limit, stop_price=stop)
 
@@ -283,28 +314,30 @@ class Probe:
     def acceptance(self, quote: Quote) -> dict[str, str]:
         far = floor_tick(quote.ask * (1 + self.config.probe.extended_far_stop_percent / PERCENT))
         limit = floor_tick(far * (1 + self.config.probe.extended_stop_limit_percent / PERCENT))
+        quantity = Decimal(self.config.probe.quantity)
         verdicts: dict[str, str] = {}
         for name, order_type, session in ACCEPTANCE_CASES:
             cid = self._cid(name)
-            request = self.request(cid, Side.BUY, order_type, session, stop=far,
+            request = self.request(cid, Side.BUY, order_type, quantity, session=session,
+                                   stop=far,
                                    limit=limit if order_type is OrderType.STOP_LOSS_LIMIT else None)
             sent = self.place(name, request)
             if sent in (REFUSED, NOT_SENT):
                 verdicts[name] = sent
                 self.out(f"{name}: {sent}")
                 continue
-            row = self.settle(name, cid, float(self.config.probe.extended_observe_seconds))
+            row, absent = self.settle(name, cid,
+                                      float(self.config.probe.extended_observe_seconds))
             if row is None:
-                verdicts[name] = UNKNOWN if sent == UNKNOWN else NOT_VISIBLE
+                verdicts[name] = REFUSED if absent and sent == UNKNOWN else (
+                    UNKNOWN if sent == UNKNOWN else NOT_VISIBLE)
             elif row.state in (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED,
                                OrderState.FILLED):
                 verdicts[name] = f"{ACCEPTED} ({row.raw_status})"
             else:
                 verdicts[name] = f"{REFUSED} ({row.raw_status})"
-            if row is not None and not row.state.terminal:
-                row = self.cancel(name, cid)
-            self._filled_now(row, Side.BUY)
             self.out(f"{name}: {verdicts[name]}")
+            self.finish(name, cid, row, absent)
         return verdicts
 
     def entry(self, quote: Quote) -> str:
@@ -314,40 +347,42 @@ class Probe:
         if price > self.config.probe.max_price_usd:
             raise ManualRefused(f"ask {quote.ask} is above [probe] max_price_usd")
         sent = self.place("entry", self.request(cid, Side.BUY, OrderType.LIMIT,
-                                                TradingSession.ALL, limit=price))
+                                                Decimal(self.config.probe.quantity),
+                                                limit=price))
         if sent in (REFUSED, NOT_SENT):
             return sent
-        row = self.settle("entry", cid, float(self.config.probe.entry_wait_seconds))
-        if row is not None and not row.state.terminal:
-            row = self.cancel("entry", cid)
-        self._filled_now(row, Side.BUY)
-        verdict = FILLED if self.held > 0 else NOT_FILLED
+        row, absent = self.settle("entry", cid, float(self.config.probe.entry_wait_seconds))
+        self.finish("entry", cid, row, absent)
+        verdict = FILLED if self.held() > 0 else NOT_FILLED
         self.out(f"entry (BUY LIMIT ALL at {price}): {verdict}")
         return verdict
 
     def trigger(self, name: str, order_type: OrderType) -> str:
+        held = self.held()
+        if held <= 0:
+            return NOT_TESTED
         quote = self.quote()
         stop = floor_tick(quote.bid) - tick(quote.bid)
         if stop <= 0:
             raise ManualRefused(f"bid {quote.bid} leaves no room for a stop below it")
         limit = floor_tick(stop * (1 - self.config.probe.extended_stop_limit_percent / PERCENT))
         cid = self._cid(name)
-        request = OrderRequest(client_order_id=cid, symbol=self.symbol, side=Side.SELL,
-                               order_type=order_type, quantity=self.held,
-                               time_in_force=TimeInForce.DAY, session=TradingSession.ALL,
-                               stop_price=stop,
-                               limit_price=limit if order_type is OrderType.STOP_LOSS_LIMIT
-                               else None)
+        request = self.request(cid, Side.SELL, order_type, held, stop=stop,
+                               limit=limit if order_type is OrderType.STOP_LOSS_LIMIT else None)
         sent = self.place(name, request)
         if sent in (REFUSED, NOT_SENT):
             return sent
         passed = False
         row: OrderDetail | None = None
+        absent = 0
         polls = max(1, int(self.config.probe.extended_trigger_seconds
                            // float(self.config.orders.detail_poll_seconds)))
         for _ in range(polls):
             self.sleep(float(self.config.orders.detail_poll_seconds))
-            row = self.detail(name, cid) or row
+            read = self.detail(name, cid)
+            absent = absent + 1 if read is False else 0
+            if isinstance(read, OrderDetail):
+                row = read
             if row is not None and row.state.terminal:
                 break
             try:
@@ -356,9 +391,8 @@ class Probe:
                 passed = passed or now_quote.bid < stop
             except (ManualRefused, BrokerError, MarketDataError) as exc:
                 self._log("quote-failed", case=name, error=str(exc))
-        if row is not None and not row.state.terminal:
-            row = self.cancel(name, cid)
-        self._filled_now(row, Side.SELL)
+        row = self.finish(name, cid, row,
+                          row is None and absent >= self.config.orders.unknown_absent_reads)
         if row is not None and row.filled_quantity:
             verdict = f"{TRIGGERED} (fill {row.average_fill_price}, stop {stop})"
         elif row is None:
@@ -369,7 +403,8 @@ class Probe:
         return verdict
 
     def close(self) -> str:
-        if self.held <= 0:
+        held = self.held()
+        if held <= 0:
             return CLOSED
         try:
             quote = self.quote()
@@ -378,17 +413,12 @@ class Probe:
             return NOT_CLOSED
         price = floor_tick(quote.bid * (1 - self.config.probe.extended_close_percent / PERCENT))
         cid = self._cid("close")
-        request = OrderRequest(client_order_id=cid, symbol=self.symbol, side=Side.SELL,
-                               order_type=OrderType.LIMIT, quantity=self.held,
-                               time_in_force=TimeInForce.DAY, session=TradingSession.ALL,
-                               limit_price=price)
+        request = self.request(cid, Side.SELL, OrderType.LIMIT, held, limit=price)
         if self.place("close", request) in (REFUSED, NOT_SENT):
             return NOT_CLOSED
-        row = self.settle("close", cid, float(self.config.orders.max_exit_seconds))
-        if row is not None and not row.state.terminal:
-            row = self.cancel("close", cid)  # so the shares are free to sell in the app
-        self._filled_now(row, Side.SELL)
-        return CLOSED if self.held <= 0 else NOT_CLOSED
+        row, absent = self.settle("close", cid, float(self.config.orders.max_exit_seconds))
+        self.finish("close", cid, row, absent)  # so the shares are free to sell in the app
+        return CLOSED if self.held() <= 0 else NOT_CLOSED
 
     def leftovers(self) -> dict[str, Any]:
         """Broker truth at the end: the symbol's position and every working probe order."""
@@ -419,7 +449,9 @@ def require_flat(broker: Broker) -> None:
 
 def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder: Path, *,
         now: Clock, sleep: Sleep, out: Out, session: str, session_end: datetime) -> int:
-    """The four steps; returns the exit code. The caller holds the bot's lock."""
+    """The four steps; returns the exit code. The caller holds the bot's lock. An order not
+    proven finished stops the run before any further order, the close included; the final
+    broker read always runs and decides the exit code."""
     started = now()
     probe = Probe(config, broker, market, symbol, Evidence(folder), now, sleep, out,
                   run_tag=f"{started.astimezone(UTC):%H%M%S}")
@@ -427,31 +459,39 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
                                "symbol": symbol, "session": session,
                                "started_at": started.isoformat(),
                                "session_end": session_end.isoformat()}
+    unresolved: str | None = None
     try:
-        require_flat(broker)
-        quote = probe.quote()
-        if quote.ask > config.probe.max_price_usd:
-            raise ManualRefused(f"ask {quote.ask} is above [probe] max_price_usd")
-        summary["acceptance"] = acceptance = probe.acceptance(quote)
-        summary["entry"] = probe.entry(probe.quote())
-        for name, order_type, kind in ACCEPTANCE_CASES:
-            key = f"trigger-{name}"
-            if kind is not TradingSession.ALL:
-                continue
-            if probe.held <= 0 or not acceptance[name].startswith(ACCEPTED):
-                summary[key] = NOT_TESTED
-                continue
-            summary[key] = probe.trigger(key, order_type)
-    except ManualRefused as exc:
-        summary["stopped"] = str(exc)
-        out(f"stopped: {exc}")
-    finally:
+        try:
+            require_flat(broker)
+            quote = probe.quote()
+            if quote.ask > config.probe.max_price_usd:
+                raise ManualRefused(f"ask {quote.ask} is above [probe] max_price_usd")
+            summary["acceptance"] = acceptance = probe.acceptance(quote)
+            summary["entry"] = probe.entry(probe.quote())
+            for name, order_type, kind in ACCEPTANCE_CASES:
+                if kind is not TradingSession.ALL:
+                    continue
+                key = f"trigger-{name}"
+                summary[key] = (probe.trigger(key, order_type)
+                                if acceptance[name].startswith(ACCEPTED) else NOT_TESTED)
+        except ManualRefused as exc:
+            summary["stopped"] = str(exc)
+            out(f"stopped: {exc}")
         summary["close"] = probe.close()
+    except Unresolved as exc:
+        unresolved = str(exc)
+        summary["unresolved"] = unresolved
+        summary.setdefault("close", NOT_SENT_UNRESOLVED)
+        out(f"stopped, nothing more sent: {exc}")
+    except BrokerError as exc:
+        summary["error"] = f"{type(exc).__name__}: {exc}"
+        summary.setdefault("close", NOT_CLOSED)
+    finally:
         summary["broker_after"] = after = probe.leftovers()
         summary["finished_at"] = now().isoformat()
         probe.evidence.summary(summary)
     clean = (after["readable"] and after["position"] == 0 and not after["working_probe_orders"])
-    if summary["close"] != CLOSED or not clean:
+    if unresolved is not None or summary.get("close") != CLOSED or not clean:
         out(f"OPERATOR: the broker shows {after}: cancel the probe orders and sell what is "
             f"held in the Webull app now")
         return EXIT_OPERATOR
