@@ -41,6 +41,7 @@ from tickr.store import DATABASE_FILE, MIGRATIONS, EnvironmentMismatch, Store
 from tickr.version import UNRECORDED, CodeVersionUnknown, running_code_version
 
 if TYPE_CHECKING:
+    from tickr.data.todaybars import TodayBars
     from tickr.observers.runner import ObserverSet
     from tickr.runtime.evaluation import Evaluator
     from tickr.runtime.market import StreamInbox
@@ -419,7 +420,7 @@ def _clear_fence(args: argparse.Namespace) -> int:
 
 
 def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
-               inbox: StreamInbox, calendar: SessionCalendar | None,
+               inbox: StreamInbox, calendar: SessionCalendar | None, today_bars: TodayBars,
                last_broker_read_at: Callable[[], datetime | None],
                observers_refused: Callable[[str], None]
                ) -> tuple[Evaluator, ObserverSet] | None:
@@ -444,7 +445,7 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
                      log=log)
     evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
                           history=HistoryReader.from_config(cfg, source, calendar),
-                          inbox=inbox, calendar=calendar, now=NOW)
+                          inbox=inbox, calendar=calendar, today_bars=today_bars, now=NOW)
     try:
         shadows = load_observers(cfg)
     except ObserverError as exc:
@@ -469,8 +470,10 @@ def _run(path: Path) -> int:
     stop marker exists, 5 when the drain hit its deadline."""
     from tickr.data.capture import CaptureWriter
     from tickr.data.health import StreamHealth
+    from tickr.data.todaybars import TodayBars
     from tickr.observers.errors import ObserverError
     from tickr.runtime import service
+    from tickr.runtime.account import AccountReads
     from tickr.runtime.alerts import Alerter, AlertKind, token_pending_text
     from tickr.runtime.market import MarketRuntime, StreamInbox
     from tickr.runtime.signals import StopRequest, install_stop_handler, restore_handlers
@@ -499,6 +502,7 @@ def _run(path: Path) -> int:
         capture: CaptureWriter | None = None
         observers: ObserverSet | None = None
         watch: Watch | None = None
+        account_reads: AccountReads | None = None
         try:
             alerter = Alerter(cfg.alerts, f"Tickr {cfg.environment_name}",
                               NOTIFIER(cfg.alerts), clock=NOW)
@@ -516,10 +520,11 @@ def _run(path: Path) -> int:
                             clock=lambda: NOW().timestamp(),
                             close_refusal=lambda: close_refusal(cfg, calendar, NOW()))
             capture = CaptureWriter.from_config(cfg, adapters.market.provider)
+            today_bars = TodayBars()  # one bars read shared by discovery and evaluation
             market = MarketRuntime(engine, cfg, adapters.market,
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
-                                   capture=capture, calendar=calendar, now=NOW,
-                                   monotonic=MONOTONIC)
+                                   capture=capture, calendar=calendar, today_bars=today_bars,
+                                   now=NOW, monotonic=MONOTONIC)
             watch = Watch(engine, cfg, alerter, NOW)
 
             def observers_refused(cause: str) -> None:
@@ -530,7 +535,7 @@ def _run(path: Path) -> int:
             entries_off = None
             evaluator, observers = None, None
             try:
-                wired = _evaluator(cfg, engine, adapters.market, inbox, calendar,
+                wired = _evaluator(cfg, engine, adapters.market, inbox, calendar, today_bars,
                                    lambda: bot.last_broker_read_at, observers_refused)
             except ObserverError as exc:  # the bot still protects and exits; no entries
                 wired, entries_off = None, str(exc)
@@ -540,12 +545,17 @@ def _run(path: Path) -> int:
             if wired is not None:
                 evaluator, observers = wired
                 market.screen = evaluator.strategy  # discovery applies its liquidity rules
+            # Display reads (balance, account kind, today's fills) on their own thread.
+            account_reads = AccountReads(adapters.broker,
+                                         float(cfg.orders.balance_read_seconds), NOW)
             bot = service.Service(engine, now=NOW, calendar=calendar, strategy=strategy,
                                   paths=service.ServicePaths.from_config(cfg), market=market,
                                   evaluator=evaluator, entries_off=entries_off,
-                                  observers=observers, watch=watch)
+                                  observers=observers, watch=watch,
+                                  account_reads=account_reads)
             market.bind()
             adapters.start_stream()
+            account_reads.start()
             clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP,
                             monotonic=MONOTONIC)
             how = (f"operator command {bot.stopped_by}" if bot.stopped_by is not None
@@ -554,6 +564,8 @@ def _run(path: Path) -> int:
         finally:
             # Each step guarded: a failing SDK disconnect must not skip recording the run end.
             for step in ((adapters.stop_stream if adapters is not None else None),
+                         ((lambda: account_reads.stop(0)) if account_reads is not None
+                          else None),
                          (capture.close if capture is not None else None),
                          (_closer(observers, cfg) if observers is not None else None),
                          (watch.flush_alerts if watch is not None else None),

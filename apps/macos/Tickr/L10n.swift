@@ -861,9 +861,6 @@ enum L10n {
         defaultValue: "Read-only, as the file is on disk now. Every key with its comment. Credentials appear only as variable names.",
         bundle: L10n.bundle)
     }
-    static var configEditAction: LocalizedStringResource {
-      LocalizedStringResource("settings.configEditAction", defaultValue: "Edit…", bundle: L10n.bundle)
-    }
     static var configTop: LocalizedStringResource {
       LocalizedStringResource("settings.configTop", defaultValue: "Top level", bundle: L10n.bundle)
     }
@@ -1243,9 +1240,6 @@ enum L10n {
     }
     static var staleAfter: LocalizedStringResource {
       LocalizedStringResource("settings.staleAfter", defaultValue: "Status stale after", bundle: L10n.bundle)
-    }
-    static var editConfig: LocalizedStringResource {
-      LocalizedStringResource("settings.editConfig", defaultValue: "Edit the bot's configuration", bundle: L10n.bundle)
     }
     static var features: LocalizedStringResource {
       LocalizedStringResource("settings.features", defaultValue: "Features · from config", bundle: L10n.bundle)
@@ -2651,10 +2645,13 @@ enum L10n {
         defaultValue: "The account kind as the broker names it. The account id is never shown or stored.",
         bundle: L10n.bundle)
     }
-    /// Account card: what the broker could show that the bot does not read yet.
-    static var accountPlanned: LocalizedStringResource {
-      LocalizedStringResource("risk.accountPlanned", defaultValue: "per-position P&L · order history and fees",
-        bundle: L10n.bundle)
+    /// Today's fills the broker lists.
+    static var fillsToday: LocalizedStringResource {
+      LocalizedStringResource("risk.fillsToday", defaultValue: "Fills today", bundle: L10n.bundle)
+    }
+    /// Columns of a fill row after the order: price and fees.
+    static var fillsColumns: LocalizedStringResource {
+      LocalizedStringResource("risk.fillsColumns", defaultValue: "price · fees", bundle: L10n.bundle)
     }
     /// Badge: the broker's view matches the bot's records.
     static var matches: LocalizedStringResource {
@@ -2857,7 +2854,7 @@ enum L10n {
     }
     /// Broker positions: the columns.
     static var positionsColumns: LocalizedStringResource {
-      LocalizedStringResource("risk.positionsColumns", defaultValue: "qty · avg", bundle: L10n.bundle)
+      LocalizedStringResource("risk.positionsColumns", defaultValue: "qty · avg · last · P&L", bundle: L10n.bundle)
     }
     /// Broker orders: which ones are listed.
     static var ordersOpen: LocalizedStringResource {
