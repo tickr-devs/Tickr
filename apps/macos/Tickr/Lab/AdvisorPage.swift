@@ -133,7 +133,6 @@ struct AdvisorCard: View {
         } else {
           // The sentence in the person's language; the bot's own cause (English) on hover.
           Footnote(AdvisorWords.noRuns)
-        .help(Text(verbatim: advisor.runs?.cause ?? String(localized: AdvisorWords.noRuns)))
             .help(Text(verbatim: runs.cause ?? String(localized: AdvisorWords.noRuns)))
         }
       } else if let failure = advisor.failure {
@@ -229,7 +228,9 @@ struct AdvisorPage: View {
     if let run = advisor.shown {
       detail(run)
     } else {
+      // The sentence in the person's language; the bot's own cause (English) on hover.
       Footnote(AdvisorWords.noRuns)
+        .help(Text(verbatim: advisor.runs?.cause ?? String(localized: AdvisorWords.noRuns)))
         .padding(Tokens.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
