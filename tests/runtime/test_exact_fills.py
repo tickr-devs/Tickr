@@ -15,7 +15,7 @@ from tickr.broker.base import BrokerFill, CashTrade
 from tickr.broker.fake import FakeBroker
 from tickr.engine.core import EXACT_FILL_PRICE, OrderRow
 from tickr.runtime import entries
-from tickr.runtime.account import AccountReads, exact_fill, record_exact_fills, rounds_to
+from tickr.runtime.account import AccountReads, Balances, exact_fill, record_exact_fills
 from tickr.store import MIGRATIONS, Store
 from tickr.types import OrderState, Side
 
@@ -155,11 +155,21 @@ def test_a_price_that_does_not_round_to_the_order_rows_is_refused(tmp_path):
     assert filled(bot, t)[1].exact_fill_price is None
 
 
-def test_the_rounding_check_follows_the_shown_decimals():
-    assert rounds_to(D("0.2272"), D("0.23")) and rounds_to(D("0.1814"), D("0.18"))
-    assert rounds_to(D("10.004"), D(10)) and rounds_to(D("9.995"), D(10))
-    assert rounds_to(D("38.4412"), D("38.44")) and not rounds_to(D("38.4413"), D("38.4412"))
-    assert not rounds_to(D("0.2251"), D("0.22"))
+def test_900_of_918_shares_is_not_the_whole_fill(tmp_path):
+    bot, t, _, _ = setup(tmp_path)
+    entry = replace(filled(bot, t)[0], quantity=D(918), filled_quantity=D(918),
+                    average_fill_price=D("0.24"))
+    fill = BrokerFill(entry.client_order_id, "ABC", "BUY", "LIMIT", D(918), D("0.24"),
+                      bot.now, D(0))
+    # The fill (918 at 0.2449) listed as two executions: 900 at the fill time, 18 a second
+    # later. The 900 row alone implies 220.41 / 918 = 0.2401, still 0.24 to the cent, so only
+    # the row count (two rows, one filled order) refuses it.
+    part = CashTrade("ABC", "BUY", D("-220.41"), bot.now)
+    rest = CashTrade("ABC", "BUY", D("-4.4082"), bot.now.replace(second=1))
+    assert exact_fill(entry, fill, Balances(fills=(fill,), cash=(part, rest))) is None
+    assert exact_fill(entry, fill, Balances(fills=(fill,), cash=(part,))) is not None
+    whole = CashTrade("ABC", "BUY", D("-224.8182"), bot.now)
+    assert exact_fill(entry, fill, Balances(fills=(fill,), cash=(whole,)))[0] == D("0.2449")
 
 
 def test_a_history_row_with_another_quantity_is_ignored(tmp_path):
@@ -193,8 +203,8 @@ def test_an_order_still_working_is_not_recorded(tmp_path):
     fill = BrokerFill(entry.client_order_id, "ABC", "BUY", "LIMIT", D(2), D(10), bot.now, D(0))
     for state in (None, OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED):
         working = replace(entry, broker_state=state)
-        assert exact_fill(working, fill, reads.snapshot().cash) is None
-    assert exact_fill(entry, fill, reads.snapshot().cash) is not None
+        assert exact_fill(working, fill, reads.snapshot()) is None
+    assert exact_fill(entry, fill, reads.snapshot()) is not None
 
 
 def test_a_non_positive_price_is_refused(tmp_path):
