@@ -98,6 +98,9 @@ class Fence(StrEnum):
     # state is unknown. While set, the order proves nothing: a stop is not verified protection
     # and an entry or close does not excuse a quantity mismatch. Clears on the next good read.
     DETAIL_UNREADABLE = "detail-unreadable"
+    # The watchdog started this run early for a resting entry (runtime/watchdog.py): the run
+    # protects, cancels and flattens, but takes no new entry until the operator clears it.
+    WATCHDOG_STARTED = "watchdog-started"
 
 
 # Fences that need the operator to look before entries resume; all others clear themselves
@@ -105,7 +108,7 @@ class Fence(StrEnum):
 OPERATOR_FENCES = frozenset({Fence.STOP_REJECTED, Fence.EXIT_REFUSED, Fence.CANCEL_FAILED,
                              Fence.RESURRECTED, Fence.UNPROTECTED_TIMEOUT,
                              Fence.REPLACE_UNRESOLVED, Fence.EXIT_NOT_FILLED,
-                             Fence.MARKET_CLOSED})
+                             Fence.MARKET_CLOSED, Fence.WATCHDOG_STARTED})
 
 _LEG_LETTER = {Leg.ENTRY: "e", Leg.STOP: "s", Leg.EXIT: "x"}
 # Key of the broker-read fence a failed open-orders read sets; only a reconcile clears it.
@@ -276,8 +279,9 @@ def _detail_priority(row: OrderRow, poll_seconds: float) -> float:
 
 @dataclass(frozen=True)
 class BrokerView:
-    """What one successful reconcile pass read: open orders, then positions. For reports
-    only (day end); never used to size or send anything."""
+    """What one successful reconcile pass read: open orders, then positions. For reports (day
+    end) and for the symbols of foreign orders (`Engine.foreign_symbols`); never used to size
+    or send anything."""
 
     positions: tuple[Position, ...]
     open_orders: tuple[OrderDetail, ...]
@@ -315,6 +319,38 @@ class Engine:
         self._detail_answered_ids: set[str] = set()
 
     # --- fences ----------------------------------------------------------------------------
+
+    def foreign_symbols(self) -> frozenset[str] | None:
+        """Symbols of the positions and open orders the bot does not own: positions from their
+        fences, orders from every open order of the latest complete reconcile that is not in
+        our records (a manual order may carry no client order id, so several share one fence).
+        None while a foreign order is fenced but no complete reconcile read is at hand: the
+        caller must assume any symbol."""
+        names = [name.partition(":") for name in self.fences()]
+        symbols = {key for fence, _, key in names if fence == Fence.FOREIGN_POSITION}
+        if any(fence == Fence.FOREIGN_ORDER for fence, _, _ in names):
+            if self.broker_view is None:
+                return None
+            ours = {o.client_order_id for o in self.orders()}
+            foreign = [o for o in self.broker_view.open_orders if o.client_order_id not in ours]
+            if not foreign or any(not o.symbol for o in foreign):
+                return None
+            symbols |= {o.symbol for o in foreign}
+        return frozenset(symbols)
+
+    def entry_fences(self, symbol: str | None) -> dict[str, str]:
+        """The fences that refuse a new entry in `symbol` (hard rule 1, narrowed by the owner
+        2026-11-16: manual trades are ignored). Every fence blocks, except a foreign position
+        or order in another known symbol; while a foreign order's symbol is unknown, foreign
+        fences block every symbol. `symbol` None asks what blocks an entry in any symbol
+        without foreign exposure (the status line). One rule for admission, `open_trade`, the
+        working-entry guard and the status."""
+        fences = self.fences()
+        foreign = self.foreign_symbols()
+        if foreign is None or (symbol is not None and symbol in foreign):
+            return fences
+        return {n: c for n, c in fences.items()
+                if n.partition(":")[0] not in (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)}
 
     def fences(self) -> dict[str, str]:
         return {r["name"]: r["cause"] for r in self.store.query("SELECT name, cause FROM fences")}
@@ -363,6 +399,10 @@ class Engine:
                 self.store.append("fence-cleared", {"by": "operator"}, key=name,
                                   run_id=self.run_id)
         return bool(removed)
+
+    def watchdog_started_fence(self, cause: str) -> None:
+        """Block new entries after an early watchdog start; only the operator clears it."""
+        self._set_fence(Fence.WATCHDOG_STARTED, "", cause)
 
     def entry_stop_row(self, on: bool, cause: str) -> None:
         """Operator entry-stop, inside the caller's transaction (the command is journaled in
@@ -454,7 +494,7 @@ class Engine:
         gate = self.gate()
         if not gate.open:
             raise EntryRefused(f"trading gate closed: {gate.cause}")
-        fences = self.fences()
+        fences = self.entry_fences(symbol)
         if fences:
             raise EntryRefused("entries fenced: " + ", ".join(sorted(fences)))
         if len(self.trades()) >= self.config.risk.max_open_positions:
