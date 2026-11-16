@@ -156,6 +156,11 @@ class ProbeConfig:
     extended_trigger_seconds: int
     extended_close_percent: Decimal
     extended_position_agree_seconds: int
+    trailing_wide_percent: Decimal
+    trailing_tight_percent: Decimal
+    trailing_observe_seconds: int
+    trailing_trigger_seconds: int
+    trailing_close_percent: Decimal
 
 
 @dataclass(frozen=True)
@@ -555,6 +560,13 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
+    probe: ProbeConfig = built["probe"]
+    if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
+            or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
+            or probe.trailing_trigger_seconds <= 0):
+        raise ConfigError("[probe] trailing_* values must be above 0")
+    if probe.trailing_tight_percent >= probe.trailing_wide_percent:
+        raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
     if risk.max_entry_rest_bars < 1:
         raise ConfigError("[risk] max_entry_rest_bars must be at least 1")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:

@@ -48,6 +48,8 @@ class OrderType(StrEnum):
     STOP_LOSS = "STOP_LOSS"
     # Sent only by the extended-hours probe (engine/session_probe.py) until F7 is answered.
     STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
+    # Sent only by the trailing-stop probe (engine/trailing_probe.py) until T1-T5 are answered.
+    TRAILING_STOP_LOSS = "TRAILING_STOP_LOSS"
 
 
 class TimeInForce(StrEnum):
@@ -91,6 +93,9 @@ class OrderRequest:
     session: TradingSession
     limit_price: Decimal | None = None
     stop_price: Decimal | None = None
+    # TRAILING_STOP_LOSS only: Webull's `trailing_stop_step` with `trailing_type` PERCENTAGE,
+    # sent as given; whether 0.2 means 20 % or 0.2 % is what the trailing probe answers.
+    trailing_stop_step: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,8 @@ class OrderDetail:
     # The sum of the row's `fees[].actual_value`; None when the row has no readable fees.
     # Recorded once the order is finished (the daily loss counts it).
     fees: Decimal | None = None
+    # Display only: a trailing stop's `trailing_stop_step` as the row shows it (unproven).
+    trailing_stop_step: Decimal | None = None
 
 
 @dataclass(frozen=True)
