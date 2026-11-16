@@ -1,9 +1,9 @@
 import Foundation
 
-/// A stage of the live flow as the Overview draws it: the six flow stages, then the
-/// reconciliation with the broker (macOS only).
+/// A stage of the live flow as the Overview draws it: the eight symbol stages (`SymbolStage`;
+/// quote and bars have no `FlowStage`), then the reconciliation with the broker.
 public enum PipelineStage: String, Hashable, Sendable, CaseIterable, Identifiable {
-  case screeners, universe, strategy, risk, order, stop, reconcile
+  case screeners, universe, quote, bars, strategy, risk, order, stop, reconcile
 
   public var id: String { rawValue }
 
@@ -98,6 +98,7 @@ extension StageDetail {
     let (facts, groups): ([Fact], [Group]) = switch stage {
     case .screeners: screeners(sources)
     case .universe: universe(sources)
+    case .quote, .bars: ([], [])  // their symbols are on the Symbols screen only
     case .strategy: strategy(sources)
     case .risk: risk(sources)
     case .order: order(sources)
@@ -260,8 +261,8 @@ extension StageDetail {
     let closed = status.tradesToday.enumerated().map { index, trade in
       Row(id: "\(trade.symbol) \(index)", symbol: trade.symbol,
         text: String(localized: L10n.stageTrade(trade.quantity.text, trade.entryPrice.text, trade.exitPrice.text,
-          Board.signed(trade.resultGrossUsd))),
-        tone: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value))
+          Board.signed(trade.resultUsd))),
+        tone: Board.exitTone(trade.exitReason, result: trade.resultUsd.value))
     }
     let open = status.positions.map { position in
       Row(id: position.symbol, symbol: position.symbol,
