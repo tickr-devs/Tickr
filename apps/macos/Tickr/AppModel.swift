@@ -326,7 +326,7 @@ public final class AppModel {
   }
 
   public var shownResult: Decimal {
-    if isLive { return status?.resultTodayGrossUsd.value ?? 0 }
+    if isLive { return status?.resultTodayUsd.value ?? 0 }
     return dayDocument?.resultGrossUsd.value ?? 0
   }
 

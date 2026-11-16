@@ -7616,6 +7616,23 @@
         }
       }
     },
+    "risk.feesToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "broker fees today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "комиссии брокера за день"
+          }
+        }
+      }
+    },
     "risk.fenceActive" : {
       "extractionState" : "manual",
       "localizations" : {

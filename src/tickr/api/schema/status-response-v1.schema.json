@@ -944,6 +944,28 @@
                 "additionalProperties": false
               }
             },
+            "fees_today_usd": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "result_today_net_usd": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "schema_version": {
               "type": "integer",
               "const": 1
@@ -968,6 +990,8 @@
             "open_reservations_usd",
             "daily_room_usd",
             "positions",
+            "fees_today_usd",
+            "result_today_net_usd",
             "schema_version"
           ],
           "additionalProperties": false

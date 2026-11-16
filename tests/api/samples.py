@@ -74,6 +74,8 @@ def status(written_at: datetime = T0, **overrides) -> StatusV1:
         open_reservations_usd=Decimal("50"),
         daily_room_usd=Decimal("248.40"),
         positions=(POSITION,),
+        fees_today_usd=Decimal("0.07"),
+        result_today_net_usd=Decimal("-1.67"),
     )
     values.update(overrides)
     return StatusV1(**values)

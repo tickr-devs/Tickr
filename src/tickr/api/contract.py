@@ -304,6 +304,11 @@ class StatusV1:
     open_reservations_usd: Decimal | None  # planned loss of every open trade
     daily_room_usd: Decimal | None  # ceiling - realized - reserved; may be negative
     positions: tuple[Position, ...]  # every open position the bot tracks
+    # Added after v1 shipped (2026-11-16), display only: the broker's fees on the fills of
+    # today's closed trades, and the day's result after them (what the broker's day P&L
+    # counts); null while any of those fills or fees is not read yet.
+    fees_today_usd: Decimal | None = _added_later(None)
+    result_today_net_usd: Decimal | None = _added_later(None)
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
 
 

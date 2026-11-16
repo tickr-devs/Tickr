@@ -125,6 +125,8 @@
         "entry_cause_codes": []
       }
     ],
+    "fees_today_usd": "0.07",
+    "result_today_net_usd": "-1.67",
     "schema_version": 1
   },
   "age_seconds": "42.500",
