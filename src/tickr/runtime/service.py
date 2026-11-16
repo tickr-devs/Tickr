@@ -58,8 +58,8 @@ if TYPE_CHECKING:
     from tickr.observers.runner import ObserverSet
     from tickr.runtime.evaluation import Evaluator
     from tickr.runtime.market import MarketRuntime
-    from tickr.types import Quote
     from tickr.runtime.watch import Watch
+    from tickr.types import Quote
 
 STRATEGIES_DIR = "strategies"
 STRATEGY_FILE = "strategy.toml"
