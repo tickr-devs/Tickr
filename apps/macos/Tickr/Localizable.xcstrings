@@ -3658,6 +3658,23 @@
         }
       }
     },
+    "common.strategyCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ v%@ · code %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ v%@ · код %@"
+          }
+        }
+      }
+    },
     "common.strategyVersion" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13211,6 +13228,40 @@
         }
       }
     },
+    "trades.codeVersion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot code version"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Версия кода бота"
+          }
+        }
+      }
+    },
+    "trades.codeVersionHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The git commit the bot ran on when it opened this trade (-dirty: files had changed since it): %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Коммит git, на котором работал бот, когда открыл эту сделку (-dirty: файлы с тех пор менялись): %@"
+          }
+        }
+      }
+    },
     "trades.cumulativeR" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14579,23 +14630,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Доля прибыльных"
-          }
-        }
-      }
-    },
-    "watching.capped" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The bot sends its closest %1$lld; it watches %2$lld in all."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Бот присылает ближайшие %1$lld; всего он следит за %2$lld."
           }
         }
       }

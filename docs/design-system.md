@@ -196,6 +196,7 @@ TickrDesign); its title carries no arrow. "â†’" stays only inside data ("7.15 â†
 | `rowSymbol` | 16 | Symbol column of a `ValueRow` |
 | `miniRing` | 52 | Small gauge ring |
 | `hintMaxWidth` | 260 | Widest hint bubble |
+| `popover` | 340 | Widest a detail popover grows (a live-flow stage's details); it narrows and wraps where the screen is narrower, never clips |
 | `glowRadius` | 8 | Glow under a primary button |
 | `ringHalo` | 60 | Reach of the halo behind a ring |
 

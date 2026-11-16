@@ -113,7 +113,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
 | GET | `/skipped?date=<YYYY-MM-DD>` | `200` `skipped-v1`: every ENTER of the active strategy that date (default today) that did not become a position (admission `refused` or `not_evaluated`), oldest first, with checks, prices after the signal and the simulated what-if. |
 | GET | `/flow?date=<YYYY-MM-DD>` | `200` `flow-v1`: the Overview's live flow that date (default today): screener chips and the pipeline stages from screeners to verified broker stops, with reconciliation. |
-| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: the symbols the active strategy is closest to entering on that date (default today), closest first, capped by `[api] watching_max_rows`. |
+| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: every symbol the active strategy is watching on that date (default today), closest to entering first. |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
 | POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
@@ -237,6 +237,13 @@ and `stop_confirmed_after_seconds` (see "Per-trade metrics" below). MAE and MFE 
 decision opened the trade, as journaled in its `trade-opened` row; `null` for a manual trade, a
 trade opened before the bot journaled it, or a row it cannot read (display only, never guessed).
 In status it was added after version 1 shipped: a reader takes an entry without it as `null`.
+`code_version` (in `trades_today` and in `day-v1` `trades`) is the bot code version the trade was
+opened by: the full git commit SHA of the run that opened it, with `-dirty` when a tracked file
+differed from that commit (in the Docker image, the commit it was built from). It is read from
+that run's own record (`runs.code_version`, via the trade's `run_id`), never re-derived; `null`
+for a trade of a run recorded before the bot recorded its version. The status-v1 top-level
+`code_version` is the current run's (next to `run_id`). All three were added after version 1
+shipped: a reader takes a document without them as `null`.
 
 Every `positions` element (so also `position`) and every `trades_today` entry has `entry` and
 `entry_cause`, the first link of the protection chain (see "Entry send" below).
@@ -984,8 +991,10 @@ above, a record whose failed check already meets its threshold, or no failed che
 `not recorded: decision records hold no quote time`: the decision file does not keep the quote
 the strategy saw.
 
-Rows are closest first (`null` closeness last), then by symbol, at most
-`[api] watching_max_rows`; `total` counts every row before the cap.
+Rows are every symbol watched that day, closest first (`null` closeness last), then by symbol;
+there is no cap (one row per symbol the strategy decided on that day), and `total` is the
+number of rows. The apps choose how many to show (the Overview and Positions
+cards show the closest three, "Show all" lists every row).
 
 `latest_size` is the Overview's "next size · binding" line: the size the active strategy gave its
 newest sized decision that day (any verdict, entering included), read from the record, never
