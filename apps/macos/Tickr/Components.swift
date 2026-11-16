@@ -351,7 +351,7 @@ enum Format {
   /// Market time zone: every time the app shows is New York time.
   static let newYork = TimeZone(identifier: "America/New_York") ?? .current
   /// Placeholder for a value the app does not have.
-  static let missing = "—"
+  static let missing = ApiText.missing
   /// Joins the items of a list ("Gainers, Most active") and the lines of a tooltip.
   static let listSeparator = ", "
   static let lineSeparator = "\n"

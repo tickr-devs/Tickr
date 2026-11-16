@@ -168,4 +168,13 @@ struct StageDetailsTests {
     #expect(group.rows.count == StageDetail.rowCap)
     #expect(group.more == 1)
   }
+
+  @Test("Two fences of one kind are two rows with their own ids")
+  func fencesOfOneKind() throws {
+    let json = #"{"kind":"foreign_position","since":"2026-11-16T15:00:00.123Z","text":"t","code":"x","params":{}}"#
+    let fence = try Wire.decoder().decode(Fence.self, from: Data(json.utf8))
+    let rows = StageDetail.fences([fence, fence], status: nil).rows
+    #expect(rows.count == 2)
+    #expect(Set(rows.map(\.id)).count == 2)
+  }
 }

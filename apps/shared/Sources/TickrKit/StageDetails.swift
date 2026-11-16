@@ -84,7 +84,7 @@ extension StageDetail {
   /// Percent in a closeness of 1.
   static let percentPerUnit: Decimal = 100
   /// Placeholder for a value the bot did not record.
-  static let missing = "—"
+  static let missing = ApiText.missing
   /// Between the parts of one row ("11:26 · Refused by risk").
   static let separator = " · "
   /// Between the parts of a check ("Spread 0.0031 <= 0.002").
@@ -298,9 +298,11 @@ extension StageDetail {
 
   /// Fences as rows: the symbol a fence is about when the live status ties it to one.
   static func fences(_ fences: [Fence], status: StatusV1?) -> Group {
-    group(L10n.stageFenceList, fences.map { fence in
+    // Two fences may share a kind (one per position): the row's place keeps its id unique.
+    group(L10n.stageFenceList, fences.enumerated().map { index, fence in
       let symbol = status.flatMap { Board.fenceSymbol(fence, status: $0) }
-      return Row(id: fence.kind, symbol: symbol, text: ApiText.fenceWithDetail(fence), tone: .amber)
+      return Row(id: "\(index)\(StageDetail.separator)\(fence.kind)", symbol: symbol,
+        text: ApiText.fenceWithDetail(fence), tone: .amber)
     })
   }
 
