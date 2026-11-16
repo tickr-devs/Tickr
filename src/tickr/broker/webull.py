@@ -61,6 +61,7 @@ from tickr.config import BARS_ROUTE, Config, GateResult, check_chart_slice, trad
 from tickr.data.base import (
     BarSpan,
     DelayedData,
+    InstrumentProfile,
     MarketDataError,
     QuoteListener,
     ScreenerKind,
@@ -73,6 +74,7 @@ from tickr.data.base import (
 )
 from tickr.types import (
     Bar,
+    ComboRole,
     OrderDetail,
     OrderRequest,
     OrderType,
@@ -640,9 +642,11 @@ def _wire_decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
-def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> dict[str, Any]:
-    """OrderRequest -> one `new_orders[]` element. Raises Refused for requests Webull must
-    never see; the code names the rule, and nothing is sent."""
+def build_order_body(request: OrderRequest, client_order_id_max_length: int,
+                     combo_type: str = ORDER_COMBO_TYPE) -> dict[str, Any]:
+    """OrderRequest -> one `new_orders[]` element (`combo_type` NORMAL, or a combo leg's role).
+    Raises Refused for requests Webull must never see; the code names the rule, and nothing is
+    sent."""
     cid = request.client_order_id
     if not cid or len(cid) > client_order_id_max_length:
         raise Refused("LOCAL_CLIENT_ORDER_ID", "empty or longer than the broker limit")
@@ -660,7 +664,7 @@ def build_order_body(request: OrderRequest, client_order_id_max_length: int) -> 
             raise Refused("LOCAL_PRICE", "prices must be positive")
     body: dict[str, Any] = {
         "client_order_id": cid,
-        "combo_type": ORDER_COMBO_TYPE,
+        "combo_type": combo_type,
         "entrust_type": ORDER_ENTRUST_TYPE,
         "instrument_type": ORDER_INSTRUMENT_TYPE,
         "market": ORDER_MARKET,
@@ -909,6 +913,36 @@ class WebullBroker:
             raise Refused(response.error_code or "", response.message)
         raise OutcomeUnknown(f"PLACE: HTTP {response.status} {response.error_code or ''}".strip())
 
+    def place_combo(self, combo_id: str,
+                    legs: Sequence[tuple[ComboRole, OrderRequest]]) -> Acknowledgement:
+        """One combo in one place request (Webull docs: `client_combo_order_id` and one
+        `new_orders[]` element per leg, each with its own `client_order_id` and its role as
+        `combo_type`). UNPROVEN: the attached-stop probe is its only caller. The
+        acknowledgement must echo the MASTER leg; any other success body is OutcomeUnknown,
+        with its top-level keys named so the probe's evidence records the shape."""
+        self._require_gate()
+        if not combo_id or len(combo_id) > self._client_order_id_max_length:
+            raise Refused("LOCAL_CLIENT_ORDER_ID", "combo id empty or longer than the limit")
+        masters = [r for role, r in legs if role is ComboRole.MASTER]
+        if len(masters) != 1 or len(legs) < 2:
+            raise Refused("LOCAL_COMBO", "a combo is one MASTER and at least one attached leg")
+        bodies = [build_order_body(r, self._client_order_id_max_length, role.value)
+                  for role, r in legs]
+        response = self._send(Route.PLACE, {"client_combo_order_id": combo_id,
+                                             "new_orders": bodies})
+        if response.ok:
+            try:
+                return read_acknowledgement(
+                    response.body, masters[0].client_order_id, self._transport.is_own_account)
+            except MalformedResponse as exc:
+                keys = sorted(response.body) if isinstance(response.body, Mapping) else []
+                raise OutcomeUnknown(
+                    f"PLACE combo: unreadable acknowledgement ({exc}); keys {keys}") from None
+        if response.error_code in PLACE_REFUSAL_CODES:
+            raise Refused(response.error_code or "", response.message)
+        raise OutcomeUnknown(
+            f"PLACE combo: HTTP {response.status} {response.error_code or ''}".strip())
+
     def can_place(self, count: int) -> bool:
         return self._budget.can_take(Route.PLACE.path, count)
 
@@ -1000,32 +1034,39 @@ def read_screener(body: Any, kind: ScreenerKind) -> list[ScreenerRow]:
     return rows
 
 
-@dataclass(frozen=True)
-class Profile:
-    instrument_id: str
-    symbol: str
-    security_type: str | None
+def _field_text(value: Any) -> str:
+    """A provider value as capture text: booleans in their JSON spelling ("true", not
+    Python's "True"), everything else as `str` (strings as sent, numbers as written)."""
+    if isinstance(value, bool):
+        return json.dumps(value)
+    return str(value)
 
 
-def read_profiles(body: Any) -> dict[str, Profile]:
-    """Instrument profile rows (`{data: [...]}`, probe M1) -> {instrument_id: Profile}.
+def read_profiles(body: Any) -> dict[str, InstrumentProfile]:
+    """Instrument profile rows (`{data: [...]}`, probe M1) -> {instrument_id: InstrumentProfile}.
 
     Identity is the instrument_id: one symbol may return several rows (OPENW returned a stale
     and a current id), and the caller matches the screener row's id, never the first symbol hit.
     A row without `sub_category` has an unknown type (None)."""
-    profiles: dict[str, Profile] = {}
+    profiles: dict[str, InstrumentProfile] = {}
     for index, item in enumerate(_unwrap_list(body, "profiles")):
         where = f"profiles[{index}]"
-        profile = Profile(
+        profile = InstrumentProfile(
             instrument_id=str(_require(item, "instrument_id", where)),
             symbol=str(_require(item, "symbol", where)),
             security_type=(None if _optional(item, SECURITY_TYPE_KEY) is None
                            else str(item[SECURITY_TYPE_KEY])),
+            fields={str(k): _field_text(v) for k, v in item.items() if v is not None},
         )
         previous = profiles.get(profile.instrument_id)
-        if previous is not None and previous != profile:
-            raise MalformedResponse(f"{where}: instrument {profile.instrument_id} listed twice "
-                                    "with different contents")
+        if previous is not None:
+            # The same instrument twice must agree on what discovery uses; other fields of a
+            # repeat are not compared, and the first row is the one captured.
+            if (previous.symbol, previous.security_type) != (profile.symbol,
+                                                             profile.security_type):
+                raise MalformedResponse(f"{where}: instrument {profile.instrument_id} listed "
+                                        "twice with different contents")
+            continue
         profiles[profile.instrument_id] = profile
     return profiles
 
@@ -1233,6 +1274,18 @@ class WebullMarketData:
             return replace(row, security_type=known[1] if same else None)
 
         return [typed(r) for r in rows]
+
+    def profiles(self, symbols: Sequence[str], *,
+                 budget_reserve: int = 0) -> list[InstrumentProfile]:
+        """Every profile row of `symbols`, `profile_symbols_per_request` per request. Rows of
+        symbols not asked are dropped."""
+        found: list[InstrumentProfile] = []
+        for start in range(0, len(symbols), self._profile_chunk):
+            chunk = list(symbols[start:start + self._profile_chunk])
+            rows = read_profiles(self._read(Route.PROFILES, {
+                "symbols": ",".join(chunk), "category": self._category}, budget_reserve))
+            found.extend(p for p in rows.values() if p.symbol in chunk)
+        return found
 
     def snapshot(self, symbols: Sequence[str]) -> list[Quote]:
         body = self._read(Route.SNAPSHOT, {

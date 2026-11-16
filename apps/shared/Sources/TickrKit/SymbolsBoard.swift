@@ -171,20 +171,21 @@ public enum SymbolsBoard {
     case passed, waiting, dropped, notReached
   }
 
-  /// The outcome of a row in words and its tone: "Passed"; "Watching"; "Quote: Quote too old ·
-  /// 7.2s (needs <= 5.0s)"; "Strategy: Close above VWAP 5.12 >= 5.20".
-  public static func outcome(_ row: SymbolRowV1) -> (text: String, tone: Tone) {
+  /// The outcome of a row as the boards draw it: a badge ("Passed", "At Strategy", "Dropped ·
+  /// Quote") in its tone, then the detail in plain text ("stop verified", "watching for its setup",
+  /// "Quote too old · 7.2s (needs <= 5.0s)").
+  public static func outcome(_ row: SymbolRowV1) -> (badge: String, detail: String, tone: Tone) {
     let stage = String(localized: row.stage.title)
     switch row.state {
     case .passed:
-      return (String(localized: L10n.symbolsPassed), .passed)
+      return (String(localized: L10n.symbolsPassed), String(localized: L10n.symbolsPassedDetail), .passed)
     case .waiting:
-      if row.verdict == .watch { return (String(localized: L10n.symbolsWatching(stage)), .waiting) }
-      return (String(localized: L10n.symbolsWaiting(stage)), .waiting)
+      let detail = row.verdict == .watch ? L10n.symbolsWatching : L10n.symbolsWaiting
+      return (String(localized: L10n.symbolsAt(stage)), String(localized: detail), .waiting)
     case .dropped:
-      return (String(localized: L10n.symbolsDropped(stage, reason(row))), .dropped)
+      return (String(localized: L10n.symbolsDropped(stage)), reason(row), .dropped)
     case .notReached:
-      return (String(localized: L10n.symbolsNotReached(stage, reason(row))), .notReached)
+      return (String(localized: L10n.symbolsNotReached(stage)), reason(row), .notReached)
     }
   }
 
@@ -206,13 +207,12 @@ public enum SymbolsBoard {
     return parts.isEmpty ? ApiText.missing : parts.joined(separator: separator)
   }
 
-  /// "Close above VWAP 5.12 >= 5.20": the rule in words, then the recorded comparison.
+  /// "Close above VWAP 5.12 · needs >= 5.20": the rule in words, then the recorded values in
+  /// words that stay true for a failed check (`CheckV1.valueText`).
   public static func checkText(_ check: CheckV1) -> String {
     let rule = ApiText.rule(check.rule)
     guard check.measured != nil || check.threshold != nil else { return rule }
-    let measured = check.measured?.text ?? ApiText.missing
-    let threshold = check.threshold?.text ?? ApiText.missing
-    return String(localized: L10n.symbolsCheck(rule, measured, check.operator, threshold))
+    return String(localized: L10n.symbolsCheck(rule, check.valueText))
   }
 
   /// "Top gainers #3": a screener and the symbol's rank in it.
@@ -248,7 +248,7 @@ public enum SymbolsBoard {
   /// Every stage in order: passed up to where the row stands, its outcome there, then ahead.
   /// A stage it went past earlier but stands before now (dropped at a later pass) reads passed.
   public static func path(_ row: SymbolRowV1) -> [Step] {
-    let (_, tone) = outcome(row)
+    let tone = outcome(row).tone
     return SymbolStage.allCases.map { stage in
       if stage == row.stage {
         return Step(stage: stage, mark: .here(tone), detail: tone == .dropped || tone == .notReached ? reason(row) : nil)

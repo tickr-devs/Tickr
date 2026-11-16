@@ -57,6 +57,10 @@ styles   No `ButtonStyle`, `PrimitiveButtonStyle`, `ToggleStyle` or `LabelStyle`
 system-buttons  No system button look: `.buttonStyle(.bordered | .borderedProminent | .borderless
          | .link)`, their `…ButtonStyle()` types or `.buttonBorderShape`. A label that is its own
          face takes `.buttonStyle(.glyph)`; other buttons `.action`, `.icon`, `.chip`.
+controls One segmented switch and one chip (mockup v98): no system segmented `Picker`
+         (`.pickerStyle(.segmented)`, `SegmentedPickerStyle`), use TickrDesign's `SegmentSwitch`;
+         no chip look of an app's own (a `ViewModifier` named …Chip…), use `.chip(selected:)`,
+         `.toggleStyle(.chip)` or `.chipFace(selected:)`.
 symbols  One SF Symbol per meaning: a symbol that competes with one of TickrDesign's `Symbols`
          (`chevron.left` for `Symbols.previous`, an outlined triangle for `Symbols.failure`) fails.
 loaders  Loading only through TickrDesign's three components (mockup v102, docs/design-system.md
@@ -604,6 +608,10 @@ SYSTEM_BUTTONS = re.compile(
     r"\.buttonStyle\(\s*\.(?:bordered|borderedProminent|borderless|link)\s*\)"
     r"|\b(?:Bordered|BorderedProminent|Borderless|Link)ButtonStyle\s*\("
     r"|\.buttonBorderShape\s*\(")
+# The system's segmented picker, and a chip look of an app's own (a view modifier named for a chip).
+SEGMENTED = re.compile(r"\.pickerStyle\(\s*\.segmented\s*\)|\bSegmentedPickerStyle\b")
+OWN_CHIP = re.compile(
+    r"\b(?:struct|class|enum)\s+\w*Chip\w*(?:<[^{]*?>)?\s*:[^{]*?\bViewModifier\b")
 # Symbols that compete with TickrDesign's `Symbols` (apps/shared/Sources/TickrDesign/Symbols.swift)
 # for a meaning, and the shared one to use instead.
 COMPETING_SYMBOLS = {
@@ -642,6 +650,16 @@ def system_button_violations(path: Path) -> list[tuple[int, str]]:
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         code, in_block = check_swift_literals.strip(raw, in_block)
         if SYSTEM_BUTTONS.search(code):
+            found.append((number, code.strip()))
+    return found
+
+
+def control_violations(path: Path) -> list[tuple[int, str]]:
+    """A system segmented picker or a chip look of the app's own (comments ignored)."""
+    found, in_block = [], False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        if SEGMENTED.search(code) or OWN_CHIP.search(code):
             found.append((number, code.strip()))
     return found
 
@@ -773,6 +791,8 @@ RULES = {
       "a control look of the app's own; use or add a TickrDesign style (docs/design-system.md)"),
   "system-buttons": (system_button_violations,
       "a system button look; use .glyph, .action, .icon or .chip (TickrDesign)"),
+  "controls": (control_violations,
+      "a segmented Picker or a chip look of the app's own; use SegmentSwitch or the .chip styles"),
   "symbols": (symbol_violations, "a symbol competing with a shared one; use TickrDesign's Symbols"),
   "loaders": (loader_violations,
       "a loader of the app's own; use Skeleton, .inFlight(_:) or ProgressLine "
@@ -790,7 +810,9 @@ RULES = {
 }
 # Rules of the apps only: TickrDesign is where the shared looks and the one map of each meaning
 # are defined.
-APP_RULES = {"styles", "system-buttons", "symbols", "result", "format", "stopsymbol", "loaders"}
+APP_RULES = {
+    "styles", "system-buttons", "controls", "symbols", "result", "format", "stopsymbol", "loaders",
+}
 
 
 def swift_files() -> list[Path]:

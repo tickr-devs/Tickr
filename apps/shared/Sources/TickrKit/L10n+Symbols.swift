@@ -66,29 +66,38 @@ extension L10n {
   static var symbolsSortChange: LocalizedStringResource {
     LocalizedStringResource("kit.symbols.sort.change", defaultValue: "Change %", bundle: bundle)
   }
-  /// Outcome: through every stage, its broker stop verified.
+  /// Outcome badge: through every stage.
   static var symbolsPassed: LocalizedStringResource {
-    LocalizedStringResource("kit.symbols.passed", defaultValue: "Passed · stop verified", bundle: bundle)
+    LocalizedStringResource("kit.symbols.passed", defaultValue: "Passed", bundle: bundle)
   }
-  /// Outcome: the strategy watches it; argument: stage.
-  static func symbolsWatching(_ stage: String) -> LocalizedStringResource {
-    LocalizedStringResource("kit.symbols.watching", defaultValue: "\(stage): watching for its setup", bundle: bundle)
+  /// Outcome detail after the Passed badge: its broker stop verified.
+  static var symbolsPassedDetail: LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.passedDetail", defaultValue: "stop verified", bundle: bundle)
   }
-  /// Outcome: nothing failed, the next step has not happened yet; argument: stage.
-  static func symbolsWaiting(_ stage: String) -> LocalizedStringResource {
-    LocalizedStringResource("kit.symbols.waiting", defaultValue: "\(stage): waiting", bundle: bundle)
+  /// Outcome badge: still at a stage, nothing failed; argument: stage.
+  static func symbolsAt(_ stage: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.at", defaultValue: "At \(stage)", bundle: bundle)
   }
-  /// Outcome: dropped at a stage; arguments: stage, why.
-  static func symbolsDropped(_ stage: String, _ reason: String) -> LocalizedStringResource {
-    LocalizedStringResource("kit.symbols.dropped", defaultValue: "\(stage): \(reason)", bundle: bundle)
+  /// Outcome detail after the At badge: the strategy watches it.
+  static var symbolsWatching: LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.watching", defaultValue: "watching for its setup", bundle: bundle)
   }
-  /// Outcome: the discovery pass stopped before deciding it; arguments: stage, why.
-  static func symbolsNotReached(_ stage: String, _ reason: String) -> LocalizedStringResource {
-    LocalizedStringResource("kit.symbols.notReached", defaultValue: "\(stage) not reached: \(reason)", bundle: bundle)
+  /// Outcome detail after the At badge: the next step has not happened yet.
+  static var symbolsWaiting: LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.waiting", defaultValue: "waiting", bundle: bundle)
   }
-  /// A failed check: rule, measured, operator, threshold.
-  static func symbolsCheck(_ rule: String, _ measured: String, _ op: String, _ threshold: String) -> LocalizedStringResource {
-    LocalizedStringResource("kit.symbols.check", defaultValue: "\(rule) \(measured) \(op) \(threshold)", bundle: bundle)
+  /// Outcome badge: dropped at a stage (the reason follows); argument: stage.
+  static func symbolsDropped(_ stage: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.dropped", defaultValue: "Dropped · \(stage)", bundle: bundle)
+  }
+  /// Outcome badge: the discovery pass stopped before deciding it (the reason follows); argument:
+  /// stage.
+  static func symbolsNotReached(_ stage: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.notReached", defaultValue: "Not reached · \(stage)", bundle: bundle)
+  }
+  /// A failed check: the rule, then its values in words (`CheckV1.valueText`).
+  static func symbolsCheck(_ rule: String, _ values: String) -> LocalizedStringResource {
+    LocalizedStringResource("kit.symbols.check", defaultValue: "\(rule) \(values)", bundle: bundle)
   }
   /// A screener and the symbol's rank in it.
   static func symbolsSource(_ screener: String, _ rank: Int) -> LocalizedStringResource {

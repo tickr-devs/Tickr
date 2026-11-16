@@ -137,6 +137,13 @@ _FENCE = {
          r"(?P<symbol>\S+) not filled after (?P<seconds>[0-9]+) s \(filled (?P<filled>\S+), "
          r"state (?P<state>[^)]+)\); nothing more is sent: look in the Webull app "
          r"\(halt\? no buyers\?\)")),
+    "watchdog-started": _shapes(
+        ("watchdog_started", r"the watchdog started the bot at (?P<time>[0-9]{2}:[0-9]{2}) "
+         r"for a resting entry: no new entry until the operator clears this \(tickr "
+         r"clear-fence watchdog-started\)"),
+        ("watchdog_record_unreadable", r"the watchdog's early restart record is unreadable "
+         r"\((?P<error>\w+)\): no new entry until the operator clears this \(tickr "
+         r"clear-fence watchdog-started\)")),
     "market-closed": _shapes(
         ("close_not_sent", r"(?P<quantity>" + _NUM + r") of (?P<expected>" + _NUM + r") "
          r"(?P<symbol>\S+) not sent: " + _CLOSE_REFUSAL + r"; the stop stays\. Close the "
@@ -321,6 +328,11 @@ _PROSE = _shapes(
     ("no_direction", r"(?P<rule>\S+): operator '(?P<operator>[^']*)' has no direction"),
     ("check_contradicts_record",
      r"(?P<rule>\S+): recorded as failed but measured meets the threshold"),
+    ("no_invalidation",
+     r"(?P<rule>\S+): no invalidation recorded to measure the trigger from"),
+    ("invalidation_wrong_side",
+     r"(?P<rule>\S+): the invalidation is not on the far side of the trigger"),
+    ("past_invalidation", r"(?P<rule>\S+): measured is past the invalidation"),
     # performance (api/performance.py)
     ("planned_loss_not_positive_r", r"planned loss is not positive: no 1 R to divide by"),
     ("no_trades", r"no counted trades in the range"),

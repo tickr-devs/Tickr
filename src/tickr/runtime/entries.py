@@ -33,6 +33,9 @@ from tickr.strategy.base import Decision, Role, Verdict
 from tickr.types import Quote
 
 ZERO = Decimal(0)
+# A strategy's partial EXIT the engine did not take (trade not open, entry still working, an
+# earlier reduce, a refused close, or not below the held quantity); one row per trade.
+REDUCE_REFUSED = "reduce-refused"
 M1 = timedelta(minutes=1)
 STOP_ORDERS_PER_ENTRY = 1
 FOREIGN = (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)
@@ -79,8 +82,9 @@ def entry_block_cause(engine: Engine, config: Config, trade: TradeRow,
                       now: datetime) -> str | None:
     """Why a working entry must not stay open for a platform reason: the state in which a new
     entry would be refused (hard rule 1: a conflict blocks new entries, and a fill of an entry
-    still working is a new position). The trading gate closed, any fence (operator pause,
-    startup reconcile, broker read, reconcile disagreement, foreign exposure, another trade's
+    still working is a new position). The trading gate closed, any fence that blocks an entry
+    in this symbol (`Engine.entry_fences`: operator pause, startup reconcile, broker read,
+    reconcile disagreement, foreign exposure in this symbol or of unknown symbol, another trade's
     trouble, ...) except the fences about this trade itself or its own orders (the engine
     already acts on those: its stop, its unknown status, its cancel; cancelling the entry for
     them would only add a cancel of an order whose state is the open question), or today's
@@ -90,7 +94,7 @@ def entry_block_cause(engine: Engine, config: Config, trade: TradeRow,
     if not gate.open:
         return f"trading gate closed: {gate.cause}"
     own = {trade.trade_id, *(o.client_order_id for o in engine.orders(trade.trade_id))}
-    fences = sorted(name for name in engine.fences()
+    fences = sorted(name for name in engine.entry_fences(trade.symbol)
                     if name.partition(":")[2] not in own)
     if fences:
         return "entries fenced: " + ", ".join(fences)
@@ -190,17 +194,25 @@ def last_loss_at(engine: Engine, symbol: str, now: datetime) -> datetime | None:
     return max(closes, default=None)
 
 
-def own_exposure(engine: Engine) -> tuple[int, int]:
-    """Our own open positions and our own working orders other than stops, as admission
-    counts them. The status document reads the same counts."""
+def own_exposure(engine: Engine, symbol: str | None = None) -> tuple[int, int]:
+    """Our own open positions and our own working orders other than stops, in `symbol` (as
+    admission counts them for a decision in it) or in every symbol (None)."""
     own_positions = 0
     working = 0
     for trade in engine.trades():
+        if symbol is not None and trade.symbol != symbol:
+            continue
         orders = engine.orders(trade.trade_id)
         if engine.expected_quantity(orders) > 0:
             own_positions += 1
         working += sum(1 for o in orders if o.live and o.leg is not Leg.STOP)
     return own_positions, working
+
+
+def slots_in_use(engine: Engine) -> int:
+    """Open own trades in any symbol (a position, a working entry or an exit in progress):
+    each takes one of `[risk] max_open_positions`, as `Engine.open_trade` counts them."""
+    return len(engine.trades())
 
 
 def session_at(calendar: SessionCalendar | None, now: datetime) -> MarketDay | CalendarRefused:
@@ -234,8 +246,11 @@ class EntryDesk:
     def _inputs(self, decision: Decision, quote: Quote | None, now: datetime) -> AdmissionInputs:
         engine = self.engine
         fences = [name.split(":", 1)[0] for name in engine.fences()]
-        own_positions, working = own_exposure(engine)
-        foreign_positions = sum(1 for f in fences if f == Fence.FOREIGN_POSITION)
+        own_positions, working = own_exposure(engine, decision.symbol)
+        # Manual trades are ignored (owner 2026-11-16): a foreign position or order blocks only
+        # an entry in its own symbol, and does not count toward the position limit. A foreign
+        # order whose symbol is not known blocks every entry (refuse, never guess).
+        foreign = engine.foreign_symbols()
         session = session_at(self.calendar, now)
         limit = None if decision.entry_high is None else round_to_tick(decision.entry_high)
         stop = None if decision.stop is None else round_to_tick(decision.stop)
@@ -245,14 +260,14 @@ class EntryDesk:
             reconciliation=Reconciliation(
                 startup_done=Fence.STARTUP_RECONCILE not in fences,
                 last_broker_read_at=None if Fence.BROKER_READ in fences else last_read,
-                foreign_exposure=any(f in FOREIGN for f in fences),
+                foreign_exposure=foreign is None or decision.symbol in foreign,
                 unresolved_exposure=any(f not in NOT_EXPOSURE for f in fences)),
             entry_stop=Fence.ENTRY_STOP in fences,
             session=session,
             now=now,
             own_open_positions=own_positions,
             own_working_orders=working,
-            open_positions=own_positions + foreign_positions,
+            open_positions=slots_in_use(engine),
             symbol_last_loss_at=last_loss_at(engine, decision.symbol, now),
             decision=decision,
             limit_price=limit,
@@ -286,14 +301,28 @@ class EntryDesk:
                                            result.planned_loss_usd,
                                            entry_low_price=decision.entry_low,
                                            strategy=(decision.strategy, decision.version),
-                                           rest_until=rest_until(decision, bar_start))
+                                           rest_until=rest_until(decision, bar_start),
+                                           scale_out_quantity=decision.scale_out)
                     admission = RecordAdmission.TAKEN
                 except EntryRefused as exc:
                     admission, cause = RecordAdmission.REFUSED, f"{ENGINE_REFUSED}: {exc.cause}"
         elif decision.verdict is Verdict.EXIT:
             for trade in self.engine.trades():
-                if trade.symbol == decision.symbol and not trade.exit_requested:
+                if trade.symbol != decision.symbol or trade.exit_requested:
+                    continue
+                if decision.quantity is None:
                     self.engine.request_exit(trade.trade_id, "strategy-exit")
+                elif (not self.engine.request_reduce(trade.trade_id, decision.quantity,
+                                                     "strategy-scale-out")
+                      and trade.reduce_state is None
+                      and not self.engine.store.journal(REDUCE_REFUSED, trade.trade_id)):
+                    # Journaled once per trade: the strategy asks again every bar.
+                    with self.engine.store.transaction():
+                        self.engine.store.append(REDUCE_REFUSED, {
+                            "quantity": decision.quantity, "state": trade.state,
+                            "cause": self.engine.reduce_refusal(trade.trade_id,
+                                                                decision.quantity)},
+                            key=trade.trade_id, run_id=self.engine.run_id)
         return self._write(DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission,
                                           cause))
 
