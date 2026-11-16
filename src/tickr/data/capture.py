@@ -23,7 +23,7 @@ are strings (never floats); times are ISO-8601 UTC. Every record carries `provid
   `[market_data] profile_refresh_seconds`, for the losers and the big gainers.
 - events.jsonl: what the screener files cannot show by themselves: `screener-skipped` (a kind
   not read: `kind`, `cause` such as "budget" or the error type, `source`), `profiles-skipped`
-  (profiles due and not read: `symbols`, `cause`), `bot-start` and
+  (profiles due and not read: the refused request's `symbols`, `cause`, `waiting`), `bot-start` and
   `bot-stop` (with the run's end `cause`), so a gap in the lists is either marked or is a time
   the bot was not running.
 - discovery.jsonl: one line per discovery pass (`tickr.data.discovery.pass_record`): every

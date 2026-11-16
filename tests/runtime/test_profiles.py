@@ -10,7 +10,7 @@ from pathlib import Path
 from tickr import config
 from tickr.calendar import NEW_YORK
 from tickr.data.base import FakeMarketData, InstrumentProfile, ScreenerKind, ScreenerRow
-from tickr.data.capture import EVENTS_FILE, PROFILES_FILE, CaptureWriter
+from tickr.data.capture import EVENTS_FILE, PROFILES_FILE, CaptureError, CaptureWriter
 from tickr.runtime.profiles import ProfileRecorder, move_percent
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +38,11 @@ def rig(tmp_path: Path, symbols: list[str]) -> tuple[FakeMarketData, CaptureWrit
     for symbol in symbols:
         source.set_profile(profile(symbol))
     capture = CaptureWriter(tmp_path, source.provider)
-    return source, capture, ProfileRecorder(CFG, source, capture)
+    return source, capture, ProfileRecorder(CFG, source, capture, lambda: T0, in_place)
+
+
+def in_place(target):
+    target()
 
 
 def lines(capture: CaptureWriter, name: str, day: date = DAY) -> list[dict]:
@@ -56,9 +60,9 @@ def test_first_listed_once_then_losers_and_big_gainers_again(tmp_path: Path) -> 
             row(ScreenerKind.LOSERS, "DOWN", "0.80", "1.00"),
             row(ScreenerKind.TOP_ACTIVES, "BUSY")]
     source, capture, recorder = rig(tmp_path, ["BIG", "SMALL", "DOWN", "BUSY"])
-    recorder.record(rows, None, T0)
-    recorder.record(rows, None, T0 + REFRESH - timedelta(seconds=1))  # nothing due
-    recorder.record(rows, None, T0 + REFRESH)
+    recorder.record(rows, T0)
+    recorder.record(rows, T0 + REFRESH - timedelta(seconds=1))  # nothing due
+    recorder.record(rows, T0 + REFRESH)
     assert asked(source) == [("BIG", "SMALL", "DOWN", "BUSY"), ("BIG", "DOWN")]
     captured = lines(capture, PROFILES_FILE)
     assert [c["symbol"] for c in captured] == ["BIG", "SMALL", "DOWN", "BUSY", "BIG", "DOWN"]
@@ -70,12 +74,12 @@ def test_a_budget_refusal_is_marked_and_the_symbols_stay_due(tmp_path: Path) -> 
     rows = [row(ScreenerKind.LOSERS, "AAA"), row(ScreenerKind.LOSERS, "BBB")]
     source, capture, recorder = rig(tmp_path, ["AAA", "BBB"])
     source.limit("profiles", 0)
-    recorder.record(rows, None, T0)
+    recorder.record(rows, T0)
     (event,) = lines(capture, EVENTS_FILE)
-    assert (event["event"], event["symbols"], event["cause"]) == (
-        "profiles-skipped", "AAA,BBB", "budget")
+    assert (event["event"], event["symbols"], event["waiting"], event["cause"]) == (
+        "profiles-skipped", "AAA,BBB", "0", "budget")
     source.limit("profiles", 1)
-    recorder.record(rows, None, T0 + timedelta(seconds=1))
+    recorder.record(rows, T0 + timedelta(seconds=1))
     assert [c["symbol"] for c in lines(capture, PROFILES_FILE)] == ["AAA", "BBB"]
 
 
@@ -84,25 +88,25 @@ def test_at_most_the_configured_requests_a_round(tmp_path: Path) -> None:
     most = CFG.market_data.profile_max_requests_per_round
     symbols = [f"S{n}" for n in range(chunk * most + 2)]
     source, capture, recorder = rig(tmp_path, symbols)
-    recorder.record([row(ScreenerKind.TOP_ACTIVES, s) for s in symbols], None, T0)
+    recorder.record([row(ScreenerKind.TOP_ACTIVES, s) for s in symbols], T0)
     assert len(asked(source)) == most
     (event,) = lines(capture, EVENTS_FILE)
-    assert event["symbols"].split(",") == symbols[-2:] and event["cause"] == "budget"
+    assert (event["symbols"], event["waiting"], event["cause"]) == ("", "2", "round-cap")
 
 
 def test_only_the_listed_instrument_of_a_symbol_is_kept(tmp_path: Path) -> None:
     source, capture, recorder = rig(tmp_path, ["OPENW"])
     source.set_profile(profile("OPENW", "stale-id"))  # a second, older row of the symbol
-    recorder.record([row(ScreenerKind.GAINERS, "OPENW")], None, T0)
+    recorder.record([row(ScreenerKind.GAINERS, "OPENW")], T0)
     assert [c["instrument_id"] for c in lines(capture, PROFILES_FILE)] == ["id-OPENW"]
 
 
 def test_a_new_new_york_day_captures_every_instrument_again(tmp_path: Path) -> None:
     source, capture, recorder = rig(tmp_path, ["AAA"])
     rows = [row(ScreenerKind.TOP_ACTIVES, "AAA")]
-    recorder.record(rows, None, T0)
+    recorder.record(rows, T0)
     tomorrow = T0 + timedelta(days=1)
-    recorder.record(rows, None, tomorrow)
+    recorder.record(rows, tomorrow)
     assert len(asked(source)) == 2
     assert len(lines(capture, PROFILES_FILE, tomorrow.date())) == 1
 
@@ -116,5 +120,27 @@ def test_a_move_not_stated_is_never_a_big_gainer() -> None:
 
 def test_without_a_capture_nothing_is_read(tmp_path: Path) -> None:
     source = FakeMarketData()
-    ProfileRecorder(CFG, source, None).record([row(ScreenerKind.LOSERS, "AAA")], None, T0)
+    ProfileRecorder(CFG, source, None, lambda: T0, in_place).submit(
+        [row(ScreenerKind.LOSERS, "AAA")])
+    assert asked(source) == []
+
+
+def test_submitted_rounds_run_on_the_thread_and_failures_wait_for_the_loop(tmp_path: Path,
+                                                                          ) -> None:
+    source, capture, recorder = rig(tmp_path, ["AAA"])
+    rows = [row(ScreenerKind.LOSERS, "AAA")]
+
+    def refuse(*args, **kwargs):
+        raise CaptureError("profiles.jsonl: disk full")
+
+    capture.profiles = refuse  # type: ignore[method-assign]
+    recorder.submit(rows)
+    (error,) = recorder.take_errors()
+    assert isinstance(error, CaptureError) and recorder.take_errors() == []
+
+
+def test_a_stopped_recorder_sends_nothing(tmp_path: Path) -> None:
+    source, _, recorder = rig(tmp_path, ["AAA"])
+    assert recorder.stop(0)
+    recorder.submit([row(ScreenerKind.LOSERS, "AAA")])
     assert asked(source) == []

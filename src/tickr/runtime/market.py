@@ -176,9 +176,6 @@ class DiscoveryOutcome:
     seconds: float  # how long the pass took (monotonic clock)
     result: DiscoveryResult | None  # None when it failed
     error: Exception | None  # why it failed (any exception: never raised into the loop)
-    # The profile recorder's round after the pass failed (a capture write, or the run
-    # stopping): journaled as capture-failed; the pass itself stands.
-    profile_error: Exception | None = None
 
 
 Spawn = Callable[[Callable[[], None]], threading.Thread | None]
@@ -292,7 +289,7 @@ class MarketRuntime:
         self._discovery_anchor: datetime | None = None  # interval counted from here
         self._worker = DiscoveryWorker(spawn)  # the discovery pass in flight, if any
         self.recorder = ScreenerRecorder(config, source, capture)
-        self.profiles = ProfileRecorder(config, source, capture)
+        self.profiles = ProfileRecorder(config, source, capture, now, spawn)
         self._started = now()
         self._seed_refused_symbols()
 
@@ -351,8 +348,10 @@ class MarketRuntime:
     def close(self, timeout_seconds: float) -> bool:
         """At the end of the run: no new pass; a pass in flight ends before its next request
         and is waited for at most `timeout_seconds`, then abandoned (a daemon thread). True
-        when none is left running. Never collected: the loop has stopped."""
-        return self._worker.stop(timeout_seconds)
+        when none is left running. Never collected: the loop has stopped. The profile round
+        in flight ends the same way, after the pass (each waited for at most the timeout)."""
+        passes = self._worker.stop(timeout_seconds)
+        return self.profiles.stop(timeout_seconds) and passes
 
     def candidates(self) -> list[str]:
         """The symbols of the latest discovery's candidates, best first."""
@@ -535,11 +534,7 @@ class MarketRuntime:
                                    exc, cap)
             return None
         if rows is not None:
-            try:
-                self.profiles.record(rows, None, now)
-            except CaptureError as exc:  # the lists stand; their profiles are missing
-                journal_capture_failed(self.engine.store, self.engine.run_id,
-                                       PROFILE_RECORDER, exc, cap)
+            self.profiles.submit(rows)  # read on their own thread: the loop never waits
         return rows
 
     def _exit_on_stream_loss(self) -> None:
@@ -589,8 +584,7 @@ class MarketRuntime:
         # Everything the thread uses is taken here; it never touches the store, the engine,
         # subscriptions or this object's state.
         source = _StopsBetweenRequests(self.source, self._worker.stopping)
-        settings, screen, capture, profiles = (self.settings, self.screen, self.capture,
-                                               self.profiles)
+        settings, screen, capture = self.settings, self.screen, self.capture
         refused, today_bars, clock, monotonic = (self._refused_symbols, self.today_bars,
                                                  self.now, self.monotonic)
 
@@ -601,13 +595,7 @@ class MarketRuntime:
                                   refused, today_bars)
             except Exception as exc:  # noqa: BLE001 - collected and journaled by the loop
                 return DiscoveryOutcome(now, clock(), monotonic() - begun, None, exc)
-            seconds = monotonic() - begun  # the pass itself; the profiles come after it
-            try:
-                profiles.record(result.screened, source, clock())
-                profile_error: Exception | None = None
-            except Exception as exc:  # noqa: BLE001 - journaled by the loop; the pass stands
-                profile_error = exc
-            return DiscoveryOutcome(now, clock(), seconds, result, None, profile_error)
+            return DiscoveryOutcome(now, clock(), monotonic() - begun, result, None)
 
         if self._worker.start(job):
             self._discovery_anchor = anchor
@@ -615,7 +603,11 @@ class MarketRuntime:
     def collect(self) -> None:
         """On the loop thread, never waiting: journal a finished pass, if any. A failure is
         `discovery-failed` (tried again at the next interval); a pass is `discovery` with its
-        `seconds`, after its discovery.jsonl record, and its candidates become the list."""
+        `seconds`, after its discovery.jsonl record, and its candidates become the list.
+        Failures of the profile thread's rounds are journaled here too (`capture-failed`)."""
+        for exc in self.profiles.take_errors():
+            journal_capture_failed(self.engine.store, self.engine.run_id, PROFILE_RECORDER,
+                                   exc, self.config.market_data.failure_detail_max_chars)
         outcome = self._worker.take()
         if outcome is None:
             return
@@ -624,10 +616,7 @@ class MarketRuntime:
             assert outcome.error is not None
             self._journal_failure(outcome.error)
             return
-        if outcome.profile_error is not None:
-            journal_capture_failed(self.engine.store, self.engine.run_id, PROFILE_RECORDER,
-                                   outcome.profile_error,
-                                   self.config.market_data.failure_detail_max_chars)
+        self.profiles.submit(result.screened)  # read on their own thread, after the pass
         candidates, kept = self._with_earlier(result)
         summary = result.summary()
         if kept:

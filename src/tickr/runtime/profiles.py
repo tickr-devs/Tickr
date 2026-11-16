@@ -14,9 +14,12 @@ rows here. Due are:
   terms may change during the day.
 
 At most `profile_max_requests_per_round` profile requests a round, each leaving
-`profile_reserve_requests` of the route free for discovery's security-type lookups. Due
-instruments not read (budget or a failed read) are written to `events.jsonl` as
-`profiles-skipped` with the cause, and stay due for the next round. A row whose price or
+`profile_reserve_requests` of the route free for discovery's security-type lookups. A request
+refused (budget or a failed read) ends the round with a `profiles-skipped` event in
+`events.jsonl`: the request's `symbols`, its `cause` and how many more were `waiting`; the
+round cap alone writes one with cause `round-cap` and the count. Everything not read stays due
+for the next round. The reads run on a thread of their own (`submit`): neither a discovery
+pass nor the loop ever waits for them. A row whose price or
 previous close is missing or not a number is never a "big gainer" (no guess), but is still
 captured when first listed.
 
@@ -26,7 +29,7 @@ Only reads market data; nothing here decides, places or asks anything of the bro
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -41,6 +44,9 @@ PERCENT = Decimal(100)
 PRICE_FIELD = "price"  # screener row: last price, string (docs/webull-facts.md)
 PREVIOUS_CLOSE_FIELD = "pre_close"  # screener row: previous close, string
 SYMBOL_SEPARATOR = ","  # the `symbols` of a profiles-skipped event
+# The cause of a profiles-skipped event for instruments due beyond the round's request cap.
+SKIPPED_ROUND_CAP = "round-cap"
+PROFILE_THREAD = "tickr-profiles"
 
 
 def move_percent(row: ScreenerRow) -> Decimal | None:
@@ -55,12 +61,26 @@ def move_percent(row: ScreenerRow) -> Decimal | None:
     return (price - previous) / previous * PERCENT
 
 
+Spawn = Callable[[Callable[[], None]], threading.Thread | None]
+
+
+def profile_thread(target: Callable[[], None]) -> threading.Thread:
+    """Run `target` on a daemon thread of its own: never keeps the process alive."""
+    thread = threading.Thread(target=target, name=PROFILE_THREAD, daemon=True)
+    thread.start()
+    return thread
+
+
 class ProfileRecorder:
-    """Thread safe: the discovery thread and the loop (outside the regular session) both call
-    `record`; one round runs at a time."""
+    """Rounds are handed over with `submit` (by the loop: a collected discovery pass, or a
+    recorder round) and read on a thread of their own, so a slow profile route never delays a
+    discovery pass, its candidates or the loop. One round runs at a time; rows submitted
+    meanwhile replace any earlier ones still waiting (the newest lists are what is due). The
+    thread never touches the store: a failure is kept for `take_errors`, which the loop
+    journals. `stop` ends the round in flight before its next request."""
 
     def __init__(self, config: Config, source: MarketData, capture: CaptureWriter | None,
-                 ) -> None:
+                 now: Callable[[], datetime], spawn: Spawn = profile_thread) -> None:
         md = config.market_data
         self.refresh = timedelta(seconds=float(md.profile_refresh_seconds))
         self.gainer_move = Decimal(md.profile_refresh_gainer_move_percent)
@@ -69,11 +89,65 @@ class ProfileRecorder:
         self.chunk = md.profile_symbols_per_request
         self.source = source
         self.capture = capture
-        self._lock = threading.Lock()
+        self.now = now
+        self._spawn = spawn
+        self._lock = threading.Lock()  # guards the hand-over state below
+        self._pending: tuple[ScreenerRow, ...] | None = None
+        self._running = False
+        self._errors: list[Exception] = []
+        self._thread: threading.Thread | None = None
+        self.stopping = threading.Event()
+        # Used by the round in flight only (one at a time).
         self._day: date | None = None
         # instrument_id -> when last asked that day (a row the provider did not return is not
         # asked again before the refresh time either: no request spent every round on it).
         self._asked: dict[str, datetime] = {}
+
+    def submit(self, rows: Sequence[ScreenerRow]) -> None:
+        """Hand a round over; returns at once."""
+        if self.capture is None or not rows:
+            return
+        with self._lock:
+            if self.stopping.is_set():
+                return
+            self._pending = tuple(rows)
+            if self._running:
+                return  # the running thread takes it next
+            self._running = True
+        try:
+            self._thread = self._spawn(self._drain)
+        except BaseException:
+            with self._lock:
+                self._running = False
+            raise
+
+    def _drain(self) -> None:
+        while True:
+            with self._lock:
+                rows, self._pending = self._pending, None
+                if rows is None or self.stopping.is_set():
+                    self._running = False
+                    return
+            try:
+                self.record(rows, self.now())
+            except Exception as exc:  # noqa: BLE001 - kept for the loop to journal
+                with self._lock:
+                    self._errors.append(exc)
+
+    def take_errors(self) -> list[Exception]:
+        """Failures of rounds since the last call (a capture write, for example)."""
+        with self._lock:
+            errors, self._errors = self._errors, []
+        return errors
+
+    def stop(self, timeout_seconds: float) -> bool:
+        """No new round; True when none is left running after at most `timeout_seconds`."""
+        self.stopping.set()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout_seconds)
+            return not thread.is_alive()
+        return True
 
     def due(self, rows: Sequence[ScreenerRow], now: datetime) -> list[str]:
         """The symbols to read this round, first-listed before refreshes, in row order."""
@@ -93,38 +167,39 @@ class ProfileRecorder:
         move = move_percent(row) if row.kind is ScreenerKind.GAINERS else None
         return move is not None and move >= self.gainer_move
 
-    def record(self, rows: Sequence[ScreenerRow], source: MarketData | None,
-               now: datetime) -> None:
-        """One round for `rows` (the reads go through `source`, or the recorder's own)."""
+    def record(self, rows: Sequence[ScreenerRow], now: datetime) -> None:
+        """One round for `rows`, on the calling thread."""
         if self.capture is None or not rows:
             return
-        reader = self.source if source is None else source
-        with self._lock:
-            today = ny_date_of(now)
-            if self._day != today:
-                self._day, self._asked = today, {}
-            symbols = self.due(rows, now)
-            limit = self.max_requests * self.chunk
-            asked, later = symbols[:limit], symbols[limit:]
-            wanted = {r.instrument_id: r.symbol for r in rows}
-            for start in range(0, len(asked), self.chunk):
-                chunk = asked[start:start + self.chunk]
-                try:
-                    got = reader.profiles(chunk, budget_reserve=self.reserve)
-                except (RateLimited, MarketDataError, BrokerError) as exc:
-                    cause = SKIPPED_BUDGET if isinstance(exc, RateLimited) else type(exc).__name__
-                    self._skipped(asked[start:] + later, cause, now)
-                    return
-                # Only the listed instruments: a stale second row of a symbol is not theirs.
-                kept = [p for p in got if wanted.get(p.instrument_id) == p.symbol]
-                self.capture.profiles(kept, reader.provider, now)
-                for instrument_id, symbol in wanted.items():
-                    if symbol in chunk:
-                        self._asked[instrument_id] = now
-            if later:
-                self._skipped(later, SKIPPED_BUDGET, now)
+        today = ny_date_of(now)
+        if self._day != today:
+            self._day, self._asked = today, {}
+        symbols = self.due(rows, now)
+        limit = self.max_requests * self.chunk
+        asked, later = symbols[:limit], symbols[limit:]
+        wanted = {r.instrument_id: r.symbol for r in rows}
+        for start in range(0, len(asked), self.chunk):
+            chunk = asked[start:start + self.chunk]
+            if self.stopping.is_set():
+                return  # the run is ending: no request is started now
+            try:
+                got = self.source.profiles(chunk, budget_reserve=self.reserve)
+            except (RateLimited, MarketDataError, BrokerError) as exc:
+                cause = SKIPPED_BUDGET if isinstance(exc, RateLimited) else type(exc).__name__
+                waiting = len(asked) - start - len(chunk) + len(later)
+                self._skipped(chunk, waiting, cause, now)
+                return
+            # Only the listed instruments: a stale second row of a symbol is not theirs.
+            kept = [p for p in got if wanted.get(p.instrument_id) == p.symbol]
+            self.capture.profiles(kept, self.source.provider, now)
+            for instrument_id, symbol in wanted.items():
+                if symbol in chunk:
+                    self._asked[instrument_id] = now
+        if later:
+            self._skipped([], len(later), SKIPPED_ROUND_CAP, now)
 
-    def _skipped(self, symbols: Sequence[str], cause: str, now: datetime) -> None:
-        if self.capture is not None and symbols:
+    def _skipped(self, symbols: Sequence[str], waiting: int, cause: str,
+                 now: datetime) -> None:
+        if self.capture is not None:
             self.capture.event(PROFILES_SKIPPED, now, symbols=SYMBOL_SEPARATOR.join(symbols),
-                               cause=cause)
+                               waiting=str(waiting), cause=cause)

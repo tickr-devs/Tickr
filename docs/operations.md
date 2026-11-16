@@ -555,10 +555,13 @@ profiles of the listed instruments and appends them to `profiles.jsonl` in the s
 them (Webull states no borrow quantity). Each instrument is read once a day when first listed,
 and again every `[market_data] profile_refresh_seconds` while it is a loser or a gainer up at
 least `profile_refresh_gainer_move_percent`. At most `profile_max_requests_per_round` requests
-are sent a round, leaving `profile_reserve_requests` of the route free for discovery. Profiles
-due and not read are a `profiles-skipped` row in `events.jsonl` (`symbols`, `cause`) and are
-asked again in the next round. A capture that cannot be written is a `capture-failed` journal
-row (`what`: `screener-recorder` or `profile-recorder`); the bot goes on.
+are sent a round, leaving `profile_reserve_requests` of the route free for discovery. A refused
+or failed request ends its round with a `profiles-skipped` row in `events.jsonl` (that request's
+`symbols`, its `cause`, and how many more were `waiting`); the round cap alone writes one with
+cause `round-cap`. What was not read is asked again in the next round. The reads run on a thread
+of their own, after a discovery pass is collected: neither the pass, its candidates nor the loop
+waits for them. A capture that cannot be written is a `capture-failed` journal row (`what`:
+`screener-recorder` or `profile-recorder`); the bot goes on.
 
 When a decision sends an entry (or asks an exit) in the middle of a minute, the symbols left in
 that minute are put aside (`evaluation-stopped`, stage `protect-first`, with `remaining` and
