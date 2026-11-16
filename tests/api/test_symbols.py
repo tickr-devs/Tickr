@@ -8,6 +8,7 @@ import pytest
 
 from tickr.api import contract, symbols
 from tickr.data.capture import CaptureWriter
+from tickr.observers.loader import read_values
 from tickr.observers.log import DecisionLog
 from tickr.research.records import Admission
 from tickr.strategy.base import Verdict
@@ -164,8 +165,16 @@ def test_movers_newest_first_with_watching_and_the_strategy_rules(api, cfg):
     assert first["ABCD"]["watching"] is True and first["QRST"]["watching"] is False
     assert first["EFGH"]["move_atr"] == "-2.4" and first["EFGH"]["spike_up"] is False
     assert first["ABCD"]["fired"] == ["volume_ratio", "move_atr"]
-    # The active strategy of the repo config (price-action-v1) defines no fast movers.
-    assert body["rules"] is None and body["rules_cause"] == symbols.NO_RULES
+    # The thresholds are the active strategy's own [spike] section, read from its strategy.toml.
+    expected = symbols.mover_rules(read_values(cfg.root, cfg.strategy.active))
+    assert expected is not None and body["rules_cause"] is None
+    assert body["rules"]["lookback_bars"] == expected.lookback_bars
+    assert body["rules"]["min_move_atr"] == str(expected.min_move_atr)
+
+
+def test_a_strategy_without_spike_has_no_rules_and_says_why():
+    body = symbols.movers_document(DAY, symbols.DiscoveryFolded(), None, ())
+    assert body.rules is None and body.rules_cause == symbols.NO_RULES
 
 
 def test_rules_come_from_the_strategy_spike_section():
