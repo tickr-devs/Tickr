@@ -251,8 +251,11 @@ class ScreenerChips:
                 handle.seek(self._offset)
                 data = handle.read()
             complete = data if not open_tail else data[:data.rfind(b"\n") + 1]
+            try:
+                lines = complete.decode("utf-8").splitlines(keepends=True)
+            except UnicodeDecodeError as exc:
+                raise CaptureError(f"{path}: {exc}") from exc
             self._offset += len(complete)
-            lines = complete.decode("utf-8").splitlines(keepends=True)
         for text in lines:
             if self._splitter.add(text, self._open) and len(self._open) > 1:
                 finished = self._open.pop(0)
