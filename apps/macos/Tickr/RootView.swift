@@ -338,14 +338,16 @@ private struct BotStateCard: View {
 /// connection status, the day stepper ‹ day › and Today.
 private struct WindowToolbar: ToolbarContent {
   var body: some ToolbarContent {
-    ToolbarItem(placement: .navigation) {
+    ToolbarItem(placement: .principal) {
       WindowLine()
     }
     .sharedBackgroundVisibility(.hidden)
+    .visibilityPriority(.low)
     ToolbarItem(placement: .primaryAction) {
       DayStepper()
     }
     .sharedBackgroundVisibility(.hidden)
+    .visibilityPriority(.high)
   }
 }
 
@@ -384,19 +386,17 @@ private struct SidebarButton: View {
 /// Overview "tickr — sandbox — price-action-v1 v1 — up to 3 positions", Chart "tickr — sandbox —
 /// chart — ABCD · Day · 1m", Trades & days "… — trades & days — 3 closed", Risk & account
 /// "… — risk & account — 10:47:03 ET", Strategy lab "… — strategy lab — price-action-v1 v1".
-/// The line is a flexible toolbar item: AppKit's toolbar layout gives it the room between the
-/// screen column's leading edge and the right-hand group, centred in it as the design centres it
-/// between the window buttons and the controls, and in a narrow window cuts it at its end rather
-/// than pushing the connection status and the day stepper into the toolbar's overflow menu. Its
-/// width was once computed from the screen column's and the group's measured widths: those
-/// arrived a layout pass late, so during a window resize the line and the date jumped after the
-/// window's edge on every step.
+/// The line is the toolbar's principal item, as wide as its text, centred in the title bar, with
+/// the right-hand group at the trailing edge. When the window is too narrow for both, the line has
+/// the lower visibility priority, so it moves into the toolbar's overflow menu and the connection
+/// status and the day stepper stay in sight (they then follow the window buttons). A SwiftUI view in a toolbar item gets its
+/// ideal width and does not stretch or cut, so the line is not given a flexible frame. Its width
+/// was once computed from the screen column's and the group's measured widths: those arrived a
+/// layout pass late, so during a window resize the line and the date jumped after the window's
+/// edge on every step.
 private struct WindowLine: View {
   @Environment(AppModel.self) private var model
   @Environment(ChartModel.self) private var chart
-
-  /// Least width of the line, in points.
-  static let minWidth: CGFloat = 120
 
   var body: some View {
     Group {
@@ -412,8 +412,6 @@ private struct WindowLine: View {
     .font(Tokens.Typography.calloutMono)
     .foregroundStyle(Palette.textQuaternary)
     .lineLimit(1)
-    .truncationMode(.tail)
-    .frame(minWidth: Self.minWidth, maxWidth: .infinity)
   }
 
   private func line(now: Date?) -> LocalizedStringResource {
