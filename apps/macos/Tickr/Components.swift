@@ -186,7 +186,6 @@ struct Card<Trailing: View, Content: View>: View {
             .font(Tokens.Typography.label)
             .tracking(Tokens.Typography.labelTracking)
             .foregroundStyle(Palette.textQuaternary)
-            .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
           Spacer(minLength: Tokens.Space.s)
           trailing
@@ -290,31 +289,6 @@ struct ChartLink<Label: View>: View {
     } label: {
       label
     }
-  }
-}
-
-/// A quiet "Details ›" action in a card header or under a message: the ghost button with a
-/// chevron, optionally led by a symbol.
-struct MoreButton: View {
-  let title: Text
-  var systemImage: String?
-  let action: () -> Void
-
-  init(_ title: LocalizedStringResource, systemImage: String? = nil, action: @escaping () -> Void) {
-    self.title = Text(title)
-    self.systemImage = systemImage
-    self.action = action
-  }
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: Tokens.Space.xs) {
-        if let systemImage { Image(systemName: systemImage) }
-        title
-        Chevron()
-      }
-    }
-    .buttonStyle(.action(.ghost, size: .compact))
   }
 }
 

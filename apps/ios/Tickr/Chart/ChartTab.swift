@@ -159,7 +159,10 @@ struct ChartTab: View {
   }
 
   private var loadingView: some View {
-    ProgressView { Text(ChartText.loading) }
+    TickrLoader(
+      chart.symbol.map { ChartText.loadingBars($0, interval: String(localized: ChartFormat.title(chart.timeframe))) }
+        ?? L10n.Common.loading,
+      size: .large, caption: true)
       .frame(maxWidth: .infinity)
       .padding(.top, Tokens.Space.xxl)
       .transition(.opacity)
@@ -230,7 +233,6 @@ private struct DayBar: View {
             Text(symbol)
               .font(Tokens.Typography.metric)
               .foregroundStyle(Palette.textPrimary)
-              .lineLimit(1)
               .fixedSize()
           }
           quote
@@ -287,7 +289,6 @@ private struct DayBar: View {
         }
       }
       .font(Tokens.Typography.annotation)
-      .lineLimit(1)
       .fixedSize()
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(Text(ChartText.dayStats(rows[0].1, rows[1].1, rows[2].1)))
@@ -309,8 +310,6 @@ private struct DayBar: View {
           .font(Tokens.Typography.captionMono)
       }
       .foregroundStyle(tone)
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
       .accessibilityElement(children: .combine)
     }
   }
@@ -325,7 +324,6 @@ private struct DayBar: View {
         Text(ChartText.todayLive)
       }
     }
-    .lineLimit(1)
     .fixedSize()
   }
 
@@ -354,8 +352,6 @@ private struct DayBar: View {
           dayLabel(live: false)
         }
       }
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.textTertiary)
     }
@@ -591,7 +587,6 @@ private struct ChipLook: ViewModifier {
   func body(content: Content) -> some View {
     content
       .font(Tokens.Typography.captionMono)
-      .lineLimit(1)
       .fixedSize()
       .foregroundStyle(on ? text : Palette.textSecondary)
       .padding(.horizontal, Tokens.Space.m)
@@ -666,7 +661,7 @@ private struct RangePicker: View {
   let chart: ChartModel
 
   var body: some View {
-    SegmentChips(options: ChartRange.allCases.map { ($0, Text(Self.title($0))) },
+    SegmentSwitch(options: ChartRange.allCases.map { ($0, Text(Self.title($0))) },
       selection: Binding(get: { chart.range }, set: { chart.choose(range: $0) }))
       .accessibilityElement(children: .contain)
       .accessibilityLabel(Text(ChartText.range))

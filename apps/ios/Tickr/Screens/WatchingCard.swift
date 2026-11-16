@@ -43,7 +43,7 @@ struct WatchingCard: View {
           WatchingRow(row: row, current: failure == nil)
         }
       } else if failure == nil {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)
@@ -82,7 +82,6 @@ struct WatchingRow: View {
         Text(verbatim: row.symbol)
           .font(Tokens.Typography.calloutMono.bold())
           .foregroundStyle(Palette.textPrimary)
-          .lineLimit(1)
           .fixedSize()
         Text(row.verdict.title)
           .font(Tokens.Typography.annotationBold)

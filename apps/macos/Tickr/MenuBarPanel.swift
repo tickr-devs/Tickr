@@ -9,8 +9,6 @@ import TickrKit
 struct MenuBarPanel: View {
   /// Width of the panel, in points: the design's 420-point board less its 14-point margins.
   static let width: CGFloat = 392
-  /// Lines the headline may wrap to.
-  static let headlineLines = 2
 
   /// Entrance order of the panel's parts.
   private enum Order: Int {
@@ -63,7 +61,6 @@ private struct StatusBanner: View {
       Text(verbatim: model.headline.text)
         .font(Tokens.Typography.body.weight(.semibold))
         .foregroundStyle(tone.text)
-        .lineLimit(MenuBarPanel.headlineLines)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
     }
@@ -92,7 +89,7 @@ private struct TodayResult: View {
         CardLabel(L10n.MenuBar.dayResult)
         if let status = model.status {
           // Counts up from zero each time the panel opens, then on to each new result.
-          let result = status.resultTodayGrossUsd.value
+          let result = status.resultTodayUsd.value
           CountingText(NSDecimalNumber(decimal: result).doubleValue) { Money.signedUSD(Decimal($0)) }
             .font(Tokens.Typography.panelFigure)
             .foregroundStyle(Palette.result(result))
@@ -110,7 +107,7 @@ private struct TodayResult: View {
       }
       Spacer(minLength: 0)
       if let status = model.status {
-        DrawnSparkline(values: curve(status), color: Tone.result(status.resultTodayGrossUsd.value).fill)
+        DrawnSparkline(values: curve(status), color: Tone.result(status.resultTodayUsd.value).fill)
           .frame(width: Self.curveWidth, height: Self.curveHeight)
       }
     }
@@ -334,7 +331,6 @@ private struct FlowDots: View {
           Text(stage.name)
             .font(Tokens.Typography.captionMono)
             .foregroundStyle(Palette.textTertiary)
-            .lineLimit(1)
             .fixedSize()
         }
       }
@@ -455,7 +451,6 @@ private struct EnvironmentChip: View {
     Text(verbatim: text)
       .textCase(.lowercase)
       .font(Tokens.Typography.captionMono.weight(.bold))
-      .lineLimit(1)
       .foregroundStyle(Palette.accentText)
       .padding(.horizontal, Tokens.Space.xs + Tokens.Space.xxs)
       .padding(.vertical, Tokens.Space.xxs)

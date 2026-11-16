@@ -67,7 +67,6 @@ private struct FlowChip: View {
         .foregroundStyle(color)
         .strikethrough(chip.excludedCause != nil, color: color)
     }
-    .lineLimit(1)
     .padding(.horizontal, Tokens.Space.m)
     .padding(.vertical, Tokens.Space.s)
     .frame(minWidth: Tokens.Size.flowChip, alignment: .leading)
@@ -154,7 +153,6 @@ struct LatestEvent: View {
     }
     .animation(reduceMotion ? nil : Tokens.Motion.standard, value: line)
     .font(Tokens.Typography.captionMono)
-    .lineLimit(1)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier(Self.id)
   }
@@ -163,9 +161,9 @@ struct LatestEvent: View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.m) {
       if let line {
         Text(L10n.Risk.clock(Format.marketTime(line.time))).foregroundStyle(Palette.textQuaternary)
-        // The tag says what happened: it never gives way; the text is cut instead.
+        // The tag says what happened: it never gives way; the text wraps instead.
         Text(verbatim: line.tag).bold().textCase(.uppercase).foregroundStyle(line.color).fixedSize()
-        Text(verbatim: line.text).foregroundStyle(Palette.textSecondary).truncationMode(.tail)
+        Text(verbatim: line.text).foregroundStyle(Palette.textSecondary)
       } else {
         Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
         Text(L10n.Flow.nothingYet).foregroundStyle(Palette.textTertiary)
@@ -207,7 +205,7 @@ struct WatchingCard: View {
           }
           HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
             if WatchingList.hasMore(watching.rows) {
-              MoreButton(L10n.Watching.showAll(watching.rows.count)) { openWatchingAll() }
+              HeaderLink(L10n.Watching.showAll(watching.rows.count)) { openWatchingAll() }
             }
             Spacer(minLength: 0)
             // How many of all the watched symbols the card shows.
@@ -219,7 +217,7 @@ struct WatchingCard: View {
       } else if let error = model.watchingError {
         Footnote(L10n.Watching.unavailable(error), color: Palette.warningText)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     }
     .accessibilityElement(children: .contain)
@@ -332,7 +330,6 @@ private struct VerdictTag: View {
     Text(verdict.title)
       .textCase(.uppercase)
       .font(Tokens.Typography.badge)
-      .lineLimit(1)
       .padding(.horizontal, Tokens.Space.xs)
       .padding(.vertical, Tokens.Space.xxs)
       .foregroundStyle(verdict.watchingColor)

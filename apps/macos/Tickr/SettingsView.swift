@@ -9,7 +9,7 @@ import TickrKit
 /// because it lives in config/bot.toml, not in the app.
 struct SettingsView: View {
   @Environment(AppModel.self) private var model
-  @State private var tab: SettingsTab = .general
+  @State private var tab: SettingsTab
   @State private var contentHeight: CGFloat = 0
   /// Height of the title bar the window still reserves above the content (measured): the tab
   /// strip is drawn into it, so the pane asks for that much less height.
@@ -19,6 +19,11 @@ struct SettingsView: View {
   static let width: CGFloat = 680
   /// Tallest the pane area grows to its content before it scrolls, in points.
   static let maxPaneHeight: CGFloat = 600
+
+  /// The window opens on General; previews and the layout checks open another pane.
+  init(tab: SettingsTab = .general) {
+    _tab = State(initialValue: tab)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -273,7 +278,6 @@ private struct TradingSettings: View {
               Text(verbatim: observer)
                 .font(Tokens.Typography.annotation)
                 .foregroundStyle(Palette.textTertiary)
-                .lineLimit(1)
             }
           }
         }
@@ -710,7 +714,7 @@ private struct ConfigCard: View {
       } else if let error = model.configError {
         ReadFailureNote(L10n.ReadFailed.config, detail: error)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     } trailing: {
       HStack(spacing: Tokens.Space.xs) {
@@ -803,7 +807,7 @@ struct JobsSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     } trailing: {
       Text(L10n.Settings.timesET)
@@ -848,7 +852,6 @@ struct JobsSection: View {
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
     }
-    .lineLimit(1)
     .accessibilityElement(children: .combine)
   }
 
@@ -1099,7 +1102,7 @@ private struct BackupSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
       Label {
         Text(L10n.Settings.cleanup)

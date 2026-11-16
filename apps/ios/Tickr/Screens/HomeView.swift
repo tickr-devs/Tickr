@@ -158,7 +158,6 @@ private struct DayLine: View {
   static let nextSymbol = "chevron.right"
 
   @Environment(AppModel.self) private var model
-  @Environment(\.dynamicTypeSize) private var typeSize
   let days: HomeDayModel
 
   /// Accessibility id of the DEMO chip, for the UI tests.
@@ -212,9 +211,7 @@ private struct DayLine: View {
     day
       .frame(maxWidth: .infinity)
       .multilineTextAlignment(.center)
-      // One line at the usual sizes; at large ones it wraps as far as it needs, never cut with "…".
-      .lineLimit(typeSize.stacksRows ? nil : 1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
+      // Wraps as far as it needs ("Пт 13 нояб. · сегодня" at large sizes), never cut.
       .fixedSize(horizontal: false, vertical: true)
   }
 
@@ -292,12 +289,8 @@ private struct Summary: View {
   /// Side of the result ring and the width of its track and arc, in points.
   static let ringSide: CGFloat = 136
   static let ringLine: CGFloat = 10
-  /// Lines the wins and losses may take inside the ring ("1 в плюс · 5 в минусе" wraps in Russian).
-  static let winsLossesLines = 2
   /// Width of the ring's figures as a share of its side: the square inside the circle.
   static let innerShare: CGFloat = 0.7
-  /// Lines the headline takes beside the ring.
-  static let headlineLines = 2
   /// Symbol of a closed trading gate.
   static let gateClosedSymbol = "lock.fill"
 
@@ -310,7 +303,7 @@ private struct Summary: View {
 
   var body: some View {
     let stats = past.map(Board.dayStats) ?? model.status.map(Board.dayStats)
-    let result = stats?.resultGrossUsd ?? 0
+    let result = stats?.resultUsd ?? 0
     let headline = model.headline
     // A recorded day says so, in the highlight colour and without a pulse; the live headline is about today.
     // Without any status the connection card above shows the failure; the headline does not repeat it.
@@ -329,8 +322,8 @@ private struct Summary: View {
           CountingText(NSDecimalNumber(decimal: result).doubleValue) { Money.signed(Decimal($0)) }
             .font(Tokens.Typography.metric)
             .foregroundStyle(result < 0 ? Palette.seriesATRText : Palette.profitText)
-            .minimumScaleFactor(Tokens.Shrink.tight)
-            .lineLimit(1)
+            // One line at its full size; the ring grows around it.
+            .fixedSize()
           Group {
             if let stats {
               Text(L10n.Common.winsLosses(stats.wins, stats.losses))
@@ -341,16 +334,17 @@ private struct Summary: View {
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
           .multilineTextAlignment(.center)
-          .lineLimit(Self.winsLossesLines)
-          .minimumScaleFactor(Tokens.Shrink.tight)
+          // "1 в плюс · 5 в минусе" wraps in Russian, never cut.
+          .fixedSize(horizontal: false, vertical: true)
         }
         // Inside the ring's opening at every text size ("4 W · 7 L" ran past it).
-        .frame(maxWidth: ringSide * Self.innerShare)
+        .frame(minWidth: 0, maxWidth: ringSide * Self.innerShare)
         .padding(Tokens.Space.l)
       }
-      // Beside the headline the ring keeps its scaled side; stacked above it at large text sizes,
-      // it stops growing at the screen's width, so it is never cut and never widens the page.
-      .frame(width: typeSize.stacksRows ? nil : ringSide, height: typeSize.stacksRows ? nil : ringSide)
+      // Beside the headline the ring keeps its scaled side, growing only when its figures need
+      // more; stacked above it at large text sizes, it stops growing at the screen's width, so it
+      // is never cut and never widens the page.
+      .frame(minWidth: typeSize.stacksRows ? nil : ringSide, minHeight: typeSize.stacksRows ? nil : ringSide)
       .aspectRatio(1, contentMode: .fit)
       .frame(maxWidth: ringSide)
       .accessibilityElement(children: .ignore)
@@ -363,8 +357,13 @@ private struct Summary: View {
           Text(verbatim: text)
             .font(.subheadline.bold())
             .foregroundStyle(tint)
-            .lineLimit(typeSize.stacksRows ? nil : Self.headlineLines)
-            .minimumScaleFactor(Tokens.Shrink.slight)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        if stats?.beforeFees == true {
+          // The ring's result does not count the broker's fees yet; wraps rather than cuts.
+          Text(L10n.Home.beforeFees)
+            .font(.footnote)
+            .foregroundStyle(Palette.warningText)
             .fixedSize(horizontal: false, vertical: true)
         }
         if let past {
@@ -444,7 +443,6 @@ private struct PositionRow: View {
             Text(verbatim: position.symbol)
               .font(.headline.monospaced())
               .foregroundStyle(Palette.textPrimary)
-              .lineLimit(1)
               .fixedSize()
           }
           Label {
@@ -455,7 +453,6 @@ private struct PositionRow: View {
           .labelStyle(ControlLabelStyle())
           .font(Tokens.Typography.annotation)
           .foregroundStyle(position.stop.state.isProtected ? Palette.textQuaternary : Palette.lossText)
-          .lineLimit(1)
           .fixedSize()
           .accessibilityLabel(Text(stopLine))
           // Long press names the stop, as on the shield beside the symbol, instead of opening the row.
@@ -477,7 +474,6 @@ private struct PositionRow: View {
                 Text(L10n.Positions.last(Money.price(marks.last)))
                   .font(Tokens.Typography.annotation)
                   .foregroundStyle(Palette.textQuaternary)
-                  .lineLimit(1)
               }
             }
             Color.clear.frame(width: 0, height: 0)
@@ -508,7 +504,6 @@ private struct PositionRow: View {
         }
         // Each value on one line; the sparkline gives way first when the row is narrow. Stacked
         // at large text sizes, a value wraps instead of widening the card past the screen.
-        .lineLimit(typeSize.stacksRows ? nil : 1)
         .fixedSize(horizontal: !typeSize.stacksRows, vertical: typeSize.stacksRows)
         .layoutPriority(1)
         if !typeSize.stacksRows {
@@ -685,7 +680,6 @@ private struct LiveFlowCard: View {
               }
               .font(Tokens.Typography.annotationBold)
               .foregroundStyle(Palette.infoText)
-              .lineLimit(1)
               .fixedSize()
             }
           }
@@ -746,8 +740,6 @@ private struct LiveFlowCard: View {
           }
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
         }
       }
       ForEach(status.fences, id: \.kind) { fence in
@@ -810,8 +802,6 @@ private struct LiveFlowCard: View {
       Text(stage.name)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       Group {
         if stage.value != nil || stage.flag == nil {
           Text(verbatim: stage.value ?? Format.missing)
@@ -825,8 +815,6 @@ private struct LiveFlowCard: View {
             .foregroundStyle(stage.flagColor)
         }
       }
-      .lineLimit(1)
-      .minimumScaleFactor(Tokens.Shrink.standard)
       pool(stage)
     }
     .unredacted(when: stage.urgent)
@@ -853,8 +841,6 @@ private struct LiveFlowCard: View {
           .font(Tokens.Typography.annotationBold)
           .foregroundStyle(stage.value == nil ? Palette.textQuaternary : Palette.textPrimary)
           .contentTransition(.numericText())
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
       }
       pool(stage)
     }
