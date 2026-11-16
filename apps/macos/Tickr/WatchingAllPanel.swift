@@ -150,27 +150,16 @@ struct WatchingAllPanel: View {
   /// SF Symbol of the close button.
   static let closeSymbol = "xmark"
 
-  /// Sort chips on the left, the verdict filter with its counts on the right; the filter goes
-  /// under the sort when both do not fit on one line, and each wraps its own chips.
+  /// The sort switch on the left, the verdict filter with its counts on the right (the apps' one
+  /// segmented switch); the filter goes under the sort when both do not fit on one line.
   private func controls(_ all: [WatchingRowV1]) -> some View {
-    let sorts = ChipFlow(spacing: Tokens.Space.xs) {
-      Text(L10n.Watching.sortLabel)
-        .textCase(.uppercase)
-        .font(Tokens.Typography.label)
-        .tracking(Tokens.Typography.labelTracking)
-        .foregroundStyle(Palette.textQuaternary)
-        .padding(.trailing, Tokens.Space.xs)
-      ForEach(Self.sorts, id: \.self) { item in
-        Button { sort = item } label: { Text(item.title) }
-          .buttonStyle(.chip(selected: sort == item))
-      }
-    }
-    let filters = ChipFlow(spacing: Tokens.Space.xs) {
-      ForEach(WatchingFilter.allCases, id: \.self) { item in
-        Button { filter = item } label: { Text(item.title(WatchingList.count(all, item))) }
-          .buttonStyle(.chip(selected: filter == item))
-      }
-    }
+    let sorts = SegmentSwitch(options: Self.sorts.map { ($0, Text($0.title)) }, selection: $sort)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(Text(L10n.Watching.sortLabel))
+    let filters = SegmentSwitch(
+      options: WatchingFilter.allCases.map { ($0, Text($0.title(WatchingList.count(all, $0)))) }, selection: $filter)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(Text(L10n.Watching.filterLabel))
     return ViewThatFits(in: .horizontal) {
       HStack(spacing: Tokens.Space.m) {
         sorts.fixedSize()
@@ -188,7 +177,7 @@ struct WatchingAllPanel: View {
 }
 
 extension WatchingSort {
-  /// The chip's name.
+  /// The segment's name.
   var title: LocalizedStringResource {
     switch self {
     case .closest: L10n.Watching.sortClosest
@@ -200,7 +189,7 @@ extension WatchingSort {
 }
 
 extension WatchingFilter {
-  /// The chip's name with how many rows it keeps.
+  /// The segment's name with how many rows it keeps.
   func title(_ count: Int) -> LocalizedStringResource {
     switch self {
     case .all: L10n.Watching.filterAll(count)

@@ -14770,6 +14770,23 @@
         }
       }
     },
+    "watching.filterLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verdict"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Решение"
+          }
+        }
+      }
+    },
     "watching.filterWatch" : {
       "extractionState" : "manual",
       "localizations" : {
