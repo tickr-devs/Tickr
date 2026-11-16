@@ -332,8 +332,7 @@ private struct MoverColumns: View {
         .frame(width: Self.symbolWidth, alignment: .leading)
       MoverFigure(text: SymbolsBoard.volume(mover), fired: mover.fired(.volume))
         .frame(width: Self.volumeWidth, alignment: .leading)
-      MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move),
-        color: mover.moveAtr.isNegative ? Palette.lossText : Palette.profitText)
+      MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move))
         .frame(width: Self.moveWidth, alignment: .leading)
       MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
         .frame(width: Self.dollarsWidth, alignment: .leading)
