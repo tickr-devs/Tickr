@@ -10,14 +10,11 @@ struct TradesView: View {
   @Environment(AppModel.self) private var model
   @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
   @State private var selection: DayTrade.ID?
-  /// Whether the screen is wide enough for the days column beside the trades.
-  @State private var sideBySide = true
 
   /// Narrowest screen, in points, that shows the days column beside the trades: the column, the
   /// four figures of the day at full size and the trades table's columns at their least widths
   /// (the selected trade beside Not taken needs less). Narrower, the days follow the trades (the
-  /// toolbar's day picker stays at the top). Measured on the screen's own width, which the window
-  /// sets, so the choice never feeds back into it.
+  /// toolbar's day picker stays at the top).
   static let sideBySideMinWidth: CGFloat = 1180
   /// Width of the selected trade's card beside Not taken, in points.
   static let detailWidth: CGFloat = 330
@@ -33,9 +30,6 @@ struct TradesView: View {
     ScrollView {
       content
     }
-    .onGeometryChange(for: Bool.self) { [threshold = Self.sideBySideMinWidth] in $0.size.width >= threshold } action: {
-      sideBySide = $0
-    }
     .plainCardLabels()
     // The first trade of the day is selected until another is picked, so its details show at once.
     .onChange(of: model.shownTrades.map(\.id), initial: true) { _, ids in
@@ -43,19 +37,44 @@ struct TradesView: View {
     }
   }
 
+  /// The days column beside the day's detail, or after it in a narrow window so the day's trades
+  /// are on the first screen. The same two views in both: a resize moves them and never makes
+  /// them anew (new ones played their entrance again mid-drag).
+  static let arrangements: [CardArrangement] = [
+    CardArrangement(minWidth: sideBySideMinWidth - Tokens.Space.xl * CardArrangement.paddedEdges, rows: [
+      CardRow(columns: [
+        CardColumn(width: .fixed(Tokens.Size.sideColumn), cards: [Part.side.rawValue]),
+        CardColumn(width: .share(1), cards: [Part.day.rawValue]),
+      ], linesUp: false)
+    ]),
+    CardArrangement(minWidth: 0, rows: [
+      CardRow(columns: [CardColumn(width: .share(1), cards: [Part.day.rawValue])], linesUp: false),
+      CardRow(columns: [CardColumn(width: .share(1), cards: [Part.side.rawValue])], linesUp: false),
+    ]),
+  ]
+
+  /// The selected trade beside the signals not taken, one height, while the day's column holds
+  /// the trade's card and a Not taken card of the least width; one above the other otherwise.
+  static let detailArrangements: [CardArrangement] = [
+    CardArrangement(minWidth: detailWidth + Tokens.Space.l + Tokens.Size.gridColumnMin, rows: [
+      CardRow(columns: [
+        CardColumn(width: .fixed(detailWidth), cards: [Part.side.rawValue]),
+        CardColumn(width: .share(1), cards: [Part.day.rawValue]),
+      ])
+    ]),
+    CardArrangement(minWidth: 0, rows: [
+      CardRow(columns: [CardColumn(width: .share(1), cards: [Part.side.rawValue, Part.day.rawValue])], linesUp: false)
+    ]),
+  ]
+
+  /// Positions of the two parts in a `CardGrid` of this screen: the first (the days column, the
+  /// selected trade) and the second (the day's detail, Not taken).
+  private enum Part: Int { case side = 0, day }
+
   private var content: some View {
-    Group {
-      if sideBySide {
-        HStack(alignment: .top, spacing: Tokens.Space.l) {
-          sideColumn.frame(width: Tokens.Size.sideColumn)
-          dayDetail
-        }
-      } else {
-        VStack(alignment: .leading, spacing: Tokens.Space.l) {
-          dayDetail
-          sideColumn
-        }
-      }
+    CardGrid(arrangements: Self.arrangements, spacing: Tokens.Space.l) {
+      sideColumn
+      dayDetail
     }
     .padding(Tokens.Space.xl)
     .frame(maxWidth: Tokens.Size.contentMaxWidth)
@@ -112,24 +131,14 @@ struct TradesView: View {
 
   /// As on the board, the selected trade beside the signals that did not become one, one height;
   /// one above the other in a narrow window.
-  @ViewBuilder private var selectedAndNotTaken: some View {
-    let detail = TradeDetailCard(trade: model.shownTrades.first { $0.id == selection })
-      .rise(step: Order.detail.rawValue)
-    let notTaken = NotTakenCard(showOnChart: showOnChart)
-      .rise(step: Order.notTaken.rawValue)
-    if sideBySide {
-      HStack(alignment: .top, spacing: Tokens.Space.l) {
-        detail.frame(width: Self.detailWidth)
-        notTaken
-      }
-      .filling()
-      .fixedSize(horizontal: false, vertical: true)
-    } else {
-      VStack(alignment: .leading, spacing: Tokens.Space.l) {
-        detail
-        notTaken
-      }
+  private var selectedAndNotTaken: some View {
+    CardGrid(arrangements: Self.detailArrangements, spacing: Tokens.Space.l) {
+      TradeDetailCard(trade: model.shownTrades.first { $0.id == selection })
+        .rise(step: Order.detail.rawValue)
+      NotTakenCard(showOnChart: showOnChart)
+        .rise(step: Order.notTaken.rawValue)
     }
+    .filling()
   }
 
   /// Opens the Chart on `symbol` (the shown day stays).
