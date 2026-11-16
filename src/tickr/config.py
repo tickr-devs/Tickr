@@ -573,6 +573,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "trailing_unit_factor above 1")
     if probe.trailing_tight_percent >= probe.trailing_wide_percent:
         raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
+    if not 1 <= risk.max_open_positions <= md.stream_reserved_symbols:
+        raise ConfigError("[risk] max_open_positions must be at least 1 and at most "
+                          "[market_data] stream_reserved_symbols (a stream slot per position)")
     if risk.max_entry_rest_bars < 1:
         raise ConfigError("[risk] max_entry_rest_bars must be at least 1")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
