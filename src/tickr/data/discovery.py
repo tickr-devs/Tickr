@@ -145,6 +145,9 @@ class DiscoveryResult:
     """Universe symbols the pass stopped before deciding (`stopped` says where and why)."""
     movers: tuple[Mover, ...] = ()
     """The active strategy's fast movers among the symbols whose bars were read."""
+    movers_measured: bool = False
+    """Whether the active strategy defines fast movers (`FastMovers`); without it `movers` is
+    empty because nothing was measured, not because nothing moved."""
 
     @property
     def evaluated(self) -> int:
@@ -404,7 +407,7 @@ def discover(
         not_reached = tuple(i.symbol for i in universe if i.symbol not in decided)
         return DiscoveryResult(started, tuple(read), merged, len(universe),
                                tuple(candidates), tuple(rejections), stop, tuple(instruments),
-                               not_reached, tuple(movers))
+                               not_reached, tuple(movers), isinstance(screen, FastMovers))
 
     if stopped is not None:
         return result([], stopped)
@@ -534,6 +537,7 @@ def pass_record(result: DiscoveryResult, finished_at: datetime) -> dict[str, Any
                        for r in result.rejections],
         "candidates": [c.instrument.symbol for c in result.candidates],
         "not_reached": list(result.not_reached),
+        "movers_measured": result.movers_measured,
         "movers": [{"symbol": m.symbol, "bar_start": at(m.bar_start), "close": str(m.close),
                     "low": str(m.low), "bar_dollar_volume": str(m.bar_dollar_volume),
                     "volume_ratio": _signal(m.volume_ratio), "move_atr": _signal(m.move_atr),

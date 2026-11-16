@@ -417,7 +417,8 @@ def test_fast_movers_are_measured_on_the_bars_already_read():
     result = run(md, screen=MoverScreen("0.015", "1"))
     assert [m.symbol for m in result.movers] == ["AAA"] and result.movers[0].spike_up
     assert [m for m, _ in md.calls[before:]].count("bars") == 1  # no read of its own
-    assert run(md, screen=Screen("0.015", "1")).movers == ()  # a strategy without the rule
+    plain = run(md, screen=Screen("0.015", "1"))  # a strategy without the rule
+    assert plain.movers == () and not plain.movers_measured
 
 
 def test_pass_record_is_plain_json_with_every_outcome():
@@ -438,6 +439,7 @@ def test_pass_record_is_plain_json_with_every_outcome():
     assert causes["ETF"] == ("SECURITY_TYPE_NOT_ALLOWED", None) and stages["ETF"] == "screener"
     assert causes["THIN"][0] == "STRATEGY_LIQUIDITY" and stages["THIN"] == "bars"
     assert causes["THIN"][1]["rule"] == "dollar_volume_usd" and not causes["THIN"][1]["passed"]
+    assert record["movers_measured"] is True
     mover = record["movers"][0]
     assert mover["symbol"] == "AAA" and mover["spike_up"] is True
     assert mover["volume_ratio"]["fired"] is True and mover["volume_ratio"]["threshold"] == "3"
