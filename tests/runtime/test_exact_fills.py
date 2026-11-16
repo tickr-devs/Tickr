@@ -283,3 +283,27 @@ def test_a_v6_database_gains_the_net_cash_column(tmp_path):
     s = Store.open(path, busy_timeout_seconds=0)
     assert "net_cash_usd" in [r[1] for r in s.query("PRAGMA table_info(orders)")]
     s.close()
+
+
+def test_a_negative_history_fee_proves_nothing_and_never_stops_the_loop(tmp_path):
+    bot, t, _, _ = setup(tmp_path)
+    sell = filled(bot, t)[1]
+
+    class Negative(Exact):
+        def fills_today(self, day):
+            return [replace(f, fees=D("-0.01")) if f.side == str(Side.SELL) else f
+                    for f in super().fills_today(day)]
+
+    # The cash row agrees with the negative fee: (20.01 - 0.01) / 2 = 10, the row's price.
+    cash = [both(bot)[0], CashTrade("ABC", "SELL", D("20.01"), bot.now)]
+    reads = AccountReads(Negative(bot, cash), float(CFG.orders.balance_read_seconds),
+                         lambda: bot.now)
+    bot.service.account_reads = reads
+    reads.read_once()
+    with bot.engine.store.transaction():  # as if Detail had shown no readable fees
+        bot.engine.store.execute("UPDATE orders SET fees_usd = NULL WHERE client_order_id = ?",
+                                 (sell.client_order_id,))
+    assert bot.run(3)  # the reconciliation's recording raises nothing
+    sell = filled(bot, t)[1]
+    assert (sell.exact_fill_price, sell.net_cash_usd, sell.fees_usd) == (None, None, None)
+    assert entries.realized_loss_today(bot.engine, bot.now) is None  # waits; fees-unknown alerts

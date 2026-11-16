@@ -285,15 +285,16 @@ def exact_fill(order: OrderRow, fill: BrokerFill, snapshot: Balances,
     history row shows the bot's filled quantity; `exact_amount` accepts a cash activity for it
     against the snapshot's cash rows and fills (one row at the fill time, as many rows of the
     symbol and side as filled orders, implied price to the cent = the history row's price),
-    with the sign of the order's side; its fees are known; and the derived price, to the
-    cent, is also the order's own recorded average fill price. So a cash row that is only one
-    of several executions (unproven whether Webull writes one row per execution) is never
-    taken for the whole fill."""
+    with the sign of the order's side; its fees are known and not negative; and the derived
+    price, to the cent, is also the order's own recorded average fill price. So a cash row
+    that is only one of several executions (unproven whether Webull writes one row per
+    execution) is never taken for the whole fill."""
     if (order.broker_state is None or not order.broker_state.terminal
             or order.filled_quantity <= 0 or order.average_fill_price is None
             or fill.filled_quantity != order.filled_quantity
-            or fill.side != str(order.side)):
-        return None
+            or fill.side != str(order.side)
+            or fill.fees is None or fill.fees < 0):
+        return None  # negative fees prove nothing: the order waits (alert `fees-unknown`)
     amount = exact_amount(fill, snapshot.cash, snapshot.fills)
     if amount is None or (amount < 0) != (order.side is Side.BUY) or amount == 0:
         return None
