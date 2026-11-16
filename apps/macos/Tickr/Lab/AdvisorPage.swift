@@ -131,7 +131,10 @@ struct AdvisorCard: View {
           }
           .buttonStyle(.action(.secondary))
         } else {
+          // The sentence in the person's language; the bot's own cause (English) on hover.
           Footnote(AdvisorWords.noRuns)
+        .help(Text(verbatim: advisor.runs?.cause ?? String(localized: AdvisorWords.noRuns)))
+            .help(Text(verbatim: runs.cause ?? String(localized: AdvisorWords.noRuns)))
         }
       } else if let failure = advisor.failure {
         Footnote(AdvisorWords.failed(failure), color: Palette.warningText)
