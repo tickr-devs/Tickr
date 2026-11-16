@@ -11,16 +11,17 @@ struct TradesView: View {
   @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
   @State private var selection: DayTrade.ID?
 
-  /// Narrowest screen, in points, that shows the days column beside the trades: the screen's
-  /// padding, the days column and its gap, and the day column's widest part, the trades table at
-  /// its least width inside its card (the four figures of the day and the selected trade beside
-  /// Not taken need less). Narrower, the days follow the trades (the toolbar's day picker stays
-  /// at the top). Derived, not set: a set 1180 left the table 6 points short of its columns, so
-  /// the columns were cut to "10:07:…". The screen's padding is `Space.xl`, the gap and a card's
-  /// own padding `Space.l`.
-  static let sideBySideMinWidth: CGFloat = Tokens.Space.xl * CardArrangement.paddedEdges
-    + Tokens.Size.sideColumn + Tokens.Space.l + Tokens.Space.l * CardArrangement.paddedEdges
-    + TradesTable.leastWidth
+  /// Least width of this screen, in points: the screen's padding (`Space.xl`) and the trades
+  /// card's own padding (`Space.l`) around the trades table at its least width. It is the widest
+  /// least width of all screens, so it sets the window's (`RootView.screenMinWidth`).
+  static let leastScreenWidth: CGFloat = Tokens.Space.xl * CardArrangement.paddedEdges
+    + Tokens.Space.l * CardArrangement.paddedEdges + TradesTable.leastWidth
+  /// Narrowest screen, in points, that shows the days column beside the trades: the least screen
+  /// with the days column and its gap beside the table (the four figures of the day and the
+  /// selected trade beside Not taken need less). Narrower, the days follow the trades (the
+  /// toolbar's day picker stays at the top). Derived, not set: a set 1180 left the table 6 points
+  /// short of its columns, so the columns were cut to "10:07:…".
+  static let sideBySideMinWidth: CGFloat = leastScreenWidth + Tokens.Size.sideColumn + Tokens.Space.l
   /// Width of the selected trade's card beside Not taken, in points.
   static let detailWidth: CGFloat = 330
 

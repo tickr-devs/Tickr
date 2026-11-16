@@ -50,9 +50,12 @@ struct RootView: View {
   static let sidebarMin: CGFloat = 200
   static let sidebarIdeal: CGFloat = 237
   static let sidebarMax: CGFloat = 260
-  /// Least size of a screen, in points: with the sidebar (200) and the inspector (240) it stays
-  /// under the window's least size (TickrMacApp.minWidth, minHeight).
-  static let screenMinWidth: CGFloat = 420
+  /// Least size of a screen, in points. The width is the widest any screen needs at its narrowest,
+  /// Trades & days' table with every column whole (`TradesView.leastScreenWidth`); the others,
+  /// the Chart with its rail open included, need less. With the sidebar at its widest it makes the
+  /// window's least width (TickrMacApp.minWidth), so a screen never asks for more than the window
+  /// leaves it.
+  static let screenMinWidth: CGFloat = TradesView.leastScreenWidth
   static let screenMinHeight: CGFloat = 400
 
   /// Whether the sidebar shows: the title bar's sidebar button and View > Hide Sidebar (⌃⌘S)
