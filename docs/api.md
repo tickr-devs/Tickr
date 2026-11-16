@@ -229,6 +229,13 @@ unknown (a trade closed today has fills without a known price), never zero:
 room is below `settings.risk.min_daily_room_usd`. `positions` lists every open position the bot
 tracks; `position` is its first element or `null`, kept for older clients.
 
+`result_today_gross_usd` sums today's closed trades before fees. `fees_today_usd` is the broker's
+actual fees on the fills of those trades, from the display reads' list of today's fills (the
+account file's `fills`), and `result_today_net_usd` = gross - fees, the figure the broker's day
+P&L shows. Both are `null` until every filled order of today's closed trades is in that list
+with its filled quantity and readable fees. Display only: the daily loss rule above does not
+count fees.
+
 Each `trades_today` entry also has `planned_loss_usd` (1 R as recorded when the trade was opened)
 and `stop_confirmed_after_seconds` (see "Per-trade metrics" below). MAE and MFE are only in
 `day-v1`: the bot does not read capture files to write its status.
@@ -970,9 +977,9 @@ is an unreadable database.
 ### GET /watching (read-only)
 
 `/watching?date=` (date optional, default today in New York) is "Watching closely": from the
-decision file, the latest record per symbol of the active strategy (role `active`) that day,
-left out when its verdict is `ENTER`, `HOLD` or `EXIT` (entering, or in a position), so a past
-day shows the state at the close. Each row: `symbol`, `at` (bar start), `strategy`, `verdict`
+decision file, the symbols whose latest record of the active strategy (role `active`) that day
+is `WATCH`: the strategy is waiting for its setup. A symbol whose latest verdict is `IGNORE`,
+`ENTER`, `HOLD` or `EXIT` is left out. A past day shows the state at the close. Each row: `symbol`, `at` (bar start), `strategy`, `verdict`
 (explain-v1 enum), `decisive_check` (explain-v1 check shape: the first failed check in the
 order evaluated, the same as explain-v1 `first_failed_check`; `null` when every recorded check
 passed, as for a `WATCH` made without a quote), `closeness`, `closeness_cause`,
