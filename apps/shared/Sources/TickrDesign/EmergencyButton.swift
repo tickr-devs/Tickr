@@ -133,6 +133,8 @@ private struct HoldToAct: View {
 /// the sweep of a hold in progress.
 private struct EmergencyFace: View {
   @Environment(\.isEnabled) private var enabled
+  /// The glyph's side, growing with Dynamic Type (iOS) so the symbol stays inside it.
+  @ScaledMetric(relativeTo: .callout) private var glyphSide = Tokens.Command.emergencyGlyph
   @State private var hovered = false
   let content: EmergencyContent
   let pressed: Bool
@@ -141,7 +143,7 @@ private struct EmergencyFace: View {
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Tokens.Command.radius, style: .continuous)
-    let glyphCenter = Tokens.Space.s + Tokens.Command.emergencyGlyph / 2
+    let glyphCenter = Tokens.Space.s + glyphSide / 2
     HStack(spacing: Tokens.Space.s + Tokens.Space.xxs) {
       glyph
       VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
@@ -214,7 +216,7 @@ private struct EmergencyFace: View {
   @ViewBuilder private var glyph: some View {
     let image = Image(systemName: content.symbol)
       .font(Tokens.Command.emergencySymbolFont)
-      .frame(width: Tokens.Command.emergencyGlyph, height: Tokens.Command.emergencyGlyph)
+      .frame(width: glyphSide, height: glyphSide)
       .accessibilityHidden(true)
     #if os(iOS)
     image.background(Circle().fill(Palette.onLoss.opacity(Tokens.Opacity.flash)))

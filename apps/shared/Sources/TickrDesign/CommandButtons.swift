@@ -139,17 +139,8 @@ private struct CommandLabelStyle: LabelStyle {
   let tag: Text?
 
   func makeBody(configuration: Configuration) -> some View {
-    let side = small ? Tokens.Command.smallGlyph : Tokens.Command.glyph
-    let tile = RoundedRectangle(cornerRadius: small ? Tokens.Radius.small : Tokens.Command.glyphRadius,
-      style: .continuous)
     HStack(spacing: small ? Tokens.Space.xs + Tokens.Space.xxs : Tokens.Command.gap) {
-      configuration.icon
-        .font(Tokens.Typography.symbolCompact)
-        .imageScale(.small)
-        .foregroundStyle(glyphColor)
-        .frame(width: side, height: side)
-        .background(tile.fill(glyphFill))
-        .accessibilityHidden(true)
+      CommandGlyph(icon: configuration.icon, small: small, color: glyphColor, fill: glyphFill)
       configuration.title
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
@@ -174,6 +165,28 @@ private struct CommandLabelStyle: LabelStyle {
     case .destructive: return Palette.loss
     case .primary: return Palette.sheen.opacity(Tokens.Command.haloOpacity)
     }
+  }
+}
+
+/// A command's glyph tile. It grows with Dynamic Type (iOS), so a large symbol stays inside it.
+private struct CommandGlyph<Icon: View>: View {
+  @ScaledMetric(relativeTo: .callout) private var side = Tokens.Command.glyph
+  @ScaledMetric(relativeTo: .callout) private var smallSide = Tokens.Command.smallGlyph
+  let icon: Icon
+  let small: Bool
+  let color: Color
+  let fill: Color
+
+  var body: some View {
+    let tile = RoundedRectangle(cornerRadius: small ? Tokens.Radius.small : Tokens.Command.glyphRadius,
+      style: .continuous)
+    icon
+      .font(Tokens.Typography.symbolCompact)
+      .imageScale(.small)
+      .foregroundStyle(color)
+      .frame(width: small ? smallSide : side, height: small ? smallSide : side)
+      .background(tile.fill(fill))
+      .accessibilityHidden(true)
   }
 }
 
@@ -224,7 +237,8 @@ public struct LastResortDivider: View {
         .font(Tokens.Typography.label)
         .tracking(Tokens.Command.captionTracking)
         .foregroundStyle(Palette.textLabel)
-        .fixedSize(horizontal: false, vertical: true)
+        // Two short words: always on one line; the hairlines give way.
+        .fixedSize()
       line
     }
     .padding(.top, Tokens.Space.xxs)
