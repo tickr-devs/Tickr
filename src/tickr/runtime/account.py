@@ -16,7 +16,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Protocol
 
 from tickr.api import contract as api
@@ -236,22 +236,34 @@ def record_reconcile(engine: Engine, disagreed_before: bool) -> bool:
     return disagree
 
 
+# One US cent (unit factor): the order rows state prices to the cent (probe 2026-11-16).
+CENT = Decimal("0.01")
+
+
 def exact_amount(fill: BrokerFill, cash: tuple[CashTrade, ...]) -> Decimal | None:
     """The exact signed cash amount of `fill` (fees included; a buy is negative): the one
     TRADE cash activity of its symbol and side at its fill time (`biz_time` equals
-    `filled_time_at`, probe 2026-11-16). None when there is not exactly one, for instance
-    before the activity is listed or for an order filled in several executions: the order
-    row's rounded price is then all there is."""
-    if fill.filled_at is None:
+    `filled_time_at`, probe 2026-11-16), accepted only when the price it implies, to the
+    cent, is the order row's `filled_price`. None otherwise: before the activity is listed,
+    or when an order filled in several executions lists one cash row per execution (unproven)
+    and the row at the fill time covers only part of it. The order row's rounded price is
+    then all there is."""
+    if fill.filled_at is None or fill.filled_price is None:
         return None
     found = [c for c in cash if c.symbol == fill.symbol and c.side == fill.side
              and c.at == fill.filled_at]
-    return found[0].net_amount if len(found) == 1 else None
+    if len(found) != 1:
+        return None
+    price = exact_price(fill, found[0].net_amount)
+    if price is None or price.quantize(CENT, rounding=ROUND_HALF_UP) != fill.filled_price:
+        return None
+    return found[0].net_amount
 
 
 def exact_price(fill: BrokerFill, amount: Decimal | None) -> Decimal | None:
-    """The fill's average price from its exact amount and fees: |amount| less the fees on a
-    buy, plus them on a sell, over the filled quantity. None when either is unknown."""
+    """The fill's average price from a cash amount and the fill's fees: |amount| less the
+    fees on a buy, plus them on a sell, over the filled quantity. None when either is
+    unknown."""
     if amount is None or fill.fees is None or fill.filled_quantity <= 0:
         return None
     gross = -amount - fill.fees if amount < 0 else amount + fill.fees

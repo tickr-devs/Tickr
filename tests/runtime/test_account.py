@@ -7,7 +7,7 @@ import json
 import threading
 import time
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
 
 from tickr.api import contract as api
@@ -22,6 +22,7 @@ from tickr.runtime.account import (
     NOT_AGREED,
     RECONCILE_CHECKED,
     AccountReads,
+    exact_amount,
     exact_price,
     record_reconcile,
 )
@@ -517,14 +518,14 @@ def test_exact_amounts_and_trade_result_from_the_cash_activities(tmp_path):
                     for f in super().fills_today(day)]
 
     cash = [CashTrade(o.symbol, str(o.side), D("-20.0004") if o.side is Side.BUY
-                      else D("19.9001"), at) for o in filled]
+                      else D("19.9901"), at) for o in filled]
     broker = Exact(funds=FUNDS, orders=bot.broker.orders, cash=cash)
     reads = AccountReads(broker, float(CFG.orders.balance_read_seconds), lambda: bot.now)
     bot.service.account_reads = reads
     assert bot.service.status().trades_today[0].result_exact_usd is None  # nothing read
     reads.read_once()
     (trade,) = bot.service.status().trades_today
-    assert trade.result_exact_usd == D("-0.10")  # -0.1003 to the cent
+    assert trade.result_exact_usd == D("-0.01")  # -0.0103 to the cent
     broker.cash = cash[:1]  # the exit's activity not listed yet: back to the order prices
     reads.read_once()
     assert bot.service.status().trades_today[0].result_exact_usd is None
@@ -536,3 +537,15 @@ def test_exact_price_from_the_amount_and_fees():
     assert exact_price(buy, D("-208.5696")) == D("0.2272")
     assert exact_price(sell, D("166.3352")) == D("0.1814")
     assert exact_price(sell, None) is None
+
+
+def test_a_cash_row_for_only_part_of_a_fill_is_not_the_fills_amount():
+    # An order of 918 filled in two executions, one cash row each (the shape is unproven):
+    # the row at the order's fill time covers 418 shares only.
+    fill = BrokerFill("e", "CYAB", "BUY", "LIMIT", D(918), D("0.23"),
+                      datetime(2026, 11, 16, 17, 36, 4, tzinfo=UTC), D(0))
+    rows = (CashTrade("CYAB", "BUY", D("-113.6000"), datetime(2026, 11, 16, 17, 36, 3, tzinfo=UTC)),
+            CashTrade("CYAB", "BUY", D("-94.9696"), datetime(2026, 11, 16, 17, 36, 4, tzinfo=UTC)))
+    assert exact_amount(fill, rows) is None  # 94.9696 / 918 = 0.10, not the order's 0.23
+    whole = (CashTrade("CYAB", "BUY", D("-208.5696"), fill.filled_at),)
+    assert exact_amount(fill, whole) == D("-208.5696")
