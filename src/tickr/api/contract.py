@@ -1649,8 +1649,8 @@ class LatestSizeV1:
 
 @dataclass(frozen=True)
 class WatchingV1:
-    """GET /watching?date=: the symbols the active strategy is closest to entering on, closest
-    first, at most `[api] watching_max_rows`; `total` counts them before the cap.
+    """GET /watching?date=: every symbol the active strategy is watching on the day, closest
+    first; `total` is the number of rows.
     `latest_size`: see LatestSizeV1, null when no decision of the day was sized."""
 
     day: date
@@ -1723,8 +1723,8 @@ def shown_check(check: Check, places: int) -> CheckV1:
                    shown(check.threshold, threshold_way), check.passed, check.note)
 
 
-def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: int,
-                      places: int, check_places: int) -> WatchingV1:
+def watching_document(day: date, records: tuple[DecisionRecord, ...], places: int,
+                      check_places: int) -> WatchingV1:
     """`records`: active-strategy records of `day`. The latest decision per symbol unless it is
     ENTER, HOLD or EXIT (entering or in a position); closest first, then by symbol."""
     latest = {r.symbol: r for r in _oldest_first(records)}
@@ -1742,7 +1742,7 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: 
             closeness=value, closeness_cause=cause, quote_age_seconds=None,
             quote_age_cause=QUOTE_AGE_NOT_RECORDED))
     rows.sort(key=lambda w: (w.closeness is None, -(w.closeness or 0), w.symbol))
-    return WatchingV1(day=day, total=len(rows), rows=tuple(rows[:max_rows]),
+    return WatchingV1(day=day, total=len(rows), rows=tuple(rows),
                       latest_size=latest_size(records))
 
 
@@ -1801,9 +1801,10 @@ class SymbolState(StrEnum):
 
 @dataclass(frozen=True)
 class SymbolRowV1:
-    """One symbol seen on the day. `furthest`: the latest stage it reached at any time of the
-    day. `stage` and `state`: where it stands now, from the newer of its latest discovery pass
-    and its latest active decision (trades win: a filled entry is at `order` or `stop`).
+    """One symbol seen on the day. `furthest`: the furthest stage it got to (judged or
+    waiting there) at any time of the day, never before `stage`. `stage` and `state`: where
+    it stands now, from the newer of its latest discovery pass and its latest active decision
+    (trades win: a filled entry is at `order` or `stop`).
     `cause`: the code of why it was dropped or not reached (a discovery cause such as
     `QUOTE_STALE` or `STRATEGY_LIQUIDITY`, the verdict `IGNORE`, or the admission `refused`),
     null otherwise. `check`: the failed check (a strategy rule, rounded like every shown check);

@@ -113,7 +113,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
 | GET | `/skipped?date=<YYYY-MM-DD>` | `200` `skipped-v1`: every ENTER of the active strategy that date (default today) that did not become a position (admission `refused` or `not_evaluated`), oldest first, with checks, prices after the signal and the simulated what-if. |
 | GET | `/flow?date=<YYYY-MM-DD>` | `200` `flow-v1`: the Overview's live flow that date (default today): screener chips and the pipeline stages from screeners to verified broker stops, with reconciliation. |
-| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: the symbols the active strategy is closest to entering on that date (default today), closest first, capped by `[api] watching_max_rows`. |
+| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: every symbol the active strategy is watching on that date (default today), closest to entering first. |
 | GET | `/symbols?date=<YYYY-MM-DD>` | `200` `symbols-v1`: every symbol the bot looked at that date (default today), with the furthest pipeline stage it reached and where and why it stands now (see GET /symbols below). |
 | GET | `/movers?date=<YYYY-MM-DD>` | `200` `movers-v1`: the fast movers of that date (default today), newest bar first, with the active strategy's thresholds (see GET /movers below). |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
@@ -995,8 +995,10 @@ above, a record whose failed check already meets its threshold, or no failed che
 `not recorded: decision records hold no quote time`: the decision file does not keep the quote
 the strategy saw.
 
-Rows are closest first (`null` closeness last), then by symbol, at most
-`[api] watching_max_rows`; `total` counts every row before the cap.
+Rows are every symbol watched that day, closest first (`null` closeness last), then by symbol;
+there is no cap (one row per symbol the strategy decided on that day), and `total` is the
+number of rows. The apps choose how many to show (the Overview and Positions
+cards show the closest three, "Show all" lists every row).
 
 `latest_size` is the Overview's "next size · binding" line: the size the active strategy gave its
 newest sized decision that day (any verdict, entering included), read from the record, never
@@ -1026,8 +1028,9 @@ Each row:
 - `sources`: `{kind, rank}` per screener that listed it, as the `/flow` chip's `ranks` (its
   latest rank in each list); `change_pct` as the chip's.
 - `first_seen`: the start of the first discovery pass that listed it.
-- `furthest`: the furthest stage it reached that day (a pass candidate reached `bars`, a
-  decision `strategy`, a taken entry `risk`, a filled entry `order`, a verified stop `stop`).
+- `furthest`: the furthest stage it got to that day, judged or waiting there (a refusal at a
+  stage got to that stage, a pass candidate and a decision `strategy`, a taken entry `risk`, a
+  filled entry `order`, a verified stop `stop`); never before `stage`.
 - `stage` and `state`: where it stands now: `passed` (stop verified), `waiting` (nothing
   failed, the next stage has not happened yet: a candidate awaiting the strategy, a `WATCH`,
   a taken entry awaiting its fill, a stop not yet seen working), `dropped` (refused at
