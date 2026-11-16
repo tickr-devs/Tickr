@@ -11,7 +11,9 @@ data, appends capture records (`CaptureWriter`, one lock around every write) and
 `TodayBars` (one lock); the loop collects a finished pass on a later pass (`collect`, never
 waits) and does everything else itself: the journal, the discovery.jsonl pass record, the
 candidate list. Strategy evaluation is `runtime.evaluation`; the service copies its WATCH set
-into `watch`.
+into `watch`. The screener-signal observer (`observers.ignition`, optional) gets each pass's
+screener rows and snapshot quotes on the discovery thread and the stream's quotes on the
+provider's thread (it has its own lock); its open paper trades come first in the observer tier.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from tickr.archive import existing, open_text
 from tickr.calendar import CalendarRefused, MarketDay, SessionCalendar, ny_date_of
 from tickr.config import Config
 from tickr.data.base import (
+    InstrumentProfile,
     MarketData,
     QuoteListener,
     ScreenerKind,
@@ -49,6 +52,8 @@ from tickr.data.discovery import (
 from tickr.data.health import FanOut, StreamHealth, StreamState
 from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine, Leg
+from tickr.observers.ignition import Ignition
+from tickr.runtime.profiles import ProfileRecorder
 from tickr.runtime.screeners import ScreenerRecorder
 from tickr.store import Store
 from tickr.strategy.base import Liquidity
@@ -61,6 +66,11 @@ DISCOVERY_FAILED = "discovery-failed"
 # A capture record outside discovery (the screener recorder's lists or a bot-start event) not
 # written: `what` names it; the run goes on without it.
 CAPTURE_FAILED = "capture-failed"
+# The screener-signal observer failed in a pass (discovery and trading go on).
+IGNITION_FAILED = "ignition-failed"
+# `[observers] ignition` could not be loaded at start (the bot runs without it).
+IGNITION_NOT_LOADED = "ignition-not-loaded"
+PROFILE_RECORDER = "profile-recorder"  # its `what` for the profile recorder after a pass
 # The day's discovery.jsonl could not seed the refused-symbol memory (the bot starts with it empty).
 REFUSED_SYMBOLS_UNREAD = "refused-symbols-unread"
 STREAM_SUBSCRIPTIONS = "stream-subscriptions"
@@ -154,6 +164,11 @@ class _StopsBetweenRequests:
         self._check()
         return self._source.snapshot(symbols)
 
+    def profiles(self, symbols: Sequence[str], *,
+                 budget_reserve: int = 0) -> list[InstrumentProfile]:
+        self._check()
+        return self._source.profiles(symbols, budget_reserve=budget_reserve)
+
     def bars(self, symbols: Sequence[str], count: int, *, budget_reserve: int = 0) -> list[Bar]:
         self._check()
         return self._source.bars(symbols, count, budget_reserve=budget_reserve)
@@ -168,6 +183,42 @@ class DiscoveryOutcome:
     seconds: float  # how long the pass took (monotonic clock)
     result: DiscoveryResult | None  # None when it failed
     error: Exception | None  # why it failed (any exception: never raised into the loop)
+    ignition_error: Exception | None = None  # the screener-signal observer's failure, if any
+
+
+class _Tee:
+    """Discovery's capture sink: the capture writer, then the screener-signal observer. An
+    observer failure is kept (journaled by the loop) and never reaches discovery."""
+
+    def __init__(self, capture: CaptureWriter | None, ignition: Ignition) -> None:
+        self.capture = capture
+        self.ignition = ignition
+        self.error: Exception | None = None
+
+    def _observe(self, call: Callable[[], None]) -> None:
+        try:
+            call()
+        except Exception as exc:  # noqa: BLE001 - an observer never stops discovery
+            self.error = self.error or exc
+
+    def screener(self, rows: Sequence[ScreenerRow], provider: str, receipt_time: datetime) -> None:
+        if self.capture is not None:
+            self.capture.screener(rows, provider, receipt_time)
+        self._observe(lambda: self.ignition.screener(rows, provider, receipt_time))
+
+    def screener_skipped(self, kinds: Sequence[ScreenerKind], cause: str, source: str,
+                         receipt_time: datetime) -> None:
+        if self.capture is not None:
+            self.capture.screener_skipped(kinds, cause, source, receipt_time)
+
+    def bars(self, bars: Sequence[Bar], provider: str, receipt_time: datetime) -> None:
+        if self.capture is not None:
+            self.capture.bars(bars, provider, receipt_time)
+
+    def quotes(self, quotes: Sequence[Quote], provider: str, source: str) -> None:
+        if self.capture is not None:
+            self.capture.quotes(quotes, provider, source)
+        self._observe(lambda: self.ignition.quotes(quotes, provider, source))
 
 
 Spawn = Callable[[Callable[[], None]], threading.Thread | None]
@@ -246,7 +297,7 @@ class MarketRuntime:
                  health: StreamHealth, inbox: StreamInbox, capture: CaptureWriter | None,
                  calendar: SessionCalendar | None, today_bars: TodayBars,
                  now: Callable[[], datetime], monotonic: Callable[[], float],
-                 spawn: Spawn = daemon_thread) -> None:
+                 spawn: Spawn = daemon_thread, ignition: Ignition | None = None) -> None:
         self.engine = engine
         self.config = config
         self.source = source
@@ -257,9 +308,12 @@ class MarketRuntime:
         self.today_bars = today_bars  # discovery's bars reads, shared with the evaluation
         self.now = now
         self.monotonic = monotonic
+        self.ignition = ignition
         listeners: list[QuoteListener] = [health, inbox]
         if capture is not None:
             listeners.append(capture)
+        if ignition is not None:
+            listeners.append(ignition)
         self.listener = FanOut(*listeners, on_error=inbox.on_listener_error)
         self.settings = DiscoverySettings.from_config(config)
         self.subscribed: set[str] = set()
@@ -281,6 +335,7 @@ class MarketRuntime:
         self._discovery_anchor: datetime | None = None  # interval counted from here
         self._worker = DiscoveryWorker(spawn)  # the discovery pass in flight, if any
         self.recorder = ScreenerRecorder(config, source, capture)
+        self.profiles = ProfileRecorder(config, source, capture, now, spawn)
         self._started = now()
         self._seed_refused_symbols()
 
@@ -339,8 +394,10 @@ class MarketRuntime:
     def close(self, timeout_seconds: float) -> bool:
         """At the end of the run: no new pass; a pass in flight ends before its next request
         and is waited for at most `timeout_seconds`, then abandoned (a daemon thread). True
-        when none is left running. Never collected: the loop has stopped."""
-        return self._worker.stop(timeout_seconds)
+        when none is left running. Never collected: the loop has stopped. The profile round
+        in flight ends the same way, after the pass (each waited for at most the timeout)."""
+        passes = self._worker.stop(timeout_seconds)
+        return self.profiles.stop(timeout_seconds) and passes
 
     def candidates(self) -> list[str]:
         """The symbols of the latest discovery's candidates, best first."""
@@ -377,9 +434,11 @@ class MarketRuntime:
         best = self.discovery.candidates[:self.config.market_data.candidate_subscriptions]
         return {c.instrument.symbol for c in best}
 
-    def _trim(self, symbols: set[str], room: int) -> set[str]:
-        """At most `room` of `symbols`, those already subscribed first, then by name."""
-        ordered = sorted(symbols, key=lambda s: (s not in self.subscribed, s))
+    def _trim(self, symbols: set[str], room: int,
+              first: frozenset[str] | set[str] = frozenset()) -> set[str]:
+        """At most `room` of `symbols`: those in `first`, then those already subscribed, then
+        by name."""
+        ordered = sorted(symbols, key=lambda s: (s not in first, s not in self.subscribed, s))
         return set(ordered[:max(room, 0)])
 
     def _observer_symbols(self, taken: set[str], trading: bool) -> set[str]:
@@ -391,7 +450,7 @@ class MarketRuntime:
         keep their slot. While `trading` (a position or a working entry) it is not changed
         except to give slots back: any failed (un)subscribe reconnects the whole stream,
         which must not happen to a position's quotes for an observer. Same live-transport
-        rule as candidates."""
+        rule as candidates. The screener-signal observer's open paper trades come first."""
         now = self.monotonic()
         if not self.health.transport.up:
             self._observers_applied = set()
@@ -404,8 +463,9 @@ class MarketRuntime:
             self._observers_next_sync = now + float(md.observer_resync_seconds)
             # A symbol a higher tier subscribed and is dropping leaves by that tier's path;
             # the observer tier may take it again on a later resync, optionally.
-            wanted = self.observer_watch - taken - (self.subscribed - self._optional)
-            self._observers_applied = self._trim(wanted, cap)
+            paper = set() if self.ignition is None else self.ignition.watching()
+            wanted = (self.observer_watch | paper) - taken - (self.subscribed - self._optional)
+            self._observers_applied = self._trim(wanted, cap, paper)
         else:
             # No new symbol while trading, in a retry pause or between resyncs: only what is
             # live stays, trimmed to the room left.
@@ -515,12 +575,16 @@ class MarketRuntime:
         """Outside the regular session: one screener round when due (runtime.screeners). A
         capture that cannot be written is journaled (`capture-failed`) and the round counts as
         not read."""
+        cap = self.config.market_data.failure_detail_max_chars
         try:
-            return self.recorder.tick(day, now)
+            rows = self.recorder.tick(day, now)
         except CaptureError as exc:
             journal_capture_failed(self.engine.store, self.engine.run_id, "screener-recorder",
-                                   exc, self.config.market_data.failure_detail_max_chars)
+                                   exc, cap)
             return None
+        if rows is not None:
+            self.profiles.submit(rows)  # read on their own thread: the loop never waits
+        return rows
 
     def _exit_on_stream_loss(self) -> None:
         """Transport lost with a position open, in the regular session: market exit through
@@ -562,6 +626,8 @@ class MarketRuntime:
         regular, session_open = self._in_regular_session(now)
         if not regular or session_open is None:
             return
+        assert self.calendar is not None  # a regular session was found in it
+        day = self.calendar.day_at(now)
         if self._worker.busy():
             return
         startup = self._discovery_anchor is None and now - self._started < interval
@@ -569,7 +635,9 @@ class MarketRuntime:
         # Everything the thread uses is taken here; it never touches the store, the engine,
         # subscriptions or this object's state.
         source = _StopsBetweenRequests(self.source, self._worker.stopping)
-        settings, screen, capture = self.settings, self.screen, self.capture
+        settings, screen, ignition = self.settings, self.screen, self.ignition
+        tee = None if ignition is None else _Tee(self.capture, ignition)
+        capture = self.capture if tee is None else tee
         refused, today_bars, clock, monotonic = (self._refused_symbols, self.today_bars,
                                                  self.now, self.monotonic)
 
@@ -580,7 +648,14 @@ class MarketRuntime:
                                   refused, today_bars)
             except Exception as exc:  # noqa: BLE001 - collected and journaled by the loop
                 return DiscoveryOutcome(now, clock(), monotonic() - begun, None, exc)
-            return DiscoveryOutcome(now, clock(), monotonic() - begun, result, None)
+            failed: Exception | None = None
+            if tee is not None and ignition is not None:
+                failed = tee.error
+                try:
+                    ignition.after_pass(day, result.universe_symbols(), clock())
+                except Exception as exc:  # noqa: BLE001 - journaled by the loop
+                    failed = failed or exc
+            return DiscoveryOutcome(now, clock(), monotonic() - begun, result, None, failed)
 
         if self._worker.start(job):
             self._discovery_anchor = anchor
@@ -588,15 +663,27 @@ class MarketRuntime:
     def collect(self) -> None:
         """On the loop thread, never waiting: journal a finished pass, if any. A failure is
         `discovery-failed` (tried again at the next interval); a pass is `discovery` with its
-        `seconds`, after its discovery.jsonl record, and its candidates become the list."""
+        `seconds`, after its discovery.jsonl record, and its candidates become the list.
+        Failures of the profile thread's rounds are journaled here too (`capture-failed`)."""
+        for exc in self.profiles.take_errors():
+            journal_capture_failed(self.engine.store, self.engine.run_id, PROFILE_RECORDER,
+                                   exc, self.config.market_data.failure_detail_max_chars)
         outcome = self._worker.take()
         if outcome is None:
             return
+        if outcome.ignition_error is not None:
+            exc = outcome.ignition_error
+            with self.engine.store.transaction():
+                self.engine.store.append(IGNITION_FAILED, {
+                    "error": type(exc).__name__,
+                    "detail": str(exc)[:self.config.market_data.failure_detail_max_chars]},
+                    run_id=self.engine.run_id)
         result = outcome.result
         if result is None:
             assert outcome.error is not None
             self._journal_failure(outcome.error)
             return
+        self.profiles.submit(result.screened)  # read on their own thread, after the pass
         candidates, kept = self._with_earlier(result)
         summary = result.summary()
         if kept:

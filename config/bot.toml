@@ -18,8 +18,8 @@ backups_dir = "backups"
 # older finished days are gzipped in place; read by maintain.
 maintain_keep_sessions = 20
 # Days, counted back from today's New York date, an archived (all *.jsonl.gz) finished capture or decision day folder is
-# kept; `tickr maintain --apply` deletes older ones. 0 = never delete (shipped: retention is an open owner question,
-# docs/backlog.md Q4); read by maintain.
+# kept; `tickr maintain --apply` deletes older ones. 0 = never delete (owner 2026-11-16: keep
+# everything, docs/decisions.md); read by maintain.
 maintain_archive_max_age_days = 0
 
 [strategy]
@@ -180,6 +180,10 @@ chart_client_interval_seconds = 30
 # probe-extended (F7): least minutes left in the pre-market or post-market when it starts, so all four steps and the close
 # fit before the session ends (about 8 minutes at worst); read by the probe-extended command.
 extended_end_margin_minutes = 15
+# probe-extended (F7): oldest snapshot quote, in seconds, it prices its orders from. Not [risk] max_quote_age_seconds:
+# after hours even active stocks' quotes were 9-700 s old on 2026-11-16 (a quote that has not changed is still the
+# market); its orders are 1 share and limit-priced; read by the probe-extended command.
+extended_max_quote_age_seconds = 300
 # probe-extended: acceptance-test BUY stops sit this many percent above the ask, so none can trigger; read by the probe-extended command.
 extended_far_stop_percent = 20
 # probe-extended: a STOP_LOSS_LIMIT's limit lies this many percent beyond its stop (above for a BUY, below for a SELL); read by the probe-extended command.
@@ -366,6 +370,18 @@ history_preload_minutes_before_open = 30
 # captured to screener-recorded.jsonl for research; the pre-open preload takes its symbols from these rounds (3 screener
 # requests per round, well inside the route's 30 per minute); read by runtime.screeners.
 screener_record_seconds = 60
+# Seconds before a loser's or big gainer's instrument profile (shortable, easy_to_borrow, margins) is read and captured
+# again; every screener instrument is captured once a day when first listed; read by runtime.profiles.
+profile_refresh_seconds = 300
+# Move from the previous close, in percent of it, from which a gainer's profile is refreshed like a loser's; read by
+# runtime.profiles.
+profile_refresh_gainer_move_percent = 20
+# Most instrument-profile requests the profile recorder sends per screener round (each up to
+# profile_symbols_per_request symbols); the rest wait for the next round; read by runtime.profiles.
+profile_max_requests_per_round = 3
+# Instrument-profile requests the profile recorder leaves free in the route's minute window, for discovery's
+# security-type lookups; read by runtime.profiles.
+profile_reserve_requests = 10
 # Seconds the pre-open preload pauses after a budget refusal or a failed read before its next batch; read by
 # runtime.preload.
 history_preload_retry_seconds = 60
@@ -437,6 +453,10 @@ forget_symbol_seconds = 600
 # others wait for a later pass (recorded as dropped), so the first passes of the day never send everything at once;
 # count; read by observers.runner.
 history_sends_per_pass = 30
+# Screener-signal observer folder under strategies/ (observers.ignition: paper trades only, signal from the screener rows,
+# exit on the L1 stream's observer tier and the discovery snapshots; records in <decisions_dir>/<environment>/<NY
+# date>/ignition.jsonl); "" = off; read by cli (run) and runtime.market.
+ignition = "early-thin-ignition-v1"
 
 [advisor]
 # NAME of the environment variable holding the Anthropic API key (the SDK reads it itself; only ANTHROPIC_API_KEY works);
@@ -518,7 +538,8 @@ watchdog_status_stale_seconds = 60
 watchdog_journal_file = "watchdog.jsonl"
 # From this many seconds before the flatten time (15:50 ET on a normal day) the watchdog starts the bot job once a day
 # when the bot is not running and its database shows an open trade, so the bot's own flatten closes it; must be positive
-# and below the last-entry-to-flatten time so the restarted bot can never open a trade; read by runtime.watchdog.
+# and below the last-entry-to-flatten time so the restarted bot can never open a trade (the earlier restart for a resting entry starts a run fenced
+# by watchdog-started, so it cannot either); read by runtime.watchdog.
 watchdog_restart_before_flatten_seconds = 300
 # Command the watchdog runs to start the bot job (the same job the schedule starts: preflight, then the supervised bot);
 # "{uid}" is replaced by the user id; kickstart without -k never touches a running job; read by runtime.watchdog.
@@ -528,6 +549,11 @@ watchdog_restart_timeout_seconds = 10
 # Record of the watchdog's one restart a day (New York date), relative to data_dir; written before the command runs and
 # never removed, so a day never gets a second attempt; read by runtime.watchdog.
 watchdog_restart_file = "watchdog-restart.json"
+# Record of the watchdog's one early restart a day for a resting limit entry (New York date), relative to data_dir: a bot
+# that is down while an entry of a trade with a rest time still works at the broker is started at once, not at the restart
+# time above, so its startup cancels that entry and protects any fill; written before the command runs and never removed;
+# separate from watchdog_restart_file, so the flatten restart stays available; read by runtime.watchdog.
+watchdog_entry_restart_file = "watchdog-entry-restart.json"
 # Seconds one loop pass may spend on market upkeep and the strategy before an evaluation-slow journal row (the next
 # Detail read waits for it; keep it near [orders] detail_poll_seconds). Discovery runs on its own thread and is not part
 # of it: its duration is the `seconds` of each discovery journal row; read by runtime.service.
