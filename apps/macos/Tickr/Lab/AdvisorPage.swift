@@ -131,7 +131,7 @@ struct AdvisorCard: View {
           }
           .buttonStyle(.action(.secondary))
         } else {
-          Footnote(verbatim: runs.cause ?? String(localized: AdvisorWords.noRuns))
+          Footnote(AdvisorWords.noRuns)
         }
       } else if let failure = advisor.failure {
         Footnote(AdvisorWords.failed(failure), color: Palette.warningText)
@@ -226,7 +226,7 @@ struct AdvisorPage: View {
     if let run = advisor.shown {
       detail(run)
     } else {
-      Footnote(verbatim: advisor.runs?.cause ?? String(localized: AdvisorWords.noRuns))
+      Footnote(AdvisorWords.noRuns)
         .padding(Tokens.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
