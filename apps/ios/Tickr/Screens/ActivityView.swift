@@ -285,11 +285,7 @@ private struct DayPicker: View {
       }
       .id(activity.month)
       if let failure = activity.daysFailure {
-        VStack(spacing: Tokens.Space.xxs) {
-          Text(L10n.Activity.daysFailed).font(Tokens.Typography.callout)
-          Text(verbatim: failure).font(Tokens.Typography.annotation)
-        }
-        .foregroundStyle(Palette.lossText)
+        ReadFailureNote(L10n.Activity.daysFailed, detail: failure)
       }
     }
     .padding(Tokens.Space.l)
@@ -299,14 +295,18 @@ private struct DayPicker: View {
   }
 
   private var header: some View {
-    HStack(spacing: Tokens.Space.s) {
-      Button {
-        if let month = activity.previousMonth { activity.month = month }
-      } label: {
-        HeaderIcon(symbol: "chevron.backward", glass: false)
+    // The month arrows only with another month to step to; the one that leads nowhere is dimmed.
+    let steps = activity.previousMonth != nil || activity.nextMonth != nil
+    return HStack(spacing: Tokens.Space.s) {
+      if steps {
+        Button {
+          if let month = activity.previousMonth { activity.month = month }
+        } label: {
+          HeaderIcon(symbol: "chevron.backward", glass: false)
+        }
+        .disabled(activity.previousMonth == nil)
+        .accessibilityLabel(Text(L10n.Activity.previousMonth))
       }
-      .disabled(activity.previousMonth == nil)
-      .accessibilityLabel(Text(L10n.Activity.previousMonth))
       Spacer(minLength: 0)
       if let first = activity.month.firstDay {
         Text(first, format: .dateTime.month(.wide).year())
@@ -323,13 +323,15 @@ private struct DayPicker: View {
         backToToday
       }
       Spacer(minLength: 0)
-      Button {
-        if let month = activity.nextMonth { activity.month = month }
-      } label: {
-        HeaderIcon(symbol: "chevron.forward", glass: false)
+      if steps {
+        Button {
+          if let month = activity.nextMonth { activity.month = month }
+        } label: {
+          HeaderIcon(symbol: "chevron.forward", glass: false)
+        }
+        .disabled(activity.nextMonth == nil)
+        .accessibilityLabel(Text(L10n.Activity.nextMonth))
       }
-      .disabled(activity.nextMonth == nil)
-      .accessibilityLabel(Text(L10n.Activity.nextMonth))
     }
     .buttonStyle(.borderless)
   }
@@ -929,9 +931,7 @@ private struct NotTaken: View {
     if let groups {
       // A failed refresh after a good read: the rows stay, marked as the last read.
       if let failure {
-        Text(L10n.Activity.notTakenStale(failure))
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.warningText)
+        ReadFailureNote(L10n.Activity.notTakenStale, detail: failure)
       }
       if groups.isEmpty {
         ContentUnavailableView {
@@ -949,11 +949,8 @@ private struct NotTaken: View {
       }
       .onArrival(of: groups.map(\.id)) { arrived = $0 }
     } else if let failure {
-      ContentUnavailableView {
-        Label { Text(L10n.Activity.notTakenFailed) } icon: { Image(systemName: "exclamationmark.triangle") }
-      } description: {
-        Text(verbatim: failure)
-      }
+      ReadFailureNote(L10n.Activity.notTakenFailed, detail: failure)
+        .frame(maxWidth: .infinity, alignment: .leading)
     } else {
       ProgressView().frame(maxWidth: .infinity).padding(.top, Tokens.Space.xl)
     }
