@@ -11205,23 +11205,6 @@
         }
       }
     },
-    "settings.gateClosedShort" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "gate closed"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "допуск закрыт"
-          }
-        }
-      }
-    },
     "settings.gateOpen" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11235,23 +11218,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "разрешена"
-          }
-        }
-      }
-    },
-    "settings.gateOpenShort" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "gate open"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "допуск открыт"
           }
         }
       }
