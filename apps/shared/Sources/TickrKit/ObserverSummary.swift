@@ -13,7 +13,8 @@ public struct ObserverSummary: Hashable, Sendable, Identifiable {
   public let exits: Int
   /// The observer's simulated day result, and why it is missing when it is.
   public let result: Decimal?
-  public let resultCause: String?
+  /// In the person's language (the bot's words for an unknown code).
+  public let resultCauseText: String?
 
   public var id: String { "\(name) \(version)" }
 
@@ -34,6 +35,6 @@ public struct ObserverSummary: Hashable, Sendable, Identifiable {
     shared = entered.filter(traded.contains)
     exits = observer.decisions.filter { $0.action == .exit }.count
     result = observer.resultGrossUSD?.value
-    resultCause = ApiText.prose(observer.resultCauseCodes, text: observer.resultCause)
+    resultCauseText = ApiText.prose(observer.resultCauseCodes, text: observer.resultCause)
   }
 }

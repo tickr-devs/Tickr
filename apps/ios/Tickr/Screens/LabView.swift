@@ -280,7 +280,7 @@ private struct ObserverRow: View {
           Badge(L10n.Lab.noResult, tone: .neutral)
         }
       }
-      if summary.result == nil, let cause = summary.resultCause {
+      if summary.result == nil, let cause = summary.resultCauseText {
         InfoCaption(verbatim: cause)
       }
       if let agreement = summary.agreement {
