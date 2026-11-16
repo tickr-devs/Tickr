@@ -375,9 +375,34 @@ def _probe_extended(args: argparse.Namespace) -> int:
         return code
 
 
+def _probe_attached_stop(args: argparse.Namespace) -> int:
+    """Probe F8 in the regular session: does Webull hold an entry's attached stop from the
+    moment the entry fills (engine/attached_probe.py)? Exit 0 answered, 3 refused, 4 the
+    operator must close a leftover position in the Webull app."""
+    from tickr.engine import attached_probe, session_probe
+
+    cfg = config_module.load(args.config)
+    gate = config_module.trading_gate(cfg)
+    if not gate.open:
+        raise ManualRefused(f"trading gate closed: {gate.cause}")
+    if not session_probe.SYMBOL.match(args.symbol):
+        raise ManualRefused(f"{args.symbol!r} is not a ticker")
+    calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+    check_window(cfg, calendar, NOW())
+    _, lock_path = data_paths(cfg)
+    with SingleInstanceLock(lock_path):
+        broker, market = PROBE_ADAPTERS(cfg)
+        folder = session_probe.evidence_folder(cfg, NOW(), "attached")
+        print(f"probe-attached-stop {args.symbol}; evidence in {folder}")
+        code = attached_probe.run(cfg, broker, market, args.symbol, folder, now=NOW,
+                                  sleep=SLEEP, out=print)
+        print(f"summary: {folder / 'summary.json'}")
+        return code
+
+
 def _probe_trailing(args: argparse.Namespace) -> int:
     """Probe T in the regular session: does Webull's trailing stop work as the broker stop for
-    several positions (engine/trailing_probe.py). Exit 0 answered, 3 refused, 4 the operator
+    several positions (engine/trailing_probe.py)? Exit 0 answered, 3 refused, 4 the operator
     must close a leftover position in the Webull app."""
     from tickr.engine import session_probe, trailing_probe
 
@@ -388,11 +413,11 @@ def _probe_trailing(args: argparse.Namespace) -> int:
     if not session_probe.SYMBOL.match(args.symbol):
         raise ManualRefused(f"{args.symbol!r} is not a ticker")
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
-    trailing_probe.check_time(cfg, calendar, NOW())
+    check_window(cfg, calendar, NOW())
     _, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
         broker, market = PROBE_ADAPTERS(cfg)
-        folder = trailing_probe.evidence_folder(cfg, NOW())
+        folder = session_probe.evidence_folder(cfg, NOW(), "trailing")
         print(f"probe-trailing {args.symbol}; evidence in {folder}")
         code = trailing_probe.run(cfg, broker, market, args.symbol, folder, now=NOW,
                                   sleep=SLEEP, out=print)
@@ -551,11 +576,17 @@ def _run(path: Path) -> int:
     from tickr.data.capture import BOT_START, BOT_STOP, CaptureError, CaptureWriter
     from tickr.data.health import StreamHealth
     from tickr.data.todaybars import TodayBars
+    from tickr.observers import ignition as ignition_module
     from tickr.observers.errors import ObserverError
     from tickr.runtime import service
     from tickr.runtime.account import AccountReads
     from tickr.runtime.alerts import Alerter, AlertKind, token_pending_text
-    from tickr.runtime.market import MarketRuntime, StreamInbox, journal_capture_failed
+    from tickr.runtime.market import (
+        IGNITION_NOT_LOADED,
+        MarketRuntime,
+        StreamInbox,
+        journal_capture_failed,
+    )
     from tickr.runtime.signals import StopRequest, install_stop_handler, restore_handlers
     from tickr.runtime.watch import ALERT, Watch
 
@@ -609,10 +640,17 @@ def _run(path: Path) -> int:
                 journal_capture_failed(store, run_id, BOT_START, exc,
                                        cfg.market_data.failure_detail_max_chars)
             today_bars = TodayBars()  # one bars read shared by discovery and evaluation
+            try:
+                ignition = ignition_module.from_config(cfg)
+            except ignition_module.IgnitionError as exc:  # trading goes on without it
+                ignition = None
+                with store.transaction():
+                    store.append(IGNITION_NOT_LOADED, {"cause": str(exc)}, run_id=run_id)
             market = MarketRuntime(engine, cfg, adapters.market,
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
                                    capture=capture, calendar=calendar, today_bars=today_bars,
-                                   now=NOW, monotonic=MONOTONIC, spawn=DISCOVERY_SPAWN)
+                                   now=NOW, monotonic=MONOTONIC, spawn=DISCOVERY_SPAWN,
+                                   ignition=ignition)
             watch = Watch(engine, cfg, alerter, NOW)
 
             def observers_refused(cause: str) -> None:
@@ -728,6 +766,10 @@ def main(argv: list[str] | None = None) -> int:
                               "post-market, bot stopped, account flat: which stops Webull "
                               "accepts and triggers there")
     extended.add_argument("symbol")
+    attached = sub.add_parser("probe-attached-stop", help="probe F8 in the regular session, "
+                              "bot stopped, account flat: does an entry's attached stop protect "
+                              "its fill at once")
+    attached.add_argument("symbol")
     trailing = sub.add_parser("probe-trailing", help="probe T in the regular session, bot "
                               "stopped, account flat: does Webull's trailing stop work as "
                               "the broker stop")
@@ -772,6 +814,8 @@ def main(argv: list[str] | None = None) -> int:
             return _probe_replace_stop(args)
         if args.command == "probe-extended":
             return _probe_extended(args)
+        if args.command == "probe-attached-stop":
+            return _probe_attached_stop(args)
         if args.command == "probe-trailing":
             return _probe_trailing(args)
         if args.command == "check-quote":

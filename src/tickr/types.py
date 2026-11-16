@@ -61,6 +61,16 @@ class TradingSession(StrEnum):
     ALL = "ALL"
 
 
+class ComboRole(StrEnum):
+    """A leg's `combo_type` in a combo place request (Webull docs: MASTER with attached
+    STOP_PROFIT and/or STOP_LOSS legs). Sent only by the attached-stop probe
+    (engine/attached_probe.py) until it is answered."""
+
+    MASTER = "MASTER"
+    STOP_LOSS = "STOP_LOSS"
+    STOP_PROFIT = "STOP_PROFIT"
+
+
 class OrderState(StrEnum):
     """Internal order state derived only from broker Detail."""
 
@@ -121,6 +131,9 @@ class OrderDetail:
     fees: Decimal | None = None
     # Display only: a trailing stop's `trailing_stop_step` as the row shows it (unproven).
     trailing_stop_step: Decimal | None = None
+    # Trailing rows only: the row's field names (never values), so the trailing probe can
+    # record where Webull shows the current stop.
+    row_keys: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

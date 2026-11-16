@@ -156,11 +156,15 @@ class ProbeConfig:
     extended_trigger_seconds: int
     extended_close_percent: Decimal
     extended_position_agree_seconds: int
+    attached_far_percent: Decimal
+    attached_observe_seconds: int
+    attached_stop_wait_seconds: int
     trailing_wide_percent: Decimal
     trailing_tight_percent: Decimal
     trailing_observe_seconds: int
     trailing_trigger_seconds: int
     trailing_close_percent: Decimal
+    trailing_unit_factor: Decimal
 
 
 @dataclass(frozen=True)
@@ -276,6 +280,7 @@ class ObserversConfig:
     decisions_dir: str
     forget_symbol_seconds: Decimal
     history_sends_per_pass: int
+    ignition: str
 
 
 @dataclass(frozen=True)
@@ -563,8 +568,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     probe: ProbeConfig = built["probe"]
     if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
             or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
-            or probe.trailing_trigger_seconds <= 0):
-        raise ConfigError("[probe] trailing_* values must be above 0")
+            or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1):
+        raise ConfigError("[probe] trailing_* values must be above 0 and "
+                          "trailing_unit_factor above 1")
     if probe.trailing_tight_percent >= probe.trailing_wide_percent:
         raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
     if risk.max_entry_rest_bars < 1:

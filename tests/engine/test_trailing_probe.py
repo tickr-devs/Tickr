@@ -14,10 +14,8 @@ from tickr import config
 from tickr.broker.base import Refused
 from tickr.broker.fake import FakeBroker
 from tickr.broker.webull import build_order_body, read_order
-from tickr.calendar import SessionCalendar
 from tickr.data.base import FakeMarketData
 from tickr.engine import trailing_probe as tp
-from tickr.engine.manual import ManualRefused
 from tickr.types import (
     OrderRequest,
     OrderState,
@@ -30,7 +28,6 @@ from tickr.types import (
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
-CALENDAR = SessionCalendar.load((ROOT / CFG.session.calendar_file).parent)
 NOON = datetime(2026, 11, 16, 17, 0, tzinfo=UTC)  # 12:00 ET, Monday
 SYMBOL = "ABCD"
 
@@ -92,7 +89,10 @@ class World:
                 if self.bid <= stop:
                     b.fill(cid, order.quantity, self.bid)
                 elif self.unit is not None:
-                    b.orders[cid] = replace(order, stop_price=stop)
+                    b.orders[cid] = replace(order, stop_price=stop, row_keys=(
+                        "client_order_id", "status", "stop_price", "trailing_stop_step"))
+                else:
+                    b.orders[cid] = replace(order, row_keys=("client_order_id", "status"))
 
     def run(self) -> tuple[int, dict]:
         code = tp.run(CFG, self.broker, self.market, SYMBOL, self.folder, now=lambda: self.at,
@@ -100,22 +100,38 @@ class World:
         return code, json.loads((self.folder / "summary.json").read_text("utf-8"))
 
 
-def test_check_time_only_in_the_regular_session_probe_window() -> None:
-    tp.check_time(CFG, CALENDAR, NOON)
-    for refused in (datetime(2026, 11, 16, 14, 45, tzinfo=UTC),  # 09:45 ET, before window
-                    datetime(2026, 11, 16, 20, 45, tzinfo=UTC),  # 15:45 ET, after window
-                    datetime(2026, 11, 16, 22, 0, tzinfo=UTC),  # post-market
-                    datetime(2026, 11, 15, 17, 0, tzinfo=UTC)):  # Sunday
-        with pytest.raises(ManualRefused):
-            tp.check_time(CFG, CALENDAR, refused)
+FACTOR = CFG.probe.trailing_unit_factor
 
 
-@pytest.mark.parametrize("measured, unit", [
-    (Decimal("2.00"), tp.UNIT_RATIO), (Decimal("0.02"), tp.UNIT_PERCENT),
-    (Decimal("0.80"), tp.UNIT_UNCLEAR)])
-def test_unit_of_reads_the_distance_detail_shows(measured, unit) -> None:
-    assert tp.unit_of(Decimal("0.2"), Decimal(10), Decimal(10) - measured) == unit
-    assert tp.unit_of(Decimal("0.2"), Decimal(10), None) == tp.UNIT_NOT_SHOWN
+@pytest.mark.parametrize("price, below_high, true_unit", [
+    ("40", "0", tp.UNIT_RATIO), ("40", "0", tp.UNIT_PERCENT),
+    ("40", "0.05", tp.UNIT_RATIO), ("40", "0.05", tp.UNIT_PERCENT),
+    ("40", "0.12", tp.UNIT_RATIO), ("40", "0.12", tp.UNIT_PERCENT),
+    ("12", "0.03", tp.UNIT_RATIO), ("12", "0.03", tp.UNIT_PERCENT),
+    ("12", "0.06", tp.UNIT_RATIO), ("12", "0.06", tp.UNIT_PERCENT),
+    ("5", "0.02", tp.UNIT_RATIO), ("5", "0.02", tp.UNIT_PERCENT)])
+def test_unit_of_finds_the_unit_when_the_stop_follows_a_high_above_the_bid(
+        price, below_high, true_unit) -> None:
+    """Fable's rows: the stop trails the high, the bid read with it is a few cents lower."""
+    step = Decimal("0.2")
+    high = Decimal(price)
+    bid = high - Decimal(below_high)
+    distance = high * step if true_unit == tp.UNIT_RATIO else high * step / 100
+    stop = (high - distance).quantize(Decimal("0.01"))
+    if bid <= stop:
+        # A 0.2 % trail is a few cents: a bid that far under the high is through the stop, so
+        # the stop has triggered and that trigger is the answer (T6), not a unit to read.
+        assert true_unit == tp.UNIT_PERCENT
+        assert tp.unit_of(step, bid, stop, FACTOR) == tp.UNIT_UNCLEAR
+        return
+    assert tp.unit_of(step, bid, stop, FACTOR) == true_unit
+
+
+def test_unit_of_keeps_unclear_for_a_stop_near_neither_and_says_when_none_is_shown() -> None:
+    step, bid = Decimal("0.2"), Decimal(10)
+    assert tp.unit_of(step, bid, Decimal("9.80"), FACTOR) == tp.UNIT_UNCLEAR  # 2 %: neither
+    assert tp.unit_of(step, bid, Decimal("10.50"), FACTOR) == tp.UNIT_UNCLEAR  # above the bid
+    assert tp.unit_of(step, bid, None, FACTOR) == tp.UNIT_NOT_SHOWN
 
 
 def test_rising_price_answers_every_question_and_ends_flat(tmp_path: Path) -> None:
@@ -128,12 +144,23 @@ def test_rising_price_answers_every_question_and_ends_flat(tmp_path: Path) -> No
     assert summary["t3_follows"] == tp.FOLLOWED
     assert summary["t4_open_orders"] == tp.LISTED
     assert summary["t5_cancel"] == tp.CANCELLED
-    assert summary["p1_positions_lag_seconds"] == 0
+    assert summary["p1_positions_lag_seconds"] == 0 and "poll-granular" in summary["p1_note"]
+    fields = [json.loads(line) for line in
+              (world.folder / "steps.jsonl").read_text("utf-8").splitlines()]
+    (logged,) = [row for row in fields if row["step"] == "trailing-row-fields"]
+    assert "stop_price" in logged["fields"]
     assert summary["close"] == "closed" and Decimal(summary["broker_after"]["position"]) == 0
     wide, tight = [r for r in world.broker.sent if r.order_type is OrderType.TRAILING_STOP_LOSS]
     assert (wide.trailing_stop_step, tight.trailing_stop_step) == (Decimal("0.2"),
                                                                     Decimal("0.005"))
     assert all(r.session is TradingSession.CORE for r in world.broker.sent)
+
+
+def test_a_wide_stop_that_triggers_answers_t6(tmp_path: Path) -> None:
+    world = World(tmp_path, unit=tp.UNIT_PERCENT, drift=Decimal("-0.01"))
+    code, summary = world.run()
+    assert summary["t6_triggers"].startswith(f"{tp.TRIGGERED} (the wide stop itself")
+    assert code == tp.EXIT_ANSWERED and summary["close"] == "closed"
 
 
 def test_tight_stop_triggers_on_a_falling_price(tmp_path: Path) -> None:

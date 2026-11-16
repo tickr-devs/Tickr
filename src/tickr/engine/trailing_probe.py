@@ -1,11 +1,12 @@
 """Probe T: does Webull's TRAILING_STOP_LOSS work as a broker-side stop for the bot.
 
 `tickr probe-trailing SYMBOL`, run by the owner on the Mac in the regular session, inside the
-`[probe] window_start`-`window_end` window, with the bot stopped and the account flat
-(docs/manual-trade.md, "Trailing-stop probe"). Several positions (backlog X1) want a trailing
-broker stop (rollout guide: 20 %); nothing in the bot sends one until this probe answered
-(docs/webull-facts.md, T1-T5). The order body is the SDK v3 sample's: `trailing_type`
-PERCENTAGE, `trailing_stop_step`, `trigger_price_type` PRICE, DAY, session CORE.
+`[probe] window_start`-`window_end` window (engine.manual.check_window), with the bot stopped
+and the account flat (docs/manual-trade.md, "Trailing-stop probe"). Several positions
+(backlog X1) want a trailing broker stop (rollout guide: 20 %); nothing in the bot sends one
+until this probe answered (docs/webull-facts.md, T1-T6). The order body is the SDK v3
+sample's: `trailing_type` PERCENTAGE, `trailing_stop_step`, `trigger_price_type` PRICE,
+DAY, session CORE.
 
 1. Entry: a BUY LIMIT DAY CORE for `[probe] quantity` shares at the ask. Unfilled within
    `[probe] entry_wait_seconds`, it is cancelled and the probe ends. While it waits, Detail
@@ -39,13 +40,13 @@ Evidence: `<data_dir>/<[probe] evidence_dir>/<NY date>/trailing-<UTC time>/steps
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from tickr.broker.base import Broker, BrokerError
-from tickr.calendar import NEW_YORK, CalendarRefused, SessionCalendar, ny_date_of
 from tickr.config import Config
 from tickr.data.base import MarketData, MarketDataError
 from tickr.engine.manual import ManualRefused
@@ -99,43 +100,38 @@ NOT_TRIGGERED = "not-triggered"
 TRIGGER_STATES = (OrderState.FILLED, OrderState.PARTIALLY_FILLED)
 
 
-def check_time(config: Config, calendar: SessionCalendar, now: datetime) -> None:
-    """Regular session of a known full trading day, inside the owner's probe window."""
-    try:
-        day = calendar.day_at(now)
-    except CalendarRefused as exc:
-        raise ManualRefused(f"no trading session: {exc}") from exc
-    if day.half_day and not config.session.half_days_enabled:
-        raise ManualRefused("half trading day: disabled by config")
-    if not day.in_regular_session(now):
-        raise ManualRefused("only in the regular session")
-    start = time.fromisoformat(config.probe.window_start)
-    end = time.fromisoformat(config.probe.window_end)
-    local = now.astimezone(NEW_YORK).time()
-    if not start <= local <= end:
-        raise ManualRefused(f"only between {start} and {end} New York ([probe] window)")
-
-
-def unit_of(step: Decimal, bid: Decimal, stop: Decimal | None) -> str:
-    """Which unit puts `stop` where Detail shows it below `bid`: the distance closer to the
-    measured one, if it is within one cent plus half of the smaller candidate."""
+def unit_of(step: Decimal, bid: Decimal, stop: Decimal | None, factor: Decimal) -> str:
+    """Which unit puts `stop` where Detail shows it below `bid`. The two candidate distances
+    (step x price, or step % of price) differ a hundredfold, and a trailing stop follows the
+    high since it was placed rather than this poll's bid, so cents do not decide: the
+    candidate whose distance is within `factor` of the measured one, nearer in ratio terms;
+    neither within it = unclear."""
     if stop is None:
         return UNIT_NOT_SHOWN
     measured = bid - stop
-    ratio, percent = bid * step, bid * step / PERCENT
-    slack = tick(bid) + min(ratio, percent) / 2
-    best = min(((abs(measured - ratio), UNIT_RATIO), (abs(measured - percent), UNIT_PERCENT)))
-    return best[1] if best[0] <= slack else UNIT_UNCLEAR
+    if measured <= 0:
+        return UNIT_UNCLEAR
+    fits = []
+    for unit, candidate in ((UNIT_RATIO, bid * step), (UNIT_PERCENT, bid * step / PERCENT)):
+        ratio = max(measured, candidate) / min(measured, candidate)
+        if ratio <= factor:
+            fits.append((ratio, unit))
+    return min(fits)[1] if fits else UNIT_UNCLEAR
 
 
+@dataclass
 class TrailingProbe(Probe):
     """The plumbing of the extended-hours probe (record, send once, Detail, cancel and
     prove), in the regular session: orders go to session CORE and quotes must be as fresh
     as the bot's own entry rule."""
 
+    order_session: TradingSession = CORE
+
     # P1: seconds from Detail first showing the entry fill to the positions read first showing
     # it (poll-granular, may be negative); None when the positions read never showed it.
     lag: float | None = None
+    # The field names (never values) of the first trailing row Detail showed, logged once.
+    _keys_logged: bool = False
 
     def quote(self) -> Quote:
         quote = read_quote(self.market, self.symbol)
@@ -238,6 +234,9 @@ class TrailingProbe(Probe):
             absent = absent + 1 if read is False else 0
             if isinstance(read, OrderDetail):
                 row = read
+                if not self._keys_logged and read.row_keys is not None:
+                    self._keys_logged = True
+                    self._log("trailing-row-fields", case=name, fields=list(read.row_keys))
             bid = self._bid(name)
             if bid is not None and row is not None and row.stop_price is not None:
                 seen.append((bid, row.stop_price))
@@ -275,7 +274,7 @@ class TrailingProbe(Probe):
             answers["t1_accepted"] = f"{REFUSED} ({row.raw_status})"
         if seen:
             bid, stop = seen[0]
-            answers["t2_unit"] = unit_of(step, bid, stop)
+            answers["t2_unit"] = unit_of(step, bid, stop, self.config.probe.trailing_unit_factor)
             rose = max(b for b, _ in seen) > bid
             answers["t3_follows"] = (FOLLOWED if max(s for _, s in seen) > stop
                                      else NOT_FOLLOWED if rose else PRICE_DID_NOT_RISE)
@@ -286,6 +285,8 @@ class TrailingProbe(Probe):
                           row is None and absent >= self.config.orders.unknown_absent_reads)
         if triggered or (row is not None and row.filled_quantity > 0):
             answers["t5_cancel"] = f"{NOT_TESTED} ({TRIGGERED} first)"
+            fill = None if row is None else row.average_fill_price
+            answers["t6_triggers"] = f"{TRIGGERED} (the wide stop itself, fill {fill})"
         elif row is not None and row.state is OrderState.CANCELLED:
             answers["t5_cancel"] = CANCELLED
         else:
@@ -356,10 +357,15 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
                 raise ManualRefused(f"ask {quote.ask} is above [probe] max_price_usd")
             summary["entry"] = probe.entry(quote)
             summary["p1_positions_lag_seconds"] = probe.lag
+            summary["p1_note"] = (
+                f"poll-granular ({config.orders.detail_poll_seconds} s): each poll reads "
+                "Detail, then the positions, so 0.0 means within one poll; null = the "
+                "positions never showed the fill")
             if summary["entry"] == FILLED:
                 answers = probe.wide()
                 summary.update(answers)
-                summary["t6_triggers"] = probe.tight(answers["t2_unit"])
+                if "t6_triggers" not in answers:
+                    summary["t6_triggers"] = probe.tight(answers["t2_unit"])
         except ManualRefused as exc:
             summary["stopped"] = str(exc)
             out(f"stopped: {exc}")
@@ -383,10 +389,3 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
             f"sell what is held in the Webull app now")
         return EXIT_OPERATOR
     return EXIT_ANSWERED
-
-
-def evidence_folder(config: Config, at: datetime) -> Path:
-    folder = (config.root / config.run.data_dir / config.probe.evidence_dir
-              / ny_date_of(at).isoformat() / f"trailing-{at.astimezone(UTC):%H%M%S}")
-    folder.mkdir(parents=True, exist_ok=False)
-    return folder
