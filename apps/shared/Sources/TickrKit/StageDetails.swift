@@ -83,7 +83,7 @@ extension StageDetail {
   public static let rowCap = 12
   /// Percent in a closeness of 1.
   static let percentPerUnit: Decimal = 100
-  /// Placeholder for a side of a check the bot did not record.
+  /// Placeholder for a value the bot did not record.
   static let missing = "—"
   /// Between the parts of one row ("11:26 · Refused by risk").
   static let separator = " · "
@@ -174,10 +174,7 @@ extension StageDetail {
     }
     if let decided = count(.strategy, sources.flow) { facts.append(fact(L10n.stageDecided, String(decided))) }
     let closest = (sources.watching?.rows ?? []).prefix(closestCap).map { row in
-      let check = row.decisiveCheck.map { check in
-        [ApiText.rule(check.rule), check.measured?.text ?? missing, check.operator, check.threshold?.text ?? missing]
-          .joined(separator: space)
-      }
+      let check = row.decisiveCheck.map { [ApiText.rule($0.rule), $0.valueText].joined(separator: space) }
       let closeness = row.closeness.map { closeness in
         String(localized: L10n.stageCloseness(whole(closeness.value * percentPerUnit)))
       }
@@ -339,5 +336,14 @@ extension StageDetail {
     case .pending: .amber
     case .missing, .unknown: .red
     }
+  }
+}
+
+extension CheckV1 {
+  /// "measured operator threshold": what the check measured against what it needs, as the bot
+  /// recorded them; a side it did not record is a dash.
+  public var valueText: String {
+    [measured?.text ?? StageDetail.missing, `operator`, threshold?.text ?? StageDetail.missing]
+      .joined(separator: StageDetail.space)
   }
 }
