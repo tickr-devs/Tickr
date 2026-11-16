@@ -1972,10 +1972,14 @@ enum L10n {
     static var result: LocalizedStringResource {
       LocalizedStringResource("trades.result", defaultValue: "Result", bundle: L10n.bundle)
     }
-    /// Trades of a day with wins and losses.
+    /// A day in the all-days list: its closed trades with wins and losses.
     static func closedWinsLosses(_ trades: Int, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
       LocalizedStringResource("trades.closedWinsLosses",
-        defaultValue: "\(trades) · \(wins) W · \(losses) L", bundle: L10n.bundle)
+        defaultValue: "\(trades) closed · \(wins) W · \(losses) L", bundle: L10n.bundle)
+    }
+    /// Wins and losses beside the shown day's trade count.
+    static func winsLosses(_ wins: Int, _ losses: Int) -> LocalizedStringResource {
+      LocalizedStringResource("trades.winsLosses", defaultValue: "\(wins) W · \(losses) L", bundle: L10n.bundle)
     }
     /// Tooltip: a day without bars.
     static var noBarsHelp: LocalizedStringResource {

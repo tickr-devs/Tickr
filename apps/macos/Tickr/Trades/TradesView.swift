@@ -11,18 +11,17 @@ struct TradesView: View {
   @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
   @State private var selection: DayTrade.ID?
 
-  /// Padding around the screen's content, in points. The board pads 16 (top, bottom) and 18
-  /// (sides) (MacTrades, `main` padding 16px 18px); the sides give up 6 to the spacing scale's 12
-  /// so the trades table, which never cuts or wraps a cell, fits beside the days column at the
-  /// first window size (1440, the sidebar at its preferred width) as on the board.
+  /// Padding around the screen's content, in points: the board's 16 (top, bottom) and 12 (sides)
+  /// (MacTrades v106, `main` padding 16px 12px), which lets the trades table, never cut or
+  /// wrapped, sit beside the days column at the first window size (1440, the sidebar at its
+  /// preferred width).
   static let verticalPadding: CGFloat = Tokens.Space.l
   static let horizontalPadding: CGFloat = Tokens.Space.m
   /// Gap between the days column and the day, and between the cards of each, in points: the
-  /// board's 14 (MacTrades, `gap:14px`) on the spacing scale.
+  /// board's 14 (MacTrades v106, `gap:14px`) on the spacing scale.
   static let columnGap: CGFloat = Tokens.Space.m
   /// Width of the days column (calendar, performance in R, all days) beside the day, in points:
-  /// the shared side column, the board's 380 (MacTrades, `grid-template-columns:380px 1fr`).
-  /// Narrower, the calendar's "0 trades" wraps in its day cells.
+  /// the shared side column, the board's 378 (MacTrades v106, `grid-template-columns:378px 1fr`).
   static let daysColumnWidth: CGFloat = Tokens.Size.sideColumn
 
   /// Least width of this screen, in points: the screen's padding and the trades card's own
@@ -204,6 +203,11 @@ struct TradesView: View {
 private struct DaysColumn: View {
   @Environment(AppModel.self) private var model
 
+  /// The calendar card's padding, in points: the board's 12 (top, bottom) and 10 (sides)
+  /// (MacTrades v106), which leaves each day tile room for "−$1,234.56" in a 378-point column.
+  static let verticalInset: CGFloat = Tokens.Space.m
+  static let horizontalInset: CGFloat = Tokens.Space.s + Tokens.Space.xxs
+
   var body: some View {
     if model.days.isEmpty {
       Card(L10n.Trades.days) {
@@ -217,7 +221,8 @@ private struct DaysColumn: View {
       }
     } else {
       MonthCalendar()
-        .padding(Tokens.Space.l)
+        .padding(.vertical, Self.verticalInset)
+        .padding(.horizontal, Self.horizontalInset)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .tickrCard(radius: Tokens.Radius.large)
     }
@@ -337,10 +342,16 @@ private struct DayStatsRow: View {
   }
 
   private var trades: some View {
+    // As the board: the count, and its wins and losses beside it in a smaller, quieter type.
     Stat(L10n.Trades.trades) {
-      Text(L10n.Trades.closedWinsLosses(model.shownTradeCount, model.shownWins, model.shownLosses))
-        .font(Tokens.Typography.figure)
-        .foregroundStyle(Palette.textPrimary)
+      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+        Text(verbatim: String(model.shownTradeCount))
+          .font(Tokens.Typography.figure)
+          .foregroundStyle(Palette.textPrimary)
+        Text(L10n.Trades.winsLosses(model.shownWins, model.shownLosses))
+          .font(Tokens.Typography.calloutMono.weight(.semibold))
+          .foregroundStyle(Palette.textTertiary)
+      }
     }
   }
 
