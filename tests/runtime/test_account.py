@@ -11,7 +11,7 @@ from datetime import timedelta
 from decimal import Decimal as D
 
 from tickr.api import contract as api
-from tickr.broker.base import AccountBalance, BrokerError
+from tickr.broker.base import AccountBalance, BrokerError, BrokerFill, CashTrade
 from tickr.broker.fake import FakeBroker
 from tickr.engine.core import BrokerView, Fence, TradeState
 from tickr.runtime import entries, service
@@ -22,6 +22,7 @@ from tickr.runtime.account import (
     NOT_AGREED,
     RECONCILE_CHECKED,
     AccountReads,
+    exact_price,
     record_reconcile,
 )
 from tickr.types import OrderDetail, OrderState, OrderType, Position, Side
@@ -501,3 +502,37 @@ def test_a_balance_read_before_the_last_close_is_not_todays_result(tmp_path):
     reads.read_once()
     closed_trade(bot)
     assert bot.service.status().result_today_broker_usd is None
+
+
+def test_exact_amounts_and_trade_result_from_the_cash_activities(tmp_path):
+    bot = Bot(tmp_path)
+    t = closed_trade(bot)
+    filled = [o for o in bot.engine.orders(t) if o.filled_quantity > 0]
+    at = bot.now
+    fees = {o.client_order_id: D(0) for o in filled}
+
+    class Exact(FakeBroker):
+        def fills_today(self, day):
+            return [replace(f, fees=fees.get(f.client_order_id), filled_at=at)
+                    for f in super().fills_today(day)]
+
+    cash = [CashTrade(o.symbol, str(o.side), D("-20.0004") if o.side is Side.BUY
+                      else D("19.9001"), at) for o in filled]
+    broker = Exact(funds=FUNDS, orders=bot.broker.orders, cash=cash)
+    reads = AccountReads(broker, float(CFG.orders.balance_read_seconds), lambda: bot.now)
+    bot.service.account_reads = reads
+    assert bot.service.status().trades_today[0].result_exact_usd is None  # nothing read
+    reads.read_once()
+    (trade,) = bot.service.status().trades_today
+    assert trade.result_exact_usd == D("-0.10")  # -0.1003 to the cent
+    broker.cash = cash[:1]  # the exit's activity not listed yet: back to the order prices
+    reads.read_once()
+    assert bot.service.status().trades_today[0].result_exact_usd is None
+
+
+def test_exact_price_from_the_amount_and_fees():
+    buy = BrokerFill("e", "CYAB", "BUY", "LIMIT", D(918), D("0.23"), None, D(0))
+    sell = BrokerFill("s", "CYAB", "SELL", "STOP_LOSS", D(918), D("0.18"), None, D("0.19"))
+    assert exact_price(buy, D("-208.5696")) == D("0.2272")
+    assert exact_price(sell, D("166.3352")) == D("0.1814")
+    assert exact_price(sell, None) is None

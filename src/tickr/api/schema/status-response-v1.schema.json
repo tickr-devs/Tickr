@@ -566,6 +566,17 @@
                       }
                     ]
                   },
+                  "result_exact_usd": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "entry_cause_codes": {
                     "type": "array",
                     "items": {
@@ -604,6 +615,7 @@
                   "entry_cause",
                   "strategy",
                   "code_version",
+                  "result_exact_usd",
                   "entry_cause_codes"
                 ],
                 "additionalProperties": false
