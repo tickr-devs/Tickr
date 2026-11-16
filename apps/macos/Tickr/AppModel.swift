@@ -203,6 +203,10 @@ public final class AppModel {
 
   // Positions with their latest bars.
   private var barsBySymbol: [String: BarsV1] = [:]
+  /// The open positions (symbols, on `barsDay`) the last bars read was for. A status that lists
+  /// others has their bars read at once (`refreshStatus`), not at the next bars poll.
+  private var barsReadFor: [String] = []
+  private var barsDay: WireDate?
 
   // Commands.
   public private(set) var sending = false
@@ -417,6 +421,7 @@ public final class AppModel {
     dayDocument = nil
     todayDocument = nil
     barsBySymbol = [:]
+    barsReadFor = []
     account = nil
     jobs = nil
     jobsError = nil
@@ -456,6 +461,13 @@ public final class AppModel {
         await refreshHistory()
       }
       resolveSentCommands()
+      // Open positions whose bars were not read yet (the first status after launch, a new
+      // position, a new day): read them now. Waiting for the bars poll left a position card
+      // without its price rows for up to `Pace.barsSeconds`, and the rows then arriving grew the
+      // card and moved the Safety card's commands under the operator's pointer.
+      if let symbols = status?.positions.map(\.symbol), symbols != barsReadFor || barsDay != today {
+        await refreshPositionBars()
+      }
       // A start answer stays until the bot is seen alive; then its status says the rest.
       if !fresh.stale, let state = status?.botState, state != .stopped { botStart = nil }
       // Counts come from status, the trade list from /days/<today>: when status shows a
@@ -722,6 +734,8 @@ public final class AppModel {
 
   public func refreshPositionBars() async {
     let symbols = status?.positions.map(\.symbol) ?? []
+    barsReadFor = symbols
+    barsDay = today
     for symbol in symbols {
       do {
         let fresh = try await client.bars(symbol: symbol, day: today)

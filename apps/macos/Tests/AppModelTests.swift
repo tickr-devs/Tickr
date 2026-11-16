@@ -102,6 +102,21 @@ struct AppModelTests {
     #expect(Set(RouteProtocol.routes.withLock { $0.barSymbols }) == ["ABCD", "EFGH"])
   }
 
+  @Test("A status listing positions whose bars were not read reads them at once, not at the next bars poll")
+  func positionBarsWithTheirStatus() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    // At launch the bars poll runs before any status: it knows no position and reads nothing.
+    await model.refreshPositionBars()
+    #expect(RouteProtocol.routes.withLock { $0.barSymbols }.isEmpty)
+    await model.refreshStatus()
+    #expect(Set(RouteProtocol.routes.withLock { $0.barSymbols }) == ["ABCD", "EFGH"])
+    #expect(model.positionBars("ABCD") != nil, "the position card has its price rows with the first status")
+    // The same positions again: the bars poll keeps them current, the status read does not repeat it.
+    let reads = RouteProtocol.routes.withLock { $0.barSymbols.count }
+    await model.refreshStatus()
+    #expect(RouteProtocol.routes.withLock { $0.barSymbols.count } == reads)
+  }
+
   @Test("The daily room is the bot's own number, never computed by the app")
   func dailyRoomComesFromStatus() async throws {
     let model = AppModel(baseURL: APIClient.defaultBaseURL)
