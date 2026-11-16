@@ -254,9 +254,9 @@ struct CandleChart: View {
     let high = candles[found.high].high
     let low = candles[found.low].low
     let tags = [
-      AxisTag(value: high, text: String(localized: L10n.Chart.highTag(price(high))), color: Palette.textTertiary,
+      AxisTag(value: high, text: String(localized: L10n.Chart.highTag(Money.price(high))), color: Palette.textTertiary,
         plain: true),
-      AxisTag(value: low, text: String(localized: L10n.Chart.lowTag(price(low))), color: Palette.textTertiary,
+      AxisTag(value: low, text: String(localized: L10n.Chart.lowTag(Money.price(low))), color: Palette.textTertiary,
         plain: true),
     ]
     // A flat stretch has one price: one tag.
