@@ -65,3 +65,11 @@ def test_shared_package_is_clean():
     for root in module.DEFAULT_ROOTS:
         for path in module.swift_files(ROOT / root):
             assert module.violations(path) == [], path
+
+
+def test_allows_toolchain_versions_in_compilation_conditions(tmp_path):
+    source = (
+        "#if compiler(>=6.4)\n.visibilityPriority(.low)\n#elseif swift(>=6.3)\n#endif\n"
+        "let a = x.padding(6.4)\n"
+    )
+    assert check(tmp_path, source) == [(5, "6.4")]
