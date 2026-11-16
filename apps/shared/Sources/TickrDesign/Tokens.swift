@@ -304,7 +304,7 @@ public enum Tokens {
     public static let pressScale: CGFloat = 0.97
     /// Seconds the pointer rests on a view before its hint appears.
     public static let hintDelay = 0.45
-    /// How far a live state glyph's pulse outline grows.
+    /// How far a live state glyph's pulse outline grows (and today's Trades calendar tile's).
     public static let glyphPulseScale: CGFloat = 1.35
     #if os(iOS)
     /// How far a count grows as it bumps once on a rise (`bumps(on:)`): the iPhone design's `bumpA/B`.
@@ -317,9 +317,6 @@ public enum Tokens {
     public static let bumpSeconds = 0.6
     /// Each half of a bump (grow, then settle), so the whole takes `bumpSeconds`.
     public static let bump = Animation.easeInOut(duration: bumpSeconds / 2)
-    /// How far a calendar tile's outline grows in its one pulse (today's tile, once per change of
-    /// today's trading): a ring just past the tile, as the design's 12-point glow.
-    public static let cellPulseScale: CGFloat = 1.12
     /// Seconds of one pass of the light across the Lab's advisor title (ornament, `OrnamentGate`).
     public static let shineSeconds = 3.5
     /// Seconds of one breath of a glow (rings, alarms).

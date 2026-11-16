@@ -219,8 +219,7 @@ a step; it does not define its own factor.
 | `pop` / `popStagger` | spring 0.5 s, damping 0.55 / 0.4 s | A dot popping in (`popIn`): the protection chain's steps, one after another, and again when a step changes |
 | `bump` / `bumpSeconds` / `bumpScale` | ease-in-out, two halves of 0.6 s / ×1.35 (iPhone), ×1.25 (Mac) | A count growing and settling once when it rises (`bumps(on:)`: Lab refusal counts), never when it falls or first appears |
 | `pressScale` | ×0.97 | Buttons and chips while pressed |
-| `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event |
-| `cellPulseScale` | ×1.12 | Today's calendar tile: one ring just past the tile per change of today's trading (a trade closed, a position opened or closed) |
+| `glyphPulseScale` | ×1.35 | Pulse outline of a live state glyph, once per event; also today's Trades calendar tile, once per change of today's trading (a trade closed, a position opened or closed) |
 | `shineSeconds` | 3.5 s | One pass of the light across the Lab's AI advisor title (ornament, `OrnamentGate`) |
 | `hintDelay` | 0.45 s | Hover before a hint appears (Mac) |
 | `clockTickSeconds` | 1 s | Redraw of clocks, ages ("3 s ago") and the session bar's cursor |

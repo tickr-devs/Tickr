@@ -219,7 +219,7 @@ private struct CalendarDay: View {
         }
       }
       .shadow(color: selected ? Palette.info.opacity(Tokens.Opacity.border) : .clear, radius: Tokens.Space.xs)
-      .eventPulse(shape, color: Palette.accent, scale: Tokens.Motion.cellPulseScale,
+      .eventPulse(shape, color: Palette.accent, scale: Tokens.Motion.glyphPulseScale,
         event: isToday ? todayEvent.map(AnyHashable.init) : nil)
       .contentShape(shape)
       // Under the pointer a day it can open lifts a little and outlines, as the design's tiles.
