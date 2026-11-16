@@ -183,7 +183,7 @@ struct SymbolsView: View {
 
   private var lines: [SymbolsLine] {
     SymbolsBoard.lines(tab, symbols: model.symbols, movers: model.movers, positions: positions,
-      filter: filter, search: search, order: shownOrder)
+      query: SymbolsQuery(filter: filter, search: search, order: shownOrder))
   }
 
   /// The line of `symbol`, also when the search or the tab no longer lists it.
