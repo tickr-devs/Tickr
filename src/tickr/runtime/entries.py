@@ -76,10 +76,38 @@ def rest_until(decision: Decision, bar_start: datetime) -> datetime | None:
     return bar_start + (decision.rest_bars + 1) * M1
 
 
+def entry_block_cause(engine: Engine, config: Config, trade: TradeRow,
+                      now: datetime) -> str | None:
+    """Why a working entry must not stay open for a platform reason: the state in which a new
+    entry would be refused (hard rule 1: a conflict blocks new entries, and a fill of an entry
+    still working is a new position). The trading gate closed, any fence (operator pause,
+    startup reconcile, broker read, reconcile disagreement, foreign exposure, another trade's
+    trouble, ...) except the fences about this trade itself or its own orders (the engine
+    already acts on those: its stop, its unknown status, its cancel; cancelling the entry for
+    them would only add a cancel of an order whose state is the open question), or today's
+    money unknown or over the daily loss ceiling with the open reservations. None when
+    nothing blocks."""
+    gate = engine.gate()
+    if not gate.open:
+        return f"trading gate closed: {gate.cause}"
+    own = {trade.trade_id, *(o.client_order_id for o in engine.orders(trade.trade_id))}
+    fences = sorted(name for name in engine.fences()
+                    if name.partition(":")[2] not in own)
+    if fences:
+        return "entries fenced: " + ", ".join(fences)
+    room = daily_loss_room(engine, config, now)
+    if room is None:
+        return "today's realized result unknown"
+    if room < 0:
+        return f"daily loss ceiling: {-room} over it with the open reservations"
+    return None
+
+
 def guard_entries(engine: Engine, config: Config, calendar: SessionCalendar | None,
                   latest: Callable[[str], Quote | None], now: datetime) -> None:
     """Once per loop pass: cancel every working entry whose quote left the price window or
-    went stale, and all of them at the last-entry time. Never re-priced (spec 9)."""
+    went stale, all of them at the last-entry time, and all of them while a new entry would
+    be refused for a platform reason (`entry_block_cause`). Never re-priced (spec 9)."""
     last_entry: datetime | None = None
     if calendar is not None:
         try:
@@ -95,7 +123,8 @@ def guard_entries(engine: Engine, config: Config, calendar: SessionCalendar | No
         orders = engine.orders(trade.trade_id)
         if not any(o.leg is Leg.ENTRY and o.live for o in orders):
             continue
-        cause = entry_cancel_cause(trade, latest(trade.symbol), now, last_entry, config)
+        cause = (entry_block_cause(engine, config, trade, now)
+                 or entry_cancel_cause(trade, latest(trade.symbol), now, last_entry, config))
         if cause is not None:
             engine.cancel_entry(trade.trade_id, cause)
 

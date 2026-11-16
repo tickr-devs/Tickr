@@ -9,9 +9,11 @@ from decimal import Decimal as D
 
 import pytest
 
-from tickr.engine.core import EntryRefused, Leg
+from tickr.config import GateResult
+from tickr.engine.core import EntryRefused, Fence, Leg
 from tickr.research.records import load_records, record_from_mapping, record_to_json
 from tickr.risk.admission import AdmissionLimits
+from tickr.runtime import entries
 from tickr.strategy.base import Verdict
 
 from .test_entries import BAR, CFG, GATE_OPEN, NOW, Desk, decision, guard, quote
@@ -145,3 +147,85 @@ def test_rest_bars_round_trips_in_records_and_is_absent_when_unset(tmp_path):
 
 def test_the_limit_comes_from_config():
     assert AdmissionLimits.from_config(CFG).max_entry_rest_bars == CFG.risk.max_entry_rest_bars
+
+
+# --- a working entry ends while new entries are blocked (Fable review of #527) -----------
+
+
+def _pause(desk: Desk) -> None:
+    with desk.store.transaction():
+        desk.engine.entry_stop_row(True, "operator pause")
+
+
+def _foreign(desk: Desk) -> None:
+    desk.broker.add_foreign_position("XYZ", D(1), D(5))
+    desk.engine.step()
+
+
+def _gate(desk: Desk) -> None:
+    desk.engine.gate = lambda: GateResult(False, "owner closed it")
+
+
+@pytest.mark.parametrize(("block", "cause"), [
+    (_pause, "entries fenced: entry-stop"),
+    (_foreign, "entries fenced: foreign-position"),
+    (_gate, "trading gate closed: owner closed it"),
+])
+def test_a_resting_entry_is_cancelled_once_new_entries_are_blocked(tmp_path, block, cause):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    assert guard(desk, at("10.40", NOW), NOW) == []  # resting, nothing blocks
+    block(desk)
+    later = NOW + 3 * M1
+    (journaled,) = guard(desk, at("10.40", later), later)
+    assert journaled.startswith(cause)
+    (entry,) = desk.engine.orders(trade_id)
+    assert entry.cancel_state == "sent"
+
+
+def test_a_resting_entry_is_cancelled_when_another_trade_uses_up_the_daily_loss(tmp_path,
+                                                                                monkeypatch):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    room = entries.daily_loss_room(desk.engine, CFG, NOW)
+    # Another trade closed today at a loss larger than the room this one left.
+    monkeypatch.setattr(entries, "realized_loss_today", lambda engine, now: room + D(1))
+    (journaled,) = guard(desk, at("10.40", NOW), NOW)
+    assert journaled.startswith("daily loss ceiling")
+    assert desk.engine.orders(trade_id)[0].cancel_state == "sent"
+
+
+def test_a_resting_entry_is_cancelled_while_todays_money_is_unknown(tmp_path, monkeypatch):
+    desk = Desk(tmp_path)
+    opened(desk)
+    monkeypatch.setattr(entries, "realized_loss_today", lambda engine, now: None)
+    (journaled,) = guard(desk, at("10.40", NOW), NOW)
+    assert journaled.startswith("today's realized result unknown")
+
+
+def test_a_fence_about_the_trade_itself_leaves_its_entry_to_the_engine(tmp_path):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    with desk.store.transaction():
+        desk.engine._fence_row(Fence.UNPROTECTED, trade_id, "partial fill, stop on its way")
+    assert guard(desk, at("10.40", NOW), NOW) == []
+
+
+def test_a_fill_racing_the_block_cancel_is_protected(tmp_path):
+    desk = Desk(tmp_path)
+    trade_id = opened(desk)
+    (entry,) = desk.engine.orders(trade_id)
+    _pause(desk)
+    desk.broker.fill(entry.client_order_id, D(3), D("9.90"))  # fills before the cancel lands
+    guard(desk, at("10.40", NOW), NOW)
+    desk.engine.step()
+    desk.engine.step()
+    stops = [o for o in desk.engine.orders(trade_id) if o.leg is Leg.STOP]
+    assert sum(s.quantity for s in stops) == D(3)
+
+
+def test_the_simulator_refuses_a_resting_entry():
+    from tickr.replay.engine import _entry_problem
+
+    assert _entry_problem(resting()) == "resting limit entries (rest_bars) are not modelled"
+    assert _entry_problem(decision()) is None
