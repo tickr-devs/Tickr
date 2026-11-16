@@ -67,12 +67,17 @@ public enum APIError: Error, LocalizedError, Equatable {
   case contract(String)
   /// The API could not be reached.
   case unreachable(String)
+  /// A read the bot has no route for (404 `not_found` on a GET that names no record): a bot
+  /// older than the app, or, for the demo day, a read its recording does not hold. Said in the
+  /// person's language, never as "API refused (404 not_found): no resource '/movers'".
+  case notServed(demo: Bool)
 
   public var errorDescription: String? {
     switch self {
     case .refused(let status, let error, let cause): return String(localized: L10n.apiRefused(status, error, cause))
     case .contract(let detail): return String(localized: L10n.apiContract(detail))
     case .unreachable(let detail): return String(localized: L10n.apiUnreachable(detail))
+    case .notServed(let demo): return String(localized: demo ? L10n.apiNotRecordedDemo : L10n.apiNotServed)
     }
   }
 }
@@ -101,6 +106,9 @@ public struct APIClient: Sendable {
   public static let defaultBaseURL = URL(string: "http://127.0.0.1:8766")!
   /// HTTP status of a successful read.
   static let ok = 200
+  /// HTTP status and error-v1 `error` of a read the API has no answer for (docs/api.md).
+  static let notFound = 404
+  static let notFoundError = "not_found"
   /// HTTP status of a queued command (accepted, not yet executed).
   static let accepted = 202
   /// API paths of the reads (docs/api.md); `daysPath` + "/" + date reads one day.
@@ -363,6 +371,17 @@ public struct APIClient: Sendable {
     return request
   }
 
+  /// Whether a refusal says the bot has no route for this read: 404 `not_found` on a GET. The one
+  /// GET the bot answers 404 for a missing record (no decision recorded for a symbol and day,
+  /// `decisionsPath`) stays a refusal with its cause; the demo day answers 404 for every read its
+  /// recording does not hold, that one included.
+  static func notServed(_ request: URLRequest, status: Int, error: String, demo: Bool) -> Bool {
+    guard status == notFound, error == notFoundError, request.httpMethod == get, let url = request.url else {
+      return false
+    }
+    return demo || !url.path.hasSuffix(decisionsPath)
+  }
+
   func perform<T: Decodable>(_ request: URLRequest, expect: Int) async throws -> T {
     let data: Data
     let response: URLResponse
@@ -380,6 +399,10 @@ public struct APIClient: Sendable {
     if http.statusCode != expect {
       guard let refusal = try? decoder.decode(ErrorV1.self, from: data) else {
         throw APIError.contract(String(localized: L10n.apiNoErrorBody(http.statusCode)))
+      }
+      let demo = DemoDay.isDemo(baseURL)
+      if Self.notServed(request, status: http.statusCode, error: refusal.error, demo: demo) {
+        throw APIError.notServed(demo: demo)
       }
       // The cause in the person's language, so no screen shows the bot's raw words for a known code.
       throw APIError.refused(status: http.statusCode, error: refusal.error, cause: refusal.causeText)

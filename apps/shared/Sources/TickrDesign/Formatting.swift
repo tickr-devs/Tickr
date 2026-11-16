@@ -43,6 +43,14 @@ public enum Money {
     fixed(abs(value), fractionDigits: abs(value) < subPennyBelow ? subPennyDigits : centsDigits, grouped: true)
   }
 
+  /// "+0.06", "−0.0012": a price's change per share at that price's tick (four decimals below
+  /// one dollar, else two; two when the price is unknown), with its sign: the prices after an exit
+  /// or a skipped signal on both apps. A move of the price, not an amount of money: no "$".
+  public static func priceChange(_ change: Decimal, at price: Decimal?) -> String {
+    let digits = price.map { abs($0) < subPennyBelow ? subPennyDigits : centsDigits } ?? centsDigits
+    return signed(change, fractionDigits: digits)
+  }
+
   /// "+$11.80", "−$1,234.50", "$0.00": a money result (a day, a trade, an open position),
   /// thousands grouped with "," in every language.
   public static func signedUSD(_ value: Decimal) -> String {
@@ -92,6 +100,11 @@ public enum Money {
   /// `signed(_:fractionDigits:)` of a chart value (a price change).
   public static func signed(_ value: Double, fractionDigits: Int = centsDigits) -> String {
     value.isFinite ? signed(decimal(value), fractionDigits: fractionDigits) : missing
+  }
+
+  /// `priceChange(_:at:)` of chart values (a candle's change from the one before).
+  public static func priceChange(_ change: Double, at price: Double) -> String {
+    change.isFinite ? priceChange(decimal(change), at: price.isFinite ? decimal(price) : nil) : missing
   }
 
   /// `number(_:fractionDigits:)` of a chart value (a study's value).

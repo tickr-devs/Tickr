@@ -471,20 +471,11 @@ struct DayStepper: View {
   /// "Сб, 28 февр. · сегодня" (157 points; "сент." and "февр." are the longest month
   /// abbreviations), as well as the English "Wed Jan 28 · today" (128).
   static let dayMinWidth: CGFloat = 158
-  /// Accessibility id of the DEMO chip, for the UI tests.
-  static let demoChipID = "toolbar-demo"
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
       ConnectionStatus()
         .padding(.trailing, Self.connectionGap)
-      if model.dayLocked {
-        // The one demo chip of both apps (Settings, the iPhone's day line): violet, as the boards
-        // draw the demo; it becomes the dashed demo `EnvironmentBadge` once that is shared (#499).
-        Badge(L10n.Toolbar.demoChip, tone: .highlight)
-          .help(Text(L10n.Toolbar.demoHelp))
-          .accessibilityIdentifier(Self.demoChipID)
-      }
       // On the demo day there is one day: no arrows, no day menu and no Today that would do
       // nothing (they also pushed the stepper into the toolbar's overflow in a narrow window).
       if model.dayLocked {
@@ -528,7 +519,7 @@ struct DayStepper: View {
           Button {
             model.selectedDay = day.day
           } label: {
-            Text(L10n.Toolbar.dayRow(DayText.day(day.day), Money.signed(day.resultUsd.value), day.trades))
+            Text(L10n.Toolbar.dayRow(DayText.day(day.day), Money.signedUSD(day.resultUsd.value), day.trades))
           }
         }
       } label: {
