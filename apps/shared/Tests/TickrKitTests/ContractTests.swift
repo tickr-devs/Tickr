@@ -308,7 +308,7 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
   func ordinaryBlockIsCalm() throws {
     let headline = Headline.make(response: try response("status-response-v1.json"), fetchError: nil)
     #expect(headline.severity == .ok)
-    #expect(headline.text.hasPrefix("Holding 1 position"))
+    #expect(headline.text == "Holding 1 position · protected by a broker stop")
   }
 
   @Test func blockNeedingTheOperatorIsAttention() throws {

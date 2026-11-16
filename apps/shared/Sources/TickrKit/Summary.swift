@@ -57,7 +57,9 @@ public struct Headline: Equatable, Sendable {
     // Open positions, all protected and nothing for the operator to do: the headline says what
     // the bot holds, as on the design, not why a further entry would be refused.
     if status.entryBlock?.attention != true, !status.positions.isEmpty {
-      return Headline(text: String(localized: L10n.headlineHolding(status.positions.count)), severity: .ok)
+      let count = status.positions.count
+      let text = count == 1 ? L10n.headlineHoldingOne : L10n.headlineHolding(count)
+      return Headline(text: String(localized: text), severity: .ok)
     }
     // An ordinary refusal (outside the entry window) is calm; only a block that needs the operator
     // is attention.
