@@ -107,7 +107,9 @@ extension L10n {
     LocalizedStringResource("kit.mover.dollars", defaultValue: "\(amount)/min", bundle: bundle)
   }
   /// The fast mover thresholds of the active strategy.
+  // swiftlint:disable:next line_length
   static func moverRules(_ volume: String, _ move: String, _ dollars: String, _ floor: String, _ bars: Int) -> LocalizedStringResource {
+    // swiftlint:disable:next line_length
     LocalizedStringResource("kit.mover.rules", defaultValue: "vol ≥ \(volume)× · move ≥ \(move) ATR · $ vol ≥ \(dollars)× · bar ≥ \(floor) · vs last \(bars) bars", bundle: bundle)
   }
 }
