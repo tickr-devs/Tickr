@@ -38,7 +38,6 @@ NO_RULES = "the active strategy defines no fast movers ([spike] in its strategy.
 SIGNALS = ("volume_ratio", "move_atr", "dollar_volume_ratio")
 # Where a refusal of each discovery stage leaves the symbol (data.discovery.Stage values).
 _DROPPED_AT = {"screener": S.UNIVERSE, "snapshot": S.QUOTE, "bars": S.BARS}
-_REACHED_BEFORE = {S.UNIVERSE: S.SCREENERS, S.QUOTE: S.UNIVERSE, S.BARS: S.QUOTE}
 NEVER_VERIFIED = "never_verified"
 
 
@@ -138,19 +137,19 @@ class DiscoveryFolded:
             reach(instrument["symbol"], S.SCREENERS)
         for r in raw["rejections"]:
             stage = _DROPPED_AT[r["stage"]]
-            reach(r["symbol"], _REACHED_BEFORE[stage])
+            reach(r["symbol"], stage)
             check = _check(r["check"])
             self.latest[r["symbol"]] = _Outcome(
                 stage, api.SymbolState.DROPPED, finished, r["cause"],
                 None if check is not None else f"{r['measured']} (needs {r['threshold']})",
                 check)
         for symbol in raw["candidates"]:
-            reach(symbol, S.BARS)
+            reach(symbol, S.STRATEGY)
             self.latest[symbol] = _Outcome(S.STRATEGY, api.SymbolState.WAITING, finished)
         stopped = raw["stopped"]
         for symbol in raw["not_reached"]:
             stage = S.BARS if stopped is not None and stopped["stage"] == "bars" else S.QUOTE
-            reach(symbol, _REACHED_BEFORE[stage])
+            reach(symbol, stage)
             cause = None if stopped is None else f"{stopped['stage']} {stopped['cause']}"
             self.latest[symbol] = _Outcome(stage, api.SymbolState.NOT_REACHED, finished, cause,
                                            None if stopped is None else stopped["detail"])
@@ -277,6 +276,7 @@ def symbols_document(day: date, folded: DiscoveryFolded, chips: Sequence[api.Flo
                                stop.state.value)
         if now is None:  # listed by a screener after the latest recorded pass
             now = _Outcome(S.UNIVERSE, api.SymbolState.NOT_REACHED, None, NO_PASS)
+        furthest = _later(furthest, now.stage)  # where it stands now, it got to
         chip = chip_of.get(symbol)
         rows.append(api.SymbolRowV1(
             symbol=symbol, sources=chip.ranks if chip else (),

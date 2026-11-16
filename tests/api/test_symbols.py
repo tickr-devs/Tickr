@@ -104,13 +104,13 @@ def test_every_symbol_with_its_furthest_stage_and_where_it_stands_now(api, cfg):
     assert rows["ABCD"]["verdict"] == "WATCH"
     assert rows["ABCD"]["sources"] == [{"kind": "GAINERS", "rank": 1},
                                        {"kind": "TOP_ACTIVES", "rank": 2}]
-    assert where("SPY") == ("screeners", "universe", "dropped", "SECURITY_TYPE_NOT_ALLOWED")
+    assert where("SPY") == ("universe", "universe", "dropped", "SECURITY_TYPE_NOT_ALLOWED")
     assert rows["SPY"]["detail"] == "ETF (needs COMMON_STOCK)"
     # Reached the strategy (and risk refused it) earlier; the newer pass dropped it at bars.
     assert where("THIN") == ("strategy", "bars", "dropped", "STRATEGY_LIQUIDITY")
     assert rows["THIN"]["check"]["measured"] == "812345.1234"  # rounded like every check
-    assert where("SLOW") == ("quote", "bars", "not_reached", "bars budget")
-    assert where("LATE") == ("universe", "quote", "dropped", "QUOTE_STALE")
+    assert where("SLOW") == ("bars", "bars", "not_reached", "bars budget")
+    assert where("LATE") == ("quote", "quote", "dropped", "QUOTE_STALE")
     assert rows["LATE"]["first_seen"] == "2026-11-16T14:55:00.000Z"
     counts = [(s["stage"], s["count"]) for s in body["stages"]]
     assert [stage for stage, _ in counts] == [s.value for s in contract.SymbolStage]
@@ -143,8 +143,9 @@ def test_a_filled_trade_is_at_the_stop_stage():
                                                           4).rows}
     assert (rows["ABCD"].furthest, rows["ABCD"].state) == (contract.SymbolStage.STOP,
                                                            contract.SymbolState.PASSED)
+    # Filled, its stop not seen working yet: it got to the stop stage and waits there.
     assert (rows["EFGH"].furthest, rows["EFGH"].stage, rows["EFGH"].state) == (
-        contract.SymbolStage.ORDER, contract.SymbolStage.STOP, contract.SymbolState.WAITING)
+        contract.SymbolStage.STOP, contract.SymbolStage.STOP, contract.SymbolState.WAITING)
 
 
 def test_no_pass_yet_says_so(api):

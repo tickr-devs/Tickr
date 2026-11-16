@@ -1801,8 +1801,8 @@ class SymbolState(StrEnum):
 
 @dataclass(frozen=True)
 class SymbolRowV1:
-    """One symbol seen on the day. `furthest`: the latest stage it reached at any time of the
-    day. `stage` and `state`: where it stands now, from the newer of its latest discovery pass
+    """One symbol seen on the day. `furthest`: the furthest stage it got to (judged or
+    waiting there) at any time of the day, never before `stage`. `stage` and `state`: where it stands now, from the newer of its latest discovery pass
     and its latest active decision (trades win: a filled entry is at `order` or `stop`).
     `cause`: the code of why it was dropped or not reached (a discovery cause such as
     `QUOTE_STALE` or `STRATEGY_LIQUIDITY`, the verdict `IGNORE`, or the admission `refused`),

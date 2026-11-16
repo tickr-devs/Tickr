@@ -1028,8 +1028,9 @@ Each row:
 - `sources`: `{kind, rank}` per screener that listed it, as the `/flow` chip's `ranks` (its
   latest rank in each list); `change_pct` as the chip's.
 - `first_seen`: the start of the first discovery pass that listed it.
-- `furthest`: the furthest stage it reached that day (a pass candidate reached `bars`, a
-  decision `strategy`, a taken entry `risk`, a filled entry `order`, a verified stop `stop`).
+- `furthest`: the furthest stage it got to that day, judged or waiting there (a refusal at a
+  stage got to that stage, a pass candidate and a decision `strategy`, a taken entry `risk`, a
+  filled entry `order`, a verified stop `stop`); never before `stage`.
 - `stage` and `state`: where it stands now: `passed` (stop verified), `waiting` (nothing
   failed, the next stage has not happened yet: a candidate awaiting the strategy, a `WATCH`,
   a taken entry awaiting its fill, a stop not yet seen working), `dropped` (refused at
