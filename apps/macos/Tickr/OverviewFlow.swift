@@ -40,9 +40,9 @@ struct FlowChips: View {
   var body: some View {
     Marquee(moving: moving, content: chips) {
       HStack(spacing: Tokens.Space.s) {
-        // Each chip opens the Chart on its symbol.
+        // No links here: the marquee draws its row as an image, outside the screen's environment.
         ForEach(chips, id: \.symbol) { chip in
-          ChartLink(chip.symbol) { FlowChip(chip: chip) }
+          FlowChip(chip: chip)
         }
       }
       .padding(.trailing, Tokens.Space.s)
