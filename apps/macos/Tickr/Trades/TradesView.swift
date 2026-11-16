@@ -26,7 +26,7 @@ struct TradesView: View {
   static let detailWidth: CGFloat = 330
 
   /// Entrance order of the screen's parts.
-  private enum Order: Int {
+  fileprivate enum Order: Int {
     case days = 0, performance, dayList, stats, trades, detail, notTaken, whatIf
   }
 
@@ -220,6 +220,8 @@ private struct DayRow: View {
   let day: DaySummary
   let isShown: Bool
   let isToday: Bool
+  /// Under the pointer: the sunken tint of the design's day rows.
+  @State private var hovered = false
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
@@ -248,12 +250,15 @@ private struct DayRow: View {
     }
     .padding(.horizontal, Tokens.Space.s)
     .padding(.vertical, Tokens.Space.s)
-    .background(isShown ? Palette.selection : .clear, in: .rect(cornerRadius: Tokens.Radius.medium))
+    .background(isShown ? Palette.selection : hovered ? Palette.surfaceSunken : .clear,
+      in: .rect(cornerRadius: Tokens.Radius.medium))
     .overlay(
       RoundedRectangle(cornerRadius: Tokens.Radius.medium)
         .strokeBorder(isShown ? Palette.separatorStrong : .clear, lineWidth: Tokens.Stroke.thin))
     .contentShape(.rect)
+    .onHover { hovered = $0 }
     .animation(Tokens.Motion.quick, value: isShown)
+    .animation(Tokens.Motion.quick, value: hovered)
   }
 }
 
@@ -341,6 +346,11 @@ private struct Stat<Value: View>: View {
 private struct TradesTable: View {
   @Environment(AppModel.self) private var model
   @Binding var selection: DayTrade.ID?
+  /// The row under the pointer, tinted as one.
+  @State private var hovered: TradeRow.ID?
+  /// Rows that have risen once: the table recycles a row's cells as the screen scrolls, and a row
+  /// shown again never rises again.
+  @State private var risen: Set<TradeRow.ID> = []
   let showOnChart: (String) -> Void
 
   /// Least and preferred widths of the table's columns, in points. Each least width holds the
@@ -427,74 +437,100 @@ private struct TradesTable: View {
   }
 
   private var table: some View {
-    Table(rows, selection: $selection) {
+    let rows = rows
+    // Worked out once per render, in one pass over the rows (not a search per cell).
+    let steps = RowEntrance.steps(rows.map(\.id), first: RowEntrance.tradesRows, risen: risen)
+    return Table(rows, selection: $selection) {
       TableColumn(Self.header(L10n.Trades.closed)) { row in
-        switch row {
-        case .open(let position):
-          // Not closed yet: when it opened, quieter.
-          Text(verbatim: Format.marketTime(position.position.openedAt.date))
-            .font(Tokens.Typography.calloutMono)
-            .foregroundStyle(Palette.textTertiary)
-        case .closed(let trade):
-          Text(verbatim: Format.marketTime(trade.closedAt.date)).font(Tokens.Typography.calloutMono)
+        cell(row, step: steps[row.id]) {
+          switch row {
+          case .open(let position):
+            // Not closed yet: when it opened, quieter.
+            Text(verbatim: Format.marketTime(position.position.openedAt.date))
+              .font(Tokens.Typography.calloutMono)
+              .foregroundStyle(Palette.textTertiary)
+          case .closed(let trade):
+            Text(verbatim: Format.marketTime(trade.closedAt.date)).font(Tokens.Typography.calloutMono)
+          }
         }
       }
       .width(min: Column.timeMin, ideal: Column.time)
       TableColumn(Self.header(L10n.Trades.symbol)) { row in
-        Text(verbatim: row.symbol).font(Tokens.Typography.calloutMono.weight(.semibold))
+        cell(row, step: steps[row.id]) {
+          Text(verbatim: row.symbol).font(Tokens.Typography.calloutMono.weight(.semibold))
+        }
       }
       .width(min: Column.symbolMin, ideal: Column.symbol)
       TableColumn(Self.header(L10n.Trades.quantity)) { row in
-        Text(verbatim: Format.quantity(row.quantity)).font(Tokens.Typography.calloutMono)
+        cell(row, step: steps[row.id]) {
+          Text(verbatim: Format.quantity(row.quantity)).font(Tokens.Typography.calloutMono)
+        }
       }
       .width(min: Column.quantityMin, ideal: Column.quantity)
       TableColumn(Self.header(L10n.Trades.entry)) { row in
-        Text(verbatim: Format.price(row.entry)).font(Tokens.Typography.calloutMono)
+        cell(row, step: steps[row.id]) {
+          Text(verbatim: Format.price(row.entry)).font(Tokens.Typography.calloutMono)
+        }
       }
       .width(min: Column.priceMin, ideal: Column.price)
       TableColumn(Self.header(L10n.Trades.exit)) { row in
-        Text(verbatim: Format.price(row.exit)).font(Tokens.Typography.calloutMono)
-          .foregroundStyle(row.exit == nil ? Palette.textQuaternary : Palette.textPrimary)
+        cell(row, step: steps[row.id]) {
+          Text(verbatim: Format.price(row.exit)).font(Tokens.Typography.calloutMono)
+            .foregroundStyle(row.exit == nil ? Palette.textQuaternary : Palette.textPrimary)
+        }
       }
       .width(min: Column.priceMin, ideal: Column.price)
       TableColumn(Self.header(L10n.Trades.stop)) { row in
-        Text(verbatim: Format.price(row.stop)).font(Tokens.Typography.calloutMono)
-          .foregroundStyle(row.stopUnverified ? Palette.lossText : Palette.textPrimary)
+        cell(row, step: steps[row.id]) {
+          Text(verbatim: Format.price(row.stop)).font(Tokens.Typography.calloutMono)
+            .foregroundStyle(row.stopUnverified ? Palette.lossText : Palette.textPrimary)
+        }
       }
       .width(min: Column.priceMin, ideal: Column.price)
       TableColumn(Self.header(L10n.Trades.reason)) { row in
-        switch row {
-        case .open(let position):
-          // A position still open: the OPEN tag, which opens the Chart on it.
-          Button { showOnChart(position.id) } label: {
-            Badge(L10n.Trades.open, color: Palette.accentText)
+        cell(row, step: steps[row.id]) {
+          switch row {
+          case .open(let position):
+            // A position still open: the OPEN tag, which opens the Chart on it.
+            Button { showOnChart(position.id) } label: {
+              HStack(spacing: Tokens.Space.xs) {
+                // One pulse per thing the bot did to the position (a fill, a stop placed or
+                // verified), never a loop.
+                PulseDot(Palette.accent, size: Tokens.Size.dotSmall, event: position.event)
+                Badge(L10n.Trades.open, color: Palette.accentText)
+              }
+            }
+            .buttonStyle(.plain)
+            .help(Text(L10n.Trades.showOnChart))
+            .accessibilityLabel(Text(L10n.Trades.openPosition(position.id)))
+            .accessibilityIdentifier(TradeRow.openID)
+          case .closed(let trade):
+            // Coloured as the event ticker colours the exit: by its result, amber when forced.
+            Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
+              color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
           }
-          .buttonStyle(.plain)
-          .help(Text(L10n.Trades.showOnChart))
-          .accessibilityLabel(Text(L10n.Trades.openPosition(position.id)))
-          .accessibilityIdentifier(TradeRow.openID)
-        case .closed(let trade):
-          // Coloured as the event ticker colours the exit: by its result, amber when forced.
-          Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
-            color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
         }
       }
       .width(min: Column.reasonMin, ideal: Column.reason)
       TableColumn(Self.header(L10n.Trades.resultR)) { row in
-        Text(verbatim: row.resultR.map(Risk.text) ?? Format.missing)
-          .font(Tokens.Typography.calloutMono)
-          .foregroundStyle(row.resultRColor)
+        cell(row, step: steps[row.id]) {
+          Text(verbatim: row.resultR.map(Risk.text) ?? Format.missing)
+            .font(Tokens.Typography.calloutMono)
+            .foregroundStyle(row.resultRColor)
+        }
       }
       .width(min: Column.figureMin, ideal: Column.figure)
       TableColumn(Self.header(L10n.Trades.result)) { row in
-        if let result = row.result {
-          // Greyed while it is as of an older bar, as in the menu-bar panel.
-          MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono, muted: row.isStale)
-        } else {
-          Text(L10n.Trades.open)
-            .textCase(.lowercase)
-            .font(Tokens.Typography.calloutMono)
-            .foregroundStyle(Palette.textQuaternary)
+        cell(row, step: steps[row.id]) {
+          if let result = row.result {
+            // Greyed while it is as of an older bar, as in the menu-bar panel.
+            MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono, muted: row.isStale)
+          } else {
+            Text(L10n.Trades.open)
+              .textCase(.lowercase)
+              .font(Tokens.Typography.calloutMono)
+              .foregroundStyle(Palette.textQuaternary)
+          }
         }
       }
       .width(min: Column.moneyMin, ideal: Column.money)
@@ -509,6 +545,32 @@ private struct TradesTable: View {
       if let row = row(ids) { showOnChart(row.symbol) }
     }
   }
+
+  /// One cell of `row`: one of the first rows rises in its turn (`step`, see `RowEntrance`) after
+  /// the card as the table appears, any other shows at once; and the whole row takes a light tint
+  /// under the pointer, as the design's rows. Each cell's tint reaches half the gap to the next, so
+  /// the row tints as one.
+  private func cell(_ row: TradeRow, step: Int?, @ViewBuilder _ content: () -> some View) -> some View {
+    let lit = hovered == row.id
+    return content()
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        Rectangle().fill(Palette.info.opacity(lit ? Tokens.Opacity.wash : 0))
+          .padding(-Self.cellOutset)
+          .allowsHitTesting(false)
+      }
+      .animation(Tokens.Motion.quick, value: lit)
+      .onHover { inside in
+        if inside { hovered = row.id } else if hovered == row.id { hovered = nil }
+      }
+      .modifier(EntranceRise(step: step.map { TradesView.Order.trades.rawValue + 1 + $0 }) {
+        risen.insert(row.id)
+      })
+  }
+
+  /// How far a hovered row's tint reaches past each cell, in points: half the table's cell gaps.
+  static let cellOutset = EdgeInsets(
+    top: Tokens.Space.xs, leading: Tokens.Space.xs / 2, bottom: Tokens.Space.xs, trailing: Tokens.Space.xs / 2)
 
   /// A column's title as the design's table heads read: mono label type, uppercase.
   private static func header(_ title: LocalizedStringResource) -> Text {
@@ -1100,3 +1162,40 @@ private struct WhatIfCard: View {
     .frame(width: PreviewAPI.windowWidth, height: PreviewAPI.windowHeight)
 }
 #endif
+
+/// Which of a table's rows rise as it appears, and in what turn: the first `first` rows not yet
+/// risen, by their place in the table; every other row shows at once. One pass over the rows.
+enum RowEntrance {
+  /// Rows of the Trades table that rise one after another as it appears, about a window's worth:
+  /// later rows show at once, so a long day never waits seconds for its last rows.
+  static let tradesRows = 10
+
+  static func steps<ID: Hashable>(_ ids: [ID], first: Int, risen: Set<ID>) -> [ID: Int] {
+    var steps: [ID: Int] = [:]
+    for (index, id) in ids.prefix(first).enumerated() where !risen.contains(id) {
+      steps[id] = index
+    }
+    return steps
+  }
+}
+
+/// A table cell's entrance, fixed when the cell is made: rises at `step` (`rise(step:)`), or shows
+/// at once without one. A recycled cell made again for a row that has risen gets no step, and a
+/// later render never changes a made cell's choice. `appeared` records the rise.
+private struct EntranceRise: ViewModifier {
+  @State private var step: Int?
+  let appeared: () -> Void
+
+  init(step: Int?, appeared: @escaping () -> Void) {
+    _step = State(initialValue: step)
+    self.appeared = appeared
+  }
+
+  func body(content: Content) -> some View {
+    if let step {
+      content.rise(step: step).onAppear(perform: appeared)
+    } else {
+      content
+    }
+  }
+}

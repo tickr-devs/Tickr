@@ -431,6 +431,18 @@ enum L10n {
     static func more(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.more", defaultValue: "+\(count)", bundle: L10n.bundle)
     }
+    /// Rows of a stage's detail beyond those listed: "4 more".
+    static func moreRows(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.moreRows", defaultValue: "\(count) more", bundle: L10n.bundle)
+    }
+    /// VoiceOver hint of a live-flow stage: a tap opens its detail.
+    static var stageDetailsHint: LocalizedStringResource {
+      LocalizedStringResource("flow.stageDetailsHint", defaultValue: "Shows what this stage did today", bundle: L10n.bundle)
+    }
+    /// VoiceOver hint of a symbol in a stage's detail.
+    static var openOnChart: LocalizedStringResource {
+      LocalizedStringResource("flow.openOnChart", defaultValue: "Opens the chart on this symbol", bundle: L10n.bundle)
+    }
     /// The position slots in use, on the live flow's header (the link to Risk): "slots 2 of 3".
     static func slots(_ used: Int, _ limit: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.slots", defaultValue: "slots \(used) of \(limit)", bundle: L10n.bundle)
@@ -1460,7 +1472,7 @@ enum L10n {
     }
     static var sessionFooter: LocalizedStringResource {
       LocalizedStringResource("settings.sessionFooter",
-        defaultValue: "US exchange hours: extended 04:00–20:00, regular 09:30–16:00. Half days are not drawn.",
+        defaultValue: "Today's hours from the bot's exchange calendar. Extended hours are shown, not traded.",
         bundle: L10n.bundle)
     }
     static var regularHours: LocalizedStringResource {

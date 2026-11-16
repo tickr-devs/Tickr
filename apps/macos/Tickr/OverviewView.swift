@@ -99,6 +99,8 @@ struct OverviewView: View {
           }
           .padding(Self.padding)
         }
+        // Also when the cards below grow: until they load, the page can be too short to bring the
+        // card to the top.
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
           showSafetyFirstIfAsked(proxy)
         }
@@ -121,11 +123,12 @@ struct OverviewView: View {
 
 private struct Header: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     HStack(alignment: .center, spacing: Tokens.Space.l) {
       // Drawn at once while the opening flies the mark here; it draws itself on later visits.
-      BrandMark(live: model.isCurrent, drawsIn: model.openingPlayed)
+      BrandMark(live: model.ornamentsMove(reduceMotion: reduceMotion), drawsIn: model.openingPlayed)
         // Hidden while the launch's opening flies its own mark here; shown as that one lands.
         .opacity(model.openingPlayed ? 1 : 0)
         .onGeometryChange(for: CGPoint.self) { proxy in
@@ -283,6 +286,7 @@ private struct DayResult: View {
 
 private struct LiveFlowCard: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     Card(L10n.Flow.title) {
@@ -303,14 +307,16 @@ private struct LiveFlowCard: View {
       // The latest event under the title, then the screeners' chips, as in the design.
       LatestEvent()
       if let chips = model.flow?.chips, !chips.isEmpty {
-        FlowChips(chips: chips, moving: model.isLive)
+        FlowChips(chips: chips, moving: model.ornamentsMove(reduceMotion: reduceMotion))
       }
       // A failed /flow read: the stages and dots below then lack the day's flow.
       if let error = model.flowError {
         Footnote(L10n.Screener.unavailable(error), color: Palette.warningText)
       }
       Pipeline(stages: stages, marks: FlowBoard.marks(flow: model.flow, skipped: model.skipped,
-        positions: model.isLive ? model.status?.positions ?? [] : []), moving: model.isLive)
+        positions: model.isLive ? model.status?.positions ?? [] : []), moving: model.isLive,
+        sources: StageSources(flow: model.flow, skipped: model.skipped, watching: model.watching,
+          status: model.isLive ? model.status : nil, settings: model.settings))
     }
   }
 
@@ -396,7 +402,8 @@ extension Board.Event.Tone {
 /// The stages a setup passes through, on one line, with today's symbols as dots under the stage
 /// each reached. Nothing moves on a timer: a dot flies to its new stage only when a read of the
 /// bot's flow moves it there, a refused symbol drops into its stage's tray, and a stage pulses
-/// once when its value changes.
+/// once when its value changes. Hovering a stage highlights it; a click opens what it did today
+/// (`StageDetailView`) in a popover anchored to it.
 private struct Pipeline: View {
   /// The stages, in the order a setup passes them.
   enum StageID: Hashable {
@@ -412,6 +419,19 @@ private struct Pipeline: View {
       case .order: .order
       case .stop: .stop
       case .reconcile: nil
+      }
+    }
+
+    /// The stage of the detail a click opens.
+    var pipeline: PipelineStage {
+      switch self {
+      case .screeners: .screeners
+      case .universe: .universe
+      case .strategy: .strategy
+      case .risk: .risk
+      case .order: .order
+      case .stop: .stop
+      case .reconcile: .reconcile
       }
     }
   }
@@ -435,8 +455,14 @@ private struct Pipeline: View {
   let marks: [FlowMark]
   /// The shown day is today: a stage whose value changes pulses once. On a past day nothing moves.
   let moving: Bool
+  /// What the stages' details are built from (`StageDetail`).
+  let sources: StageSources
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Namespace private var board
+  /// The stage under the pointer, highlighted.
+  @State private var hovered: StageID?
+  /// The stage whose detail popover is open.
+  @State private var open: StageID?
 
   /// Most dots a stage shows, as in the design; the rest are counted ("+404").
   static let poolCap = 8
@@ -446,6 +472,8 @@ private struct Pipeline: View {
   static let trayNamed = 2
   /// Blur of the soft glow around a reporting stage, in points.
   static let stageGlow: CGFloat = 9
+  /// Blur of the glow around a stage under the pointer or with its detail open, in points.
+  static let stageGlowHovered: CGFloat = 16
 
   var body: some View {
     ZStack(alignment: .top) {
@@ -467,20 +495,54 @@ private struct Pipeline: View {
     }
   }
 
+  /// A stage as a button: hovering highlights it, a click opens its detail anchored to it.
   private func column(_ stage: Stage) -> some View {
+    let lit = hovered == stage.id || open == stage.id
+    return Button {
+      open = stage.id
+    } label: {
+      columnBody(stage, lit: lit)
+        .padding(.vertical, Tokens.Space.xs)
+        .background {
+          RoundedRectangle(cornerRadius: Tokens.Radius.medium)
+            .fill(stage.color.opacity(lit ? Tokens.Opacity.wash : 0))
+        }
+        .contentShape(RoundedRectangle(cornerRadius: Tokens.Radius.medium))
+    }
+    .buttonStyle(.plain)
+    .pointerStyle(.link)
+    .onHover { inside in
+      if inside {
+        hovered = stage.id
+      } else if hovered == stage.id {
+        hovered = nil
+      }
+    }
+    .animation(reduceMotion ? nil : Tokens.Motion.quick, value: lit)
+    .popover(isPresented: Binding(get: { open == stage.id }, set: { if !$0 { open = nil } }), arrowEdge: .bottom) {
+      StageDetailView(name: stage.name, color: stage.color, detail: StageDetail.make(stage.id.pipeline, from: sources))
+    }
+    .frame(maxWidth: .infinity)
+    .accessibilityLabel(Text(stage.name))
+    .accessibilityValue(Text(verbatim: stage.value ?? Format.missing))
+    .accessibilityHint(Text(L10n.Flow.stageDetailsHint))
+  }
+
+  private func columnBody(_ stage: Stage, lit: Bool) -> some View {
     let reported = stage.value != nil
     let strength = reported ? 1 : Tokens.Opacity.faint
     return VStack(spacing: Tokens.Space.xs) {
       ZStack {
         Circle().fill(Palette.surface)
-        // The design's tint: the stage colour over the card.
-        Circle().fill(stage.color.opacity(Tokens.Opacity.glow * strength))
-        Circle().strokeBorder(stage.color.opacity(strength), lineWidth: Tokens.Stroke.bold)
+        // The design's tint: the stage colour over the card, stronger under the pointer.
+        Circle().fill(stage.color.opacity((lit ? Tokens.Opacity.faint : Tokens.Opacity.glow) * strength))
+        Circle().strokeBorder(stage.color.opacity(lit ? 1 : strength), lineWidth: Tokens.Stroke.bold)
         DesignGlyphView(stage.glyph, side: Tokens.Size.stageGlyph)
-          .foregroundStyle(stage.color.opacity(reported ? 1 : Tokens.Opacity.border))
+          .foregroundStyle(stage.color.opacity(reported || lit ? 1 : Tokens.Opacity.border))
       }
       .frame(width: Tokens.Size.stage, height: Tokens.Size.stage)
-      .shadow(color: reported ? stage.color.opacity(Tokens.Opacity.faint) : .clear, radius: Self.stageGlow)
+      .shadow(color: reported || lit ? stage.color.opacity(lit ? Tokens.Opacity.medium : Tokens.Opacity.faint) : .clear,
+        radius: lit ? Self.stageGlowHovered : Self.stageGlow)
       // One pulse when the stage's value changes (a new count, a verified stop): a real event.
       .eventPulse(Circle(), color: stage.color, scale: Tokens.Motion.pulseScale,
         event: reported && moving ? stage.value : nil)
@@ -518,7 +580,6 @@ private struct Pipeline: View {
       }
     }
     .frame(maxWidth: .infinity)
-    .accessibilityElement(children: .contain)
   }
 
   /// The symbols whose furthest stage this is, as dots under the stage's value, as the design
@@ -912,6 +973,9 @@ private struct MiniChart: View {
               .symbol { PulseDot(Palette.accent, event: values.count) }
           }
           .plain(bars: bars, prices: domain)
+          // Each new M1 bar: the line and the last-price dot glide to their new places (and the
+          // dot pulses once), still in between.
+          .animation(reduceMotion ? nil : Tokens.Motion.standard, value: values.count)
           .reveal(drawn)
         }
       } else {
@@ -1018,7 +1082,7 @@ private struct Radar: View {
       RadarSweep(
         color: Palette.accent.opacity(Tokens.Opacity.border), width: Self.sweep,
         blips: [Palette.highlight, Palette.accent],
-        turning: RadarGate.turns(reduceMotion: reduceMotion, current: model.isCurrent, botState: model.status?.botState),
+        turning: model.ornamentsMove(reduceMotion: reduceMotion),
         active: scenePhase == .active)
         .allowsHitTesting(false)
     }

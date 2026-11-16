@@ -53,16 +53,27 @@ struct SettingsView: View {
 
   @ViewBuilder private var pane: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      switch tab {
-      case .general: GeneralSettings()
-      case .trading: TradingSettings()
-      case .notifications: NotificationSettings()
-      case .environment: EnvironmentSettings()
-      case .storage: StorageSettings()
-      case .advanced: AdvancedSettings()
+      // The pane's cards rise one after another each time a tab is shown, as the design's.
+      Group(subviews: paneCards) { cards in
+        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+          card.rise(step: index)
+        }
       }
     }
+    // A new identity per tab: the next tab's cards rise afresh.
+    .id(tab)
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder private var paneCards: some View {
+    switch tab {
+    case .general: GeneralSettings()
+    case .trading: TradingSettings()
+    case .notifications: NotificationSettings()
+    case .environment: EnvironmentSettings()
+    case .storage: StorageSettings()
+    case .advanced: AdvancedSettings()
+    }
   }
 }
 
@@ -130,8 +141,8 @@ private struct GeneralSettings: View {
           .keyboardShortcut(.defaultAction)
       }
       HStack(spacing: Tokens.Space.s) {
-        PulseDot(reachable ? Palette.profit : Palette.loss, pulsing: reachable,
-          event: model.response.map { AnyHashable($0.servedAt) })
+        // One pulse when the bot becomes reachable or unreachable, never per read.
+        PulseDot(reachable ? Palette.profit : Palette.loss, event: reachable)
         Group {
           if let error = model.fetchError {
             Text(L10n.Settings.notReachable(error))
@@ -738,11 +749,18 @@ private struct ConfigCard: View {
 
 // MARK: - Jobs and session
 
+/// A job's state as its dot shows it; a change is one pulse of the dot.
+struct JobDot: Hashable {
+  let tone: Tone
+  let live: Bool
+}
+
 /// The design's "Session" card with the jobs under it (GET /jobs): today's session as a strip,
 /// then what runs on its own on the Mac, one row each: a dot in its colour (pulsing while it
 /// runs), its name, when it runs, its state and its last or next time. Read while Settings is open.
 struct JobsSection: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// Widths of the name and "when" columns, in points (the design's 86 and 130, the name widened
   /// for the Russian names).
@@ -758,7 +776,11 @@ struct JobsSection: View {
   var body: some View {
     SettingsCard(sessionTitle) {
       if let session = model.jobs?.session {
-        SessionStrip(session: session, now: model.botNow)
+        // The now line follows the bot's clock; it moves once a minute (`SessionStrip.minute`).
+        TimelineView(.periodic(from: .now, by: Tokens.Motion.clockTickSeconds)) { context in
+          SessionStrip(span: SessionSpan(session), now: model.botTime(context.date),
+            moving: Self.stripesMove(reduceMotion: reduceMotion, model: model))
+        }
       } else if let cause = model.jobs?.sessionCause {
         Text(verbatim: cause).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary)
       }
@@ -788,6 +810,12 @@ struct JobsSection: View {
     }
   }
 
+  /// Whether the session strip's planned stripes drift: an ornament that reads as "the bot is at
+  /// work", so only while it is (`OrnamentGate`: running, live and fresh status, motion allowed).
+  static func stripesMove(reduceMotion: Bool, model: AppModel) -> Bool {
+    model.ornamentsMove(reduceMotion: reduceMotion)
+  }
+
   private var sessionTitle: LocalizedStringResource {
     guard let day = model.jobs?.session?.day else { return L10n.Settings.session }
     return L10n.Settings.sessionTitle(Format.dayLabel(day))
@@ -800,7 +828,8 @@ struct JobsSection: View {
   ) -> some View {
     let (tone, live) = dot
     return HStack(spacing: Tokens.Space.s) {
-      PulseDot(tone.fill, pulsing: live, event: live ? model.jobs.map { AnyHashable($0.servedAt) } : nil)
+      // One pulse when the job's state changes (its tone or whether it runs), never per read.
+      PulseDot(tone.fill, event: JobDot(tone: tone, live: live))
       name
         .font(Tokens.Typography.calloutMono)
         .foregroundStyle(Palette.textPrimary)
@@ -918,36 +947,49 @@ struct JobsSection: View {
   }
 }
 
-/// Today's session as the design's strip: pre-market and post-market dashed and marked planned
-/// (the bot trades the regular session only), the regular session in the accent with the minutes
-/// after the flatten time in amber, the open, last entry, flatten and close times above and below,
-/// and a line at now.
-private struct SessionStrip: View {
-  let session: SessionTimesV1
+/// Today's session as the design's strip: pre-market and post-market striped, dashed and marked
+/// planned (the bot trades the regular session only), the regular session in the accent with the
+/// minutes after the flatten time in amber, the open, last entry, flatten and close times above
+/// and below, and a line at now with a dot on top.
+///
+/// Its motion, as the design's: the now line glides to each new minute (`Motion.nowGlide`), and
+/// its dot sends out one ring each time now passes a mark of the session (open, last entry,
+/// flatten, close): one move per real change of the time, still in between. The planned stripes
+/// drift while `moving` (ornament). Under Reduce Motion everything stands at its final place.
+struct SessionStrip: View {
+  /// Today's span from the bot's `/jobs` session (`SessionSpan`).
+  let span: SessionSpan
   let now: Date
+  /// Whether the planned stripes drift: `OrnamentGate`, as `JobsSection.stripesMove` decides.
+  let moving: Bool
 
-  /// How long the extended sessions run around the regular one on a full day, in hours:
-  /// pre-market from 04:00, post-market to 20:00 New York time (shown, not traded).
-  static let preMarketHours: Double = 5.5
-  static let postMarketHours: Double = 4
-  /// Seconds in an hour.
-  static let secondsPerHour: Double = 3600
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   /// Height of the bar, and of the whole strip with a row of labels above and below, in points.
   static let barHeight: CGFloat = 22
   static let height: CGFloat = 62
+  /// Side of the dot on the now line, and how far the line starts above the bar, in points (the
+  /// design's 10 px and 10 px).
+  static let nowDot: CGFloat = 10
+  static let lineAbove: CGFloat = 10
+
+  /// The pre-market label: with the calendar's pre-market open, as the design's "PRE 04:00 ·
+  /// BACKLOG"; without the time for an older bot's session.
+  static func preLabel(_ span: SessionSpan) -> LocalizedStringResource {
+    guard span.extendedHoursKnown else { return L10n.Settings.preBacklog }
+    return L10n.Settings.preBacklogFrom(Format.marketMinute(span.start))
+  }
 
   var body: some View {
-    let open = session.regularOpen.date
-    let close = session.regularClose.date
-    let flatten = session.flattenAt.date
-    let start = open.addingTimeInterval(-Self.preMarketHours * Self.secondsPerHour)
-    let end = close.addingTimeInterval(Self.postMarketHours * Self.secondsPerHour)
-    let span = end.timeIntervalSince(start)
+    let open = span.regularOpen
+    let close = span.regularClose
+    let flatten = span.flatten
     let barTop = (Self.height - Self.barHeight) / 2
     let below = Self.height - Tokens.Typography.annotationSize - Tokens.Space.xs
+    let minute = SessionSpan.minute(now)
     GeometryReader { proxy in
       let width = proxy.size.width
-      let x = { (date: Date) -> CGFloat in CGFloat(date.timeIntervalSince(start) / span) * width }
+      let x = { (date: Date) -> CGFloat in CGFloat(span.share(date)) * width }
       ZStack(alignment: .topLeading) {
         planned.frame(width: x(open), height: Self.barHeight).offset(y: barTop)
         Rectangle().fill(Palette.accent.opacity(Tokens.Opacity.glow))
@@ -956,25 +998,42 @@ private struct SessionStrip: View {
         Rectangle().fill(Palette.warning.opacity(Tokens.Opacity.faint))
           .frame(width: x(close) - x(flatten), height: Self.barHeight).offset(x: x(flatten), y: barTop)
         planned.frame(width: width - x(close), height: Self.barHeight).offset(x: x(close), y: barTop)
-        if now > start && now < end {
+        if span.contains(minute) {
           Rectangle().fill(Palette.textPrimary)
-            .frame(width: Tokens.Stroke.bold, height: Self.height)
-            .offset(x: x(now))
+            .frame(width: Tokens.Stroke.bold, height: Self.height - barTop + Self.lineAbove)
+            .offset(x: x(minute), y: barTop - Self.lineAbove)
+            .animation(reduceMotion ? nil : Tokens.Motion.nowGlide, value: minute)
         }
         mark(L10n.Settings.markOpen(Format.marketMinute(open)), color: Palette.accentText, x: x(open))
-        mark(L10n.Settings.markLastEntry(Format.marketMinute(session.lastEntryAt.date)), color: Palette.warningText,
-          x: x(session.lastEntryAt.date), trailing: true)
+        mark(L10n.Settings.markLastEntry(Format.marketMinute(span.lastEntry)), color: Palette.warningText,
+          x: x(span.lastEntry), trailing: true)
         mark(L10n.Settings.markClose(Format.marketMinute(close)), color: Palette.accentText,
           x: x(close) + Tokens.Space.xs)
-        mark(L10n.Settings.preBacklog, color: Palette.highlightText, x: Tokens.Space.s, y: below)
+        mark(Self.preLabel(span), color: Palette.highlightText, x: Tokens.Space.s, y: below)
         mark(L10n.Settings.markFlatten(Format.marketMinute(flatten)), color: Palette.warningText,
           x: x(flatten), y: below, trailing: true)
         mark(L10n.Settings.postBacklog, color: Palette.highlightText, x: width - Tokens.Space.s, y: below,
           trailing: true)
+        // The dot over the labels, as the design's: the line passes behind them.
+        if span.contains(minute) {
+          nowDot
+            .offset(x: x(minute) + (Tokens.Stroke.bold - Self.nowDot) / 2,
+              y: barTop - Self.lineAbove - Self.nowDot / 2)
+            .animation(reduceMotion ? nil : Tokens.Motion.nowGlide, value: minute)
+        }
       }
     }
     .frame(height: Self.height)
     .accessibilityElement(children: .combine)
+  }
+
+  /// The now line's dot, centred on the line's top end; its ring plays once per change of
+  /// `phase`.
+  private var nowDot: some View {
+    Circle().fill(Palette.textPrimary)
+      .frame(width: Self.nowDot, height: Self.nowDot)
+      .eventPulse(Circle(), color: Palette.textPrimary, scale: Tokens.Motion.blipScale,
+        event: span.marksPassed(at: now))
   }
 
   /// A label at `x` (its leading edge, or its trailing edge when `trailing`), `y` from the top.
@@ -993,9 +1052,9 @@ private struct SessionStrip: View {
       .offset(x: trailing ? 0 : x, y: y)
   }
 
-  /// A planned stretch: the highlight's dashed outline over a light wash.
+  /// A planned stretch: the highlight's stripes inside its dashed outline, as the design's.
   private var planned: some View {
-    Rectangle().fill(Palette.highlight.opacity(Tokens.Opacity.wash))
+    Hatch(Palette.highlight, moving: moving)
       .overlay(Rectangle().strokeBorder(Palette.highlight,
         style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine)))
   }
@@ -1058,10 +1117,19 @@ private struct BackupSection: View {
       Image(systemName: symbol)
         .font(Tokens.Typography.symbol)
         .foregroundStyle(tone.fill)
+        // Pops in as the card appears, and again when the backup's state changes (a new backup,
+        // a failure): a new identity per state.
+        .popIn(delay: Tokens.Motion.popStagger)
+        .id(state(of: model.jobs?.backup))
       text
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textPrimary)
     }
+  }
+
+  /// What the check stands for: the newest backup or failure the bot reports. A change pops it.
+  private func state(of job: BackupJobV1?) -> [WireTime?] {
+    [job?.lastAt, job?.lastFailedAt]
   }
 
   /// "Fri Nov 13 16:20" in New York time.

@@ -304,8 +304,21 @@ public enum Tokens {
     public static let pressScale: CGFloat = 0.97
     /// Seconds the pointer rests on a view before its hint appears.
     public static let hintDelay = 0.45
-    /// How far a live state glyph's pulse outline grows.
+    /// How far a live state glyph's pulse outline grows (and today's Trades calendar tile's).
     public static let glyphPulseScale: CGFloat = 1.35
+    #if os(iOS)
+    /// How far a count grows as it bumps once on a rise (`bumps(on:)`): the iPhone design's `bumpA/B`.
+    public static let bumpScale: CGFloat = 1.35
+    #else
+    /// How far a count grows as it bumps once on a rise (`bumps(on:)`): the Mac design's `bumpA/B`.
+    public static let bumpScale: CGFloat = 1.25
+    #endif
+    /// Seconds of a count's whole bump, grow and settle.
+    public static let bumpSeconds = 0.6
+    /// Each half of a bump (grow, then settle), so the whole takes `bumpSeconds`.
+    public static let bump = Animation.easeInOut(duration: bumpSeconds / 2)
+    /// Seconds of one pass of the light across the Lab's advisor title (ornament, `OrnamentGate`).
+    public static let shineSeconds = 3.5
     /// Seconds of one breath of a glow (rings, alarms).
     public static let breatheSeconds = 2.4
     /// How much a breathing glow grows.
@@ -332,8 +345,7 @@ public enum Tokens {
     public static let launchFadeSeconds = 0.35
     /// Seconds for one turn of the radar sweep.
     public static let rotationSeconds = 3.0
-    /// The radar's blips: how far each one's ring grows (a multiple of the dot), and how long the
-    /// second blip trails the first, in seconds.
+    /// The radar's blips (and the session now dot's ring): how far a ring grows, a multiple of the dot; the second blip's lag, s.
     public static let blipScale: CGFloat = 1.9
     public static let blipLagSeconds = 0.8
     /// macOS opening: when the mark's spark pops in, in seconds from the start (after the line
@@ -355,8 +367,9 @@ public enum Tokens {
     public static let themeFadeSeconds = 0.4
     /// Points per second of the event ticker.
     public static let tickerSpeed = 22.0
-    /// Seconds between redraws of a clock or an age ("3 s ago"), and of the session bar's cursor.
+    /// Seconds between redraws of a clock, an age ("3 s ago") and the session now line, which `nowGlide` moves evenly over one tick.
     public static let clockTickSeconds: TimeInterval = 1
+    public static let nowGlide = Animation.linear(duration: clockTickSeconds)
     /// Seconds the iOS Home ticker takes to scroll its whole row once (the board's 45 s marquee).
     public static let tickerLoopSeconds = 45.0
     /// A dot or step popping in (`popIn`): a quick spring that overshoots a little, as the boards'

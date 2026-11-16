@@ -102,6 +102,21 @@ struct AppModelTests {
     #expect(Set(RouteProtocol.routes.withLock { $0.barSymbols }) == ["ABCD", "EFGH"])
   }
 
+  @Test("A status listing positions whose bars were not read reads them at once, not at the next bars poll")
+  func positionBarsWithTheirStatus() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    // At launch the bars poll runs before any status: it knows no position and reads nothing.
+    await model.refreshPositionBars()
+    #expect(RouteProtocol.routes.withLock { $0.barSymbols }.isEmpty)
+    await model.refreshStatus()
+    #expect(Set(RouteProtocol.routes.withLock { $0.barSymbols }) == ["ABCD", "EFGH"])
+    #expect(model.positionBars("ABCD") != nil, "the position card has its price rows with the first status")
+    // The same positions again: the bars poll keeps them current, the status read does not repeat it.
+    let reads = RouteProtocol.routes.withLock { $0.barSymbols.count }
+    await model.refreshStatus()
+    #expect(RouteProtocol.routes.withLock { $0.barSymbols.count } == reads)
+  }
+
   @Test("The daily room is the bot's own number, never computed by the app")
   func dailyRoomComesFromStatus() async throws {
     let model = AppModel(baseURL: APIClient.defaultBaseURL)
@@ -135,6 +150,23 @@ struct AppModelTests {
     let served = try WireTime("2026-11-16T15:00:02.123Z").date
     #expect(abs(model.botNow.timeIntervalSince(served)) < 1)
     #expect(model.isLive)
+  }
+
+  @Test("The session strip's stripes drift only while the bot runs with live, fresh status")
+  func sessionStripesGate() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    // No status yet: still.
+    #expect(!JobsSection.stripesMove(reduceMotion: false, model: model))
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = try? Self.status(botState: "running") }
+    await model.refreshStatus()
+    #expect(JobsSection.stripesMove(reduceMotion: false, model: model))
+    #expect(!JobsSection.stripesMove(reduceMotion: true, model: model))
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = try? Self.status(botState: "running", stale: true) }
+    await model.refreshStatus()
+    #expect(!JobsSection.stripesMove(reduceMotion: false, model: model))
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = try? Self.status(botState: "stopped") }
+    await model.refreshStatus()
+    #expect(!JobsSection.stripesMove(reduceMotion: false, model: model))
   }
 
   @Test("The shown day's flow and watched symbols are read; a failed read clears each")
@@ -225,6 +257,128 @@ struct AppModelTests {
     #expect(keys.count == 2 && Set(keys).count == 2)
   }
 
+  /// Commands sent so far (each POST carries one idempotency key).
+  static func sentCount() -> Int { RouteProtocol.routes.withLock { $0.idempotencyKeys.count } }
+
+  @Test("A flatten press only asks; the model holds the question, and only the yes sends it, once")
+  func flattenAsksBeforeSending() async throws {
+    RouteProtocol.routes.withLock { $0.bodies["/commands/flatten"] = try? Data(contentsOf:
+      fixturesDir.appendingPathComponent("command-accepted-v1.json")) }
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    model.press(.flatten(symbol: "ABCD"), in: .window)
+    let question = try #require(model.confirming, "a press opens its question")
+    #expect(question.action == .flatten(symbol: "ABCD") && question.place == .window)
+    // The question lives in the model, not in the view that asked: status reads (which redraw
+    // and can rebuild Overview's cards) leave it open, and nothing is sent meanwhile.
+    await model.refreshStatus()
+    await model.refreshStatus()
+    #expect(model.confirming == question)
+    #expect(Self.sentCount() == 0, "nothing is sent before the yes")
+    let send = try #require(model.accept(question), "the yes to the open question sends")
+    #expect(model.confirming == nil, "accepting closes the question in the same step")
+    #expect(model.accept(question) == nil, "a second yes to the same question sends nothing")
+    await send.value
+    #expect(Self.sentCount() == 1)
+  }
+
+  @Test("Only the open question is accepted: a cancelled or replaced one sends nothing")
+  func onlyTheOpenQuestionSends() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    model.press(.flatten(symbol: "ABCD"), in: .window)
+    let cancelled = try #require(model.confirming)
+    model.withdraw(cancelled)
+    #expect(model.accept(cancelled) == nil)
+    model.press(.emergency, in: .window)
+    let older = try #require(model.confirming)
+    model.press(.flattenAll, in: .window)
+    let newer = try #require(model.confirming)
+    #expect(model.accept(older) == nil, "a replaced question sends nothing")
+    #expect(model.confirming == newer, "and leaves the newer one open")
+    model.withdraw(newer)
+    #expect(Self.sentCount() == 0)
+  }
+
+  /// A model with a current status and a flatten question open in `place`.
+  static func modelAsking(in place: CommandPlace = .window) async throws -> AppModel {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    model.press(.flatten(symbol: "ABCD"), in: place)
+    _ = try #require(model.confirming)
+    return model
+  }
+
+  @Test("A question closes when its window or panel closes, and only there")
+  func questionClosesWithItsPlace() async throws {
+    let model = try await Self.modelAsking(in: .menuBar)
+    model.withdrawQuestion(in: .window)
+    #expect(model.confirming != nil, "the main window closing leaves the panel's question")
+    model.withdrawQuestion(in: .menuBar)
+    #expect(model.confirming == nil, "the panel closing withdraws its question: it never reappears")
+  }
+
+  @Test("A question closes on a stale status")
+  func questionClosesOnStaleStatus() async throws {
+    let model = try await Self.modelAsking()
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = try? Self.status(botState: "running", stale: true) }
+    await model.refreshStatus()
+    #expect(model.confirming == nil)
+  }
+
+  @Test("A question closes on a failed status read")
+  func questionClosesOnFailedRead() async throws {
+    let model = try await Self.modelAsking()
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = nil }
+    await model.refreshStatus()
+    #expect(model.fetchError != nil)
+    #expect(model.confirming == nil)
+  }
+
+  @Test("A question closes when commands turn off for a recorded day")
+  func questionClosesOnRecordedDay() async throws {
+    let model = try await Self.modelAsking()
+    model.selectedDay = WireDate(newYorkDateOf: model.botNow.addingTimeInterval(-Self.daySeconds))
+    #expect(!model.commandsEnabled)
+    #expect(model.confirming == nil)
+  }
+
+  /// Seconds in a day, to name yesterday.
+  static let daySeconds: TimeInterval = 86_400
+
+  @Test("A question closes when the API address changes")
+  func questionClosesOnAddressSwitch() async throws {
+    let model = try await Self.modelAsking()
+    model.connect(to: try #require(URL(string: "http://127.0.0.1:9")))
+    #expect(model.confirming == nil)
+  }
+
+  @Test("A question closes when the demo day is switched")
+  func questionClosesOnDemoSwitch() async throws {
+    let model = try await Self.modelAsking()
+    model.setDemoDay(true)
+    #expect(model.confirming == nil)
+  }
+
+  @Test("Cancel sends nothing; each press is its own question; nothing is asked while commands are off")
+  func withdrawnQuestionsSendNothing() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    model.press(.flatten(symbol: "ABCD"), in: .window)
+    #expect(model.confirming == nil, "no status yet: commands are off, so nothing is asked")
+    await model.refreshStatus()
+    model.press(.emergency, in: .menuBar)
+    let first = try #require(model.confirming)
+    model.withdraw(first)
+    #expect(model.confirming == nil)
+    model.press(.emergency, in: .menuBar)
+    let second = try #require(model.confirming)
+    #expect(second != first, "a second press is a new question")
+    model.withdraw(first)
+    #expect(model.confirming == second, "closing an old question leaves the newer one open")
+    model.withdraw(second)
+    #expect(Self.sentCount() == 0)
+  }
+
   @Test("Start is offered only when no current status says the bot is alive; it is sent once")
   func startBot() async throws {
     RouteProtocol.routes.withLock { $0.bodies["/commands/start-bot"] = try? Data(contentsOf:
@@ -280,5 +434,68 @@ struct AppModelTests {
     #expect(chart.plot(timeframe: .m1) == nil)
     await chart.load(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
     #expect(try #require(chart.plot(timeframe: .m1)).revision > first.revision)
+  }
+  @Test("Ornaments move only while the bot runs with fresh live status, and never with Reduce Motion")
+  func ornamentsFollowTheBot() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    #expect(!model.ornamentsMove(reduceMotion: false), "no status yet")
+    let cases: [(String, Bool, Bool)] = [("running", false, true), ("running", true, false), ("stopped", false, false)]
+    for (state, stale, moves) in cases {
+      let body = try Self.status(botState: state, stale: stale)
+      RouteProtocol.routes.withLock { $0.bodies["/status"] = body }
+      await model.refreshStatus()
+      #expect(model.ornamentsMove(reduceMotion: false) == moves, "\(state), stale \(stale)")
+      #expect(!model.ornamentsMove(reduceMotion: true))
+    }
+    // A recorded day: the ornaments stand still even while the bot runs.
+    model.selectedDay = try WireDate("2020-01-02")
+    #expect(!model.ornamentsMove(reduceMotion: false))
+  }
+
+  @Test("Today's tile pulses for a trade or a position, not for another read of the same day")
+  func todayEvent() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    #expect(model.todayEvent == nil)
+    await model.refreshStatus()
+    let first = try #require(model.todayEvent)
+    await model.refreshStatus()
+    #expect(model.todayEvent == first, "the same trading read again is no event")
+    let body = try Self.status(botState: "running")
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = body }
+    await model.refreshStatus()
+    #expect(model.todayEvent != first, "a position closed is an event")
+  }
+
+  @Test("An open position's dot pulses for a fill or a stop, never for a newer price")
+  func positionEvent() async throws {
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    let row = try #require(model.positions.first)
+    let moved = PositionRow(position: row.position, lastBarClose: (row.lastBarClose ?? 0) + 1,
+      lastBarAt: row.lastBarAt, closes: row.closes, latestClose: row.latestClose)
+    #expect(moved.event == row.event)
+    var status = try #require(JSONSerialization.jsonObject(with: Self.twoPositionStatus()) as? [String: Any])
+    var inner = try #require(status["status"] as? [String: Any])
+    var positions = try #require(inner["positions"] as? [[String: Any]])
+    var stop = try #require(positions[0]["stop"] as? [String: Any])
+    stop["state"] = stop["state"] as? String == "verified" ? "pending" : "verified"
+    positions[0]["stop"] = stop
+    inner["positions"] = positions
+    status["status"] = inner
+    let body = try JSONSerialization.data(withJSONObject: status)
+    RouteProtocol.routes.withLock { $0.bodies["/status"] = body }
+    await model.refreshStatus()
+    #expect(try #require(model.positions.first).event != row.event)
+  }
+
+  @Test("The chart's LIVE dot pulses for a new bar, not for the same bars read again")
+  func newestBar() async throws {
+    let chart = ChartModel()
+    let day = try WireDate("2026-11-16")
+    #expect(chart.newestBar == nil)
+    await chart.load(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
+    let first = try #require(chart.newestBar)
+    await chart.load(baseURL: APIClient.defaultBaseURL, symbol: "ABCD", day: day)
+    #expect(chart.newestBar == first)
   }
 }

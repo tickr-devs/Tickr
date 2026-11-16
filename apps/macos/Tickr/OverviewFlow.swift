@@ -31,22 +31,26 @@ enum FlowStages {
 
 /// The symbols the screeners returned today, scrolling across the top of the live flow as in the
 /// design: each a chip with the symbol over its screener and change, coloured by screener; one
-/// the universe left out is greyed and says it was skipped, with the cause on hover. Still on a
+/// the universe left out is greyed and says it was skipped, with the cause on hover. Every other
+/// chip opens the Chart on its symbol, and the row stands still under the pointer. Still on a
 /// recorded day or with Reduce Motion (then it scrolls by hand).
 struct FlowChips: View {
+  @Environment(AppModel.self) private var model
+  @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
   let chips: [FlowChipV1]
   let moving: Bool
 
   var body: some View {
-    Marquee(moving: moving, content: chips) {
-      HStack(spacing: Tokens.Space.s) {
-        // No links here: the marquee draws its row as an image, outside the screen's environment.
-        ForEach(chips, id: \.symbol) { chip in
-          FlowChip(chip: chip)
-        }
-      }
-      .padding(.trailing, Tokens.Space.s)
-    }
+    ChipsMarquee(
+      items: chips, moving: moving, hint: { L10n.Common.openOnChart($0.symbol) },
+      help: { Text(verbatim: FlowChip.help($0)) },
+      // A symbol the universe left out has no chart to open.
+      opens: { $0.excludedCause == nil },
+      open: { chip in
+        chartSymbol = chip.symbol
+        model.section = .chart
+      },
+      chip: { FlowChip(chip: $0) })
   }
 }
 
@@ -71,8 +75,12 @@ private struct FlowChip: View {
     .overlay {
       RoundedRectangle(cornerRadius: Tokens.Radius.medium).strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin)
     }
-    .help(Text(verbatim: [chip.excludedCause, chip.changeCause].compactMap { $0 }.joined(separator: Format.lineSeparator)))
     .accessibilityElement(children: .combine)
+  }
+
+  /// The chip's hover help: why it was skipped and why its change is missing, if so.
+  static func help(_ chip: FlowChipV1) -> String {
+    [chip.excludedCause, chip.changeCause].compactMap { $0 }.joined(separator: Format.lineSeparator)
   }
 
   /// "gainers +21.3%"; "skipped" for a symbol the universe left out.
@@ -114,11 +122,12 @@ extension ScreenerSource {
 /// day shows its last closed trade.
 struct LatestEvent: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// Accessibility id of the line, for the UI tests.
   static let id = "overview-latest-event"
 
-  private struct Line {
+  private struct Line: Hashable {
     let time: Date
     let tag: String
     let text: String
@@ -139,6 +148,18 @@ struct LatestEvent: View {
   }
 
   var body: some View {
+    // A new event fades in over the old one: one fade per real event, still in between.
+    ZStack(alignment: .leading) {
+      row.id(line).transition(.opacity)
+    }
+    .animation(reduceMotion ? nil : Tokens.Motion.standard, value: line)
+    .font(Tokens.Typography.captionMono)
+    .lineLimit(1)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier(Self.id)
+  }
+
+  private var row: some View {
     HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.m) {
       if let line {
         Text(L10n.Risk.clock(Format.marketTime(line.time))).foregroundStyle(Palette.textQuaternary)
@@ -150,10 +171,6 @@ struct LatestEvent: View {
         Text(L10n.Flow.nothingYet).foregroundStyle(Palette.textTertiary)
       }
     }
-    .font(Tokens.Typography.captionMono)
-    .lineLimit(1)
-    .accessibilityElement(children: .combine)
-    .accessibilityIdentifier(Self.id)
   }
 }
 
@@ -184,8 +201,11 @@ struct WatchingCard: View {
           let rows = expanded ? watching.rows : Array(watching.rows.prefix(Self.shown))
           VStack(spacing: Tokens.Space.s) {
             // Each row opens the Chart on its symbol.
-            ForEach(rows, id: \.symbol) { row in
+            // The rows rise one after another as the card shows them (a symbol the bot starts
+            // watching rises as it arrives).
+            ForEach(Array(rows.enumerated()), id: \.element.symbol) { index, row in
               ChartLink(row.symbol) { WatchingRow(row: row) }
+                .rise(step: index)
             }
           }
           HStack(spacing: Tokens.Space.s) {
@@ -337,10 +357,5 @@ extension CheckV1 {
   /// "rule measured operator threshold" as the bot recorded them; a missing side is a dash.
   var comparisonText: String {
     "\(ApiText.rule(rule)) \(valueText)"
-  }
-
-  /// "measured operator threshold": what the check measured against what it needs.
-  var valueText: String {
-    "\(measured?.text ?? Format.missing) \(`operator`) \(threshold?.text ?? Format.missing)"
   }
 }

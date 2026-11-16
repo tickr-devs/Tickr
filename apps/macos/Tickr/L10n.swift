@@ -488,6 +488,10 @@ enum L10n {
     static func more(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.more", defaultValue: "+\(count)", bundle: L10n.bundle)
     }
+    /// Accessibility hint of a live-flow stage: a click opens its detail.
+    static var stageDetailsHint: LocalizedStringResource {
+      LocalizedStringResource("flow.stageDetailsHint", defaultValue: "Shows what this stage did today", bundle: L10n.bundle)
+    }
     static func seen(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.seen", defaultValue: "\(count) seen", bundle: L10n.bundle)
     }
@@ -1308,6 +1312,9 @@ enum L10n {
     }
     static var preBacklog: LocalizedStringResource {
       LocalizedStringResource("settings.preBacklog", defaultValue: "PRE · BACKLOG", bundle: L10n.bundle)
+    }
+    static func preBacklogFrom(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("settings.preBacklogFrom", defaultValue: "PRE \(time) · BACKLOG", bundle: L10n.bundle)
     }
     static var postBacklog: LocalizedStringResource {
       LocalizedStringResource("settings.postBacklog", defaultValue: "POST · BACKLOG", bundle: L10n.bundle)

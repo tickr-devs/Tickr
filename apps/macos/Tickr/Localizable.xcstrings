@@ -4384,6 +4384,23 @@
         }
       }
     },
+    "flow.stageDetailsHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows what this stage did today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показывает, что этот этап сделал сегодня"
+          }
+        }
+      }
+    },
     "flow.stocks" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11386,6 +11403,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ПРЕ · В ПЛАНАХ"
+          }
+        }
+      }
+    },
+    "settings.preBacklogFrom" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PRE %@ · BACKLOG"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ПРЕ %@ · В ПЛАНАХ"
           }
         }
       }
