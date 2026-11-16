@@ -27,7 +27,7 @@ from tickr.version import code_version
 from .conftest import ROOT
 
 T0 = datetime(2026, 11, 16, 21, 0, tzinfo=UTC)
-BOT, WATCHDOG, API = release.RESTARTED_JOBS
+BOT, WATCHDOG, API = release.BOT_JOB, release.WATCHDOG_JOB, release.API_JOB
 GIT_ID = ("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false")
 
 
@@ -124,7 +124,9 @@ class FakeRunner:
         if argv[0] == release.GIT:
             return release.run_process(argv, cwd, env, timeout)
         if tuple(argv) == release.UV_SYNC:
-            (cwd / ".venv").mkdir(exist_ok=True)
+            python = cwd / release.VENV_PYTHON
+            python.parent.mkdir(parents=True, exist_ok=True)
+            python.touch()
             return release.Done(0, "", "")
         if argv[0] == release.SH:
             return self._preflight(Path(argv[4]), argv[6])
@@ -311,6 +313,88 @@ def test_rollback_swaps_live_and_previous(world):
     assert (world.live(), world.previous()) == (world.first, second)
     release.rollback(world.context())
     assert (world.live(), world.previous()) == (second, world.first)
+
+
+def test_rollback_needs_no_network(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    second = _commit(world.repo, "second")
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    _git(world.repo, "remote", "set-url", "origin", str(world.repo.parent / "gone.git"))
+    with pytest.raises(release.ReleaseRefused, match="git fetch origin failed"):
+        release.release(world.context(), release.DEFAULT_COMMIT)  # a release does fetch
+    world.fake.calls.clear()
+    release.rollback(world.context())
+    assert (world.live(), world.previous()) == (world.first, second)
+    git = [c for c in world.fake.calls if c[0] == release.GIT]
+    assert git and not any("fetch" in c for c in git)
+    assert "uv" not in world.fake.kinds()  # verified, not synced again
+
+
+def test_rollback_refuses_a_changed_previous_folder(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    _commit(world.repo, "second")
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    (world.releases / world.first / "src" / "tickr" / "first.py").write_text("# x\n", "utf-8")
+    with pytest.raises(release.ReleaseRefused, match="changes to tracked files"):
+        release.rollback(world.context())
+    assert world.previous() == world.first
+
+
+@pytest.mark.parametrize("command", ["release", "rollback"])
+def test_a_command_from_another_data_folder_is_refused(world, tmp_path, command):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    _commit(world.repo, "second")
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    other = tmp_path / "other"  # another checkout with its own data and database
+    shutil.copytree(world.repo / "config", other / "config")
+    (other / "data").mkdir()
+    Store.open(other / "data" / DATABASE_FILE, busy_timeout_seconds=Decimal(5)).close()
+    cfg = config_module.load(other / "config" / "bot.toml")
+    write_account(other / "data" / cfg.api.account_file, _account())
+    ctx = release.context(cfg, other / "config" / "bot.toml", world.releases, world.env_file,
+                          world.fake, os.environ, world.lines.append)
+    world.fake.calls.clear()
+    live = world.live()
+    with pytest.raises(release.ReleaseRefused, match="live release uses the data folder"):
+        release.release(ctx, release.DEFAULT_COMMIT) if command == "release" else \
+            release.rollback(ctx)
+    assert world.fake.calls == [] and world.live() == live
+
+
+def test_link_failure_is_reported_with_the_links(world, monkeypatch):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    second = _commit(world.repo, "second")
+
+    def broken(link, name):
+        raise PermissionError("denied")
+    monkeypatch.setattr(release, "_point", broken)
+    with pytest.raises(release.ReleaseFailed, match=f"live -> {world.first}, previous -> none"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() == world.first and (world.releases / second).is_dir()
+
+
+def test_watchdog_stops_first_and_starts_last(world):
+    world.fake.pids[WATCHDOG] = 102
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    killed = [c[-1].rsplit("/", 1)[-1] for c in world.fake.calls
+              if c[:2] == [release.LAUNCHCTL, "kill"]]
+    started = [c[-1].rsplit("/", 1)[-1] for c in world.fake.calls
+               if c[:2] == [release.LAUNCHCTL, "kickstart"]]
+    assert killed == [WATCHDOG, BOT, API] and started == [BOT, API, WATCHDOG]
+    last_kill = max(i for i, c in enumerate(world.fake.calls) if c[1:2] == ["kill"])
+    first_start = min(i for i, c in enumerate(world.fake.calls) if c[1:2] == ["kickstart"])
+    assert last_kill < first_start  # every job stopped before any starts
+
+
+def test_preflight_shell_errors_are_never_printed(world, capsys):
+    original = world.fake._preflight
+    world.fake._preflight = lambda folder, config: release.Done(
+        2, "", "env: line 3: SECRET=abc: not found")
+    with pytest.raises(release.ReleaseRefused) as refused:
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert "SECRET" not in str(refused.value) and "exit 2" in str(refused.value)
+    assert not any("SECRET" in line for line in world.lines)
+    world.fake._preflight = original
 
 
 def test_rollback_without_a_previous_release_is_refused(world):

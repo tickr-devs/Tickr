@@ -245,27 +245,63 @@ cd ~/Development/Tickr
 Each step is printed. In order, and a refusal at any step before the switch leaves the running
 release, the links and the jobs exactly as they were (exit 1, `refused: ...`):
 
-1. Refuses unless flat: the bot's account file (its latest broker read) shows no position and no
+1. Refuses when `live` exists and its `data` resolves to another folder than the data folder of
+   the `--config` given (a command started from another checkout would check flatness in, and
+   switch the bot onto, another database). Then refuses unless flat: the bot's account file (its latest broker read) shows no position and no
    open order and agrees with its records, and the database has no open trade.
 2. Refuses on uncommitted config changes in the checkout; fetches `origin`; refuses unless the
    commit (default `origin/main`) is on `origin/main`.
 3. Prepares `<sha>/` (worktree, data link, `uv sync`) and runs its own preflight exactly as the
    preflight job does (the env file sourced by `sh`); refuses unless it passes or says no session
    today, with code version `<sha>`, the release's config and the shared data folder. On a
-   trading day this preflight checks the Webull token like the 08:30 run. A stop marker
-   (`stopped-by-operator`) fails it: the bot stays stopped until `tickr clear-stop`.
+   trading day this preflight checks the Webull token like the 08:30 run. On failure only the
+   exit code of that step is printed, never the shell's error text (it could quote the
+   credentials file).
+   **Stop marker:** while the bot is stopped by the operator (`stopped-by-operator`), preflight
+   fails and so does `release`; it is not passed over on purpose, because a release cannot
+   prove the code it would start. To deploy then: after the close, `tickr clear-stop`, release,
+   and, if the bot must stay stopped tomorrow, send stop-bot again from the apps once it runs
+   (or `launchctl kill TERM` it and keep the scheduled start in mind).
 4. Checks flat again, points `previous` at the running release and switches `live` (an atomic
    rename of a new link).
-5. Restarts bot, watchdog and API: each one that runs gets SIGTERM (`launchctl kill TERM`), is
-   waited for (at most `[runtime] release_stop_wait_seconds`) and is started again
-   (`launchctl kickstart`). A job that is not running is left to its schedule, which starts the
-   new release.
+5. Restarts the jobs that run: stops the watchdog first (so it never sees the stopping bot
+   missing), then the bot, then the API, each with SIGTERM (`launchctl kill TERM`) and waited
+   for (at most `[runtime] release_stop_wait_seconds`); then starts the bot, the API and the
+   watchdog (`launchctl kickstart`). A job that is not running is left to its schedule, which
+   starts the new release; one that did not stop is not started and is reported (exit 1). If
+   the link rename itself fails, nothing is restarted and the message names where `live` and
+   `previous` point.
 6. Removes every release folder other than `live` and `previous` (keep only the latest backup),
    except one a running process still runs from (removed by the next release): its data link is
    unlinked first, then `git worktree remove` without force. The data folder is never touched.
 
-`rollback` (same arguments, no `--commit`) switches back to `previous` the same way, flat only;
-`live` and `previous` swap, so a rollback can itself be rolled back.
+`rollback` (same arguments, no `--commit`) switches back to `previous` the same way, flat only,
+and needs no network: it does not fetch, it verifies the folder (HEAD at its commit, no changes
+to tracked files, its `data` link naming the data folder, its `.venv` present) and runs its
+preflight. `live` and `previous` swap, so a rollback can itself be rolled back.
+
+### Emergency: the owner switches back by hand
+
+Only for the owner, only when `rollback` cannot run: it refuses while not flat, and flatness is
+read from files that only a running bot refreshes, so a new release that opened a trade and
+then cannot start blocks it even after the position is closed by hand in the Webull app.
+
+1. In the Webull app: close the position and cancel every open order; check both are gone.
+2. Stop the jobs, the watchdog first, and wait for each to end (`launchctl list <label>` shows
+   no `"PID"`):
+   ```sh
+   for job in watchdog bot api; do launchctl kill TERM gui/$(id -u)/local.tickr.$job; done
+   ```
+3. Repoint `live` at the previous release by hand (`R=~/Development/Tickr-releases`):
+   ```sh
+   cd $R && old=$(readlink live) && back=$(readlink previous)
+   ln -sfn "$back" live.new && mv -f live.new live && ln -sfn "$old" previous.new && mv -f previous.new previous
+   readlink live   # the previous commit
+   ```
+4. Run its preflight (`$R/live/.venv/bin/python -m tickr.runtime --config
+   $R/live/config/bot.toml preflight` with the env file sourced), then start the jobs:
+   `launchctl kickstart gui/$(id -u)/local.tickr.api`, then the bot (only if wanted today), then
+   the watchdog. The bot's start reconciles with the broker and rewrites its account file.
 
 ### One-time switch-over (the coordinator, after the close, flat)
 

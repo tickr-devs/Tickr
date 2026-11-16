@@ -32,7 +32,9 @@ Order of `release`: lock; refuse unless flat (the bot's account file: no positio
 orders, records match; and no open trade in the database); refuse unless the commit is on
 origin/main; prepare the folder and run its preflight BEFORE anything running is touched (a
 refusal up to here leaves the running release as it was); check flat again; switch; restart;
-prune. `rollback` is the same switch to `previous`. Every step is printed.
+prune. `rollback` switches to `previous` without any network: it verifies that folder (HEAD
+at its commit, clean, data link) and runs its preflight. Both first refuse when the live
+release uses another data folder than this command. Every step is printed.
 """
 
 from __future__ import annotations
@@ -63,9 +65,12 @@ MAIN = "origin/main"  # a release commit must be on it
 REMOTE = "origin"
 CONFIG_DIR = "config"
 LAUNCHD_DIR = "ops/launchd"
-# The jobs a release restarts when they run, in this order: the bot first (it alone may hold a
-# position), the API last (launchd's KeepAlive starts it again by itself).
-RESTARTED_JOBS = ("local.tickr.bot", "local.tickr.watchdog", "local.tickr.api")
+# The jobs a release restarts when they run. Stopped watchdog first (it would see the stopping
+# bot missing and alert or spend its one restart a day), then the bot, then the API (launchd's
+# KeepAlive starts it again by itself); started bot, API, then the watchdog.
+BOT_JOB, WATCHDOG_JOB, API_JOB = "local.tickr.bot", "local.tickr.watchdog", "local.tickr.api"
+STOP_ORDER = (WATCHDOG_JOB, BOT_JOB, API_JOB)
+START_ORDER = (BOT_JOB, API_JOB, WATCHDOG_JOB)
 # Commands (protocol: fixed argument lists, no shell, no user input beyond paths and a sha).
 GIT = "git"
 UV_SYNC = ("uv", "sync", "--frozen", "--extra", "webull")
@@ -245,6 +250,21 @@ def _target(link: Path) -> str | None:
     return Path(os.readlink(link)).name
 
 
+def _require_live_data(ctx: Context) -> None:
+    """Refuse unless the running release uses the same data folder as this command: started
+    from another checkout, it would prove "flat" from another folder and switch the bot onto
+    another database. The first release has nothing to compare with (it prints its link)."""
+    live = ctx.live
+    if not live.is_symlink():
+        return
+    used = (live / ctx.data_dir).resolve()
+    if used != ctx.data:
+        raise ReleaseRefused(f"the live release uses the data folder {used}, this command "
+                             f"{ctx.data}: run it with the config of the checkout whose data "
+                             "the bot uses")
+    ctx.say(f"data folder {ctx.data} is the live release's")
+
+
 def _require_committed_config(ctx: Context) -> None:
     done = ctx.git("status", "--porcelain", "--untracked-files=no", "--", CONFIG_DIR)
     if done.code != 0:
@@ -290,6 +310,27 @@ def _prepare(ctx: Context, sha: str) -> Path:
     return folder
 
 
+def _verify(ctx: Context, sha: str) -> Path:
+    """An already prepared release, checked without any network: a worktree at `sha`, no
+    changes to tracked files, its data link naming THE data folder, its environment present."""
+    folder = ctx.releases / sha
+    if not _SHA.match(sha) or not folder.is_dir():
+        raise ReleaseRefused(f"{folder} is not a prepared release")
+    head = ctx.git("rev-parse", "HEAD", folder=folder)
+    if head.code != 0 or head.out.strip() != sha:
+        raise ReleaseRefused(f"{folder} is not a worktree at {sha}")
+    dirty = ctx.git("status", "--porcelain", "--untracked-files=no", folder=folder)
+    if dirty.code != 0 or dirty.out.strip():
+        raise ReleaseRefused(f"{folder} has changes to tracked files")
+    link = folder / ctx.data_dir
+    if not link.is_symlink() or link.resolve() != ctx.data:
+        raise ReleaseRefused(f"{link} is not a link to {ctx.data}")
+    if not (folder / VENV_PYTHON).exists():
+        raise ReleaseRefused(f"{folder / VENV_PYTHON} is missing")
+    ctx.say(f"verified {folder}: at {sha}, clean, data -> {ctx.data}")
+    return folder
+
+
 def _config_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -327,8 +368,8 @@ def _preflight(ctx: Context, folder: Path, sha: str) -> None:
         if isinstance(row, dict) and row.get("record") == "preflight":
             records.append(row)
     if not records:
-        raise ReleaseRefused(f"preflight printed no result (exit {done.code}): "
-                             f"{_first(done.err)}")
+        # Only the exit code: the shell's error text could quote the credentials file.
+        raise ReleaseRefused(f"preflight printed no result (exit {done.code})")
     body = records[-1]
     if done.code not in _PREFLIGHT_PASSES or body.get("exit_code") != done.code:
         raise ReleaseRefused(f"preflight failed (exit {done.code}): {body.get('cause')}")
@@ -364,35 +405,46 @@ def job_pid(ctx: Context, label: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _stop(ctx: Context, label: str, pid: int) -> str | None:
+    """SIGTERM to the job, then wait until that process has ended; the problem, or None."""
+    ctx.say(f"{label}: stop pid {pid} (SIGTERM)")
+    done = ctx.step([LAUNCHCTL, "kill", "TERM", f"gui/{ctx.uid}/{label}"])
+    if done.code != 0:
+        return f"{label}: kill failed (exit {done.code})"
+    deadline = ctx.clock() + ctx.runtime.release_stop_wait_seconds
+    while job_pid(ctx, label) == pid:
+        if ctx.clock() >= deadline:
+            return (f"{label}: pid {pid} still running after "
+                    f"{ctx.runtime.release_stop_wait_seconds} s")
+        ctx.sleep(float(ctx.runtime.release_poll_seconds))
+    return None
+
+
 def _restart(ctx: Context) -> list[str]:
-    """Stop each running job with SIGTERM, wait until that process has ended, start the job
-    again (kickstart without -k). Returns the problems; a job not running is left to its
-    schedule, which then starts the new release."""
+    """Stop the running jobs (STOP_ORDER: the watchdog first, so it never sees the bot missing
+    while it stops), each waited for, then start them again (START_ORDER, kickstart without -k).
+    Returns the problems; a job not running is left to its schedule, which then starts the new
+    release, and a job that did not stop is not started."""
     problems = []
-    for label in RESTARTED_JOBS:
+    stopped = []
+    for label in STOP_ORDER:
         pid = job_pid(ctx, label)
         if pid is None:
             ctx.say(f"{label}: not running; its next start runs the new release")
             continue
-        target = f"gui/{ctx.uid}/{label}"
-        ctx.say(f"{label}: stop pid {pid} (SIGTERM)")
-        done = ctx.step([LAUNCHCTL, "kill", "TERM", target])
-        if done.code != 0:
-            problems.append(f"{label}: kill failed: {_first(done.err)}")
-            continue
-        deadline = ctx.clock() + ctx.runtime.release_stop_wait_seconds
-        while job_pid(ctx, label) == pid:
-            if ctx.clock() >= deadline:
-                problems.append(f"{label}: pid {pid} still running after "
-                                f"{ctx.runtime.release_stop_wait_seconds} s")
-                break
-            ctx.sleep(float(ctx.runtime.release_poll_seconds))
+        problem = _stop(ctx, label, pid)
+        if problem is None:
+            stopped.append(label)
         else:
-            done = ctx.step([LAUNCHCTL, "kickstart", target])
-            if done.code != 0:
-                problems.append(f"{label}: kickstart failed: {_first(done.err)}")
-                continue
-            ctx.say(f"{label}: started, pid {job_pid(ctx, label)}")
+            problems.append(problem)
+    for label in START_ORDER:
+        if label not in stopped:
+            continue
+        done = ctx.step([LAUNCHCTL, "kickstart", f"gui/{ctx.uid}/{label}"])
+        if done.code != 0:
+            problems.append(f"{label}: kickstart failed (exit {done.code})")
+            continue
+        ctx.say(f"{label}: started, pid {job_pid(ctx, label)}")
     return problems
 
 
@@ -423,10 +475,15 @@ def _prune(ctx: Context, keep: set[str]) -> None:
 
 def _switch(ctx: Context, sha: str, running: str | None) -> None:
     _require_flat(ctx)  # again: preflight may have taken minutes
-    if running is not None:
-        _point(ctx.previous, running)
-        ctx.say(f"previous -> {running}")
-    _point(ctx.live, sha)
+    try:
+        if running is not None:
+            _point(ctx.previous, running)
+            ctx.say(f"previous -> {running}")
+        _point(ctx.live, sha)
+    except OSError as exc:
+        raise ReleaseFailed(f"switching the links failed ({type(exc).__name__}: {exc}); live "
+                            f"-> {_link_state(ctx.live)}, previous -> "
+                            f"{_link_state(ctx.previous)}; no job was restarted") from exc
     ctx.say(f"live -> {sha}")
     problems = _restart(ctx)
     keep = {sha} | ({running} if running else set())
@@ -435,6 +492,13 @@ def _switch(ctx: Context, sha: str, running: str | None) -> None:
         raise ReleaseFailed("; ".join(problems) + f". live is {sha}; a job still running "
                             "runs the release it started from")
     ctx.say(f"released {sha}")
+
+
+def _link_state(link: Path) -> str:
+    try:
+        return os.readlink(link) if link.is_symlink() else "none"
+    except OSError:
+        return "unreadable"
 
 
 def _locked(ctx: Context, work: Callable[[], None]) -> None:
@@ -453,6 +517,7 @@ def _locked(ctx: Context, work: Callable[[], None]) -> None:
 def release(ctx: Context, ref: str) -> None:
     """Release `ref` (see the module docstring for the order)."""
     def work() -> None:
+        _require_live_data(ctx)
         _require_flat(ctx)
         _require_committed_config(ctx)
         sha = _commit(ctx, ref)
@@ -471,13 +536,14 @@ def release(ctx: Context, ref: str) -> None:
 def rollback(ctx: Context) -> None:
     """Switch back to `previous`: live and previous swap, so a rollback can be rolled back."""
     def work() -> None:
+        _require_live_data(ctx)
         _require_flat(ctx)
         running = _target(ctx.live)
         back = _target(ctx.previous)
         if running is None or back is None:
             raise ReleaseRefused("no live and previous release to roll back between")
-        sha = _commit(ctx, back)
-        folder = _prepare(ctx, sha)
+        sha = back  # fetched, checked on origin/main and synced when it was released
+        folder = _verify(ctx, sha)
         _report_config(ctx, folder, sha, running)
         _preflight(ctx, folder, sha)
         _switch(ctx, sha, running)
