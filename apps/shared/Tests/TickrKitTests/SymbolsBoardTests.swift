@@ -99,16 +99,16 @@ struct SymbolsBoardTests {
     let standard = SymbolsOrder.standard(.stage(.screeners))
     #expect(standard == SymbolsOrder(column: .stage, ascending: false))
     let byStage = SymbolsBoard.lines(.stage(.screeners), symbols: symbols, movers: movers, positions: [],
-      filter: .all, search: "", order: standard)
+      query: SymbolsQuery(filter: .all, search: "", order: standard))
     #expect(byStage.first?.symbol == "ABCD")  // through the stop
     let byChange = standard.clicked(.change)
     #expect(byChange == SymbolsOrder(column: .change, ascending: false))
     let changes = SymbolsBoard.lines(.stage(.screeners), symbols: symbols, movers: movers, positions: [],
-      filter: .all, search: "", order: byChange)
+      query: SymbolsQuery(filter: .all, search: "", order: byChange))
     #expect(changes.first?.symbol == "ABCD")
     #expect(changes.last?.row?.changePct == nil)  // WXYZ has no change: last either way
     let turned = SymbolsBoard.lines(.stage(.screeners), symbols: symbols, movers: movers, positions: [],
-      filter: .all, search: "", order: byChange.clicked(.change))
+      query: SymbolsQuery(filter: .all, search: "", order: byChange.clicked(.change)))
     #expect(turned.last?.row?.changePct == nil)
     #expect(byChange.clicked(.symbol) == SymbolsOrder(column: .symbol, ascending: true))
   }
@@ -116,7 +116,7 @@ struct SymbolsBoardTests {
   @Test("Fast movers: positions and watches without a bar are pinned on top; the rest by |ATR|")
   func fastMoverLines() {
     let lines = SymbolsBoard.lines(.fastMovers, symbols: symbols, movers: movers, positions: ["QRST"],
-      filter: .all, search: "", order: .standard(.fastMovers))
+      query: SymbolsQuery(filter: .all, search: "", order: .standard(.fastMovers)))
     #expect(lines.map(\.symbol) == ["QRST", "KLMN", "EFGH"])
     #expect(lines.first?.mover == nil && lines.first?.position == true)
   }

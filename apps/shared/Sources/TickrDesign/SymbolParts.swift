@@ -199,7 +199,7 @@ public struct MoverStat: View {
 /// One stage of a symbol's path today in the detail (mockup v101): a small icon in the step's
 /// colour, the stage's name and time, and under them what was measured or why it stopped. A
 /// stage not reached is dimmed.
-public struct PathStep: View {
+public struct SymbolPathStep: View {
   let systemImage: String
   let color: Color
   let title: Text

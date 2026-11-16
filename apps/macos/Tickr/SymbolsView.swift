@@ -154,7 +154,7 @@ struct SymbolsView: View {
 
   private var lines: [SymbolsLine] {
     SymbolsBoard.lines(tab, symbols: model.symbols, movers: model.movers, positions: Set(model.positions.map(\.id)),
-      filter: filter, search: search, order: shownOrder)
+      query: SymbolsQuery(filter: filter, search: search, order: shownOrder))
   }
 
   private var table: some View {
@@ -625,7 +625,7 @@ private struct SymbolsDetailPanel: View {
     case .ahead: String(localized: SymbolsText.stepNotReached)
     case .passed, .here(.passed): nil
     }
-    return PathStep(systemImage: glyph, color: color, title: step.stage.title,
+    return SymbolPathStep(systemImage: glyph, color: color, title: step.stage.title,
       time: step.mark == .ahead ? Format.missing : Format.marketTime(reachedAt), detail: detail,
       detailColor: step.mark == .ahead ? Palette.textQuaternary : color, reached: step.mark != .ahead)
   }

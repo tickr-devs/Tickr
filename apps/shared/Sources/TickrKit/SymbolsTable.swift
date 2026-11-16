@@ -38,6 +38,19 @@ public enum SymbolsColumn: String, CaseIterable, Identifiable, Hashable, Sendabl
   }
 }
 
+/// What the person asked the table for: the filter, the search and the order.
+public struct SymbolsQuery: Hashable, Sendable {
+  public var filter: SymbolsFilter
+  public var search: String
+  public var order: SymbolsOrder
+
+  public init(filter: SymbolsFilter, search: String, order: SymbolsOrder) {
+    self.filter = filter
+    self.search = search
+    self.order = order
+  }
+}
+
 /// The order of the table: a column and its direction.
 public struct SymbolsOrder: Hashable, Sendable {
   public var column: SymbolsColumn
@@ -102,11 +115,12 @@ public enum SymbolsOutcome: Hashable, Sendable {
 extension SymbolsBoard {
   /// The lines of `tab`: on a stage tab every symbol that reached it (`rows`' filter and search),
   /// on the Fast movers tab every flagged symbol plus the positions and watches without a bar,
-  /// pinned on top. In `order`, missing values last, then furthest stage and symbol. Never capped.
+  /// pinned on top. In the query's order, missing values last, then furthest stage and symbol.
+  /// Never capped.
   public static func lines(
-    _ tab: SymbolsTab, symbols: SymbolsV1?, movers: MoversV1?, positions: Set<String>,
-    filter: SymbolsFilter, search: String, order: SymbolsOrder
+    _ tab: SymbolsTab, symbols: SymbolsV1?, movers: MoversV1?, positions: Set<String>, query: SymbolsQuery
   ) -> [SymbolsLine] {
+    let (filter, search, order) = (query.filter, query.search, query.order)
     let rows = symbols?.rows ?? []
     let rowOf = Dictionary(rows.map { ($0.symbol, $0) }, uniquingKeysWith: { first, _ in first })
     let moverOf = Dictionary((movers?.movers ?? []).map { ($0.symbol, $0) }, uniquingKeysWith: { first, _ in first })
@@ -164,15 +178,18 @@ extension SymbolsBoard {
     case .atr: return line.mover.map { abs($0.moveAtr.value) }
     case .dollars: return line.mover?.dollarVolumeRatio.value
     case .screener: return line.row.flatMap(bestRank).map { Decimal($0) }
-    case .stage:
-      guard let row = line.row else { return nil }
-      // Within a stage, a symbol dropped there sorts below one that stands there otherwise.
-      return Decimal(row.furthest.order * outcomeOrder.count + (row.state == .dropped ? 0 : 1))
+    case .stage: return line.row.map(stageKey)
     case .outcome: return line.row.map { Decimal(outcomeOrder.firstIndex(of: $0.state) ?? 0) }
     case .time:
       let date = fastMovers ? line.mover?.at.date : line.row?.firstSeen?.date
       return date.map { Decimal($0.timeIntervalSince1970) }
     }
+  }
+
+  /// The stage column's key: the furthest stage, and within it a symbol dropped there below one
+  /// that stands there otherwise.
+  private static func stageKey(_ row: SymbolRowV1) -> Decimal {
+    Decimal(row.furthest.order * outcomeOrder.count + (row.state == .dropped ? 0 : 1))
   }
 
   /// Outcomes from worst to best, as the outcome column sorts them.
