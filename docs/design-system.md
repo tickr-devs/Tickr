@@ -74,11 +74,14 @@ emergency command tiers from the palette's values (`Swatch`) and fails below 4.5
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
 | `scrim` | Dimmed backdrop behind a Mac overlay panel (at `Opacity.faint`) and that panel's shadow; the emergency stop's hold sweep (at `Command.sweepOpacity`) | `#080C1E` | `#080C1E` |
 
-A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero, only
-through `Palette.result` / `Tone.result` (rule `result` of the rules check rejects a hand-written
-`>= 0 ? … profit : … loss` in the apps). Text is drawn only in a text role: a fill (`info`,
-`loss`) is never text (`PaletteContrastTests` checks every `Tone`'s and every verdict's text
-colour at 4.5:1 on `surface` and shows that `info` fails it).
+A money result uses `profitText` above zero, `seriesATRText` (the series pink) below and
+`textTertiary` at zero (mockup v100: money losses are pink everywhere; `loss`/`lossText` red is
+kept for danger: a missing or rejected stop, alarms, destructive actions). The sign is taken from
+the value as shown, rounded to its decimals (cents by default), so "−0.004" shown as "$0.00" is
+neutral. Only through `Palette.result` / `Tone.result` (rule `result` of the rules check rejects a
+hand-written `>= 0 ? … profit : … loss` in the apps). Text is drawn only in a text role: a fill
+(`info`, `loss`) is never text (`PaletteContrastTests` checks every `Tone`'s and every verdict's
+text colour at 4.5:1 on `surface` and shows that `info` fails it).
 
 ## One meaning, one look (`Meanings.swift`, `Formatting.swift`)
 
@@ -88,7 +91,7 @@ pick these colours, symbols or number formats themselves.
 
 | Meaning | Shared piece | Look |
 |---|---|---|
-| A stop's protection | `StopState.isProtected` (TickrKit), `StopState.symbol` / `.tone`, `StopGlyph`, `StopDot` | Verified: `checkmark.shield`, `profit`. Pending: `hourglass`; missing: `xmark.shield`; unknown: `exclamationmark.shield`: all `loss` (a stop the broker has not confirmed does not protect; the Main board draws "STOP PENDING" red with the alarm ring). A stop's price level: `StopState.levelSymbol` (`shield`) in the state's tone. `StopGlyph(state:symbol:price:style:)` is the glyph tile beside a position's symbol (`.tile` on the Mac Positions card, `.compact` in rows and the menu bar, iOS Home); its label is "ABCD · pending". `StopDot` is on every position tab (both apps), green or red, and the tab's accessibility value says the state. A set of stops (`StopState.combinedTone`): neutral with none, profit only when every one is verified |
+| A stop's protection | `StopState.isProtected` (TickrKit), `StopState.symbol` / `.tone`, `StopState.worst` / `combinedTone` / `combinedSymbol` / `stageTone`, `StopGlyph`, `StopDot` | Mockup v100: verified `checkmark.shield` `profit` (green); pending `hourglass` `warning` (amber); missing `xmark.shield` and unknown `exclamationmark.shield` `loss` (red). A stop's price level: `StopState.levelSymbol` (`shield`) in the state's tone. `StopGlyph(state:symbol:price:style:)` is the glyph tile beside a position's symbol (`.tile` on the Mac Positions card, `.compact` in rows and the menu bar, iOS Home); its label is "ABCD · pending". `StopDot` is on every position tab (both apps) in the state's tone, and the tab's accessibility value says the state. A set of stops (the Mac "Broker stops" safety tile) takes the worst state's tone and symbol (`combinedTone`, `combinedSymbol`: never a fixed check; the bare shield, neutral, with no position). The live flow's broker-stop stage (Mac Overview, Mac menu bar, iOS Home) is `stageTone`: neutral with no open position unless a trade of the day ended without a confirmed stop, else the worst of the open and the day's stops. The Symbols screen's stop stage is named by the bare shield |
 | The status headline | `Severity.tone`, `Headline.tone`, `HeadlineBanner` | Alarm `loss`, attention `warning`, calm `profit`; a calm headline about held positions, every one protected (`Headline.holding`), in `accent` (Main "holding", MacMenuBar, IOSHome), a calm one with nothing held in `profit` (Main "scanning"); a recorded day `highlight`. `HeadlineBanner`: dot in the tone's fill, title in its text colour in `Typography.statusLine` (Mac `.body` semibold, iOS `.subheadline` bold), optional detail in `callout` `textTertiary`; `framed` (Mac Overview, menu-bar panel) on the tone's wash with an `Opacity.border` hairline, `Radius.medium`, `Space.m` padding; bare on iOS Home |
 | A verdict | `Verdict.color` | ENTER and HOLD `accentText`, WATCH `infoText`, IGNORE `seriesATRText`, EXIT `warningText`: the Chart's explain card and decisions, Watching closely (tag and bar), both apps |
 | A trade's reason tag | `Tone.exit(_:)` (on `Board.exitLook`), `Tone.openPosition`, `Tone.refused`, `Tone.notEvaluated` | By the reason, never the result (mockup v99, MacTrades and IOSActivity): OPEN and STRATEGY EXIT `accent`, STOPPED OUT `series` (pink), CLOSED, END-OF-DAY and every other close (operator, lost stream, an entry not filled, a reason this app does not know) `neutral`; a protection failure (stop rejected, unprotected too long; no board draws one) `loss`; REFUSED `warning`, NOT EVALUATED `neutral` |
@@ -100,17 +103,19 @@ Russian.
 
 | API | Output | Use |
 |---|---|---|
-| `Money.price` | "0.4567", "0.5000", "1.00", "12.35" (half away from zero) | Every price: chart axes, readouts, tags, positions, trades, stops, entries. Owner rule: below $1 four decimals, from $1 two (`subPennyBelow`, `subPennyDigits`). A chart's `Double` is read through its shortest text (`Money.decimal`), so 12.345 shows 12.35 |
-| `Money.value` | "0.4567", "−0.0123", "50.00" | A chart study's value or scale (VWAP, EMA, MACD, RSI, ATR): a price's tick with its minus |
-| `Money.signed` / `Money.signedUSD` | "+11.80", "−1.60", "0.00" / "+$11.80" | A result (zero unsigned) |
-| `Money.usd` | "$250.00", "−$4.10" | An amount that is not a result: room, limits, balances, fees (never a plus) |
-| `Money.plain`, `Money.number` | "12.30" / "−0.12" | A plain figure; with its minus only below zero |
+| `Money.price` | "0.4567", "0.5000", "1.00", "12.35" (half away from zero), "1,234.50" | Every price: chart axes, readouts, tags, positions, trades, stops, entries. Owner rule: below $1 four decimals, from $1 two (`subPennyBelow`, `subPennyDigits`); from a thousand grouped with "," in every language. A chart `Double` is read through its shortest text (`Money.decimal`), so 12.345 shows 12.35 |
+| `Money.value` | "0.4567", "−0.0123", "1,234.50" | A chart study's value or scale (VWAP, EMA, MACD, RSI, ATR): a price's tick with its minus |
+| `Money.signed` / `Money.signedUSD` | "+11.80", "−1.60", "0.00" / "+$11.80", "−$1,234.50" | A result (zero unsigned); in dollars grouped with "," |
+| `Money.usd` | "$250.00", "$1,000,011.80", "−$4.10" | An amount that is not a result: room, limits, balances, fees (never a plus), grouped with "," |
+| `Money.plain`, `Money.number` | "12.30" / "−0.12" | A plain figure (counts, statistics; not grouped); with its minus only below zero |
 | `Percent.signed(fraction:)` / `(points:)` | "+6.21%", "−0.40%" | A price change: `changeDigits` 2 (the Chart's day change and readout, both apps); a screener's change `moverDigits` 1 |
 | `Percent.plain` | "52%" | A share or win rate (`StatDigits.percent`) |
 | `Volume.compact` | "950", "23.4K", "1.2M" | A share volume (en_US short names in every language) |
 | `DayText.day` | "Mon Nov 16", "пн 16 нояб." | A trading day: weekday, then the date, no comma, the New York day, in the person's language |
 
-A line setting an `accessibilityValue` may let VoiceOver read a number in the person's locale.
+A chart value that is not a number (NaN, infinity) shows the shared dash `Money.missing` ("—"),
+never "0.0000". A line setting an `accessibilityValue` may let VoiceOver read a number in the
+person's locale.
 
 ## Spacing (`Tokens.Space`), 4-point grid
 

@@ -213,7 +213,7 @@ private struct PositionCard: View {
   @ViewBuilder private var stop: some View {
     if let price = row.stop {
       // A verified stop's level is red like the chart's stop line; an unverified one in its
-      // state's tone (red too: not confirmed is not protected), its words saying which.
+      // state's tone (`StopState.tone`: pending amber, missing red), its words saying which.
       if row.position.stop.state.isProtected {
         Text(L10n.Chart.positionStopVerified(Format.price(price))).foregroundStyle(Palette.lossText)
       } else {

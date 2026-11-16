@@ -325,11 +325,9 @@ private struct LiveFlowCard: View {
     let positions = status.map(Board.positions) ?? []
     // An open position whose stop is not verified outranks the day's count of verified stops.
     let unprotected = positions.first { !$0.stop.state.isProtected }
-    // Green only while every open position's stop is verified at the broker.
-    // and no trade of the day ended without one (or with one the bot cannot account for).
-    let stopVerified = StopState.allProtected(positions.map(\.stop.state))
-      && !(model.flow?.stops ?? []).contains { $0.state == .neverVerified || $0.state == .unknown }
-    let stopTone: Tone = stopVerified ? .profit : .loss
+    // The one stage rule of both apps (`StopState.stageTone`): neutral with no position, else the
+    // worst of the open and the day's stops.
+    let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (model.flow?.stops ?? []).map(\.state))
     return [
       .init(id: .screeners, name: L10n.Flow.screeners, value: count(.screeners, L10n.Flow.seen),
         glyph: .screeners, color: Palette.accent, text: Palette.accentText),
@@ -1143,10 +1141,11 @@ private struct SafetyCard: View {
     let label: LocalizedStringResource
     let value: String
     let tone: Tone
+    /// The open positions' stops, for the stops row's symbol (the worst one's, never a fixed check).
+    var stops: [StopState] = []
 
     /// Symbols of the rows.
     static let statusSymbol = "questionmark.circle"
-    static let stopsSymbol = StopState.verifiedSymbol
     static let entriesSymbol = "paperplane"
     static let reconcileSymbol = "arrow.triangle.2.circlepath"
     static let streamSymbol = "waveform.path.ecg"
@@ -1156,7 +1155,7 @@ private struct SafetyCard: View {
     var symbol: String {
       switch id {
       case .status: return Self.statusSymbol
-      case .stops: return Self.stopsSymbol
+      case .stops: return StopState.combinedSymbol(stops)
       case .entries: return Self.entriesSymbol
       case .reconcile: return Self.reconcileSymbol
       case .stream: return Self.streamSymbol
@@ -1190,7 +1189,7 @@ private struct SafetyCard: View {
       Row(id: .stops, label: L10n.Safety.brokerStops,
         value: positions.isEmpty
           ? String(localized: L10n.Common.noPosition) : String(localized: L10n.Safety.verified(verified, positions.count)),
-        tone: StopState.combinedTone(positions.map(\.stop.state))),
+        tone: StopState.combinedTone(positions.map(\.stop.state)), stops: positions.map(\.stop.state)),
       Row(id: .entries, label: L10n.EntrySent.safetyRow,
         value: sent?.text ?? String(localized: L10n.Common.none), tone: sent?.tone ?? .neutral),
       Row(id: .stream, label: L10n.Safety.quoteStream, value: stream.title,

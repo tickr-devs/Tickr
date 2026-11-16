@@ -503,8 +503,8 @@ private struct DayCard: View {
             value: String(localized: L10n.Activity.chipWins(figures.tally.wins)), tone: .profit,
             color: Tone.profit.text, compact: true)
           IconMetric(Self.lossesSymbol, label: L10n.Activity.hintLosses,
-            value: String(localized: L10n.Activity.chipLosses(figures.tally.losses)), tone: .loss,
-            color: Tone.loss.text, compact: true)
+            value: String(localized: L10n.Activity.chipLosses(figures.tally.losses)), tone: .series,
+            color: Tone.series.text, compact: true)
           if let open = figures.tally.open, open > 0 {
             IconMetric(Self.openSymbol, label: L10n.Activity.hintOpen,
               value: String(localized: L10n.Activity.chipOpen(open)), tone: .accent, color: Tone.accent.text,
@@ -784,7 +784,7 @@ private struct TradesList: View {
         value: String(localized: L10n.Risk.seconds(Money.plain(after, fractionDigits: 1))), tone: .profit))
     }
     if let mae = trade.mae, let mfe = trade.mfe {
-      list.append(Figure(symbol: Self.maeSymbol, label: L10n.Activity.hintMae, value: Money.signed(mae), tone: .loss))
+      list.append(Figure(symbol: Self.maeSymbol, label: L10n.Activity.hintMae, value: Money.signed(mae), tone: .series))
       list.append(Figure(symbol: Self.mfeSymbol, label: L10n.Activity.hintMfe, value: Money.signed(mfe), tone: .profit))
     }
     if let code = trade.codeVersion {

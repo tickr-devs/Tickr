@@ -126,7 +126,7 @@ private struct RoomCard: View {
       // A loss with its minus ("−$1.60"), as on the Mac.
       RiskLine(label: L10n.Risk.realizedLoss,
         value: status.realizedLossTodayUsd.map { Money.signedUSD(-$0.value) } ?? Format.missing,
-        color: Palette.lossText)
+        color: Tone.series.text)
       RiskLine(label: L10n.Risk.reservations, value: RiskFormat.amount(status.openReservationsUsd?.value),
         color: Palette.warningText)
       RiskLine(label: L10n.Risk.resultToday, value: Money.signedUSD(status.resultTodayUsd.value),

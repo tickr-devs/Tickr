@@ -95,7 +95,7 @@ private struct Figure: View {
         // Counts up as it appears and on to each new value, as the design's figures do.
         CountingText(NSDecimalNumber(decimal: value).doubleValue) { format(Decimal($0)) }
           .font(Tokens.Typography.figure)
-          .foregroundStyle(loss && value != 0 ? Palette.lossText : color ? Palette.result(value) : Palette.textPrimary)
+          .foregroundStyle(loss && value != 0 ? Tone.series.text : color ? Palette.result(value) : Palette.textPrimary)
       } else {
         Text(verbatim: Format.missing)
           .font(Tokens.Typography.figure)

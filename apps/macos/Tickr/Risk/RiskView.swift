@@ -263,7 +263,7 @@ private struct LossRoomCard: View {
             value: model.status?.feesTodayUsd.map { Money.usd($0.value) } ?? Format.missing,
             symbol: Self.feesSymbol, symbolColor: Palette.warning, color: Palette.textSecondary)
           FigureRow(L10n.Risk.realizedLoss, value: loss(model.status?.realizedLossTodayUsd),
-            symbol: Self.realizedSymbol, symbolColor: Palette.loss, color: Palette.lossText)
+            symbol: Self.realizedSymbol, symbolColor: Tone.series.fill, color: Tone.series.text)
           FigureRow(L10n.Risk.reservations, value: amount(model.status?.openReservationsUsd),
             symbol: Self.reservationsSymbol, symbolColor: Palette.warning, color: Palette.warningText)
           FigureRow(L10n.Risk.nextPlannedLoss, value: amount(model.settings?.risk.plannedLossUsd),
@@ -708,7 +708,7 @@ private struct PositionSlots: View {
     .accessibilityLabel(Text(L10n.Risk.slots))
   }
 
-  /// Colours of a stop state: its tone (`StopState.tone`), green verified, red otherwise.
+  /// Colours of a stop state: its tone (`StopState.tone`): green verified, amber pending, red missing.
   private func colors(_ state: StopState) -> (frame: Color, text: Color) {
     (state.tone.fill, state.tone.text)
   }

@@ -25,7 +25,7 @@ public enum Tone: Sendable, Hashable, CaseIterable {
   case info
   /// Recorded days, observers, planned work.
   case highlight
-  /// The series pink: a stop-out's tag (mockup v99), the ATR line.
+  /// The series pink: a money loss (mockup v100), a stop-out's tag (mockup v99), the ATR line.
   case series
 
   /// Strokes, dots, rails and washes.
@@ -71,9 +71,12 @@ public enum Tone: Sendable, Hashable, CaseIterable {
     }
   }
 
-  /// The tone of a money result: profit above zero, loss below, neutral at zero.
-  public static func result(_ value: Decimal) -> Tone {
-    value > 0 ? .profit : value < 0 ? .loss : .neutral
+  /// The tone of a money result, by the value as shown (rounded to `fractionDigits`, cents by
+  /// default): profit above zero, the series pink below (mockup v100: money losses are pink, red
+  /// is kept for danger), neutral at zero, so "−0.004" shown as "$0.00" is never coloured.
+  public static func result(_ value: Decimal, fractionDigits: Int = Money.centsDigits) -> Tone {
+    let shown = Money.rounded(value, fractionDigits)
+    return shown > 0 ? .profit : shown < 0 ? .series : .neutral
   }
 }
 

@@ -110,7 +110,7 @@ private struct PositionChips: View {
           VStack(spacing: Tokens.Space.xxs) {
             HStack(spacing: Tokens.Space.xs) {
               // Every tab carries its stop's dot, as on the Mac and the Main board: green verified,
-              // red otherwise; the words are the tab's accessibility value.
+              // amber pending, red missing (`StopState.tone`); the words are the tab's accessibility value.
               StopDot(position.stop.state)
               Text(verbatim: position.symbol)
             }

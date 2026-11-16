@@ -31,16 +31,57 @@ extension StopState {
     }
   }
 
-  /// Profit only for a verified stop; loss for every other state, pending included: a stop the
-  /// broker has not confirmed does not protect the position yet (the Main board draws "STOP
-  /// PENDING" in red, with the alarm ring).
-  public var tone: Tone { isProtected ? .profit : .loss }
+  /// Verified profit (green), pending warning (amber: sent, not confirmed yet), missing or
+  /// unknown loss (red: no protection, a danger state). Mockup v100.
+  public var tone: Tone {
+    switch self {
+    case .verified: return .profit
+    case .pending: return .warning
+    case .missing, .unknown: return .loss
+    }
+  }
 
-  /// The tone of a set of positions' stops: profit when every one is verified, loss when any is
-  /// not, neutral with no position.
+  /// The states from best to worst, for picking the worst of several.
+  static let bestToWorst: [StopState] = [.verified, .pending, .unknown, .missing]
+
+  /// How bad a state is: its place in `bestToWorst`.
+  var rank: Int { Self.bestToWorst.firstIndex(of: self) ?? Self.bestToWorst.count }
+
+  /// The worst of several stops' states; nil for none.
+  public static func worst(_ states: [StopState]) -> StopState? {
+    states.max { $0.rank < $1.rank }
+  }
+
+  /// The tone of a set of positions' stops: the worst one's, neutral with no position.
   public static func combinedTone(_ states: [StopState]) -> Tone {
-    guard !states.isEmpty else { return .neutral }
-    return allProtected(states) ? .profit : .loss
+    worst(states)?.tone ?? .neutral
+  }
+
+  /// The symbol of a set of positions' stops (a safety tile): the worst one's, so an unverified
+  /// stop never shows a check; the bare stop shield with no position.
+  public static func combinedSymbol(_ states: [StopState]) -> String {
+    worst(states)?.symbol ?? levelSymbol
+  }
+
+  /// A day trade's stop as the flow reports it, read as a position's stop state (a stop never
+  /// confirmed before the trade ended counts as missing).
+  public init(_ flow: FlowStopState) {
+    switch flow {
+    case .verified: self = .verified
+    case .pending: self = .pending
+    case .neverVerified: self = .missing
+    case .unknown: self = .unknown
+    }
+  }
+
+  /// The tone of the live flow's broker-stop stage (Mac Overview, the Mac menu bar, iOS Home):
+  /// neutral with no open position unless a trade of the day ended without a confirmed stop (or
+  /// one the bot cannot account for); else the worst of the open positions' and the day's stops.
+  public static func stageTone(open: [StopState], day: [FlowStopState] = []) -> Tone {
+    let dayStates = day.map { StopState($0) }
+    let dayFailed = dayStates.contains { $0 == .missing || $0 == .unknown }
+    guard !open.isEmpty || dayFailed else { return .neutral }
+    return combinedTone(open + dayStates)
   }
 }
 

@@ -37,22 +37,25 @@ public enum Money {
   public static let subPennyBelow: Decimal = 1
   public static let subPennyDigits = 4
 
-  /// A price rounded to its tick: "12.35" for 12.3456…, "0.4567" for 0.45671…; never a sign.
+  /// A price rounded to its tick: "12.35" for 12.3456…, "0.4567" for 0.45671…, "1,234.50" from a
+  /// thousand (grouped with ","); never a sign.
   public static func price(_ value: Decimal) -> String {
-    plain(value, fractionDigits: abs(value) < subPennyBelow ? subPennyDigits : centsDigits)
+    fixed(abs(value), fractionDigits: abs(value) < subPennyBelow ? subPennyDigits : centsDigits, grouped: true)
   }
 
-  /// "+$11.80", "−$1.60", "$0.00": a money result (a day, a trade, an open position).
+  /// "+$11.80", "−$1,234.50", "$0.00": a money result (a day, a trade, an open position),
+  /// thousands grouped with "," in every language.
   public static func signedUSD(_ value: Decimal) -> String {
-    let body = dollar + fixed(abs(value), fractionDigits: centsDigits)
+    let body = dollar + fixed(abs(value), fractionDigits: centsDigits, grouped: true)
     if rounded(value, centsDigits) == 0 { return body }
     return (value > 0 ? "+" : minus) + body
   }
 
-  /// "$250.00", "−$4.10": an amount that is not a result (room, a limit, a balance, a fee), so
-  /// never a plus; a minus only when the amount itself is below zero.
+  /// "$250.00", "$1,000,011.80", "−$4.10": an amount that is not a result (room, a limit, a
+  /// balance, a fee), so never a plus; a minus only when the amount itself is below zero;
+  /// thousands grouped with "," in every language.
   public static func usd(_ value: Decimal) -> String {
-    let body = dollar + fixed(abs(value), fractionDigits: centsDigits)
+    let body = dollar + fixed(abs(value), fractionDigits: centsDigits, grouped: true)
     return rounded(value, centsDigits) < 0 ? minus + body : body
   }
 
@@ -64,36 +67,46 @@ public enum Money {
 
   /// The currency sign of every amount (the account is in US dollars).
   static let dollar = "$"
+  /// What a value that is not a number shows: the shared dash.
+  public static let missing = ApiText.missing
+  /// Thousands separator of grouped figures, the same in every language.
+  static let groupingSeparator = ","
+  /// Digits per group.
+  static let groupingSize = 3
 
   // MARK: chart values (Double)
 
   /// The decimal a chart's `Double` stands for, read through its shortest decimal text, so
   /// 12.345 (stored as 12.3449999…) rounds as it reads, to 12.35; zero for a value that is not
-  /// finite.
+  /// finite (the text functions below show `missing` for one instead).
   public static func decimal(_ value: Double) -> Decimal {
     guard value.isFinite else { return 0 }
     return Decimal(string: String(value), locale: Locale(identifier: posixLocale)) ?? Decimal(value)
   }
 
   /// `price(_:)` of a chart value: the same tick on both apps' charts.
-  public static func price(_ value: Double) -> String { price(decimal(value)) }
+  public static func price(_ value: Double) -> String {
+    value.isFinite ? price(decimal(value)) : missing
+  }
 
   /// `signed(_:fractionDigits:)` of a chart value (a price change).
   public static func signed(_ value: Double, fractionDigits: Int = centsDigits) -> String {
-    signed(decimal(value), fractionDigits: fractionDigits)
+    value.isFinite ? signed(decimal(value), fractionDigits: fractionDigits) : missing
   }
 
   /// `number(_:fractionDigits:)` of a chart value (a study's value).
   public static func number(_ value: Double, fractionDigits: Int = centsDigits) -> String {
-    number(decimal(value), fractionDigits: fractionDigits)
+    value.isFinite ? number(decimal(value), fractionDigits: fractionDigits) : missing
   }
 
   /// A value on a chart's scale or legend (a price line, VWAP, an EMA, MACD, RSI, ATR): at a
   /// price's tick, four decimals below one in size, else two, with a minus below zero, so a study
   /// line and the price it is drawn against read alike ("0.4567", "−0.0123", "12.35").
   public static func value(_ value: Double) -> String {
+    guard value.isFinite else { return missing }
     let exact = decimal(value)
-    return number(exact, fractionDigits: abs(exact) < subPennyBelow ? subPennyDigits : centsDigits)
+    let body = price(exact)
+    return rounded(exact, abs(exact) < subPennyBelow ? subPennyDigits : centsDigits) < 0 ? minus + body : body
   }
 
   static func rounded(_ value: Decimal, _ digits: Int) -> Decimal {
@@ -103,12 +116,14 @@ public enum Money {
     return output
   }
 
-  static func fixed(_ value: Decimal, fractionDigits: Int) -> String {
+  static func fixed(_ value: Decimal, fractionDigits: Int, grouped: Bool = false) -> String {
     let number = NSDecimalNumber(decimal: rounded(value, fractionDigits))
     let formatter = NumberFormatter()
     formatter.locale = Locale(identifier: posixLocale)
     formatter.numberStyle = .decimal
-    formatter.usesGroupingSeparator = false
+    formatter.usesGroupingSeparator = grouped
+    formatter.groupingSeparator = groupingSeparator
+    formatter.groupingSize = groupingSize
     formatter.minimumFractionDigits = fractionDigits
     formatter.maximumFractionDigits = fractionDigits
     formatter.minimumIntegerDigits = 1
@@ -162,7 +177,7 @@ public enum Percent {
 
   /// The same from a chart value.
   public static func signed(fraction: Double, fractionDigits: Int = changeDigits) -> String {
-    signed(fraction: Money.decimal(fraction), fractionDigits: fractionDigits)
+    fraction.isFinite ? signed(fraction: Money.decimal(fraction), fractionDigits: fractionDigits) : Money.missing
   }
 
   /// "+18.2%" from points (18.24).
@@ -189,7 +204,8 @@ public enum Volume {
   static let digits = 1
 
   public static func compact(_ value: Double) -> String {
-    value.formatted(.number.notation(.compactName).precision(.fractionLength(0...digits))
+    guard value.isFinite else { return Money.missing }
+    return value.formatted(.number.notation(.compactName).precision(.fractionLength(0...digits))
       .locale(Locale(identifier: compactLocale)))
   }
 }

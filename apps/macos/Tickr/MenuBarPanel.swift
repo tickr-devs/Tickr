@@ -282,8 +282,8 @@ private struct FlowDots: View {
 
   private var stages: [Stage] {
     let stops = model.status.map(Board.positions)?.map(\.stop.state) ?? []
-    // Neutral with no position, else green only while every stop is verified.
-    let stopColor = StopState.combinedTone(stops).fill
+    // The one stage rule of both apps, as on Overview (`StopState.stageTone`).
+    let stopColor = StopState.stageTone(open: stops, day: (model.flow?.stops ?? []).map(\.state)).fill
     let items: [(LocalizedStringResource, Color)] = [
       (L10n.MenuBar.flowScreen, Palette.accent),
       (L10n.MenuBar.flowStrategy, Palette.highlight),

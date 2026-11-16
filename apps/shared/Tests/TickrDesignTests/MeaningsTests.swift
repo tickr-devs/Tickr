@@ -8,10 +8,10 @@ import TickrKit
 @Suite struct MeaningsTests {
   static let states: [StopState] = [.verified, .pending, .missing, .unknown]
 
-  @Test("Only a verified stop protects; pending is red like missing (the Main board)")
+  @Test("Only a verified stop protects; pending amber, missing and unknown red (mockup v100)")
   func stopTones() {
     #expect(Self.states.map(\.isProtected) == [true, false, false, false])
-    #expect(Self.states.map(\.tone) == [.profit, .loss, .loss, .loss])
+    #expect(Self.states.map(\.tone) == [.profit, .warning, .loss, .loss])
   }
 
   @Test("One symbol per stop state, none shared with the stop's level")
@@ -21,12 +21,28 @@ import TickrKit
     #expect(!Self.states.map(\.symbol).contains(StopState.levelSymbol))
   }
 
-  @Test("A set of stops: neutral with none, profit only when every one is verified")
+  @Test("A set of stops takes the worst one's tone and symbol, never a fixed check")
   func stopSets() {
     #expect(StopState.combinedTone([]) == .neutral)
     #expect(StopState.combinedTone([.verified, .verified]) == .profit)
-    #expect(StopState.combinedTone([.verified, .pending]) == .loss)
+    #expect(StopState.combinedTone([.verified, .pending]) == .warning)
+    #expect(StopState.combinedTone([.pending, .missing, .verified]) == .loss)
+    #expect(StopState.combinedSymbol([.verified, .pending]) == StopState.pendingSymbol)
+    #expect(StopState.combinedSymbol([.unknown, .missing]) == StopState.missingSymbol)
+    #expect(StopState.combinedSymbol([.verified]) == StopState.verifiedSymbol)
+    #expect(StopState.combinedSymbol([]) == StopState.levelSymbol)
     #expect(StopState.allProtected([]))
+  }
+
+  @Test("The broker-stop stage: neutral with no position on every screen, unless a day's trade lost its stop")
+  func stopStage() {
+    #expect(StopState.stageTone(open: []) == .neutral)
+    #expect(StopState.stageTone(open: [], day: [.verified, .pending]) == .neutral)
+    #expect(StopState.stageTone(open: [], day: [.verified, .neverVerified]) == .loss)
+    #expect(StopState.stageTone(open: [.verified], day: [.verified]) == .profit)
+    #expect(StopState.stageTone(open: [.verified], day: [.pending]) == .warning)
+    #expect(StopState.stageTone(open: [.pending]) == .warning)
+    #expect(StopState.stageTone(open: [.verified, .missing]) == .loss)
   }
 
   @Test("The glyph's label names the symbol and the state")
@@ -59,7 +75,7 @@ import TickrKit
     #expect(tones.map(\.textSwatch) == [.textTertiary, .accentText, .profitText, .lossText, .warningText, .infoText,
       .highlightText, .seriesATRText])
     #expect(Palette.result(0) == Palette.textTertiary)
-    #expect(Palette.result(d("-1")) == Palette.lossText)
+    #expect(Palette.result(d("-1")) == Palette.seriesATRText)
   }
 
   @Test("Trade tags by reason (v99): strategy exit and open teal, stopped out pink, other closes grey")
@@ -86,7 +102,15 @@ import TickrKit
   @Test("A money result: profit above zero, loss below, neutral at zero (never green)")
   func results() {
     #expect(Tone.result(d("0.01")) == .profit)
-    #expect(Tone.result(d("-0.01")) == .loss)
+    #expect(Tone.result(d("-0.01")) == .series)
     #expect(Tone.result(0) == .neutral)
+    // Coloured as shown: "−0.004" reads "$0.00" and is neutral; "−0.005" reads "−$0.01", a loss.
+    #expect(Money.signedUSD(d("-0.004")) == "$0.00")
+    #expect(Tone.result(d("-0.004")) == .neutral)
+    #expect(Tone.result(d("0.004")) == .neutral)
+    #expect(Money.signedUSD(d("-0.005")) == "\u{2212}$0.01")
+    #expect(Tone.result(d("-0.005")) == .series)
+    // R results shown to one decimal: −0.04 R reads "0.0 R".
+    #expect(Tone.result(d("-0.04"), fractionDigits: 1) == .neutral)
   }
 }

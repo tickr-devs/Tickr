@@ -353,14 +353,22 @@ extension StageDetail {
     }
   }
 
-  /// Green only for a verified stop; red for every other state, pending included (a stop the
-  /// broker has not confirmed does not protect yet), as `StopState.tone` in TickrDesign.
+  /// Verified green, pending amber, never verified, missing or unknown red, as `StopState.tone`
+  /// in TickrDesign (mockup v100).
   static func tone(_ state: FlowStopState) -> Tone {
-    state == .verified ? .green : .red
+    switch state {
+    case .verified: .green
+    case .pending: .amber
+    case .neverVerified, .unknown: .red
+    }
   }
 
   static func tone(_ state: StopState) -> Tone {
-    state.isProtected ? .green : .red
+    switch state {
+    case .verified: .green
+    case .pending: .amber
+    case .missing, .unknown: .red
+    }
   }
 }
 

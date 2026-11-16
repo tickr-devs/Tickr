@@ -105,8 +105,8 @@ public enum Palette {
   /// Deep navy behind an overlay panel (the Mac "Watching closely" list), at `Opacity.faint`, and its shadow.
   public static let scrim = Color(Swatch.scrim)
 
-  /// Text colour for a money result: gains profit, losses loss, zero tertiary (`Tone.result`, the
-  /// one place the sign of a result picks its colour).
+  /// Text colour for a money result: gains profit, losses the series pink, zero tertiary, by the
+  /// value as shown (`Tone.result`, the one place the sign of a result picks its colour).
   public static func result(_ value: Decimal) -> Color {
     Tone.result(value).text
   }

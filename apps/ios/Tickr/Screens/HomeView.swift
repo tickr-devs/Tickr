@@ -602,10 +602,10 @@ private struct LiveFlowCard: View {
   private var stages: [Stage] {
     let positions = status.positions
     let verified = positions.filter { $0.stop.state.isProtected }.count
-    // Green only while every open position's stop, and every stop of the day's trades the flow
-    // knows, is verified at the broker.
     let flowVerified = flow?.stops.filter { $0.state == .verified }.count
-    let allProtected = verified == positions.count && flowVerified == flow?.stops.count
+    // The one stage rule of both apps (`StopState.stageTone`): neutral with no position, else the
+    // worst of the open and the day's stops.
+    let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (flow?.stops ?? []).map(\.state))
     guard current else {
       // Nothing here is live: no counts, no green, nothing breathing.
       return [StageID.screen, .stocks, .strategy, .risk, .order, .stop].map { id in
@@ -637,7 +637,7 @@ private struct LiveFlowCard: View {
       Stage(id: .order, name: L10n.Flow.order,
         value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: Palette.info),
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
-        color: (allProtected ? Tone.profit : Tone.loss).fill, urgent: verified < positions.count),
+        color: stopTone.fill, urgent: verified < positions.count),
     ]
   }
 

@@ -573,7 +573,7 @@ extension SymbolsTab {
   /// The entry order.
   static let orderSymbol = "paperplane"
   /// The broker stop.
-  static let stopSymbol = StopState.verifiedSymbol
+  static let stopSymbol = StopState.levelSymbol
   /// A fast mover's jump.
   static let fastMoversSymbol = "bolt"
 }
