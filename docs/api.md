@@ -113,7 +113,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/decisions?symbol=<ticker>&date=<YYYY-MM-DD>` | `200` `decisions-v1`: every decision recorded for one symbol on one date (active strategy and observers, marked), oldest first, with checks. |
 | GET | `/skipped?date=<YYYY-MM-DD>` | `200` `skipped-v1`: every ENTER of the active strategy that date (default today) that did not become a position (admission `refused` or `not_evaluated`), oldest first, with checks, prices after the signal and the simulated what-if. |
 | GET | `/flow?date=<YYYY-MM-DD>` | `200` `flow-v1`: the Overview's live flow that date (default today): screener chips and the pipeline stages from screeners to verified broker stops, with reconciliation. |
-| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: the symbols the active strategy is closest to entering on that date (default today), closest first, capped by `[api] watching_max_rows`. |
+| GET | `/watching?date=<YYYY-MM-DD>` | `200` `watching-v1`: every symbol the active strategy is watching on that date (default today), closest to entering first. |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
 | POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
@@ -259,7 +259,15 @@ was written, just after the reads. `age_seconds` = `served_at - account.read_at`
 the cause.
 
 - `positions`: every non-zero position the broker listed (`avg_price` null when the broker row
-  does not show it).
+  does not show it). `last_price`, `market_value_usd`, `unrealized_pl_usd` and `day_pl_usd` are
+  the broker's own figures for the position, display only (null when absent or unreadable).
+- `fills`: today's orders with a fill, oldest first, from the broker's order history
+  (`GET /trading/orders/historical-orders/list`, no `start_time`, at most
+  `[environments.*] history_max_pages` pages, kept to the New York date), read on the same
+  thread with the balance and under the same rules (`fills_read_at`, `fills-read-failed` journaled once per stretch, never
+  blocks anything). Each has the broker's `side` and `type`, the filled `quantity`, the
+  average fill `price`, `filled_at`, `fees_usd` (the sum of the broker's actual fees, null when
+  one is unreadable) and `ours`.
 - `orders`: every open order the broker listed. `side`, `type` and `status` are the bot's names
   (`BUY`/`SELL`; `MARKET`/`LIMIT`/`STOP_LOSS`; `ACCEPTED`, `PARTIALLY_FILLED`, ...). `ours` is
   true when the client order id is one of the bot's own. `limit_price` is the broker's, read on
@@ -272,11 +280,13 @@ the cause.
   the comparison fails. `resurrected` is an operator fence that stays until it is cleared, so
   `mismatch` may describe something the broker has already resolved.
 - Balances come from the latest successful balance read (`GET /trading/assets/balances/get`,
-  docs/webull-facts.md), made after a successful reconciliation at most once per
-  `[orders] balance_read_seconds`; `balance_read_at` is when it succeeded. All are null until
-  one succeeds. A failed read keeps the previous values (with their `balance_read_at`), is
-  journaled once per stretch (`balance-read-failed`) and never blocks anything: balances are
-  display only, and no limit or decision reads them (limits live in the platform settings).
+  docs/webull-facts.md), made on the bot's own display-read thread every
+  `[orders] balance_read_seconds` (the trading loop never waits on it and only takes the
+  latest result when it writes this file); `balance_read_at` is when it succeeded. All are
+  null until one succeeds. A failed read keeps the previous values (with their
+  `balance_read_at`), is journaled once per stretch (`balance-read-failed`; an unexpected error
+  in the thread: `account-reads-failed`) and never blocks anything: balances are display only,
+  and no limit or decision reads them (limits live in the platform settings).
   - `equity_usd`: net liquidation value (cash plus positions at market).
   - `buying_power_usd`: day (intraday) buying power; `overnight_buying_power_usd`: overnight.
   - `cash_usd`, `positions_value_usd` (positions at market), `unrealized_pl_usd`, `day_pl_usd`
@@ -991,8 +1001,10 @@ above, a record whose failed check already meets its threshold, or no failed che
 `not recorded: decision records hold no quote time`: the decision file does not keep the quote
 the strategy saw.
 
-Rows are closest first (`null` closeness last), then by symbol, at most
-`[api] watching_max_rows`; `total` counts every row before the cap.
+Rows are every symbol watched that day, closest first (`null` closeness last), then by symbol;
+there is no cap (one row per symbol the strategy decided on that day), and `total` is the
+number of rows. The apps choose how many to show (the Overview and Positions
+cards show the closest three, "Show all" lists every row).
 
 `latest_size` is the Overview's "next size · binding" line: the size the active strategy gave its
 newest sized decision that day (any verdict, entering included), read from the record, never
