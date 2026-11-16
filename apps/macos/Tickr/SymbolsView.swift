@@ -361,18 +361,6 @@ private struct MoverColumns: View {
   }
 }
 
-/// The signals named in `FastMoverV1.fired` (protocol constants of the API).
-enum FastMoverSignal: String {
-  case volume = "volume_ratio"
-  case move = "move_atr"
-  case dollars = "dollar_volume_ratio"
-}
-
-extension FastMoverV1 {
-  /// Whether `signal` reached its threshold on the mover's bar.
-  func fired(_ signal: FastMoverSignal) -> Bool { fired.contains(signal.rawValue) }
-}
-
 /// One figure of a fast mover: bright when its signal fired, quiet when it did not.
 struct MoverFigure: View {
   let text: String
