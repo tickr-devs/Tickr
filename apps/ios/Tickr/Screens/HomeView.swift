@@ -361,6 +361,13 @@ private struct Summary: View {
             .minimumScaleFactor(Tokens.Shrink.slight)
             .fixedSize(horizontal: false, vertical: true)
         }
+        if stats?.beforeFees == true {
+          // The ring's result does not count the broker's fees yet; wraps rather than cuts.
+          Text(L10n.Home.beforeFees)
+            .font(.footnote)
+            .foregroundStyle(Palette.warningText)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         if let past {
           Text(L10n.Home.recordedNote)
             .font(.footnote)
