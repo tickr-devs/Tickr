@@ -31,20 +31,15 @@ struct OverviewView: View {
   /// Least height of the bottom row (Risk room, Observers, the journal), in points. It takes
   /// the rest of the window's height as in the design, never less than this.
   static let bottomRowMinHeight: CGFloat = 150
-  /// `Space.l` gaps in the screen's height besides its parts: the padding above and below, and
-  /// the gap between the cards above the bottom row and the row.
-  static let verticalGaps: CGFloat = 3
 
   @State private var headerBesideResult = true
   @State private var threeColumns = true
-  /// Height of the visible screen, and of everything above the bottom row, in points.
+  /// Height of the visible screen, and of everything above the bottom row, in points. The bottom
+  /// row fills the rest of the screen by layout (the content is at least the screen's height and
+  /// the row takes what is left), never by a height computed from a measured one: the cards above
+  /// it grow with their content, and a computed height chased them in a loop that never settled.
   @State private var viewportHeight: CGFloat = 0
   @State private var aboveBottomHeight: CGFloat = 0
-
-  /// The bottom row fills the window under the cards above it, as the design's grid does.
-  private var bottomRowHeight: CGFloat {
-    max(Self.bottomRowMinHeight, viewportHeight - aboveBottomHeight - Tokens.Space.l * Self.verticalGaps)
-  }
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -55,7 +50,7 @@ struct OverviewView: View {
             WeightedColumns(weights: Self.bottomRowWeights, spacing: Tokens.Space.l) {
               bottomRow
             }
-            .frame(height: bottomRowHeight)
+            .frame(minHeight: Self.bottomRowMinHeight, maxHeight: .infinity)
           } else {
             WeightedColumns(weights: Self.twoColumnWeights, spacing: Tokens.Space.l) {
               RiskRoomCard().filling()
@@ -66,6 +61,9 @@ struct OverviewView: View {
           }
         }
         .padding(Tokens.Space.l)
+        // The screen's height is proposed to the content, so the bottom row takes what the cards
+        // above leave; taller content scrolls.
+        .frame(minHeight: viewportHeight, idealHeight: viewportHeight, alignment: .top)
       }
       .onChange(of: aboveBottomHeight) { showSafetyFirstIfAsked(proxy) }
     }
