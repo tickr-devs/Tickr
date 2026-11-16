@@ -40,7 +40,7 @@ struct HomeView: View {
         showControl = true
       } label: {
         HeaderIcon(.power)
-          .foregroundStyle(model.canCommand && dayModel.shown == nil ? Palette.warningText : Palette.textQuaternary)
+          .foregroundStyle(model.canCommand && dayModel.shown == nil ? powerTint : Palette.textQuaternary)
       }
       .disabled(!model.canCommand || dayModel.shown != nil)
       .accessibilityLabel(Text(L10n.Control.title))
@@ -49,7 +49,7 @@ struct HomeView: View {
         SettingsView()
       } label: {
         HeaderIcon(.settings)
-          .foregroundStyle(Palette.infoText)
+          .foregroundStyle(Palette.textPrimary)
       }
       .accessibilityLabel(Text(L10n.Home.settings))
       .accessibilityIdentifier(AccessibilityID.settings)
@@ -120,6 +120,17 @@ struct HomeView: View {
 }
 
 extension HomeView {
+  /// The power glyph in the bot's state, as on the design: green running, amber with entries paused
+  /// or while it starts or stops, red stopped.
+  fileprivate var powerTint: Color {
+    guard let status = model.status else { return Palette.textQuaternary }
+    switch status.botState {
+    case .running: return status.entryStop ? Palette.warningText : Palette.profitText
+    case .starting, .stopping: return Palette.warningText
+    case .stopped: return Palette.lossText
+    }
+  }
+
   /// Changes when the address, the session or the open positions change, restarting the reads.
   fileprivate var followKey: FollowKey {
     FollowKey(url: model.connection.url, day: model.status.map { WireDate(newYorkDateOf: $0.writtenAt.date) },
@@ -146,8 +157,6 @@ private struct DayLine: View {
   /// Symbols of the arrows to the previous and next day.
   static let previousSymbol = "chevron.left"
   static let nextSymbol = "chevron.right"
-  /// Lines the day may take at large text sizes ("Пт 13 нояб. · сегодня").
-  static let stackedDayLines = 2
 
   @Environment(AppModel.self) private var model
   @Environment(\.dynamicTypeSize) private var typeSize
@@ -190,7 +199,7 @@ private struct DayLine: View {
   }
 
   private func arrow(_ symbol: String) -> some View {
-    HeaderIcon(symbol: symbol).foregroundStyle(Palette.infoText)
+    HeaderIcon(symbol: symbol).foregroundStyle(Palette.textPrimary)
   }
 
   /// The day, centred in the room between the arrows (or the DEMO chips).
@@ -198,8 +207,10 @@ private struct DayLine: View {
     day
       .frame(maxWidth: .infinity)
       .multilineTextAlignment(.center)
-      .lineLimit(typeSize.stacksRows ? Self.stackedDayLines : 1)
+      // One line at the usual sizes; at large ones it wraps as far as it needs, never cut with "…".
+      .lineLimit(typeSize.stacksRows ? nil : 1)
       .minimumScaleFactor(Tokens.Shrink.standard)
+      .fixedSize(horizontal: false, vertical: true)
   }
 
   private var demoChip: some View {
