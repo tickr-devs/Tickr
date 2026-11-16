@@ -24,12 +24,30 @@ struct ActivityView: View {
 
   @Environment(AppModel.self) private var model
   @State private var activity = Container.shared.activityModel()
+  /// The open positions' marks (last price, R), as on Positions.
+  @State private var prices = Container.shared.positionsModel()
   @State private var section: Pane = .trades
   @State private var showsCalendar = false
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
-    Screen(L10n.App.activity) {
+    Screen(L10n.App.activity, tab: .activity) {
+      Button {
+        showsCalendar.toggle()
+      } label: {
+        DesignGlyphView(.calendar, side: Tokens.Size.headerGlyph)
+          .foregroundStyle(Palette.infoText)
+          // Open, the calendar's button sits on a wash, as a selected chip.
+          .background {
+            if showsCalendar {
+              Circle().fill(Palette.info.opacity(TickrTabBar.selectedWash)).frame(width: HomeView.actionSide)
+            }
+          }
+          .frame(minWidth: HomeView.actionSide, minHeight: HomeView.actionSide)
+      }
+      .accessibilityLabel(Text(L10n.Activity.calendar))
+      .accessibilityIdentifier(AccessibilityID.calendar)
+    } content: {
       ConnectionPrompt()
       if showsCalendar, let url = model.connection.url {
         DayPicker(activity: activity, url: url)
@@ -48,18 +66,6 @@ struct ActivityView: View {
         panes(status: status)
       }
     }
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          showsCalendar.toggle()
-        } label: {
-          Image(systemName: "calendar")
-            .symbolVariant(showsCalendar ? SymbolVariants.fill.circle : .none)
-        }
-        .accessibilityLabel(Text(L10n.Activity.calendar))
-        .accessibilityIdentifier(AccessibilityID.calendar)
-      }
-    }
     .animation(Tokens.Motion.standard, value: section)
     .animation(Tokens.Motion.standard, value: showsCalendar)
     .animation(Tokens.Motion.standard, value: activity.selectedDay)
@@ -76,6 +82,10 @@ struct ActivityView: View {
         guard activity.selectedDay == nil, day == activity.today else { return }
         try? await Task.sleep(for: .seconds(ChartModel.liveReloadSeconds))
       } while !Task.isCancelled
+    }
+    .task(id: followKey) {
+      guard let url = model.connection.url, let status = model.status, !status.positions.isEmpty else { return }
+      await prices.follow(url, status: status)
     }
     .task(id: sessionKey) {
       guard let url = model.connection.url, let status = model.status else { return }
@@ -103,6 +113,18 @@ struct ActivityView: View {
     SkippedKey(url: model.connection.url,
       day: activity.selectedDay ?? model.status.map(activity.sessionDay(of:)),
       trades: model.status?.tradesToday.count ?? 0)
+  }
+
+  /// Changes when the address, the session or the open positions change, restarting the reads.
+  private var followKey: FollowKey {
+    FollowKey(url: model.connection.url, day: model.status.map { WireDate(newYorkDateOf: $0.writtenAt.date) },
+      positions: model.status?.positions ?? [])
+  }
+
+  private struct FollowKey: Hashable {
+    let url: URL?
+    let day: WireDate?
+    let positions: [Position]
   }
 
   private struct SkippedKey: Hashable {
@@ -165,6 +187,7 @@ struct ActivityView: View {
       case .trades:
         if let status {
           TradesList(activity: activity, url: model.connection.url, positions: status.positions,
+            marks: prices.marks.filter { model.isCurrent($0.value) },
             trades: status.tradesToday.map { TradeLine($0, recorded: activity.session?.trades ?? []) },
             empty: (L10n.Activity.noTrades, L10n.Activity.noTradesBody))
         } else {
@@ -192,21 +215,22 @@ struct ActivityView: View {
 }
 
 extension ActivityView {
-  /// The pane control: segments while their titles fit, which a segmented control's fixed-size
-  /// text does up to the largest standard text size; at accessibility sizes a menu of the panes,
-  /// whose button grows with the text.
+  /// The pane control as on the design: three segments on a card, the chosen one raised; at
+  /// accessibility sizes a menu of the panes, whose button grows with the text.
   @ViewBuilder fileprivate var paneControl: some View {
-    let picker = Picker(selection: $section) {
-      ForEach(Pane.allCases) { Text($0.title).tag($0) }
-    } label: {
-      Text(L10n.Activity.show)
-    }
     if dynamicTypeSize.isAccessibilitySize {
-      picker
-        .pickerStyle(.menu)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      Picker(selection: $section) {
+        ForEach(Pane.allCases) { Text($0.title).tag($0) }
+      } label: {
+        Text(L10n.Activity.show)
+      }
+      .pickerStyle(.menu)
+      .frame(maxWidth: .infinity, alignment: .leading)
     } else {
-      picker.pickerStyle(.segmented)
+      SegmentChips(options: Pane.allCases.map { ($0, Text($0.title)) }, selection: $section, style: .raised,
+        identifier: AccessibilityID.activitySection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(L10n.Activity.show))
     }
   }
 }
@@ -221,6 +245,14 @@ private struct DayPicker: View {
   let url: URL
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(AppModel.self) private var model
+
+  /// Today's live dot pulses once when today's trading changes: a trade closed, a position opened
+  /// or closed (the status's counts); still in between.
+  private var todayEvent: AnyHashable? {
+    guard let status = model.status else { return nil }
+    return AnyHashable([status.tradesToday.count, status.positions.count])
+  }
 
   var body: some View {
     VStack(spacing: Tokens.Space.s) {
@@ -239,21 +271,26 @@ private struct DayPicker: View {
         }
       }
       .accessibilityHidden(true)
-      ForEach(Array(activity.weeks.enumerated()), id: \.offset) { _, week in
-        // Wider gaps at accessibility sizes, where the day numbers fill their cells.
-        HStack(spacing: dynamicTypeSize.isAccessibilitySize ? Tokens.Space.s : Tokens.Space.xs) {
-          ForEach(week.indices, id: \.self) { column in
-            if let cell = week[column] {
-              DayCell(cell: cell, isToday: cell.day == activity.today,
-                selected: cell.day == (activity.selectedDay ?? activity.today)) {
-                Task { await activity.show(cell.day, from: url) }
+      // A new month assembles cell by cell (the board's per-cell fade-up, `Motion.cellStagger` apart).
+      VStack(spacing: Tokens.Space.s) {
+        ForEach(Array(activity.weeks.enumerated()), id: \.offset) { row, week in
+          // Wider gaps at accessibility sizes, where the day numbers fill their cells.
+          HStack(spacing: dynamicTypeSize.isAccessibilitySize ? Tokens.Space.s : Tokens.Space.xs) {
+            ForEach(week.indices, id: \.self) { column in
+              if let cell = week[column] {
+                DayCell(cell: cell, isToday: cell.day == activity.today,
+                  selected: cell.day == (activity.selectedDay ?? activity.today), todayEvent: todayEvent) {
+                  Task { await activity.show(cell.day, from: url) }
+                }
+                .rise(Double(row * week.count + column) * Tokens.Motion.cellStagger)
+              } else {
+                Color.clear.frame(maxWidth: .infinity, minHeight: DayCell.height)
               }
-            } else {
-              Color.clear.frame(maxWidth: .infinity, minHeight: DayCell.height)
             }
           }
         }
       }
+      .id(activity.month)
       if let failure = activity.daysFailure {
         VStack(spacing: Tokens.Space.xxs) {
           Text(L10n.Activity.daysFailed).font(Tokens.Typography.callout)
@@ -327,6 +364,8 @@ private struct DayCell: View {
   let cell: DayCalendar.Cell
   let isToday: Bool
   let selected: Bool
+  /// Today's real change (see `DayPicker.todayEvent`): one pulse of today's dot per change.
+  let todayEvent: AnyHashable?
   let action: () -> Void
 
   var body: some View {
@@ -347,7 +386,7 @@ private struct DayCell: View {
             .lineLimit(1)
             .minimumScaleFactor(Tokens.Shrink.tight)
         } else if isToday {
-          PulseDot(Palette.accent, size: Tokens.Size.dotSmall)
+          PulseDot(Palette.accent, size: Tokens.Size.dotSmall, event: todayEvent)
         }
       }
       .frame(maxWidth: .infinity, minHeight: Self.height)
@@ -372,13 +411,23 @@ private struct DayCell: View {
 
 /// What a day card shows: the net result, the counts and the running total of closed trades.
 private struct DayFigures: Equatable {
+  /// The day's trades counted for the chips under the result; `open` only for today.
+  struct Tally: Hashable {
+    let closed: Int
+    let wins: Int
+    let losses: Int
+    var open: Int?
+  }
+
   let result: Decimal
   let counts: LocalizedStringResource
+  let tally: Tally
   let curve: [Double]
 
-  init(result: Decimal, counts: LocalizedStringResource, curve: [Double]) {
+  init(result: Decimal, counts: LocalizedStringResource, tally: Tally, curve: [Double]) {
     self.result = result
     self.counts = counts
+    self.tally = tally
     self.curve = curve
   }
 
@@ -387,6 +436,7 @@ private struct DayFigures: Equatable {
     let stats = Board.dayStats(status)
     result = stats.resultGrossUsd
     counts = L10n.Activity.counts(stats.trades, stats.wins, stats.losses, status.positions.count)
+    tally = Tally(closed: stats.trades, wins: stats.wins, losses: stats.losses, open: status.positions.count)
     curve = Self.curve(status.tradesToday.map { ($0.closedAt.date, $0.resultGrossUsd.value) })
   }
 
@@ -395,6 +445,7 @@ private struct DayFigures: Equatable {
     let results = day.trades.map(\.resultGrossUsd.value)
     result = day.resultGrossUsd.value
     counts = L10n.Activity.pastCounts(results.count, results.filter { $0 > 0 }.count, results.filter { $0 < 0 }.count)
+    tally = Tally(closed: results.count, wins: results.filter { $0 > 0 }.count, losses: results.filter { $0 < 0 }.count)
     curve = Self.curve(day.trades.map { ($0.closedAt.date, $0.resultGrossUsd.value) })
   }
 
@@ -402,6 +453,7 @@ private struct DayFigures: Equatable {
   init(_ summary: DaySummary) {
     result = summary.resultGrossUsd.value
     counts = L10n.Activity.pastCounts(summary.trades, summary.wins, summary.losses)
+    tally = Tally(closed: summary.trades, wins: summary.wins, losses: summary.losses)
     curve = Self.curve([])
   }
 
@@ -417,13 +469,18 @@ private struct DayFigures: Equatable {
   }
 
   static func == (a: DayFigures, b: DayFigures) -> Bool {
-    a.result == b.result && a.curve == b.curve
+    a.result == b.result && a.curve == b.curve && a.tally == b.tally
   }
 }
 
 private struct DayCard: View {
   /// Size of the day's result curve, in points.
   static let curveSize = CGSize(width: 120, height: 50)
+  /// Symbols of the day's chips: closed trades, wins, losses, open positions.
+  static let closedSymbol = "checkmark"
+  static let winsSymbol = "arrow.up"
+  static let lossesSymbol = "arrow.down"
+  static let openSymbol = "circle"
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The result as shown: counts up from zero to the day's result when the card appears.
@@ -441,26 +498,42 @@ private struct DayCard: View {
     layout {
       VStack(alignment: .leading, spacing: Tokens.Space.xs) {
         HStack(spacing: Tokens.Space.s) {
-          if live { PulseDot(Palette.profit, size: Tokens.Size.dotSmall) }
+          // One pulse per real change of the day's tally (a trade closed, a position opened).
+          if live { PulseDot(Palette.profit, size: Tokens.Size.dotSmall, event: figures.tally) }
           Text(verbatim: label)
         }
-        .font(Tokens.Typography.captionMono)
+        .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textTertiary)
         Text(verbatim: Money.signedUSD(shown))
-          .font(Tokens.Typography.metric)
+          .font(.title.monospaced().bold())
           .foregroundStyle(Palette.result(figures.result))
           .lineLimit(1)
           .minimumScaleFactor(Tokens.Shrink.standard)
           .contentTransition(.numericText(value: NSDecimalNumber(decimal: shown).doubleValue))
           .accessibilityLabel(Text(verbatim: Money.signedUSD(figures.result)))
-        Text(figures.counts)
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.textQuaternary)
+        // As on the design: the day's counts as chips; VoiceOver reads the sentence.
+        ChipFlow {
+          IconMetric(Self.closedSymbol, label: L10n.Activity.hintClosed, value: String(figures.tally.closed),
+            compact: true)
+          IconMetric(Self.winsSymbol, label: L10n.Activity.hintWins,
+            value: String(localized: L10n.Activity.chipWins(figures.tally.wins)), tone: .profit,
+            color: Tone.profit.text, compact: true)
+          IconMetric(Self.lossesSymbol, label: L10n.Activity.hintLosses,
+            value: String(localized: L10n.Activity.chipLosses(figures.tally.losses)), tone: .loss,
+            color: Tone.loss.text, compact: true)
+          if let open = figures.tally.open, open > 0 {
+            IconMetric(Self.openSymbol, label: L10n.Activity.hintOpen,
+              value: String(localized: L10n.Activity.chipOpen(open)), tone: .accent, color: Tone.accent.text,
+              compact: true)
+          }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(figures.counts))
       }
       Spacer(minLength: 0)
       // A day without closed trades has no curve; one point would draw as a lone ring.
       if figures.curve.count > 1 {
-        DrawnSparkline(values: figures.curve, color: Palette.result(figures.result))
+        DrawnSparkline(values: figures.curve, color: figures.result < 0 ? Palette.loss : Palette.accent)
           .frame(width: Self.curveSize.width, height: Self.curveSize.height)
       }
     }
@@ -484,7 +557,10 @@ private struct DayCard: View {
 #if DEBUG
 extension DayFigures {
   /// A sample past day for previews: three closed trades, two wins and a loss, net +42.50 USD.
-  static let sample = DayFigures(result: 42.5, counts: L10n.Activity.pastCounts(3, 2, 1), curve: [0, 12, -4, 42.5])
+  static let sampleTally = Tally(closed: 3, wins: 2, losses: 1)
+  static let sampleCurve: [Double] = [0, 12, -4, 42.5]
+  static let sample = DayFigures(result: 42.5, counts: L10n.Activity.pastCounts(3, 2, 1), tally: sampleTally,
+    curve: sampleCurve)
 }
 
 #Preview {
@@ -577,11 +653,15 @@ private struct TradesList: View {
   static let quantitySymbol = "number"
   static let entrySymbol = "arrow.right.to.line"
   static let entryExitSymbol = "arrow.right"
-  static let resultRSymbol = "scalemass"
+  static let resultUpSymbol = "chart.line.uptrend.xyaxis"
+  static let resultDownSymbol = "chart.line.downtrend.xyaxis"
+  static let lastSymbol = "chart.bar"
+  static let sendsSymbol = "paperplane"
+  static let timeSymbol = "clock"
   static let stopSymbol = "checkmark.shield"
   static let maeSymbol = "arrow.down"
   static let mfeSymbol = "arrow.up"
-  static let openSymbol = "circle.fill"
+  static let openSymbol = "circle"
   /// Symbol of a closed trade's "Another strategy" button.
   static let anotherSymbol = "arrow.triangle.branch"
 
@@ -597,6 +677,8 @@ private struct TradesList: View {
   let activity: ActivityModel
   let url: URL?
   let positions: [Position]
+  /// Current marks of the open positions, by symbol.
+  var marks: [String: PositionMarks] = [:]
   let trades: [TradeLine]
   /// Title and text shown when there is nothing to list.
   let empty: (title: LocalizedStringResource, body: LocalizedStringResource)
@@ -609,14 +691,13 @@ private struct TradesList: View {
     VStack(spacing: Tokens.Space.s) {
       ForEach(positions, id: \.symbol) { position in
         let state = position.stop.state
-        row(symbol: position.symbol, time: String(localized: L10n.Activity.openSince(Format.time(position.openedAt.date))),
-          tag: String(localized: L10n.Activity.openTag), tagSymbol: Self.openSymbol, tone: .accent,
+        // As on the design: no time beside the symbol (the fill time is a chip below), and a verified
+        // stop said in the tag.
+        row(symbol: position.symbol, time: nil,
+          tag: String(localized: state == .verified ? L10n.Activity.openVerifiedTag : L10n.Activity.openTag),
+          tagSymbol: Self.openSymbol, tone: .accent,
           result: String(localized: L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value))),
-          figures: [
-            Figure(symbol: StopGlyph.stateSymbol(state), label: L10n.Activity.hintStop,
-              value: position.stop.price.map { Money.price($0.value) } ?? Format.missing, tone: StopGlyph.stateTone(state)),
-          ],
-          stopState: state)
+          figures: openFigures(position), stopState: state.isProtected ? nil : state, open: true)
           .rise(step: ActivityView.Order.list.rawValue)
       }
       ForEach(Array(sorted.enumerated()), id: \.offset) { index, trade in
@@ -659,6 +740,30 @@ private struct TradesList: View {
     .accessibilityHidden(true)
   }
 
+  /// An open position as on the design: last price and R while current, entry sends, stop, time
+  /// of the fill and quantity.
+  private func openFigures(_ position: Position) -> [Figure] {
+    let state = position.stop.state
+    var list: [Figure] = []
+    if let marks = marks[position.symbol] {
+      list.append(Figure(symbol: Self.lastSymbol, label: L10n.Activity.hintLast, value: Money.price(marks.last)))
+      if let r = marks.resultR {
+        list.append(Figure(symbol: r < 0 ? Self.resultDownSymbol : Self.resultUpSymbol, label: L10n.Activity.hintResultR,
+          value: Risk.text(r), tone: Tone.result(marks.unrealized)))
+      }
+    }
+    if let sends = position.entry.sends {
+      list.append(Figure(symbol: Self.sendsSymbol, label: L10n.Activity.hintSends,
+        value: String(localized: L10n.Activity.sends(sends)), tone: sends == 1 ? nil : .loss))
+    }
+    list.append(Figure(symbol: StopGlyph.stateSymbol(state), label: L10n.Activity.hintStop,
+      value: position.stop.price.map { Money.price($0.value) } ?? Format.missing, tone: StopGlyph.stateTone(state)))
+    list.append(Figure(symbol: Self.timeSymbol, label: L10n.Activity.hintOpened,
+      value: Format.time((position.entry.filledAt ?? position.openedAt).date)))
+    list.append(Figure(symbol: Self.quantitySymbol, label: L10n.Activity.hintQuantity, value: position.quantity.text))
+    return list
+  }
+
   /// Quantity, entry to exit, and the result in R.
   private func figures(_ trade: TradeLine) -> [Figure] {
     var list = [
@@ -667,7 +772,8 @@ private struct TradesList: View {
         value: trade.entryPrice + Format.arrow + trade.exitPrice),
     ]
     if let r = trade.resultR {
-      list.append(Figure(symbol: Self.resultRSymbol, label: L10n.Activity.hintResultR, value: Risk.text(r),
+      list.append(Figure(symbol: r < 0 ? Self.resultDownSymbol : Self.resultUpSymbol, label: L10n.Activity.hintResultR,
+        value: Risk.text(r),
         tone: Tone.result(trade.result)))
     }
     return list
@@ -711,9 +817,9 @@ private struct TradesList: View {
   }
 
   private func row(
-    symbol: String, time: String, tag: String, tagSymbol: String, tone: Tone, result: String,
+    symbol: String, time: String?, tag: String, tagSymbol: String, tone: Tone, result: String,
     figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil,
-    after: [PriceAfterV1] = [], another: TradeLine? = nil
+    open: Bool = false, after: [PriceAfterV1] = [], another: TradeLine? = nil
   ) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       // One line while it fits; at large text sizes the symbol and result keep a line of their own
@@ -721,7 +827,7 @@ private struct TradesList: View {
       ViewThatFits(in: .horizontal) {
         HStack(spacing: Tokens.Space.s) {
           headerText(symbol)
-          timeText(time)
+          if let time { timeText(time) }
           Spacer(minLength: Tokens.Space.s)
           StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
           resultText(result, tone: tone)
@@ -735,7 +841,7 @@ private struct TradesList: View {
             if let another { anotherButton(another) }
           }
           ChipFlow {
-            timeText(time)
+            if let time { timeText(time) }
             StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
           }
         }
@@ -748,7 +854,7 @@ private struct TradesList: View {
           }
           resultText(result, tone: tone)
           ChipFlow {
-            timeText(time)
+            if let time { timeText(time) }
             StatusPill(verbatim: tag, systemImage: tagSymbol, tone: tone)
           }
         }
@@ -773,7 +879,14 @@ private struct TradesList: View {
     }
     .padding(.horizontal, Tokens.Space.m)
     .padding(.vertical, Tokens.Space.m)
-    .tickrCard(radius: Tokens.Radius.card)
+    // An open position's card is washed in `info`, as on the design.
+    .background {
+      if open {
+        RoundedRectangle(cornerRadius: Tokens.Radius.card, style: .continuous)
+          .fill(Palette.info.opacity(Tokens.Opacity.wash))
+      }
+    }
+    .tickrCard(radius: Tokens.Radius.card, tint: open ? Palette.info : nil)
     .accessibilityElement(children: .combine)
     .accessibilityActions {
       if let another {
@@ -805,6 +918,8 @@ private struct TradesList: View {
 private struct NotTaken: View {
   let groups: [SkippedGroup]?
   let failure: String?
+  /// Rows a new read brought while the list was on screen: each flashes once.
+  @State private var arrived: Set<String> = []
 
   var body: some View {
     if let groups {
@@ -823,10 +938,12 @@ private struct NotTaken: View {
       }
       VStack(spacing: Tokens.Space.s) {
         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-          SkippedRow(group: group)
+          // A genuinely new refusal tints its row once (the board flashes the newest row).
+          SkippedRow(group: group, arrived: arrived.contains(group.id))
             .rise(step: ActivityView.Order.list.rawValue + index)
         }
       }
+      .onArrival(of: groups.map(\.id)) { arrived = $0 }
     } else if let failure {
       ContentUnavailableView {
         Label { Text(L10n.Activity.notTakenFailed) } icon: { Image(systemName: "exclamationmark.triangle") }
@@ -846,6 +963,8 @@ private struct SkippedRow: View {
   static let whenSymbol = "clock"
 
   let group: SkippedGroup
+  /// Whether the row just arrived with a new read: it tints once.
+  var arrived = false
 
   private var refused: Bool { group.latest.admission == .refused }
 
@@ -915,6 +1034,9 @@ private struct SkippedRow: View {
     }
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
+    // Inside the card, inset from its rounded edge.
+    .arrivalFlash(arrived, color: Palette.info, outset: EdgeInsets(top: -Tokens.Space.xs,
+      leading: -Tokens.Space.xs, bottom: -Tokens.Space.xs, trailing: -Tokens.Space.xs))
     .tickrCard()
     .accessibilityElement(children: .combine)
   }
@@ -924,6 +1046,7 @@ private struct SkippedRow: View {
 /// 15m —". Each change in its direction's colour; a minute with no captured bar shows a dash.
 /// Nothing when the bot sent no prices.
 struct AfterLine: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   let prices: [PriceAfterV1]
 
   private var line: AttributedString { Self.line(prices) }
@@ -947,8 +1070,11 @@ struct AfterLine: View {
 
   var body: some View {
     if !prices.isEmpty {
+      // Small and on one line, as on the design; it wraps only at large text sizes.
       Text(line)
-        .font(Tokens.Typography.captionMono)
+        .font(Tokens.Typography.annotation)
+        .lineLimit(typeSize.stacksRows ? nil : 1)
+        .minimumScaleFactor(typeSize.stacksRows ? 1 : Tokens.Shrink.standard)
         .fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -1046,6 +1172,8 @@ private struct Journal: View {
   static let dotSide: CGFloat = 7
 
   @Environment(\.dynamicTypeSize) private var typeSize
+  /// Events a new read brought while the journal was on screen: each flashes once.
+  @State private var arrived: Set<String> = []
   let events: [Board.Event]
 
   var body: some View {
@@ -1080,6 +1208,8 @@ private struct Journal: View {
         }
         .padding(.horizontal, Tokens.Space.m)
         .padding(.vertical, Tokens.Space.s)
+        // A genuinely new event washes its row once (the board's `flashA/B`), never a rotation.
+        .arrivalFlash(arrived.contains(event.id), color: Palette.info)
         .rise(step: ActivityView.Order.list.rawValue + min(index, Self.staggeredRows))
       }
       if events.isEmpty {
@@ -1092,6 +1222,7 @@ private struct Journal: View {
     .padding(.vertical, Tokens.Space.s)
     .frame(maxWidth: .infinity, alignment: .leading)
     .tickrCard(radius: Tokens.Radius.card)
+    .onArrival(of: events.map(\.id)) { arrived = $0 }
   }
 
   private func time(_ event: Board.Event) -> some View {

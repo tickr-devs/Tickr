@@ -29,6 +29,8 @@ public enum Tokens {
   public enum Radius {
     /// Badges, tags, small chips.
     public static let small: CGFloat = 6
+    /// Chips and tabs (ranges, intervals, studies, position tabs).
+    public static let chip: CGFloat = 8
     /// Banners, inset panels, menus.
     public static let medium: CGFloat = 10
     /// Small cards (sidebar, menu-bar panel).
@@ -60,8 +62,20 @@ public enum Tokens {
     public static let titleSize: CGFloat = 28
     /// The mono word next to a screen title ("Operator"): as large as the title, lighter.
     public static let subtitleSize: CGFloat = 28
-    /// SF Symbols inside a live-flow stage.
-    public static let stageSymbolSize: CGFloat = 20
+    /// The day result in the macOS menu-bar panel: a little smaller than `hero`, drawn tight.
+    public static let panelFigureSize: CGFloat = 32
+    /// Letter spacing of `panelFigure`, in points (negative: tighter).
+    public static let panelFigureTracking: CGFloat = -1
+    /// SF Symbols inside a compact round icon button.
+    public static let symbolCompactSize: CGFloat = 13
+    /// A screen's heading in its content ("Today · Mon, Nov 16" on Trades).
+    public static let headingSize: CGFloat = 22
+    /// A price beside a symbol heading (the Chart's last price).
+    public static let quoteSize: CGFloat = 20
+    /// Figures in compact tiles and stat rows (Trades' day figures, performance figures).
+    public static let figureSize: CGFloat = 18
+    /// Tab names under the tab glyphs in the iPhone tab bar.
+    public static let tabLabelSize: CGFloat = 11
 
     #if os(iOS)
     // iOS: each role follows a text style, so Dynamic Type (Settings › Display & Brightness ›
@@ -77,10 +91,16 @@ public enum Tokens {
     public static let display = Font.system(.largeTitle, design: .monospaced, weight: .bold)
     public static let title = Font.system(.title, weight: .bold)
     public static let subtitle = Font.system(.title, design: .monospaced, weight: .medium)
+    public static let heading = Font.system(.title2, weight: .bold)
+    public static let quote = Font.system(.title3, design: .monospaced, weight: .semibold)
+    public static let figure = Font.system(.headline, design: .monospaced, weight: .bold)
     /// SF Symbols inside a round icon well.
     public static let symbol = Font.system(.subheadline, weight: .semibold)
-    /// SF Symbols inside a live-flow stage.
-    public static let stageSymbol = Font.system(.title3, weight: .semibold)
+    public static let panelFigure = Font.system(.largeTitle, design: .monospaced, weight: .bold)
+    /// SF Symbols inside a compact round icon button.
+    public static let symbolCompact = Font.system(.footnote, weight: .semibold)
+    /// Tab names under the tab glyphs in the iPhone tab bar.
+    public static let tabLabel = Font.system(.caption2, weight: .medium)
     #else
     public static let label = Font.system(size: labelSize, weight: .semibold, design: .monospaced)
     public static let badge = Font.system(size: badgeSize, weight: .bold, design: .monospaced)
@@ -91,10 +111,17 @@ public enum Tokens {
     public static let display = Font.system(size: displaySize, weight: .bold, design: .monospaced)
     public static let title = Font.system(size: titleSize, weight: .bold)
     public static let subtitle = Font.system(size: subtitleSize, weight: .medium, design: .monospaced)
+    public static let heading = Font.system(size: headingSize, weight: .bold)
+    public static let quote = Font.system(size: quoteSize, weight: .semibold, design: .monospaced)
+    public static let figure = Font.system(size: figureSize, weight: .bold, design: .monospaced)
     /// SF Symbols inside a round icon well.
     public static let symbol = Font.system(size: Size.iconWellSymbol, weight: .semibold)
-    /// SF Symbols inside a live-flow stage.
-    public static let stageSymbol = Font.system(size: stageSymbolSize, weight: .semibold)
+    /// The day result in the macOS menu-bar panel.
+    public static let panelFigure = Font.system(size: panelFigureSize, weight: .bold, design: .monospaced)
+    /// SF Symbols inside a compact round icon button.
+    public static let symbolCompact = Font.system(size: symbolCompactSize, weight: .semibold)
+    /// Tab names under the tab glyphs in the iPhone tab bar.
+    public static let tabLabel = Font.system(size: tabLabelSize, weight: .medium)
     #endif
     /// Buttons drawn by the apps' own button style (bot controls).
     public static let button = Font.system(.body, weight: .semibold)
@@ -113,6 +140,14 @@ public enum Tokens {
     public static let calloutMono = Font.callout.monospaced()
     public static let caption = Font.caption
     public static let captionMono = Font.caption.monospaced()
+    /// A symbol heading a compact row (the menu-bar panel's positions).
+    public static let headingMono = Font.title3.monospaced()
+    /// A detail line under a figure or beside a symbol (trades and room, a size in shares); the Mac
+    /// title bar's connection status (11 points on the Mac).
+    public static let subheadlineMono = Font.subheadline.monospaced()
+    /// The Mac title bar's day stepper: the shown day in 11.5-point mono.
+    public static let dayStepperSize: CGFloat = 11.5
+    public static let dayStepper = Font.system(size: dayStepperSize, design: .monospaced)
   }
 
   /// Line widths, in points.
@@ -123,8 +158,10 @@ public enum Tokens {
     public static let thin: CGFloat = 1
     /// Indicator lines, outlines that must read at a glance.
     public static let regular: CGFloat = 1.5
-    /// Price lines and sparklines.
+    /// Price lines and sparklines; also the design's own outline glyphs on their 24-point grid.
     public static let bold: CGFloat = 2
+    /// The design's power glyph, on its 24-point grid (`DesignGlyph.power`).
+    public static let glyphHeavy: CGFloat = 2.2
     /// Rings (loss room, results).
     public static let ring: CGFloat = 12
     /// Track and fill of a small gauge ring (`MiniRing`).
@@ -145,12 +182,16 @@ public enum Tokens {
     public static let faint = 0.35
     /// Borders tinted with an accent, secondary marks.
     public static let border = 0.45
+    /// An off chip among on ones (the Chart's studies).
+    public static let muted = 0.55
     /// Visible but not dominant: inactive elements, pulse rings at start.
     public static let medium = 0.7
     /// Light-mode card shadow.
     public static let shadow = 0.12
     /// Overlays that must stay readable over content (crosshair readout).
     public static let overlay = 0.85
+    /// A new row's tint at the start of its one flash (`arrivalFlash`).
+    public static let flash = 0.22
   }
 
   /// How far a line of text may shrink to fit before it truncates, as a share of its size
@@ -176,6 +217,8 @@ public enum Tokens {
     public static let iconWell: CGFloat = 44
     /// Stages of the live flow, larger than an icon well so the pipeline reads at a glance.
     public static let stage: CGFloat = 52
+    /// The line glyph inside a live-flow stage (`DesignGlyph`), as on the Overview board.
+    public static let stageGlyph: CGFloat = 22
     /// Width of the day result set beside Overview's header.
     public static let dayResultWidth: CGFloat = 300
     /// Narrowest a column of a card grid gets before the grid stacks into fewer columns.
@@ -193,18 +236,23 @@ public enum Tokens {
     public static let launchMark: CGFloat = 160
     /// Height of a sparkline and of a progress bar.
     public static let sparkline: CGFloat = 34
+    /// A tab bar glyph (`DesignGlyph`), as on the iOS boards.
+    public static let tabGlyph: CGFloat = 24
+    /// Home's title-row action glyphs (power, settings), as on the iOS Home board.
+    public static let headerGlyph: CGFloat = 16
+    /// A glyph inside a chip-height button (the chart-type buttons), as on the iOS Chart board.
+    public static let chipGlyph: CGFloat = 14
     public static let bar: CGFloat = 8
     /// Height of a thin progress bar inside a row (Watching closely).
     public static let barThin: CGFloat = 4
     /// Height of the ticker strip.
     public static let ticker: CGFloat = 22
-    /// A symbol's dot on the live flow board, and the least height of a stage's pool of dots.
-    public static let flowMark: CGFloat = 10
-    public static let flowPool: CGFloat = 44
+    /// A symbol's dot on the live flow board.
+    public static let flowMark: CGFloat = 7
     /// Least width of a symbol chip in the live flow (symbol over screener and change).
     public static let flowChip: CGFloat = 96
     /// Width of a side column of cards on wide screens.
-    public static let sideColumn: CGFloat = 320
+    public static let sideColumn: CGFloat = 378
     /// Widest a screen's content grows before it centres.
     public static let contentMaxWidth: CGFloat = 1500
     /// Card shadow in light mode: blur radius and downward offset.
@@ -283,11 +331,39 @@ public enum Tokens {
     /// The cross-fade that replaces the opening animation under Reduce Motion.
     public static let launchFadeSeconds = 0.35
     /// Seconds for one turn of the radar sweep.
-    public static let rotationSeconds = 4.0
+    public static let rotationSeconds = 3.0
+    /// The radar's blips: how far each one's ring grows (a multiple of the dot), and how long the
+    /// second blip trails the first, in seconds.
+    public static let blipScale: CGFloat = 1.9
+    public static let blipLagSeconds = 0.8
+    /// macOS opening: when the mark's spark pops in, in seconds from the start (after the line
+    /// has nearly drawn), and how long it takes.
+    public static let openingSparkDelaySeconds = 0.45
+    public static let openingSparkSeconds = 0.25
+    /// The opening's spark pop: a timing curve that ends at its seconds, like the line's draw.
+    public static let openingSpark = Animation.easeOut(duration: openingSparkSeconds)
+    /// Delay between the tiles of a grid (the Trades calendar) as it fills in, in seconds.
+    public static let cellStagger = 0.025
+    /// How far a button rises under the pointer, and a calendar tile, in points.
+    public static let hoverLift: CGFloat = 1
+    public static let cellLift: CGFloat = 2
+    /// Seconds a new row's tint takes to fade out (`arrivalFlash`).
+    public static let flashSeconds = 1.6
+    /// The fade of a new row's tint.
+    public static let flash = Animation.easeOut(duration: flashSeconds)
+    /// Seconds of the cross-fade when the app's appearance (light, dark) is switched.
+    public static let themeFadeSeconds = 0.4
     /// Points per second of the event ticker.
     public static let tickerSpeed = 22.0
     /// Seconds between redraws of a clock or an age ("3 s ago"), and of the session bar's cursor.
     public static let clockTickSeconds: TimeInterval = 1
+    /// Seconds the iOS Home ticker takes to scroll its whole row once (the board's 45 s marquee).
+    public static let tickerLoopSeconds = 45.0
+    /// A dot or step popping in (`popIn`): a quick spring that overshoots a little, as the boards'
+    /// `pop` (0.5 s, overshooting curve).
+    public static let pop = Animation.spring(response: 0.5, dampingFraction: 0.55)
+    /// Seconds between the protection chain's steps popping in, top to bottom.
+    public static let popStagger = 0.4
   }
 
   /// The loss-room ring (Risk on both apps), as shares of the daily loss limit.

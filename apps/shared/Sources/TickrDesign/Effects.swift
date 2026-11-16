@@ -56,9 +56,11 @@ extension View {
 }
 
 /// Fades a view in while it rises a few points, after `delay`; staggered delays make a screen
-/// assemble itself on appear.
+/// assemble itself on appear. While `risesHeld` is set (an opening animation covers the screen)
+/// the view waits, hidden, and rises once it is cleared.
 public struct Rise: ViewModifier {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.risesHeld) private var held
   @State private var shown = false
   let delay: Double
 
@@ -74,10 +76,20 @@ public struct Rise: ViewModifier {
           .opacity(isShown ? 1 : 0)
           .offset(y: isShown || still ? 0 : Tokens.Size.riseOffset)
       }
-      .onAppear {
-        withAnimation(Tokens.Motion.entrance.delay(delay)) { shown = true }
-      }
+      .onAppear { if !held { show() } }
+      .onChange(of: held) { _, now in if !now { show() } }
   }
+
+  private func show() {
+    guard !shown else { return }
+    withAnimation(Tokens.Motion.entrance.delay(delay)) { shown = true }
+  }
+}
+
+public extension EnvironmentValues {
+  /// Holds every `rise` below it until cleared: the macOS opening sets it while its mark covers
+  /// the screen, so the cards rise as the mark flies off, as the design times them.
+  @Entry var risesHeld = false
 }
 
 public extension View {
@@ -199,32 +211,52 @@ extension TickerItem.Tone {
 public struct Ticker: View {
   let items: [TickerItem]
   let moving: Bool
-  /// Points per second.
-  let speed: Double
+  let pace: MarqueePace
 
   public init(_ items: [TickerItem], moving: Bool = true, speed: Double = Tokens.Motion.tickerSpeed) {
+    self.init(items, moving: moving, pace: .speed(speed))
+  }
+
+  /// `loopSeconds`: the whole row passes once in this many seconds, however long it is.
+  public init(_ items: [TickerItem], moving: Bool = true, loopSeconds: Double) {
+    self.init(items, moving: moving, pace: .loop(seconds: loopSeconds))
+  }
+
+  private init(_ items: [TickerItem], moving: Bool, pace: MarqueePace) {
     self.items = items
     self.moving = moving
-    self.speed = speed
+    self.pace = pace
   }
 
   public var body: some View {
-    Marquee(moving: moving && !items.isEmpty, content: items, speed: speed) { row }
+    Marquee(moving: moving && !items.isEmpty, content: items, pace: pace) { row }
   }
 
+  /// The design's ticker pills: a ringed dot and the bold tag in the event's colour, then the
+  /// text, on a `surface` capsule with a hairline.
   private var row: some View {
-    HStack(spacing: Tokens.Space.xl) {
+    HStack(spacing: Tokens.Space.s) {
       ForEach(items) { item in
-        HStack(spacing: Tokens.Space.s) {
+        HStack(spacing: Tokens.Space.xs) {
+          Circle()
+            .fill(item.tone.color)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+            .padding(Tokens.Space.xxs)
+            .overlay(Circle().strokeBorder(item.tone.color.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.regular))
           Text(item.tag).fontWeight(.bold).foregroundStyle(item.tone.color)
           Text(item.text).foregroundStyle(Palette.textTertiary)
         }
         .font(Tokens.Typography.annotation)
         .lineLimit(1)
         .fixedSize()
+        .padding(.leading, Tokens.Space.xxs)
+        .padding(.trailing, Tokens.Space.s)
+        .padding(.vertical, Tokens.Space.xxs / 2)
+        .background(Palette.surface, in: Capsule())
+        .overlay(Capsule().strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
       }
     }
-    .padding(.trailing, Tokens.Space.xl)
+    .padding(.trailing, Tokens.Space.s)
   }
 
 }
@@ -248,17 +280,25 @@ public struct Marquee<Row: View>: View {
   let moving: Bool
   /// What the row shows; a change draws the picture again.
   let content: AnyHashable
-  /// Points per second.
-  let speed: Double
+  let pace: MarqueePace
   let row: Row
 
   public init(
-    moving: Bool = true, content: AnyHashable, speed: Double = Tokens.Motion.tickerSpeed, @ViewBuilder row: () -> Row
+    moving: Bool = true, content: AnyHashable, pace: MarqueePace = .speed(Tokens.Motion.tickerSpeed),
+    @ViewBuilder row: () -> Row
   ) {
     self.moving = moving
     self.content = content
-    self.speed = speed
+    self.pace = pace
     self.row = row()
+  }
+
+  /// Points per second for the row's current width.
+  private var speed: Double {
+    switch pace {
+    case .speed(let speed): return speed
+    case .loop(let seconds): return seconds > 0 ? Double(rowWidth) / seconds : 0
+    }
   }
 
   /// Everything the picture depends on.

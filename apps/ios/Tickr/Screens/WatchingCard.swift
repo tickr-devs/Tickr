@@ -55,6 +55,16 @@ private struct WatchingRow: View {
     row.closeness.map { NSDecimalNumber(decimal: $0.value).doubleValue }
   }
 
+  /// A verdict's colour here, as on the design: watching in blue, ignored in the stocks stage's
+  /// pink, the rest as everywhere else.
+  static func color(_ verdict: Verdict) -> Color {
+    switch verdict {
+    case .watch: return Palette.infoText
+    case .ignore: return Palette.seriesATRText
+    case .enter, .exit, .hold: return verdict.color
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       RowStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
@@ -65,7 +75,7 @@ private struct WatchingRow: View {
           .fixedSize()
         Text(row.verdict.title)
           .font(Tokens.Typography.annotationBold)
-          .foregroundStyle(row.verdict.color)
+          .foregroundStyle(Self.color(row.verdict))
         Spacer(minLength: 0)
         Text(verbatim: Format.time(row.at.date))
           .font(Tokens.Typography.annotation)
@@ -81,9 +91,21 @@ private struct WatchingRow: View {
           .minimumScaleFactor(Tokens.Shrink.standard)
       }
       if let closeness {
-        ProgressView(value: min(max(closeness, 0), 1))
-          .tint(current ? Palette.accent : Palette.textQuaternary)
-          .accessibilityLabel(Text(L10n.Watching.closeness))
+        // As on the board: a thin bar that grows in, and to each new closeness the bot measures.
+        let share = min(max(closeness, 0), 1)
+        GeometryReader { proxy in
+          ZStack(alignment: .leading) {
+            Capsule().fill(Palette.separator)
+            Capsule()
+              .fill(current ? Self.color(row.verdict) : Palette.textQuaternary)
+              .frame(width: proxy.size.width * share)
+              .grows(with: share)
+          }
+        }
+        .frame(height: Tokens.Size.barThin)
+        .accessibilityElement()
+        .accessibilityLabel(Text(L10n.Watching.closeness))
+        .accessibilityValue(Text(share, format: .percent.precision(.fractionLength(0))))
       } else if let cause = row.closenessCause {
         Text(verbatim: ApiText.prose(row.closenessCauseCodes, text: cause))
           .font(Tokens.Typography.annotation)

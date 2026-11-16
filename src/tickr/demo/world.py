@@ -18,6 +18,7 @@ bot sees a position without a verified stop and the apps show it unprotected.
 
 `go_live` switches the clock from simulated to real time: from then on a bot sleep really
 sleeps and the world's time moves with the wall clock, shifted by a fixed offset.
+`call_soon` hands an action from another thread to the bot's thread (the next clock advance).
 
 `daily_history` draws older days for the charts only: one D bar per weekday before the minute
 history, a seeded random walk that ends at the first minute day's open. The feed serves them on
@@ -30,6 +31,7 @@ symbol and minute). The rehearsals keep the plain planned bars.
 
 from __future__ import annotations
 
+import queue
 import random
 import time
 import zlib
@@ -221,6 +223,7 @@ class World:
         self.history: dict[str, list[Bar]] = {}
         self.daily: dict[str, list[Bar]] = {}  # chart-only D bars before the minute history
         self.screeners: dict[ScreenerKind, list[str]] = {k: [] for k in ScreenerKind}
+        self.listed_from: dict[str, datetime] = {}  # symbols on a screener only from then on
         self.exchange = Exchange(self)
         self.feed = Feed(self, provider)
         self.events: list[tuple[datetime, Callable[[], None]]] = []
@@ -229,21 +232,31 @@ class World:
         self.exchange_lead = timedelta(0)
         # Set by go_live: world time = wall time + this offset, and sleeps are real.
         self.live_offset: timedelta | None = None
+        # Actions handed over from other threads (`call_soon`), run at the next clock advance.
+        self.soon: queue.SimpleQueue[Callable[[], None]] = queue.SimpleQueue()
 
     # --- scenario ------------------------------------------------------------------------
 
     def add_symbol(self, symbol: str, today: list[Bar], history: Iterable[Bar],
                    kinds: Iterable[ScreenerKind] = (ScreenerKind.GAINERS,),
-                   daily: Iterable[Bar] = ()) -> None:
+                   daily: Iterable[Bar] = (), listed_from: datetime | None = None) -> None:
+        """`listed_from`: the screeners list the symbol only from then on (None: all day)."""
         self.today[symbol] = today
         self.history[symbol] = list(history)
         self.daily[symbol] = list(daily)
         for kind in kinds:
             self.screeners[kind].append(symbol)
+        if listed_from is not None:
+            self.listed_from[symbol] = listed_from
 
     def at(self, when: datetime, action: Callable[[], None]) -> None:
         self.events.append((when, action))
         self.events.sort(key=lambda e: e[0])
+
+    def call_soon(self, action: Callable[[], None]) -> None:
+        """From any thread: run `action` on the bot's thread at the next clock advance (`at`
+        is for the bot's thread only)."""
+        self.soon.put(action)
 
     # --- clock ---------------------------------------------------------------------------
 
@@ -274,6 +287,8 @@ class World:
         while self.events and self.events[0][0] <= self.now:
             _, action = self.events.pop(0)
             action()
+        while not self.soon.empty():
+            self.soon.get()()
 
     # --- prices --------------------------------------------------------------------------
 
@@ -376,7 +391,9 @@ class Feed(FakeMarketData):
     def screener(self, kind: ScreenerKind) -> list[ScreenerRow]:
         self._call("screener", [kind.value])
         # Ranked like a gainers list: by today's change, best first (losers: worst first).
-        symbols = sorted(self.world.screeners[kind], key=self.world.change,
+        listed = [s for s in self.world.screeners[kind]
+                  if self.world.listed_from.get(s, self.world.now) <= self.world.now]
+        symbols = sorted(listed, key=self.world.change,
                          reverse=kind is not ScreenerKind.LOSERS)
         # Provider row keys as Webull names them; the world's previous close is today's open.
         return [ScreenerRow(kind, rank, f"id-{symbol}", symbol, SCREENER_EXCHANGE,

@@ -14,6 +14,8 @@ public struct ActionButtonStyle: ButtonStyle {
   public enum Size: Sendable, Hashable, CaseIterable {
     /// Inline in a row or a card header.
     case compact
+    /// A panel's one main action, between compact and regular (the menu-bar panel's Open Tickr).
+    case medium
     /// The default.
     case regular
     /// Full-width actions of a sheet or a panel on the phone: at least a touch target tall.
@@ -45,7 +47,7 @@ private struct ActionButtonBody: View {
     let shape = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
     configuration.label
       .labelStyle(ControlLabelStyle())
-      .font(size == .compact ? Tokens.Typography.buttonCompact : Tokens.Typography.button)
+      .font(size == .compact || size == .medium ? Tokens.Typography.buttonCompact : Tokens.Typography.button)
       .foregroundStyle(foreground)
       .padding(.horizontal, horizontalPadding)
       .padding(.vertical, verticalPadding)
@@ -57,12 +59,15 @@ private struct ActionButtonBody: View {
       .contentShape(shape)
       .opacity(enabled ? 1 : Tokens.Opacity.faint)
       .scaleEffect(configuration.isPressed ? Tokens.Motion.pressScale : 1)
+      // Under the pointer an enabled button lifts a point, as the design's buttons do.
+      .offset(y: lifted ? -Tokens.Motion.hoverLift : 0)
       .animation(Tokens.Motion.quick, value: configuration.isPressed)
       .animation(Tokens.Motion.quick, value: hovered)
       .onHover { hovered = $0 }
   }
 
   private var active: Bool { enabled && (hovered || configuration.isPressed) }
+  private var lifted: Bool { enabled && hovered && !configuration.isPressed }
 
   @ViewBuilder private func fill(_ shape: RoundedRectangle) -> some View {
     switch kind {
@@ -101,6 +106,7 @@ private struct ActionButtonBody: View {
   private var horizontalPadding: CGFloat {
     switch size {
     case .compact: return Tokens.Space.s
+    case .medium: return Tokens.Space.s + Tokens.Space.xxs
     case .regular: return Tokens.Space.m
     case .large: return Tokens.Space.l
     }
@@ -109,6 +115,7 @@ private struct ActionButtonBody: View {
   private var verticalPadding: CGFloat {
     switch size {
     case .compact: return Tokens.Space.xs
+    case .medium: return Tokens.Space.xs + Tokens.Space.xxs
     case .regular: return Tokens.Space.s
     case .large: return Tokens.Space.m
     }
@@ -144,8 +151,8 @@ private struct IconButtonBody: View {
     let active = enabled && (hovered || configuration.isPressed)
     configuration.label
       .labelStyle(.iconOnly)
-      .font(Tokens.Typography.symbol)
-      .foregroundStyle(neutral ? Palette.textSecondary : tone.text)
+      .font(compact ? Tokens.Typography.symbolCompact : Tokens.Typography.symbol)
+      .foregroundStyle(neutral ? Palette.textPrimary : tone.text)
       .frame(width: side, height: side)
       .background(Circle().fill(neutral
         ? (active ? Palette.accent.opacity(Tokens.Opacity.wash) : Palette.surfaceSunken)
@@ -162,8 +169,11 @@ private struct IconButtonBody: View {
 }
 
 /// A selectable chip: one of a few choices shown side by side (a position's tab, a day, a range).
-/// The selected one is outlined and washed in its tone.
+/// The design's chip: mono `label` text in `textTertiary` on `chipFill` with a `separatorStrong`
+/// hairline; the selected one in `textPrimary` on `selection`, outlined in its tone.
 public struct ChipButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+  @State private var hovered = false
   let selected: Bool
   let tone: Tone
 
@@ -173,21 +183,70 @@ public struct ChipButtonStyle: ButtonStyle {
   }
 
   public func makeBody(configuration: Configuration) -> some View {
-    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.small, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.chip, style: .continuous)
     configuration.label
       .labelStyle(ControlLabelStyle())
-      .font(Tokens.Typography.chip)
-      .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
+      .font(Tokens.Typography.label)
+      .lineLimit(1)
+      .foregroundStyle(selected || hovered ? Palette.textPrimary : Palette.textTertiary)
       .padding(.horizontal, Tokens.Space.s)
-      .padding(.vertical, Tokens.Space.xs)
-      .background(selected ? tone.fill.opacity(Tokens.Opacity.wash) : Palette.surfaceSunken, in: shape)
+      .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
+      .background(selected ? Palette.selection : Palette.chipFill, in: shape)
       .overlay(shape.strokeBorder(selected ? tone.fill : Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
       .contentShape(shape)
+      .opacity(enabled ? 1 : Tokens.Opacity.faint)
       .scaleEffect(configuration.isPressed ? Tokens.Motion.pressScale : 1)
       .animation(Tokens.Motion.quick, value: configuration.isPressed)
       .animation(Tokens.Motion.quick, value: selected)
+      .animation(Tokens.Motion.quick, value: hovered)
+      .onHover { hovered = $0 }
       .accessibilityAddTraits(selected ? .isSelected : [])
   }
+}
+
+/// An on/off chip (a chart study, the trade marks), uppercase as the design's chips: on is
+/// `textPrimary` on `selection` with the chip's hairline, off is the plain chip at `Opacity.muted`.
+public struct ChipToggleStyle: ToggleStyle {
+  public init() {}
+
+  public func makeBody(configuration: Configuration) -> some View {
+    Button {
+      configuration.isOn.toggle()
+    } label: {
+      configuration.label.textCase(.uppercase)
+    }
+    .buttonStyle(ChipToggleButton(isOn: configuration.isOn))
+    .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+  }
+}
+
+/// The button inside a `ChipToggleStyle`.
+private struct ChipToggleButton: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+  let isOn: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.chip, style: .continuous)
+    configuration.label
+      .labelStyle(ControlLabelStyle())
+      .font(Tokens.Typography.label)
+      .lineLimit(1)
+      .foregroundStyle(isOn ? Palette.textPrimary : Palette.textTertiary)
+      .padding(.horizontal, Tokens.Space.s)
+      .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
+      .background(isOn ? Palette.selection : Palette.chipFill, in: shape)
+      .overlay(shape.strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
+      .contentShape(shape)
+      .opacity(!enabled ? Tokens.Opacity.faint : isOn ? 1 : Tokens.Opacity.muted)
+      .scaleEffect(configuration.isPressed ? Tokens.Motion.pressScale : 1)
+      .animation(Tokens.Motion.quick, value: configuration.isPressed)
+      .animation(Tokens.Motion.quick, value: isOn)
+  }
+}
+
+public extension ToggleStyle where Self == ChipToggleStyle {
+  /// `.toggleStyle(.chip)`.
+  static var chip: ChipToggleStyle { ChipToggleStyle() }
 }
 
 public extension ButtonStyle where Self == ActionButtonStyle {

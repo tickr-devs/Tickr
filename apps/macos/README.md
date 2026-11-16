@@ -17,7 +17,7 @@ the three operator commands. It never talks to the broker.
 | `../shared` | Shared Swift package (see `apps/shared/README.md`): contract models and API client (`TickrKit`), palette and animated pieces (`TickrDesign`). |
 | `Tickr/` | The app's Swift sources (views, polling model, menu-bar extra, window). |
 | `TickrMac.xcodeproj` | Xcode project: target and scheme `Tickr macOS`, builds `Tickr.app` from `Tickr/`. |
-| `Support/Info.plist` | Info.plist keys Xcode cannot generate (local-network HTTP to the API). |
+| `Support/Info.plist` | Info.plist keys Xcode cannot generate (languages, local-network HTTP to the API); `scripts/make-app.sh` starts from it too. |
 | `Package.swift` | The same sources as a Swift package, for `swift build` and `scripts/make-app.sh` without Xcode. |
 
 ## Open in Xcode
@@ -47,6 +47,8 @@ python -m tickr.api --config config/bot.toml
 cd apps/macos && swift run TickrMac
 
 # 2b. Or build an app bundle and open it
+# (actool compiles Tickr/AppIcon.icon into Assets.car and AppIcon.icns, as the Xcode build does;
+#  scripts/check-app-bundle.sh, run in CI, fails if the bundle lacks the icon)
 apps/macos/scripts/make-app.sh && open apps/macos/build/Tickr.app
 
 # Tests (contract models and shared code)

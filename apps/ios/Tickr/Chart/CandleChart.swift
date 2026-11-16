@@ -21,7 +21,7 @@ struct CandleChart: View {
     var volume = true
     var macd = false
     var stochastic = false
-    var rsi = true
+    var rsi = false
     var atr = false
 
     /// The study panes under the price pane, top to bottom.
@@ -64,6 +64,17 @@ struct CandleChart: View {
     case atr
   }
 
+  /// Colours of the two EMA lines as the iOS design draws them: the fast one violet, the slow
+  /// one teal (the swap keeps the fast line apart from the rising candles' green).
+  static var fastEMAColour: Color { Palette.highlight }
+  static var slowEMAColour: Color { Palette.accent }
+  /// Side of an entry or exit marker, a filled circle with its direction inside, and of a
+  /// watch, entry or refused mark, a plain filled circle, in points.
+  static let markerSide: CGFloat = 16
+  /// How far a marker that would cover another one is moved at a time, in points: one side
+  /// and a small gap, so stacked markers on the same or neighbouring candles never touch.
+  static let markerStep: CGFloat = 18
+
   /// Height of the price pane, in points.
   static let priceHeight: CGFloat = 300
   /// Height of each study pane, in points.
@@ -81,8 +92,6 @@ struct CandleChart: View {
   /// Width every pane gives its scale labels, so the plot areas of all panes are equally wide
   /// and candles, volume and studies line up.
   static let axisLabelWidth: CGFloat = 50
-  /// Size of a watch or entry mark on its candle, in points.
-  static let eventSize: CGFloat = 60
   /// Length of the leader line of the high and low labels, in points.
   static let extremeLeader: CGFloat = 12
   /// Room above a study pane's line for its legend, as a share of the pane's value range.
@@ -92,6 +101,8 @@ struct CandleChart: View {
   /// Width a time label needs with a gap to the next, in points at the default text size:
   /// labels closer than this are left out.
   static let timeLabelSlot: CGFloat = 52
+  /// Area of the dot on the touched candle's close, in square points (a Charts symbol size).
+  static let scrubDotArea: CGFloat = 36
   /// Annotations near an edge move inside the chart instead of being cut off.
   static let keepInside = AnnotationOverflowResolution(x: .fit(to: .chart), y: .fit(to: .chart))
   /// Colours of the moving-average lines, in the order of `Studies.movingAveragePeriods`.
@@ -112,6 +123,8 @@ struct CandleChart: View {
   /// The trading strategy's watch and entry marks.
   let events: [ChartEvent]
   let lines: Lines
+  /// The range's name for the caption ("Day · 1m · 40 bars …").
+  var rangeTitle: LocalizedStringResource = ChartText.rangeDay
   /// Beyond one day the whole range is on screen (zoom in to read closer); one day opens on
   /// the newest candles.
   var fitsAll = false
@@ -126,6 +139,14 @@ struct CandleChart: View {
   @State private var chartWidth: CGFloat = 0
 
   @State private var selected: Date?
+  /// Start of the newest candle the chart has taken in. A candle after it, a new minute bar that
+  /// just arrived, is left out until it has grown in over the chart (the board's `grow`).
+  @State private var grownThrough: Date?
+  /// The new candle growing in now, drawn over the chart (`GrowingCandle`) instead of as a mark:
+  /// Core Animation scales the small view, where an animated mark redrew the whole chart on every
+  /// frame and the growth showed as a jump.
+  @State private var growing: Date?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
@@ -152,7 +173,18 @@ struct CandleChart: View {
     .padding(Tokens.Space.l)
     .tickrCard()
     .animation(Tokens.Motion.standard, value: lines)
-    .onAppear { place() }
+    .onAppear {
+      place()
+      grownThrough = series.candles.last?.start
+    }
+    .onChange(of: GrowthKey(timeframe: series.timeframe, first: series.candles.first?.start,
+      last: series.candles.last?.start)) { old, new in
+      // Only a new bar on the same chart grows; another range, interval or day just shows.
+      let newBar = old.timeframe == new.timeframe && old.first == new.first
+        && (new.last ?? .distantPast) > (old.last ?? .distantFuture)
+      if newBar && !reduceMotion { growing = new.last }
+      grownThrough = new.last
+    }
     .onChange(of: fitsAll) { place() }
     .onChange(of: series.timeframe) { place() }
     .onChange(of: series.candles.first?.start) { if fitsAll { viewport.fit(series) } }
@@ -210,21 +242,26 @@ struct CandleChart: View {
         }
       }
       if showsVWAP { lineMarks(.vwap, series.vwap, Palette.seriesVWAP) }
-      if lines.fastEMA { lineMarks(.fastEMA, series.fastEMA, Palette.seriesFastEMA) }
-      if lines.slowEMA { lineMarks(.slowEMA, series.slowEMA, Palette.seriesSlowEMA) }
+      if lines.fastEMA { lineMarks(.fastEMA, series.fastEMA, CandleChart.fastEMAColour) }
+      if lines.slowEMA { lineMarks(.slowEMA, series.slowEMA, CandleChart.slowEMAColour) }
       extremes(scale)
+      let lifts = markerLifts(scale)
       ForEach(trades) { trade in
-        tradeMarks(trade)
+        tradeMarks(trade, lifts)
       }
       if let position {
-        positionMarks(position)
+        positionMarks(position, lifts)
       }
       ForEach(events) { event in
-        eventMark(event)
+        if let lift = lifts[.event(event)] {
+          eventMark(event, lift: lift)
+        }
       }
       if let candle = selectedCandle {
+        band(candle)
+        // The time on a pill at the top of the line, clear of the time axis's labels.
         crosshair(candle)
-          .annotation(position: .bottom, spacing: 0, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+          .annotation(position: .top, spacing: 0, overflowResolution: .init(x: .fit(to: .plot), y: .fit(to: .plot))) {
             Text(verbatim: times.text(candle.start))
               .fixedSize()
               .font(Tokens.Typography.annotationBold)
@@ -232,28 +269,57 @@ struct CandleChart: View {
               .padding(.horizontal, Tokens.Space.xs)
               .background(Palette.textSecondary, in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
           }
+        // The touched candle's close: a line across, its price on the scale and a dot on it.
+        RuleMark(y: .value(Plot.price, candle.close))
+          .foregroundStyle(Palette.textTertiary)
+          .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
+          .annotation(position: .trailing, alignment: .center, spacing: 0,
+            overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))) {
+            priceTag(PriceTag(price: candle.close, fill: Palette.textSecondary, shownAt: candle.close))
+          }
+        PointMark(x: .value(Plot.time, middle(candle)), y: .value(Plot.price, candle.close))
+          .symbolSize(Self.scrubDotArea)
+          .foregroundStyle(candle.isUp ? Palette.profit : Palette.loss)
       }
     }
     .chartYScale(domain: scale.domain)
+    .chartOverlay(alignment: .topLeading) { proxy in
+      if let start = growing, lines.style != .line, let candle = series.candles.last(where: { $0.start == start }) {
+        GeometryReader { geometry in
+          if let plot = proxy.plotFrame.map({ geometry[$0] }), let frame = growthFrame(candle, proxy) {
+            GrowingCandle(candle: candle, frame: frame) {
+              if growing == start { growing = nil }
+            }
+            .frame(width: plot.width, height: plot.height)
+            .clipped()
+            .offset(x: plot.minX, y: plot.minY)
+          }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .id(start)
+      }
+    }
     .chartXAxis { timeAxis }
     .chartYAxis {
       // Coloured tags over the scale: the last price, entries and stops; a plain axis price
       // they would cover stays hidden.
-      let tags = priceTags
+      let tags = priceTags(scale)
       let clearance = tagClearance(scale)
       AxisMarks(position: .trailing) { value in
         AxisGridLine(stroke: StrokeStyle(lineWidth: Tokens.Stroke.hairline))
           .foregroundStyle(Palette.separator)
         AxisValueLabel {
-          if let price = value.as(Double.self), !tags.contains(where: { abs($0.price - price) < clearance }) {
+          if let price = value.as(Double.self), !tags.contains(where: { abs($0.shownAt - price) < clearance }) {
             axisLabel(value, ChartFormat.price, Palette.textQuaternary)
           }
         }
       }
-      AxisMarks(position: .trailing, values: tags.map(\.price)) { value in
+      // Each tag is found by its own place on the scale, which no other tag shares.
+      AxisMarks(position: .trailing, values: tags.map(\.shownAt)) { value in
         AxisValueLabel {
-          if tags.indices.contains(value.index) {
-            priceTag(tags[value.index])
+          if let place = value.as(Double.self), let tag = tags.first(where: { $0.shownAt == place }) {
+            priceTag(tag)
           }
         }
       }
@@ -300,7 +366,7 @@ struct CandleChart: View {
       let lowLeft = labelGoesLeft(low)
       // A high or low at a tagged price (the last close, an entry, a stop) is already named by
       // its tag: a second label there would lie over it.
-      let tagged = priceTags.map(\.price)
+      let tagged = priceTags(scale).map(\.shownAt)
       let clearance = tagClearance(scale)
       if !tagged.contains(where: { abs($0 - high.high) < clearance }) {
         PointMark(x: .value(Plot.time, middle(high)), y: .value(Plot.price, high.high))
@@ -354,6 +420,12 @@ struct CandleChart: View {
     .fixedSize()
   }
 
+  /// The touched candle's slot, lightly lit behind it, in every pane.
+  private func band(_ candle: Candle) -> some ChartContent {
+    RectangleMark(xStart: .value(Plot.time, candle.start), xEnd: .value(Plot.time, candle.end))
+      .foregroundStyle(Palette.textPrimary.opacity(Tokens.Opacity.wash))
+  }
+
   /// The touched candle's line, drawn in every pane so it reads as one line through them.
   private func crosshair(_ candle: Candle) -> some ChartContent {
     RuleMark(x: .value(Plot.time, middle(candle)))
@@ -379,7 +451,10 @@ struct CandleChart: View {
         }
         lineMarks(.macd, studies.macd.map { $0?.macd }, Palette.info)
         lineMarks(.signal, studies.macd.map { $0?.signal }, Palette.warning)
-        if let candle = selectedCandle { crosshair(candle) }
+        if let candle = selectedCandle {
+          band(candle)
+          crosshair(candle)
+        }
       }
       .chartYScale(domain: macdDomain)
       .modifier(PaneAxes(marks: .automatic(desiredCount: Self.paneAxisMarks)))
@@ -389,7 +464,10 @@ struct CandleChart: View {
         bands(high: Studies.stochasticHigh, low: Studies.stochasticLow)
         lineMarks(.stochasticK, studies.stochastic.map { $0?.k }, Palette.info)
         lineMarks(.stochasticD, studies.stochastic.map { $0?.d }, Palette.warning)
-        if let candle = selectedCandle { crosshair(candle) }
+        if let candle = selectedCandle {
+          band(candle)
+          crosshair(candle)
+        }
       }
       .chartYScale(domain: 0...(Studies.oscillatorScale * (1 + Self.legendHeadroom)))
       .modifier(PaneAxes(marks: .values([Studies.stochasticLow, Studies.stochasticHigh])))
@@ -398,7 +476,10 @@ struct CandleChart: View {
       Chart {
         bands(high: Studies.rsiHigh, low: Studies.rsiLow)
         lineMarks(.rsi, studies.rsi, Palette.info)
-        if let candle = selectedCandle { crosshair(candle) }
+        if let candle = selectedCandle {
+          band(candle)
+          crosshair(candle)
+        }
       }
       .chartYScale(domain: 0...(Studies.oscillatorScale * (1 + Self.legendHeadroom)))
       .modifier(PaneAxes(marks: .values([Studies.rsiLow, Studies.rsiHigh])))
@@ -406,7 +487,10 @@ struct CandleChart: View {
     case .atr:
       Chart {
         lineMarks(.atr, atr, Palette.seriesATR)
-        if let candle = selectedCandle { crosshair(candle) }
+        if let candle = selectedCandle {
+          band(candle)
+          crosshair(candle)
+        }
       }
       .chartYScale(domain: .automatic(includesZero: false))
       .modifier(PaneAxes(marks: .automatic(desiredCount: Self.paneAxisMarks)))
@@ -454,11 +538,11 @@ struct CandleChart: View {
     if showsVWAP { items.append(LegendItem(name: ChartText.vwap, value: series.vwap[index], colour: Palette.seriesVWAP)) }
     if lines.fastEMA {
       items.append(LegendItem(name: ChartText.ema(Indicators.fastEMAPeriod), value: series.fastEMA[index],
-        colour: Palette.seriesFastEMA))
+        colour: CandleChart.fastEMAColour))
     }
     if lines.slowEMA {
       items.append(LegendItem(name: ChartText.ema(Indicators.slowEMAPeriod), value: series.slowEMA[index],
-        colour: Palette.seriesSlowEMA))
+        colour: CandleChart.slowEMAColour))
     }
     if lines.movingAverages {
       for (offset, period) in Studies.movingAveragePeriods.enumerated() {
@@ -526,26 +610,30 @@ struct CandleChart: View {
 
   @ChartContentBuilder
   private func candleMarks(_ candle: Candle) -> some ChartContent {
-    let colour = candle.isUp ? Palette.profit : Palette.loss
+    // A bar that has not grown in yet stands flat on its low, faded out.
+    // A new bar not taken in yet, or growing in over the chart, is not drawn here.
+    let shown = candle.start <= (grownThrough ?? .distantFuture) && candle.start != growing
+    let height = { (price: Double) in shown ? price : candle.low }
+    let colour = (candle.isUp ? Palette.profit : Palette.loss).opacity(shown ? 1 : 0)
     RuleMark(
       x: .value(Plot.time, middle(candle)),
       yStart: .value(Plot.price, candle.low),
-      yEnd: .value(Plot.price, candle.high))
+      yEnd: .value(Plot.price, height(candle.high)))
       .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.thin))
       .foregroundStyle(colour)
     if candle.open == candle.close {
       RuleMark(
         xStart: .value(Plot.time, bodyStart(candle)),
         xEnd: .value(Plot.time, bodyEnd(candle)),
-        y: .value(Plot.price, candle.close))
+        y: .value(Plot.price, height(candle.close)))
         .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.regular))
         .foregroundStyle(colour)
     } else {
       RectangleMark(
         xStart: .value(Plot.time, bodyStart(candle)),
         xEnd: .value(Plot.time, bodyEnd(candle)),
-        yStart: .value(Plot.price, candle.open),
-        yEnd: .value(Plot.price, candle.close))
+        yStart: .value(Plot.price, height(candle.open)),
+        yEnd: .value(Plot.price, height(candle.close)))
         .foregroundStyle(colour)
     }
   }
@@ -564,31 +652,82 @@ struct CandleChart: View {
       }
     }
   }
+  /// A trade's entry and stop lines, and its entry and exit markers where they are on screen.
   @ChartContentBuilder
-  private func tradeMarks(_ trade: DayTrade) -> some ChartContent {
+  private func tradeMarks(_ trade: DayTrade, _ lifts: [MarkerID: Int]) -> some ChartContent {
     let entry = ChartFormat.double(trade.entryPrice)
     let exit = ChartFormat.double(trade.exitPrice)
     levelLines(entry: entry, stop: trade.stopPrice.map(ChartFormat.double))
-    PointMark(
-      x: .value(Plot.time, trade.openedAt.date),
-      y: .value(Plot.entry, entry))
-      .symbol { marker(Image(systemName: "arrowtriangle.up.fill"), Palette.info) }
-    PointMark(
-      x: .value(Plot.time, trade.closedAt.date),
-      y: .value(Plot.exit, exit))
-      .symbol { marker(Image(systemName: "arrowtriangle.down.fill"), Palette.result(trade.resultGrossUsd.value)) }
+    if let lift = lifts[.entry(trade.tradeId)] {
+      PointMark(
+        x: .value(Plot.time, trade.openedAt.date),
+        y: .value(Plot.entry, entry))
+        .symbol { marker(Image(systemName: "arrowtriangle.up.fill"), Palette.info, lift: lift) }
+    }
+    if let lift = lifts[.exit(trade.tradeId)] {
+      PointMark(
+        x: .value(Plot.time, trade.closedAt.date),
+        y: .value(Plot.exit, exit))
+        .symbol {
+          marker(Image(systemName: "arrowtriangle.down.fill"), Palette.result(trade.resultGrossUsd.value), lift: lift)
+        }
+    }
   }
 
-  /// The open position's entry and stop, with the entry marked at its time.
+  /// The open position's entry and stop, with the entry marked at its time when it is on screen.
   @ChartContentBuilder
-  private func positionMarks(_ position: Position) -> some ChartContent {
+  private func positionMarks(_ position: Position, _ lifts: [MarkerID: Int]) -> some ChartContent {
     let entry = ChartFormat.double(position.entryPrice)
     levelLines(entry: entry, stop: position.stop.price.map(ChartFormat.double),
       protected: position.stop.state.isProtected)
-    PointMark(
-      x: .value(Plot.time, position.openedAt.date),
-      y: .value(Plot.entry, entry))
-      .symbol { marker(Image(systemName: "arrowtriangle.up.fill"), Palette.info) }
+    if let lift = lifts[.position] {
+      PointMark(
+        x: .value(Plot.time, position.openedAt.date),
+        y: .value(Plot.entry, entry))
+        .symbol { marker(Image(systemName: "arrowtriangle.up.fill"), Palette.info, lift: lift) }
+    }
+  }
+
+  /// A round marker on the price pane.
+  enum MarkerID: Hashable, Sendable {
+    /// A closed trade's entry and exit, by its trade id.
+    case entry(String)
+    case exit(String)
+    /// The open position's entry.
+    case position
+    case event(ChartEvent)
+  }
+
+  /// How many steps each marker on screen is moved (up when positive) so none covers another
+  /// (`ChartMarkerLayout`); a marker missing here is off screen and not drawn.
+  private func markerLifts(_ scale: PriceScale) -> [MarkerID: Int] {
+    var markers: [ChartMarkerLayout.Marker<MarkerID>] = []
+    for trade in trades {
+      markers.append(.init(id: .entry(trade.tradeId), time: trade.openedAt.date,
+        price: ChartFormat.double(trade.entryPrice)))
+      markers.append(.init(id: .exit(trade.tradeId), time: trade.closedAt.date,
+        price: ChartFormat.double(trade.exitPrice)))
+    }
+    if let position {
+      markers.append(.init(id: .position, time: position.openedAt.date, price: ChartFormat.double(position.entryPrice)))
+    }
+    for event in events {
+      markers.append(.init(id: .event(event), time: eventTime(event), price: event.price))
+    }
+    let span = scale.domain.upperBound - scale.domain.lowerBound
+    let plot = max(chartWidth - axisWidth, 0)
+    let layout = ChartMarkerLayout.Scale(
+      shown: shownStretch,
+      prices: scale.domain,
+      pointsPerSecond: window > 0 ? Double(plot) / window : 0,
+      pointsPerPrice: span > 0 ? Double(Self.priceHeight) / span : 0,
+      side: Double(Self.markerSide), step: Double(Self.markerStep))
+    return ChartMarkerLayout.place(markers, scale: layout)
+  }
+
+  /// Where a watch, entry or refused mark sits: the middle of its candle.
+  private func eventTime(_ event: ChartEvent) -> Date {
+    event.candle.addingTimeInterval(series.timeframe.seconds / 2)
   }
 
   /// Dashed lines across the chart at an entry and its stop; a stop the broker has not proven
@@ -606,13 +745,17 @@ struct CandleChart: View {
   }
 
   /// A dot on the candle where the strategy began watching (amber), said enter (blue) or was
-  /// refused an entry (grey).
-  private func eventMark(_ event: ChartEvent) -> some ChartContent {
+  /// refused an entry (grey), moved `lift` steps (up when positive) clear of the markers before it.
+  private func eventMark(_ event: ChartEvent, lift: Int) -> some ChartContent {
     PointMark(
-      x: .value(Plot.time, event.candle.addingTimeInterval(series.timeframe.seconds / 2)),
+      x: .value(Plot.time, eventTime(event)),
       y: .value(Plot.price, event.price))
-      .symbolSize(Self.eventSize)
-      .foregroundStyle(Self.colour(event.kind))
+      .symbol {
+        Circle()
+          .fill(Self.colour(event.kind))
+          .frame(width: Self.markerSide, height: Self.markerSide)
+          .offset(y: -CGFloat(lift) * Self.markerStep)
+      }
       .accessibilityLabel(Text(Self.title(event.kind)))
   }
 
@@ -640,24 +783,39 @@ struct CandleChart: View {
   struct PriceTag: Hashable {
     let price: Double
     let fill: Color
+    /// Where on the scale the tag is drawn: at `price`, or pinned to the top or bottom edge of
+    /// the price area when `price` is off it, and pushed clear of the other tags
+    /// (`PriceTagPlacement`). No two tags share it.
+    let shownAt: Double
   }
 
-  /// The last close, then each entry and stop on the chart (the trades' and the open position's).
-  private var priceTags: [PriceTag] {
-    var tags: [PriceTag] = []
-    var levels = trades.map { (ChartFormat.double($0.entryPrice), $0.stopPrice.map(ChartFormat.double), true) }
+  /// The last close, then the open position's stop and entry, then each trade's stop and entry,
+  /// latest opened first: the order in which tags are kept when the price area is too short for
+  /// all of them. Placed inside the price area of `scale` and apart from each other; a tag that
+  /// does not fit is left out.
+  private func priceTags(_ scale: PriceScale) -> [PriceTag] {
+    var tags: [(price: Double, fill: Color)] = []
+    if let last = series.candles.last {
+      tags.append((last.close, last.isUp ? Palette.profit : Palette.loss))
+    }
+    var levels = trades.sorted { $0.openedAt.date > $1.openedAt.date }.map {
+      (ChartFormat.double($0.entryPrice), $0.stopPrice.map(ChartFormat.double), true)
+    }
     if let position {
-      levels.append((ChartFormat.double(position.entryPrice), position.stop.price.map(ChartFormat.double),
-        position.stop.state.isProtected))
+      levels.insert((ChartFormat.double(position.entryPrice), position.stop.price.map(ChartFormat.double),
+        position.stop.state.isProtected), at: 0)
     }
     for (entry, stop, protected) in levels {
-      tags.append(PriceTag(price: entry, fill: Palette.info))
-      if let stop { tags.append(PriceTag(price: stop, fill: Self.stopColour(protected: protected))) }
+      if let stop { tags.append((stop, Self.stopColour(protected: protected))) }
+      tags.append((entry, Palette.info))
     }
-    if let last = series.candles.last {
-      tags.append(PriceTag(price: last.close, fill: last.isUp ? Palette.profit : Palette.loss))
+    // The price area is above the volume bars; half a tag's room keeps the whole tag inside it
+    // and a whole one keeps two tags apart.
+    let area = (scale.volumeBase + scale.volumeHeight)...scale.domain.upperBound
+    let shown = PriceTagPlacement.positions(of: tags.map(\.price), in: area, halfHeight: tagClearance(scale) / 2)
+    return zip(tags, shown).compactMap { tag, place in
+      place.map { PriceTag(price: tag.price, fill: tag.fill, shownAt: $0) }
     }
-    return tags
   }
 
   private func priceTag(_ tag: PriceTag) -> some View {
@@ -671,10 +829,14 @@ struct CandleChart: View {
       .background(tag.fill, in: RoundedRectangle(cornerRadius: Tokens.Radius.small))
   }
 
-  private func marker(_ image: Image, _ colour: Color) -> some View {
+  /// An entry or exit marker, moved `lift` steps (up when positive) clear of the markers before it.
+  private func marker(_ image: Image, _ colour: Color, lift: Int) -> some View {
     image
-      .font(Tokens.Typography.badge)
-      .foregroundStyle(colour)
+      .font(Tokens.Typography.chevron)
+      .foregroundStyle(Palette.onAccent)
+      .frame(width: Self.markerSide, height: Self.markerSide)
+      .background(colour, in: Circle())
+      .offset(y: -CGFloat(lift) * Self.markerStep)
   }
 
   /// Clock times on one day; beyond one day, where each session, week, month or quarter begins.
@@ -751,7 +913,7 @@ struct CandleChart: View {
         }
       }
     } else {
-      Text(ChartText.caption(String(localized: ChartFormat.title(series.timeframe)),
+      Text(ChartText.caption(String(localized: rangeTitle), String(localized: ChartFormat.title(series.timeframe)),
         String(localized: ChartText.bars(viewport.barsShown(series)))))
     }
   }
@@ -818,6 +980,15 @@ struct CandleChart: View {
       volumeCeiling: candles.map(\.volume).max() ?? 0)
   }
 
+  /// Where `candle` stands in the plot, in points from its top left: its body's left and right,
+  /// and the prices of its high, open, close and low.
+  private func growthFrame(_ candle: Candle, _ proxy: ChartProxy) -> GrowingCandle.Frame? {
+    guard let left = proxy.position(forX: bodyStart(candle)), let right = proxy.position(forX: bodyEnd(candle)),
+      let high = proxy.position(forY: candle.high), let low = proxy.position(forY: candle.low),
+      let open = proxy.position(forY: candle.open), let close = proxy.position(forY: candle.close) else { return nil }
+    return GrowingCandle.Frame(left: left, right: right, high: high, open: open, close: close, low: low)
+  }
+
   private func middle(_ candle: Candle) -> Date {
     candle.start.addingTimeInterval(series.timeframe.seconds / 2)
   }
@@ -832,6 +1003,61 @@ struct CandleChart: View {
 }
 
 /// The price pane's value range and where its volume bars sit.
+/// A new minute bar growing up from its low to its full height once, over the chart where its
+/// mark will be (the board's `grow`: scale from nothing, fading in, `Motion.standard`); then it
+/// calls `done` and the chart draws the bar itself.
+private struct GrowingCandle: View {
+  /// The candle's place in the plot, in points.
+  struct Frame {
+    let left: CGFloat
+    let right: CGFloat
+    let high: CGFloat
+    let open: CGFloat
+    let close: CGFloat
+    let low: CGFloat
+  }
+
+  @State private var grown = false
+  let candle: Candle
+  let frame: Frame
+  let done: () -> Void
+
+  var body: some View {
+    let colour = candle.isUp ? Palette.profit : Palette.loss
+    let middle = (frame.left + frame.right) / 2
+    let top = min(frame.open, frame.close)
+    let isGrown = grown
+    ZStack(alignment: .topLeading) {
+      Rectangle()
+        .fill(colour)
+        .frame(width: Tokens.Stroke.thin, height: max(frame.low - frame.high, Tokens.Stroke.thin))
+        .offset(x: middle - Tokens.Stroke.thin / 2, y: frame.high)
+      Rectangle()
+        .fill(colour)
+        .frame(width: frame.right - frame.left, height: max(abs(frame.close - frame.open), Tokens.Stroke.regular))
+        .offset(x: frame.left, y: top)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    // Drawn as a scale, not in layout: Core Animation plays it.
+    .visualEffect { effect, proxy in
+      effect
+        .scaleEffect(x: 1, y: isGrown ? 1 : PopIn.hiddenScale,
+          anchor: UnitPoint(x: middle / max(proxy.size.width, 1), y: frame.low / max(proxy.size.height, 1)))
+        .opacity(isGrown ? 1 : 0)
+    }
+    .onAppear {
+      withAnimation(Tokens.Motion.standard) { grown = true } completion: { done() }
+    }
+  }
+}
+
+/// What tells a new bar from another chart: the interval, the first candle and the newest one.
+private struct GrowthKey: Equatable {
+  let timeframe: Timeframe
+  let first: Date?
+  let last: Date?
+}
+
 struct PriceScale {
   let domain: ClosedRange<Double>
   /// Price at the bottom of the volume bars.

@@ -24,6 +24,9 @@ final class ChartModel {
   private(set) var decisionsError: String?
   /// The Chart shows a symbol; without one there are no decisions to ask the bot for.
   var hasSymbol = false
+  /// The symbol, range and interval the chart shows, for the title bar's line; nil until a
+  /// symbol has something to show.
+  var shown: Shown?
   /// Counts the reads that brought different bars; a plot built from an older count is stale.
   @ObservationIgnored private(set) var revision = 0
   /// The last plot built, reused while the bars and the timeframe stay the same.
@@ -121,6 +124,15 @@ final class ChartModel {
     }
   }
 
+  /// Takes bars the Overview read for the same symbol and day when they end later than the
+  /// shown ones, so both screens show one price for one moment.
+  func adopt(_ newer: BarsV1) {
+    guard let bars, bars.symbol == newer.symbol, bars.day == newer.day, newer != bars,
+      let theirs = newer.bars.last?.start.date, theirs > (bars.bars.last?.start.date ?? .distantPast) else { return }
+    self.bars = newer
+    revision += 1
+  }
+
   /// Forgets the shown bars, candles and decisions when the symbol, day or range changes.
   func clear() {
     bars = nil
@@ -131,5 +143,13 @@ final class ChartModel {
     error = nil
     decisions = nil
     decisionsError = nil
+    shown = nil
+  }
+
+  /// What the chart shows: a symbol over a range in candles of an interval.
+  struct Shown: Equatable {
+    let symbol: String
+    let range: ChartRange
+    let interval: Timeframe
   }
 }
