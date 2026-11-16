@@ -225,6 +225,41 @@ public enum SymbolsBoard {
     String(localized: L10n.stageChange(signed(value.value, digits: changeDigits)))
   }
 
+  // MARK: path
+
+  /// One stage of a symbol's path today, as its detail lists it.
+  public struct Step: Hashable, Sendable, Identifiable {
+    public enum Mark: Hashable, Sendable {
+      /// It went on past this stage.
+      case passed
+      /// It stands here now: waiting, dropped, not reached, or through the last stage.
+      case here(Tone)
+      /// It never got this far.
+      case ahead
+    }
+
+    public let stage: SymbolStage
+    public let mark: Mark
+    /// Why it stopped here (`reason`): only on the stage it stands at, when dropped or not reached.
+    public let detail: String?
+    public var id: SymbolStage { stage }
+  }
+
+  /// Every stage in order: passed up to where the row stands, its outcome there, then ahead.
+  /// A stage it went past earlier but stands before now (dropped at a later pass) reads passed.
+  public static func path(_ row: SymbolRowV1) -> [Step] {
+    let (_, tone) = outcome(row)
+    return SymbolStage.allCases.map { stage in
+      if stage == row.stage {
+        return Step(stage: stage, mark: .here(tone), detail: tone == .dropped || tone == .notReached ? reason(row) : nil)
+      }
+      if stage.order < row.stage.order || stage.order <= row.furthest.order {
+        return Step(stage: stage, mark: .passed, detail: nil)
+      }
+      return Step(stage: stage, mark: .ahead, detail: nil)
+    }
+  }
+
   // MARK: fast movers
 
   /// "vol 6.4×": the bar's volume against the average of the bars before it.
