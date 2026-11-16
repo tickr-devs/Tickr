@@ -14742,13 +14742,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The strategy is not watching any symbol on this day."
+            "value" : "Nothing armed right now. A symbol shows here while the strategy waits for its setup."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "В этот день стратегия ни за чем не следит."
+            "value" : "Сейчас ничего не взведено. Символ появляется здесь, пока стратегия ждёт его сетап."
           }
         }
       }
