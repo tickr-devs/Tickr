@@ -32,7 +32,7 @@ struct PerformanceCard: View {
       } else if let error = model.performanceError {
         Footnote(L10n.Trades.performanceUnavailable(error))
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     })
     .accessibilityElement(children: .contain)

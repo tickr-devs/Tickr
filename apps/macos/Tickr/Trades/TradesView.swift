@@ -845,7 +845,7 @@ private struct AnotherStrategyView: View {
             .font(Tokens.Typography.caption)
             .foregroundStyle(Palette.warningText)
         } else {
-          ProgressView().controlSize(.small)
+          TickrLoader(L10n.Common.loading)
         }
       } else if versions.isEmpty {
         Footnote(L10n.Trades.anotherNoVersions)
@@ -891,7 +891,7 @@ private struct AnotherStrategyView: View {
     switch answer {
     case nil:
       GridRow {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
         Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
         Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
       }
@@ -1004,7 +1004,7 @@ private struct NotTakenCard: View {
       } else if model.skipped != nil {
         Footnote(L10n.Trades.notTakenEmpty)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     })
   }

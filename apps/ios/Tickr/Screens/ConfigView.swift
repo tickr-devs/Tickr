@@ -78,7 +78,7 @@ struct ConfigView: View {
       } else if let error = model.configError {
         InfoCaption(verbatim: error, tone: .warning)
       } else {
-        ProgressView()
+        TickrLoader(L10n.Common.loading)
       }
     }
     .contentMargins(.top, 0, for: .scrollContent)

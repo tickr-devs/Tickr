@@ -703,7 +703,7 @@ private struct ConfigCard: View {
       } else if let error = model.configError {
         Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     } trailing: {
       HStack(spacing: Tokens.Space.xs) {
@@ -801,7 +801,7 @@ struct JobsSection: View {
       } else if let error = model.jobsError {
         Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     } trailing: {
       Text(L10n.Settings.timesET)
@@ -1097,7 +1097,7 @@ private struct BackupSection: View {
       } else if let error = model.jobsError {
         Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
       Label {
         Text(L10n.Settings.cleanup)

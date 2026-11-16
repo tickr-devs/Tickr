@@ -44,7 +44,7 @@ struct DecisionsCard: View {
       } else if let failure {
         note(ChartText.decisionsFailed(failure))
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)

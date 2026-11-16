@@ -1980,19 +1980,19 @@
         }
       }
     },
-    "chart.loading" : {
+    "chart.loadingBars" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading Bars…"
+            "value" : "Loading %1$@ · %2$@ bars"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Загрузка баров…"
+            "value" : "Загрузка %1$@ · свечи %2$@"
           }
         }
       }
@@ -3501,6 +3501,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "блокировок: %lld"
+          }
+        }
+      }
+    },
+    "common.loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузка…"
           }
         }
       }
@@ -7010,13 +7027,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open chart →"
+            "value" : "Open chart"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Открыть график →"
+            "value" : "Открыть график"
           }
         }
       }
@@ -8846,13 +8863,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details →"
+            "value" : "Details"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подробнее →"
+            "value" : "Подробнее"
           }
         }
       }

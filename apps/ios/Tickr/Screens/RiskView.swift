@@ -297,7 +297,7 @@ private struct LimitsCard: View {
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
   }

@@ -534,8 +534,9 @@ struct ChartView: View {
         L10n.Chart.barsUnavailable,
         detail: showsDay ? L10n.Chart.barsUnavailableDetail(error) : L10n.Chart.candlesUnavailableDetail(error),
         symbol: "wifi.exclamationmark")
-    } else if chart.loading || !chart.hasRead(timeframe: interval, range: range) {
-      ProgressView { Text(L10n.Chart.loading) }
+    } else if let symbol, chart.loading || !chart.hasRead(timeframe: interval, range: range) {
+      TickrLoader(
+        L10n.Chart.loadingBars(symbol, interval: String(localized: Self.title(interval))), size: .large, caption: true)
     } else if !showsDay, let cause = chart.rangeCause {
       empty(L10n.Chart.noBars, detail: L10n.Chart.noCandlesDetail(cause), symbol: "chart.bar.xaxis")
     } else {
