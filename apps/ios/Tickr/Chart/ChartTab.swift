@@ -257,11 +257,7 @@ private struct DayBar: View {
   }
 
   private func arrow(_ symbol: String) -> some View {
-    Image(systemName: symbol)
-      // Small, as the design's "‹ ›".
-      .font(.footnote.weight(.bold))
-      .foregroundStyle(Palette.infoText)
-      .frame(minWidth: Tokens.Size.iconButtonCompact, minHeight: Tokens.Size.iconButton)
+    HeaderIcon(symbol: symbol).foregroundStyle(Palette.infoText)
   }
 
   /// The shown candles' high, low and volume, small and dim beside the arrows, as on the design.

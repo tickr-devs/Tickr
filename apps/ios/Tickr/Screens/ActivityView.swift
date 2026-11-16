@@ -35,15 +35,14 @@ struct ActivityView: View {
       Button {
         showsCalendar.toggle()
       } label: {
-        DesignGlyphView(.calendar, side: Tokens.Size.headerGlyph)
+        HeaderIcon(.calendar)
           .foregroundStyle(Palette.infoText)
           // Open, the calendar's button sits on a wash, as a selected chip.
           .background {
             if showsCalendar {
-              Circle().fill(Palette.info.opacity(TickrTabBar.selectedWash)).frame(width: HomeView.actionSide)
+              Circle().fill(Palette.info.opacity(TickrTabBar.selectedWash))
             }
           }
-          .frame(minWidth: HomeView.actionSide, minHeight: HomeView.actionSide)
       }
       .accessibilityLabel(Text(L10n.Activity.calendar))
       .accessibilityIdentifier(AccessibilityID.calendar)
@@ -310,7 +309,7 @@ private struct DayPicker: View {
       Button {
         if let month = activity.previousMonth { activity.month = month }
       } label: {
-        Image(systemName: "chevron.backward")
+        HeaderIcon(symbol: "chevron.backward")
       }
       .disabled(activity.previousMonth == nil)
       .accessibilityLabel(Text(L10n.Activity.previousMonth))
@@ -333,7 +332,7 @@ private struct DayPicker: View {
       Button {
         if let month = activity.nextMonth { activity.month = month }
       } label: {
-        Image(systemName: "chevron.forward")
+        HeaderIcon(symbol: "chevron.forward")
       }
       .disabled(activity.nextMonth == nil)
       .accessibilityLabel(Text(L10n.Activity.nextMonth))

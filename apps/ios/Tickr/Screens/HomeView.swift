@@ -8,13 +8,7 @@ struct HomeView: View {
   /// Order in which the blocks rise in (`rise(step:)`); open positions follow one step apart.
   private enum Order: Int { case day = 1, summary, ticker, positions, flow = 6 }
 
-  /// The title row's icon buttons: least touch side (their glyphs are the design's own, at
-  /// `Size.headerGlyph`).
-  static var actionSide: CGFloat { Tokens.Size.iconButtonCompact }
-
   @Environment(AppModel.self) private var model
-  /// The title row's glyphs grow with the text, as the system's own bar buttons do.
-  @ScaledMetric(relativeTo: .body) private var glyphSide = Tokens.Size.headerGlyph
   @State private var showControl = false
   @State private var prices = Container.shared.positionsModel()
   @State private var dayModel = Container.shared.homeDayModel()
@@ -45,9 +39,8 @@ struct HomeView: View {
       Button {
         showControl = true
       } label: {
-        DesignGlyphView(.power, side: glyphSide)
+        HeaderIcon(.power)
           .foregroundStyle(model.canCommand && dayModel.shown == nil ? Palette.warningText : Palette.textQuaternary)
-          .frame(minWidth: Self.actionSide, minHeight: Self.actionSide)
       }
       .disabled(!model.canCommand || dayModel.shown != nil)
       .accessibilityLabel(Text(L10n.Control.title))
@@ -55,9 +48,8 @@ struct HomeView: View {
       NavigationLink {
         SettingsView()
       } label: {
-        DesignGlyphView(.settings, side: glyphSide)
+        HeaderIcon(.settings)
           .foregroundStyle(Palette.infoText)
-          .frame(minWidth: Self.actionSide, minHeight: Self.actionSide)
       }
       .accessibilityLabel(Text(L10n.Home.settings))
       .accessibilityIdentifier(AccessibilityID.settings)
@@ -198,11 +190,7 @@ private struct DayLine: View {
   }
 
   private func arrow(_ symbol: String) -> some View {
-    Image(systemName: symbol)
-      // Small, as the design's "‹ ›".
-      .font(.footnote.weight(.bold))
-      .foregroundStyle(Palette.infoText)
-      .frame(minWidth: Tokens.Size.iconButtonCompact, minHeight: Tokens.Size.iconButtonCompact)
+    HeaderIcon(symbol: symbol).foregroundStyle(Palette.infoText)
   }
 
   /// The day, centred in the room between the arrows (or the DEMO chips).

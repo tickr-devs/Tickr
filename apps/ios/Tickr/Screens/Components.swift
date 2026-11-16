@@ -228,8 +228,8 @@ struct Screen<Leading: View, Actions: View, Content: View>: View {
   }
 }
 
-/// A pushed screen's top, as on the design's Settings: "‹ Home" (blue chevron and the name of the
-/// screen under it, no glass circle), then the screen's title row, as on the tabs.
+/// A pushed screen's top: the app's own back button ("‹ Home", `BackButton`), then the screen's
+/// title row, as on the tabs. The one way every pushed screen draws its way back.
 struct PushedHeader<Leading: View, Actions: View>: View {
   let title: LocalizedStringResource
   /// The screen under this one; nil reads "Back".
@@ -263,13 +263,18 @@ extension PushedHeader where Leading == EmptyView, Actions == EmptyView {
   }
 }
 
-/// "‹ Home": the way back from a pushed screen, drawn as on the design instead of the system's
-/// glass circle. The edge swipe still goes back (`EdgeSwipeBack`).
+/// "‹ Home": the way back from a pushed screen, the app's own control rather than the system's:
+/// a capsule (the card surface and hairline) holding the chevron on a blue wash and the
+/// name of the screen under it. The visible capsule is a little shorter than the touch target,
+/// which still covers `Size.touchTarget` (Apple HIG). VoiceOver reads "Back, Home"; the edge swipe
+/// still goes back (`EdgeSwipeBack`). Every pushed screen draws it through `PushedHeader`.
 struct BackButton: View {
   /// Symbol of the way back.
-  static let symbol = "chevron.left"
+  static let symbol = "chevron.backward"
 
   @Environment(\.dismiss) private var dismiss
+  /// The chevron's round well grows with the title's text size.
+  @ScaledMetric(relativeTo: .callout) private var well = Tokens.Size.iconButtonCompact
   let title: LocalizedStringResource
   /// The screen's own dismiss, for a header inside a form, whose rows see another one.
   var action: DismissAction?
@@ -278,18 +283,67 @@ struct BackButton: View {
     Button {
       (action ?? dismiss)()
     } label: {
-      HStack(spacing: Tokens.Space.xxs) {
-        Image(systemName: Self.symbol).fontWeight(.semibold)
+      HStack(spacing: Tokens.Space.s) {
+        Image(systemName: Self.symbol)
+          .font(Tokens.Typography.buttonCompact)
+          .frame(width: well, height: well)
+          .background(Palette.info.opacity(TickrTabBar.selectedWash), in: Circle())
         Text(title).lineLimit(1)
       }
-      .font(.body)
+    }
+    .buttonStyle(BackButtonStyle())
+    .accessibilityLabel(Text(L10n.Common.back))
+    .accessibilityValue(Text(title))
+    .accessibilityIdentifier(AccessibilityID.back)
+  }
+}
+
+/// The look of `BackButton`: a capsule on the card surface with the strong hairline, pressed in a
+/// little while held. No shadow: inside a form's row (Settings) it would be cut at the row's edge.
+private struct BackButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(Tokens.Typography.buttonCompact)
       .foregroundStyle(Palette.infoText)
+      .padding(.leading, Tokens.Space.xs)
+      .padding(.trailing, Tokens.Space.m)
+      .padding(.vertical, Tokens.Space.xs)
+      .background(Palette.surface, in: Capsule())
+      .overlay(Capsule().strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
       .frame(minHeight: Tokens.Size.touchTarget)
       .contentShape(Rectangle())
+      .scaleEffect(configuration.isPressed ? Tokens.Motion.pressScale : 1)
+      .animation(Tokens.Motion.quick, value: configuration.isPressed)
+  }
+}
+
+/// A header's icon button face, the same on every screen: the design's glyph (or a symbol) at the
+/// size of the system's bar-button glyphs, growing with the text size, inside a touch target of at
+/// least `Size.touchTarget` (Apple HIG). Wrap it in a `Button` or a `NavigationLink`.
+struct HeaderIcon: View {
+  /// What the button shows.
+  enum Glyph {
+    case design(DesignGlyph)
+    case symbol(String)
+  }
+
+  /// The design glyphs grow with the text, as the system's own bar buttons do.
+  @ScaledMetric(relativeTo: .title3) private var side = Tokens.Size.headerGlyph
+  let glyph: Glyph
+
+  init(_ glyph: DesignGlyph) { self.glyph = .design(glyph) }
+
+  init(symbol: String) { self.glyph = .symbol(symbol) }
+
+  var body: some View {
+    Group {
+      switch glyph {
+      case .design(let glyph): DesignGlyphView(glyph, side: side)
+      case .symbol(let name): Image(systemName: name).font(Tokens.Typography.headerSymbol)
+      }
     }
-    .buttonStyle(.plain)
-    .accessibilityLabel(Text(L10n.Common.backTo(String(localized: title))))
-    .accessibilityIdentifier(AccessibilityID.back)
+    .frame(minWidth: Tokens.Size.touchTarget, minHeight: Tokens.Size.touchTarget)
+    .contentShape(Rectangle())
   }
 }
 
@@ -362,8 +416,9 @@ struct TitleRow<Leading: View, Actions: View>: View {
     .padding(.top, Tokens.Space.s)
   }
 
+  /// The actions' touch targets (`HeaderIcon`) carry their own room, so they sit close.
   private var actionRow: some View {
-    HStack(spacing: Tokens.Space.m) { actions }
+    HStack(spacing: Tokens.Space.xs) { actions }
       .buttonStyle(.borderless)
       .tint(Palette.infoText)
   }
