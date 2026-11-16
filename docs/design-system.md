@@ -63,6 +63,7 @@ contrast on `surface` in both appearances.
 | `seriesUniverse` | Universe stage of the live flow | = `seriesATR` | = `seriesATR` |
 | `glowIndigo`, `glowTeal` | Light background corner glows (at `Opacity.glow`, reach 420 pt; teal centred on the right edge, a fifth down) | `#6366F1`, `#14B8A6` | not drawn |
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
+| `scrim` | Dimmed backdrop behind a Mac overlay panel (at `Opacity.faint`) and that panel's shadow | `#080C1E` | `#080C1E` |
 
 A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero.
 
@@ -192,6 +193,7 @@ a step; it does not define its own factor.
 | `rowSymbol` | 16 | Symbol column of a `ValueRow` |
 | `miniRing` | 52 | Small gauge ring |
 | `hintMaxWidth` | 260 | Widest hint bubble |
+| `popover` | 340 | Widest a detail popover grows (a live-flow stage's details); it narrows and wraps where the screen is narrower, never clips |
 | `glowRadius` | 8 | Glow under a primary button |
 | `ringHalo` | 60 | Reach of the halo behind a ring |
 

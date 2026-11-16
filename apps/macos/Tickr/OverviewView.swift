@@ -108,6 +108,8 @@ struct OverviewView: View {
     }
     // The cards wait under the launch's opening and rise as its mark flies to the header.
     .environment(\.risesHeld, !model.openingPlayed && !model.openingFlying)
+    // "Show all" of Watching closely opens its full list over the cards.
+    .watchingAllPanel()
   }
 
   /// UI tests (`LayoutSweep.safetyFirst`): the Safety · bot card at the top of the screen, kept
@@ -135,7 +137,9 @@ private struct Header: View {
           let frame = proxy.frame(in: .global)
           return CGPoint(x: frame.midX, y: frame.midY)
         } action: { centre in
-          model.overviewMarkCentre = centre
+          // Only while the opening can still land here: afterwards a scroll would write the
+          // model on every frame for nobody.
+          if !model.openingPlayed { model.overviewMarkCentre = centre }
         }
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         HStack(spacing: Tokens.Space.m) {
