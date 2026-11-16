@@ -15,13 +15,13 @@ v1 is done when the bot, started by launchd on a trading day, finds setups with 
 
 In v1:
 - One Webull account, Sandbox environment. Production code path exists but is closed by the gate (section 8).
-- US common stocks only, regular session (09:30-16:00 ET) only, long only, at most one open position.
+- US common stocks only, regular session (09:30-16:00 ET) only, long only, at most `[risk] max_open_positions` open trades (1 in the shipped config; several positions, backlog X1, are built but off until the owner enables them).
 - One active strategy (`price-action-v3` since 2026-11-16: `price-action-v1` plus a spike setup on fast movers), loaded as a swappable module.
 - Broker-side STOP_LOSS protection; exit by the resting stop, by strategy EXIT, or by session flatten.
 - Recording of every decision and all market inputs for later analysis.
 - A small local API with state and operator commands, and a minimal status screen on top of it.
 
-Not in v1 (see backlog): trailing stop and stop tightening, extended hours, shorts, several positions, observers running live, replay of other strategy versions, reports, AI advisor, the macOS/iOS app, Production enablement.
+Not in v1 (see backlog): trailing stop and stop tightening, extended hours, shorts, several positions enabled, observers running live, replay of other strategy versions, reports, AI advisor, the macOS/iOS app, Production enablement.
 
 ## 3. Architecture
 
@@ -77,13 +77,13 @@ Modules (`src/tickr/`): `config`, `store`, `broker/` (interface, `fake.py`, `web
 
 ## 7. Risk and the safety layer
 
-Numbers in `config/bot.toml` `[risk]`: planned loss 50 USD per trade; notional cap 2,500 USD per position; daily loss ceiling 300 USD on the net realized result of the New York day (winning trades offset losing ones; owner 2026-11-14); one open position; quote age 5 s; 30 min per-symbol pause after a loss; no limit on the number of entries per day or per symbol (owner 2026-11-14).
+Numbers in `config/bot.toml` `[risk]`: planned loss 50 USD per trade; notional cap 2,500 USD per position; daily loss ceiling 300 USD on the net realized result of the New York day (winning trades offset losing ones; owner 2026-11-14); one position slot (`max_open_positions`; with several, every open trade's planned loss is reserved against the one daily ceiling, so the worst case of all stops filling stays inside it); quote age 5 s; 30 min per-symbol pause after a loss; no limit on the number of entries per day or per symbol (owner 2026-11-14).
 
 Admission (all must hold; the first failure is the single recorded cause):
 1. Trading gate open for the active environment.
 2. Startup reconciliation done; latest broker read fresh; no unresolved exposure; no foreign exposure in the entry's symbol (or of unknown symbol); entry-stop flag clear.
 3. Regular session, calendar known for today, not a half day, before last-entry time.
-4. No own position or working order; open positions below the limit; no trade in the symbol closed at a loss today (New York date, as for the daily rule) within the last `symbol_cooldown_minutes_after_loss` (`SYMBOL_COOLDOWN`; an entry exactly at the end is allowed; a closed trade whose fill prices are unknown counts as a loss; turned off by `symbol_cooldown_after_loss_enabled = false`).
+4. No own trade (position or working order) in the decision's symbol, so at most one trade per symbol; own open trades (each a working entry, a position or an exit in progress) below `max_open_positions`; no trade in the symbol closed at a loss today (New York date, as for the daily rule) within the last `symbol_cooldown_minutes_after_loss` (`SYMBOL_COOLDOWN`; an entry exactly at the end is allowed; a closed trade whose fill prices are unknown counts as a loss; turned off by `symbol_cooldown_after_loss_enabled = false`).
 5. Executable quote fresh; setup still valid; price inside the window.
 6. Quantity at least 1; notional within cap; planned loss within limit; daily rule passes (today's net realized loss + open reservations + new planned loss <= ceiling).
 7. Request budget available for the entry AND the stop.

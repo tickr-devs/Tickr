@@ -480,8 +480,13 @@ class Engine:
                       if n.partition(":")[0] not in (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)}
         if fences:
             raise EntryRefused("entries fenced: " + ", ".join(sorted(fences)))
-        if len(self.trades()) >= self.config.risk.max_open_positions:
+        trades = self.trades()
+        if len(trades) >= self.config.risk.max_open_positions:
             raise EntryRefused("open position limit reached")
+        if any(t.symbol == symbol for t in trades):
+            # One trade per symbol: trades in one symbol would share the broker position that
+            # each trade's stop, exit and reconciliation are sized against.
+            raise EntryRefused(f"a trade in {symbol} is already open")
         if quantity <= 0 or quantity != quantity.to_integral_value():
             raise EntryRefused("quantity must be a positive whole number")
         if not ZERO < stop_price < limit_price:
