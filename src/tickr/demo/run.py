@@ -23,7 +23,6 @@ import os
 import re
 import shutil
 import signal
-import socket
 import sys
 import threading
 from collections.abc import Callable, Iterator
@@ -262,8 +261,7 @@ class LiveApi:
     def __init__(self, settings: ApiSettings) -> None:
         self.settings = settings
         self.server: ApiServer | None = None
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.bind((settings.host, settings.port))
+        make_server(settings).server_close()  # the bot's API code binds; this module never
 
     def start(self, world: World) -> ApiServer:
         """Listen and serve the live world; returns the running server."""
