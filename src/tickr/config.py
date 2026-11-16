@@ -149,12 +149,22 @@ class ProbeConfig:
     chart_client_reads: int
     chart_client_interval_seconds: int
     extended_end_margin_minutes: int
+    extended_max_quote_age_seconds: Decimal
     extended_far_stop_percent: Decimal
     extended_stop_limit_percent: Decimal
     extended_observe_seconds: int
     extended_trigger_seconds: int
     extended_close_percent: Decimal
     extended_position_agree_seconds: int
+    attached_far_percent: Decimal
+    attached_observe_seconds: int
+    attached_stop_wait_seconds: int
+    trailing_wide_percent: Decimal
+    trailing_tight_percent: Decimal
+    trailing_observe_seconds: int
+    trailing_trigger_seconds: int
+    trailing_close_percent: Decimal
+    trailing_unit_factor: Decimal
 
 
 @dataclass(frozen=True)
@@ -236,6 +246,10 @@ class MarketDataConfig:
     history_cache_max_age_days: int
     history_preload_minutes_before_open: int
     screener_record_seconds: Decimal
+    profile_refresh_seconds: Decimal
+    profile_refresh_gainer_move_percent: Decimal
+    profile_max_requests_per_round: int
+    profile_reserve_requests: int
     history_preload_retry_seconds: Decimal
     stream_reconnect_delay_seconds: Decimal
     stream_max_symbols: int
@@ -266,6 +280,7 @@ class ObserversConfig:
     decisions_dir: str
     forget_symbol_seconds: Decimal
     history_sends_per_pass: int
+    ignition: str
 
 
 @dataclass(frozen=True)
@@ -307,6 +322,7 @@ class RuntimeConfig:
     watchdog_restart_command: tuple[str, ...]
     watchdog_restart_timeout_seconds: int
     watchdog_restart_file: str
+    watchdog_entry_restart_file: str
     evaluation_budget_seconds: Decimal
     discovery_stop_seconds: Decimal
     stop_marker_file: str
@@ -515,6 +531,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if run.code_version_timeout_seconds <= 0:
         raise ConfigError("[run] code_version_timeout_seconds must be above 0")
     md: MarketDataConfig = built["market_data"]
+    if (md.profile_refresh_seconds <= 0 or md.profile_refresh_gainer_move_percent <= 0
+            or md.profile_max_requests_per_round < 1 or md.profile_reserve_requests < 0):
+        raise ConfigError("[market_data] profile_refresh_seconds and "
+                          "profile_refresh_gainer_move_percent must be above 0, "
+                          "profile_max_requests_per_round at least 1 and "
+                          "profile_reserve_requests at least 0")
     if md.refused_symbol_recheck_seconds <= 0:
         raise ConfigError("[market_data] refused_symbol_recheck_seconds must be above 0")
     if md.failure_detail_max_chars < 1:
@@ -543,6 +565,17 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
+    probe: ProbeConfig = built["probe"]
+    if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
+            or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
+            or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1):
+        raise ConfigError("[probe] trailing_* values must be above 0 and "
+                          "trailing_unit_factor above 1")
+    if probe.trailing_tight_percent >= probe.trailing_wide_percent:
+        raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
+    if not 1 <= risk.max_open_positions <= md.stream_reserved_symbols:
+        raise ConfigError("[risk] max_open_positions must be at least 1 and at most "
+                          "[market_data] stream_reserved_symbols (a stream slot per position)")
     if risk.max_entry_rest_bars < 1:
         raise ConfigError("[risk] max_entry_rest_bars must be at least 1")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:

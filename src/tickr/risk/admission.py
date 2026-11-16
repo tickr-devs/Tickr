@@ -80,7 +80,9 @@ class Reconciliation:
     last_broker_read_at: datetime | None
     """Time of the latest successful broker read of positions and open orders (aware)."""
     foreign_exposure: bool
-    """A position or open order the bot does not own exists at the broker."""
+    """A position or open order the bot does not own exists at the broker in the decision's
+    symbol, or a foreign order's symbol is not known. Foreign exposure in other symbols is
+    ignored (owner 2026-11-16)."""
     unresolved_exposure: bool
     """An own order with unknown outcome, a quantity mismatch, or anything not yet explained."""
 
@@ -95,9 +97,14 @@ class AdmissionInputs:
     """Calendar answer for the New York date of `now`."""
     now: datetime
     own_open_positions: int
+    """The bot's own positions in the decision's symbol (one trade per symbol at a time)."""
     own_working_orders: int
+    """The bot's own working orders other than stops (entries, exits) in the decision's
+    symbol."""
     open_positions: int
-    """All positions at the broker (own + foreign), for the position limit."""
+    """Slots in use against `max_open_positions`: the bot's open trades in any symbol (a
+    position, a working entry or an exit in progress), as `Engine.open_trade` counts them.
+    Manual trades are ignored (owner 2026-11-16)."""
     symbol_last_loss_at: datetime | None
     """When the latest trade in the decision's symbol that closed today (New York date) at a
     loss, or with an unknown result, closed; None = no such trade today."""
@@ -160,7 +167,8 @@ def _check_reconciliation(i: AdmissionInputs, lim: AdmissionLimits) -> Admission
     if r.unresolved_exposure:
         return _refuse(C.UNRESOLVED_EXPOSURE, "unresolved exposure")
     if r.foreign_exposure:
-        return _refuse(C.FOREIGN_EXPOSURE, "foreign position or order at the broker")
+        return _refuse(C.FOREIGN_EXPOSURE,
+                       "foreign position or order in this symbol, or of unknown symbol")
     if i.entry_stop:
         return _refuse(C.ENTRY_STOP_SET, "operator entry-stop is set")
     return None
@@ -204,6 +212,8 @@ def _check_own_state(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | No
     for name, value in counts.items():
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return _refuse(C.COUNT_INVALID, f"{name} {value!r} is not a count")
+    # One trade per symbol: a second trade in a held symbol would share its broker position,
+    # and the stop, the exit and reconciliation of each trade are sized per symbol.
     if i.own_open_positions:
         return _refuse(C.OWN_POSITION_OPEN, f"{i.own_open_positions} own position(s) open")
     if i.own_working_orders:
@@ -246,6 +256,12 @@ def _check_quote_and_setup(i: AdmissionInputs, lim: AdmissionLimits) -> Admissio
         return _refuse(C.DECISION_INVALID,
                        f"need 0 < stop {d.stop} < entry_low {d.entry_low} <= "
                        f"entry_high {d.entry_high}")
+    if d.scale_out is not None and not (
+            isinstance(d.scale_out, Decimal) and d.scale_out.is_finite()
+            and Decimal(0) < d.scale_out < d.quantity
+            and d.scale_out == d.scale_out.to_integral_value()):
+        return _refuse(C.DECISION_INVALID,
+                       f"scale_out {d.scale_out} not a whole number below quantity {d.quantity}")
     rest = d.rest_bars
     if rest is not None and (isinstance(rest, bool) or not isinstance(rest, int)
                              or not 1 <= rest <= lim.max_entry_rest_bars):

@@ -310,6 +310,8 @@ the shared database the first time its bot opens it, after a verified backup
   account's cash activities): one way as well.
 - Migration v8 (2026-11-16) adds `trades.entry_rest_until` (until when a resting limit entry may
   work): one way as well.
+- Migration v9 (2026-11-16) adds the trade's scale-out columns (`scale_out_quantity`,
+  `reduce_quantity`, `reduce_cause`, `reduce_state`): one way as well.
 
 ### Emergency: the owner switches back by hand
 
@@ -534,7 +536,8 @@ loads the prior-session history of the screener recorder's symbols (below), one 
 20 symbols per loop pass. Each batch that settled symbols writes a `history-preload` row
 (`symbols`, `loaded`, `refused`, `requests`, `queued`); a failed history read writes one with
 `error` and the preload pauses `history_preload_retry_seconds` (a budget refusal pauses
-silently).
+silently). History refusals of the strategy's symbols are `history-refused` rows, once a
+symbol a day.
 
 ### Screener lists outside the regular session
 
@@ -543,13 +546,29 @@ From the pre-market open to the regular open, and from the regular close to the 
 screener_record_seconds`, on the first loop pass of a minute, and appends them as they came to
 `<capture>/<date>/screener-recorded.jsonl` (discovery's own reads in the regular session stay in
 `screener.jsonl`). There the gainers and losers rank by the pre-market's or the post-market's
-change (`[market_data] premarket_gainers_losers_rank_type`, `postmarket_gainers_losers_rank_type`),
-and each record says which in `session`. A list not read, because the request budget was spent or the read failed, is
-written to `events.jsonl` in the same folder as one `screener-skipped` row per list (`kind`,
-`cause` (`budget` or the error's type) and `source` (`recorder` or `discovery`). The same file
-has a `bot-start` and a `bot-stop` row for each run (`run_id`, `code_version`, the stop's
-`cause`), so a gap in the lists can be told apart from a bot that was not running. History refusals of the strategy's symbols are `history-refused` rows, once a
-symbol a day.
+change (`[market_data] premarket_gainers_losers_rank_type`,
+`postmarket_gainers_losers_rank_type`), and each record says which in `session`. A list not
+read, because the request budget was spent or the read failed, is written to `events.jsonl` in
+the same folder as one `screener-skipped` row per list: `kind`, `cause` (`budget` or the error's
+type) and `source` (`recorder` or `discovery`). The same file has a `bot-start` and a `bot-stop`
+row for each run (`run_id`, `code_version`, the stop's `cause`), so a gap in the lists can be
+told apart from a bot that was not running.
+
+### Instrument profiles of the listed stocks
+
+With each round of lists (a discovery pass, or a recorder round), the bot reads the instrument
+profiles of the listed instruments and appends them to `profiles.jsonl` in the same folder:
+`shortable`, `easy_to_borrow`, `marginable` and the short margin requirements, as Webull sent
+them (Webull states no borrow quantity). Each instrument is read once a day when first listed,
+and again every `[market_data] profile_refresh_seconds` while it is a loser or a gainer up at
+least `profile_refresh_gainer_move_percent`. At most `profile_max_requests_per_round` requests
+are sent a round, leaving `profile_reserve_requests` of the route free for discovery. A refused
+or failed request ends its round with a `profiles-skipped` row in `events.jsonl` (that request's
+`symbols`, its `cause`, and how many more were `waiting`); the round cap alone writes one with
+cause `round-cap`. What was not read is asked again in the next round. The reads run on a thread
+of their own, after a discovery pass is collected: neither the pass, its candidates nor the loop
+waits for them. A capture that cannot be written is a `capture-failed` journal row (`what`:
+`screener-recorder` or `profile-recorder`); the bot goes on.
 
 When a decision sends an entry (or asks an exit) in the middle of a minute, the symbols left in
 that minute are put aside (`evaluation-stopped`, stage `protect-first`, with `remaining` and
@@ -705,7 +724,8 @@ that finds the bot down while its database shows an open trade starts the bot jo
 schedule starts: preflight again (a failure alerts `bot-did-not-start`), the supervisor, the
 single-instance lock, then the normal startup: recovery, reconciliation, the stop verified.
 Config refuses a restart time at or before the last entry time, so the restarted bot can never
-open a trade; at the flatten time its own `flatten_due` closes the position through the
+open a trade (the earlier restart for a resting entry, below, starts a run fenced by
+`watchdog-started` instead); at the flatten time its own `flatten_due` closes the position through the
 normal exit path. The watchdog itself never places, cancels or replaces anything.
 
 - Once a day: the New York date is written to `data/watchdog-restart.json` (`[runtime]
@@ -722,6 +742,13 @@ normal exit path. The watchdog itself never places, cancels or replaces anything
   flatten time finds a position or open order, or the bot still down with an open trade. It
   replaces `watchdog-not-flat` on that day. Open the Webull app now and close by hand.
 - On a quiet day nothing changes: a running bot, or a flat database, never triggers it.
+- Earlier, at any bot check in the regular session: a bot that is down while the database shows
+  an open trade whose resting entry (`trades.entry_rest_until`) may still work at Webull is
+  started at once, once a day, recorded in `data/watchdog-entry-restart.json` (`[runtime]
+  watchdog_entry_restart_file`), so the flatten restart stays available. The started bot cancels
+  every working entry and protects any fill, but it sets the `watchdog-started` fence: no new
+  entry that day until you look and clear it (`tickr clear-fence watchdog-started`). It is set
+  once per record, so a later start the same day after you cleared it is not fenced again.
 - To keep the bot down on purpose with a position open (a manual trade), unload the bot job, or
   keep a stop marker left from an earlier stop made while flat. A new `stop-bot` is refused while
   any trade is open, so it cannot create the marker then. See docs/manual-trade.md.

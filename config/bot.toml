@@ -40,7 +40,12 @@ max_daily_loss_usd = 300
 # (owner 2026-11-14), but below this room entries stop and status says "daily ceiling" (a smaller trade is not worth
 # its costs; owner confirmed 2026-11-14); read by runtime.entries (strategy loss budget and status).
 min_daily_room_usd = 10
-# Maximum simultaneous open positions (v1 supports 1); read by safety.
+# Position slots: most open trades at once, count; a trade (working entry, position or exit in progress) takes one slot,
+# at most one trade per symbol, every trade has its own broker stop and all share the daily loss ceiling (their planned
+# losses are reserved against it). 1 until the owner enables several positions (backlog X1); at most
+# [market_data] stream_reserved_symbols (each position keeps a stream slot), and the session flatten (one position at a
+# time, two [orders] detail_poll_seconds each) must fit before [session] close_order_cutoff_seconds (checked by the
+# start-time checks, runtime.launchd.check_timings); read by safety, the engine and the status.
 max_open_positions = 1
 # Maximum quote age for any decision, seconds, end to end from provider time (owner 2026-10-15); read by safety and strategy input.
 max_quote_age_seconds = 5
@@ -180,6 +185,10 @@ chart_client_interval_seconds = 30
 # probe-extended (F7): least minutes left in the pre-market or post-market when it starts, so all four steps and the close
 # fit before the session ends (about 8 minutes at worst); read by the probe-extended command.
 extended_end_margin_minutes = 15
+# probe-extended (F7): oldest snapshot quote, in seconds, it prices its orders from. Not [risk] max_quote_age_seconds:
+# after hours even active stocks' quotes were 9-700 s old on 2026-11-16 (a quote that has not changed is still the
+# market); its orders are 1 share and limit-priced; read by the probe-extended command.
+extended_max_quote_age_seconds = 300
 # probe-extended: acceptance-test BUY stops sit this many percent above the ask, so none can trigger; read by the probe-extended command.
 extended_far_stop_percent = 20
 # probe-extended: a STOP_LOSS_LIMIT's limit lies this many percent beyond its stop (above for a BUY, below for a SELL); read by the probe-extended command.
@@ -192,8 +201,37 @@ extended_trigger_seconds = 180
 extended_close_percent = 2
 # probe-extended: seconds the positions read may take to agree with the fills Detail proved, read once per
 # [orders] detail_poll_seconds, before a SELL, the close or the final verdict; still different = the probe stops and
-# exits 4; read by the probe-extended command.
+# exits 4; read by the probe-extended and probe-trailing commands.
 extended_position_agree_seconds = 15
+# probe-attached-stop (F8): the shape tests' MASTER LIMIT BUY sits this many percent below the bid (and a bracket's
+# STOP_PROFIT LIMIT SELL this many percent above the ask), so neither can fill; read by the probe-attached-stop command.
+attached_far_percent = 20
+# probe-attached-stop: seconds each combo leg is read by Detail before the MASTER is cancelled, and again after it for
+# its attached legs; read by the probe-attached-stop command.
+attached_observe_seconds = 9
+# probe-attached-stop: seconds the stop leg is read after the MASTER fills, until it is working for the filled
+# quantity and listed in the open orders; read by the probe-attached-stop command.
+attached_stop_wait_seconds = 30
+# probe-trailing: the wide trailing stop's distance, percent (the rollout guide's 20 % trail for several positions); sent as
+# trailing_stop_step = this / 100, the SDK sample's ratio form, and the stop price Detail shows says which unit Webull
+# reads; read by the probe-trailing command.
+trailing_wide_percent = 20
+# probe-trailing: the tight trailing stop's distance, percent, so it triggers within trailing_trigger_seconds on an active
+# stock; sent only once the wide stop proved the unit; read by the probe-trailing command.
+trailing_tight_percent = 0.5
+# probe-trailing: seconds the wide trailing stop is watched (Detail and a quote each [orders] detail_poll_seconds) for
+# its stop price and whether it rises with the price, before it is cancelled; read by the probe-trailing command.
+trailing_observe_seconds = 120
+# probe-trailing: seconds the tight trailing stop is watched for a trigger before it is cancelled; read by the
+# probe-trailing command.
+trailing_trigger_seconds = 300
+# probe-trailing: the closing SELL LIMIT lies this many percent below the bid, so it fills at once; read by the
+# probe-trailing command.
+trailing_close_percent = 1
+# probe-trailing: T2 picks the unit (ratio or percent) whose distance is within this factor of the stop distance Detail
+# shows; the two candidates differ a hundredfold and the stop follows the high, not the bid read with it, so cents do
+# not decide; a ratio; read by the probe-trailing command.
+trailing_unit_factor = 3
 
 [api]
 # Local API bind address; loopback only; read by the api server.
@@ -366,6 +404,18 @@ history_preload_minutes_before_open = 30
 # captured to screener-recorded.jsonl for research; the pre-open preload takes its symbols from these rounds (3 screener
 # requests per round, well inside the route's 30 per minute); read by runtime.screeners.
 screener_record_seconds = 60
+# Seconds before a loser's or big gainer's instrument profile (shortable, easy_to_borrow, margins) is read and captured
+# again; every screener instrument is captured once a day when first listed; read by runtime.profiles.
+profile_refresh_seconds = 300
+# Move from the previous close, in percent of it, from which a gainer's profile is refreshed like a loser's; read by
+# runtime.profiles.
+profile_refresh_gainer_move_percent = 20
+# Most instrument-profile requests the profile recorder sends per screener round (each up to
+# profile_symbols_per_request symbols); the rest wait for the next round; read by runtime.profiles.
+profile_max_requests_per_round = 3
+# Instrument-profile requests the profile recorder leaves free in the route's minute window, for discovery's
+# security-type lookups; read by runtime.profiles.
+profile_reserve_requests = 10
 # Seconds the pre-open preload pauses after a budget refusal or a failed read before its next batch; read by
 # runtime.preload.
 history_preload_retry_seconds = 60
@@ -437,6 +487,10 @@ forget_symbol_seconds = 600
 # others wait for a later pass (recorded as dropped), so the first passes of the day never send everything at once;
 # count; read by observers.runner.
 history_sends_per_pass = 30
+# Screener-signal observer folder under strategies/ (observers.ignition: paper trades only, signal from the screener rows,
+# exit on the L1 stream's observer tier and the discovery snapshots; records in <decisions_dir>/<environment>/<NY
+# date>/ignition.jsonl); "" = off; read by cli (run) and runtime.market.
+ignition = "early-thin-ignition-v1"
 
 [advisor]
 # NAME of the environment variable holding the Anthropic API key (the SDK reads it itself; only ANTHROPIC_API_KEY works);
@@ -518,7 +572,8 @@ watchdog_status_stale_seconds = 60
 watchdog_journal_file = "watchdog.jsonl"
 # From this many seconds before the flatten time (15:50 ET on a normal day) the watchdog starts the bot job once a day
 # when the bot is not running and its database shows an open trade, so the bot's own flatten closes it; must be positive
-# and below the last-entry-to-flatten time so the restarted bot can never open a trade; read by runtime.watchdog.
+# and below the last-entry-to-flatten time so the restarted bot can never open a trade (the earlier restart for a resting entry starts a run fenced
+# by watchdog-started, so it cannot either); read by runtime.watchdog.
 watchdog_restart_before_flatten_seconds = 300
 # Command the watchdog runs to start the bot job (the same job the schedule starts: preflight, then the supervised bot);
 # "{uid}" is replaced by the user id; kickstart without -k never touches a running job; read by runtime.watchdog.
@@ -528,6 +583,11 @@ watchdog_restart_timeout_seconds = 10
 # Record of the watchdog's one restart a day (New York date), relative to data_dir; written before the command runs and
 # never removed, so a day never gets a second attempt; read by runtime.watchdog.
 watchdog_restart_file = "watchdog-restart.json"
+# Record of the watchdog's one early restart a day for a resting limit entry (New York date), relative to data_dir: a bot
+# that is down while an entry of a trade with a rest time still works at the broker is started at once, not at the restart
+# time above, so its startup cancels that entry and protects any fill; written before the command runs and never removed;
+# separate from watchdog_restart_file, so the flatten restart stays available; read by runtime.watchdog.
+watchdog_entry_restart_file = "watchdog-entry-restart.json"
 # Seconds one loop pass may spend on market upkeep and the strategy before an evaluation-slow journal row (the next
 # Detail read waits for it; keep it near [orders] detail_poll_seconds). Discovery runs on its own thread and is not part
 # of it: its duration is the `seconds` of each discovery journal row; read by runtime.service.

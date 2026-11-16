@@ -6,15 +6,16 @@ import TickrKit
 /// `Text` and the components, or read them with `String(localized:)`. Generated keys are
 /// `<namespace>.<name>`.
 enum L10n {
-  /// Where the String Catalog is: the package's resource bundle in a `swift build`, the app
-  /// bundle in the Xcode build.
-  static var bundle: LocalizedStringResource.BundleDescription {
+  /// Where the String Catalog is: the package's resource bundle in a `swift build` (in the
+  /// language given at launch, if any: `StringsBundle`), the app bundle in the Xcode build. Read
+  /// once, at the first text.
+  static let bundle: LocalizedStringResource.BundleDescription = {
     #if SWIFT_PACKAGE
-    return .atURL(Bundle.module.bundleURL)
+    return StringsBundle.description(of: .module)
     #else
     return .main
     #endif
-  }
+  }()
 
   enum About {
     static var tagline: LocalizedStringResource {
@@ -1825,13 +1826,6 @@ enum L10n {
     static var positionStop: LocalizedStringResource {
       LocalizedStringResource("chart.positionStop", defaultValue: "stop", bundle: L10n.bundle)
     }
-    static func positionStopVerified(_ price: String) -> LocalizedStringResource {
-      LocalizedStringResource("chart.positionStopVerified", defaultValue: "\(price) · verified", bundle: L10n.bundle)
-    }
-    static func positionStopUnverified(_ price: String) -> LocalizedStringResource {
-      LocalizedStringResource("chart.positionStopUnverified", defaultValue: "\(price) · not verified",
-        bundle: L10n.bundle)
-    }
     static var positionNoStop: LocalizedStringResource {
       LocalizedStringResource("chart.positionNoStop", defaultValue: "none", bundle: L10n.bundle)
     }
@@ -3177,9 +3171,9 @@ enum L10n {
     static var replayVersus: LocalizedStringResource {
       LocalizedStringResource("lab.replayVersus", defaultValue: "vs", bundle: L10n.bundle)
     }
-    /// Replay switch: one picked day.
-    static func replayOneDayOn(_ day: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.replayOneDayOn", defaultValue: "One day · \(day)", bundle: L10n.bundle)
+    /// Replay choice: the one day to replay (the day chip's menu).
+    static var replayDay: LocalizedStringResource {
+      LocalizedStringResource("lab.replayDay", defaultValue: "Day", bundle: L10n.bundle)
     }
     /// Card: one symbol decision, check by check.
     static var explain: LocalizedStringResource {
@@ -3395,10 +3389,6 @@ enum L10n {
     /// Bar and VoiceOver name: how close the deciding check is to passing.
     static var closeness: LocalizedStringResource {
       LocalizedStringResource("watching.closeness", defaultValue: "Closeness to entry", bundle: L10n.bundle)
-    }
-    /// Row without a deciding check.
-    static var noCheck: LocalizedStringResource {
-      LocalizedStringResource("watching.noCheck", defaultValue: "No deciding check recorded", bundle: L10n.bundle)
     }
     /// The card's caption: what each row shows besides the symbol.
     static var columns: LocalizedStringResource {

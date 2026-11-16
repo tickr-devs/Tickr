@@ -47,6 +47,7 @@ tickr trade SYMBOL --limit 12.34            # quantity and stop default from [pr
 tickr trade SYMBOL --limit 12.34 --stop 12.10
 tickr probe-replace-stop --to 12.20          # probe F5, see below
 tickr probe-extended SYMBOL                  # probe F7, pre/post-market only, see below
+tickr probe-attached-stop SYMBOL             # probe F8, regular session, see below
 tickr resume                                 # recover, keep protecting; ends when no trade is open
 tickr exit                                   # recover, then close every open trade
 tickr clear-fence NAME                       # after looking at an operator fence
@@ -130,13 +131,63 @@ by the probe's result (a few cents).
    `launchctl kickstart gui/$(id -u)/local.tickr.bot`.
 2. Pick a liquid common stock priced under `[probe] max_price_usd` that trades in this session
    (a top pre-market gainer or a large name), and check its quote: `tickr check-quote SYM`.
-   A STALE answer means snapshot quotes are not live in this session; that is a finding too.
+   `check-quote` applies the entry rule (`[risk] max_quote_age_seconds`); after hours even
+   active stocks' quotes are minutes old (2026-11-16: 9-700 s), so expect STALE there. The probe
+   uses its own limit, `[probe] extended_max_quote_age_seconds`: pick a stock whose age is
+   below it.
 3. `mkdir -p data/probe-extended && tickr probe-extended SYM 2>&1 | tee -i data/probe-extended/run.txt`.
    It takes about 5 minutes. It buys `[probe] quantity` share(s) at the ask and sells them again.
 4. Exit 0: answered. Exit 4: something is left; the OPERATOR line names it. Cancel the named
    probe orders and sell what is held in the Webull app now (LIMIT, extended hours on). Exit 3:
    refused, nothing sent; the line says why.
 5. Paste `run.txt` and the `summary.json` it names into the project chat.
+
+## Attached-stop probe (F8)
+
+`tickr probe-attached-stop SYMBOL` answers whether an entry can carry its own stop at the
+broker (docs/webull-facts.md F8): a LIMIT BUY sent as one combo with a STOP_LOSS leg, so a
+fill while the bot is down is protected without the bot. Webull has no expiring limit (time in
+force is DAY or GTC only), so there is no GTD fallback to test. Details:
+`src/tickr/engine/attached_probe.py`.
+
+When: in the regular session inside the `[probe]` window, bot stopped, account flat. It is a
+short sitting of its own (the F7 probe runs in the post-market): stop and disable the bot, run
+the probe, then enable and kickstart the bot, so the day loses only those few minutes.
+
+1. Stop the bot and keep its job from starting, as in step 1 of the F7 probe above; re-enable
+   and kickstart it after step 4. The account must be flat.
+2. Pick a liquid common stock under `[probe] max_price_usd`; check `tickr check-quote SYM`.
+3. `mkdir -p data/probe-attached && tickr probe-attached-stop SYM 2>&1 | tee -i data/probe-attached/run.txt`.
+   About 3 minutes. Two shapes far from the market first (nothing can fill: stop-only, then the
+   documented bracket), then one combo at the ask that buys `[probe] quantity` share(s), reads
+   its stop leg until it works, cancels it and sells the share.
+4. Exit 0: answered. Exit 4: something is left; the OPERATOR line names it (cancel the named
+   probe orders, sell what is held in the Webull app). Exit 3: refused, nothing sent.
+5. Paste `run.txt` and the `summary.json` it names into the project chat.
+
+## Trailing-stop probe (T)
+
+`tickr probe-trailing SYMBOL` answers whether Webull's TRAILING_STOP_LOSS can be the broker stop
+for several positions (backlog X1, rollout guide: a 20 % trail), and how long the positions read
+lags a fill (P1). Questions (docs/webull-facts.md, "T"): T1 is a SELL TRAILING_STOP_LOSS
+(PERCENTAGE, DAY, CORE) accepted; T2 which unit `trailing_stop_step` is read in (0.2 = 20 % or
+0.2 %), from the stop price Detail shows; T3 does that stop price rise with the price; T4 is it
+listed in open orders; T5 does a cancel end it; T6 does a tight one trigger. Details:
+`src/tickr/engine/trailing_probe.py`.
+
+When: in the regular session, between `[probe] window_start` and `window_end`, account flat and
+the bot stopped (it holds the lock for its whole run). It takes about 10 minutes and buys
+`[probe] quantity` share(s) at the ask; they are under the trailing stop being tested, and for
+a few seconds between orders without one.
+
+1. Stop the bot and keep its job from starting, as in step 1 of the extended-hours probe.
+2. Pick a liquid common stock under `[probe] max_price_usd` that moves (a large name);
+   `tickr check-quote SYM` must say fresh.
+3. `mkdir -p data/probe-trailing && tickr probe-trailing SYM 2>&1 | tee -i data/probe-trailing/run.txt`.
+4. Exit 0: answered. Exit 4: something is left; cancel the named probe orders and sell what is
+   held in the Webull app now. Exit 3: refused, nothing sent.
+5. Paste `run.txt` and the `summary.json` it names into the project chat; restart the bot as in
+   the extended-hours probe.
 
 ## Probe day (Monday 2026-11-16)
 

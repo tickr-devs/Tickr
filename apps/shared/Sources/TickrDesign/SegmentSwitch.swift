@@ -1,127 +1,160 @@
 import SwiftUI
 
-/// The apps' one segmented switch, as the iOS Activity screen draws it (Trades / Not taken /
-/// Journal): equal segments on a card with a hairline, the chosen one raised on a sunken tile with
-/// a hairline of its own. Used wherever one of a few choices switches what a screen shows (the
-/// Activity panes, the Chart's range, the Lab's replay span, the Watching closely sort and filter),
-/// so every switch in both apps looks alike.
+/// The apps' one segmented switch, as the boards' shared spec draws it (`.u-seg`): equal segments
+/// on a `surface` track with a `separator` hairline, `SegmentSwitchLook.radius` corners and
+/// padding; the chosen segment on `surfaceSunken` in `textPrimary` with a `separatorStrong` line
+/// under it, the others in `textTertiary`. A segment may lead with a `DesignGlyph` (the chart
+/// type: candles or a line). Used wherever one of a few choices switches what a screen shows (the
+/// Activity panes, the Chart's range and type, the Lab's replay span, the Watching closely sort,
+/// the Mac's theme), so every switch in both apps looks alike.
 ///
-/// A title that does not fit its segment wraps onto another line, never cut. Each segment answers
-/// taps over the switch's full height (at least `Size.touchTarget` with its padding). The chosen
-/// segment carries VoiceOver's selected trait; name the group with `.accessibilityLabel` on the
-/// switch.
+/// `fit` sizes each segment to its title (`.u-seg.fit`, the Mac Chart's controls); otherwise the
+/// segments share the width. A title that does not fit its segment wraps onto another line, never
+/// cut. On iOS each segment answers taps over `Size.touchTarget`. The chosen segment carries
+/// VoiceOver's selected trait; name the group with `.accessibilityLabel` on the switch.
+///
+/// `init(options:shown:)` draws a choice made elsewhere and only shown here (the iPhone Settings'
+/// Sandbox | Production, which only the Mac's config and the owner's authorization change): the
+/// same look, nothing to tap. A `locked` option carries a lock before its title and a dashed edge
+/// in `textQuaternary`, as the board draws "Production · locked".
 public struct SegmentSwitch<Value: Hashable>: View {
-  let options: [(value: Value, title: Text)]
+  /// One segment: its value, its title and an optional glyph before the title.
+  public struct Option {
+    let value: Value
+    let title: Text
+    let glyph: DesignGlyph?
+    /// Cannot be picked here: a lock before the title and a dashed edge.
+    let locked: Bool
+
+    public init(_ value: Value, title: Text, glyph: DesignGlyph? = nil, locked: Bool = false) {
+      self.value = value
+      self.title = title
+      self.glyph = glyph
+      self.locked = locked
+    }
+  }
+
+  let options: [Option]
   @Binding var selection: Value
+  let fit: Bool
   /// Accessibility identifier of each segment (UI tests find them by it).
   let identifier: String?
+  /// Shows a choice made elsewhere: no segment can be tapped.
+  var readOnly = false
 
-  public init(options: [(value: Value, title: Text)], selection: Binding<Value>, identifier: String? = nil) {
+  public init(options: [Option], selection: Binding<Value>, fit: Bool = false, identifier: String? = nil) {
     self.options = options
     _selection = selection
+    self.fit = fit
     self.identifier = identifier
   }
 
+  /// A choice made elsewhere, only shown: `shown` raised (a value of no option raises none).
+  public init(options: [Option], shown: Value) {
+    self.init(options: options, selection: .constant(shown))
+    readOnly = true
+  }
+
+  public init(
+    options: [(value: Value, title: Text)], selection: Binding<Value>, fit: Bool = false, identifier: String? = nil
+  ) {
+    self.init(options: options.map { Option($0.value, title: $0.title) }, selection: selection, fit: fit,
+      identifier: identifier)
+  }
+
   public var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: SegmentSwitchLook.radius, style: .continuous)
     HStack(spacing: Tokens.Space.xs) {
       ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-        let chosen = option.value == selection
-        Button {
-          selection = option.value
-        } label: {
-          option.title
-            .font(SegmentSwitchLook.font)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .foregroundStyle(chosen ? Palette.textPrimary : Palette.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: Tokens.Size.iconButton)
-            .padding(.horizontal, Tokens.Space.xs)
-            .background {
-              if chosen {
-                let tile = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
-                tile.fill(Palette.surfaceSunken)
-                  .overlay { tile.strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin) }
-              }
-            }
-            // The tap area reaches over the switch's padding, so each segment is a full touch target.
-            .padding(.vertical, Tokens.Space.xs)
-            .contentShape(Rectangle())
-            .padding(.vertical, -Tokens.Space.xs)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(chosen ? [.isSelected] : [])
-        .accessibilityIdentifier(identifier ?? "")
+        segment(option)
       }
     }
-    .padding(Tokens.Space.xs)
+    .padding(SegmentSwitchLook.padding)
     .background(Palette.surface, in: shape)
     .overlay(shape.strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
+    .fixedSize(horizontal: fit, vertical: false)
     .animation(Tokens.Motion.quick, value: selection)
   }
-}
 
-/// `SegmentSwitch`'s look (a generic type cannot keep static constants of its own).
-enum SegmentSwitchLook {
-  /// The segments' titles: footnote semibold, as on the Activity board.
-  static let font = Font.footnote.weight(.semibold)
-  /// Symbol beside a segment the person cannot pick here (`ShownSegments`).
-  static let lockSymbol = "lock.fill"
-}
-
-/// `SegmentSwitch`'s look for a choice that is made elsewhere and only shown here: the same card,
-/// segments and raised tile on the shown value, but nothing to tap. A segment in `locked` carries a
-/// lock and a dashed edge, as the iOS Settings board draws "Production · locked": the phone shows
-/// the bot's environment, which only the Mac's config and the owner's authorization change.
-/// `shown` nil raises no segment (a value outside the options). VoiceOver reads the group as one
-/// element: name it with `.accessibilityLabel`, and its value is the shown segment.
-public struct ShownSegments<Value: Hashable>: View {
-  let options: [(value: Value, title: Text)]
-  let shown: Value?
-  let locked: Set<Value>
-
-  public init(options: [(value: Value, title: Text)], shown: Value?, locked: Set<Value> = []) {
-    self.options = options
-    self.shown = shown
-    self.locked = locked
-  }
-
-  public var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous)
-    HStack(spacing: Tokens.Space.xs) {
-      ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-        segment(option.title, chosen: option.value == shown, locked: locked.contains(option.value))
+  @ViewBuilder
+  private func segment(_ option: Option) -> some View {
+    let chosen = option.value == selection
+    if readOnly {
+      face(option, chosen: chosen)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(chosen ? [.isSelected] : [])
+    } else {
+      Button {
+        selection = option.value
+      } label: {
+        face(option, chosen: chosen)
+          // The tap area reaches over and under the drawn segment, up to a full touch target.
+          .padding(.vertical, SegmentSwitchLook.reach)
+          .contentShape(Rectangle())
+          .padding(.vertical, -SegmentSwitchLook.reach)
       }
+      .buttonStyle(.plain)
+      .accessibilityAddTraits(chosen ? [.isSelected] : [])
+      .accessibilityIdentifier(identifier ?? "")
     }
-    .padding(Tokens.Space.xs)
-    .background(Palette.surface, in: shape)
-    .overlay(shape.strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
-    .accessibilityElement(children: .ignore)
-    .accessibilityValue(options.first { $0.value == shown }?.title ?? Text(verbatim: ""))
   }
 
-  private func segment(_ title: Text, chosen: Bool, locked: Bool) -> some View {
-    let tile = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
-    return HStack(spacing: Tokens.Space.xs) {
-      if locked && !chosen {
+  private func face(_ option: Option, chosen: Bool) -> some View {
+    let tile = RoundedRectangle(cornerRadius: SegmentSwitchLook.segmentRadius, style: .continuous)
+    let locked = option.locked && !chosen
+    return HStack(spacing: SegmentSwitchLook.glyphGap) {
+      if locked {
         Image(systemName: SegmentSwitchLook.lockSymbol)
       }
-      title
+      if let glyph = option.glyph {
+        DesignGlyphView(glyph, side: SegmentSwitchLook.glyph)
+      }
+      option.title
         .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize(horizontal: fit, vertical: true)
     }
-    .font(SegmentSwitchLook.font)
-    .foregroundStyle(chosen ? Palette.textPrimary : locked ? Palette.textQuaternary : Palette.textSecondary)
-    .frame(maxWidth: .infinity, minHeight: Tokens.Size.iconButton)
-    .padding(.horizontal, Tokens.Space.xs)
+    .font(Tokens.Typography.segment)
+    .foregroundStyle(chosen ? Palette.textPrimary : locked ? Palette.textQuaternary : Palette.textTertiary)
+    .padding(.horizontal, Tokens.Space.m)
+    .padding(.vertical, Tokens.Space.xs)
+    .frame(maxWidth: fit ? nil : .infinity, minHeight: SegmentSwitchLook.minHeight)
     .background {
       if chosen {
         tile.fill(Palette.surfaceSunken)
-          .overlay { tile.strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin) }
+          .shadow(color: Palette.separatorStrong, radius: 0, x: 0, y: Tokens.Stroke.thin)
       } else if locked {
         tile.strokeBorder(Palette.separatorStrong,
           style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine))
       }
     }
   }
+}
+
+/// `SegmentSwitch`'s look (a generic type cannot keep static constants of its own): the boards'
+/// `.u-seg`.
+enum SegmentSwitchLook {
+  /// Corner radius of the track, in points.
+  static let radius: CGFloat = 12
+  /// Corner radius of the chosen segment, in points.
+  static let segmentRadius: CGFloat = 9
+  /// The track's padding around the segments, in points.
+  static let padding: CGFloat = 3
+  /// Side of a segment's glyph, in points.
+  static let glyph: CGFloat = 12
+  /// Gap between a segment's glyph and its title, in points.
+  static let glyphGap: CGFloat = 6
+  /// Symbol before the title of an option that cannot be picked here (`Option.locked`).
+  static let lockSymbol = "lock.fill"
+  #if os(iOS)
+  /// Least height of a segment, in points (`.u-seg`; 28 on the Mac, `.u-seg.mac`).
+  static let minHeight: CGFloat = 32
+  /// How far a segment's tap area reaches above and below it, so it answers over
+  /// `Size.touchTarget`.
+  static let reach = (Tokens.Size.touchTarget - minHeight) / 2
+  #else
+  /// Least height of a segment, in points (`.u-seg.mac`).
+  static let minHeight: CGFloat = 28
+  /// The Mac clicks the drawn segment only.
+  static let reach: CGFloat = 0
+  #endif
 }

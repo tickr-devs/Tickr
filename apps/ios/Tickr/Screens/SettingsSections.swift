@@ -23,10 +23,10 @@ struct EnvironmentSection: View {
             accessibilityLabel: ApiText.environmentLabel(status.environment))
         }
       }
-      ShownSegments(options: [
-        (value: BotEnvironment.sandbox, title: Text(BotEnvironment.sandbox.title)),
-        (value: BotEnvironment.production, title: Text(BotEnvironment.production.title)),
-      ], shown: current, locked: [.production])
+      SegmentSwitch<BotEnvironment?>(options: [
+        .init(BotEnvironment.sandbox, title: Text(BotEnvironment.sandbox.title)),
+        .init(BotEnvironment.production, title: Text(BotEnvironment.production.title), locked: true),
+      ], shown: current)
       .accessibilityLabel(Text(L10n.Settings.environment))
       .accessibilityHint(Text(L10n.Settings.environmentLocked))
       .padding(.vertical, Tokens.Space.xs)
