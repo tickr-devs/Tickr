@@ -854,3 +854,27 @@ def test_a_recorder_capture_not_written_is_journaled_and_the_round_not_used(tmp_
     (row,) = rig.store.journal(CAPTURE_FAILED)
     assert row.body == {"what": "screener-recorder", "error": "CaptureError",
                         "detail": "screener-recorded.jsonl: disk full"}
+
+
+def test_a_discovery_pass_and_the_recorder_capture_the_listed_profiles(tmp_path):
+    from tickr.calendar import ny_date_of
+    from tickr.data.base import InstrumentProfile
+    from tickr.data.capture import PROFILES_FILE, CaptureWriter
+
+    source = FakeMarketData()
+    writer = CaptureWriter(tmp_path / "capture", source.provider)
+    rig = Rig(tmp_path, source=source, capture=writer)
+    for symbol in ("ABC", "XYZ"):
+        source.set_profile(InstrumentProfile(f"id-{symbol}", symbol, "COMMON_STOCK",
+                                             {"shortable": "true"}))
+    source.set_screener(ScreenerKind.GAINERS, [
+        ScreenerRow(ScreenerKind.GAINERS, 1, "id-ABC", "ABC", "NSQ", "USD", "COMMON_STOCK", {})])
+    rig.market.tick()  # a discovery pass in the regular session
+    source.set_screener(ScreenerKind.GAINERS, [
+        ScreenerRow(ScreenerKind.GAINERS, 1, "id-XYZ", "XYZ", "NSQ", "USD", None, {})])
+    day = CALENDAR.day(MONDAY_11.date())
+    assert rig.market.record_screeners(day, day.regular_close) is not None
+    path = writer.path(ny_date_of(MONDAY_11), PROFILES_FILE)
+    captured = [json.loads(x) for x in path.read_text("utf-8").splitlines()]
+    assert [(c["symbol"], c["fields"]) for c in captured] == [
+        ("ABC", {"shortable": "true"}), ("XYZ", {"shortable": "true"})]
