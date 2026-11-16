@@ -179,3 +179,25 @@ def test_config_refuses_a_slot_count_outside_1_to_the_reserved_stream_slots(tmp_
 
 def test_the_shipped_config_keeps_one_slot():
     assert CFG.risk.max_open_positions == 1
+
+
+def test_with_sixteen_positions_a_new_fill_is_protected_well_within_the_deadline(tmp_path):
+    """One Detail read per step serves every order, but a new fill's entry and its new stop
+    keep their head start over the verified stops, so the 16th position is verified in a
+    few polls, far inside `[orders] max_unprotected_seconds`."""
+    desk = Desk(tmp_path, wide(16, max_daily_loss_usd=D(5000)))
+    symbols = [f"S{n:02d}" for n in range(16)]
+    for symbol in symbols[:-1]:
+        desk.enter(symbol)
+        desk.fill(symbol)
+    desk.step(20)  # every verified stop has been read again recently
+    desk.enter(symbols[-1])
+    entry = desk.engine.orders(desk.trade_of(symbols[-1]).trade_id)[0]
+    desk.broker.fill(entry.client_order_id, D(10), D("10.05"))
+    poll = float(CFG.orders.detail_poll_seconds)
+    steps = 0
+    while not any(s.verified for s in desk.stops(symbols[-1])):
+        desk.step()
+        steps += 1
+        assert steps * poll < float(CFG.orders.max_unprotected_seconds) / 2
+    assert sum(o.verified for o in desk.engine.orders() if o.leg is Leg.STOP) == 16
