@@ -281,3 +281,16 @@ def test_open_order_row_carries_its_limit_price():
     rows, _ = read_order_rows(load("historical_orders_cancelled_limit.json").body, own,
                               lambda c: True, "h")
     assert rows[0].limit_price == D("100.00")
+
+
+def test_an_unreadable_limit_price_is_unknown_never_a_refusal():
+    body = load("historical_orders_cancelled_limit.json").body
+    body["data"][0]["orders"][0]["limit_price"] = "--"
+    rows, bad = read_order_rows(body, own, lambda c: True, "h")
+    assert bad == [] and rows[0].limit_price is None
+
+
+def test_balance_refuses_non_ascii_digits():
+    b, _, _ = broker(balance_with(day_trades_left="\u00b2"))
+    with pytest.raises(MalformedResponse):
+        b.balance()

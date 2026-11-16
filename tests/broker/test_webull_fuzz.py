@@ -272,9 +272,13 @@ def expected_order(row: Any, choices: Choices) -> OrderDetail:
     fill_price = optional_number(get(row, "filled_price"), choices)
     if fill_price is not None and fill_price <= 0 and filled > 0:
         implausible(choices)  # a fill at no price: tests/broker/test_bug_nonsense_values.py
-    # Read (display only) on LIMIT rows; a present one that is not positive may be refused.
-    limit = (positive_price(get(row, "limit_price"), choices)
-             if order_type == OrderType.LIMIT.value else None)
+    # Read (display only) on LIMIT rows; an unreadable one is None, never a refusal.
+    limit = None
+    if order_type == OrderType.LIMIT.value and not missing(get(row, "limit_price"), choices):
+        try:
+            limit = number(get(row, "limit_price"))
+        except Refuse:
+            limit = None
     order_id = get(row, "order_id")
     return OrderDetail(
         client_order_id=text(get(row, "client_order_id"), choices),

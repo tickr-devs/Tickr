@@ -152,16 +152,17 @@ public struct AccountV1: Codable, Hashable, Sendable {
     orders = try c.decode([AccountOrderV1].self, forKey: .orders)
     matchesRecords = try c.decode(Bool.self, forKey: .matchesRecords)
     mismatch = try c.decodeNullable(String.self, forKey: .mismatch)
-    balanceReadAt = try c.decodeNullable(WireTime.self, forKey: .balanceReadAt)
-    cashUsd = try c.decodeNullable(DecimalString.self, forKey: .cashUsd)
-    positionsValueUsd = try c.decodeNullable(DecimalString.self, forKey: .positionsValueUsd)
-    unrealizedPlUsd = try c.decodeNullable(DecimalString.self, forKey: .unrealizedPlUsd)
-    dayPlUsd = try c.decodeNullable(DecimalString.self, forKey: .dayPlUsd)
-    overnightBuyingPowerUsd = try c.decodeNullable(DecimalString.self, forKey: .overnightBuyingPowerUsd)
-    maintenanceMarginUsd = try c.decodeNullable(DecimalString.self, forKey: .maintenanceMarginUsd)
-    marginCalls = try c.decodeNullable(Int.self, forKey: .marginCalls)
-    dayTradesLeft = try c.decodeNullable(Int.self, forKey: .dayTradesLeft)
-    accountLabel = try c.decodeNullable(String.self, forKey: .accountLabel)
+    // Added after version 1 shipped: an older bot's file has no balance read.
+    balanceReadAt = try c.decodeIfPresent(WireTime.self, forKey: .balanceReadAt)
+    cashUsd = try c.decodeIfPresent(DecimalString.self, forKey: .cashUsd)
+    positionsValueUsd = try c.decodeIfPresent(DecimalString.self, forKey: .positionsValueUsd)
+    unrealizedPlUsd = try c.decodeIfPresent(DecimalString.self, forKey: .unrealizedPlUsd)
+    dayPlUsd = try c.decodeIfPresent(DecimalString.self, forKey: .dayPlUsd)
+    overnightBuyingPowerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .overnightBuyingPowerUsd)
+    maintenanceMarginUsd = try c.decodeIfPresent(DecimalString.self, forKey: .maintenanceMarginUsd)
+    marginCalls = try c.decodeIfPresent(Int.self, forKey: .marginCalls)
+    dayTradesLeft = try c.decodeIfPresent(Int.self, forKey: .dayTradesLeft)
+    accountLabel = try c.decodeIfPresent(String.self, forKey: .accountLabel)
   }
 
   public func encode(to encoder: Encoder) throws {

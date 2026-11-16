@@ -19,6 +19,7 @@ from tickr.api import contract as api
 from tickr.broker.base import AccountBalance, BrokerError
 from tickr.engine.core import Engine, Fence
 from tickr.runtime.dayend import records_agree
+from tickr.runtime.protection import busy
 
 # Journal row when a balance read fails: one per stretch of failures (the next success ends it).
 BALANCE_READ_FAILED = "balance-read-failed"
@@ -31,20 +32,30 @@ class Balances:
     balance: AccountBalance | None = None
     read_at: datetime | None = None
     label: str | None = None
+    _label_read: bool = False  # the accounts list was read once (label may still be None)
     _attempt_at: datetime | None = None
     _failing: bool = False
 
     def refresh(self, engine: Engine, now: datetime) -> None:
         """Read the balance when the last attempt is at least `[orders] balance_read_seconds`
-        old (the account's kind too, until it is known). A failure keeps the last good read
-        (the document carries its time) and is journaled once per stretch."""
+        old, and the account's kind until one accounts read succeeds. Skipped while a trade
+        needs the loop (`protection.busy`: an entry working, an exit in progress, a fill not
+        yet covered by a verified stop), so a slow balance route never delays protection.
+        A failed balance read keeps the last good one (the document carries its time) and is
+        journaled once per stretch; a failed accounts read only leaves the kind unknown."""
         interval = timedelta(seconds=float(engine.config.orders.balance_read_seconds))
         if self._attempt_at is not None and now - self._attempt_at < interval:
             return
+        if busy(engine) is not None:
+            return
         self._attempt_at = now
-        try:
-            if self.label is None:
+        if not self._label_read:
+            try:
                 self.label = engine.broker.account().label
+                self._label_read = True
+            except BrokerError:
+                pass  # display only: tried again at the next balance read
+        try:
             balance = engine.broker.balance()
         except BrokerError as exc:
             if not self._failing:

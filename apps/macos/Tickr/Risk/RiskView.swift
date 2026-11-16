@@ -1018,7 +1018,7 @@ private struct AccountCard: View {
         if let value {
           // Counts up as it appears and on to each new balance the broker reports.
           CountingText(NSDecimalNumber(decimal: value.value).doubleValue) {
-            signed ? Money.signedUSD(Decimal($0)) : Format.usd(Decimal($0))
+            signed ? String(localized: L10n.Format.usd(Money.signed(Decimal($0)))) : Format.usd(Decimal($0))
           }
         } else {
           Text(verbatim: Format.missing)

@@ -3,6 +3,7 @@ status carries the daily loss numbers and every tracked position."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal as D
@@ -11,6 +12,7 @@ from tickr.api import contract as api
 from tickr.broker.base import AccountBalance, BrokerError
 from tickr.broker.fake import FakeBroker
 from tickr.engine.core import BrokerView, Fence, TradeState
+from tickr.runtime import account as account_module
 from tickr.runtime import entries, service
 from tickr.runtime.account import (
     BALANCE_READ_FAILED,
@@ -305,3 +307,47 @@ def test_an_open_limit_order_shows_its_limit_price(tmp_path):
     bot.service.write_account()
     (order,) = read(bot).orders
     assert order.limit_price == D("4.25")
+
+
+def test_an_older_bots_file_reads_as_no_balance(tmp_path):
+    bot = with_account(Bot(tmp_path, broker=FakeBroker(funds=FUNDS)), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    raw = json.loads(bot.paths.account.read_text("utf-8"))
+    for key in ("balance_read_at", "cash_usd", "positions_value_usd", "unrealized_pl_usd",
+                "day_pl_usd", "overnight_buying_power_usd", "maintenance_margin_usd",
+                "margin_calls", "day_trades_left", "account_label"):
+        del raw[key]
+    raw["equity_usd"] = raw["buying_power_usd"] = None
+    bot.paths.account.write_text(json.dumps(raw), "utf-8")
+    doc = read(bot)
+    assert doc.balance_read_at is None and doc.cash_usd is None and doc.account_label is None
+
+
+def test_no_balance_read_while_a_trade_needs_the_loop(tmp_path, monkeypatch):
+    broker = FakeBroker(funds=FUNDS)
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    bot.service.balances.refresh(bot.engine, bot.now)
+    assert broker.balance_reads == 1
+    bot.now += timedelta(seconds=float(CFG.orders.balance_read_seconds))
+    with monkeypatch.context() as patched:
+        patched.setattr(account_module, "busy", lambda engine: "t1: entry working")
+        bot.service.balances.refresh(bot.engine, bot.now)
+    assert broker.balance_reads == 1  # skipped; tried again on the next pass
+    bot.service.balances.refresh(bot.engine, bot.now)
+    assert broker.balance_reads == 2
+
+
+def test_a_failed_accounts_read_never_blocks_the_balance(tmp_path):
+    class NoAccounts(FakeBroker):
+        def account(self):
+            raise BrokerError("accounts route paused")
+
+    broker = NoAccounts(funds=FUNDS)
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    doc = read(bot)
+    assert doc.equity_usd == D("1000.50") and doc.account_label is None
+    assert balance_rows(bot) == []

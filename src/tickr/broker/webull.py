@@ -301,6 +301,14 @@ def _optional_decimal(obj: Mapping[str, Any], key: str, where: str) -> Decimal |
     return None if value is None else to_decimal(value, f"{where}.{key}")
 
 
+def _display_decimal(obj: Mapping[str, Any], key: str, where: str) -> Decimal | None:
+    """A number shown and never decided on: None when absent or unreadable."""
+    try:
+        return _optional_decimal(obj, key, where)
+    except MalformedResponse:
+        return None
+
+
 def _enum_field[E: Enum](obj: Mapping[str, Any], key: str, enum: type[E], where: str) -> E:
     raw = str(_require(obj, key, where))
     try:
@@ -334,17 +342,18 @@ def read_order(item: Any, is_own: IsOwnAccount, where: str) -> OrderDetail:
     an order whose fill we cannot read is one we cannot reason about. Status/quantity
     contradictions map to UNKNOWN (broker/status.py). `filled_price` has not been observed
     on a fill yet (no fill recorded so far), so it stays optional; so do `limit_price`
-    (recorded on a LIMIT row; read on LIMIT rows only), `stop_price` (no working stop recorded
-    yet; named like the recorded `limit_price`) and `order_id`."""
+    (recorded on a LIMIT row; read on LIMIT rows only, display only), `stop_price` (no
+    working stop recorded yet; named like the recorded `limit_price`) and `order_id`."""
     _check_account(item, is_own, where)
     raw_status = str(_require(item, "status", where)).strip()
     quantity = _decimal_field(item, "total_quantity", where)
     filled = _decimal_field(item, "filled_quantity", where)
     order_type = _enum_field(item, "order_type", OrderType, where)
-    # Display only: read on LIMIT rows, the one type it was recorded on, so the unrecorded
-    # shape of a stop row can never make our stop unreadable through it.
-    limit_price = (_optional_decimal(item, "limit_price", where)
-                   if order_type is OrderType.LIMIT else None)
+    # Display only: read on LIMIT rows, the one type it was recorded on, and an unreadable
+    # value is shown as unknown: nothing decides on it, so it can never make one of our
+    # orders unreadable.
+    limit_price = _display_decimal(item, "limit_price", where) \
+        if order_type is OrderType.LIMIT else None
     return OrderDetail(
         client_order_id=str(_require(item, "client_order_id", where)),
         symbol=str(_require(item, "symbol", where)),
@@ -499,7 +508,7 @@ def read_balance(body: Any, is_own: IsOwnAccount) -> AccountBalance:
     left = str(_require(body, "day_trades_left", where)).strip()
     if left == DAY_TRADES_UNLIMITED:
         trades_left = None
-    elif left.isdigit():
+    elif left.isascii() and left.isdigit():
         trades_left = int(left)
     else:
         raise MalformedResponse(f"{where}.day_trades_left: unsupported value {left!r}")
