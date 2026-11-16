@@ -1069,6 +1069,7 @@ private struct EmptyPositions: View {
 
 /// A radar sweep with two blips while the bot scans for setups (ornament, as on the design).
 private struct Radar: View {
+  @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
 
@@ -1085,7 +1086,9 @@ private struct Radar: View {
       // Core Animation turns the sweep (see RadarSweep).
       RadarSweep(
         color: Palette.accent.opacity(Tokens.Opacity.border), width: Self.sweep,
-        blips: [Palette.highlight, Palette.accent], turning: !reduceMotion, active: scenePhase == .active)
+        blips: [Palette.highlight, Palette.accent],
+        turning: RadarGate.turns(reduceMotion: reduceMotion, current: model.isCurrent, botState: model.status?.botState),
+        active: scenePhase == .active)
         .allowsHitTesting(false)
     }
     .accessibilityHidden(true)

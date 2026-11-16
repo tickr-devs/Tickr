@@ -207,7 +207,7 @@ a step; it does not define its own factor.
 | `stagger` | 0.05 s | Delay between cards of a screen |
 | `pulseSeconds` / `pulseScale` | 2.4 s / ×2.2 | One pulse ring per real event (never a loop) |
 | `breatheSeconds` / `breatheScale` | 2.4 s / ×1.08 | One swell of a glow when its value changes (never a loop) |
-| `rotationSeconds` | 3 s per turn | Radar sweep |
+| `rotationSeconds` | 3 s per turn | Radar sweep; it and the blips move only while the bot runs with live, fresh status (`RadarGate`), still otherwise |
 | `blipScale` / `blipLagSeconds` | ×1.9 / 0.8 s | The radar's two blips: each one's ring (every `pulseSeconds`, ornament) and the second one's lag |
 | `openingSparkDelaySeconds` / `openingSpark` | 0.45 s / ease-out 0.25 s | macOS opening: the spark pops in as the line nearly ends |
 | `cellStagger` | 0.025 s | Delay between the tiles of a grid filling in (Trades calendar, on appear and month change) |
