@@ -541,6 +541,11 @@ class Service:
         names = [name for name, _, _ in fences]
         if str(Fence.ENTRY_STOP) in names:
             return api.EntryBlock("entry_stop", "Entries stopped by the operator.")
+        # Foreign positions and orders block only their own symbol (owner 2026-11-16), so they
+        # are not a reason that blocks every entry, unless a foreign order's symbol is unknown.
+        foreign = (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)
+        if self.engine.foreign_symbols() is not None:
+            fences = [f for f in fences if f[0].split(":", 1)[0] not in foreign]
         if fences:
             name, cause, _ = fences[0]
             fence = reasons.fence_reason(name, cause)

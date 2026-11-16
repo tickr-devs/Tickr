@@ -276,8 +276,9 @@ def _detail_priority(row: OrderRow, poll_seconds: float) -> float:
 
 @dataclass(frozen=True)
 class BrokerView:
-    """What one successful reconcile pass read: open orders, then positions. For reports
-    only (day end); never used to size or send anything."""
+    """What one successful reconcile pass read: open orders, then positions. For reports (day
+    end) and for the symbols of foreign orders (`Engine.foreign_symbols`); never used to size
+    or send anything."""
 
     positions: tuple[Position, ...]
     open_orders: tuple[OrderDetail, ...]
@@ -315,6 +316,22 @@ class Engine:
         self._detail_answered_ids: set[str] = set()
 
     # --- fences ----------------------------------------------------------------------------
+
+    def foreign_symbols(self) -> frozenset[str] | None:
+        """Symbols of the positions and open orders the bot does not own, from their fences
+        and the latest complete reconcile. None when a foreign order's symbol is not known
+        (no complete reconcile read since it was seen): the caller must assume any symbol."""
+        names = [name.partition(":") for name in self.fences()]
+        symbols = {key for fence, _, key in names if fence == Fence.FOREIGN_POSITION}
+        order_ids = {key for fence, _, key in names if fence == Fence.FOREIGN_ORDER}
+        if order_ids:
+            if self.broker_view is None:
+                return None
+            by_id = {o.client_order_id: o.symbol for o in self.broker_view.open_orders}
+            if not order_ids <= by_id.keys():
+                return None
+            symbols |= {by_id[cid] for cid in order_ids}
+        return frozenset(symbols)
 
     def fences(self) -> dict[str, str]:
         return {r["name"]: r["cause"] for r in self.store.query("SELECT name, cause FROM fences")}
@@ -455,6 +472,12 @@ class Engine:
         if not gate.open:
             raise EntryRefused(f"trading gate closed: {gate.cause}")
         fences = self.fences()
+        foreign = self.foreign_symbols()
+        if foreign is not None and symbol not in foreign:
+            # Manual trades in other symbols are ignored (owner 2026-11-16); their fences
+            # stay set and alert, but do not block this entry.
+            fences = {n: c for n, c in fences.items()
+                      if n.partition(":")[0] not in (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)}
         if fences:
             raise EntryRefused("entries fenced: " + ", ".join(sorted(fences)))
         if len(self.trades()) >= self.config.risk.max_open_positions:

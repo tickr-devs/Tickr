@@ -235,7 +235,10 @@ class EntryDesk:
         engine = self.engine
         fences = [name.split(":", 1)[0] for name in engine.fences()]
         own_positions, working = own_exposure(engine)
-        foreign_positions = sum(1 for f in fences if f == Fence.FOREIGN_POSITION)
+        # Manual trades are ignored (owner 2026-11-16): a foreign position or order blocks only
+        # an entry in its own symbol, and does not count toward the position limit. A foreign
+        # order whose symbol is not known blocks every entry (refuse, never guess).
+        foreign = engine.foreign_symbols()
         session = session_at(self.calendar, now)
         limit = None if decision.entry_high is None else round_to_tick(decision.entry_high)
         stop = None if decision.stop is None else round_to_tick(decision.stop)
@@ -245,14 +248,14 @@ class EntryDesk:
             reconciliation=Reconciliation(
                 startup_done=Fence.STARTUP_RECONCILE not in fences,
                 last_broker_read_at=None if Fence.BROKER_READ in fences else last_read,
-                foreign_exposure=any(f in FOREIGN for f in fences),
+                foreign_exposure=foreign is None or decision.symbol in foreign,
                 unresolved_exposure=any(f not in NOT_EXPOSURE for f in fences)),
             entry_stop=Fence.ENTRY_STOP in fences,
             session=session,
             now=now,
             own_open_positions=own_positions,
             own_working_orders=working,
-            open_positions=own_positions + foreign_positions,
+            open_positions=own_positions,
             symbol_last_loss_at=last_loss_at(engine, decision.symbol, now),
             decision=decision,
             limit_price=limit,
