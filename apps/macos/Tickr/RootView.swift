@@ -465,16 +465,16 @@ struct DayStepper: View {
   /// "Сб, 28 февр. · сегодня" (157 points; "сент." and "февр." are the longest month
   /// abbreviations), as well as the English "Wed Jan 28 · today" (128).
   static let dayMinWidth: CGFloat = 158
-  /// Accessibility id of the DEMO chip, for the UI tests, and its symbol.
+  /// Accessibility id of the DEMO chip, for the UI tests.
   static let demoChipID = "toolbar-demo"
-  static let demoSymbol = "theatermasks.fill"
 
   var body: some View {
     HStack(spacing: Tokens.Space.s) {
       ConnectionStatus()
         .padding(.trailing, Self.connectionGap)
       if model.dayLocked {
-        StatusPill(L10n.Toolbar.demoChip, systemImage: Self.demoSymbol, tone: .warning)
+        // The same badge as Settings' and the iPhone's day line (the one demo chip of both apps).
+        Badge(L10n.Toolbar.demoChip, tone: .warning)
           .help(Text(L10n.Toolbar.demoHelp))
           .accessibilityIdentifier(Self.demoChipID)
       }
