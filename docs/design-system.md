@@ -13,6 +13,7 @@ the approved design canvas. Code follows it one to one:
    - `apps/scripts/check_swift_rules.py` (rule `numbers`, using `check_swift_literals.py`) fails CI on a number other than 0 and 1 unless it is a documented `static let` constant, an enum raw value, a subscript index or a halving `/ 2`.
    - SwiftLint (`.swiftlint.yml`) fails CI on a colour made outside `Palette.swift`, a hue name instead of a role, and a font size outside `Tokens.Typography`.
    - A screen may define its own documented constant only for a value no other screen uses (a chart's padding ratio, say); anything shared belongs in `Tokens`.
+   - Rules `result`, `format` and `stopsymbol` check `apps/macos` and `apps/ios` only (the shared package holds the one map they point to): a result's colour only through `Palette.result` / `Tone.result`, numbers only through `Formatting.swift`, a shield SF Symbol only from `StopState` (a shield meaning something else is marked `// symbol: <meaning>`). See "One meaning, one look".
    - The rules check covers `apps/shared`, `apps/macos` and `apps/ios` in the `swift-rules` workflow on every pull request. It has no baseline: every violation fails. The `test` job also runs the check (`tests/test_swift_rules.py`). SwiftLint runs in the same workflow and covers `apps/shared`, `apps/macos` and `apps/ios`; an app's own `.swiftlint.yml` may relax SwiftLint's size limits only, until its long files are split.
 2. **No user-facing text in code.** Every string a person reads is defined once, in the target's `L10n.swift`, as `LocalizedStringResource("key", defaultValue: "English")`, and translated in the String Catalog (`Localizable.xcstrings`) beside it. A catalog is committed exactly as Xcode writes it (`apps/scripts/format_xcstrings.py` rewrites it so), and a key's `table:` is a string literal or left out: Xcode's extraction cannot follow a constant, so it would copy the keys into `Localizable.xcstrings` on every build.
    - Views use `L10n` entries. `Text("…")`, `Button("…")`, `Text(verbatim: "…")` and computed properties returning English all fail CI (rule `text`). Other string literals may only be SF Symbol names, documented `static let` identifiers and enum raw values; the one capitalised protocol token allowed in a documented constant is the HTTP scheme `Bearer`.
@@ -73,7 +74,42 @@ emergency command tiers from the palette's values (`Swatch`) and fails below 4.5
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
 | `scrim` | Dimmed backdrop behind a Mac overlay panel (at `Opacity.faint`) and that panel's shadow; the emergency stop's hold sweep (at `Command.sweepOpacity`) | `#080C1E` | `#080C1E` |
 
-A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero.
+A money result uses `profitText` above zero, `lossText` below and `textTertiary` at zero, only
+through `Palette.result` / `Tone.result` (rule `result` of the rules check rejects a hand-written
+`>= 0 ? … profit : … loss` in the apps). Text is drawn only in a text role: a fill (`info`,
+`loss`) is never text (`PaletteContrastTests` checks every `Tone`'s and every verdict's text
+colour at 4.5:1 on `surface` and shows that `info` fails it).
+
+## One meaning, one look (`Meanings.swift`, `Formatting.swift`)
+
+Operator-facing safety and money signals look the same on every screen of both apps (owner rule
+2026-11-16). Each has one map in TickrDesign (which builds on TickrKit's models); screens never
+pick these colours, symbols or number formats themselves.
+
+| Meaning | Shared piece | Look |
+|---|---|---|
+| A stop's protection | `StopState.isProtected` (TickrKit), `StopState.symbol` / `.tone`, `StopGlyph`, `StopDot` | Verified: `checkmark.shield`, `profit`. Pending: `hourglass`; missing: `xmark.shield`; unknown: `exclamationmark.shield`: all `loss` (a stop the broker has not confirmed does not protect; the Main board draws "STOP PENDING" red with the alarm ring). A stop's price level: `StopState.levelSymbol` (`shield`) in the state's tone. `StopGlyph(state:symbol:price:style:)` is the glyph tile beside a position's symbol (`.tile` on the Mac Positions card, `.compact` in rows and the menu bar, iOS Home); its label is "ABCD · pending". `StopDot` is on every position tab (both apps), green or red, and the tab's accessibility value says the state. A set of stops (`StopState.combinedTone`): neutral with none, profit only when every one is verified |
+| The status headline | `Severity.tone`, `Headline.tone`, `HeadlineBanner` | Alarm `loss`, attention `warning`, calm `profit`; a calm headline about held positions, every one protected (`Headline.holding`), in `accent` (Main "holding", MacMenuBar, IOSHome), a calm one with nothing held in `profit` (Main "scanning"); a recorded day `highlight`. `HeadlineBanner`: dot in the tone's fill, title in its text colour in `Typography.statusLine` (Mac `.body` semibold, iOS `.subheadline` bold), optional detail in `callout` `textTertiary`; `framed` (Mac Overview, menu-bar panel) on the tone's wash with an `Opacity.border` hairline, `Radius.medium`, `Space.m` padding; bare on iOS Home |
+| A verdict | `Verdict.color` | ENTER and HOLD `accentText`, WATCH `infoText`, IGNORE `seriesATRText`, EXIT `warningText`: the Chart's explain card and decisions, Watching closely (tag and bar), both apps |
+| An exit and a bot event | `Tone(Board.Event.Tone)`, `Tone.exit(_:result:)` | The bot's tone mapped once: a forced exit (session end, stream lost, operator close) `warning`, a protection failure `loss` whatever the result, an ordinary exit by its result's sign (zero neutral); both apps' exit badges, pills and tickers |
+
+**Numbers** come only from `Formatting.swift` (rule `format`): locale-independent, a "." separator
+and the U+2212 minus in every language, so a figure reads the same on both apps in English and
+Russian.
+
+| API | Output | Use |
+|---|---|---|
+| `Money.price` | "0.4567", "0.5000", "1.00", "12.35" (half away from zero) | Every price: chart axes, readouts, tags, positions, trades, stops, entries. Owner rule: below $1 four decimals, from $1 two (`subPennyBelow`, `subPennyDigits`). A chart's `Double` is read through its shortest text (`Money.decimal`), so 12.345 shows 12.35 |
+| `Money.value` | "0.4567", "−0.0123", "50.00" | A chart study's value or scale (VWAP, EMA, MACD, RSI, ATR): a price's tick with its minus |
+| `Money.signed` / `Money.signedUSD` | "+11.80", "−1.60", "0.00" / "+$11.80" | A result (zero unsigned) |
+| `Money.usd` | "$250.00", "−$4.10" | An amount that is not a result: room, limits, balances, fees (never a plus) |
+| `Money.plain`, `Money.number` | "12.30" / "−0.12" | A plain figure; with its minus only below zero |
+| `Percent.signed(fraction:)` / `(points:)` | "+6.21%", "−0.40%" | A price change: `changeDigits` 2 (the Chart's day change and readout, both apps); a screener's change `moverDigits` 1 |
+| `Percent.plain` | "52%" | A share or win rate (`StatDigits.percent`) |
+| `Volume.compact` | "950", "23.4K", "1.2M" | A share volume (en_US short names in every language) |
+| `DayText.day` | "Mon Nov 16", "пн 16 нояб." | A trading day: weekday, then the date, no comma, the New York day, in the person's language |
+
+A line setting an `accessibilityValue` may let VoiceOver read a number in the person's locale.
 
 ## Spacing (`Tokens.Space`), 4-point grid
 
@@ -110,7 +146,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `hero` | 34 pt bold mono | The one key figure of a screen inside a card |
 | `panelFigure` | 32 pt bold mono, tracking −1 | The day result in the Mac menu-bar panel |
 | `metric` | 24 pt bold mono | Large figures in cards |
-| `heading` | 22 pt bold | A screen's heading in its content ("Today · Mon, Nov 16" on Trades) |
+| `heading` | 22 pt bold | A screen's heading in its content ("Today · Mon Nov 16" on Trades) |
 | `quote` | 20 pt semibold mono | A price beside a symbol heading (the Chart's last price) |
 | `figure` | 18 pt bold mono | Figures in compact tiles and stat rows (Trades' day figures, performance) |
 | `body` / `bodyMono` | `.body` | Values in rows |
@@ -125,6 +161,7 @@ in rows uses the platform text styles so Dynamic Type applies.
 | `symbol` | `Size.iconWellSymbol` semibold | SF Symbols in icon wells |
 | `symbolCompact` | 13 pt semibold | SF Symbols in compact round icon buttons |
 | `button` | `.body` semibold | Command buttons (bot controls) |
+| `statusLine` | `.body` semibold (iOS `.subheadline` bold) | The status headline (`HeadlineBanner`) |
 | `chip` | `.callout` bold mono | Tabs and chips naming a symbol (position tabs) |
 | `buttonCompact` | `.callout` semibold | Compact buttons |
 | `chipValue` | `.headline` bold mono | Figures of metric chips, icon metrics, large delta tags |
@@ -325,7 +362,7 @@ still reads it. Every control takes a `Tone`.
 | `.buttonStyle(.chip(selected:))` | One of a few choices side by side (position tabs, the Chart's ranges and intervals) | `Typography.label` in `textTertiary` on `chipFill`, `separatorStrong` hairline, `Radius.chip`, `Space.s` × 6 pt padding; selected: `textPrimary` on `selection` with a tone outline |
 | `SegmentSwitch` | The one segmented switch of both apps (the iOS Activity panes, the Chart range on iPhone, the Lab replay span, Watching closely sort and filter); never `Picker(.segmented)` | Equal segments on `surface` in a `Radius.large` card with a `separator` hairline, `Space.xs` padding; titles footnote semibold in `textSecondary`, wrapping rather than cut; chosen: `textPrimary` on a `surfaceSunken` `Radius.medium` tile with a hairline; each segment answers taps over the full 44 pt height |
 | `.toggleStyle(.chip)` | An on/off choice among chips (the Chart's studies, trade marks) | The chip above, title uppercase; on: `textPrimary` on `selection` with the `separatorStrong` hairline; off: the plain chip at `Opacity.muted` |
-| `StateGlyph` | A state without a word (stop verified, paused, stream fresh, gate closed) | SF Symbol on a `Size.glyph` tile in the tone, `Opacity.glow` fill; `live` pulses the outline (`Motion.glyphPulseScale`) |
+| `StateGlyph` | A state without a word (paused, stream fresh, gate closed; a stop's protection through `StopGlyph`) | SF Symbol on a `Size.glyph` tile in the tone, `Opacity.glow` fill; `live` pulses the outline (`Motion.glyphPulseScale`) |
 | `StatusPill` | A state that needs its word (bot running, an exit reason) | Capsule, `PulseDot` (one pulse per `event` while live) or a `systemImage` in its place, `Typography.badge` uppercase |
 | `IconMetric` | A figure named by a symbol (entry, stop, quantity, time) | Symbol in the tone, `Typography.chipValue` figure, sunken `Radius.medium` chip; the name is its hint. `compact`: a `Radius.small` chip that fits its figure (`captionMono`), in rows under a list item |
 | `ChipFlow` | A row of chips under a list item | Layout that wraps chips onto new lines (`Space.xs` apart) instead of clipping on a narrow phone or at large Dynamic Type |

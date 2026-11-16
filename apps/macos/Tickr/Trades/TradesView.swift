@@ -121,9 +121,9 @@ struct TradesView: View {
     HStack(alignment: .center, spacing: Tokens.Space.m) {
       Group {
         if model.isLive {
-          Text(L10n.Trades.dayTitleToday(Format.dayLabel(model.shownDay)))
+          Text(L10n.Trades.dayTitleToday(DayText.day(model.shownDay)))
         } else {
-          Text(verbatim: Format.dayLabel(model.shownDay))
+          Text(verbatim: DayText.day(model.shownDay))
         }
       }
       .font(Tokens.Typography.heading)
@@ -226,7 +226,7 @@ private struct DayRow: View {
     HStack(spacing: Tokens.Space.s) {
       VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
         HStack(spacing: Tokens.Space.xs) {
-          Text(verbatim: Format.dayLabel(day.day))
+          Text(verbatim: DayText.day(day.day))
             .font(Tokens.Typography.calloutMono)
             .foregroundStyle(Palette.textPrimary)
           if isToday { Badge(L10n.Common.today, color: Palette.accentText) }
@@ -506,7 +506,7 @@ private struct TradesTable: View {
           case .closed(let trade):
             // Coloured as the event ticker colours the exit: by its result, amber when forced.
             Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
-              color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
+              color: Tone.exit(trade.exitReason, result: trade.resultGrossUsd.value).text)
           }
         }
       }
@@ -641,7 +641,7 @@ enum TradeRow: Identifiable {
 
   /// An open position whose broker stop is not verified.
   var stopUnverified: Bool {
-    if case .open(let row) = self { return row.position.stop.state != .verified }
+    if case .open(let row) = self { return !row.position.stop.state.isProtected }
     return false
   }
 

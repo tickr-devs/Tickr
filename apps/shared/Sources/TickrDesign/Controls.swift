@@ -39,7 +39,7 @@ public enum Tone: Sendable, Hashable, CaseIterable {
     }
   }
 
-  /// Text and symbols drawn in this tone.
+  /// Text and symbols drawn in this tone (the role whose values are `textSwatch`).
   public var text: Color {
     switch self {
     case .neutral: return Palette.textTertiary
@@ -49,6 +49,20 @@ public enum Tone: Sendable, Hashable, CaseIterable {
     case .warning: return Palette.warningText
     case .info: return Palette.infoText
     case .highlight: return Palette.highlightText
+    }
+  }
+
+  /// The light and dark values of `text`: always a text role (4.5:1 on `surface`), never a fill
+  /// (`PaletteContrastTests` checks every case).
+  public var textSwatch: Swatch {
+    switch self {
+    case .neutral: return .textTertiary
+    case .accent: return .accentText
+    case .profit: return .profitText
+    case .loss: return .lossText
+    case .warning: return .warningText
+    case .info: return .infoText
+    case .highlight: return .highlightText
     }
   }
 

@@ -62,7 +62,7 @@ struct HomeView: View {
       Summary(past: dayModel.shown).rise(step: Order.summary.rawValue)
       if let past = dayModel.shown {
         // A recorded day: its result above, nothing live below.
-        Text(L10n.Home.pastDayNote(Format.day(past.day.noonInNewYork)))
+        Text(L10n.Home.pastDayNote(DayText.day(past.day.noonInNewYork)))
           .font(.subheadline)
           .foregroundStyle(Palette.textTertiary)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -225,10 +225,10 @@ private struct DayLine: View {
     let written = model.status?.writtenAt.date ?? model.botNow
     let isToday = WireDate(newYorkDateOf: written) == model.today
     if let past = days.shown {
-      Text(verbatim: Format.day(past.day.noonInNewYork))
+      Text(verbatim: DayText.day(past.day.noonInNewYork))
         .foregroundStyle(Palette.highlightText)
     } else {
-      Text(isToday ? L10n.Common.today(Format.day(written)) : L10n.Activity.lastSession(Format.day(written)))
+      Text(isToday ? L10n.Common.today(DayText.day(written)) : L10n.Activity.lastSession(DayText.day(written)))
     }
   }
 }
@@ -310,7 +310,7 @@ private struct Summary: View {
     let unreachable = model.status == nil && model.fetchError != nil
     let text = past != nil ? String(localized: L10n.Home.recordedDay)
       : unreachable ? String(localized: L10n.Home.statusUnknown) : headline.text
-    let tint = past == nil ? headline.severity.tint : Palette.highlightText
+    let tone = past == nil ? headline.tone : Tone.highlight
     // A stale status's text counts its age; read again it is no new event.
     let pulse: Headline.Pulse = past == nil ? headline.pulse : .text(text)
     RowStack(spacing: Tokens.Space.l) {
@@ -321,7 +321,7 @@ private struct Summary: View {
           // Counts up from zero as the ring appears and on to each new result (the board's count).
           CountingText(NSDecimalNumber(decimal: result).doubleValue) { Money.signed(Decimal($0)) }
             .font(Tokens.Typography.metric)
-            .foregroundStyle(result < 0 ? Palette.seriesATRText : Palette.profitText)
+            .foregroundStyle(Palette.result(result))
             // One line at its full size; the ring grows around it.
             .fixedSize()
           Group {
@@ -351,14 +351,10 @@ private struct Summary: View {
       .accessibilityLabel(Text(L10n.Home.dayResult(Money.signedUSD(result), stats?.wins ?? 0, stats?.losses ?? 0)))
 
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-          PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false),
-            event: pulse)
-          Text(verbatim: text)
-            .font(.subheadline.bold())
-            .foregroundStyle(tint)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+        // As IOSHome draws it: the shared headline, bare.
+        HeadlineBanner(text, tone: tone,
+          pulse: past == nil && (headline.severity != .ok || model.response?.stale == false) ? AnyHashable(pulse) : nil,
+          framed: false)
         if stats?.beforeFees == true {
           // The ring's result does not count the broker's fees yet; wraps rather than cuts.
           Text(L10n.Home.beforeFees)
@@ -448,7 +444,7 @@ private struct PositionRow: View {
           Label {
             Text(verbatim: position.stop.price.map { Money.price($0.value) } ?? Format.missing)
           } icon: {
-            Image(systemName: StopGlyph.levelSymbol)
+            Image(systemName: StopState.levelSymbol)
           }
           .labelStyle(ControlLabelStyle())
           .font(Tokens.Typography.annotation)
@@ -645,7 +641,7 @@ private struct LiveFlowCard: View {
       Stage(id: .order, name: L10n.Flow.order,
         value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: Palette.info),
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
-        color: allProtected ? Palette.profit : Palette.loss, urgent: verified < positions.count),
+        color: (allProtected ? Tone.profit : Tone.loss).fill, urgent: verified < positions.count),
     ]
   }
 

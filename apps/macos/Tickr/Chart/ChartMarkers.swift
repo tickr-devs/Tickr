@@ -127,7 +127,7 @@ enum ChartMarkers {
         label: L10n.Chart.entryLevel(Format.price(row.entry)))
     ]
     if let stop = row.stop {
-      let verified = row.position.stop.state == .verified
+      let verified = row.position.stop.state.isProtected
       levels.append(
         ChartLevel(
           kind: verified ? .stop : .stopUnverified, price: double(stop), since: since,

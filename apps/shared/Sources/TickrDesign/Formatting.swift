@@ -1,4 +1,5 @@
 import Foundation
+import TickrKit
 
 /// Decimals of the statistics on the Lab and performance cards (both apps).
 public enum StatDigits {
@@ -41,11 +42,58 @@ public enum Money {
     plain(value, fractionDigits: abs(value) < subPennyBelow ? subPennyDigits : centsDigits)
   }
 
-  /// "+$11.80", "−$1.60", "$0.00".
+  /// "+$11.80", "−$1.60", "$0.00": a money result (a day, a trade, an open position).
   public static func signedUSD(_ value: Decimal) -> String {
-    let body = "$" + fixed(abs(value), fractionDigits: centsDigits)
+    let body = dollar + fixed(abs(value), fractionDigits: centsDigits)
     if rounded(value, centsDigits) == 0 { return body }
     return (value > 0 ? "+" : minus) + body
+  }
+
+  /// "$250.00", "−$4.10": an amount that is not a result (room, a limit, a balance, a fee), so
+  /// never a plus; a minus only when the amount itself is below zero.
+  public static func usd(_ value: Decimal) -> String {
+    let body = dollar + fixed(abs(value), fractionDigits: centsDigits)
+    return rounded(value, centsDigits) < 0 ? minus + body : body
+  }
+
+  /// "0.12", "−0.12": a value with its sign only below zero (a study's value: MACD, RSI, ATR).
+  public static func number(_ value: Decimal, fractionDigits: Int = centsDigits) -> String {
+    let body = fixed(abs(value), fractionDigits: fractionDigits)
+    return rounded(value, fractionDigits) < 0 ? minus + body : body
+  }
+
+  /// The currency sign of every amount (the account is in US dollars).
+  static let dollar = "$"
+
+  // MARK: chart values (Double)
+
+  /// The decimal a chart's `Double` stands for, read through its shortest decimal text, so
+  /// 12.345 (stored as 12.3449999…) rounds as it reads, to 12.35; zero for a value that is not
+  /// finite.
+  public static func decimal(_ value: Double) -> Decimal {
+    guard value.isFinite else { return 0 }
+    return Decimal(string: String(value), locale: Locale(identifier: posixLocale)) ?? Decimal(value)
+  }
+
+  /// `price(_:)` of a chart value: the same tick on both apps' charts.
+  public static func price(_ value: Double) -> String { price(decimal(value)) }
+
+  /// `signed(_:fractionDigits:)` of a chart value (a price change).
+  public static func signed(_ value: Double, fractionDigits: Int = centsDigits) -> String {
+    signed(decimal(value), fractionDigits: fractionDigits)
+  }
+
+  /// `number(_:fractionDigits:)` of a chart value (a study's value).
+  public static func number(_ value: Double, fractionDigits: Int = centsDigits) -> String {
+    number(decimal(value), fractionDigits: fractionDigits)
+  }
+
+  /// A value on a chart's scale or legend (a price line, VWAP, an EMA, MACD, RSI, ATR): at a
+  /// price's tick, four decimals below one in size, else two, with a minus below zero, so a study
+  /// line and the price it is drawn against read alike ("0.4567", "−0.0123", "12.35").
+  public static func value(_ value: Double) -> String {
+    let exact = decimal(value)
+    return number(exact, fractionDigits: abs(exact) < subPennyBelow ? subPennyDigits : centsDigits)
   }
 
   static func rounded(_ value: Decimal, _ digits: Int) -> Decimal {
@@ -92,5 +140,76 @@ public enum Risk {
   /// "+0.18 R": a mean or a bound, where one decimal would hide the difference.
   public static func text(_ r: Decimal, fractionDigits: Int) -> String {
     "\(Money.signed(r, fractionDigits: fractionDigits)) \(unit)"
+  }
+}
+
+/// Percentages, locale-independent like `Money`: "+6.21%", "52%", a minus U+2212.
+public enum Percent {
+  /// Decimals of a price's change in percent: the Chart's day change and its readout, both apps
+  /// (the MacChart board's "+0.98%").
+  public static let changeDigits = 2
+  /// Decimals of a screener's change (the boards' mover chips: "+18.2%").
+  public static let moverDigits = 1
+  /// Percent points in a whole.
+  static let pointsPerWhole: Decimal = 100
+  /// The sign after the number, in every language.
+  static let sign = "%"
+
+  /// "+6.21%", "−0.40%", "0.00%" from a fraction (0.0621).
+  public static func signed(fraction: Decimal, fractionDigits: Int = changeDigits) -> String {
+    signed(points: fraction * pointsPerWhole, fractionDigits: fractionDigits)
+  }
+
+  /// The same from a chart value.
+  public static func signed(fraction: Double, fractionDigits: Int = changeDigits) -> String {
+    signed(fraction: Money.decimal(fraction), fractionDigits: fractionDigits)
+  }
+
+  /// "+18.2%" from points (18.24).
+  public static func signed(points: Decimal, fractionDigits: Int = changeDigits) -> String {
+    Money.signed(points, fractionDigits: fractionDigits) + sign
+  }
+
+  /// "52%" from points (52.4): a share, a win rate; never a sign.
+  public static func plain(points: Decimal, fractionDigits: Int = StatDigits.percent) -> String {
+    Money.plain(points, fractionDigits: fractionDigits) + sign
+  }
+
+  /// "52%" from a fraction (0.524).
+  public static func plain(fraction: Decimal, fractionDigits: Int = StatDigits.percent) -> String {
+    plain(points: fraction * pointsPerWhole, fractionDigits: fractionDigits)
+  }
+}
+
+/// Share volumes: "950", "23.4K", "1.2M", in the same letters in every language.
+public enum Volume {
+  /// The locale whose short compact names the apps show (K, M, B).
+  static let compactLocale = "en_US"
+  /// Most decimals of a compact volume.
+  static let digits = 1
+
+  public static func compact(_ value: Double) -> String {
+    value.formatted(.number.notation(.compactName).precision(.fractionLength(0...digits))
+      .locale(Locale(identifier: compactLocale)))
+  }
+}
+
+/// A trading day as both apps write it: weekday, then the date, no comma ("Fri Nov 13",
+/// "пт 13 нояб."), the New York day whatever the device's time zone (noon in New York is already
+/// the next day from UTC+7 eastward).
+public enum DayText {
+  /// Between a day's weekday and its date.
+  static let space = " "
+
+  public static func day(_ date: Date, locale: Locale = .autoupdatingCurrent) -> String {
+    var weekday = Date.FormatStyle.dateTime.weekday(.abbreviated).locale(locale)
+    var monthDay = Date.FormatStyle.dateTime.month(.abbreviated).day().locale(locale)
+    weekday.timeZone = WireDate.newYork.timeZone
+    monthDay.timeZone = WireDate.newYork.timeZone
+    return date.formatted(weekday) + space + date.formatted(monthDay)
+  }
+
+  public static func day(_ day: WireDate, locale: Locale = .autoupdatingCurrent) -> String {
+    Self.day(day.noonInNewYork, locale: locale)
   }
 }

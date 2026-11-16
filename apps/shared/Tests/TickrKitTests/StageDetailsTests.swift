@@ -132,7 +132,8 @@ struct StageDetailsTests {
     #expect(detail.facts.first?.tone == .red)
     let trades = try #require(group(detail, L10n.stageTradeStops))
     #expect(trades.rows.map(\.symbol) == ["WXYZ", "EFGH", "ABCD"])
-    #expect(trades.rows.map(\.tone) == [.green, .red, .amber])
+    // A pending stop is red like a missing one: not confirmed is not protected (the Main board).
+    #expect(trades.rows.map(\.tone) == [.green, .red, .red])
     // Seconds without the wire's trailing zeros.
     #expect(trades.rows[0].text?.contains(String(localized: L10n.stageConfirmedAfter("1.25"))) == true)
     #expect(trades.rows[1].text == String(localized: L10n.stageNeverVerified))

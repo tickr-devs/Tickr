@@ -32,6 +32,17 @@ catalog  Every key of an `L10n.swift` has a Russian translation in the target's 
          app Info.plist lists in `CFBundleLocalizations` each language the app's and the shared
          package's String Catalogs translate (the app follows the system language; without the
          list the SwiftPM-built Mac app opens in English).
+result   (apps/macos, apps/ios) A money result's colour comes only from the shared map
+         (`Palette.result` / `Tone.result`, zero neutral): no hand-written `>= 0 ? … profit : … loss`.
+format   (apps/macos, apps/ios) Numbers are formatted only by TickrDesign (`Money`, `Percent`,
+         `Volume`, Formatting.swift), the same in both apps and every language: no
+         `.formatted(.number|.percent|.currency…)`, `format: .number|.percent|.currency`,
+         `FloatingPointFormatStyle`, `NumberFormatter`, `String(format:` or `.currency(code:`.
+         A line that sets an `accessibilityValue` may let VoiceOver read a number in the
+         person's locale.
+stopsymbol  (apps/macos, apps/ios) A stop's symbols (every SF Symbol with "shield") come only
+         from TickrDesign's `StopState` constants, one symbol per meaning. A shield that means
+         something else is marked `// symbol: <meaning>` on its line or the line above.
 truncation  No text is ever cut (owner rule 2026-11-16, docs/design-system.md "Text is never
          cut"): no `.lineLimit`, `.truncationMode`, `.minimumScaleFactor` or
          `.allowsTightening`. A text that does not fit wraps or its layout adapts; one that must
@@ -489,6 +500,69 @@ def loop_violations(path: Path) -> list[tuple[int, str]]:
     return found
 
 
+# MARK: - one meaning, one look (apps/macos and apps/ios only)
+
+# Folders whose files the rules below check: the apps, never the shared package that holds the
+# one map each rule points to.
+APP_ROOTS = ("apps/macos", "apps/ios")
+# A result's sign picking profit or loss by hand: `x >= 0 ? Palette.profitText : Palette.lossText`,
+# `value < 0 ? .loss : .profit`.
+RESULT_SIGN = re.compile(r"(?:>=?|<=?)\s*0\s*\?\s*(?:Palette\.|Tone\.|\.)?(?:profit|loss)\w*")
+# A number formatted outside TickrDesign.
+NUMBER_FORMAT = re.compile(
+    r"\.formatted\(\s*\.(?:number|percent|currency)\b|\bformat:\s*\.(?:number|percent|currency)\b"
+    r"|\bFloatingPointFormatStyle\b|\bIntegerFormatStyle\b|\bNumberFormatter\b|\bString\(format:"
+    r"|\.currency\(code:")
+# VoiceOver may read a number in the person's locale.
+ACCESSIBILITY_VALUE = "accessibilityValue"
+# An SF Symbol name with a shield (a string literal's whole text).
+SHIELD_SYMBOL = re.compile(r"(?:[a-z]+\.)*shield(?:\.[a-z]+)*")
+SYMBOL_MARKER = "// symbol:"
+
+
+def is_app_file(path: Path) -> bool:
+    """A file of one of the apps (not the shared package, not a test target)."""
+    try:
+        relative = path.resolve().relative_to(REPO).as_posix()
+    except ValueError:
+        return False
+    return relative.startswith(tuple(root + "/" for root in APP_ROOTS))
+
+
+def _code_lines(path: Path) -> list[tuple[int, str, str]]:
+    """(line, code without comments, the raw line) for each line."""
+    lines, in_block = [], False
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        code, in_block = check_swift_literals.strip(raw, in_block)
+        lines.append((number, code, raw))
+    return lines
+
+
+def result_violations(path: Path) -> list[tuple[int, str]]:
+    """A result's colour picked by its sign by hand instead of `Palette.result` / `Tone.result`."""
+    return [(number, code.strip()) for number, code, _ in _code_lines(path) if RESULT_SIGN.search(code)]
+
+
+def format_violations(path: Path) -> list[tuple[int, str]]:
+    """A number formatted outside TickrDesign (a line setting an accessibilityValue excepted)."""
+    return [(number, code.strip()) for number, code, raw in _code_lines(path)
+            if NUMBER_FORMAT.search(code) and ACCESSIBILITY_VALUE not in raw]
+
+
+def stop_symbol_violations(path: Path) -> list[tuple[int, str]]:
+    """A shield symbol written in an app instead of taken from `StopState`, unless marked."""
+    source = path.read_text(encoding="utf-8")
+    lines = source.splitlines()
+    found = []
+    for number, literal, _ in string_literals(source):
+        if not SHIELD_SYMBOL.fullmatch(literal):
+            continue
+        marked = any(SYMBOL_MARKER in lines[index] for index in (number - 2, number - 1) if index >= 0)
+        if not marked:
+            found.append((number, literal))
+    return found
+
+
 def number_violations(path: Path) -> list[tuple[int, str]]:
     if path.name in check_swift_literals.SKIPPED_FILES:
         return []
@@ -515,6 +589,17 @@ RULES = {
     "loop": (loop_violations,
       "motion on its own clock; move only on a real data change, "
       "or mark it `// decorative: <why>`"),
+}
+
+
+# Rules of the apps only (`is_app_file`).
+APP_RULES = {
+    "result": (result_violations,
+      "result colour by hand; use Palette.result or Tone.result (zero is neutral)"),
+    "format": (format_violations,
+      "number formatted outside TickrDesign; use Money, Percent or Volume (Formatting.swift)"),
+    "stopsymbol": (stop_symbol_violations,
+      "stop symbol written by hand; use StopState's symbols, or mark another meaning `// symbol:`"),
 }
 
 
@@ -553,10 +638,11 @@ def plist_files() -> list[Path]:
 
 
 def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
-    result: dict[str, dict[str, list[tuple[int, str]]]] = {rule: {} for rule in RULES}
+    result: dict[str, dict[str, list[tuple[int, str]]]] = {rule: {} for rule in RULES | APP_RULES}
     for path in swift_files():
         key = path.relative_to(REPO).as_posix()
-        for rule, (check, _) in RULES.items():
+        rules = RULES | APP_RULES if is_app_file(path) else RULES
+        for rule, (check, _) in rules.items():
             found = check(path)
             if found:
                 result[rule][key] = found
@@ -582,7 +668,7 @@ def collect() -> dict[str, dict[str, list[tuple[int, str]]]]:
 def main(argv: list[str]) -> int:
     found = collect()
     failures = 0
-    for rule, (_, message) in RULES.items():
+    for rule, (_, message) in (RULES | APP_RULES).items():
         for path, items in sorted(found[rule].items()):
             for line, detail in items:
                 failures += 1

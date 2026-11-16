@@ -88,7 +88,7 @@ public enum Board {
         id: "\(positionID)\(position.symbol)\(stopID)", time: position.openedAt.date,
         tag: stopTag(position.stop.state),
         text: "\(position.symbol) \(position.stop.price?.text ?? String(localized: L10n.noPrice))",
-        tone: position.stop.state == .verified ? .green : .red))
+        tone: position.stop.state.isProtected ? .green : .red))
     }
     for fence in status.fences {
       events.append(Event(

@@ -484,7 +484,7 @@ struct DayStepper: View {
       // On the demo day there is one day: no arrows, no day menu and no Today that would do
       // nothing (they also pushed the stepper into the toolbar's overflow in a narrow window).
       if model.dayLocked {
-        Text(L10n.Toolbar.dayDemo(Self.label(model.today)))
+        Text(L10n.Toolbar.dayDemo(DayText.day(model.today)))
           .font(Tokens.Typography.dayStepper)
           .foregroundStyle(Palette.textPrimary)
           .fixedSize()
@@ -493,7 +493,7 @@ struct DayStepper: View {
         stepper
       } else {
         // No other recorded day: no arrows, day menu or Today that would do nothing.
-        Text(L10n.Toolbar.dayToday(Self.label(model.today)))
+        Text(L10n.Toolbar.dayToday(DayText.day(model.today)))
           .font(Tokens.Typography.dayStepper)
           .foregroundStyle(Palette.textPrimary)
           .frame(minWidth: Self.dayMinWidth)
@@ -524,15 +524,15 @@ struct DayStepper: View {
           Button {
             model.selectedDay = day.day
           } label: {
-            Text(L10n.Toolbar.dayRow(Format.dayLabel(day.day), Money.signed(day.resultGrossUsd.value), day.trades))
+            Text(L10n.Toolbar.dayRow(DayText.day(day.day), Money.signed(day.resultGrossUsd.value), day.trades))
           }
         }
       } label: {
         Group {
           if model.isLive {
-            Text(L10n.Toolbar.dayToday(Self.label(model.today)))
+            Text(L10n.Toolbar.dayToday(DayText.day(model.today)))
           } else {
-            Text(verbatim: Self.label(model.shownDay))
+            Text(verbatim: DayText.day(model.shownDay))
           }
         }
         .font(Tokens.Typography.dayStepper)
@@ -556,18 +556,6 @@ struct DayStepper: View {
         .disabled(model.isLive)
         .help(Text(L10n.Toolbar.todayHelp))
     }
-  }
-
-  /// "Mon Nov 16": the design's day, in New York and the person's language.
-  static func label(_ day: WireDate) -> String {
-    let date = day.noonInNewYork
-    func part(_ style: Date.FormatStyle) -> String {
-      var style = style
-      style.timeZone = Format.newYork
-      return date.formatted(style)
-    }
-    return String(localized: L10n.Toolbar.day(part(Date.FormatStyle().weekday(.abbreviated)),
-      part(Date.FormatStyle().month(.abbreviated)), part(Date.FormatStyle().day())))
   }
 }
 
