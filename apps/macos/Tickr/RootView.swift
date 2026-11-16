@@ -342,18 +342,27 @@ private struct BotStateCard: View {
 /// The title bar as the design draws it (the sidebar button right after the window buttons is
 /// the sidebar column's item, `SidebarButton`): one centred mono line, and on the right the
 /// connection status, the day stepper ‹ day › and Today.
+///
+/// In a narrow window the line goes into the toolbar's overflow before the controls do
+/// (`visibilityPriority`, macOS 26.1). That modifier ships with the Xcode 27 SDK (Swift 6.4),
+/// which the owner builds with; the CI runner's newest released Xcode (26.6) lacks it, so the
+/// modifiers are compiled only by a toolchain that has them.
 private struct WindowToolbar: ToolbarContent {
   var body: some ToolbarContent {
     ToolbarItem(placement: .principal) {
       WindowLine()
     }
     .sharedBackgroundVisibility(.hidden)
+    #if compiler(>=6.4)
     .visibilityPriority(.low)
+    #endif
     ToolbarItem(placement: .primaryAction) {
       DayStepper()
     }
     .sharedBackgroundVisibility(.hidden)
+    #if compiler(>=6.4)
     .visibilityPriority(.high)
+    #endif
   }
 }
 
