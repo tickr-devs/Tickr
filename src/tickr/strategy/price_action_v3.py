@@ -3,7 +3,7 @@
 Values come from `strategies/price-action-v3/strategy.toml`: every v1 section plus `[spike]`.
 Unknown, missing or mistyped keys raise ValueError. The owner asked for it on 2026-11-16: a
 stock whose latest minute breaks sharply from the minutes before it is traded by the one
-strategy, not by a separate one, with real Sandbox orders, and every decision names its setup
+strategy, not by a separate one, with real orders, and every decision names its setup
 so breakout, continuation and spike results stay apart.
 
 The detector is `tickr.data.movers.measure` on the completed bars of the current session with
