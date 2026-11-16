@@ -154,9 +154,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let resultTodayNetUsd: DecimalString?
   public let schemaVersion: Int
 
-  /// Today's result as shown: after the broker's fees once they are read, else before them.
+  /// Today's result as shown: after the broker's fees once read, else before them (`resultBeforeFees`).
   public var resultTodayUsd: DecimalString { resultTodayNetUsd ?? resultTodayGrossUsd }
-  /// Today's result shown does not count the broker's fees yet (trades closed, fees unread).
   public var resultBeforeFees: Bool { resultTodayNetUsd == nil && !tradesToday.isEmpty }
 
   enum CodingKeys: String, CodingKey {
@@ -200,9 +199,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     openReservationsUsd = try c.decodeNullable(DecimalString.self, forKey: .openReservationsUsd)
     dailyRoomUsd = try c.decodeNullable(DecimalString.self, forKey: .dailyRoomUsd)
     positions = try c.decode([Position].self, forKey: .positions)
-    // Added after version 1 shipped: an older bot's status has no such key.
+    // Added after version 1 shipped: an older bot's status has none of these keys.
     codeVersion = try c.decodeIfPresent(String.self, forKey: .codeVersion)
-    // Added after version 1 shipped.
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
   }
