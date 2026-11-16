@@ -6,7 +6,6 @@ Rule (docs/design-system.md): a number other than 0 and 1 may appear only
   that sits in a block of `static let` lines under one doc comment;
 - as an enum case raw value (`case m5 = 5`);
 - as the halving divisor `/ 2`, or a subscript index (`parts[2]`);
-- as a toolchain version in a compilation condition (`#if compiler(>=6.4)`, `#if swift(...)`);
 - in Palette.swift (colour definitions) and in tests.
 Comments and string literals are ignored. Usage: check_swift_literals.py [root ...]
 (default: the roots in DEFAULT_ROOTS; each app joins when its code has moved onto the
@@ -31,7 +30,6 @@ CONSTANT = re.compile(
 )
 ENUM_CASE = re.compile(r"(?:^|[{;])\s*case\s+\w+\s*=")
 ALLOWED = {"0", "1", "0.0", "1.0"}
-TOOLCHAIN_CONDITION = re.compile(r"^\s*#(?:if|elseif)\b.*\b(?:compiler|swift)\s*\(")
 
 
 def strip(line: str, in_block: bool) -> tuple[str, bool]:
@@ -78,7 +76,7 @@ def violations(path: Path) -> list[tuple[int, str]]:
             continue
         if stripped and not is_constant:
             documented = False
-        if ENUM_CASE.search(code) or TOOLCHAIN_CONDITION.match(code):
+        if ENUM_CASE.search(code):
             continue
         code = re.sub(r"/\s*2(?![\w.])", "/", code)
         code = re.sub(r"(?<=[\w)\]])\[\s*\d+\s*\]", "[]", code)
