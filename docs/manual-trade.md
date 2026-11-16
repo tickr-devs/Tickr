@@ -46,6 +46,7 @@ tickr check-quote SYMBOL                     # read-only: is the snapshot quote 
 tickr trade SYMBOL --limit 12.34            # quantity and stop default from [probe]
 tickr trade SYMBOL --limit 12.34 --stop 12.10
 tickr probe-replace-stop --to 12.20          # probe F5, see below
+tickr probe-extended SYMBOL                  # probe F7, pre/post-market only, see below
 tickr resume                                 # recover, keep protecting; ends when no trade is open
 tickr exit                                   # recover, then close every open trade
 tickr clear-fence NAME                       # after looking at an operator fence
@@ -102,6 +103,41 @@ nothing sent, the stop stays; docs/operations.md, `flatten-after-close`). All ot
 themselves, including
 `stop-held:*` (see F5 results).
 
+## Extended-hours probe (F7)
+
+`tickr probe-extended SYMBOL` answers what the extended-hours design waits for
+(docs/webull-facts.md F7): does Webull Sandbox accept a STOP_LOSS or STOP_LOSS_LIMIT with session
+ALL outside the regular session, does a CORE stop placed then get accepted, does a LIMIT BUY with
+session ALL fill, and does a SELL stop trigger there. Details: `src/tickr/engine/session_probe.py`.
+
+When: in the pre-market or the post-market (16:00-20:00 ET), at least
+`[probe] extended_end_margin_minutes` before that session ends; it refuses at any other time. The
+bot job runs from 04:00 ET (`[runtime] bot_start_local`) through the post-market, recording the
+screener lists, so either session needs it stopped and kept from restarting (step 1); afterwards
+restart it the same day, or the rest of that day's lists are not recorded.
+
+It never sends a SELL while an earlier order of the run is not proven finished, and takes every
+SELL quantity from the broker's positions. If an order stays working after its cancel or Detail
+never shows it, it stops at once (no close) and exits 4 with the order ids. A killed process or
+a sleeping Mac sends no close either: keep the Mac awake and watch the run. The probe's fills are
+not the bot's trades, so on that day the broker's Day P&L differs from the bot's realized result
+by the probe's result (a few cents).
+
+1. Stop the bot and keep its job from starting (it must not hold the lock; the probe holds it
+   for its whole run): "Stopping the bot safely" in operations.md, then
+   `launchctl disable gui/$(id -u)/local.tickr.bot`. The account must be flat: no position, no
+   open order. After step 5: `launchctl enable gui/$(id -u)/local.tickr.bot` and
+   `launchctl kickstart gui/$(id -u)/local.tickr.bot`.
+2. Pick a liquid common stock priced under `[probe] max_price_usd` that trades in this session
+   (a top pre-market gainer or a large name), and check its quote: `tickr check-quote SYM`.
+   A STALE answer means snapshot quotes are not live in this session; that is a finding too.
+3. `mkdir -p data/probe-extended && tickr probe-extended SYM 2>&1 | tee -i data/probe-extended/run.txt`.
+   It takes about 5 minutes. It buys `[probe] quantity` share(s) at the ask and sells them again.
+4. Exit 0: answered. Exit 4: something is left; the OPERATOR line names it. Cancel the named
+   probe orders and sell what is held in the Webull app now (LIMIT, extended hours on). Exit 3:
+   refused, nothing sent; the line says why.
+5. Paste `run.txt` and the `summary.json` it names into the project chat.
+
 ## Probe day (Monday 2026-11-16)
 
 Goal: answer the open broker facts in docs/webull-facts.md with read-only calls and two
@@ -113,7 +149,7 @@ chat at the end; an agent then writes webull-facts.md and the fixtures from them
 
 1. The manual commands and the bot service share one lock and one database: `tickr trade`
    refuses while `tickr run` holds the lock. If the launchd jobs are installed, keep the
-   bot job from starting today, before its `[runtime] bot_start_local` (09:00 Mac local time):
+   bot job from starting today, before its `[runtime] bot_start_local` (04:00 Mac local time):
 
    ```
    launchctl disable gui/$(id -u)/local.tickr.bot
