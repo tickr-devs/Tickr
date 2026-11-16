@@ -156,6 +156,12 @@ enum L10n {
     LocalizedStringResource("kit.headline.connecting", defaultValue: "Connecting to the local API…",
       bundle: bundle)
   }
+  /// Headline: the bot holds open positions, every one with a verified broker stop, and nothing
+  /// needs the operator; argument: how many.
+  static func headlineHolding(_ count: Int) -> LocalizedStringResource {
+    LocalizedStringResource("kit.headline.holding",
+      defaultValue: "Holding \(count) positions · all protected by broker stops", bundle: bundle)
+  }
   /// Headline: entries are allowed.
   static var headlineAllowed: LocalizedStringResource {
     LocalizedStringResource("kit.headline.allowed", defaultValue: "Entries allowed.", bundle: bundle)
