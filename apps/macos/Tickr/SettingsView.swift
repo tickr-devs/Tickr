@@ -145,7 +145,7 @@ private struct GeneralSettings: View {
         PulseDot(reachable ? Palette.profit : Palette.loss, event: reachable)
         Group {
           if let error = model.fetchError {
-            Text(L10n.Settings.notReachable(error))
+            ReadFailureNote(L10n.Settings.notReachable, detail: error, tone: .loss, defersToConnection: false)
           } else {
             Text(L10n.Settings.connectedTo(model.baseURL.absoluteString))
           }
@@ -302,7 +302,11 @@ private struct TradingSettings: View {
     } else {
       SettingsCard(L10n.Common.strategy) {
         Group {
-          if let error = model.settingsError { Text(verbatim: error) } else { Text(L10n.Settings.readingSettings) }
+          if let error = model.settingsError {
+            ReadFailureNote(L10n.ReadFailed.settings, detail: error)
+          } else {
+            Text(L10n.Settings.readingSettings)
+          }
         }
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textTertiary)
@@ -508,7 +512,9 @@ private struct StorageSettings: View {
   }
 
   private var historyNote: Text {
-    model.historyError.map { Text(verbatim: $0) } ?? Text(L10n.Settings.historySource)
+    // Plain words: the read's technical cause is the connection banner's (Details) or the
+    // Trades screen's.
+    model.historyError.map { _ in Text(L10n.ReadFailed.history) } ?? Text(L10n.Settings.historySource)
   }
 }
 
@@ -563,14 +569,15 @@ private struct BotServiceCard: View {
         Button { question = .start } label: {
           Label { Text(L10n.Settings.startBotAction) } icon: { Image(systemName: Self.startSymbol) }
         }
-        .buttonStyle(.action(.secondary, size: .compact))
-        .foregroundStyle(Palette.profitText)
+        // Start is the card's main action; Stop is a destructive bot command, as on Overview.
+        .buttonStyle(.action(.primary, size: .compact))
         .disabled(!model.canStartBot)
         .hint(L10n.Settings.startBotHint)
         Button(role: .destructive) { question = .stop } label: {
           Label { Text(L10n.Settings.stopBotAction) } icon: { Image(systemName: BotAction.stopSymbol) }
         }
-        .buttonStyle(.action(.destructive, size: .compact))
+        .buttonStyle(.command(.destructive, tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
+        .fixedSize()
         .disabled(!model.canStopBot)
         .hint(verbatim: BotAction.stopBot.explanation)
       }
@@ -701,7 +708,7 @@ private struct ConfigCard: View {
           }
         }
       } else if let error = model.configError {
-        Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
+        ReadFailureNote(L10n.ReadFailed.config, detail: error)
       } else {
         TickrLoader(L10n.Common.loading)
       }
@@ -799,7 +806,7 @@ struct JobsSection: View {
         backup(jobs.backup)
         api
       } else if let error = model.jobsError {
-        Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
+        ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
         TickrLoader(L10n.Common.loading)
       }
@@ -1095,7 +1102,7 @@ private struct BackupSection: View {
           Text(verbatim: cause).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
         }
       } else if let error = model.jobsError {
-        Text(verbatim: error).font(Tokens.Typography.callout).foregroundStyle(Palette.warningText)
+        ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
         TickrLoader(L10n.Common.loading)
       }

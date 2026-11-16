@@ -201,7 +201,7 @@ enum L10n {
       LocalizedStringResource("control.startTitle", defaultValue: "Start the bot?", bundle: L10n.bundle)
     }
     static var startBot: LocalizedStringResource {
-      LocalizedStringResource("control.startBot", defaultValue: "Start the Bot", bundle: L10n.bundle)
+      LocalizedStringResource("control.startBot", defaultValue: "Start bot", bundle: L10n.bundle)
     }
     static var stopTitle: LocalizedStringResource {
       LocalizedStringResource("control.stopTitle",
@@ -226,22 +226,35 @@ enum L10n {
         bundle: L10n.bundle)
     }
     static var resume: LocalizedStringResource {
-      LocalizedStringResource("control.resume", defaultValue: "Resume Entries", bundle: L10n.bundle)
+      LocalizedStringResource("control.resume", defaultValue: "Resume entries", bundle: L10n.bundle)
     }
     static var pause: LocalizedStringResource {
-      LocalizedStringResource("control.pause", defaultValue: "Pause Entries", bundle: L10n.bundle)
+      LocalizedStringResource("control.pause", defaultValue: "Pause entries", bundle: L10n.bundle)
     }
     static var cancelOrders: LocalizedStringResource {
-      LocalizedStringResource("control.cancelOrders", defaultValue: "Cancel Own Orders", bundle: L10n.bundle)
+      LocalizedStringResource("control.cancelOrders", defaultValue: "Cancel orders", bundle: L10n.bundle)
     }
     static var flattenAll: LocalizedStringResource {
-      LocalizedStringResource("control.flattenAll", defaultValue: "Flatten All Positions", bundle: L10n.bundle)
+      LocalizedStringResource("control.flattenAll", defaultValue: "Close all", bundle: L10n.bundle)
     }
     static var stopBot: LocalizedStringResource {
-      LocalizedStringResource("control.stopBot", defaultValue: "Stop the Bot", bundle: L10n.bundle)
+      LocalizedStringResource("control.stopBot", defaultValue: "Stop bot", bundle: L10n.bundle)
     }
     static var emergency: LocalizedStringResource {
-      LocalizedStringResource("control.emergency", defaultValue: "Emergency: Pause, Cancel, Flatten", bundle: L10n.bundle)
+      LocalizedStringResource("control.emergency", defaultValue: "Emergency stop", bundle: L10n.bundle)
+    }
+    /// Caption of the divider above the emergency stop, which sets it apart from the commands.
+    static var lastResort: LocalizedStringResource {
+      LocalizedStringResource("control.lastResort", defaultValue: "Last resort", bundle: L10n.bundle)
+    }
+    /// The emergency stop's second line: what it does, in order.
+    static var emergencyDetail: LocalizedStringResource {
+      LocalizedStringResource("control.emergencyDetail",
+        defaultValue: "pauses entries · cancels entry orders · sells all", bundle: L10n.bundle)
+    }
+    /// The pill on every command while commands go to the demo day.
+    static var demoTag: LocalizedStringResource {
+      LocalizedStringResource("control.demoTag", defaultValue: "Demo", bundle: L10n.bundle)
     }
     /// A command confirmation's message with where the command goes: the demo day.
     static func toDemo(_ message: String) -> LocalizedStringResource {
@@ -255,18 +268,18 @@ enum L10n {
     static var short: LocalizedStringResource {
       LocalizedStringResource("control.short",
         // swiftlint:disable:next line_length
-        defaultValue: "Pausing and cancelling never touch broker stops; flattening cancels each stop only right before its sale. Each command is sent once.",
+        defaultValue: "Pausing and cancelling never touch broker stops; closing a position cancels its stop only right before its sale. Each command is sent once.",
         bundle: L10n.bundle)
     }
     static var unknown: LocalizedStringResource {
       LocalizedStringResource("control.unknown", defaultValue: "Bot status unknown", bundle: L10n.bundle)
     }
     static func state(_ state: String) -> LocalizedStringResource {
-      LocalizedStringResource("control.state", defaultValue: "Bot is \(state)", bundle: L10n.bundle)
+      LocalizedStringResource("control.state", defaultValue: "Bot · \(state)", bundle: L10n.bundle)
     }
     static func statePaused(_ state: String) -> LocalizedStringResource {
       LocalizedStringResource("control.statePaused",
-        defaultValue: "Bot is \(state) · entries paused",
+        defaultValue: "Bot · \(state) · entries paused",
         bundle: L10n.bundle)
     }
     static func reason(_ command: String) -> LocalizedStringResource {
@@ -514,14 +527,15 @@ enum L10n {
     static var toStop: LocalizedStringResource {
       LocalizedStringResource("positions.toStop", defaultValue: "to stop", bundle: L10n.bundle)
     }
-    static func flattenEllipsis(_ symbol: String) -> LocalizedStringResource {
-      LocalizedStringResource("positions.flattenEllipsis", defaultValue: "Flatten \(symbol)…", bundle: L10n.bundle)
+    /// The close button under a position: closes this one position, after a confirmation.
+    static var closePosition: LocalizedStringResource {
+      LocalizedStringResource("positions.closePosition", defaultValue: "Close position", bundle: L10n.bundle)
     }
     static func closeNow(_ symbol: String) -> LocalizedStringResource {
       LocalizedStringResource("positions.closeNow", defaultValue: "Close \(symbol) now?", bundle: L10n.bundle)
     }
     static func flatten(_ symbol: String) -> LocalizedStringResource {
-      LocalizedStringResource("positions.flatten", defaultValue: "Flatten \(symbol)", bundle: L10n.bundle)
+      LocalizedStringResource("positions.flatten", defaultValue: "Close \(symbol) position", bundle: L10n.bundle)
     }
     static var flattenMessage: LocalizedStringResource {
       LocalizedStringResource("positions.flattenMessage",
@@ -738,7 +752,7 @@ enum L10n {
       LocalizedStringResource("risk.lastEntry", defaultValue: "Last entry", bundle: L10n.bundle)
     }
     static var flatten: LocalizedStringResource {
-      LocalizedStringResource("risk.flatten", defaultValue: "Close everything", bundle: L10n.bundle)
+      LocalizedStringResource("risk.flatten", defaultValue: "Close all", bundle: L10n.bundle)
     }
     static var halfDays: LocalizedStringResource {
       LocalizedStringResource("risk.halfDays", defaultValue: "Half days", bundle: L10n.bundle)
@@ -934,8 +948,8 @@ enum L10n {
     static var tooLateTag: LocalizedStringResource {
       LocalizedStringResource("activity.tooLateTag", defaultValue: "TOO LATE", bundle: L10n.bundle)
     }
-    static func notTakenStale(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("activity.notTakenStale", defaultValue: "Last read shown; refresh failed: \(cause)",
+    static var notTakenStale: LocalizedStringResource {
+      LocalizedStringResource("activity.notTakenStale", defaultValue: "Last read shown; refresh failed",
         bundle: L10n.bundle)
     }
     static func stopAfter(_ seconds: String) -> LocalizedStringResource {
@@ -1141,11 +1155,6 @@ enum L10n {
     static var live: LocalizedStringResource {
       LocalizedStringResource("watching.live", defaultValue: "live", bundle: L10n.bundle)
     }
-    /// Under the sheet's rows when the bot sent fewer rows than it watches ([api] watching_max_rows).
-    static func capped(_ shown: Int, _ total: Int) -> LocalizedStringResource {
-      LocalizedStringResource("watching.capped",
-        defaultValue: "The bot sends its closest \(shown); it watches \(total) in all.", bundle: L10n.bundle)
-    }
     /// VoiceOver name of the sort control.
     static var sortLabel: LocalizedStringResource {
       LocalizedStringResource("watching.sortLabel", defaultValue: "Sort", bundle: L10n.bundle)
@@ -1170,12 +1179,12 @@ enum L10n {
     static var close: LocalizedStringResource {
       LocalizedStringResource("watching.close", defaultValue: "Close", bundle: L10n.bundle)
     }
-    static func failed(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("watching.failed", defaultValue: "Couldn't read the watched symbols: \(cause)",
+    static var failed: LocalizedStringResource {
+      LocalizedStringResource("watching.failed", defaultValue: "Couldn't read the watched symbols",
         bundle: L10n.bundle)
     }
-    static func stale(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("watching.stale", defaultValue: "Last read shown; refresh failed: \(cause)",
+    static var stale: LocalizedStringResource {
+      LocalizedStringResource("watching.stale", defaultValue: "Last read shown; refresh failed",
         bundle: L10n.bundle)
     }
   }
@@ -1233,8 +1242,8 @@ enum L10n {
     static var noRefusals: LocalizedStringResource {
       LocalizedStringResource("lab.noRefusals", defaultValue: "No signal was refused.", bundle: L10n.bundle)
     }
-    static func refusalsFailed(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.refusalsFailed", defaultValue: "Couldn't read the refused signals: \(cause)",
+    static var refusalsFailed: LocalizedStringResource {
+      LocalizedStringResource("lab.refusalsFailed", defaultValue: "Couldn't read the refused signals",
         bundle: L10n.bundle)
     }
     static var title: LocalizedStringResource {
@@ -1293,9 +1302,9 @@ enum L10n {
     static var replayIdle: LocalizedStringResource {
       LocalizedStringResource("lab.replayIdle", defaultValue: "No replay yet.", bundle: L10n.bundle)
     }
-    /// The replay could not be read; the reason follows.
-    static func replayFailed(_ reason: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.replayFailed", defaultValue: "Replay not read: \(reason)", bundle: L10n.bundle)
+    /// The replay could not be read (its cause is behind Details).
+    static var replayFailed: LocalizedStringResource {
+      LocalizedStringResource("lab.replayFailed", defaultValue: "Replay not read", bundle: L10n.bundle)
     }
     /// Replay running, with its New York start time.
     static func replayRunningSince(_ time: String) -> LocalizedStringResource {
@@ -1349,8 +1358,8 @@ enum L10n {
       LocalizedStringResource("lab.agreement",
         defaultValue: "bot also traded \(shared) of \(entered): \(symbols)", bundle: L10n.bundle)
     }
-    static func failed(_ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.failed", defaultValue: "Couldn't read the observers: \(cause)", bundle: L10n.bundle)
+    static var failed: LocalizedStringResource {
+      LocalizedStringResource("lab.failed", defaultValue: "Couldn't read the observers", bundle: L10n.bundle)
     }
     /// Button that starts a replay of two versions.
     static var replayStartCompare: LocalizedStringResource {
@@ -1511,9 +1520,6 @@ enum L10n {
   }
 
   enum Settings {
-    static var start: LocalizedStringResource {
-      LocalizedStringResource("settings.start", defaultValue: "Start", bundle: L10n.bundle)
-    }
     static var demoDay: LocalizedStringResource {
       LocalizedStringResource("settings.demoDay", defaultValue: "Demo day", bundle: L10n.bundle)
     }
@@ -1622,9 +1628,9 @@ enum L10n {
     static var checkGateOpen: LocalizedStringResource {
       LocalizedStringResource("settings.checkGateOpen", defaultValue: "Trading gate open", bundle: L10n.bundle)
     }
-    static func accountFailed(_ cause: String) -> LocalizedStringResource {
+    static var accountFailed: LocalizedStringResource {
       LocalizedStringResource("settings.accountFailed",
-        defaultValue: "Couldn't read the broker check: \(cause)",
+        defaultValue: "Couldn't read the broker check",
         bundle: L10n.bundle)
     }
     static func failing(_ count: Int) -> LocalizedStringResource {
@@ -1718,10 +1724,7 @@ enum L10n {
     static var connected: LocalizedStringResource {
       LocalizedStringResource("settings.connected", defaultValue: "Connected", bundle: L10n.bundle)
     }
-    /// The bot row's Stop (opens bot control) and what the bot holds under its state.
-    static var stop: LocalizedStringResource {
-      LocalizedStringResource("settings.stop", defaultValue: "Stop", bundle: L10n.bundle)
-    }
+    /// What the bot holds, under its state in the bot row.
     static var holdsNothing: LocalizedStringResource {
       LocalizedStringResource("settings.holdsNothing", defaultValue: "flat", bundle: L10n.bundle)
     }
@@ -1759,6 +1762,26 @@ enum L10n {
       LocalizedStringResource("settings.configEdit", defaultValue: "Edit", bundle: L10n.bundle)
     }
   }
+
+  /// A read of one card's data that failed while the link to the bot is up (its cause is behind
+  /// Details).
+  enum ReadFailed {
+    static var config: LocalizedStringResource {
+      LocalizedStringResource("readFailed.config", defaultValue: "Couldn't read the configuration file",
+        bundle: L10n.bundle)
+    }
+    static var jobs: LocalizedStringResource {
+      LocalizedStringResource("readFailed.jobs", defaultValue: "Couldn't read the jobs", bundle: L10n.bundle)
+    }
+    static var versions: LocalizedStringResource {
+      LocalizedStringResource("readFailed.versions", defaultValue: "Couldn't read the strategy versions",
+        bundle: L10n.bundle)
+    }
+    static var whatIf: LocalizedStringResource {
+      LocalizedStringResource("readFailed.whatIf", defaultValue: "Couldn't read the simulated result",
+        bundle: L10n.bundle)
+    }
+  }
 }
 
 /// Every text of the Chart tab, in Localizable.xcstrings with the rest.
@@ -1793,8 +1816,8 @@ enum ChartText {
   static let rangeThreeMonths = LocalizedStringResource("chart.range.threeMonths", defaultValue: "3M")
   static let rangeOneYear = LocalizedStringResource("chart.range.oneYear", defaultValue: "1Y")
   /// Market data (GET /chart) could not be read for a range beyond one day.
-  static func candlesUnavailable(_ cause: String) -> LocalizedStringResource {
-    LocalizedStringResource("chart.candlesUnavailable", defaultValue: "Market data is not available: \(cause)")
+  static var candlesUnavailable: LocalizedStringResource {
+    LocalizedStringResource("chart.candlesUnavailable", defaultValue: "Market data is not available")
   }
   /// Market data answered with no candles for the range.
   static func noCandles(_ cause: String) -> LocalizedStringResource {
@@ -1939,9 +1962,9 @@ enum ChartText {
   static func allDecisions(_ count: Int) -> LocalizedStringResource {
     LocalizedStringResource("chart.decisions.all", defaultValue: "All \(count) decisions")
   }
-  static func decisionsFailed(_ cause: String) -> LocalizedStringResource {
+  static var decisionsFailed: LocalizedStringResource {
     LocalizedStringResource("chart.decisions.failed",
-      defaultValue: "Couldn't read the decisions: \(cause)")
+      defaultValue: "Couldn't read the decisions")
   }
   static func entryStop(_ entry: String, _ stop: String) -> LocalizedStringResource {
     LocalizedStringResource("chart.decisions.entryStop", defaultValue: "entry \(entry) · stop \(stop)")
