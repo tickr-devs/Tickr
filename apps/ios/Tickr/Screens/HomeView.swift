@@ -34,7 +34,8 @@ struct HomeView: View {
         }
     } actions: {
       if let environment = model.status?.environment {
-        EnvironmentBadge(environment: environment)
+        EnvironmentBadge(ApiText.environment(environment), raw: environment)
+          .accessibilityLabel(Text(L10n.Connect.environment(ApiText.environment(environment))))
       }
       Button {
         showControl = true
