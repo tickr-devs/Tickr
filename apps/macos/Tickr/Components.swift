@@ -186,7 +186,6 @@ struct Card<Trailing: View, Content: View>: View {
             .font(Tokens.Typography.label)
             .tracking(Tokens.Typography.labelTracking)
             .foregroundStyle(Palette.textQuaternary)
-            .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
           Spacer(minLength: Tokens.Space.s)
           trailing
@@ -308,11 +307,7 @@ struct MoreButton: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: Tokens.Space.xs) {
-        if let systemImage { Image(systemName: systemImage) }
-        title
-        Chevron()
-      }
+      ChevronLabel(title, systemImage: systemImage)
     }
     .buttonStyle(.action(.ghost, size: .compact))
   }

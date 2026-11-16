@@ -6993,13 +6993,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open chart →"
+            "value" : "Open chart"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Открыть график →"
+            "value" : "Открыть график"
           }
         }
       }
@@ -8829,13 +8829,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details →"
+            "value" : "Details"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подробнее →"
+            "value" : "Подробнее"
           }
         }
       }

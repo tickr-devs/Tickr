@@ -596,8 +596,6 @@ struct TickrTabBar: View {
         DesignGlyphView(tab.glyph, side: Tokens.Size.tabGlyph)
         Text(tab.title)
           .font(Tokens.Typography.tabLabel)
-          .lineLimit(1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
       }
       .foregroundStyle(selected ? Palette.infoText : Palette.textSecondary)
       .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
@@ -641,8 +639,6 @@ struct SegmentChips<Value: Hashable>: View {
         } label: {
           option.title
             .font(font)
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.standard)
             .foregroundStyle(chosen ? chosenText : Palette.textSecondary)
             .frame(maxWidth: .infinity, minHeight: Tokens.Size.iconButton)
             .padding(.horizontal, Tokens.Space.xs)
@@ -747,13 +743,9 @@ struct StatTile: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       CardLabel(label)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.slight)
       Text(verbatim: value)
         .font(.subheadline.monospaced().bold())
         .foregroundStyle(color)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
         .contentTransition(.numericText())
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

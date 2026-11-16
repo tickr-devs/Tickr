@@ -7330,13 +7330,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "open full chart →"
+            "value" : "open full chart"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "открыть график →"
+            "value" : "открыть график"
           }
         }
       }

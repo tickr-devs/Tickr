@@ -27,15 +27,13 @@ struct StageDetailView: View {
   }
 
   var body: some View {
-    // Text at reading size, never the card's shrunk or redacted styles; content too tall for the
+    // Text at reading size, never the card's redacted style; content too tall for the
     // popover (a long day, large Dynamic Type) scrolls.
     ViewThatFits(in: .vertical) {
       content
       ScrollView { content }
     }
     .frame(width: Self.width)
-    .lineLimit(nil)
-    .minimumScaleFactor(1)
     .unredacted()
     .task {
       guard stage == .strategy || stage == .risk, let url = model.connection.url else { return }

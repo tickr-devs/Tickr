@@ -135,14 +135,11 @@ private struct FigureRow: View {
   var symbol: String?
   var symbolColor: Color = Palette.textQuaternary
   var color: Color = Palette.textSecondary
-  /// Lines the label may wrap to in a narrow column, the value keeping its one line.
-  var labelLines = 1
 
   init(
     _ label: LocalizedStringResource, value: String, symbol: String? = nil,
-    symbolColor: Color = Palette.textQuaternary, color: Color = Palette.textSecondary, labelLines: Int = 1
+    symbolColor: Color = Palette.textQuaternary, color: Color = Palette.textSecondary
   ) {
-    self.labelLines = labelLines
     self.label = Text(label)
     self.value = value
     self.symbol = symbol
@@ -161,17 +158,14 @@ private struct FigureRow: View {
       }
       label
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(labelLines)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Tokens.Space.s)
       Text(verbatim: value)
         .foregroundStyle(color)
         .monospacedDigit()
-        .lineLimit(1)
         .layoutPriority(1)
     }
     .font(Tokens.Typography.calloutMono)
-    .minimumScaleFactor(Tokens.Shrink.slight)
     .accessibilityElement(children: .combine)
   }
 }
@@ -186,7 +180,6 @@ private struct PlannedLine: View {
       Text(text)
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.textTertiary)
-        .lineLimit(1)
       Spacer(minLength: 0)
     }
   }
@@ -568,13 +561,9 @@ private struct ReconciliationCard: View {
       text
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(Self.checkLines)
     }
     .accessibilityElement(children: .combine)
   }
-
-  /// Lines a check may take before it is cut.
-  static let checkLines = 2
 
   /// The design's small tinted square around a symbol.
   private func glyph(_ symbol: String, color: Color) -> some View {
@@ -614,7 +603,6 @@ private struct ReconciliationCard: View {
       title
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textSecondary)
-        .lineLimit(1)
       Spacer(minLength: Tokens.Space.s)
       Group {
         if switched {
@@ -775,8 +763,6 @@ private struct PositionSlots: View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       content()
     }
-    .lineLimit(1)
-    .minimumScaleFactor(Tokens.Shrink.standard)
     .padding(Tokens.Space.s)
     .frame(maxWidth: .infinity, minHeight: Self.tileHeight, alignment: .topLeading)
     .background(Palette.surfaceSunken, in: .rect(cornerRadius: Tokens.Radius.medium))
@@ -796,8 +782,6 @@ private struct SessionCard: View {
   static let clockWidth: CGFloat = 132
   /// Least width of the times beside the clock, in points: narrower, they go under it.
   static let figuresMinWidth: CGFloat = 180
-  /// Lines a time's label may take beside the clock ("Last / entry", as the design wraps it).
-  static let labelLines = 2
 
   /// Today's regular session, when the bot reported it for today.
   private var session: SessionTimesV1? {
@@ -855,11 +839,9 @@ private struct SessionCard: View {
   private func figures(_ settings: SessionSettings) -> some View {
     VStack(spacing: Tokens.Space.xs) {
       FigureRow(L10n.Risk.lastEntry,
-        value: String(localized: L10n.Risk.minutesBeforeClose(settings.lastEntryMinutesBeforeClose)),
-        labelLines: Self.labelLines)
+        value: String(localized: L10n.Risk.minutesBeforeClose(settings.lastEntryMinutesBeforeClose)))
       FigureRow(L10n.Risk.flatten,
-        value: String(localized: L10n.Risk.minutesBeforeClose(settings.flattenMinutesBeforeClose)),
-        labelLines: Self.labelLines)
+        value: String(localized: L10n.Risk.minutesBeforeClose(settings.flattenMinutesBeforeClose)))
       FigureRow(L10n.Risk.halfDays, value: String(localized: settings.halfDaysEnabled ? L10n.Common.on : L10n.Common.off))
     }
   }
@@ -968,8 +950,6 @@ private struct AccountCard: View {
           }
         }
         .font(Tokens.Typography.calloutMono)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       }
       PlannedLine(text: L10n.Risk.accountPlanned)
         .padding(.top, Tokens.Space.xs)

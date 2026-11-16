@@ -187,7 +187,6 @@ public struct ChipButtonStyle: ButtonStyle {
     configuration.label
       .labelStyle(ControlLabelStyle())
       .font(Tokens.Typography.label)
-      .lineLimit(1)
       .foregroundStyle(selected || hovered ? Palette.textPrimary : Palette.textTertiary)
       .padding(.horizontal, Tokens.Space.s)
       .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
@@ -230,7 +229,6 @@ private struct ChipToggleButton: ButtonStyle {
     configuration.label
       .labelStyle(ControlLabelStyle())
       .font(Tokens.Typography.label)
-      .lineLimit(1)
       .foregroundStyle(isOn ? Palette.textPrimary : Palette.textTertiary)
       .padding(.horizontal, Tokens.Space.s)
       .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
@@ -279,6 +277,30 @@ public struct ControlLabelStyle: LabelStyle {
     HStack(spacing: Tokens.Space.xs) {
       configuration.icon
       configuration.title
+    }
+  }
+}
+
+/// A card link's label: an optional symbol, the title and the disclosure chevron, the only sign
+/// that it leads somewhere ("Open chart ›", "Details ›"); its title never carries an arrow.
+public struct ChevronLabel: View {
+  let title: Text
+  let systemImage: String?
+
+  public init(_ title: Text, systemImage: String? = nil) {
+    self.title = title
+    self.systemImage = systemImage
+  }
+
+  public init(_ title: LocalizedStringResource, systemImage: String? = nil) {
+    self.init(Text(title), systemImage: systemImage)
+  }
+
+  public var body: some View {
+    HStack(spacing: Tokens.Space.xs) {
+      if let systemImage { Image(systemName: systemImage).accessibilityHidden(true) }
+      title
+      Chevron()
     }
   }
 }

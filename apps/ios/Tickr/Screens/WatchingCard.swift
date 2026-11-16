@@ -45,7 +45,6 @@ struct WatchingCard: View {
 }
 
 private struct WatchingRow: View {
-  @Environment(\.dynamicTypeSize) private var typeSize
   let row: WatchingRowV1
   /// False while a refresh failed and the row is the last read: its bar is dimmed.
   let current: Bool
@@ -71,7 +70,6 @@ private struct WatchingRow: View {
         Text(verbatim: row.symbol)
           .font(Tokens.Typography.calloutMono.bold())
           .foregroundStyle(Palette.textPrimary)
-          .lineLimit(1)
           .fixedSize()
         Text(row.verdict.title)
           .font(Tokens.Typography.annotationBold)
@@ -86,9 +84,8 @@ private struct WatchingRow: View {
           check.threshold?.text ?? Format.missing].joined(separator: ChartFormat.space))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textTertiary)
-          // One line at ordinary sizes; at large ones it wraps rather than cutting the figures.
-          .lineLimit(typeSize.stacksRows ? nil : 1)
-          .minimumScaleFactor(Tokens.Shrink.standard)
+          // Wraps rather than cutting the figures.
+          .fixedSize(horizontal: false, vertical: true)
       }
       if let closeness {
         // As on the board: a thin bar that grows in, and to each new closeness the bot measures.

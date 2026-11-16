@@ -162,7 +162,7 @@ struct BotControls: View {
   var body: some View {
     let count = compact ? Self.compactColumns : Self.columns
     let list = actions
-    // A plain Grid, not a lazy one: the few buttons always exist, so they stay reachable (and
+    // Plain stacks, not lazy ones: the few buttons always exist, so they stay reachable (and
     // visible to accessibility) while scrolled out of view.
     let rows = stride(from: 0, to: list.count, by: count).map { Array(list[$0..<min($0 + count, list.count)]) }
     if compact {
@@ -173,11 +173,17 @@ struct BotControls: View {
         }
       }
     } else {
-      Grid(horizontalSpacing: Tokens.Space.s, verticalSpacing: Tokens.Space.s) {
+      // Rows of equal buttons sharing the card's width: a long title wraps inside its button, so
+      // the buttons never ask the card for more width than it has (a grid sized its columns by
+      // the titles' whole width and pushed the card past the window).
+      VStack(spacing: Tokens.Space.s) {
         ForEach(rows.indices, id: \.self) { index in
-          GridRow {
+          HStack(spacing: Tokens.Space.s) {
             ForEach(rows[index]) { action in
               button(action)
+            }
+            ForEach(rows[index].count..<count, id: \.self) { _ in
+              Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
             }
           }
         }
@@ -204,8 +210,6 @@ struct BotControls: View {
       Button(role: action.isDestructive ? .destructive : nil, action: tap) {
         Label {
           Text(verbatim: action.needsConfirmation ? "\(action.title)…" : action.title)
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.slight)
         } icon: {
           Image(systemName: action.symbol)
         }

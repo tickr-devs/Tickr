@@ -518,7 +518,7 @@ enum L10n {
         bundle: L10n.bundle)
     }
     static var openChart: LocalizedStringResource {
-      LocalizedStringResource("positions.openChart", defaultValue: "open full chart →", bundle: L10n.bundle)
+      LocalizedStringResource("positions.openChart", defaultValue: "open full chart", bundle: L10n.bundle)
     }
     static var riskBand: LocalizedStringResource {
       LocalizedStringResource("positions.riskBand", defaultValue: "Risk band", bundle: L10n.bundle)
