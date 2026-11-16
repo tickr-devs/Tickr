@@ -103,6 +103,7 @@ struct RootView: View {
             .frame(minWidth: Self.screenMinWidth, maxWidth: .infinity, minHeight: Self.screenMinHeight,
               maxHeight: .infinity, alignment: .topLeading)
             .clipped()
+            .lastKnown(model.connectionState.isLastKnown)
         }
         if let unattended = model.unattendedPositions {
           UnattendedBanner(unattended: unattended)

@@ -120,8 +120,14 @@ final class AppModel {
     ConnectionState.make(configured: isConfigured, response: response, failure: readFailure, lastSuccess: lastReadAt)
   }
 
-  /// The words of the connection banner now (the last read's time is on this phone's clock).
-  var connectionMessage: ConnectionMessage? { connectionState.message(now: now()) }
+  /// Seconds between two reads of /status: the server's poll_seconds once it answered.
+  var pollSeconds: Double {
+    let asked = response.map { NSDecimalNumber(decimal: $0.pollSeconds.value).doubleValue } ?? Self.initialPollSeconds
+    return max(asked, Self.minimumPollSeconds)
+  }
+
+  /// The words of the connection banner: the reads go on every `pollSeconds`.
+  var connectionMessage: ConnectionMessage? { connectionState.message(retrySeconds: Int(pollSeconds.rounded())) }
 
   /// The last read succeeded and the bot's status is current.
   var isFresh: Bool { status != nil && response?.stale == false && fetchError == nil }
@@ -144,9 +150,7 @@ final class AppModel {
       while !Task.isCancelled {
         guard let self else { return }
         await self.refresh()
-        let seconds = self.response.map { NSDecimalNumber(decimal: $0.pollSeconds.value).doubleValue }
-          ?? Self.initialPollSeconds
-        try? await Task.sleep(for: .seconds(max(seconds, Self.minimumPollSeconds)))
+        try? await Task.sleep(for: .seconds(self.pollSeconds))
       }
     }
   }

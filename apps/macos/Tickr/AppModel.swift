@@ -240,8 +240,15 @@ public final class AppModel {
   public var connectionState: ConnectionState {
     ConnectionState.make(configured: true, response: response, failure: readFailure, lastSuccess: lastReadAt)
   }
-  /// The words of the connection banner now (the last read's time is on this Mac's clock).
-  public var connectionMessage: ConnectionMessage? { connectionState.message(now: now()) }
+  /// Seconds between two reads of /status: the server's poll_seconds once it answered, at least
+  /// one second.
+  public var pollSeconds: Double {
+    max(response.map { NSDecimalNumber(decimal: $0.pollSeconds.value).doubleValue } ?? Pace.initialPollSeconds, 1)
+  }
+  /// The words of the connection banner: the reads go on every `pollSeconds`.
+  public var connectionMessage: ConnectionMessage? {
+    connectionState.message(retrySeconds: Int(pollSeconds.rounded()))
+  }
   /// This moment on the bot's clock.
   public var botNow: Date { botTime(now()) }
   /// A moment of this Mac's clock (a TimelineView's tick) on the bot's clock.
@@ -367,9 +374,7 @@ public final class AppModel {
       while !Task.isCancelled {
         guard let self else { return }
         await self.refreshStatus()
-        let seconds = self.response.map { NSDecimalNumber(decimal: $0.pollSeconds.value).doubleValue }
-          ?? Pace.initialPollSeconds
-        try? await Task.sleep(for: .seconds(max(seconds, 1)))
+        try? await Task.sleep(for: .seconds(self.pollSeconds))
       }
     })
     tasks.append(Task { [weak self] in

@@ -1664,36 +1664,19 @@
         }
       }
     },
-    "kit.connection.errorTitle" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The bot's server answered with an error"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Сервер бота ответил ошибкой"
-          }
-        }
-      }
-    },
     "kit.connection.lastKnown" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Showing the last known data, from %@. Commands are off until the connection is back."
+            "value" : "showing data from %1$@ · retrying every %2$lld s · commands off"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показаны последние известные данные на %@. Команды недоступны, пока связь не вернётся."
+            "value" : "данные на %1$@ · повтор каждые %2$lld с · команды выключены"
           }
         }
       }
@@ -1704,13 +1687,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The Mac answers, but the bot has no status to show. Entries are not possible."
+            "value" : "the Mac answers, the bot has no status · entries not possible"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac отвечает, но у бота нет состояния для показа. Входы невозможны."
+            "value" : "Mac отвечает, у бота нет состояния · входы невозможны"
           }
         }
       }
@@ -1738,13 +1721,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair this device with the Mac in the connection settings."
+            "value" : "pair this device with the Mac in Settings"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Свяжите это устройство с Mac в настройках связи."
+            "value" : "свяжите это устройство с Mac в настройках"
           }
         }
       }
@@ -1772,13 +1755,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing received yet. Check that the Mac is awake and the bot is running. Commands are off."
+            "value" : "nothing received yet · retrying every %lld s · commands off"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Данных пока нет. Проверьте, что Mac не спит и бот запущен. Команды недоступны."
+            "value" : "данных пока нет · повтор каждые %lld с · команды выключены"
           }
         }
       }
@@ -1806,13 +1789,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connection settings"
+            "value" : "Settings"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Настройки связи"
+            "value" : "Настройки"
           }
         }
       }
@@ -1823,7 +1806,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No connection to the bot"
+            "value" : "Can't reach the bot"
           }
         },
         "ru" : {
@@ -3616,7 +3599,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No connection to the bot. Entry status unknown."
+            "value" : "Can't reach the bot. Entry status unknown."
           }
         },
         "ru" : {

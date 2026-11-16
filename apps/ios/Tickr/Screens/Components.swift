@@ -192,6 +192,7 @@ struct Screen<Leading: View, Actions: View, Content: View>: View {
   let leading: Leading
   let actions: Actions
   let content: Content
+  @Environment(AppModel.self) private var model
 
   init(
     _ title: LocalizedStringResource, tab: AppTab? = nil, back: LocalizedStringResource? = nil,
@@ -213,7 +214,10 @@ struct Screen<Leading: View, Actions: View, Content: View>: View {
         } else {
           PushedHeader(title: title, back: back) { leading } actions: { actions }
         }
-        content
+        // The link to the bot, said the same on every screen: a banner over the last known
+        // data (drawn dimmer), or an empty state in the card area when nothing was read.
+        ConnectionPrompt()
+        content.lastKnown(model.connectionState.isLastKnown)
       }
       .padding(.horizontal, Tokens.Space.l)
       .padding(.bottom, Tokens.Space.xl)
@@ -578,10 +582,11 @@ struct SegmentChips<Value: Hashable>: View {
   }
 }
 
-/// What every tab says about the link to the bot (TickrKit `ConnectionState`), at the top of its
-/// content: a banner over the last known data when a read fails, an empty state in the card area
-/// when there is no data yet, nothing while the link is fine. The technical cause (address, port,
-/// the API's own words) is behind "Details"; commands stay off while it shows (`canCommand`).
+/// What every screen says about the link to the bot (TickrKit `ConnectionState`), at the top of
+/// its content (`Screen`, the Chart tab): the mockup's calm banner over the last known data when a
+/// read fails, an empty state in the card area when there is no data yet, nothing while the link
+/// is fine. The technical cause (address, port, the API's own words) is behind "Details"; commands
+/// stay off while it shows (`canCommand`), and its line says so.
 struct ConnectionPrompt: View {
   @Environment(AppModel.self) private var model
   /// A Retry is on its way: the button waits for it.
@@ -590,9 +595,7 @@ struct ConnectionPrompt: View {
   var body: some View {
     let state = model.connectionState
     if let message = model.connectionMessage {
-      ConnectionNotice(state.hasNoData ? .empty : .banner, title: message.title, message: message.body,
-        tone: message.severity == .alarm ? .loss : .warning,
-        systemImage: state == .notConfigured ? ConnectionNoticeLook.setupSymbol : ConnectionNoticeLook.offlineSymbol,
+      ConnectionNotice(state.hasNoData ? .empty : .banner, title: message.title, subtitle: message.subtitle,
         detailsLabel: ConnectionMessage.detailsLabel, details: details(message)) {
         if state != .notConfigured {
           Button {
@@ -602,7 +605,7 @@ struct ConnectionPrompt: View {
               retrying = false
             }
           } label: { Text(ConnectionMessage.retry) }
-            .buttonStyle(.action(state.hasNoData ? .primary : .secondary, size: .compact))
+            .buttonStyle(.action(.secondary, size: .compact))
             .disabled(retrying)
         }
         NavigationLink { SettingsView() } label: { Text(ConnectionMessage.settings) }

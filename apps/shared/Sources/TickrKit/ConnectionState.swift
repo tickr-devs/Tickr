@@ -1,21 +1,12 @@
 import Foundation
 
-/// Why the last read of /status failed, kept apart from its wording: the apps say the kind in
-/// plain words and show the technical detail (address, port, the API's own cause) only on request.
+/// Why the last read of /status failed. The apps say it in the same calm words whatever the cause
+/// and show this technical detail (address, port, the API's own cause) only on request.
 public struct ReadFailure: Equatable, Sendable {
-  public enum Kind: Equatable, Sendable {
-    /// Nothing answered at the address (no network, the Mac asleep, the API not running).
-    case unreachable
-    /// The API answered, but with a refusal or an answer the app cannot read.
-    case answeredWithError
-  }
-
-  public let kind: Kind
   /// The failure as the API client describes it, in the person's language: for "Details" only.
   public let detail: String
 
-  public init(kind: Kind, detail: String) {
-    self.kind = kind
+  public init(detail: String) {
     self.detail = detail
   }
 
@@ -23,8 +14,7 @@ public struct ReadFailure: Equatable, Sendable {
   /// the failure seen before stays (`ReadFailure(error) ?? old`).
   public init?(_ error: Error) {
     guard let detail = ErrorText.describe(error) else { return nil }
-    let unreachable = (error as? APIError).map { if case .unreachable = $0 { true } else { false } } ?? false
-    self.init(kind: unreachable ? .unreachable : .answeredWithError, detail: detail)
+    self.init(detail: detail)
   }
 }
 
@@ -87,52 +77,42 @@ public enum ConnectionState: Equatable, Sendable {
     }
   }
 
-  /// The banner's or empty state's words at `now`; nil while the link is fine (or still
+  /// The banner's or empty state's words (the mockup's calm "Can't reach the bot" banner);
+  /// `retrySeconds` is how often the app reads again. Nil while the link is fine (or still
   /// connecting).
-  public func message(now: Date) -> ConnectionMessage? {
+  public func message(retrySeconds: Int) -> ConnectionMessage? {
     switch self {
     case .connecting, .connected:
       return nil
     case .notConfigured:
-      return ConnectionMessage(title: L10n.connectionNotConfiguredTitle, body: L10n.connectionNotConfiguredBody,
-        details: nil, severity: .attention)
+      return ConnectionMessage(title: L10n.connectionNotConfiguredTitle, subtitle: L10n.connectionNotConfiguredBody,
+        details: nil)
     case .noBotStatus(let cause):
-      return ConnectionMessage(title: L10n.connectionNoBotStatusTitle, body: L10n.connectionNoBotStatusBody,
-        details: cause, severity: .alarm)
+      return ConnectionMessage(title: L10n.connectionNoBotStatusTitle, subtitle: L10n.connectionNoBotStatusBody,
+        details: cause)
     case .stale(let lastSuccess, let failure):
-      return ConnectionMessage(title: Self.title(failure), body: L10n.connectionLastKnown(Self.time(lastSuccess, now: now)),
-        details: failure.detail, severity: .attention)
+      return ConnectionMessage(title: L10n.connectionUnreachableTitle,
+        subtitle: L10n.connectionLastKnown(Self.time(lastSuccess), retrySeconds), details: failure.detail)
     case .neverConnected(let failure):
-      return ConnectionMessage(title: Self.title(failure), body: L10n.connectionNothingYet,
-        details: failure.detail, severity: .alarm)
+      return ConnectionMessage(title: L10n.connectionUnreachableTitle,
+        subtitle: L10n.connectionNothingYet(retrySeconds), details: failure.detail)
     }
   }
 
-  private static func title(_ failure: ReadFailure) -> LocalizedStringResource {
-    switch failure.kind {
-    case .unreachable: return L10n.connectionUnreachableTitle
-    case .answeredWithError: return L10n.connectionErrorTitle
-    }
-  }
-
-  /// The time of the last good read: the clock time today, with the day before that.
-  static func time(_ date: Date, now: Date) -> String {
-    Calendar.current.isDate(date, inSameDayAs: now)
-      ? date.formatted(date: .omitted, time: .shortened)
-      : date.formatted(date: .abbreviated, time: .shortened)
+  /// The clock time of the last good read, to the second ("10:46:12").
+  static func time(_ date: Date) -> String {
+    date.formatted(.dateTime.hour().minute().second())
   }
 }
 
-/// The words of a connection banner or empty state: a short title, one plain sentence, and the
-/// technical detail kept for "Details".
+/// The words of a connection banner or empty state: a short title, one mono line under it, and
+/// the technical detail kept for "Details". Calm in every case (no alarm colour): the health dot
+/// and the headline already say the bot cannot be trusted, and commands are off.
 public struct ConnectionMessage: Equatable, Sendable {
   public let title: LocalizedStringResource
-  public let body: LocalizedStringResource
+  public let subtitle: LocalizedStringResource
   /// The technical cause (address, port, the API's own words); shown only when asked for.
   public let details: String?
-  /// `attention` over last known data or before setup, `alarm` when there is nothing to show
-  /// (never connected, or the bot has no status). Commands are off in every case.
-  public let severity: Severity
 
   /// Labels of the actions every banner offers.
   public static var retry: LocalizedStringResource { L10n.connectionRetry }

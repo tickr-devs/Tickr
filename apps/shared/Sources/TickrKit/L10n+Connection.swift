@@ -7,24 +7,18 @@ extension L10n {
 
   /// Title of the banner when nothing answers at the bot's address.
   static var connectionUnreachableTitle: LocalizedStringResource {
-    LocalizedStringResource("kit.connection.unreachableTitle", defaultValue: "No connection to the bot", bundle: bundle)
+    LocalizedStringResource("kit.connection.unreachableTitle", defaultValue: "Can't reach the bot", bundle: bundle)
   }
-  /// Title of the banner when the bot's API answers with an error.
-  static var connectionErrorTitle: LocalizedStringResource {
-    LocalizedStringResource("kit.connection.errorTitle", defaultValue: "The bot's server answered with an error",
-      bundle: bundle)
-  }
-  /// The banner's sentence over last known data; argument: the time of the last good read.
-  static func connectionLastKnown(_ time: String) -> LocalizedStringResource {
+  /// The banner's line over last known data; arguments: the last good read's time, the seconds
+  /// between reads.
+  static func connectionLastKnown(_ time: String, _ seconds: Int) -> LocalizedStringResource {
     LocalizedStringResource("kit.connection.lastKnown",
-      defaultValue: "Showing the last known data, from \(time). Commands are off until the connection is back.",
-      bundle: bundle)
+      defaultValue: "showing data from \(time) · retrying every \(seconds) s · commands off", bundle: bundle)
   }
-  /// The empty state's sentence when nothing was ever read.
-  static var connectionNothingYet: LocalizedStringResource {
+  /// The line when nothing was ever read; argument: the seconds between reads.
+  static func connectionNothingYet(_ seconds: Int) -> LocalizedStringResource {
     LocalizedStringResource("kit.connection.nothingYet",
-      defaultValue: "Nothing received yet. Check that the Mac is awake and the bot is running. Commands are off.",
-      bundle: bundle)
+      defaultValue: "nothing received yet · retrying every \(seconds) s · commands off", bundle: bundle)
   }
   /// Title of the empty state before an address is set.
   static var connectionNotConfiguredTitle: LocalizedStringResource {
@@ -33,7 +27,7 @@ extension L10n {
   /// The empty state's sentence before an address is set.
   static var connectionNotConfiguredBody: LocalizedStringResource {
     LocalizedStringResource("kit.connection.notConfiguredBody",
-      defaultValue: "Pair this device with the Mac in the connection settings.", bundle: bundle)
+      defaultValue: "pair this device with the Mac in Settings", bundle: bundle)
   }
   /// Title when the API answers but the bot has written no status.
   static var connectionNoBotStatusTitle: LocalizedStringResource {
@@ -43,8 +37,7 @@ extension L10n {
   /// Sentence when the API answers but the bot has written no status.
   static var connectionNoBotStatusBody: LocalizedStringResource {
     LocalizedStringResource("kit.connection.noBotStatusBody",
-      defaultValue: "The Mac answers, but the bot has no status to show. Entries are not possible.",
-      bundle: bundle)
+      defaultValue: "the Mac answers, the bot has no status · entries not possible", bundle: bundle)
   }
   /// The banner's action that reads again now.
   static var connectionRetry: LocalizedStringResource {
@@ -52,7 +45,7 @@ extension L10n {
   }
   /// The banner's action that opens the connection settings.
   static var connectionSettings: LocalizedStringResource {
-    LocalizedStringResource("kit.connection.settings", defaultValue: "Connection settings", bundle: bundle)
+    LocalizedStringResource("kit.connection.settings", defaultValue: "Settings", bundle: bundle)
   }
   /// The disclosure that shows the technical detail.
   static var connectionDetails: LocalizedStringResource {
@@ -64,7 +57,7 @@ extension L10n {
   }
   /// Headline while the last read of the bot failed: plain words, the detail is in the banner.
   static var headlineNoConnection: LocalizedStringResource {
-    LocalizedStringResource("kit.headline.noConnection", defaultValue: "No connection to the bot. Entry status unknown.",
+    LocalizedStringResource("kit.headline.noConnection", defaultValue: "Can't reach the bot. Entry status unknown.",
       bundle: bundle)
   }
 }

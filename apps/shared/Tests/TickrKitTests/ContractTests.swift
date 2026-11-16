@@ -340,7 +340,7 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
   @Test("A failed read's headline is plain words: no address, port or system error in it")
   func failedReadHeadlineHasNoTechnicalDetail() {
     let headline = Headline.make(response: nil, readFailed: true)
-    #expect(headline.text == "No connection to the bot. Entry status unknown.")
+    #expect(headline.text == "Can't reach the bot. Entry status unknown.")
   }
 
   /// A stale status read again is older but no new state: its pulse key stays, though its text

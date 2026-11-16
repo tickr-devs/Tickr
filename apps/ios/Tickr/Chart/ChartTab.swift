@@ -16,7 +16,7 @@ struct ChartTab: View {
       VStack(alignment: .leading, spacing: Tokens.Space.m) {
         ConnectionPrompt()
         if let url = app.connection.url {
-          content(url)
+          content(url).lastKnown(app.connectionState.isLastKnown)
         }
       }
       .padding(.horizontal, Tokens.Space.l)
