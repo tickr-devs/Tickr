@@ -10166,6 +10166,23 @@
         }
       }
     },
+    "settings.configuration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфигурация"
+          }
+        }
+      }
+    },
     "settings.configValid" : {
       "extractionState" : "manual",
       "localizations" : {

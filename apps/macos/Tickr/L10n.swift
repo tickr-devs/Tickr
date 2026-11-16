@@ -785,6 +785,9 @@ enum L10n {
   }
 
   enum Settings {
+    static var configuration: LocalizedStringResource {
+      LocalizedStringResource("settings.configuration", defaultValue: "Configuration", bundle: L10n.bundle)
+    }
     static var configFooter: LocalizedStringResource {
       LocalizedStringResource("settings.configFooter",
         // swiftlint:disable:next line_length

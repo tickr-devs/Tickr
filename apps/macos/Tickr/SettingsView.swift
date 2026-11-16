@@ -557,7 +557,7 @@ private struct BotServiceCard: View {
         StateGlyph(Self.serviceSymbol, tone: tone, label: L10n.Settings.botService, live: running,
           event: model.status?.botState)
         VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-          Text(title).font(Tokens.Typography.body.weight(.semibold)).foregroundStyle(Palette.textPrimary)
+          title.font(Tokens.Typography.body.weight(.semibold)).foregroundStyle(Palette.textPrimary)
           Text(note).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary)
         }
         Spacer(minLength: Tokens.Space.s)
@@ -658,9 +658,9 @@ private struct BotServiceCard: View {
   }
 
   /// A stale status proves nothing about the bot now, so the card says so instead of the last state.
-  private var title: LocalizedStringResource {
-    guard !stale, let state = model.status?.botState else { return L10n.Settings.serviceNotReported }
-    return state.title
+  private var title: Text {
+    guard !stale, let state = model.status?.botState else { return Text(L10n.Settings.serviceNotReported) }
+    return Text(verbatim: state.title)
   }
 
   private var note: LocalizedStringResource {
