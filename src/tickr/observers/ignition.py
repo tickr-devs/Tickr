@@ -422,6 +422,10 @@ class Ignition:
                     if not leg.exited:
                         self._exit(earlier, leg, quote, at, REPLACED)
             self._trades[symbol] = trade
+            # Slot caps are judged later from this: open paper trades counting this one (any
+            # trail still out), and those whose main trail is still out.
+            record.update(open_paper_trades=len(self._trades),
+                          open_main_trails=sum(t.main_open for t in self._trades.values()))
             record.update(outcome=ENTERED, trade_id=trade.trade_id, entry_price=str(quote.ask),
                           entry_at=quote.provider_time.isoformat(),
                           spread_percent=str(spread_percent(quote).quantize(CENTS)))

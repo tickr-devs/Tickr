@@ -234,3 +234,16 @@ def test_records_are_one_json_object_per_line(tmp_path):
     world.ignite()
     lines = world.log.path(T0).read_text("utf-8").splitlines()
     assert all(isinstance(json.loads(line), dict) for line in lines)
+
+
+def test_each_entry_records_how_many_paper_trades_are_open(tmp_path):
+    world = World(tmp_path)
+    world.ignite()
+    other = "RUN"
+    world.pass_(T0 - timedelta(minutes=5), [row("2.00", "2.05", symbol=other)])
+    at = T0 + timedelta(minutes=1)
+    world.pass_(at, [row("2.60", "2.60", volume="200000", symbol=other)],
+                [quote("2.59", "2.61", at, symbol=other)])
+    first, second = world.records(ig.SIGNAL)
+    assert (first["open_paper_trades"], first["open_main_trails"]) == (1, 1)
+    assert (second["open_paper_trades"], second["open_main_trails"]) == (2, 2)

@@ -160,6 +160,7 @@ the screener rows discovery already reads every minute, so it costs no extra req
   (`flat_grace_seconds` later without one: the last bid seen). A pause of
   `quote_gap_seconds` between two quotes is recorded as a gap (halt, quiet book or no slot).
 - **Records**: `<decisions_dir>/<environment>/<NY date>/ignition.jsonl`: `ignition-signal`,
+  (each entry also counts the paper trades open at that moment, for judging slot caps later),
   `ignition-exit` (bid, ask, spread, result in percent and on `paper_notional_usd`, stream and
   snapshot quote counts) and `ignition-gap`. A failure in a pass is journaled as
   `ignition-failed`; discovery and trading go on. After a restart, open paper trades are taken
