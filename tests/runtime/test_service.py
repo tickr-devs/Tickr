@@ -104,8 +104,9 @@ class StubEvaluator:
         self.watch = {"WAT"}
         self.calls: list[list[str]] = []
 
-    def tick(self, candidates):
-        self.calls.append(list(candidates))
+    def tick(self, market):
+        market.discover()
+        self.calls.append(market.candidates())
 
 
 class StubMarket:
@@ -121,6 +122,13 @@ class StubMarket:
     def tick(self, *, discover: bool = True) -> None:
         self.ticks += 1
         self.discovers.append(discover)
+
+    def discover(self) -> None:
+        self.discovers.append(True)
+
+    def candidates(self) -> list[str]:
+        found = self.discovery
+        return [] if found is None else [c.instrument.symbol for c in found.candidates]
 
     def freshness(self, last_broker_read_at):
         return api.Freshness(last_broker_read_at, None, api.StreamHealth.OFF)
@@ -138,6 +146,7 @@ def test_with_an_evaluator_the_loop_runs_the_strategy_and_entries_are_open(tmp_p
         assert bot.service.status().entry_block is None
     bot.run(1)
     assert evaluator.calls == [[]] and market.watch == {"WAT"}
+    assert market.discovers == [False, True]  # discovery only through the evaluation
 
     class Candidate:
         class instrument:
@@ -968,3 +977,132 @@ def test_a_missing_calendar_is_a_real_block(tmp_path):
     bot.service.calendar = None
     block = bot.service._ordinary_block()
     assert block is not None and (block.cause, block.attention) == ("calendar_unknown", True)
+
+
+def test_positions_and_watch_are_evaluated_before_discovery_starts(tmp_path):
+    """The real market runtime and evaluator in the service loop: the WATCH symbol's decision
+    comes before discovery's first screener read of the minute."""
+    from tickr.data.base import ScreenerKind
+    from tickr.data.health import StreamHealth
+    from tickr.data.history import HistoryReader, HistorySettings
+    from tickr.data.todaybars import TodayBars
+    from tickr.observers.log import DecisionLog
+    from tickr.runtime.entries import EntryDesk
+    from tickr.runtime.evaluation import Evaluator
+    from tickr.runtime.market import DISCOVERY, MarketRuntime, StreamInbox
+    from tickr.strategy.base import Check, Decision, Verdict
+    from tickr.types import Bar
+
+    events: list[str] = []
+
+    class Source(FakeMarketData):
+        def screener(self, kind: ScreenerKind):
+            events.append(f"screener {kind}")
+            return super().screener(kind)
+
+    class Watching:
+        name, version = CFG.strategy.active, "1"
+
+        def evaluate(self, context):
+            events.append(f"evaluate {context.symbol}")
+            return Decision(self.name, self.version, context.symbol, Verdict.WATCH,
+                            (Check("rule", D(1), ">=", D(1), True),))
+
+        def quote_liquidity(self, quote):
+            return ()
+
+        def session_liquidity(self, bars):
+            return ()
+
+    bot = Bot(tmp_path)
+    source, inbox, today_bars = Source(), StreamInbox(), TodayBars()
+    one = D(10)
+    for day in (9, 10, 11, 12, 13):
+        start = datetime(2026, 11, day, 9, 30, tzinfo=NEW_YORK)
+        source.add_bars([Bar("WAT", start + timedelta(minutes=i), one, one, one, one, one)
+                         for i in range(390)])
+    source.add_bars([Bar("WAT", MONDAY_11 - timedelta(minutes=2), one, one, one, one, one)])
+    market = MarketRuntime(bot.engine, CFG, source, health=StreamHealth.from_config(CFG),
+                           inbox=inbox, capture=None, calendar=CALENDAR, today_bars=today_bars,
+                           now=lambda: bot.now, monotonic=lambda: bot.clock[0])
+    strategy = Watching()
+    market.screen = strategy
+    desk = EntryDesk(bot.engine, CFG, calendar=CALENDAR, last_broker_read_at=lambda: bot.now,
+                     log=DecisionLog(tmp_path / "decisions"))
+    evaluator = Evaluator(bot.engine, CFG, source, strategy=strategy, desk=desk,
+                          history=HistoryReader(source, CALENDAR,
+                                                HistorySettings.from_config(CFG), None),
+                          inbox=inbox, calendar=CALENDAR, today_bars=today_bars,
+                          now=lambda: bot.now)
+    evaluator.watch = {"WAT"}
+    bot.service.market, bot.service.evaluator = market, evaluator
+    bot.engine.recover()
+    bot.service.state = api.BotState.RUNNING
+    bot.run(1)
+    assert events[0] == "evaluate WAT" and events[1].startswith("screener")
+    assert len(bot.store.journal(DISCOVERY)) == 1
+
+
+def test_cli_run_records_the_code_version_on_the_run_and_status(tmp_path, monkeypatch,
+                                                                 code_version_in_environment):
+    TEST_CODE_VERSION = code_version_in_environment  # noqa: N806 - the fixture's value
+
+    bot_toml = copy_config(tmp_path)
+    monkeypatch.setattr(cli, "RUN_ADAPTERS", lambda cfg, on_error, on_token: cli.RunAdapters(
+        FakeBroker(), FakeMarketData(), lambda: None, lambda: None))
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    monkeypatch.setattr(cli, "SLEEP", lambda seconds: os.kill(os.getpid(), signal.SIGTERM))
+    assert cli.main(["--config", str(bot_toml), "run"]) == 0
+    cfg = config.load(bot_toml)
+    assert api.read_status(service.ServicePaths.from_config(cfg).status).code_version == \
+        TEST_CODE_VERSION
+    database, _ = cli.data_paths(cfg)
+    store = Store.open(database, busy_timeout_seconds=0)
+    run_id = store.last_run()["run_id"]
+    assert store.run_code_version(run_id) == TEST_CODE_VERSION
+    (started,) = store.journal("run-started")
+    assert started.body["code_version"] == TEST_CODE_VERSION
+    store.close()
+
+
+def test_cli_run_refuses_without_a_code_version(tmp_path, monkeypatch, capsys):
+    bot_toml = copy_config(tmp_path)
+    monkeypatch.delenv("TICKR_CODE_VERSION")
+    monkeypatch.setattr(cli, "RUN_ADAPTERS", lambda cfg, on_error, on_token: pytest.fail(
+        "the run must be refused before any adapter is built"))
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    assert cli.main(["--config", str(bot_toml), "run"]) == 3
+    err = capsys.readouterr().err
+    assert "code version unknown" in err and "TICKR_CODE_VERSION" in err
+    database, _ = cli.data_paths(config.load(bot_toml))
+    assert not database.exists()  # refused before any run was recorded
+
+
+def test_status_code_version_is_null_for_a_run_recorded_without_one(tmp_path):
+    bot = Bot(tmp_path)
+    assert bot.service.status().code_version is None  # no runs row: never guessed
+    run_id = bot.store.start_run(environment="sandbox", config_digest="d", strategy="s",
+                                 strategy_version="1", code_version="-")
+    bot.engine.run_id = run_id
+    assert bot.service.status().code_version is None
+
+
+def test_a_trade_carries_the_code_version_of_the_run_that_opened_it(tmp_path):
+    sha = "6c4eec8b0f3a91d2e5b7c6a8d9e0f1a2b3c4d5e6-dirty"
+    bot = Bot(tmp_path)
+    bot.engine.run_id = bot.store.start_run(environment="sandbox", config_digest="d",
+                                            strategy="price-action-v1", strategy_version="3",
+                                            code_version=sha)
+    t = bot.engine.open_trade("ABC", D(2), D(10), D("9.80"), D(1),
+                              strategy=("price-action-v1", "3"))
+    (row,) = bot.store.journal("trade-opened", t)
+    assert (row.body["strategy_version"], row.body["code_version"]) == ("3", sha)
+    bot.broker.fill(bot.engine.orders(t)[0].client_order_id, D(2), D(10))
+    for _ in range(3):
+        bot.engine.step()
+    bot.service.state = api.BotState.RUNNING
+    bot.command(api.CommandKind.FLATTEN)
+    assert bot.run(10)
+    status = bot.service.status()
+    (done,) = status.trades_today
+    assert done.code_version == sha and status.code_version == sha

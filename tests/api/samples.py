@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from tickr.api.contract import (
+    AccountFill,
     AccountOrder,
     AccountPosition,
     AccountV1,
@@ -63,7 +64,8 @@ def status(written_at: datetime = T0, **overrides) -> StatusV1:
                             EntrySend("ap-0002-e", T0, T0 + timedelta(milliseconds=2),
                                       SendOutcome.UNKNOWN, SendOutcome.ACKNOWLEDGED, 1,
                                       T0 + timedelta(seconds=4)),
-                            None, StrategyId("price-action-v1", "1")),),
+                            None, StrategyId("price-action-v1", "1"),
+                            "6c4eec8b0f3a91d2e5b7c6a8d9e0f1a2b3c4d5e6-dirty"),),
         result_today_gross_usd=Decimal("-1.60"),
         freshness=Freshness(T0, None, StreamHealth.FRESH),
         recent_commands=(CommandRecord("0b6f7c1e-2f0a-4c55-9d1e-6a1d2f3e4b5c",
@@ -73,6 +75,7 @@ def status(written_at: datetime = T0, **overrides) -> StatusV1:
         open_reservations_usd=Decimal("50"),
         daily_room_usd=Decimal("248.40"),
         positions=(POSITION,),
+        code_version="6c4eec8b0f3a91d2e5b7c6a8d9e0f1a2b3c4d5e6-dirty",
     )
     values.update(overrides)
     return StatusV1(**values)
@@ -83,7 +86,8 @@ def account(read_at: datetime = T0, **overrides) -> AccountV1:
         read_at=read_at,
         equity_usd=Decimal("100123.40"),
         buying_power_usd=Decimal("400493.60"),
-        positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12.34")),),
+        positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12.34"), Decimal("12.40"),
+                                   Decimal("124.00"), Decimal("0.60"), Decimal("0.60")),),
         orders=(AccountOrder("ap-0001-s", "ABCD", "SELL", "STOP_LOSS", "ACCEPTED",
                              Decimal("10"), None, Decimal("11.90"), True),),
         matches_records=True,
@@ -98,6 +102,12 @@ def account(read_at: datetime = T0, **overrides) -> AccountV1:
         margin_calls=0,
         day_trades_left=None,
         account_label="Individual Margin",
+        fills_read_at=read_at - timedelta(seconds=20),
+        fills=(AccountFill("ap-0000-x", "WXYZ", "SELL", "STOP_LOSS", Decimal("20"),
+                           Decimal("5.02"), read_at - timedelta(minutes=40), Decimal("0.07"),
+                           True),
+               AccountFill("ap-0001-e", "ABCD", "BUY", "LIMIT", Decimal("10"), Decimal("12.34"),
+                           read_at - timedelta(minutes=12), Decimal("0"), True)),
     )
     values.update(overrides)
     return AccountV1(**values)

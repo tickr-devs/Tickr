@@ -67,6 +67,7 @@ class RunConfig:
     environment: str
     data_dir: str
     database_busy_timeout_seconds: Decimal
+    code_version_timeout_seconds: Decimal
     backups_dir: str
     maintain_keep_sessions: int
     maintain_archive_max_age_days: int
@@ -175,7 +176,6 @@ class ApiConfig:
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
     observer_trades_max_rows: int
-    watching_max_rows: int
     journal_rows: int
     start_bot_command: tuple[str, ...]
     start_bot_timeout_seconds: Decimal
@@ -209,6 +209,7 @@ class MarketDataConfig:
     snapshot_symbols_per_request: int
     bars_symbols_per_request: int
     bars_per_symbol: int
+    discovery_bars_reserve_requests: int
     history_bars_per_request: int
     history_max_pages_per_symbol: int
     history_max_lookback_days: int
@@ -218,8 +219,13 @@ class MarketDataConfig:
     observer_resync_seconds: Decimal
     stream_reserved_subscribe_requests: int
     candidate_retry_seconds: Decimal
+    refused_symbol_recheck_seconds: Decimal
+    failure_detail_max_chars: int
     history_dir: str
     history_cache_max_age_days: int
+    history_preload_minutes_before_open: int
+    history_preload_screener_seconds: Decimal
+    history_preload_retry_seconds: Decimal
     stream_reconnect_delay_seconds: Decimal
     stream_max_symbols: int
     stream_reserved_symbols: int
@@ -324,6 +330,7 @@ class EnvironmentConfig:
     token_check_duration_seconds: int
     token_check_interval_seconds: int
     open_orders_max_pages: int
+    history_max_pages: int
     route_limits: dict[str, tuple[int, Decimal]]
 
     @property
@@ -487,10 +494,21 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if run.maintain_archive_max_age_days < 0:
         raise ConfigError("[run] maintain_archive_max_age_days must be 0 (never delete archives) "
                           "or a number of days")
+    if run.code_version_timeout_seconds <= 0:
+        raise ConfigError("[run] code_version_timeout_seconds must be above 0")
     md: MarketDataConfig = built["market_data"]
+    if md.refused_symbol_recheck_seconds <= 0:
+        raise ConfigError("[market_data] refused_symbol_recheck_seconds must be above 0")
+    if md.failure_detail_max_chars < 1:
+        raise ConfigError("[market_data] failure_detail_max_chars must be at least 1")
     if md.history_cache_max_age_days < 1:
         raise ConfigError("[market_data] history_cache_max_age_days must be at least 1 (today's "
                           "cache is in use)")
+    if (md.history_preload_minutes_before_open < 0 or md.history_preload_screener_seconds <= 0
+            or md.history_preload_retry_seconds <= 0):
+        raise ConfigError("[market_data] history_preload_minutes_before_open must be at least 0, "
+                          "history_preload_screener_seconds and history_preload_retry_seconds "
+                          "above 0")
     if (md.candidate_subscriptions + md.observer_subscriptions
             > md.stream_max_symbols - md.stream_reserved_symbols):
         raise ConfigError(
@@ -536,6 +554,15 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if chart.webull_enabled:
         for name, env in environments.items():
             check_chart_slice(chart, name, env)
+    reserve = built["market_data"].discovery_bars_reserve_requests
+    for name, env in environments.items():
+        count, _ = env.route_limits.get(BARS_ROUTE,
+                                        (env.requests_per_route_per_minute, SECONDS_PER_MINUTE))
+        bot_count = count - (chart.requests_per_minute if chart.webull_enabled else 0)
+        if not 0 <= reserve < bot_count:
+            raise ConfigError(f"[market_data] discovery_bars_reserve_requests must be at least 0 "
+                              f"and below the bot's bars route limit of [environments.{name}] "
+                              f"({bot_count}), or discovery could never read bars")
     orders, api = built["orders"], built["api"]
     if not orders.reconcile_interval_seconds < api.broker_read_warn_seconds \
             < orders.broker_read_max_age_seconds:

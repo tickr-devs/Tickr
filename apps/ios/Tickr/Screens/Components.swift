@@ -99,7 +99,7 @@ extension DecimalString {
 /// Money and time formatting used across screens.
 enum Format {
   /// Shown where a value is missing.
-  static let missing = "—"
+  static let missing = ApiText.missing
   /// Percent sign after a number.
   static let percentSign = "%"
   /// Between the two times of a trade.
@@ -1016,5 +1016,14 @@ struct SettingsRow<Value: View, Subtitle: View>: View {
 extension SettingsRow where Subtitle == EmptyView {
   init(_ label: LocalizedStringResource, systemImage: String, tone: Tone, @ViewBuilder value: () -> Value) {
     self.init(label, systemImage: systemImage, tone: tone, value: value) { EmptyView() }
+  }
+}
+
+extension View {
+  /// Sets what every `ReadFailureNote` below says: while the link to the bot is down, cards wait
+  /// calmly and leave the failure to the connection banner.
+  func readFailureContext(_ model: AppModel) -> some View {
+    environment(\.readFailureContext, ReadFailureContext(connectionDown: model.connectionState.failure != nil,
+      detailsLabel: ConnectionMessage.detailsLabel, waiting: ConnectionMessage.waiting))
   }
 }

@@ -52,7 +52,7 @@ Goal, scope and stages: `docs/spec-v1.md`. What is left:
 
 Goal: the tools and rules to tell a strategy with a positive net result after costs, on data it was
 not fitted on, from a fitted one. Scope: offline research tools and strategy versions only; nothing
-in the order, risk or session path changes. Strategies still never send orders (rule 8). R6-R11 are
+in the order, risk or session path changes. Strategies still never send orders (rule 8). R6-R12 are
 research runs and candidates: they go on in every later version and never gate a merge.
 
 - **R1** Promotion ladder with written criteria: history, observer for N sessions, active in Sandbox,
@@ -79,6 +79,11 @@ research runs and candidates: they go on in every later version and never gate a
 - **R11** Observers see what they would trade: discovery applies the union of the active strategy's
   and the observers' liquidity rules, so an observer with looser rules is not starved (left over
   from #403).
+- **R12** Intra-minute breakout entry (owner, 2026-11-16): a strategy variant that enters on the L1
+  stream when the breakout happens, instead of waiting for the M1 bar to close above it. Webull
+  history has only minute bars, so it cannot be backtested. First step: record every L1 quote of
+  WATCH symbols from the stream the bot already holds (no extra bars quota), check the capture
+  (`quotes.jsonl`) misses none, then judge the variant by quote-level replay and as an observer.
 
 Exit: R1-R5 merged. A strategy climbs R1's ladder as its observer and Sandbox days come in,
 while later versions are built.
@@ -111,7 +116,9 @@ Platform checks (old group B):
 - **T8** Tradability and halts: instrument profile `status` and trade-instrument
   `trade_policy`/`forbid_reason` (CLOSE_ONLY, DENIED, HALTED) refuse entries with a typed cause and
   never block exits; probe first how a halt and the LULD band show in snapshot, profile and stream
-  (old #158). Depends on Q2.
+  (old #158). Depends on Q2. Before Production it also gates price-action-v3's spike setup, which
+  enters right after a sharp move, where LULD pauses are most likely (Fable review of #476,
+  2026-11-16).
 - **T9** Money in the account as an admission check: buying power, settled cash, intraday margin
   (the account file shows the broker's buying power since 2026-11-16, display only). The pattern day trader rule is being replaced
   by an intraday margin standard (FINRA 4210 amendments effective 2026-06-04, broker phase-in to
@@ -165,8 +172,8 @@ owner decision plus the authorization file (rule 5), never a code change.
 
 - **M1** Production readiness view: authorization record form, readiness checklist
   (`docs/api-planned.md` section 3), enabling day.
-- **M2** Account page completeness: per-position market value and P&L, order history with fees
-  (balances, buying power and the account kind are shown since 2026-11-16).
+- **M2** Account page completeness: done 2026-11-16 (balances, account kind, per-position P&L,
+  today's fills with fees); left: fee evidence on real fills against the backtest assumptions.
 - **M3** gRPC trade events (faster fill and order updates than polling), if the probe shows they are
   reliable.
 - **M4** Slippage and fill quality on real fills against the Sandbox and backtest assumptions (R5

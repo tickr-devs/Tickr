@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sqlite3
 import sys
@@ -37,8 +38,10 @@ from tickr.lock import (
 )
 from tickr.runtime import stopmarker
 from tickr.store import DATABASE_FILE, MIGRATIONS, EnvironmentMismatch, Store
+from tickr.version import UNRECORDED, CodeVersionUnknown, running_code_version
 
 if TYPE_CHECKING:
+    from tickr.data.todaybars import TodayBars
     from tickr.observers.runner import ObserverSet
     from tickr.runtime.evaluation import Evaluator
     from tickr.runtime.market import StreamInbox
@@ -47,6 +50,12 @@ if TYPE_CHECKING:
 def data_paths(cfg: config_module.Config) -> tuple[Path, Path]:
     data = cfg.root / cfg.run.data_dir
     return data / DATABASE_FILE, data / LOCK_FILE
+
+
+def _code_version(cfg: config_module.Config) -> str:
+    """The running code version, once per command, before its run starts: every run and
+    every trade it opens is tagged with it. CodeVersionUnknown refuses the start."""
+    return running_code_version(os.environ, cfg.run.code_version_timeout_seconds)
 
 
 def _require_environment(store: Store, cfg: config_module.Config) -> None:
@@ -173,16 +182,28 @@ class _Interrupt:
 
 @contextmanager
 def _engine(path: Path, broker: Broker | None = None,
-            precheck: Callable[[Engine], None] | None = None) -> Iterator[Engine]:
+            precheck: Callable[[Engine], None] | None = None, *,
+            opens_trades: bool) -> Iterator[Engine]:
     """Lock, open the store, recover. `precheck` runs on the records before recovery (which
-    may already send cancels or orders)."""
+    may already send cancels or orders). A command that can open a trade (`opens_trades`)
+    refuses without a code version; one that only manages, exits or unfences existing trades
+    (resume, exit-all, clear-fence) is never blocked by it: it records "-" (shown as null) and
+    prints the cause, because closing a position must always work."""
     cfg = config_module.load(path)
+    try:
+        version = _code_version(cfg)
+    except CodeVersionUnknown as exc:
+        if opens_trades:
+            raise
+        print(f"warning: code version unknown ({exc}); this run is recorded without one",
+              file=sys.stderr)
+        version = UNRECORDED
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds)
         _require_environment(store, cfg)
         run_id = store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
-                                 strategy="manual", strategy_version="-", code_version="-")
+                                 strategy="manual", strategy_version="-", code_version=version)
         cause = "crashed"
         try:
             try:
@@ -253,7 +274,7 @@ def _trade(args: argparse.Namespace) -> int:
     flatten_at = check_window(cfg, calendar, NOW())
     print(f"plan: BUY {plan.quantity} {plan.symbol} limit {plan.limit_price}, "
           f"stop {plan.stop_price}, planned loss {plan.planned_loss_usd} USD")
-    with _engine(args.config) as engine:
+    with _engine(args.config, opens_trades=True) as engine:
         engine.open_trade(plan.symbol, plan.quantity, plan.limit_price, plan.stop_price,
                           plan.planned_loss_usd,
                           None if args.stop is not None else cfg.probe.stop_percent_below_fill)
@@ -270,7 +291,7 @@ def _resume(args: argparse.Namespace, *, exit_all: bool) -> int:
     except CalendarRefused as exc:
         print(f"calendar unreadable ({exc}): closing open trades now", file=sys.stderr)
         flatten_at = NOW()
-    with _engine(args.config) as engine:
+    with _engine(args.config, opens_trades=False) as engine:
         if exit_all:
             for trade in engine.trades():
                 engine.request_exit(trade.trade_id, "operator-exit")
@@ -291,7 +312,7 @@ def _probe_replace_stop(args: argparse.Namespace) -> int:
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
     check_window(cfg, calendar, NOW())
     broker, market = PROBE_ADAPTERS(cfg)
-    with _engine(args.config, broker, replace_probe.precheck) as engine:
+    with _engine(args.config, broker, replace_probe.precheck, opens_trades=True) as engine:
         plan = replace_probe.plan_replace(engine, market, args.to, NOW())
         print(f"plan: stop {plan.stop.client_order_id} ({plan.stop.quantity} {plan.symbol}) "
               f"from {plan.current} to {plan.new}; bid {plan.bid}")
@@ -390,7 +411,7 @@ def _clear_stop(path: Path) -> int:
 
 
 def _clear_fence(args: argparse.Namespace) -> int:
-    with _engine(args.config) as engine:
+    with _engine(args.config, opens_trades=False) as engine:
         if not engine.clear_operator_fence(args.name):
             print(f"not an operator fence or not set: {args.name}", file=sys.stderr)
             return 1
@@ -399,7 +420,7 @@ def _clear_fence(args: argparse.Namespace) -> int:
 
 
 def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
-               inbox: StreamInbox, calendar: SessionCalendar | None,
+               inbox: StreamInbox, calendar: SessionCalendar | None, today_bars: TodayBars,
                last_broker_read_at: Callable[[], datetime | None],
                observers_refused: Callable[[str], None]
                ) -> tuple[Evaluator, ObserverSet] | None:
@@ -424,7 +445,7 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
                      log=log)
     evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
                           history=HistoryReader.from_config(cfg, source, calendar),
-                          inbox=inbox, calendar=calendar, now=NOW)
+                          inbox=inbox, calendar=calendar, today_bars=today_bars, now=NOW)
     try:
         shadows = load_observers(cfg)
     except ObserverError as exc:
@@ -449,8 +470,10 @@ def _run(path: Path) -> int:
     stop marker exists, 5 when the drain hit its deadline."""
     from tickr.data.capture import CaptureWriter
     from tickr.data.health import StreamHealth
+    from tickr.data.todaybars import TodayBars
     from tickr.observers.errors import ObserverError
     from tickr.runtime import service
+    from tickr.runtime.account import AccountReads
     from tickr.runtime.alerts import Alerter, AlertKind, token_pending_text
     from tickr.runtime.market import MarketRuntime, StreamInbox
     from tickr.runtime.signals import StopRequest, install_stop_handler, restore_handlers
@@ -462,6 +485,7 @@ def _run(path: Path) -> int:
         print(f"refused: {stopped}", file=sys.stderr)
         return 3
     strategy = service.strategy_id(cfg)
+    version = _code_version(cfg)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds,
@@ -469,7 +493,7 @@ def _run(path: Path) -> int:
         _require_environment(store, cfg)
         run_id = store.start_run(environment=cfg.environment_name, config_digest=cfg.digest,
                                  strategy=strategy.name, strategy_version=strategy.version,
-                                 code_version="-")
+                                 code_version=version)
         stop = StopRequest()
         previous = install_stop_handler(stop)
         cause = "crashed"
@@ -478,6 +502,7 @@ def _run(path: Path) -> int:
         capture: CaptureWriter | None = None
         observers: ObserverSet | None = None
         watch: Watch | None = None
+        account_reads: AccountReads | None = None
         try:
             alerter = Alerter(cfg.alerts, f"Tickr {cfg.environment_name}",
                               NOTIFIER(cfg.alerts), clock=NOW)
@@ -495,10 +520,11 @@ def _run(path: Path) -> int:
                             clock=lambda: NOW().timestamp(),
                             close_refusal=lambda: close_refusal(cfg, calendar, NOW()))
             capture = CaptureWriter.from_config(cfg, adapters.market.provider)
+            today_bars = TodayBars()  # one bars read shared by discovery and evaluation
             market = MarketRuntime(engine, cfg, adapters.market,
                                    health=StreamHealth.from_config(cfg), inbox=inbox,
-                                   capture=capture, calendar=calendar, now=NOW,
-                                   monotonic=MONOTONIC)
+                                   capture=capture, calendar=calendar, today_bars=today_bars,
+                                   now=NOW, monotonic=MONOTONIC)
             watch = Watch(engine, cfg, alerter, NOW)
 
             def observers_refused(cause: str) -> None:
@@ -509,7 +535,7 @@ def _run(path: Path) -> int:
             entries_off = None
             evaluator, observers = None, None
             try:
-                wired = _evaluator(cfg, engine, adapters.market, inbox, calendar,
+                wired = _evaluator(cfg, engine, adapters.market, inbox, calendar, today_bars,
                                    lambda: bot.last_broker_read_at, observers_refused)
             except ObserverError as exc:  # the bot still protects and exits; no entries
                 wired, entries_off = None, str(exc)
@@ -519,12 +545,17 @@ def _run(path: Path) -> int:
             if wired is not None:
                 evaluator, observers = wired
                 market.screen = evaluator.strategy  # discovery applies its liquidity rules
+            # Display reads (balance, account kind, today's fills) on their own thread.
+            account_reads = AccountReads(adapters.broker,
+                                         float(cfg.orders.balance_read_seconds), NOW)
             bot = service.Service(engine, now=NOW, calendar=calendar, strategy=strategy,
                                   paths=service.ServicePaths.from_config(cfg), market=market,
                                   evaluator=evaluator, entries_off=entries_off,
-                                  observers=observers, watch=watch)
+                                  observers=observers, watch=watch,
+                                  account_reads=account_reads)
             market.bind()
             adapters.start_stream()
+            account_reads.start()
             clean = bot.run(should_stop=lambda: stop.requested, sleep=SLEEP,
                             monotonic=MONOTONIC)
             how = (f"operator command {bot.stopped_by}" if bot.stopped_by is not None
@@ -533,6 +564,8 @@ def _run(path: Path) -> int:
         finally:
             # Each step guarded: a failing SDK disconnect must not skip recording the run end.
             for step in ((adapters.stop_stream if adapters is not None else None),
+                         ((lambda: account_reads.stop(0)) if account_reads is not None
+                          else None),
                          (capture.close if capture is not None else None),
                          (_closer(observers, cfg) if observers is not None else None),
                          (watch.flush_alerts if watch is not None else None),
@@ -660,6 +693,9 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     except EnvironmentMismatch as exc:
         print(f"refused: {exc}", file=sys.stderr)
+        return 3
+    except CodeVersionUnknown as exc:
+        print(f"refused: code version unknown: {exc}", file=sys.stderr)
         return 3
     except AlreadyRunning:
         print("refused: another tickr process holds the lock", file=sys.stderr)

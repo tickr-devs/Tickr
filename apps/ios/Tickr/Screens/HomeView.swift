@@ -176,14 +176,18 @@ private struct DayLine: View {
           dayText
           demoChip
             .accessibilityIdentifier(Self.demoChipID)
-        } else {
+        } else if arrows.visible {
+          // The arrow that leads nowhere is dimmed and refuses taps ("dimmed" to VoiceOver).
           Button { days.back() } label: { arrow(Self.previousSymbol) }
-            .disabled(!days.canGoBack)
+            .disabled(!arrows.canGoBack)
             .accessibilityLabel(Text(L10n.Home.previousDay))
           dayText
           Button { days.forward() } label: { arrow(Self.nextSymbol) }
-            .disabled(!days.canGoForward)
+            .disabled(!arrows.canGoForward)
             .accessibilityLabel(Text(L10n.Home.nextDay))
+        } else {
+          // No other recorded day to step to: no arrows that would do nothing.
+          dayText
         }
       }
       if days.shown != nil {
@@ -197,8 +201,10 @@ private struct DayLine: View {
     .animation(Tokens.Motion.standard, value: days.shown)
   }
 
+  private var arrows: DayArrows { days.arrows }
+
   private func arrow(_ symbol: String) -> some View {
-    HeaderIcon(symbol: symbol).foregroundStyle(Palette.textPrimary)
+    HeaderIcon(symbol: symbol).foregroundStyle(Palette.textPrimary).dimmedWhenDisabled()
   }
 
   /// The day, centred in the room between the arrows (or the DEMO chips).
@@ -380,7 +386,8 @@ private struct Summary: View {
               let entries = EntriesGlyph.make(status)
               StateGlyph(entries.symbol, tone: entries.tone, label: entries.label, style: .compact)
             }
-            Badge(keepingCase: L10n.Common.version(status.strategy.version), tone: .highlight)
+            Badge(keepingCase: status.codeVersion.map { L10n.Home.versionCode(status.strategy.version, CodeVersion.short($0)) }
+              ?? L10n.Common.version(status.strategy.version), tone: .highlight)
           }
           .accessibilityElement(children: .ignore)
           .accessibilityLabel(Text(verbatim: subline(status)))
@@ -399,6 +406,9 @@ private struct Summary: View {
         : L10n.Home.stopIs(position.symbol, Board.stopStateTitle(position.stop.state)))
     }
     parts.append(L10n.Home.strategy(status.strategy.name, status.strategy.version))
+    if let code = status.codeVersion {
+      parts.append(L10n.Home.codeVersion(CodeVersion.short(code)))
+    }
     parts.append(status.tradingGate.open
       ? EntriesGlyph.make(status).label : L10n.Home.gateClosed(ApiText.gate(status.tradingGate)))
     return parts.map { String(localized: $0) }.joined(separator: " ")
@@ -784,7 +794,10 @@ private struct LiveFlowCard: View {
     .buttonStyle(StagePressStyle(color: stage.color))
     .accessibilityElement(children: .combine)
     .accessibilityHint(Text(L10n.Flow.stageDetailsHint))
-    .popover(isPresented: Binding(get: { openStage == stage.id }, set: { if !$0 { openStage = nil } })) {
+    // Above the stage (the card sits low on Home): the popover then has the screen's width and
+    // never clips at the sides.
+    .popover(isPresented: Binding(get: { openStage == stage.id }, set: { if !$0 { openStage = nil } }),
+      attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
       StageDetailView(name: stage.name, color: stage.color, stage: stage.id.pipeline, sources: sources)
         .presentationCompactAdaptation(.popover)
         .presentationBackground(Palette.surface)

@@ -351,7 +351,7 @@ enum Format {
   /// Market time zone: every time the app shows is New York time.
   static let newYork = TimeZone(identifier: "America/New_York") ?? .current
   /// Placeholder for a value the app does not have.
-  static let missing = "—"
+  static let missing = ApiText.missing
   /// Joins the items of a list ("Gainers, Most active") and the lines of a tooltip.
   static let listSeparator = ", "
   static let lineSeparator = "\n"
@@ -445,9 +445,10 @@ enum Format {
     String(localized: L10n.Format.seconds(secondsNumber(value)))
   }
 
-  /// "5" for 5.00, "0.5" for 0.50: a setting in seconds without trailing zeros.
+  /// "5" for 5.00, "0.5" for 0.50: a setting in seconds without trailing zeros (`DurationText`,
+  /// shared with the live flow's stage details).
   static func secondsNumber(_ value: Decimal) -> String {
-    NSDecimalNumber(decimal: value).stringValue
+    DurationText.number(value)
   }
 
   /// "4 s": an age or duration in whole seconds, rounded.
@@ -463,6 +464,14 @@ enum Format {
   /// "Momentum v3": a strategy and its version.
   static func strategy(_ strategy: StrategyId) -> String {
     String(localized: L10n.Common.strategyVersion(strategy.name, strategy.version))
+  }
+
+  /// "Momentum v3 · code 6c4eec8b": the running bot's strategy and code version (short commit);
+  /// the strategy alone when the run did not record a code version.
+  static func strategy(_ status: StatusV1) -> String {
+    guard let code = status.codeVersion else { return strategy(status.strategy) }
+    return String(localized: L10n.Common.strategyCode(status.strategy.name, status.strategy.version,
+      CodeVersion.short(code)))
   }
 
   /// The same for a strategy named in a decision record.

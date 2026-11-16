@@ -402,16 +402,21 @@ class Feed(FakeMarketData):
                                 "pre_close": str(self.world.today[symbol][0].open)})
                 for rank, symbol in enumerate(symbols, start=1)]
 
-    def bars(self, symbols: Sequence[str], count: int) -> list[Bar]:
+    def bars(self, symbols: Sequence[str], count: int, *, budget_reserve: int = 0) -> list[Bar]:
         self._call("bars", symbols)
         return [b for s in symbols for b in self.world.completed_and_current(s)[-count:]]
 
-    def bars_before(self, symbol: str, end: datetime, count: int) -> list[Bar]:
-        self._call("bars_before", [symbol])
-        older = [b for b in self.world.history.get(symbol, []) + self.world.today.get(symbol, [])
-                 if b.start < end and b.start <= self.world.now]
-        older.sort(key=lambda b: b.start)
-        return older[-count:] if count > 0 else []
+    def bars_before(self, symbols: Sequence[str], end: datetime, count: int, *,
+                    budget_reserve: int = 0) -> list[Bar]:
+        self._call("bars_before", symbols)
+        out: list[Bar] = []
+        for symbol in symbols:
+            older = [b for b in self.world.history.get(symbol, [])
+                     + self.world.today.get(symbol, [])
+                     if b.start < end and b.start <= self.world.now]
+            older.sort(key=lambda b: b.start)
+            out.extend(older[-count:] if count > 0 else [])
+        return out
 
     def history_bars(self, symbol: str, span: BarSpan, end: datetime,
                      count: int) -> list[SessionBar]:

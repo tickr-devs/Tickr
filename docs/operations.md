@@ -81,6 +81,12 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
 
 1. Config valid: loads, every key commented, active strategy file present, launchd schedule valid,
    and `[orders] shutdown_deadline_seconds` < `stop_alert_after_seconds` < `bot_exit_timeout_seconds`.
+1b. The running code version is known (cause `code-version-unknown`): on the Mac the git commit
+   of the checkout the code runs from (`-dirty` when a tracked file under `src/` or `strategies/` differs from it; config edits are tagged by the run's config digest instead), in the Docker image the
+   `TICKR_CODE_VERSION` it was built with (`docs/deploy-server.md`). `tickr run`, `trade` and the
+   stop-replace probe refuse to start without it too: every run and every trade records it.
+   `resume`, `exit-all` and `clear-fence` never refuse for it (closing a position must always
+   work): they record the run without a version and print the cause.
 2. Data folder exists; free disk on it at least `[runtime] min_free_disk_mb`.
 3. Calendar knows today (New York date).
 4. Credential variables named in the active `[environments.*]` table are set. Only the names are
@@ -342,6 +348,14 @@ working, or an exit in progress, the bot does no discovery and runs no strategy:
 only the Detail and positions reads and the protection step. One `evaluation-skipped` row marks
 the start of each such stretch. A pass whose market upkeep, discovery and strategy took longer
 than `[runtime] evaluation_budget_seconds` journals `evaluation-slow`.
+
+Before the open (from `[market_data] history_preload_minutes_before_open`, 9:00 ET) the bot
+reads the screeners and loads the prior-session history of their symbols, one batch of up to 20
+symbols per loop pass. Each batch that settled symbols writes a `history-preload` row
+(`symbols`, `loaded`, `refused`, `requests`, `queued`); a failed screener or history read writes
+one with `error` and the preload pauses `history_preload_retry_seconds` (a budget refusal
+pauses silently). History refusals of the strategy's symbols are `history-refused` rows, once a
+symbol a day.
 
 When a decision sends an entry (or asks an exit) in the middle of a minute, the symbols left in
 that minute are put aside (`evaluation-stopped`, stage `protect-first`, with `remaining` and

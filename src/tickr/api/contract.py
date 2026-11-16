@@ -259,6 +259,9 @@ class Trade:
     # The strategy whose decision opened the trade; null for a manual trade or one opened
     # before the bot journaled it. Added after version 1 shipped.
     strategy: StrategyId | None = _added_later(None)
+    # The bot code version (git commit, `-dirty` with changed tracked files) of the run that
+    # opened the trade, from `runs`; null for a run recorded before it was. Added later.
+    code_version: str | None = _added_later(None)
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
@@ -304,6 +307,9 @@ class StatusV1:
     open_reservations_usd: Decimal | None  # planned loss of every open trade
     daily_room_usd: Decimal | None  # ceiling - realized - reserved; may be negative
     positions: tuple[Position, ...]  # every open position the bot tracks
+    # The code version this run records (as `Trade.code_version`); null only for a run
+    # recorded before it was. Added after version 1 shipped.
+    code_version: str | None = _added_later(None)
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
 
 
@@ -315,6 +321,26 @@ class AccountPosition:
     symbol: str
     quantity: Decimal
     avg_price: Decimal | None  # null when the broker row does not show it
+    # Added after v1 shipped (2026-11-16), display only; null when not shown or unreadable.
+    last_price: Decimal | None = _added_later(None)
+    market_value_usd: Decimal | None = _added_later(None)
+    unrealized_pl_usd: Decimal | None = _added_later(None)
+    day_pl_usd: Decimal | None = _added_later(None)
+
+
+@dataclass(frozen=True)
+class AccountFill:
+    """One of today's orders with a fill, as the broker's order history lists it."""
+
+    client_order_id: str | None
+    symbol: str
+    side: str  # the broker's word (BUY, SELL, ...)
+    type: str  # the broker's word (LIMIT, STOP_LOSS, MARKET, ...)
+    quantity: Decimal  # filled
+    price: Decimal | None  # average fill price; null when not shown
+    filled_at: datetime | None
+    fees_usd: Decimal | None  # sum of the broker's actual fees; null when unreadable
+    ours: bool
 
 
 @dataclass(frozen=True)
@@ -358,6 +384,9 @@ class AccountV1:
     margin_calls: int | None = _added_later(None)  # open margin calls the broker lists
     day_trades_left: int | None = _added_later(None)  # null with a balance read: no limit
     account_label: str | None = _added_later(None)  # the broker's name for the account kind
+    # Today's fills from the broker's order history, read with the balance; empty until read.
+    fills_read_at: datetime | None = _added_later(None)
+    fills: tuple[AccountFill, ...] = _added_later(())
     schema_version: int = _const(ACCOUNT_SCHEMA_VERSION)
 
 
@@ -515,6 +544,8 @@ class DayTrade:
     # As in `Trade`: the strategy whose decision opened it, null when not journaled. Always
     # written; the default only spares paths that never show it (the daily-loss check).
     strategy: StrategyId | None = None
+    # As in `Trade`: the code version of the run that opened it. Added after version 1 shipped.
+    code_version: str | None = _added_later(None)
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
     prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
@@ -1631,8 +1662,8 @@ class LatestSizeV1:
 
 @dataclass(frozen=True)
 class WatchingV1:
-    """GET /watching?date=: the symbols the active strategy is closest to entering on, closest
-    first, at most `[api] watching_max_rows`; `total` counts them before the cap.
+    """GET /watching?date=: every symbol the active strategy is watching on the day, closest
+    first; `total` is the number of rows.
     `latest_size`: see LatestSizeV1, null when no decision of the day was sized."""
 
     day: date
@@ -1705,8 +1736,8 @@ def shown_check(check: Check, places: int) -> CheckV1:
                    shown(check.threshold, threshold_way), check.passed, check.note)
 
 
-def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: int,
-                      places: int, check_places: int) -> WatchingV1:
+def watching_document(day: date, records: tuple[DecisionRecord, ...], places: int,
+                      check_places: int) -> WatchingV1:
     """`records`: active-strategy records of `day`. The latest decision per symbol unless it is
     ENTER, HOLD or EXIT (entering or in a position); closest first, then by symbol."""
     latest = {r.symbol: r for r in _oldest_first(records)}
@@ -1724,7 +1755,7 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], max_rows: 
             closeness=value, closeness_cause=cause, quote_age_seconds=None,
             quote_age_cause=QUOTE_AGE_NOT_RECORDED))
     rows.sort(key=lambda w: (w.closeness is None, -(w.closeness or 0), w.symbol))
-    return WatchingV1(day=day, total=len(rows), rows=tuple(rows[:max_rows]),
+    return WatchingV1(day=day, total=len(rows), rows=tuple(rows),
                       latest_size=latest_size(records))
 
 
