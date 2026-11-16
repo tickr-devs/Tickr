@@ -3,6 +3,9 @@ on:
   pull_request:
     # ready_for_review: a draft skips this job; marking it ready runs it.
     types: [opened, synchronize, reopened, ready_for_review]
+  # The merge queue: the required checks run again on the queued change on top of the newest main
+  # (and of the changes queued ahead of it), so two separately green pull requests cannot break main.
+  merge_group:
   # Every merge to main that touches the app: a conflict between two separately green pull requests
   # shows up at once, and the SwiftPM cache that pull requests restore is saved from the newest main.
   push:
@@ -42,12 +45,16 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_HEAD: ${{ github.event.merge_group.head_sha }}
         run: |
           # A pull request: what it changes against its base. A push to main: what that push
-          # changed. Nightly and manual runs always build.
+          # changed. The merge queue: what this entry adds to the one queued ahead of it (or to
+          # main), whose own run covers the rest. Nightly and manual runs always build.
           case "$EVENT" in
             pull_request) range="$BASE...$HEAD" ;;
             push) range="$BEFORE..$AFTER" ;;
+            merge_group) range="$QUEUE_BASE..$QUEUE_HEAD" ;;
             *) echo "app=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
           esac
           # Its own command, so a failing diff stops the job instead of reading as "no changes".

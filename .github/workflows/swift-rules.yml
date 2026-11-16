@@ -4,6 +4,9 @@ name: swift-rules
 # every pull request, whatever it touches, so it can be a required check.
 on:
   pull_request:
+  # The merge queue: the required checks run again on the queued change on top of the newest main
+  # (and of the changes queued ahead of it), so two separately green pull requests cannot break main.
+  merge_group:
   push:
     branches: [main]
 # A new push to a pull request cancels its earlier run; runs on main are never cancelled.

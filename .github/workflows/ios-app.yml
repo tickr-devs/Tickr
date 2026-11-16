@@ -3,6 +3,9 @@ on:
   pull_request:
     # ready_for_review: a draft skips this job; marking it ready runs it.
     types: [opened, synchronize, reopened, ready_for_review]
+  # The merge queue: the required checks run again on the queued change on top of the newest main
+  # (and of the changes queued ahead of it), so two separately green pull requests cannot break main.
+  merge_group:
   workflow_dispatch:
   # Nightly build of main (07:23 UTC, outside US market hours, like macos-app; not on the hour, when
   # GitHub is busiest and may drop scheduled runs), so a conflict between two separately green pull
@@ -32,15 +35,22 @@ jobs:
           fetch-depth: 0
       - id: diff
         env:
+          EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_HEAD: ${{ github.event.merge_group.head_sha }}
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # A pull request: what it changes against its base. The merge queue: what this entry adds
+          # to the one queued ahead of it (or to main), whose own run covers the rest. Nightly and
+          # manual runs always build.
+          case "$EVENT" in
+            pull_request) range="$BASE...$HEAD" ;;
+            merge_group) range="$QUEUE_BASE..$QUEUE_HEAD" ;;
+            *) echo "app=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
           # Its own command, so a failing diff stops the job instead of reading as "no changes".
-          files=$(git diff --name-only --no-renames "$BASE...$HEAD")
+          files=$(git diff --name-only --no-renames "$range")
           hits=$(printf '%s\n' "$files" | grep -E \
             '^(apps/ios/|apps/shared/|apps/scripts/select-xcode\.sh$|Tickr\.xcworkspace/|\.github/workflows/ios-app\.yml$)' \
             || true)

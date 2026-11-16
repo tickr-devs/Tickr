@@ -4,9 +4,12 @@ name: ci
 # skipped when a pull request touches only docs/, the root README/CLAUDE.md or the Xcode workspace;
 # markdown under tests/ is scanned for account ids, so it always counts. App sources (apps/) and the
 # workflows always count: the suite reads them (tests/test_workflows.py checks the job names).
-# Pushes to main always run everything.
+# Pushes to main and the merge queue always run everything.
 on:
   pull_request:
+  # The merge queue: the required checks run again on the queued change on top of the newest main
+  # (and of the changes queued ahead of it), so two separately green pull requests cannot break main.
+  merge_group:
   push:
     branches: [main]
 # One run per pull request: a new push cancels the run still going for the previous one. Runs on
