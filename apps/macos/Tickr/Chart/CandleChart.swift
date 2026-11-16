@@ -695,14 +695,20 @@ struct CandleChart: View {
 
   private func color(_ candle: Candle) -> Color { candle.isUp ? Palette.profit : Palette.loss }
 
-  /// Prices of the candles, levels and drawn bands on screen, padded so nothing touches the edge.
+  /// Prices of the candles and levels on screen and of every line drawn over them (Bollinger
+  /// bands, moving averages, VWAP, EMAs), so no line runs off the plot, padded so nothing touches
+  /// the edge.
   private var priceScale: ClosedRange<Double> {
-    let shown = visibleIndices
-    var prices = candles[shown].flatMap { [$0.low, $0.high] } + levels.map(\.price)
-    if lines.bollinger {
-      prices += shown.compactMap { plot.bollingerUpper[$0] } + shown.compactMap { plot.bollingerLower[$0] }
-    }
-    guard let low = prices.min(), let high = prices.max() else { return 0...1 }
+    var drawn: [[Double?]] = []
+    if lines.bollinger { drawn += [plot.bollingerUpper, plot.bollingerLower] }
+    if lines.movingAverages { drawn += plot.movingAverages }
+    if lines.vwap { drawn.append(series.vwap) }
+    if lines.fastEMA { drawn.append(series.fastEMA) }
+    if lines.slowEMA { drawn.append(series.slowEMA) }
+    guard let prices = ChartPriceSpan.bounds(
+      of: candles, shown: visibleIndices, lines: drawn, levels: levels.map(\.price)) else { return 0...1 }
+    let low = prices.lowerBound
+    let high = prices.upperBound
     let span = max(high - low, high * Self.minimumSpan)
     let pad = span * Tokens.Chart.pricePadding
     return (low - pad)...(high + pad)
@@ -819,12 +825,16 @@ extension SharedAxis {
   /// other's position inside a layout pass until AppKit threw ("needs another Update
   /// Constraints in Window pass"), on opening the chart with several panes.
   @ViewBuilder func scrolling(_ content: Content) -> some View {
+    // Every pane's marks are clipped to its plot: a line or marker off the value scale ends at
+    // the plot's edge instead of running over the controls above the chart. Labels stay inside
+    // by their own fit (`keepInside`); the crosshair and axis tags are an overlay, not clipped.
     if pane == .price {
       content
         .chartXScale(domain: chart.xDomain)
         .chartScrollableAxes(chart.zoomed ? .horizontal : [])
         .chartXVisibleDomain(length: chart.visibleLength)
         .chartScrollPosition(x: chart.scrollPosition)
+        .chartPlotStyle { $0.clipped() }
     } else {
       content
         .chartXScale(domain: chart.windowDomain)
@@ -1027,7 +1037,9 @@ struct ChartReadout: View {
     let pointed = pointer.index.flatMap { series.candles.indices.contains($0) ? $0 : nil }
     if let index = pointed ?? series.candles.indices.last {
       let candle = series.candles[index]
-      HStack(spacing: Tokens.Space.m) {
+      // As many values as fit on a line, the rest on the next: none is cut in a narrow window.
+      // (The screen's least size is fixed, so a readout that changes height moves no window.)
+      ChipFlow(spacing: Tokens.Space.m) {
         Text(verbatim: plot.timeText(index))
           .foregroundStyle(Palette.textSecondary)
         value(L10n.Chart.open, CandleChart.price(candle.open))
@@ -1043,13 +1055,7 @@ struct ChartReadout: View {
       .font(Tokens.Typography.annotation)
       .monospacedDigit()
       .contentTransition(.numericText())
-      .lineLimit(1)
-      .fixedSize()
-      // One line, cut at the edge when the window is narrow: values that wrapped made the
-      // readout's height (and with it the window's least size) change on every pointed candle,
-      // and AppKit re-laid the window inside its own layout pass until it threw.
       .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
-      .clipped()
     }
   }
 
@@ -1084,7 +1090,8 @@ private struct ChartLegend: View {
     if let index = pointed ?? series.candles.indices.last {
       let items = entries(index)
       if !items.isEmpty {
-        HStack(spacing: Tokens.Space.m) {
+        // As many lines' values as fit across, the rest on the next row: none is cut.
+        ChipFlow(spacing: Tokens.Space.m) {
           ForEach(Array(items.enumerated()), id: \.offset) { _, item in
             HStack(spacing: Tokens.Space.xs) {
               Text(item.name)
@@ -1095,12 +1102,9 @@ private struct ChartLegend: View {
         }
         .font(Tokens.Typography.annotation)
         .monospacedDigit()
-        .lineLimit(1)
-        .fixedSize()
         .padding(.horizontal, Tokens.Space.xs)
         .background(Palette.surfaceSunken.opacity(Tokens.Opacity.overlay), in: .rect(cornerRadius: Tokens.Radius.small))
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        .clipped()
         .allowsHitTesting(false)
       }
     }
