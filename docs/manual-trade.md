@@ -46,6 +46,7 @@ tickr check-quote SYMBOL                     # read-only: is the snapshot quote 
 tickr trade SYMBOL --limit 12.34            # quantity and stop default from [probe]
 tickr trade SYMBOL --limit 12.34 --stop 12.10
 tickr probe-replace-stop --to 12.20          # probe F5, see below
+tickr probe-extended SYMBOL                  # probe F7, pre/post-market only, see below
 tickr resume                                 # recover, keep protecting; ends when no trade is open
 tickr exit                                   # recover, then close every open trade
 tickr clear-fence NAME                       # after looking at an operator fence
@@ -101,6 +102,28 @@ fences need a look and are cleared with `tickr clear-fence NAME`: `stop-rejected
 nothing sent, the stop stays; docs/operations.md, `flatten-after-close`). All others clear
 themselves, including
 `stop-held:*` (see F5 results).
+
+## Extended-hours probe (F7)
+
+`tickr probe-extended SYMBOL` answers what the extended-hours design waits for
+(docs/webull-facts.md F7): does Webull Sandbox accept a STOP_LOSS or STOP_LOSS_LIMIT with session
+ALL outside the regular session, does a CORE stop placed then get accepted, does a LIMIT BUY with
+session ALL fill, and does a SELL stop trigger there. Details: `src/tickr/engine/session_probe.py`.
+
+When: in the pre-market (04:00-09:30 ET, before the bot's 09:00 start) or the post-market
+(16:00-20:00 ET), at least `[probe] extended_end_margin_minutes` before that session ends. It
+refuses at any other time.
+
+1. Stop the bot (it must not hold the lock; the probe holds it for its whole run, so launchd
+   cannot start the bot next to it). The account must be flat: no position, no open order.
+2. Pick a liquid common stock priced under `[probe] max_price_usd` that trades in this session
+   (a top pre-market gainer or a large name), and check its quote: `tickr check-quote SYM`.
+   A STALE answer means snapshot quotes are not live in this session; that is a finding too.
+3. `mkdir -p data/probe-extended && tickr probe-extended SYM 2>&1 | tee -i data/probe-extended/run.txt`.
+   It takes about 5 minutes. It buys `[probe] quantity` share(s) at the ask and sells them again.
+4. Exit 0: answered. Exit 4: a share is still held; sell it in the Webull app now (LIMIT,
+   extended hours on). Exit 3: refused, nothing sent; the line says why.
+5. Paste `run.txt` and the `summary.json` it names into the project chat.
 
 ## Probe day (Monday 2026-11-16)
 
