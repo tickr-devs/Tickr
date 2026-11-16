@@ -722,9 +722,14 @@ class WebullBroker:
         own_client_order_id_prefixes: tuple[str, ...],
         gate: Callable[[], GateResult],
         clock: Callable[[], float] = time.monotonic,
+        *,
+        history_max_pages: int,
     ) -> None:
         if open_orders_max_pages < 1:
             raise AdapterConfigError("open_orders_max_pages must be at least 1")
+        if history_max_pages < 1:
+            raise AdapterConfigError("history_max_pages must be at least 1")
+        self._history_max_pages = history_max_pages
         if not own_client_order_id_prefixes or not all(own_client_order_id_prefixes):
             raise AdapterConfigError("own client order id prefixes must be non-empty")
         self._own_prefixes = own_client_order_id_prefixes
@@ -778,12 +783,12 @@ class WebullBroker:
 
     def fills_today(self, day: date) -> list[BrokerFill]:
         """The history's default window (no `start_time`; its format is unproven), every page
-        by `pagination_key` (SDK `list_order_history`) up to `open_orders_max_pages`, kept to
-        the fills of `day`; a partial list refuses."""
+        by `pagination_key` (SDK `list_order_history`) up to `history_max_pages`, kept to the
+        fills of `day`; a partial list refuses. Display only, called off the loop thread."""
         fills: list[BrokerFill] = []
         params: dict[str, Any] = {}
         seen_keys: set[str] = set()
-        for _page in range(self._open_orders_max_pages):
+        for _page in range(self._history_max_pages):
             body = self._read(Route.HISTORY, params)
             fills.extend(read_fills(body, self._transport.is_own_account, day))
             next_key = _optional(body, "pagination_key") if isinstance(body, Mapping) else None
@@ -2274,6 +2279,7 @@ def broker_from_config(config: Config, transport: Transport | None = None,
         config.orders.client_order_id_max_length,
         (config.orders.client_order_id_prefix, config.orders.probe_client_order_id_prefix),
         gate=lambda: trading_gate(config),
+        history_max_pages=config.environment.history_max_pages,
     )
 
 
