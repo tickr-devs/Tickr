@@ -102,8 +102,10 @@ def main(argv: list[str]) -> int:
     for root in roots:
         for path in swift_files(root):
             for line, literal in violations(path):
-                print(f"{path}:{line}: magic number {literal}: "
-                      "use a token (Tokens.swift) or a documented constant")
+                print(
+                    f"{path}:{line}: magic number {literal}: "
+                    "use a token (Tokens.swift) or a documented constant"
+                )
                 problems += 1
     if problems:
         print(f"{problems} magic number(s); see docs/design-system.md")
