@@ -46,7 +46,8 @@ struct OverviewView: View {
       weighted(middleRowWeights, [.watching, .positions, .safety], height: .atLeast(middleRowHeight)),
       weighted(bottomRowWeights, [.riskRoom, .observers, .journal], height: .fillsRest(atLeast: bottomRowMinHeight)),
     ]),
-    CardArrangement(minWidth: headerBesideResultMinWidth - padding * CardArrangement.paddedEdges, rows: [headerBesideResult] + twoColumnRows),
+    CardArrangement(minWidth: headerBesideResultMinWidth - padding * CardArrangement.paddedEdges,
+      rows: [headerBesideResult] + twoColumnRows),
     CardArrangement(minWidth: 0, rows: [single(.header), single(.result)] + twoColumnRows),
   ]
 

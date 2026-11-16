@@ -43,7 +43,7 @@ struct CandleChart: View {
   static let minimumSpan = 0.0005
   /// Width of every pane's value labels, in points: one width keeps the panes' plot areas, and so
   /// their candles and crosshairs, lined up.
-  static let axisLabelWidth: CGFloat = 56
+  nonisolated static let axisLabelWidth: CGFloat = 56
   /// Gridlines each pane asks for on its value axis.
   static let priceTicks = 6
   /// Share of the price pane's height a tag covers on the scale (with a gap): an axis price
@@ -67,7 +67,7 @@ struct CandleChart: View {
   static let drawnMargin = 1.0
   /// Width a range's time label needs with a gap to the next, in points: labels closer than
   /// this are left out ("Mon 9Tue 10").
-  static let timeLabelSlot: CGFloat = 64
+  nonisolated static let timeLabelSlot: CGFloat = 64
   /// Annotations near an edge move inside the chart instead of being cut off.
   static let keepInside = AnnotationOverflowResolution(x: .fit(to: .plot), y: .fit(to: .plot))
   /// Least distance between the centres of two tags on a value axis, in points: closer tags are
@@ -532,7 +532,7 @@ struct CandleChart: View {
 
   /// Time labels `timeLabelSlot` apart that fit across a price pane `chartWidth` wide (its value
   /// scale takes `axisLabelWidth` of it).
-  static func slotCount(chartWidth: CGFloat) -> Int {
+  nonisolated static func slotCount(chartWidth: CGFloat) -> Int {
     let plotWidth = chartWidth - axisLabelWidth
     return plotWidth > 0 ? Int(plotWidth / timeLabelSlot) : 0
   }
