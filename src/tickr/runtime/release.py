@@ -520,17 +520,20 @@ def _prune(ctx: Context, keep: set[str]) -> None:
 PRE_RELEASE_PREFIX = "pre-release-"
 BACKUP_SUFFIX = ".sqlite3"
 TEMP_PREFIX = ".tmp-"
+SHORT_SHA = 12  # hex digits of the commit in a backup's name (a name part, not a setting)
 
 
-def _backup(ctx: Context, sha: str) -> Path:
+def _backup(ctx: Context, sha: str, *, prune: bool) -> Path:
     """A verified copy of the database, taken right before the switch, while the running bot
     may still write: SQLite's online backup from a read-only connection, so no code's schema
     knowledge is involved (2026-11-16: a backup through the developer checkout's Store refused a
     schema newer than its code, and the release went on without one). Written under a temporary
-    name, `integrity_check` must say ok, then renamed; older pre-release backups are removed
-    (keep only the latest). Any failure refuses the release before a link moves."""
+    name, `integrity_check` must say ok, then renamed. A release (`prune`) then removes older
+    pre-release backups (keep only the latest); a rollback removes none, so the backup from
+    before the release it rolls back is never lost. Any failure, of the backup or of removing
+    an older one, refuses before a link moves."""
     stamp = ctx.now().astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-    target = ctx.backups / f"{PRE_RELEASE_PREFIX}{stamp}-{sha[:12]}{BACKUP_SUFFIX}"
+    target = ctx.backups / f"{PRE_RELEASE_PREFIX}{stamp}-{sha[:SHORT_SHA]}{BACKUP_SUFFIX}"
     temporary = ctx.backups / f"{TEMP_PREFIX}{target.name}"
     try:
         ctx.backups.mkdir(parents=True, exist_ok=True)
@@ -557,16 +560,25 @@ def _backup(ctx: Context, sha: str) -> Path:
         raise ReleaseRefused(f"the pre-release backup failed ({type(exc).__name__}: {exc})") \
             from exc
     ctx.say(f"backup {target} (integrity ok, schema {version})")
+    if not prune:
+        return target
     for old in ctx.backups.glob(f"{PRE_RELEASE_PREFIX}*{BACKUP_SUFFIX}"):
-        if old != target:
+        if old == target:
+            continue
+        try:
             old.unlink()
-            ctx.say(f"removed older backup {old.name}")
+        except OSError as exc:
+            raise ReleaseRefused(f"removing the older backup {old.name} failed "
+                                 f"({type(exc).__name__}: {exc}); the new backup {target.name} "
+                                 "is kept, nothing was switched") from exc
+        ctx.say(f"removed older backup {old.name}")
     return target
 
 
-def _switch(ctx: Context, folder: Path, sha: str, running: str | None) -> None:
+def _switch(ctx: Context, folder: Path, sha: str, running: str | None, *,
+            prune_backups: bool) -> None:
     _require_broker_flat(ctx, folder)  # read now: preflight may have taken minutes
-    _backup(ctx, sha)  # after the last flat proof, before any link moves
+    _backup(ctx, sha, prune=prune_backups)  # after the last flat proof, before a link moves
     try:
         if running is not None:
             _point(ctx.previous, running)
@@ -621,7 +633,7 @@ def release(ctx: Context, ref: str) -> None:
         folder = _prepare(ctx, sha)
         _report_config(ctx, folder, sha, running)
         _preflight(ctx, folder, sha)
-        _switch(ctx, folder, sha, running)
+        _switch(ctx, folder, sha, running, prune_backups=True)
     _locked(ctx, work)
 
 
@@ -638,5 +650,5 @@ def rollback(ctx: Context) -> None:
         folder = _verify(ctx, sha)
         _report_config(ctx, folder, sha, running)
         _preflight(ctx, folder, sha)
-        _switch(ctx, folder, sha, running)
+        _switch(ctx, folder, sha, running, prune_backups=False)
     _locked(ctx, work)
