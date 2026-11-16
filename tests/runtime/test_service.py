@@ -970,8 +970,9 @@ def test_a_missing_calendar_is_a_real_block(tmp_path):
     assert block is not None and (block.cause, block.attention) == ("calendar_unknown", True)
 
 
-def test_cli_run_records_the_code_version_on_the_run_and_status(tmp_path, monkeypatch):
-    from tests.conftest import TEST_CODE_VERSION
+def test_cli_run_records_the_code_version_on_the_run_and_status(tmp_path, monkeypatch,
+                                                                 code_version_in_environment):
+    TEST_CODE_VERSION = code_version_in_environment  # noqa: N806 - the fixture's value
 
     bot_toml = copy_config(tmp_path)
     monkeypatch.setattr(cli, "RUN_ADAPTERS", lambda cfg, on_error, on_token: cli.RunAdapters(

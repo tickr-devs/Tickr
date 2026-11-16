@@ -32,8 +32,10 @@ def _no_git_code_root(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def code_version_in_environment(monkeypatch, _no_git_code_root):
+def code_version_in_environment(monkeypatch, _no_git_code_root) -> str:
     """Every bot run is tagged with a code version or refuses to start; tests that check the
-    refusal remove the variable themselves."""
+    refusal remove the variable themselves. Returns the version a test run records (request
+    this fixture by name to compare with it)."""
     monkeypatch.setattr(version, "CODE_ROOT", _no_git_code_root)
     monkeypatch.setenv("TICKR_CODE_VERSION", TEST_CODE_VERSION)
+    return TEST_CODE_VERSION

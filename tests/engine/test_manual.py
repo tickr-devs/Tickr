@@ -141,8 +141,9 @@ def test_cli_trade_end_to_end(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_trade_records_the_code_version_and_refuses_without_one(tmp_path, monkeypatch,
-                                                                    capsys):
-    from tests.conftest import TEST_CODE_VERSION
+                                                                    capsys,
+                                                                    code_version_in_environment):
+    TEST_CODE_VERSION = code_version_in_environment  # noqa: N806 - the fixture's value
 
     bot = copy_config(tmp_path)
     market = Market()
