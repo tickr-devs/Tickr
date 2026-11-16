@@ -2,14 +2,18 @@
 
 Discovery reads the session's M1 bars of several hundred symbols every pass; evaluation needs the
 same bars for the candidates each completed minute. `TodayBars` keeps, per symbol, the bars of the
-latest read and the time that read was SENT (taken before the request, so a bar the provider
-had not finished at that moment can never be counted as complete). Evaluation of the minute
-starting at M uses a symbol's kept bars only when that read was sent at or after M + 1 minute,
-so the minute was over before the provider answered; otherwise it reads the symbol itself.
-Discovery's reserve rule (`[market_data] discovery_bars_reserve_requests`) is unchanged.
+latest read and the time that read was SENT, taken from the local clock before the request.
+Evaluation of the minute starting at M uses a symbol's kept bars only when that read was sent
+at or after M + 1 minute by our clock; otherwise it reads the symbol itself. This is the same
+completeness check as a direct read at that moment, and it has the same limit: it trusts the
+local clock, and a bar the provider publishes late is simply absent from the read, so the
+strategy then decides on the previous bar (as it did before this cache existed). Discovery's
+reserve rule (`[market_data] discovery_bars_reserve_requests`) is unchanged.
 
-Keyed by the regular session's open: the first use for another session drops everything.
-Thread safe (one lock); nothing here sends a request.
+Keyed by the regular session's open: the first use for another session drops everything. A put
+also drops the reads sent before the minute it was sent in: they can no longer serve the
+minute being evaluated, so memory does not grow all session (a remainder of an older minute
+then reads for itself). Thread safe (one lock); nothing here sends a request.
 """
 
 from __future__ import annotations
@@ -40,12 +44,19 @@ class TodayBars:
         for bar in bars:
             if bar.symbol in grouped:
                 grouped[bar.symbol].append(bar)
+        minute = sent_at.replace(second=0, microsecond=0)
         with self._lock:
             reads = self._of(session_open)
+            for stale in [s for s, (at, _) in reads.items() if at < minute]:
+                del reads[stale]
             for symbol, own in grouped.items():
                 kept = reads.get(symbol)
                 if kept is None or kept[0] <= sent_at:
                     reads[symbol] = (sent_at, tuple(sorted(own, key=lambda b: b.start)))
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._reads)
 
     def complete(self, session_open: datetime, symbol: str,
                  minute_end: datetime) -> tuple[Bar, ...] | None:
