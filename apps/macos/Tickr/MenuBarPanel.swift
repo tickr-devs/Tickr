@@ -393,7 +393,8 @@ private struct MenuFooter: View {
   private var badges: some View {
     HStack(spacing: Tokens.Space.xs) {
       if let environment = model.status?.environment {
-        EnvironmentBadge(ApiText.environment(environment), raw: environment)
+        EnvironmentBadge(ApiText.environment(environment), raw: environment,
+          accessibilityLabel: ApiText.environmentLabel(environment))
           .hint(L10n.Settings.environment)
       }
     }

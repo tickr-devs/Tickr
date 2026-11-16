@@ -41,16 +41,21 @@ public struct EnvironmentBadge: View {
 
   let name: String
   let kind: Kind
+  let label: String
 
   /// - Parameters:
   ///   - name: The environment's localized name ("Sandbox"); drawn in capitals.
   ///   - raw: The bot's status value ("sandbox"), which picks the colour.
-  public init(_ name: String, raw: String) {
+  ///   - accessibilityLabel: What VoiceOver reads, the same on every screen
+  ///     ("Environment: Sandbox", TickrKit's `ApiText.environmentLabel`).
+  public init(_ name: String, raw: String, accessibilityLabel: String) {
     self.name = name
     self.kind = Kind(raw: raw)
+    self.label = accessibilityLabel
   }
 
   public var body: some View {
     Badge(Text(verbatim: name), fill: kind.tone.fill, color: kind.tone.text, planned: false, dashed: kind.dashed)
+      .accessibilityLabel(Text(verbatim: label))
   }
 }

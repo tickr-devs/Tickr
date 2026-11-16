@@ -14,7 +14,8 @@ struct EnvironmentSection: View {
     SettingsCard(L10n.Settings.environment, note: L10n.Settings.environmentFooter) {
       SettingsRow(L10n.Settings.environment, systemImage: Self.symbol,
         tone: EnvironmentBadge.Kind(raw: status.environment).tone) {
-        EnvironmentBadge(ApiText.environment(status.environment), raw: status.environment)
+        EnvironmentBadge(ApiText.environment(status.environment), raw: status.environment,
+          accessibilityLabel: ApiText.environmentLabel(status.environment))
       }
     }
   }

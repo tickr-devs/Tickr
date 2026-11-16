@@ -455,8 +455,8 @@ private struct PhoneDot: View {
 // MARK: - Environment
 
 /// The environment and the trading gate: the environment the bot runs in as the one
-/// `EnvironmentBadge` of both apps; then the gate, its cause, the environment's name and the API
-/// version.
+/// `EnvironmentBadge` of both apps beside the gate's open or closed badge (as in the Overview
+/// header); then the gate, its cause, the environment's name and the API version.
 private struct EnvironmentSettings: View {
   @Environment(AppModel.self) private var model
 
@@ -466,9 +466,15 @@ private struct EnvironmentSettings: View {
       // The environment in use as a status, not a picker: config/bot.toml sets it, the app never does.
       HStack(spacing: Tokens.Space.s) {
         if let raw {
-          EnvironmentBadge(ApiText.environment(raw), raw: raw)
+          EnvironmentBadge(ApiText.environment(raw), raw: raw, accessibilityLabel: ApiText.environmentLabel(raw))
         } else {
           Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
+        }
+        // The gate at a glance beside it, the same badge as the Overview header's; its cause on hover.
+        if let gate = model.status?.tradingGate {
+          Badge(gate.open ? L10n.Overview.gateOpen : L10n.Overview.gateClosed,
+            color: gate.open ? Palette.profitText : Palette.warningText)
+            .help(Text(verbatim: ApiText.gate(gate)))
         }
         Spacer(minLength: 0)
       }

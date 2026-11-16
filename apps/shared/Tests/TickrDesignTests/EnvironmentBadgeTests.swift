@@ -29,8 +29,10 @@ import Testing
 
   /// Every screen gets the same badge for the same value.
   @Test func badgeTakesItsKindFromTheRawValue() {
-    #expect(EnvironmentBadge("Sandbox", raw: "sandbox").kind == .sandbox)
-    #expect(EnvironmentBadge("Production", raw: "production").kind == .production)
+    let sandbox = EnvironmentBadge("Sandbox", raw: "sandbox", accessibilityLabel: "Environment: Sandbox")
+    #expect(sandbox.kind == .sandbox)
+    #expect(sandbox.label == "Environment: Sandbox")
+    #expect(EnvironmentBadge("Production", raw: "production", accessibilityLabel: "").kind == .production)
   }
 
   /// Production never shares Sandbox's colour.
