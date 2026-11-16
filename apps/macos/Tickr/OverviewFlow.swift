@@ -207,7 +207,7 @@ struct WatchingCard: View {
           }
           HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
             if WatchingList.hasMore(watching.rows) {
-              MoreButton(L10n.Watching.showAll(watching.rows.count)) { openWatchingAll() }
+              HeaderLink(L10n.Watching.showAll(watching.rows.count)) { openWatchingAll() }
             }
             Spacer(minLength: 0)
             // How many of all the watched symbols the card shows.
@@ -219,7 +219,7 @@ struct WatchingCard: View {
       } else if let error = model.watchingError {
         Footnote(L10n.Watching.unavailable(error), color: Palette.warningText)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     }
     .accessibilityElement(children: .contain)
@@ -390,14 +390,14 @@ struct FastMoversCard: View {
             }
           }
           .animation(Tokens.Motion.standard, value: movers.movers.prefix(Self.rowCap).map(\.symbol))
-          MoreButton(L10n.FastMovers.showAll(movers.movers.count)) {
+          CardFooterLink(L10n.FastMovers.showAll, count: movers.movers.count) {
             withAnimation(Tokens.Motion.standard) { model.symbolsTab = .fastMovers }
           }
         }
       } else if let error = model.moversError {
         Footnote(L10n.FastMovers.unavailable(error), color: Palette.warningText)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     }
     .accessibilityElement(children: .contain)

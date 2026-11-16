@@ -60,11 +60,11 @@ struct ChartExplainCard: View {
       } else if !showsDay {
         note(L10n.Chart.decisionsDayOnly)
       } else if let error {
-        note(L10n.Chart.decisionsUnavailable(error))
+        ReadFailureNote(L10n.Chart.decisionsUnavailable, detail: error)
       } else if decisions != nil || symbol == nil {
         note(L10n.Chart.noDecisions)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     }
   }

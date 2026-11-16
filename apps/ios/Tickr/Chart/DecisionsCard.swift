@@ -42,9 +42,9 @@ struct DecisionsCard: View {
           .font(Tokens.Typography.captionMono)
         }
       } else if let failure {
-        note(ChartText.decisionsFailed(failure))
+        ReadFailureNote(ChartText.decisionsFailed, detail: failure)
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)
