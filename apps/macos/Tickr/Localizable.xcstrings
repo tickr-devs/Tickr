@@ -613,6 +613,59 @@
         }
       }
     },
+    "bot.positionCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld position"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld positions"
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиции"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиций"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиция"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld позиции"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "bot.resumeEntries" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6720,6 +6773,23 @@
         }
       }
     },
+    "overview.beforeFees" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "before broker fees"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "до комиссий брокера"
+          }
+        }
+      }
+    },
     "overview.dayCounts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7850,6 +7920,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Капитал"
+          }
+        }
+      }
+    },
+    "risk.feesToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "broker fees today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "комиссии брокера за день"
           }
         }
       }
@@ -14906,74 +14993,6 @@
         }
       }
     },
-    "watching.filterAll" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All %lld"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Все %lld"
-          }
-        }
-      }
-    },
-    "watching.filterIgnore" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ignore %lld"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Пропуск %lld"
-          }
-        }
-      }
-    },
-    "watching.filterLabel" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verdict"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Решение"
-          }
-        }
-      }
-    },
-    "watching.filterWatch" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watch %lld"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Наблюдение %lld"
-          }
-        }
-      }
-    },
     "watching.live" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15031,30 +15050,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The strategy is not watching any symbol on this day."
+            "value" : "Nothing armed right now. A symbol shows here while the strategy waits for its setup."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "В этот день стратегия ни за чем не следит."
-          }
-        }
-      }
-    },
-    "watching.noneFiltered" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No watched symbol has this verdict."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Нет тикеров с таким решением."
+            "value" : "Сейчас ничего не взведено. Символ появляется здесь, пока стратегия ждёт его сетап."
           }
         }
       }
