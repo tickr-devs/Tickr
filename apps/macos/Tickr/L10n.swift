@@ -3330,8 +3330,8 @@ enum L10n {
     }
     /// Watching card is empty.
     static var none: LocalizedStringResource {
-      LocalizedStringResource(
-        "watching.none", defaultValue: "Nothing armed right now. A symbol shows here while the strategy waits for its setup.",
+      LocalizedStringResource("watching.none",
+        defaultValue: "Nothing armed right now. A symbol shows here while the strategy waits for its setup.",
         bundle: L10n.bundle)
     }
     /// Watching read failed.
