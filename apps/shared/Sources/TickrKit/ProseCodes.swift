@@ -52,6 +52,9 @@ public enum ProseReason: String, CaseIterable, Sendable {
   case needsPositiveMeasured = "needs_positive_measured"
   case noDirection = "no_direction"
   case checkContradictsRecord = "check_contradicts_record"
+  case noInvalidation = "no_invalidation"
+  case invalidationWrongSide = "invalidation_wrong_side"
+  case pastInvalidation = "past_invalidation"
   case plannedLossNotPositiveR = "planned_loss_not_positive_r"
   case noTrades = "no_trades"
   case noWins = "no_wins"
@@ -109,6 +112,9 @@ public enum ProseReason: String, CaseIterable, Sendable {
     case .needsPositiveMeasured: [ReasonSentence(L10n.proseReasonNeedsPositiveMeasured, [.rule])]
     case .noDirection: [ReasonSentence(L10n.proseReasonNoDirection, [.rule, .`operator`])]
     case .checkContradictsRecord: [ReasonSentence(L10n.proseReasonCheckContradictsRecord, [.rule])]
+    case .noInvalidation: [ReasonSentence(L10n.proseReasonNoInvalidation, [.rule])]
+    case .invalidationWrongSide: [ReasonSentence(L10n.proseReasonInvalidationWrongSide, [.rule])]
+    case .pastInvalidation: [ReasonSentence(L10n.proseReasonPastInvalidation, [.rule])]
     case .plannedLossNotPositiveR: [ReasonSentence(L10n.proseReasonPlannedLossNotPositiveR, [])]
     case .noTrades: [ReasonSentence(L10n.proseReasonNoTrades, [])]
     case .noWins: [ReasonSentence(L10n.proseReasonNoWins, [])]

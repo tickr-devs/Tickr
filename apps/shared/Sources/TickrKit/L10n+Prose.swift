@@ -245,6 +245,21 @@ extension L10n {
     LocalizedStringResource("kit.prose.check_contradicts_record",
       defaultValue: "{rule}: recorded as failed but the measured value meets the threshold", bundle: bundle)
   }
+  /// A cause the API writes itself (`<field>_codes`). no_invalidation (values: rule)
+  static var proseReasonNoInvalidation: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.no_invalidation",
+      defaultValue: "{rule}: no invalidation level recorded, so the distance to the trigger has no scale", bundle: bundle)
+  }
+  /// A cause the API writes itself (`<field>_codes`). invalidation_wrong_side (values: rule)
+  static var proseReasonInvalidationWrongSide: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.invalidation_wrong_side",
+      defaultValue: "{rule}: the invalidation level is not on the far side of the trigger", bundle: bundle)
+  }
+  /// A cause the API writes itself (`<field>_codes`). past_invalidation (values: rule)
+  static var proseReasonPastInvalidation: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.past_invalidation",
+      defaultValue: "{rule}: the measured price is already past the invalidation level", bundle: bundle)
+  }
   /// A cause the API writes itself (`<field>_codes`). planned_loss_not_positive_r
   static var proseReasonPlannedLossNotPositiveR: LocalizedStringResource {
     LocalizedStringResource("kit.prose.planned_loss_not_positive_r",
