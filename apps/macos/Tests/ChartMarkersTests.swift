@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TickrDesign
 @testable import TickrKit
 @testable import TickrMac
 
