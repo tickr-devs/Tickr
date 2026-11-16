@@ -245,7 +245,7 @@ private struct DayRow: View {
           .foregroundStyle(Palette.textQuaternary)
           .help(Text(L10n.Trades.noBarsHelp))
       }
-      MoneyText(value: day.resultGrossUsd.value, usd: true, font: Tokens.Typography.calloutMono)
+      MoneyText(value: day.resultUsd.value, usd: true, font: Tokens.Typography.calloutMono)
     }
     .padding(.horizontal, Tokens.Space.s)
     .padding(.vertical, Tokens.Space.s)
@@ -267,7 +267,7 @@ private struct DayRow: View {
 private struct DayStatsRow: View {
   @Environment(AppModel.self) private var model
 
-  private var results: [Decimal] { model.shownTrades.map(\.resultGrossUsd.value) }
+  private var results: [Decimal] { model.shownTrades.map(\.resultUsd.value) }
 
   private var averageR: Decimal? {
     let values = model.shownTrades.compactMap(\.resultR)
@@ -506,7 +506,7 @@ private struct TradesTable: View {
           case .closed(let trade):
             // Coloured as the event ticker colours the exit: by its result, amber when forced.
             Badge(verbatim: Board.exitReasonTitle(trade.exitReason),
-              color: Board.exitTone(trade.exitReason, result: trade.resultGrossUsd.value).color)
+              color: Board.exitTone(trade.exitReason, result: trade.resultUsd.value).color)
           }
         }
       }
@@ -666,11 +666,11 @@ enum TradeRow: Identifiable {
     return Palette.result(resultR)
   }
 
-  /// Gross result in USD now (open) or at the exit; nil while an open one has no bar yet.
+  /// Result in USD now (open, gross) or at the exit (after fees once known); nil while an open one has no bar yet.
   var result: Decimal? {
     switch self {
     case .open(let row): row.unrealized ?? row.latestUnrealized
-    case .closed(let trade): trade.resultGrossUsd.value
+    case .closed(let trade): trade.resultUsd.value
     }
   }
 }
