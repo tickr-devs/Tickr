@@ -3,7 +3,7 @@ import TickrDesign
 import TickrKit
 
 // "Watching closely", all symbols: the panel the card's "Show all N ›" opens over the Overview,
-// with the rows of GET /watching in a two-column grid, sorted and filtered here
+// with the rows of GET /watching in a two-column grid, sorted here
 // (`WatchingList`). Closes with its X, Esc or a click on the dimmed backdrop.
 
 /// Opens the full "Watching closely" list over the screen that hosts it (`watchingAllPanel()`).
@@ -60,12 +60,11 @@ private struct WatchingAllPresenter: ViewModifier {
   }
 }
 
-/// The panel itself: the title and what the rows show, sort and filter chips, then every row the
+/// The panel itself: the title and what the rows show, sort chips, then every row the
 /// bot sent in two columns, scrolling inside the panel when they are many.
 struct WatchingAllPanel: View {
   @Environment(AppModel.self) private var model
   @State private var sort = WatchingSort.closest
-  @State private var filter = WatchingFilter.all
   let close: () -> Void
 
   /// Width of the panel, in points, as the design's sheet; narrower windows get less.
@@ -84,15 +83,15 @@ struct WatchingAllPanel: View {
 
   var body: some View {
     let all = model.watching?.rows ?? []
-    let shown = WatchingList.rows(all, sort: sort, filter: filter)
+    let shown = WatchingList.sorted(all, by: sort)
     VStack(alignment: .leading, spacing: 0) {
       header(all)
-      controls(all)
+      controls
       Rectangle().fill(Palette.separator).frame(height: Tokens.Stroke.thin)
       ScrollsWhenTall {
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
           if shown.isEmpty {
-            Footnote(all.isEmpty ? L10n.Watching.none : L10n.Watching.noneFiltered)
+            Footnote(L10n.Watching.none)
           }
           LazyVGrid(columns: [GridItem(.flexible(), spacing: Tokens.Space.s, alignment: .top),
             GridItem(.flexible(), spacing: Tokens.Space.s, alignment: .top)],
@@ -150,62 +149,26 @@ struct WatchingAllPanel: View {
   /// SF Symbol of the close button.
   static let closeSymbol = "xmark"
 
-  /// Sort chips on the left, the verdict filter with its counts on the right; the filter goes
-  /// under the sort when both do not fit on one line, and each wraps its own chips.
-  private func controls(_ all: [WatchingRowV1]) -> some View {
-    let sorts = ChipFlow(spacing: Tokens.Space.xs) {
-      Text(L10n.Watching.sortLabel)
-        .textCase(.uppercase)
-        .font(Tokens.Typography.label)
-        .tracking(Tokens.Typography.labelTracking)
-        .foregroundStyle(Palette.textQuaternary)
-        .padding(.trailing, Tokens.Space.xs)
-      ForEach(Self.sorts, id: \.self) { item in
-        Button { sort = item } label: { Text(item.title) }
-          .buttonStyle(.chip(selected: sort == item))
-      }
-    }
-    let filters = ChipFlow(spacing: Tokens.Space.xs) {
-      ForEach(WatchingFilter.allCases, id: \.self) { item in
-        Button { filter = item } label: { Text(item.title(WatchingList.count(all, item))) }
-          .buttonStyle(.chip(selected: filter == item))
-      }
-    }
-    return ViewThatFits(in: .horizontal) {
-      HStack(spacing: Tokens.Space.m) {
-        sorts.fixedSize()
-        Spacer(minLength: 0)
-        filters.fixedSize()
-      }
-      VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        sorts
-        filters
-      }
-    }
-    .padding(.horizontal, Tokens.Space.l)
-    .padding(.bottom, Tokens.Space.m)
+  /// The sort switch (the apps' one segmented switch).
+  private var controls: some View {
+    SegmentSwitch(options: Self.sorts.map { ($0, Text($0.title)) }, selection: $sort)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(Text(L10n.Watching.sortLabel))
+      .fixedSize()
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, Tokens.Space.l)
+      .padding(.bottom, Tokens.Space.m)
   }
 }
 
 extension WatchingSort {
-  /// The chip's name.
+  /// The segment's name.
   var title: LocalizedStringResource {
     switch self {
     case .closest: L10n.Watching.sortClosest
     case .symbol: L10n.Watching.sortSymbol
     case .quoteAge: L10n.Watching.sortQuoteAge
     case .latest: L10n.Watching.sortLatest
-    }
-  }
-}
-
-extension WatchingFilter {
-  /// The chip's name with how many rows it keeps.
-  func title(_ count: Int) -> LocalizedStringResource {
-    switch self {
-    case .all: L10n.Watching.filterAll(count)
-    case .watch: L10n.Watching.filterWatch(count)
-    case .ignore: L10n.Watching.filterIgnore(count)
     }
   }
 }

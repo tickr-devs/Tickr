@@ -131,8 +131,9 @@ private struct RoomCard: View {
         color: Palette.lossText)
       RiskLine(label: L10n.Risk.reservations, value: RiskFormat.amount(status.openReservationsUsd?.value),
         color: Palette.warningText)
-      RiskLine(label: L10n.Risk.resultToday, value: Money.signedUSD(status.resultTodayGrossUsd.value),
-        color: Palette.result(status.resultTodayGrossUsd.value))
+      RiskLine(label: L10n.Risk.resultToday, value: Money.signedUSD(status.resultTodayUsd.value),
+        color: Palette.result(status.resultTodayUsd.value))
+      RiskLine(label: L10n.Risk.feesToday, value: RiskFormat.amount(status.feesTodayUsd?.value))
       Text(L10n.Risk.roomNote(RiskFormat.amount(risk?.minDailyRoomUsd.value)))
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
@@ -346,7 +347,7 @@ private struct LimitsCard: View {
       } else if let failure {
         ReadFailureNote(L10n.Risk.settingsFailed, detail: failure)
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
   }

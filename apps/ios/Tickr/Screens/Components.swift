@@ -278,19 +278,11 @@ extension PushedHeader where Leading == EmptyView, Actions == EmptyView {
 }
 
 /// "‹ Home": the way back from a pushed screen, the app's own control rather than the system's, as
-/// on the design (the boards' `.bk`): a glass capsule, 36 points tall (the card surface over a blur
-/// with the strong hairline and a soft shadow), holding the blue chevron and the name of the screen
-/// under it. Its touch target covers `Size.touchTarget` (Apple HIG). A long name wraps onto more
-/// lines rather than being cut. VoiceOver reads "Back, Home"; the edge swipe still goes back
-/// (`EdgeSwipeBack`). Every pushed screen draws it through `PushedHeader`.
+/// on the design: the shared glass `BackCapsule` (chevron and name in the label's colour) with the
+/// name of the screen under it. Its touch target covers `Size.touchTarget` (Apple HIG). VoiceOver
+/// reads "Back, Home"; the edge swipe still goes back (`EdgeSwipeBack`). Every pushed screen draws
+/// it through `PushedHeader`.
 struct BackButton: View {
-  /// Symbol of the way back.
-  static let symbol = "chevron.left"
-  /// The chevron: 17 points semibold at the default text size, as on the design.
-  static let chevronFont = Font.body.weight(.semibold)
-  /// The screen's name: 15 points medium at the default text size, as on the design.
-  static let titleFont = Font.subheadline.weight(.medium)
-
   @Environment(\.dismiss) private var dismiss
   let title: LocalizedStringResource
   /// The screen's own dismiss, for a header inside a form, whose rows see another one.
@@ -300,54 +292,12 @@ struct BackButton: View {
     Button {
       (action ?? dismiss)()
     } label: {
-      HStack(spacing: Tokens.Space.xs) {
-        Image(systemName: Self.symbol)
-          .font(Self.chevronFont)
-          .foregroundStyle(Palette.infoText)
-        Text(title)
-          .font(Self.titleFont)
-          .foregroundStyle(Palette.textPrimary)
-          .multilineTextAlignment(.leading)
-          .fixedSize(horizontal: false, vertical: true)
-      }
+      BackCapsule(title)
     }
-    .buttonStyle(BackButtonStyle())
+    .buttonStyle(.backCapsule)
     .accessibilityLabel(Text(L10n.Common.back))
     .accessibilityValue(Text(title))
     .accessibilityIdentifier(AccessibilityID.back)
-  }
-}
-
-/// The look of `BackButton`: the glass capsule (rounded to half its one-line height, so a wrapped
-/// name keeps round ends), pressed in while held.
-private struct BackButtonStyle: ButtonStyle {
-  /// Half the one-line height, growing with the text size as the capsule does.
-  @ScaledMetric(relativeTo: .subheadline) private var radius = Tokens.Size.iconButton / 2
-
-  func makeBody(configuration: Configuration) -> some View {
-    let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-    configuration.label
-      .padding(.leading, Tokens.Space.s + Tokens.Space.xxs)
-      .padding(.trailing, Tokens.Space.m + Tokens.Space.xxs)
-      .padding(.vertical, Tokens.Space.xs)
-      .frame(minHeight: Tokens.Size.iconButton)
-      .glassSurface(in: shape, shadow: Tokens.Opacity.shadow)
-      .frame(minHeight: Tokens.Size.touchTarget)
-      .contentShape(Rectangle())
-      .scaleEffect(configuration.isPressed ? HeaderIcon.pressScale : 1)
-      .animation(Tokens.Motion.quick, value: configuration.isPressed)
-  }
-}
-
-extension View {
-  /// The design's glass for a header's controls (the boards' `.gbtn` and `.bk`): the card surface,
-  /// a little see-through over a blur, with the strong hairline and a soft shadow of `shadow`.
-  func glassSurface(in shape: some InsettableShape, shadow: Double) -> some View {
-    background(Palette.surface.opacity(Tokens.Opacity.overlay), in: shape)
-      .background(.ultraThinMaterial, in: shape)
-      .overlay(shape.strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
-      .shadow(color: Palette.shadow.opacity(shadow), radius: HeaderIcon.shadowRadius, x: 0,
-        y: HeaderIcon.shadowOffset)
   }
 }
 
@@ -365,9 +315,6 @@ struct HeaderIcon: View {
 
   /// Diameter of the glass circle at the default text size, in points (the boards' `.gbtn`).
   static let glassSide: CGFloat = 40
-  /// The soft shadow under the glass: blur radius and downward offset, in points.
-  static let shadowRadius: CGFloat = 7
-  static let shadowOffset: CGFloat = 4
   /// How far a header control shrinks while pressed.
   static let pressScale: CGFloat = 0.95
 
@@ -434,12 +381,6 @@ extension Screen where Leading == EmptyView, Actions == EmptyView {
   ) {
     self.init(title, tab: tab, back: back, leading: { EmptyView() }, actions: { EmptyView() }, content: content)
   }
-}
-
-/// Layout constants of `SegmentChips` (a generic type cannot keep its own).
-enum SegmentLayout {
-  /// Largest text size of the segments' titles.
-  static let largestText = DynamicTypeSize.xxxLarge
 }
 
 /// A tab screen's title row as on the design: the title in `Typography.title`, the screen's
@@ -616,82 +557,6 @@ struct TickrTabBar: View {
     }
     .accessibilityAddTraits(selected ? [.isSelected] : [])
     .accessibilityIdentifier(tab.identifier)
-  }
-}
-
-/// One of a few choices side by side as the design draws them, as equal segments on a card:
-/// `tinted` washes the chosen one in `info` with its text in `infoText` (the chart's range),
-/// `raised` sets it on a sunken tile with a hairline (Activity's panes), `filled` draws it solid in
-/// `info` (the Lab's replay span).
-struct SegmentChips<Value: Hashable>: View {
-  enum Style { case tinted, raised, filled }
-
-  let options: [(value: Value, title: Text)]
-  @Binding var selection: Value
-  var style = Style.tinted
-  /// Accessibility identifier of each segment (UI tests find the panes by it).
-  var identifier: String?
-
-  var body: some View {
-    HStack(spacing: Tokens.Space.xs) {
-      ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-        let chosen = option.value == selection
-        Button {
-          selection = option.value
-        } label: {
-          option.title
-            .font(font)
-            .lineLimit(1)
-            .minimumScaleFactor(Tokens.Shrink.standard)
-            .foregroundStyle(chosen ? chosenText : Palette.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: Tokens.Size.iconButton)
-            .padding(.horizontal, Tokens.Space.xs)
-            .background {
-              if chosen {
-                let shape = RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous)
-                shape.fill(chosenFill)
-                  .overlay { if style == .raised { shape.strokeBorder(Palette.separator) } }
-              }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(chosen ? [.isSelected] : [])
-        .accessibilityIdentifier(identifier ?? "")
-      }
-    }
-    .padding(Tokens.Space.xs)
-    .background(Palette.surface, in: RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous)
-      .strokeBorder(Palette.separator, lineWidth: Tokens.Stroke.thin))
-    .animation(Tokens.Motion.quick, value: selection)
-    // Equal segments in one row: past this size a title would be cut ("Де…"), as a system
-    // segmented control's titles stop growing too.
-    .dynamicTypeSize(...SegmentLayout.largestText)
-  }
-
-  private var font: Font {
-    switch style {
-    case .tinted: return Tokens.Typography.captionMono.bold()
-    case .raised: return .footnote.weight(.semibold)
-    case .filled: return Tokens.Typography.buttonCompact
-    }
-  }
-
-  private var chosenText: Color {
-    switch style {
-    case .tinted: return Palette.infoText
-    case .raised: return Palette.textPrimary
-    case .filled: return Palette.onAccent
-    }
-  }
-
-  private var chosenFill: Color {
-    switch style {
-    case .tinted: return Palette.info.opacity(Tokens.Opacity.wash)
-    case .raised: return Palette.surfaceSunken
-    case .filled: return Palette.info
-    }
   }
 }
 

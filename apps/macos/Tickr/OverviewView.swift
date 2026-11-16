@@ -263,6 +263,14 @@ private struct DayResult: View {
         .lineLimit(1)
         .minimumScaleFactor(Tokens.Shrink.standard)
       Text(verbatim: subtitle).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
+      if model.shownResultBeforeFees {
+        // Wraps rather than cuts, in either language.
+        Text(L10n.Overview.beforeFees)
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(Palette.warningText)
+          .multilineTextAlignment(.trailing)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       DrawnSparkline(values: model.cumulativeResults, color: Palette.result(model.shownResult))
         .frame(width: Self.sparklineWidth, height: Self.sparklineHeight)
     }
@@ -716,7 +724,7 @@ private struct PositionsCard: View {
             PositionTab(row: row, selected: row.id == shown?.id) { selected = row.id }
           }
         }
-        MoreButton(L10n.Position.openChart, systemImage: AppSection.chartSymbol) {
+        HeaderLink(L10n.Position.openChart, systemImage: AppSection.chartSymbol) {
           if let shown { chartSymbol = shown.position.symbol }
           model.section = .chart
         }
@@ -1057,7 +1065,7 @@ private struct EmptyPositions: View {
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textTertiary)
         if !model.isLive {
-          MoreButton(L10n.Position.openTrades, systemImage: AppSection.tradesSymbol) { model.section = .trades }
+          HeaderLink(L10n.Position.openTrades, systemImage: AppSection.tradesSymbol) { model.section = .trades }
         }
       }
       Spacer()
@@ -1306,7 +1314,7 @@ private struct RiskRoomCard: View {
 
   var body: some View {
     Card(L10n.RiskRoom.title) {
-      MoreButton(L10n.RiskRoom.details) { model.section = .risk }
+      HeaderLink(L10n.RiskRoom.details) { model.section = .risk }
     } content: {
       if let risk = model.settings?.risk {
         let limit = risk.maxDailyLossUsd.value
@@ -1417,7 +1425,7 @@ private struct ObserversCard: View {
 
   var body: some View {
     Card(L10n.Observers.title) {
-      MoreButton(L10n.Observers.lab) {
+      HeaderLink(L10n.Observers.lab) {
         // The Lab's cards, where the observers are, not the advisor page left open earlier.
         advisor.pageOpen = false
         model.section = .lab
@@ -1465,7 +1473,7 @@ private struct AdvisorRow: View {
       if let count = advisor.runs?.awaitingReview, count > 0 {
         StatusPill(AdvisorWords.awaiting(count), tone: .highlight)
       }
-      MoreButton(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, action: open)
+      HeaderLink(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, tone: .highlight, action: open)
     }
     // The design's violet strip at the foot of the card; all of it opens the Lab.
     .padding(.horizontal, Tokens.Space.m)
