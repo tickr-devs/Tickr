@@ -760,7 +760,7 @@ public final class AppModel {
       let answer = try await client.startBot()
       botStart = .accepted(stopCleared: answer.stopMarkerCleared)
     } catch {
-      botStart = .refused(Self.describe(error))
+      botStart = .refused(ErrorText.text(error))
     }
     await refreshStatus()
   }
