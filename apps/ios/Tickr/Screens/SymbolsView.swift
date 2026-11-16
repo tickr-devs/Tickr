@@ -54,7 +54,7 @@ struct SymbolsView: View {
   /// "Mon Nov 16 · 10:48 ET · 412 screened": the day, the end of the latest discovery pass and how
   /// many symbols the screeners listed; the bot's cause when no pass is recorded.
   private var context: String {
-    let day = Format.day(model.today.noonInNewYork)
+    let day = DayText.day(model.today)
     guard let symbols = model.symbols else {
       return [day, model.symbolsError.map { String(localized: L10n.Symbols.unavailable($0)) }]
         .compactMap { $0 }.joined(separator: Format.separator)
@@ -580,7 +580,7 @@ private struct SymbolDetailScreen: View {
   @ViewBuilder private func decision(_ row: SymbolRowV1) -> some View {
     if let verdict = row.verdict {
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-        Badge(verdict.title, color: verdict == .watch ? Palette.infoText : Palette.textTertiary)
+        Badge(verdict.title, color: verdict.color)
         Text(SymbolsText.decided(row.decidedAt.map { Format.time($0.date) } ?? Format.missing,
           row.strategy ?? Format.missing))
           .font(Tokens.Typography.annotation)
