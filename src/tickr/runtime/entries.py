@@ -79,8 +79,9 @@ def entry_block_cause(engine: Engine, config: Config, trade: TradeRow,
                       now: datetime) -> str | None:
     """Why a working entry must not stay open for a platform reason: the state in which a new
     entry would be refused (hard rule 1: a conflict blocks new entries, and a fill of an entry
-    still working is a new position). The trading gate closed, any fence (operator pause,
-    startup reconcile, broker read, reconcile disagreement, foreign exposure, another trade's
+    still working is a new position). The trading gate closed, any fence that blocks an entry
+    in this symbol (`Engine.entry_fences`: operator pause, startup reconcile, broker read,
+    reconcile disagreement, foreign exposure in this symbol or of unknown symbol, another trade's
     trouble, ...) except the fences about this trade itself or its own orders (the engine
     already acts on those: its stop, its unknown status, its cancel; cancelling the entry for
     them would only add a cancel of an order whose state is the open question), or today's
@@ -90,7 +91,7 @@ def entry_block_cause(engine: Engine, config: Config, trade: TradeRow,
     if not gate.open:
         return f"trading gate closed: {gate.cause}"
     own = {trade.trade_id, *(o.client_order_id for o in engine.orders(trade.trade_id))}
-    fences = sorted(name for name in engine.fences()
+    fences = sorted(name for name in engine.entry_fences(trade.symbol)
                     if name.partition(":")[2] not in own)
     if fences:
         return "entries fenced: " + ", ".join(fences)

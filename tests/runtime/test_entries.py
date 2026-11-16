@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -377,3 +378,34 @@ def test_cooldown_is_built_from_the_store_across_a_restart(tmp_path):
     # The 30-minute pause after the 10:41 loss ends at 11:11 exactly.
     assert decide(at(16, 11, 10)).refusal_cause.startswith("SYMBOL_COOLDOWN")
     assert decide(at(16, 11, 11)).admission == "taken"
+
+
+# --- manual trades are ignored (owner 2026-11-16): one rule for admission and the guard ------
+
+
+def test_an_entry_beside_a_foreign_position_keeps_working(tmp_path):
+    """Fable review of #539: the guard used every fence, so the entry admitted beside a
+    foreign XYZ position was cancelled on the next pass."""
+    desk = Desk(tmp_path)
+    desk.broker.add_foreign_position("XYZ", D(1), D(5))
+    desk.engine.step()
+    opened(desk)
+    assert guard(desk, quote()) == []
+    assert desk.engine.trades()[0].trade_id and desk.engine.fences()
+
+
+def test_manual_orders_without_an_id_are_all_seen(tmp_path, monkeypatch):
+    """Fable review of #539: manual orders without a client order id share one fence; the
+    symbols come from every foreign open order of the reconcile, so ABC is refused."""
+    desk = Desk(tmp_path)
+    manual = [OrderDetail(client_order_id="", symbol=s, side=Side.BUY,
+                          order_type=OrderType.LIMIT, quantity=D(1), filled_quantity=D(0),
+                          average_fill_price=None, state=OrderState.ACCEPTED,
+                          raw_status="SUBMITTED", limit_price=D(5)) for s in ("ABC", "XYZ")]
+    monkeypatch.setattr(desk.broker, "open_orders", lambda: list(manual))
+    assert desk.engine.reconcile()
+    assert desk.engine.foreign_symbols() == {"ABC", "XYZ"}
+    record = desk.decide(decision())
+    assert record.admission == "refused" and record.refusal_cause.startswith("FOREIGN_EXPOSURE")
+    other = desk.decide(decision(symbol="QQQ"), replace(quote(), symbol="QQQ"))
+    assert other.admission == "taken", other.refusal_cause
