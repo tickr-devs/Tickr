@@ -50,7 +50,7 @@ struct ChartRail: View {
     var seen = Set<String>()
     var rows: [SymbolList.Row] = []
     for row in model.positions where seen.insert(row.id).inserted {
-      let verified = row.position.stop.state == .verified
+      let verified = row.position.stop.state.isProtected
       let note = row.stop.map {
         verified ? L10n.Chart.railStop(Format.price($0)) : L10n.Chart.railStopUnverified(Format.price($0))
       }
@@ -85,7 +85,7 @@ struct ChartRail: View {
     case .topActives: String(localized: L10n.Chart.sourceActives)
     }
     let change = chip.changePct.map {
-      ($0.value / ChartView.percentFactor).formatted(.percent.precision(.fractionLength(1)).sign(strategy: .always()))
+      Percent.signed(points: $0.value, fractionDigits: Percent.moverDigits)
     }
     return L10n.Chart.railScreener(name, change ?? Format.missing)
   }
@@ -210,15 +210,14 @@ private struct PositionCard: View {
     }
   }
 
-  /// The stop's price, then its state as a `Badge` (as on the iOS position chain): green
-  /// VERIFIED, amber otherwise.
+  /// The stop's price, then its state as a `Badge` (as on the iOS position chain) in the state's
+  /// tone (`StopState.tone`): green VERIFIED, amber pending, red missing or unknown.
   @ViewBuilder private var stop: some View {
     if let price = row.stop {
       let state = row.position.stop.state
       HStack(spacing: Tokens.Space.xs) {
         Text(verbatim: Format.price(price)).foregroundStyle(Palette.lossText)
-        Badge(verbatim: Board.stopStateTitle(state),
-          color: state == .verified ? Palette.profitText : Palette.warningText)
+        Badge(verbatim: Board.stopStateTitle(state), color: state.tone.text)
       }
     } else {
       Text(L10n.Chart.positionNoStop).foregroundStyle(Palette.lossText)

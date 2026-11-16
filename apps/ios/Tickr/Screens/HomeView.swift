@@ -6,7 +6,7 @@ import TickrKit
 /// open positions and the live flow. The power button opens bot control.
 struct HomeView: View {
   /// Order in which the blocks rise in (`rise(step:)`); open positions follow one step apart.
-  private enum Order: Int { case day = 1, summary, ticker, positions, flow = 6 }
+  private enum Order: Int { case day = 1, summary, ticker, positions, flow = 6, movers }
 
   @Environment(AppModel.self) private var model
   @State private var showControl = false
@@ -63,7 +63,7 @@ struct HomeView: View {
       Summary(past: dayModel.shown).rise(step: Order.summary.rawValue)
       if let past = dayModel.shown {
         // A recorded day: its result above, nothing live below.
-        Text(L10n.Home.pastDayNote(Format.day(past.day.noonInNewYork)))
+        Text(L10n.Home.pastDayNote(DayText.day(past.day.noonInNewYork)))
           .font(.subheadline)
           .foregroundStyle(Palette.textTertiary)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,8 +97,11 @@ struct HomeView: View {
           current: current,
           // The status only while it is current, as the stages' own values.
           sources: StageSources(flow: todayFlow, skipped: todaySkipped, watching: nil,
-            status: current ? status : nil, settings: model.settings))
+            status: current ? status : nil, settings: model.settings),
+          symbols: model.symbols?.day == model.today ? model.symbols : nil)
           .rise(step: Order.flow.rawValue)
+        FastMoversCard(movers: model.movers?.day == model.today ? model.movers : nil, failure: model.moversError)
+          .rise(step: Order.movers.rawValue)
       }
     }
     .botControl(isPresented: $showControl)
@@ -221,10 +224,10 @@ private struct DayLine: View {
     let written = model.status?.writtenAt.date ?? model.botNow
     let isToday = WireDate(newYorkDateOf: written) == model.today
     if let past = days.shown {
-      Text(verbatim: Format.day(past.day.noonInNewYork))
+      Text(verbatim: DayText.day(past.day.noonInNewYork))
         .foregroundStyle(Palette.highlightText)
     } else {
-      Text(isToday ? L10n.Common.today(Format.day(written)) : L10n.Activity.lastSession(Format.day(written)))
+      Text(isToday ? L10n.Common.today(DayText.day(written)) : L10n.Activity.lastSession(DayText.day(written)))
     }
   }
 }
@@ -306,7 +309,7 @@ private struct Summary: View {
     let unreachable = model.status == nil && model.fetchError != nil
     let text = past != nil ? String(localized: L10n.Home.recordedDay)
       : unreachable ? String(localized: L10n.Home.statusUnknown) : headline.text
-    let tint = past == nil ? headline.severity.tint : Palette.highlightText
+    let tone = past == nil ? headline.tone : Tone.highlight
     // A stale status's text counts its age; read again it is no new event.
     let pulse: Headline.Pulse = past == nil ? headline.pulse : .text(text)
     RowStack(spacing: Tokens.Space.l) {
@@ -317,7 +320,7 @@ private struct Summary: View {
           // Counts up from zero as the ring appears and on to each new result (the board's count).
           CountingText(NSDecimalNumber(decimal: result).doubleValue) { Money.signed(Decimal($0)) }
             .font(Tokens.Typography.metric)
-            .foregroundStyle(result < 0 ? Palette.seriesATRText : Palette.profitText)
+            .foregroundStyle(Palette.result(result))
             // One line at its full size; the ring grows around it.
             .fixedSize()
           Group {
@@ -347,14 +350,10 @@ private struct Summary: View {
       .accessibilityLabel(Text(L10n.Home.dayResult(Money.signedUSD(result), stats?.wins ?? 0, stats?.losses ?? 0)))
 
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-          PulseDot(tint, pulsing: past == nil && (headline.severity != .ok || model.response?.stale == false),
-            event: pulse)
-          Text(verbatim: text)
-            .font(.subheadline.bold())
-            .foregroundStyle(tint)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+        // As IOSHome draws it: the shared headline, bare.
+        HeadlineBanner(text, tone: tone,
+          pulse: past == nil && (headline.severity != .ok || model.response?.stale == false) ? AnyHashable(pulse) : nil,
+          framed: false)
         if stats?.beforeFees == true {
           // The ring's result does not count the broker's fees yet; wraps rather than cuts.
           Text(L10n.Home.beforeFees)
@@ -444,7 +443,7 @@ private struct PositionRow: View {
           Label {
             Text(verbatim: position.stop.price.map { Money.price($0.value) } ?? Format.missing)
           } icon: {
-            Image(systemName: StopGlyph.levelSymbol)
+            Image(systemName: StopState.levelSymbol)
           }
           .labelStyle(ControlLabelStyle())
           .font(Tokens.Typography.annotation)
@@ -546,15 +545,18 @@ private struct LiveFlowCard: View {
   let marks: [FlowMark]
   /// The status is fresh and describes today's session.
   let current: Bool
-  /// What the stages' details are built from (`StageDetail`); the detail reads the watching rows.
+  /// What the reconcile stage's detail is built from (`StageDetail`).
   let sources: StageSources
+  /// Today's symbols by the stage they got to: the Quote and Bars counts; nil until read.
+  let symbols: SymbolsV1?
 
   /// The stages, in the order a setup passes them.
-  private enum StageID: Int {
-    case screen = 0, stocks, strategy, risk, order, stop
+  private enum StageID: Int, CaseIterable {
+    case screen = 0, stocks, quote, bars, strategy, risk, order, stop, reconcile
 
-    /// The flow stage whose symbols sit under this one.
-    var flowStage: FlowStage {
+    /// The flow stage whose symbols sit under this one as dots; nil for a stage the flow does
+    /// not place symbols at.
+    var flowStage: FlowStage? {
       switch self {
       case .screen: .screeners
       case .stocks: .universe
@@ -562,6 +564,7 @@ private struct LiveFlowCard: View {
       case .risk: .risk
       case .order: .order
       case .stop: .stop
+      case .quote, .bars, .reconcile: nil
       }
     }
 
@@ -570,20 +573,29 @@ private struct LiveFlowCard: View {
       switch self {
       case .screen: .screeners
       case .stocks: .universe
+      case .quote: .quote
+      case .bars: .bars
       case .strategy: .strategy
       case .risk: .risk
       case .order: .order
       case .stop: .stop
+      case .reconcile: .reconcile
       }
     }
+
+    /// The Symbols screen's tab a tap opens: every symbol at this stage today; nil for reconcile,
+    /// whose detail opens in a popover.
+    var tab: SymbolsTab? { SymbolsTab(pipeline) }
   }
 
   @Namespace private var board
-  /// The stage whose detail is open in a popover (a tap on the stage, its dots or its tray).
+  /// The stage whose detail is open in a popover (reconcile, which holds no symbol list).
   @State private var openStage: StageID?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
 
+  /// Stages per row of the funnel's grid (the design's 3×3).
+  static let gridColumns = 3
   /// Symbol dots per row under a stage, and the most shown before "+N".
   static let poolColumns = 3
   static let poolCap = 9
@@ -606,13 +618,13 @@ private struct LiveFlowCard: View {
   private var stages: [Stage] {
     let positions = status.positions
     let verified = positions.filter { $0.stop.state.isProtected }.count
-    // Green only while every open position's stop, and every stop of the day's trades the flow
-    // knows, is verified at the broker.
     let flowVerified = flow?.stops.filter { $0.state == .verified }.count
-    let allProtected = verified == positions.count && flowVerified == flow?.stops.count
+    // The one stage rule of both apps (`StopState.stageTone`): neutral with no position, else the
+    // worst of the open and the day's stops.
+    let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (flow?.stops ?? []).map(\.state))
     guard current else {
       // Nothing here is live: no counts, no green, nothing breathing.
-      return [StageID.screen, .stocks, .strategy, .risk, .order, .stop].map { id in
+      return StageID.allCases.map { id in
         Stage(id: id, name: Self.names[id.rawValue], value: nil, color: Palette.textQuaternary)
       }
     }
@@ -630,6 +642,8 @@ private struct LiveFlowCard: View {
     return [
       Stage(id: .screen, name: L10n.Flow.screen, value: count(.screeners), color: Palette.accent),
       Stage(id: .stocks, name: L10n.Flow.stocks, value: count(.universe), color: Palette.seriesUniverse),
+      Stage(id: .quote, name: L10n.FlowStages.quote, value: reached(.quote), color: Palette.accentText),
+      Stage(id: .bars, name: L10n.FlowStages.bars, value: reached(.bars), color: Palette.info),
       Stage(id: .strategy, name: L10n.Flow.strategy,
         value: count(.strategy) ?? (fromStatus ? status.strategy.version : nil), color: Palette.highlight),
       Stage(id: .risk, name: L10n.Flow.risk,
@@ -641,13 +655,39 @@ private struct LiveFlowCard: View {
       Stage(id: .order, name: L10n.Flow.order,
         value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: Palette.info),
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
-        color: allProtected ? Palette.profit : Palette.loss, urgent: verified < positions.count),
+        color: stopTone.fill, urgent: verified < positions.count),
+      reconcileStage,
     ]
+  }
+
+  /// Live fences first (the status is newer than any reconciliation), then the latest
+  /// reconciliation's match or mismatch; without one, no value (never read as fine).
+  private var reconcileStage: Stage {
+    let fences = status.fences
+    let agreement = flow?.reconcile.agreement
+    let value: LocalizedStringResource? = if !fences.isEmpty {
+      L10n.FlowStages.fences(fences.count)
+    } else {
+      switch agreement {
+      case .match: L10n.FlowStages.match
+      case .mismatch: L10n.FlowStages.mismatch
+      case nil: nil
+      }
+    }
+    let agrees = fences.isEmpty && agreement == .match
+    return Stage(id: .reconcile, name: L10n.FlowStages.reconcile, value: value.map { String(localized: $0) },
+      color: value == nil ? Palette.textQuaternary : agrees ? Palette.profit : Palette.loss,
+      urgent: !fences.isEmpty || agreement == .mismatch)
   }
 
   /// "2/2 ✓" only when every stop is verified; otherwise the bare count, never a check mark.
   private static func stops(_ verified: Int, of total: Int) -> String {
     String(localized: verified == total ? L10n.Flow.stopsVerified(verified, total) : L10n.Flow.stopsCount(verified, total))
+  }
+
+  /// How many symbols got to `stage` today (GET /symbols); nil until the symbols are read.
+  private func reached(_ stage: SymbolStage) -> String? {
+    symbols?.stages.first { $0.stage == stage }.map { String($0.count) }
   }
 
   /// How many symbols reached `stage` today; nil until the flow is read.
@@ -693,15 +733,16 @@ private struct LiveFlowCard: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      // Six equal columns, as in the design (a long value never widens its stage); at large text
-      // sizes one row per stage, so the names stay whole.
+      // A 3×3 grid of equal cells, as in the design (a long value never widens its stage); at
+      // large text sizes one row per stage, so the names stay whole.
       Group {
         if typeSize.stacksRows {
           VStack(alignment: .leading, spacing: Tokens.Space.s) {
             ForEach(stages) { stage in opens(stage) { row(stage) } }
           }
         } else {
-          HStack(alignment: .top) {
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Tokens.Space.s, alignment: .top),
+            count: Self.gridColumns), alignment: .leading, spacing: Tokens.Space.m) {
             ForEach(stages) { stage in
               opens(stage) { column(stage).frame(maxWidth: .infinity, alignment: .top) }
             }
@@ -747,8 +788,8 @@ private struct LiveFlowCard: View {
   }
 
   /// Stage names, in `StageID` order.
-  private static let names = [L10n.Flow.screen, L10n.Flow.stocks, L10n.Flow.strategy, L10n.Flow.risk, L10n.Flow.order,
-    L10n.Flow.stop]
+  private static let names = [L10n.Flow.screen, L10n.Flow.stocks, L10n.FlowStages.quote, L10n.FlowStages.bars,
+    L10n.Flow.strategy, L10n.Flow.risk, L10n.Flow.order, L10n.Flow.stop, L10n.FlowStages.reconcile]
 
   /// Symbol of the quote stream.
   static let streamSymbol = "waveform.path.ecg"
@@ -765,10 +806,27 @@ private struct LiveFlowCard: View {
     }
   }
 
-  /// A stage as a button: a tap anywhere on it (its dot, name, value, dots or tray) opens what it
-  /// did today in a popover that stays until dismissed (HIG), the stage's colour washing behind it
-  /// while the finger is down.
+  /// A stage as a button: a tap anywhere on it (its dot, name, value, dots or tray) pushes the
+  /// Symbols screen on its tab, every symbol at the stage today; reconcile, which holds no symbol
+  /// list, opens its detail in a popover that stays until dismissed (HIG). The stage's colour
+  /// washes behind it while the finger is down.
+  @ViewBuilder
   private func opens(_ stage: Stage, @ViewBuilder label: () -> some View) -> some View {
+    if let tab = stage.id.tab {
+      NavigationLink {
+        SymbolsView(tab: tab)
+      } label: {
+        label().contentShape(Rectangle())
+      }
+      .buttonStyle(.washPress(stage.color))
+      .accessibilityElement(children: .combine)
+      .accessibilityHint(Text(L10n.FlowStages.symbolsHint))
+    } else {
+      popover(stage, label: label)
+    }
+  }
+
+  private func popover(_ stage: Stage, @ViewBuilder label: () -> some View) -> some View {
     Button {
       openStage = stage.id
     } label: {
@@ -842,7 +900,7 @@ private struct LiveFlowCard: View {
   /// stages the symbols they refused sit in a dashed tray as outlines, as in the design.
   @ViewBuilder
   private func pool(_ stage: Stage) -> some View {
-    let here = current ? marks.filter { $0.stage == stage.id.flowStage } : []
+    let here = current && stage.id.flowStage != nil ? marks.filter { $0.stage == stage.id.flowStage } : []
     let passed = here.filter { !$0.refused }
     let refused = here.filter(\.refused)
     VStack(spacing: Tokens.Space.xs) {

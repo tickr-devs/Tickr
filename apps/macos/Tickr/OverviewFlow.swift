@@ -143,7 +143,7 @@ struct LatestEvent: View {
     guard let trade = model.shownTrades.max(by: { $0.closedAt.date < $1.closedAt.date }) else { return nil }
     let result = trade.resultGrossUsd.value
     return Line(time: trade.closedAt.date, tag: Board.exitReasonTitle(trade.exitReason),
-      text: "\(trade.symbol) \(Money.signed(result))", color: result >= 0 ? Palette.profitText : Palette.lossText)
+      text: "\(trade.symbol) \(Money.signed(result))", color: Palette.result(result))
   }
 
   var body: some View {
@@ -301,7 +301,7 @@ struct WatchingRow: View {
       ZStack(alignment: .leading) {
         if let share {
           Capsule().fill(Palette.separator)
-          Capsule().fill(row.verdict.watchingColor).frame(width: proxy.size.width * share)
+          Capsule().fill(row.verdict.color).frame(width: proxy.size.width * share)
         } else {
           // Unknown is a dashed outline, never an empty track that reads as 0 %.
           Capsule().strokeBorder(Palette.separatorStrong,
@@ -324,16 +324,7 @@ struct VerdictTag: View {
   let verdict: Verdict
 
   var body: some View {
-    Badge(verdict.title, color: verdict.watchingColor)
-  }
-}
-
-extension Verdict {
-  /// A watched symbol's colour, for its tag and its closeness bar: the decision's colour, with
-  /// IGNORE in the design's pink rather than grey, so a symbol the strategy turned away reads apart
-  /// from a quiet value.
-  var watchingColor: Color {
-    self == .ignore ? Palette.seriesATRText : color
+    Badge(verdict.title, color: verdict.color)
   }
 }
 
@@ -411,8 +402,7 @@ private struct FastMoverRow: View {
       }
       ChipFlow(spacing: Tokens.Space.s) {
         MoverFigure(text: SymbolsBoard.volume(mover), fired: mover.fired(.volume))
-        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move),
-          color: mover.moveAtr.isNegative ? Palette.lossText : Palette.profitText)
+        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move))
         MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
       }
     }

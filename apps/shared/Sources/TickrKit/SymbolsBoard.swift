@@ -249,7 +249,7 @@ public enum SymbolsBoard {
   /// Every stage in order: passed up to where the row stands, its outcome there, then ahead.
   /// A stage it went past earlier but stands before now (dropped at a later pass) reads passed.
   public static func path(_ row: SymbolRowV1) -> [Step] {
-    let (_, tone) = outcome(row)
+    let tone = outcome(row).tone
     return SymbolStage.allCases.map { stage in
       if stage == row.stage {
         return Step(stage: stage, mark: .here(tone), detail: tone == .dropped || tone == .notReached ? reason(row) : nil)
@@ -273,14 +273,12 @@ public enum SymbolsBoard {
     String(localized: L10n.moverMove(signed(mover.moveAtr.value, digits: ratioDigits)))
   }
 
-  /// "$1.9M/min": the bar's dollar volume.
+  /// "$vol 4.1×": the bar's dollar volume against the average of the bars before it.
   public static func dollars(_ mover: FastMoverV1) -> String {
-    let compact = mover.barDollarVolume.value.formatted(
-      .currency(code: dollarCode).notation(.compactName).precision(.fractionLength(0...ratioDigits)))
-    return String(localized: L10n.moverDollars(compact))
+    String(localized: L10n.moverDollars(fixed(mover.dollarVolumeRatio.value, digits: ratioDigits)))
   }
 
-  /// "vol ≥ 5× · move ≥ 2 ATR · $ vol ≥ 5× · bar ≥ $250K, last 10 bars": the thresholds.
+  /// "bar ≥ $250K, then any of: vol ≥ 5× · |move| ≥ 2 ATR · $ vol ≥ 5× · vs last 10 bars": the thresholds.
   public static func rules(_ rules: FastMoverRulesV1) -> String {
     let floor = rules.minBarDollarVolumeUsd.value.formatted(
       .currency(code: dollarCode).notation(.compactName).precision(.fractionLength(0...ratioDigits)))
@@ -317,4 +315,16 @@ extension ScreenerSource {
     case .topActives: L10n.stageActives
     }
   }
+}
+
+/// The signals named in `FastMoverV1.fired` (protocol constants of the API).
+public enum FastMoverSignal: String, Sendable {
+  case volume = "volume_ratio"
+  case move = "move_atr"
+  case dollars = "dollar_volume_ratio"
+}
+
+extension FastMoverV1 {
+  /// Whether `signal` reached its threshold on the mover's bar.
+  public func fired(_ signal: FastMoverSignal) -> Bool { fired.contains(signal.rawValue) }
 }

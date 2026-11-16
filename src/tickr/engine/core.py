@@ -121,6 +121,12 @@ ORDER_HELD = "order-held"
 # (`detail-unreadable` fence) survives a restart.
 DETAIL_FAILED = "detail-read-failed"
 DETAIL_ANSWERED = "detail-read-answered"
+# A filled order's exact average fill price, recorded once from the account's cash activity of
+# the fill (runtime/account.py, `record_exact_fills`); the body is the evidence it came from.
+EXACT_FILL_PRICE = "exact-fill-price"
+# A finished order's fees as the broker charged them, recorded once from the order history
+# (runtime/account.py, `record_exact_fills`); the body is the evidence it came from.
+ORDER_FEES = "order-fees"
 _LIVE_SEND = (SendState.INTENT, SendState.ATTEMPTED, SendState.ACKNOWLEDGED, SendState.UNKNOWN)
 _WORKING = (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED)
 # Cancel states after which a later Detail read decides whether the cancel took.
@@ -155,6 +161,18 @@ class OrderRow:
     cancel_at: float | None
     absent_reads: int
     last_detail_at: float | None
+    # The exact average fill price from the fill's cash activity (None: not known yet or never).
+    exact_fill_price: Decimal | None = None
+    # The broker's fees on the order (None: not read yet); the daily loss counts them.
+    fees_usd: Decimal | None = None
+
+    @property
+    def fill_price(self) -> Decimal | None:
+        """The average price the order filled at, as results count it: the exact price when
+        recorded, else the broker's order row (rounded to cents for sub-dollar prices)."""
+        if self.exact_fill_price is not None:
+            return self.exact_fill_price
+        return self.average_fill_price
 
     @property
     def live(self) -> bool:
@@ -207,6 +225,8 @@ def order_from_row(row: Any) -> OrderRow:
         average_fill_price=_dec(row["average_fill_price"]), cancel_state=row["cancel_state"],
         cancel_attempts=row["cancel_attempts"], cancel_at=row["cancel_at"],
         absent_reads=row["absent_reads"], last_detail_at=row["last_detail_at"],
+        exact_fill_price=_dec(row["exact_fill_price"]),
+        fees_usd=_dec(row["fees_usd"]),
     )
 
 
@@ -621,6 +641,40 @@ class Engine:
 
     # --- observation -----------------------------------------------------------------------
 
+    def record_exact_fill_price(self, client_order_id: str, price: Decimal,
+                                evidence: dict[str, Any]) -> bool:
+        """Record a finished order's exact average fill price with its evidence (one journal
+        row), once: a price already recorded is never overwritten. Returns whether it was
+        written. Raises ValueError for a price that is not positive."""
+        if price <= 0:
+            raise ValueError(f"exact fill price {price} is not positive")
+        with self.store.transaction():
+            written = self.store.execute(
+                "UPDATE orders SET exact_fill_price = ? WHERE client_order_id = ? "
+                "AND exact_fill_price IS NULL", (str(price), client_order_id))
+            if written != 1:
+                return False
+            self.store.append(EXACT_FILL_PRICE, {"exact_fill_price": price, **evidence},
+                              key=client_order_id, run_id=self.run_id)
+        return True
+
+    def record_order_fees(self, client_order_id: str, fees: Decimal,
+                          evidence: dict[str, Any]) -> bool:
+        """Record a finished order's fees as the broker charged them, with its evidence (one
+        journal row), once: fees already recorded are never overwritten. Returns whether they
+        were written. Raises ValueError for negative fees."""
+        if fees < 0:
+            raise ValueError(f"order fees {fees} are negative")
+        with self.store.transaction():
+            written = self.store.execute(
+                "UPDATE orders SET fees_usd = ? WHERE client_order_id = ? "
+                "AND fees_usd IS NULL", (str(fees), client_order_id))
+            if written != 1:
+                return False
+            self.store.append(ORDER_FEES, {"fees_usd": fees, **evidence},
+                              key=client_order_id, run_id=self.run_id)
+        return True
+
     def _apply_detail(self, row: OrderRow, detail: OrderDetail, *, resurrected: bool) -> None:
         """Inside a transaction: record a Detail read."""
         cid = row.client_order_id
@@ -648,6 +702,17 @@ class Engine:
             self.store.append(ORDER_HELD, {
                 "state": detail.state, "raw_status": detail.raw_status,
                 "filled_quantity": detail.filled_quantity}, key=cid, run_id=self.run_id)
+        if (detail.state.terminal and detail.filled_quantity > 0 and detail.fees is not None
+                and detail.fees >= 0 and row.fees_usd is None):
+            # The finished order's fees as Detail shows them, once (the daily loss counts
+            # them); a Detail without readable fees leaves them to the order history.
+            written = self.store.execute(
+                "UPDATE orders SET fees_usd = ? WHERE client_order_id = ? AND fees_usd IS NULL",
+                (str(detail.fees), cid))
+            if written == 1:
+                self.store.append(ORDER_FEES, {"fees_usd": detail.fees, "source": "detail",
+                                               "filled_quantity": detail.filled_quantity},
+                                  key=cid, run_id=self.run_id)
         # A cancel is known not to have taken when a read well after it still shows the
         # order working: a new cancel decision becomes possible.
         if (row.cancel_state in _CANCEL_AWAITING and not detail.state.terminal

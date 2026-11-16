@@ -24,6 +24,7 @@ from tickr.api.history import (
     average_fill_price,
     closed_trades,
     entry_send,
+    recorded_fees,
     trade_metrics,
     trade_strategy,
 )
@@ -38,10 +39,16 @@ from tickr.config import Config, trading_gate
 from tickr.engine.core import Engine, Fence, Leg, OrderRow, SendState, TradeRow
 from tickr.engine.loop import drain
 from tickr.engine.manual import flatten_deadline
+from tickr.observers.runner import DROPPED
 from tickr.risk.admission import Admission, AdmissionLimits, session_refusal
 from tickr.risk.causes import AdmissionCause
 from tickr.runtime import stopmarker
-from tickr.runtime.account import AccountReads, account_document, exact_amount, record_reconcile
+from tickr.runtime.account import (
+    AccountReads,
+    account_document,
+    record_exact_fills,
+    record_reconcile,
+)
 from tickr.runtime.alerts import AlertKind
 from tickr.runtime.dayend import DayEnd
 from tickr.runtime.protection import LatencyLog, busy
@@ -62,6 +69,7 @@ EMERGENCY_STEPS = ("entry-stop-on", "cancel-own-orders", "flatten")
 CLOSE_IN_PROGRESS = "a close is in progress; send stop-bot again after it completes"
 OBSERVER_FAILURE = "observer-failure"
 OBSERVERS_STOPPED = "observers-stopped"
+OBSERVERS_DROPPED = "observers-dropped"  # one row per pass with evaluations the observers dropped
 OBSERVERS_NOT_LOADED = "observers-not-loaded"
 EVALUATION_FAILED = "evaluation-failed"
 EVALUATION_SKIPPED = "evaluation-skipped"  # one row per protect-first episode
@@ -74,7 +82,6 @@ ENTRY_SEND_FAILED = "entry-send-failed"  # one row per trade whose entry send is
 NOT_WIRED = api.EntryBlock("entries_not_wired",
                            "This build does not open trades on its own yet.")
 ZERO = Decimal(0)
-CENT = Decimal("0.01")  # one US cent (unit factor): the broker states money results in cents
 
 
 @dataclass(frozen=True)
@@ -460,41 +467,47 @@ class Service:
 
     def _feed_observers(self) -> None:
         """The contexts the active strategy just saw go to the observers, after all broker
-        work of this pass. Failures are journaled every pass. A full queue (a hung observer)
-        or any error here switches the observers off for the run, with one alert; trading
-        goes on."""
+        work of this pass. Failures are journaled every pass. What the observers cannot take now
+        (a full queue: the worker is behind; or the pass's cap on whole histories) is dropped,
+        journaled as one `observers-dropped` row with the count; they go on with the next pass.
+        A worker process that ended, or any error here, switches the observers off for the run,
+        with one alert; trading goes on."""
         observers, evaluator = self.observers, self.evaluator
         if observers is None or evaluator is None:
             return
         try:
-            overflow = self._hand_over(observers, evaluator)
+            self._hand_over(observers, evaluator)
+            alive = observers.alive
         except Exception as exc:  # noqa: BLE001 - observers never end the trading loop
             self._stop_observers(observers, {"error": type(exc).__name__, "detail": str(exc)},
                                  f"observer hook failed ({type(exc).__name__}): observers "
                                  "switched off for this run")
             return
-        if overflow:
-            self._stop_observers(observers, {"error": "queue-full"},
-                                 "observer queue full: observers switched off for this run")
+        if not alive:
+            self._stop_observers(observers, {"error": "process-ended"},
+                                 "observer process ended: observers switched off for this run")
 
-    def _hand_over(self, observers: ObserverSet, evaluator: Evaluator) -> bool:
-        """Queue this pass's contexts and journal worker failures; True on queue overflow."""
-        overflow = False
+    def _hand_over(self, observers: ObserverSet, evaluator: Evaluator) -> None:
+        """Queue this pass's contexts (those the observers cannot take now are dropped) and
+        journal the drops (one row with the count) and the worker's failures."""
         at = evaluator.evaluated_at
+        dropped = 0
         if at is not None:
             for context in evaluator.contexts:
                 if observers.on_evaluation(context, at):
-                    overflow = True
-                    break
-        failures = observers.take_failures()
-        if failures:
+                    dropped += 1
+        failures = [f for f in observers.take_failures() if not f.cause.startswith(DROPPED)]
+        if failures or dropped:
             store = self.engine.store
             with store.transaction():
+                if dropped:
+                    store.append(OBSERVERS_DROPPED, {"at": at.isoformat() if at else None,
+                                                     "dropped": dropped},
+                                 run_id=self.engine.run_id)
                 for f in failures:
                     store.append(OBSERVER_FAILURE, {"folder": f.folder, "identity": f.identity,
                                                     "at": f.at.isoformat(), "cause": f.cause},
                                  run_id=self.engine.run_id)
-        return overflow
 
     def _stop_observers(self, observers: ObserverSet, body: dict[str, object],
                         text: str) -> None:
@@ -669,46 +682,16 @@ class Service:
 
     def _trades_today(self, closed: list[api.DayTrade]) -> tuple[api.Trade, ...]:
         """For status only: today's trades with their stop confirmation time and, once the
-        account's cash activities list every fill, their exact result."""
-        return tuple(replace(_status_trade(self._shown(t)), result_exact_usd=self._exact(t))
+        broker's fees on every fill are recorded, their result after fees."""
+        return tuple(replace(_status_trade(self._shown(t)), result_exact_usd=self._net(t))
                      for t in closed)
 
-    def _exact(self, trade: api.DayTrade) -> Decimal | None:
-        """The trade's exact result after fees from the display reads (display only): the sum
-        of the cash amounts of its filled orders' fills, to the cent as the broker shows it;
-        None while any fill or its cash activity is not listed, or lists another quantity
-        than the bot's records."""
-        if self.account_reads is None:
-            return None
-        snapshot = self.account_reads.snapshot()
-        fills = {f.client_order_id: f for f in snapshot.fills}
-        total = ZERO
-        filled = [o for o in self.engine.orders(trade.trade_id) if o.filled_quantity > 0]
-        for order in filled:
-            fill = fills.get(order.client_order_id)
-            if fill is None or fill.filled_quantity != order.filled_quantity:
-                return None
-            amount = exact_amount(fill, snapshot.cash, snapshot.fills)
-            if amount is None:
-                return None
-            total += amount
-        return total.quantize(CENT) if filled else None
-
-    def _broker_result_today(self, closed: list[api.DayTrade]) -> Decimal | None:
-        """Today's realized result as the broker counts it: its day profit or loss less the
-        unrealized part, from the display reads' latest balance read (display only). The
-        broker prices fills to the sub-cent and charges the fees, which the order rows do not
-        show exactly (sub-dollar fill prices come back rounded to cents, probe 2026-11-16).
-        None until a balance read made after the last of today's trades closed."""
-        if self.account_reads is None:
-            return None
-        snapshot = self.account_reads.snapshot()
-        balance, read_at = snapshot.balance, snapshot.read_at
-        if balance is None or read_at is None:
-            return None
-        if any(trade.closed_at > read_at for trade in closed):
-            return None
-        return balance.day_profit_loss - balance.unrealized_profit_loss
+    def _net(self, trade: api.DayTrade) -> Decimal | None:
+        """The trade's result after the broker's fees as the daily loss counts it: its gross
+        result (exact fill prices where recorded) less its recorded fees; None while any
+        filled order's fees are not recorded."""
+        fees = recorded_fees(self.engine.orders(trade.trade_id))
+        return None if fees is None else trade.result_gross_usd - fees
 
     def _broker_result_today(self, closed: list[api.DayTrade]) -> Decimal | None:
         """Today's realized result as the broker counts it: its day profit or loss less the
@@ -727,26 +710,14 @@ class Service:
         return balance.day_profit_loss - balance.unrealized_profit_loss
 
     def _fees_today(self, closed: list[api.DayTrade]) -> Decimal | None:
-        """The broker's fees on the fills of today's closed trades, from the display reads'
-        latest list of today's fills (display only). None (unknown) until every filled order
-        of those trades is in that list with its filled quantity and readable fees, so a fill
-        the list has not caught up with yet never shows as free."""
-        if self.account_reads is None:
-            return None
-        snapshot = self.account_reads.snapshot()
-        if snapshot.fills_read_at is None:
-            return None
-        fills = {f.client_order_id: f for f in snapshot.fills}
+        """The broker's fees on the fills of today's closed trades as recorded (the same the
+        daily loss counts); None while any of them is not recorded, never counted as free."""
         total = ZERO
         for trade in closed:
-            for order in self.engine.orders(trade.trade_id):
-                if order.filled_quantity <= 0:
-                    continue
-                fill = fills.get(order.client_order_id)
-                if fill is None or fill.fees is None \
-                        or fill.filled_quantity != order.filled_quantity:
-                    return None
-                total += fill.fees
+            fees = recorded_fees(self.engine.orders(trade.trade_id))
+            if fees is None:
+                return None
+            total += fees
         return total
 
     def _shown(self, trade: api.DayTrade) -> api.DayTrade:
@@ -861,11 +832,18 @@ class Service:
             self.engine.step()
         elif ok:
             self._disagreed = record_reconcile(self.engine, self._disagreed)
+            self._record_exact_fills()
             self.write_account()
         else:
             self._disagreed = False  # a failed read: the next two must agree again
         if ok and not self._broker_read_failing():
             self.last_broker_read_at = self.now()
+
+    def _record_exact_fills(self) -> None:
+        """After a successful reconciliation: our finished orders' exact fill prices from the
+        display reads' latest snapshot (read on their thread, written here on the loop's)."""
+        if self.account_reads is not None:
+            record_exact_fills(self.engine, self.account_reads.snapshot())
 
     def _broker_read_failing(self) -> bool:
         """A positions or open-orders read is failing (the fence, plain or keyed)."""
@@ -884,6 +862,7 @@ class Service:
         self._disagreed = record_reconcile(self.engine, False)
         if not self._broker_read_failing():
             self.last_broker_read_at = self.now()
+            self._record_exact_fills()
             self.write_account()
         self.state = api.BotState.RUNNING
         last_reconcile = monotonic()
