@@ -98,6 +98,9 @@ class Fence(StrEnum):
     # state is unknown. While set, the order proves nothing: a stop is not verified protection
     # and an entry or close does not excuse a quantity mismatch. Clears on the next good read.
     DETAIL_UNREADABLE = "detail-unreadable"
+    # The watchdog started this run early for a resting entry (runtime/watchdog.py): the run
+    # protects, cancels and flattens, but takes no new entry until the operator clears it.
+    WATCHDOG_STARTED = "watchdog-started"
 
 
 # Fences that need the operator to look before entries resume; all others clear themselves
@@ -105,7 +108,7 @@ class Fence(StrEnum):
 OPERATOR_FENCES = frozenset({Fence.STOP_REJECTED, Fence.EXIT_REFUSED, Fence.CANCEL_FAILED,
                              Fence.RESURRECTED, Fence.UNPROTECTED_TIMEOUT,
                              Fence.REPLACE_UNRESOLVED, Fence.EXIT_NOT_FILLED,
-                             Fence.MARKET_CLOSED})
+                             Fence.MARKET_CLOSED, Fence.WATCHDOG_STARTED})
 
 _LEG_LETTER = {Leg.ENTRY: "e", Leg.STOP: "s", Leg.EXIT: "x"}
 # Key of the broker-read fence a failed open-orders read sets; only a reconcile clears it.
@@ -213,6 +216,7 @@ class TradeRow:
     stop_price: Decimal
     stop_percent_below_fill: Decimal | None
     entry_low_price: Decimal | None
+    entry_rest_until: datetime | None
     planned_loss_usd: Decimal
     exit_requested: str | None
     stop_failures: int
@@ -248,6 +252,8 @@ def _trade(row: Any) -> TradeRow:
         stop_price=Decimal(row["stop_price"]),
         stop_percent_below_fill=_dec(row["stop_percent_below_fill"]),
         entry_low_price=_dec(row["entry_low_price"]),
+        entry_rest_until=(None if row["entry_rest_until"] is None
+                          else datetime.fromisoformat(row["entry_rest_until"])),
         planned_loss_usd=Decimal(row["planned_loss_usd"]),
         exit_requested=row["exit_requested"], stop_failures=row["stop_failures"],
         last_stop_failure_at=row["last_stop_failure_at"],
@@ -273,8 +279,9 @@ def _detail_priority(row: OrderRow, poll_seconds: float) -> float:
 
 @dataclass(frozen=True)
 class BrokerView:
-    """What one successful reconcile pass read: open orders, then positions. For reports
-    only (day end); never used to size or send anything."""
+    """What one successful reconcile pass read: open orders, then positions. For reports (day
+    end) and for the symbols of foreign orders (`Engine.foreign_symbols`); never used to size
+    or send anything."""
 
     positions: tuple[Position, ...]
     open_orders: tuple[OrderDetail, ...]
@@ -312,6 +319,38 @@ class Engine:
         self._detail_answered_ids: set[str] = set()
 
     # --- fences ----------------------------------------------------------------------------
+
+    def foreign_symbols(self) -> frozenset[str] | None:
+        """Symbols of the positions and open orders the bot does not own: positions from their
+        fences, orders from every open order of the latest complete reconcile that is not in
+        our records (a manual order may carry no client order id, so several share one fence).
+        None while a foreign order is fenced but no complete reconcile read is at hand: the
+        caller must assume any symbol."""
+        names = [name.partition(":") for name in self.fences()]
+        symbols = {key for fence, _, key in names if fence == Fence.FOREIGN_POSITION}
+        if any(fence == Fence.FOREIGN_ORDER for fence, _, _ in names):
+            if self.broker_view is None:
+                return None
+            ours = {o.client_order_id for o in self.orders()}
+            foreign = [o for o in self.broker_view.open_orders if o.client_order_id not in ours]
+            if not foreign or any(not o.symbol for o in foreign):
+                return None
+            symbols |= {o.symbol for o in foreign}
+        return frozenset(symbols)
+
+    def entry_fences(self, symbol: str | None) -> dict[str, str]:
+        """The fences that refuse a new entry in `symbol` (hard rule 1, narrowed by the owner
+        2026-11-16: manual trades are ignored). Every fence blocks, except a foreign position
+        or order in another known symbol; while a foreign order's symbol is unknown, foreign
+        fences block every symbol. `symbol` None asks what blocks an entry in any symbol
+        without foreign exposure (the status line). One rule for admission, `open_trade`, the
+        working-entry guard and the status."""
+        fences = self.fences()
+        foreign = self.foreign_symbols()
+        if foreign is None or (symbol is not None and symbol in foreign):
+            return fences
+        return {n: c for n, c in fences.items()
+                if n.partition(":")[0] not in (Fence.FOREIGN_POSITION, Fence.FOREIGN_ORDER)}
 
     def fences(self) -> dict[str, str]:
         return {r["name"]: r["cause"] for r in self.store.query("SELECT name, cause FROM fences")}
@@ -360,6 +399,10 @@ class Engine:
                 self.store.append("fence-cleared", {"by": "operator"}, key=name,
                                   run_id=self.run_id)
         return bool(removed)
+
+    def watchdog_started_fence(self, cause: str) -> None:
+        """Block new entries after an early watchdog start; only the operator clears it."""
+        self._set_fence(Fence.WATCHDOG_STARTED, "", cause)
 
     def entry_stop_row(self, on: bool, cause: str) -> None:
         """Operator entry-stop, inside the caller's transaction (the command is journaled in
@@ -436,7 +479,8 @@ class Engine:
                    stop_price: Decimal, planned_loss_usd: Decimal,
                    stop_percent_below_fill: Decimal | None = None,
                    entry_low_price: Decimal | None = None,
-                   strategy: tuple[str, str] | None = None) -> str:
+                   strategy: tuple[str, str] | None = None,
+                   rest_until: datetime | None = None) -> str:
         """Record and send a LIMIT BUY entry. Refuses (EntryRefused) instead of guessing.
 
         With `stop_percent_below_fill`, the stop is re-derived from the first observed average
@@ -444,11 +488,13 @@ class Engine:
         is the bound computed from the limit and is never loosened. `entry_low_price` is the
         bottom of the strategy's price window, kept so a resting entry can be cancelled once
         the quote leaves the window (`cancel_entry`). `strategy` (name, version) of the decision
-        that opened it is journaled for display; None for a manual trade."""
+        that opened it is journaled for display; None for a manual trade. `rest_until` (aware)
+        makes it a resting entry that may wait below the ask until then
+        (`runtime.entries.entry_cancel_cause`); it needs `entry_low_price`."""
         gate = self.gate()
         if not gate.open:
             raise EntryRefused(f"trading gate closed: {gate.cause}")
-        fences = self.fences()
+        fences = self.entry_fences(symbol)
         if fences:
             raise EntryRefused("entries fenced: " + ", ".join(sorted(fences)))
         if len(self.trades()) >= self.config.risk.max_open_positions:
@@ -459,22 +505,27 @@ class Engine:
             raise EntryRefused("stop must be above zero and below the entry limit")
         if entry_low_price is not None and not stop_price < entry_low_price <= limit_price:
             raise EntryRefused("window bottom must be above the stop and at most the limit")
+        if rest_until is not None and (rest_until.tzinfo is None or entry_low_price is None):
+            raise EntryRefused("a resting entry needs an aware end time and a window bottom")
 
         with self.store.transaction():
             trade_id = f"t{self.store.next_counter('trade')}"
             self.store.execute(
                 "INSERT INTO trades(trade_id, run_id, symbol, state, entry_quantity, "
                 "entry_limit_price, stop_price, stop_percent_below_fill, planned_loss_usd, "
-                "opened_at, entry_low_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "opened_at, entry_low_price, entry_rest_until) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (trade_id, self.run_id, symbol, TradeState.OPENING, str(quantity),
                  str(limit_price), str(stop_price),
                  None if stop_percent_below_fill is None else str(stop_percent_below_fill),
                  str(planned_loss_usd), self.store.stamp(),
-                 None if entry_low_price is None else str(entry_low_price)))
+                 None if entry_low_price is None else str(entry_low_price),
+                 None if rest_until is None else rest_until.astimezone(UTC).isoformat()))
             self.store.append(TRADE_OPENED, {
                 "symbol": symbol, "quantity": quantity, "limit_price": limit_price,
                 "stop_price": stop_price, "planned_loss_usd": planned_loss_usd,
                 "entry_low_price": entry_low_price,
+                **({} if rest_until is None else {"rest_until": rest_until}),
                 **({} if strategy is None else {"strategy": strategy[0],
                                                 "strategy_version": strategy[1]}),
                 "code_version": self.store.run_code_version(self.run_id)},

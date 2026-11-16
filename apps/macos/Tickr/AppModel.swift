@@ -822,6 +822,13 @@ public final class AppModel {
     barsBySymbol = barsBySymbol.filter { symbols.contains($0.key) }
   }
 
+  /// The price line of `symbol` on the Symbols screen's day, against `previousClose`
+  /// (`SymbolDayLine`: the bot's stored bars, a chart read only without them).
+  public func symbolDayLine(_ symbol: String, previousClose: Decimal?) async -> SymbolDayLine? {
+    await SymbolDayLine.read(symbol, day: symbols?.day ?? shownDay, today: today,
+      previousClose: previousClose, client: client)
+  }
+
   /// Today's bars of an open position's symbol as another screen (the Chart) read them: kept
   /// unless older than the overview's own read, so the Overview and the Chart show one price for
   /// one moment.
@@ -945,7 +952,7 @@ public final class AppModel {
     for index in sent.indices where sent[index].outcome == nil {
       if let record = records.first(where: { $0.commandId == sent[index].id }) {
         sent[index].outcome = record.outcome
-        sent[index].cause = record.cause
+        sent[index].cause = record.causeText
         show(sent[index])
       }
     }

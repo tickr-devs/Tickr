@@ -90,6 +90,7 @@ class RiskConfig:
     max_clock_skew_seconds: Decimal
     symbol_cooldown_after_loss_enabled: bool
     symbol_cooldown_minutes_after_loss: int
+    max_entry_rest_bars: int
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,7 @@ class ProbeConfig:
     chart_client_reads: int
     chart_client_interval_seconds: int
     extended_end_margin_minutes: int
+    extended_max_quote_age_seconds: Decimal
     extended_far_stop_percent: Decimal
     extended_stop_limit_percent: Decimal
     extended_observe_seconds: int
@@ -213,6 +215,8 @@ class MarketDataConfig:
     allowed_security_types: tuple[str, ...]
     profile_symbols_per_request: int
     gainers_losers_rank_type: str
+    premarket_gainers_losers_rank_type: str
+    postmarket_gainers_losers_rank_type: str
     top_actives_rank_type: str
     snapshot_symbols_per_request: int
     bars_symbols_per_request: int
@@ -232,7 +236,11 @@ class MarketDataConfig:
     history_dir: str
     history_cache_max_age_days: int
     history_preload_minutes_before_open: int
-    history_preload_screener_seconds: Decimal
+    screener_record_seconds: Decimal
+    profile_refresh_seconds: Decimal
+    profile_refresh_gainer_move_percent: Decimal
+    profile_max_requests_per_round: int
+    profile_reserve_requests: int
     history_preload_retry_seconds: Decimal
     stream_reconnect_delay_seconds: Decimal
     stream_max_symbols: int
@@ -304,6 +312,7 @@ class RuntimeConfig:
     watchdog_restart_command: tuple[str, ...]
     watchdog_restart_timeout_seconds: int
     watchdog_restart_file: str
+    watchdog_entry_restart_file: str
     evaluation_budget_seconds: Decimal
     discovery_stop_seconds: Decimal
     stop_marker_file: str
@@ -512,6 +521,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if run.code_version_timeout_seconds <= 0:
         raise ConfigError("[run] code_version_timeout_seconds must be above 0")
     md: MarketDataConfig = built["market_data"]
+    if (md.profile_refresh_seconds <= 0 or md.profile_refresh_gainer_move_percent <= 0
+            or md.profile_max_requests_per_round < 1 or md.profile_reserve_requests < 0):
+        raise ConfigError("[market_data] profile_refresh_seconds and "
+                          "profile_refresh_gainer_move_percent must be above 0, "
+                          "profile_max_requests_per_round at least 1 and "
+                          "profile_reserve_requests at least 0")
     if md.refused_symbol_recheck_seconds <= 0:
         raise ConfigError("[market_data] refused_symbol_recheck_seconds must be above 0")
     if md.failure_detail_max_chars < 1:
@@ -519,10 +534,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if md.history_cache_max_age_days < 1:
         raise ConfigError("[market_data] history_cache_max_age_days must be at least 1 (today's "
                           "cache is in use)")
-    if (md.history_preload_minutes_before_open < 0 or md.history_preload_screener_seconds <= 0
+    if (md.history_preload_minutes_before_open < 0 or md.screener_record_seconds <= 0
             or md.history_preload_retry_seconds <= 0):
         raise ConfigError("[market_data] history_preload_minutes_before_open must be at least 0, "
-                          "history_preload_screener_seconds and history_preload_retry_seconds "
+                          "screener_record_seconds and history_preload_retry_seconds "
                           "above 0")
     if (md.candidate_subscriptions + md.observer_subscriptions
             > md.stream_max_symbols - md.stream_reserved_symbols):
@@ -540,6 +555,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
+    if risk.max_entry_rest_bars < 1:
+        raise ConfigError("[risk] max_entry_rest_bars must be at least 1")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     if built["orders"].detail_unreadable_seconds <= 0:

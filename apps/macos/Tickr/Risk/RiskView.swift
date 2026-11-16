@@ -234,7 +234,7 @@ private struct LossRoomCard: View {
           .help(Text(verbatim: Self.gateCause(status)))
       } else {
         StatusPill(L10n.Risk.entriesUnknown, tone: .warning)
-          .help(Text(verbatim: model.fetchError ?? model.response?.unavailableCause ?? String()))
+          .help(Text(verbatim: model.fetchError ?? model.response?.unavailableCauseText ?? String()))
       }
     }, content: {
       VStack(spacing: Tokens.Space.m) {
@@ -409,7 +409,7 @@ private enum FenceGroup: CaseIterable, Identifiable {
     case .exits: [.exitRefused, .exitNotFilled, .cancelFailed, .cancelNotSent]
     case .brokerReads: [.startupReconcile, .brokerReadFailed, .detailBudget]
     case .session: [.shuttingDown, .marketClosed]
-    case .operatorStop: [.entryStop]
+    case .operatorStop: [.entryStop, .watchdogStarted]
     }
   }
 
@@ -854,7 +854,7 @@ private struct SessionCard: View {
       .font(Tokens.Typography.annotation)
       .foregroundStyle(open ? Palette.accentText : Palette.textQuaternary)
       .fixedSize()
-    } else if let cause = model.jobs?.sessionCause {
+    } else if let cause = model.jobs?.sessionCauseText {
       Text(verbatim: cause)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)

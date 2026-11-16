@@ -166,6 +166,8 @@ class DiscoveryResult:
     """The regular session the pass ran in (keys the refused-symbol memory)."""
     refused_symbols: tuple[RefusedSymbol, ...] = ()
     """Every refusal the session memory still held when the pass ended (`RefusedSymbols`)."""
+    screened: tuple[ScreenerRow, ...] = ()
+    """Every screener row the pass read, in list order (the profile recorder's input)."""
 
     @property
     def evaluated(self) -> int:
@@ -223,12 +225,18 @@ class CaptureSink(Protocol):
     def screener(self, rows: Sequence[ScreenerRow], provider: str, receipt_time: datetime) -> None:
         ...
 
+    def screener_skipped(self, kinds: Sequence[ScreenerKind], cause: str, source: str,
+                         receipt_time: datetime) -> None:
+        ...
+
     def bars(self, bars: Sequence[Bar], provider: str, receipt_time: datetime) -> None: ...
 
     def quotes(self, quotes: Sequence[Quote], provider: str, source: str) -> None: ...
 
 
 SNAPSHOT_SOURCE = "snapshot"
+DISCOVERY_SOURCE = "discovery"  # the `source` of a screener-skipped event written by discovery
+SKIPPED_BUDGET = "budget"  # its `cause` when our request budget was spent
 
 
 def _chunks(items: Sequence[str], size: int) -> list[Sequence[str]]:
@@ -418,12 +426,21 @@ def discover(
     read: list[ScreenerKind] = []
     stopped: Stopped | None = None
 
-    for kind in ScreenerKind:
+    kinds = list(ScreenerKind)
+    for number, kind in enumerate(kinds):
         try:
             got = source.screener(kind)
         except RateLimited as exc:
+            if capture is not None:
+                capture.screener_skipped(kinds[number:], SKIPPED_BUDGET, DISCOVERY_SOURCE,
+                                         clock())
             stopped = Stopped(Stage.SCREENER, StopCause.BUDGET, str(exc))
             break
+        except Exception as exc:
+            if capture is not None:  # the pass fails; the lists it did not get are marked
+                capture.screener_skipped(kinds[number:], type(exc).__name__,
+                                         DISCOVERY_SOURCE, clock())
+            raise
         if capture is not None:
             capture.screener(got, provider, clock())
         rows.extend(got)
@@ -447,7 +464,7 @@ def discover(
         return DiscoveryResult(started, tuple(read), merged, len(universe),
                                tuple(candidates), tuple(rejections), stop, tuple(instruments),
                                not_reached, tuple(movers), isinstance(screen, FastMovers),
-                               session_open, memory.remembered())
+                               session_open, memory.remembered(), tuple(rows))
 
     if stopped is not None:
         return result([], stopped)

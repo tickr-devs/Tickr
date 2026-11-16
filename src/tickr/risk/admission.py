@@ -46,6 +46,8 @@ class AdmissionLimits:
     """Only decisions tagged with this strategy name may be admitted."""
     symbol_cooldown_minutes_after_loss: int | None
     """None = cooldown turned off (`symbol_cooldown_after_loss_enabled = false`)."""
+    max_entry_rest_bars: int
+    """Longest a resting limit entry (`Decision.rest_bars`) may work, in bars."""
 
     @classmethod
     def from_config(cls, config: Config) -> AdmissionLimits:
@@ -66,6 +68,7 @@ class AdmissionLimits:
             symbol_cooldown_minutes_after_loss=(
                 risk.symbol_cooldown_minutes_after_loss
                 if risk.symbol_cooldown_after_loss_enabled else None),
+            max_entry_rest_bars=risk.max_entry_rest_bars,
         )
 
 
@@ -77,7 +80,9 @@ class Reconciliation:
     last_broker_read_at: datetime | None
     """Time of the latest successful broker read of positions and open orders (aware)."""
     foreign_exposure: bool
-    """A position or open order the bot does not own exists at the broker."""
+    """A position or open order the bot does not own exists at the broker in the decision's
+    symbol, or a foreign order's symbol is not known. Foreign exposure in other symbols is
+    ignored (owner 2026-11-16)."""
     unresolved_exposure: bool
     """An own order with unknown outcome, a quantity mismatch, or anything not yet explained."""
 
@@ -94,7 +99,8 @@ class AdmissionInputs:
     own_open_positions: int
     own_working_orders: int
     open_positions: int
-    """All positions at the broker (own + foreign), for the position limit."""
+    """Positions counted against the position limit: the bot's own (manual trades are ignored,
+    owner 2026-11-16)."""
     symbol_last_loss_at: datetime | None
     """When the latest trade in the decision's symbol that closed today (New York date) at a
     loss, or with an unknown result, closed; None = no such trade today."""
@@ -157,7 +163,8 @@ def _check_reconciliation(i: AdmissionInputs, lim: AdmissionLimits) -> Admission
     if r.unresolved_exposure:
         return _refuse(C.UNRESOLVED_EXPOSURE, "unresolved exposure")
     if r.foreign_exposure:
-        return _refuse(C.FOREIGN_EXPOSURE, "foreign position or order at the broker")
+        return _refuse(C.FOREIGN_EXPOSURE,
+                       "foreign position or order in this symbol, or of unknown symbol")
     if i.entry_stop:
         return _refuse(C.ENTRY_STOP_SET, "operator entry-stop is set")
     return None
@@ -243,6 +250,11 @@ def _check_quote_and_setup(i: AdmissionInputs, lim: AdmissionLimits) -> Admissio
         return _refuse(C.DECISION_INVALID,
                        f"need 0 < stop {d.stop} < entry_low {d.entry_low} <= "
                        f"entry_high {d.entry_high}")
+    rest = d.rest_bars
+    if rest is not None and (isinstance(rest, bool) or not isinstance(rest, int)
+                             or not 1 <= rest <= lim.max_entry_rest_bars):
+        return _refuse(C.DECISION_INVALID,
+                       f"rest_bars {rest!r} not a whole number 1..{lim.max_entry_rest_bars}")
     if i.limit_price is None or i.stop_price is None:
         return _refuse(C.ORDER_PRICES_MISSING, "final limit and stop prices not computed")
     prices = (i.limit_price, i.stop_price)
@@ -277,6 +289,13 @@ def _check_quote_and_setup(i: AdmissionInputs, lim: AdmissionLimits) -> Admissio
     age = max(age, Decimal(0))
     if age > lim.max_quote_age_seconds:
         return _refuse(C.QUOTE_STALE, f"quote {age} s old > {lim.max_quote_age_seconds} s")
+    if rest is not None:
+        # A resting buy waits below the ask for a pullback; it fills at its limit or better,
+        # so only an ask already under the window refuses it.
+        if q.ask < d.entry_low:
+            return _refuse(C.PRICE_OUTSIDE_WINDOW,
+                           f"ask {q.ask} below the window {d.entry_low}")
+        return None
     if not (d.entry_low <= q.ask <= i.limit_price):
         return _refuse(C.PRICE_OUTSIDE_WINDOW,
                        f"ask {q.ask} outside {d.entry_low}..limit {i.limit_price}")

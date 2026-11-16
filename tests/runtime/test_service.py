@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import signal
+from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -342,6 +343,52 @@ def test_cli_run_stops_on_sigterm(tmp_path, monkeypatch):
     assert api.read_status(paths.status).bot_state is api.BotState.STOPPED
     database, _ = cli.data_paths(cfg)
     store = Store.open(database, busy_timeout_seconds=0)
+    assert store.last_run()["end_cause"] == "stopped (SIGTERM)"
+    store.close()
+
+
+def test_cli_run_marks_its_start_and_stop_in_the_capture(tmp_path, monkeypatch):
+    from tickr.data.capture import EVENTS_FILE, CaptureWriter
+    bot_toml = copy_config(tmp_path)
+    monkeypatch.setattr(cli, "RUN_ADAPTERS", lambda cfg, on_error, on_token: cli.RunAdapters(
+        FakeBroker(), FakeMarketData(), lambda: None, lambda: None))
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    monkeypatch.setattr(cli, "SLEEP", lambda seconds: os.kill(os.getpid(), signal.SIGTERM))
+    assert cli.main(["--config", str(bot_toml), "run"]) == 0
+    cfg = config.load(bot_toml)
+    capture = CaptureWriter.from_config(cfg, FakeMarketData().provider)
+    path = capture.path(MONDAY_11.astimezone(NEW_YORK).date(), EVENTS_FILE)
+    events = [json.loads(x) for x in path.read_text("utf-8").splitlines()]
+    assert [e["event"] for e in events] == ["bot-start", "bot-stop"]
+    assert events[0]["run_id"] == events[1]["run_id"]
+    assert events[1]["cause"] == "stopped (SIGTERM)"
+
+
+def test_a_bot_start_marker_not_written_never_keeps_the_bot_from_running(tmp_path,
+                                                                         monkeypatch):
+    from tickr.data.capture import CaptureError, CaptureWriter
+    from tickr.runtime.market import CAPTURE_FAILED
+    bot_toml = copy_config(tmp_path)
+    monkeypatch.setattr(cli, "RUN_ADAPTERS", lambda cfg, on_error, on_token: cli.RunAdapters(
+        FakeBroker(), FakeMarketData(), lambda: None, lambda: None))
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    passes = []
+
+    def sleep(seconds):
+        passes.append(seconds)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    def refuse(self, name, at, **fields):
+        raise CaptureError(f"events.jsonl: disk full ({name})")
+
+    monkeypatch.setattr(cli, "SLEEP", sleep)
+    monkeypatch.setattr(CaptureWriter, "event", refuse)
+    assert cli.main(["--config", str(bot_toml), "run"]) == 0
+    assert passes  # the loop ran
+    database, _ = cli.data_paths(config.load(bot_toml))
+    store = Store.open(database, busy_timeout_seconds=0)
+    (row,) = store.journal(CAPTURE_FAILED)
+    assert row.body["what"] == "bot-start" and row.body["error"] == "CaptureError"
     assert store.last_run()["end_cause"] == "stopped (SIGTERM)"
     store.close()
 
@@ -987,7 +1034,7 @@ def test_a_missing_calendar_is_a_real_block(tmp_path):
 def test_positions_and_watch_are_evaluated_before_discovery_starts(tmp_path):
     """The real market runtime and evaluator in the service loop: the WATCH symbol's decision
     comes before discovery's first screener read of the minute."""
-    from tickr.data.base import ScreenerKind
+    from tickr.data.base import ScreenerKind, ScreenerSession
     from tickr.data.health import StreamHealth
     from tickr.data.history import HistoryReader, HistorySettings
     from tickr.data.todaybars import TodayBars
@@ -1001,9 +1048,9 @@ def test_positions_and_watch_are_evaluated_before_discovery_starts(tmp_path):
     events: list[str] = []
 
     class Source(FakeMarketData):
-        def screener(self, kind: ScreenerKind):
+        def screener(self, kind: ScreenerKind, session=ScreenerSession.REGULAR):
             events.append(f"screener {kind}")
-            return super().screener(kind)
+            return super().screener(kind, session)
 
     class Watching:
         name, version = CFG.strategy.active, "1"
@@ -1112,3 +1159,73 @@ def test_a_trade_carries_the_code_version_of_the_run_that_opened_it(tmp_path):
     status = bot.service.status()
     (done,) = status.trades_today
     assert done.code_version == sha and status.code_version == sha
+
+
+def _resting(bot: Bot) -> str:
+    return bot.engine.open_trade("ABC", D(10), D("9.90"), D("9.60"), D("3"),
+                                 entry_low_price=D("9.80"),
+                                 rest_until=bot.now + timedelta(minutes=6))
+
+
+def test_a_restart_never_resumes_a_working_entry(tmp_path):
+    first = Bot(tmp_path, broker=FakeBroker())
+    first.engine.recover()
+    t = _resting(first)
+    first.store.close()  # the crash: the entry still rests at the broker
+    bot = Bot(tmp_path, broker=first.broker)
+    bot.run(0)
+    (row,) = bot.store.journal("entry-cancel")
+    assert row.body["cause"] == service.RESTART_ENTRY_CANCEL
+    (entry,) = bot.engine.orders(t)
+    assert entry.cancel_state == "sent"
+
+
+def test_without_a_market_every_working_entry_is_cancelled(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())
+    bot.engine.recover()
+    t = _resting(bot)
+    assert bot.service.market is None
+    bot.service._guard_entries()
+    (row,) = bot.store.journal("entry-cancel")
+    assert row.body["cause"] == "no quote"
+    assert bot.engine.orders(t)[0].cancel_state == "sent"
+
+
+def _early(tmp_path: Path, record: str | None) -> Bot:
+    """A bot whose paths name a watchdog early-restart record holding `record`."""
+    path = tmp_path / "watchdog-entry-restart.json"
+    if record is not None:
+        path.write_text(record, "utf-8")
+    bot = Bot(tmp_path, broker=FakeBroker())
+    bot.service.paths = replace(bot.paths, watchdog_entry_restart=path)
+    return bot
+
+
+def _today_record(at: datetime = MONDAY_11) -> str:
+    return json.dumps({"ny_date": at.date().isoformat(), "at": at.isoformat(),
+                       "early": True}) + "\n"
+
+
+def test_a_run_the_watchdog_started_early_takes_no_new_entry_until_cleared(tmp_path):
+    bot = _early(tmp_path, _today_record())
+    bot.run(0)
+    fences = bot.engine.fences()
+    assert str(Fence.WATCHDOG_STARTED) in fences
+    assert "no new entry" in fences[str(Fence.WATCHDOG_STARTED)]
+    assert bot.engine.clear_operator_fence(str(Fence.WATCHDOG_STARTED))
+    again = _early(tmp_path, _today_record())  # a later start the same day, same record
+    again.run(0)
+    assert str(Fence.WATCHDOG_STARTED) not in again.engine.fences()
+
+
+@pytest.mark.parametrize("record", [None, _today_record(MONDAY_11 - timedelta(days=3))])
+def test_no_fence_without_a_record_of_today(tmp_path, record):
+    bot = _early(tmp_path, record)
+    bot.run(0)
+    assert str(Fence.WATCHDOG_STARTED) not in bot.engine.fences()
+
+
+def test_an_unreadable_early_restart_record_fences_too(tmp_path):
+    bot = _early(tmp_path, "{not json")
+    bot.run(0)
+    assert "unreadable" in bot.engine.fences()[str(Fence.WATCHDOG_STARTED)]
