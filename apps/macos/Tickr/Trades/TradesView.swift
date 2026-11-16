@@ -841,11 +841,9 @@ private struct AnotherStrategyView: View {
         .fontWeight(.semibold)
       if model.labReplay == nil {
         if let error = model.labReplayError {
-          Text(verbatim: error)
-            .font(Tokens.Typography.caption)
-            .foregroundStyle(Palette.warningText)
+          ReadFailureNote(L10n.ReadFailed.replay, detail: error)
         } else {
-          ProgressView().controlSize(.small)
+          TickrLoader(L10n.Common.loading)
         }
       } else if versions.isEmpty {
         Footnote(L10n.Trades.anotherNoVersions)
@@ -891,7 +889,7 @@ private struct AnotherStrategyView: View {
     switch answer {
     case nil:
       GridRow {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
         Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
         Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
       }
@@ -1000,11 +998,11 @@ private struct NotTakenCard: View {
         }
         .onArrival(of: groups.map(\.id)) { arrived = $0 }
       } else if let error = model.skippedError {
-        Footnote(L10n.Trades.notTakenUnavailable(error))
+        ReadFailureNote(L10n.Trades.notTakenUnavailable, detail: error)
       } else if model.skipped != nil {
         Footnote(L10n.Trades.notTakenEmpty)
       } else {
-        ProgressView().controlSize(.small)
+        TickrLoader(L10n.Common.loading)
       }
     })
   }

@@ -251,7 +251,7 @@ private struct CurvesCard: View {
         } else if model.observersError != nil {
           Footnote(L10n.Lab.observersUnavailable, color: Palette.warningText)
         } else {
-          ProgressView().controlSize(.small)
+          TickrLoader(L10n.Common.loading)
         }
         Spacer(minLength: 0)
         Text(L10n.Lab.curvesNote)
@@ -445,9 +445,9 @@ private struct RefusalsCard: View {
             row(count, share: Double(count.count) / most, color: Self.colors[index % Self.colors.count], step: index)
           }
         } else if let error = model.skippedError {
-          Footnote(L10n.Trades.notTakenUnavailable(error), color: Palette.warningText)
+          ReadFailureNote(L10n.Trades.notTakenUnavailable, detail: error)
         } else {
-          ProgressView().controlSize(.small)
+          TickrLoader(L10n.Common.loading)
         }
         Spacer(minLength: 0)
         PlannedLine(text: L10n.Lab.screenerBacklog)
@@ -588,8 +588,7 @@ struct ObserverRow: View {
   /// How many of the symbols the observer would have entered the bot also traded, as a bar.
   @ViewBuilder private func agreement(_ summary: ObserverSummary) -> some View {
     if let share = summary.agreement {
-      ProgressView(value: share)
-        .tint(Palette.highlight)
+      MeterBar(fraction: share, tone: .highlight)
         .accessibilityHidden(true)
       Text(L10n.Lab.agreement(summary.shared.count, summary.entered.count,
         summary.entered.joined(separator: Format.listSeparator)))
@@ -681,7 +680,7 @@ private struct ReplayCard: View {
         .disabled(running || model.labReplayStarting || replay == nil || (first == nil && !listsNone)
           || (oneDay && chosenDay == nil))
         if running || model.labReplayStarting {
-          ProgressView().progressViewStyle(.linear).tint(Palette.info)
+          TickrLoader(L10n.Common.loading)
         }
         status
         Spacer(minLength: 0)
@@ -888,9 +887,7 @@ private struct ReplayCard: View {
         Footnote(L10n.Lab.replayIdle)
       }
     } else if let error = model.labReplayError {
-      Text(verbatim: error)
-        .font(Tokens.Typography.caption)
-        .foregroundStyle(Palette.warningText)
+      ReadFailureNote(L10n.ReadFailed.replay, detail: error)
     }
   }
 
@@ -1049,7 +1046,7 @@ private struct ExplainCard: View {
           .buttonStyle(.action(.secondary, size: .compact))
           .disabled(wanted.isEmpty || explain.loading)
           if explain.loading {
-            ProgressView().controlSize(.small)
+            TickrLoader(L10n.Common.loading)
           }
         }
         content
@@ -1072,7 +1069,7 @@ private struct ExplainCard: View {
 
   @ViewBuilder private var content: some View {
     if let error {
-      Footnote(verbatim: error, color: Palette.warningText)
+      ReadFailureNote(L10n.ReadFailed.explain, detail: error)
     } else if let decision {
       Text(headline(decision))
         .font(Tokens.Typography.calloutMono)

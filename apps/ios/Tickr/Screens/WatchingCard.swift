@@ -31,9 +31,7 @@ struct WatchingCard: View {
         }
       }
       if let failure {
-        Text(watching == nil ? L10n.Watching.failed(failure) : L10n.Watching.stale(failure))
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.warningText)
+        ReadFailureNote(watching == nil ? L10n.Watching.failed : L10n.Watching.stale, detail: failure)
       }
       if let watching {
         if watching.rows.isEmpty {
@@ -45,7 +43,7 @@ struct WatchingCard: View {
           WatchingRow(row: row, current: failure == nil)
         }
       } else if failure == nil {
-        ProgressView().frame(maxWidth: .infinity)
+        TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity)
       }
     }
     .padding(Tokens.Space.l)

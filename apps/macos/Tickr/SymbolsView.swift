@@ -53,7 +53,8 @@ struct SymbolsView: View {
   private var header: some View {
     HStack(alignment: .bottom, spacing: Tokens.Space.m) {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
-        BackCapsule(title: L10n.Symbols.back, action: close)
+        Button(action: close) { BackCapsule(L10n.Symbols.back) }
+          .buttonStyle(.backCapsule)
         ChipFlow(spacing: Tokens.Space.m) {
           Text(L10n.Symbols.title)
             .font(Tokens.Typography.heading)
@@ -486,11 +487,11 @@ private struct SymbolDetail: View {
         }
         if let row { path(row) }
         ChipFlow(spacing: Tokens.Space.s) {
-          MoreButton(L10n.Symbols.openChart, systemImage: Self.chartSymbol) {
+          HeaderLink(L10n.Symbols.openChart, systemImage: Self.chartSymbol) {
             chartSymbol = symbol
             model.section = .chart
           }
-          MoreButton(L10n.Symbols.tradesAndDays) { model.section = .trades }
+          HeaderLink(L10n.Symbols.tradesAndDays) { model.section = .trades }
         }
       } else {
         Footnote(L10n.Symbols.selectHint)
@@ -566,35 +567,6 @@ private struct SymbolDetail: View {
     case .here(let tone): tone.color
     case .ahead: Palette.textQuaternary
     }
-  }
-}
-
-/// The design's back capsule: a chevron and where it goes back to.
-struct BackCapsule: View {
-  let title: LocalizedStringResource
-  let action: () -> Void
-
-  /// SF Symbol of the capsule's chevron.
-  static let symbol = "chevron.left"
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: Tokens.Space.xs) {
-        Image(systemName: Self.symbol)
-          .font(Tokens.Typography.chevron)
-          .foregroundStyle(Palette.textTertiary)
-        Text(title)
-          .font(Tokens.Typography.buttonCompact)
-          .foregroundStyle(Palette.textPrimary)
-      }
-      .padding(.horizontal, Tokens.Space.s)
-      .padding(.vertical, Tokens.Space.xs)
-      .background(Palette.chipFill, in: Capsule())
-      .overlay { Capsule().strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin) }
-      .contentShape(Capsule())
-    }
-    .buttonStyle(.plain)
-    .pointerStyle(.link)
   }
 }
 

@@ -163,7 +163,7 @@ struct ActivityView: View {
         }
         .rise()
       default:
-        ProgressView { Text(L10n.Activity.loadingDay) }
+        TickrLoader(L10n.Activity.loadingDay, size: .large, caption: true)
           .frame(maxWidth: .infinity)
           .padding(.top, Tokens.Space.xl)
       }
@@ -285,11 +285,7 @@ private struct DayPicker: View {
       }
       .id(activity.month)
       if let failure = activity.daysFailure {
-        VStack(spacing: Tokens.Space.xxs) {
-          Text(L10n.Activity.daysFailed).font(Tokens.Typography.callout)
-          Text(verbatim: failure).font(Tokens.Typography.annotation)
-        }
-        .foregroundStyle(Palette.lossText)
+        ReadFailureNote(L10n.Activity.daysFailed, detail: failure)
       }
     }
     .padding(Tokens.Space.l)
@@ -929,9 +925,7 @@ private struct NotTaken: View {
     if let groups {
       // A failed refresh after a good read: the rows stay, marked as the last read.
       if let failure {
-        Text(L10n.Activity.notTakenStale(failure))
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.warningText)
+        ReadFailureNote(L10n.Activity.notTakenStale, detail: failure)
       }
       if groups.isEmpty {
         ContentUnavailableView {
@@ -949,13 +943,10 @@ private struct NotTaken: View {
       }
       .onArrival(of: groups.map(\.id)) { arrived = $0 }
     } else if let failure {
-      ContentUnavailableView {
-        Label { Text(L10n.Activity.notTakenFailed) } icon: { Image(systemName: "exclamationmark.triangle") }
-      } description: {
-        Text(verbatim: failure)
-      }
+      ReadFailureNote(L10n.Activity.notTakenFailed, detail: failure)
+        .frame(maxWidth: .infinity, alignment: .leading)
     } else {
-      ProgressView().frame(maxWidth: .infinity).padding(.top, Tokens.Space.xl)
+      TickrLoader(L10n.Common.loading).frame(maxWidth: .infinity).padding(.top, Tokens.Space.xl)
     }
   }
 }
