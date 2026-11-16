@@ -546,6 +546,17 @@ def test_a_cash_row_for_only_part_of_a_fill_is_not_the_fills_amount():
                       datetime(2026, 11, 16, 17, 36, 4, tzinfo=UTC), D(0))
     rows = (CashTrade("CYAB", "BUY", D("-113.6000"), datetime(2026, 11, 16, 17, 36, 3, tzinfo=UTC)),
             CashTrade("CYAB", "BUY", D("-94.9696"), datetime(2026, 11, 16, 17, 36, 4, tzinfo=UTC)))
-    assert exact_amount(fill, rows) is None  # 94.9696 / 918 = 0.10, not the order's 0.23
+    assert exact_amount(fill, rows, (fill,)) is None  # two rows for one filled order
+    assert exact_amount(fill, rows[1:], (fill,)) is None  # 94.9696 / 918 = 0.10, not 0.23
     whole = (CashTrade("CYAB", "BUY", D("-208.5696"), fill.filled_at),)
-    assert exact_amount(fill, whole) == D("-208.5696")
+    assert exact_amount(fill, whole, (fill,)) == D("-208.5696")
+
+
+def test_a_cash_part_too_small_to_move_the_price_is_caught_by_the_row_count():
+    at = datetime(2026, 11, 16, 17, 36, 4, tzinfo=UTC)
+    fill = BrokerFill("e", "CYAB", "BUY", "LIMIT", D(918), D("0.23"), at, D(0))
+    # 900 of 918 shares at the fill time: the price it implies still rounds to 0.23.
+    rows = (CashTrade("CYAB", "BUY", D("-4.1994"), at - timedelta(seconds=1)),
+            CashTrade("CYAB", "BUY", D("-209.9700"), at))
+    assert exact_amount(fill, rows[1:], (fill,)) == D("-209.9700")  # alone: undetectable
+    assert exact_amount(fill, rows, (fill,)) is None  # the day lists two rows for one order

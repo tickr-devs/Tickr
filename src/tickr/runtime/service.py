@@ -688,7 +688,7 @@ class Service:
             fill = fills.get(order.client_order_id)
             if fill is None or fill.filled_quantity != order.filled_quantity:
                 return None
-            amount = exact_amount(fill, snapshot.cash)
+            amount = exact_amount(fill, snapshot.cash, snapshot.fills)
             if amount is None:
                 return None
             total += amount

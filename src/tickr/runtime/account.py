@@ -240,18 +240,24 @@ def record_reconcile(engine: Engine, disagreed_before: bool) -> bool:
 CENT = Decimal("0.01")
 
 
-def exact_amount(fill: BrokerFill, cash: tuple[CashTrade, ...]) -> Decimal | None:
+def exact_amount(fill: BrokerFill, cash: tuple[CashTrade, ...],
+                 fills: tuple[BrokerFill, ...]) -> Decimal | None:
     """The exact signed cash amount of `fill` (fees included; a buy is negative): the one
     TRADE cash activity of its symbol and side at its fill time (`biz_time` equals
     `filled_time_at`, probe 2026-11-16), accepted only when the price it implies, to the
     cent, is the order row's `filled_price`. None otherwise: before the activity is listed,
     or when an order filled in several executions lists one cash row per execution (unproven)
     and the row at the fill time covers only part of it. The order row's rounded price is
-    then all there is."""
+    then all there is. Stricter still: the day's cash rows of the fill's symbol and side
+    must be as many as the day's filled orders of that symbol and side (`fills`), so a
+    missing part too small to move the price by a cent is caught as well."""
     if fill.filled_at is None or fill.filled_price is None:
         return None
-    found = [c for c in cash if c.symbol == fill.symbol and c.side == fill.side
-             and c.at == fill.filled_at]
+    rows = [c for c in cash if c.symbol == fill.symbol and c.side == fill.side]
+    orders = [f for f in fills if f.symbol == fill.symbol and f.side == fill.side]
+    if len(rows) != len(orders):
+        return None
+    found = [c for c in rows if c.at == fill.filled_at]
     if len(found) != 1:
         return None
     price = exact_price(fill, found[0].net_amount)
@@ -307,12 +313,12 @@ def account_document(engine: Engine, read_at: datetime,
         day_trades_left=None if b is None else b.day_trades_left,
         account_label=balances.label,
         fills_read_at=balances.fills_read_at,
-        fills=tuple(_fill(f, balances.cash, f.client_order_id in ours) for f in balances.fills),
+        fills=tuple(_fill(f, balances, f.client_order_id in ours) for f in balances.fills),
     )
 
 
-def _fill(f: BrokerFill, cash: tuple[CashTrade, ...], ours: bool) -> api.AccountFill:
-    amount = exact_amount(f, cash)
+def _fill(f: BrokerFill, balances: Balances, ours: bool) -> api.AccountFill:
+    amount = exact_amount(f, balances.cash, balances.fills)
     return api.AccountFill(
         client_order_id=f.client_order_id, symbol=f.symbol, side=f.side, type=f.order_type,
         quantity=f.filled_quantity, price=f.filled_price, filled_at=f.filled_at,
