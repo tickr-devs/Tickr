@@ -822,7 +822,7 @@ private struct LiveFlowCard: View {
       } label: {
         label().contentShape(Rectangle())
       }
-      .buttonStyle(StagePressStyle(color: stage.color))
+      .buttonStyle(.washPress(stage.color))
       .accessibilityElement(children: .combine)
       .accessibilityHint(Text(L10n.FlowStages.symbolsHint))
     } else {
