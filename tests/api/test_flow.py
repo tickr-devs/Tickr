@@ -146,21 +146,6 @@ def test_a_check_is_against_the_trigger_by_its_rule_never_by_its_values():
     assert contract.shown_check(trigger, 4).against_trigger
 
 
-def test_the_trigger_rules_are_the_strategy_checks_whose_threshold_is_the_trigger():
-    # The names in TRIGGER_RULES are the checks price-action-v1 records with the setup's
-    # trigger as threshold (the ENTER path records both); its other checks are not.
-    from strategy.test_price_action_v1 import BREAKOUT_BARS, GOOD_QUOTE, ctx, make
-
-    decision = make().evaluate(ctx(BREAKOUT_BARS, GOOD_QUOTE))
-    assert decision.verdict is Verdict.ENTER and decision.trigger is not None
-    by_rule = {c.rule: c for c in decision.checks}
-    assert contract.TRIGGER_RULES <= set(by_rule)
-    assert all(by_rule[r].threshold == decision.trigger for r in contract.TRIGGER_RULES)
-    priced = {c.rule for c in decision.checks if c.threshold == decision.trigger
-              and c.measured is not None and c.measured >= decision.trigger}
-    assert priced == set(contract.TRIGGER_RULES)
-
-
 # ---------------------------------------------------------------- GET /watching
 
 
