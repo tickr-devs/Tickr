@@ -494,6 +494,8 @@ class ErrorV1:
     cause: str
     api_version: int = _const(API_VERSION)
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
+
 
 # ---------------------------------------------------------------- history (read-only)
 
@@ -565,6 +567,11 @@ class DayTrade:
     strategy: StrategyId | None = None
     # As in `Trade`: the code version of the run that opened it. Added after version 1 shipped.
     code_version: str | None = _added_later(None)
+    # Added after version 1 shipped (2026-11-16): the result after the broker's fees, as the
+    # daily loss counts it (the orders' settled cash amounts once all are proven, else gross
+    # less recorded fees); null while any filled order's fees are not recorded (every trade
+    # closed before fees were recorded).
+    result_net_usd: Decimal | None = _added_later(None)
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
     prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
@@ -620,6 +627,9 @@ class DaySummary:
     result_gross_usd: Decimal
     has_bars: bool
     clean: CleanDay
+    # Added after version 1 shipped (2026-11-16): the day's result after fees, the sum of its
+    # trades' `result_net_usd`; null while any of them is null.
+    result_net_usd: Decimal | None = _added_later(None)
 
 
 @dataclass(frozen=True)
@@ -641,6 +651,8 @@ class DayV1:
     trades: tuple[DayTrade, ...]
     result_gross_usd: Decimal
     bar_symbols: tuple[str, ...]
+    # Added after version 1 shipped (2026-11-16): as `DaySummary.result_net_usd`.
+    result_net_usd: Decimal | None = _added_later(None)
     api_version: int = _const(API_VERSION)
 
 
@@ -1080,6 +1092,8 @@ class LabVersionV1:
     role: LabVersionRole
     cause: str | None
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
+
 
 @dataclass(frozen=True)
 class LabReplayLegV1:
@@ -1092,6 +1106,8 @@ class LabReplayLegV1:
     cause: str | None
     summary: LabReplaySummaryV1 | None
 
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
+
 
 @dataclass(frozen=True)
 class LabReplayV1:
@@ -1099,7 +1115,9 @@ class LabReplayV1:
     one unless asked) over the last sessions of the already fetched backtest data, or over one
     of its days (it never fetches), optionally compared with a second version. One run at a
     time; only the latest is kept. `summary` when `state` is done; `cause` when failed.
-    `versions` and `days` are what a run may ask for."""
+    `versions` and `days` are what a run may ask for; `available_at`: while
+    `[api] lab_replay_outside_session_only` refuses a start in the regular session, its regular
+    close (when a start is allowed again), null when the session rule allows one now."""
 
     state: LabReplayState
     run_id: str | None
@@ -1115,7 +1133,10 @@ class LabReplayV1:
     compare: LabReplayLegV1 | None = _added_later(None)
     versions: tuple[LabVersionV1, ...] = _added_later(())
     days: tuple[date, ...] = _added_later(())  # pool days of the last sessions, newest first
+    available_at: datetime | None = _added_later(None)
     api_version: int = _const(API_VERSION)
+
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 
 # ---------------------------------------------------------------- trade what-if (simulated)
@@ -1166,6 +1187,8 @@ class TradeWhatIfV1:
     result_gross_usd: Decimal | None
     cause: str | None
     api_version: int = _const(API_VERSION)
+
+    cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 
 # ---------------------------------------------------------------- explain (read-only)
