@@ -33,7 +33,8 @@ catalog  Every key of an `L10n.swift` has a Russian translation in the target's 
          package's String Catalogs translate (the app follows the system language; without the
          list the SwiftPM-built Mac app opens in English).
 result   (apps/macos, apps/ios) A money result's colour comes only from the shared map
-         (`Palette.result` / `Tone.result`, zero neutral): no hand-written `>= 0 ? … profit : … loss`.
+         (`Palette.result` / `Tone.result`, zero neutral): no hand-written
+         `>= 0 ? … profit : … loss`.
 format   (apps/macos, apps/ios) Numbers are formatted only by TickrDesign (`Money`, `Percent`,
          `Volume`, Formatting.swift), the same in both apps and every language: no
          `.formatted(.number|.percent|.currency…)`, `format: .number|.percent|.currency`,
@@ -540,7 +541,8 @@ def _code_lines(path: Path) -> list[tuple[int, str, str]]:
 
 def result_violations(path: Path) -> list[tuple[int, str]]:
     """A result's colour picked by its sign by hand instead of `Palette.result` / `Tone.result`."""
-    return [(number, code.strip()) for number, code, _ in _code_lines(path) if RESULT_SIGN.search(code)]
+    return [(number, code.strip()) for number, code, _ in _code_lines(path)
+            if RESULT_SIGN.search(code)]
 
 
 def format_violations(path: Path) -> list[tuple[int, str]]:
@@ -557,7 +559,8 @@ def stop_symbol_violations(path: Path) -> list[tuple[int, str]]:
     for number, literal, _ in string_literals(source):
         if not SHIELD_SYMBOL.fullmatch(literal):
             continue
-        marked = any(SYMBOL_MARKER in lines[index] for index in (number - 2, number - 1) if index >= 0)
+        nearby = (lines[index] for index in (number - 2, number - 1) if index >= 0)
+        marked = any(SYMBOL_MARKER in line for line in nearby)
         if not marked:
             found.append((number, literal))
     return found

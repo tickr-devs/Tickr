@@ -563,8 +563,10 @@ def test_meaning_rules_apply_to_the_apps_only(tmp_path, monkeypatch):
     module = load()
     for folder in ("apps/macos/Tickr", "apps/ios/Tickr", "apps/shared/Sources/TickrDesign"):
         (tmp_path / folder).mkdir(parents=True)
-        write(tmp_path / folder, 'let c = v >= 0 ? Palette.profit : Palette.loss\nlet s = "shield"\n')
+        source = 'let c = v >= 0 ? Palette.profit : Palette.loss\nlet s = "shield"\n'
+        write(tmp_path / folder, source)
     monkeypatch.setattr(module, "REPO", tmp_path)
     found = module.collect()
-    assert sorted(found["result"]) == ["apps/ios/Tickr/View.swift", "apps/macos/Tickr/View.swift"]
-    assert sorted(found["stopsymbol"]) == ["apps/ios/Tickr/View.swift", "apps/macos/Tickr/View.swift"]
+    apps = ["apps/ios/Tickr/View.swift", "apps/macos/Tickr/View.swift"]
+    assert sorted(found["result"]) == apps
+    assert sorted(found["stopsymbol"]) == apps
