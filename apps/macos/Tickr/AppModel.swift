@@ -127,7 +127,12 @@ public final class AppModel {
 
   // Live state.
   public private(set) var response: StatusResponseV1?
-  public private(set) var fetchError: String?
+  /// Why the last read of /status failed; nil after an answer.
+  public private(set) var readFailure: ReadFailure?
+  /// When /status last answered, on this Mac's clock; nil until it answers at this address.
+  public private(set) var lastReadAt: Date?
+  /// The last failure's technical text (Settings); screens say `connectionState` instead.
+  public var fetchError: String? { readFailure?.detail }
   public private(set) var settings: SettingsV1?
   public private(set) var settingsError: String?
   /// The broker's view of the account at the bot's last read; nil until read.
@@ -229,7 +234,14 @@ public final class AppModel {
   // MARK: derived
 
   public var status: StatusV1? { response?.status }
-  public var headline: Headline { Headline.make(response: response, fetchError: fetchError) }
+  public var headline: Headline { Headline.make(response: response, readFailed: readFailure != nil) }
+  /// What every section says about the link to the bot: last known data under a banner, or a
+  /// notice when nothing was read (TickrKit `ConnectionState`).
+  public var connectionState: ConnectionState {
+    ConnectionState.make(configured: true, response: response, failure: readFailure, lastSuccess: lastReadAt)
+  }
+  /// The words of the connection banner now (the last read's time is on this Mac's clock).
+  public var connectionMessage: ConnectionMessage? { connectionState.message(now: now()) }
   /// This moment on the bot's clock.
   public var botNow: Date { botTime(now()) }
   /// A moment of this Mac's clock (a TimelineView's tick) on the bot's clock.
@@ -420,6 +432,8 @@ public final class AppModel {
     let url = baseURL
     client = Container.shared.apiClient(APIClient.Endpoint(baseURL: url))
     response = nil
+    readFailure = nil
+    lastReadAt = nil
     settings = nil
     days = []
     dayDocument = nil
@@ -455,7 +469,8 @@ public final class AppModel {
       let fresh = try await client.status()
       let dayBefore = today
       response = fresh
-      fetchError = nil
+      readFailure = nil
+      lastReadAt = now()
       followBotClock(servedAt: fresh.servedAt.date)
       if today != dayBefore {
         // The bot's day is not the one assumed so far (the first status, a demo day, a new
@@ -480,7 +495,7 @@ public final class AppModel {
         await refreshHistory()
       }
     } catch {
-      fetchError = Self.describe(error) ?? fetchError
+      readFailure = ReadFailure(error) ?? readFailure
     }
     // A stale status or a failed read turns commands off: an open question goes with them.
     withdrawIfCommandsOff()

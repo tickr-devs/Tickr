@@ -1630,6 +1630,210 @@
         }
       }
     },
+    "kit.connection.address" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Address: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Адрес: %@"
+          }
+        }
+      }
+    },
+    "kit.connection.details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подробности"
+          }
+        }
+      }
+    },
+    "kit.connection.errorTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot's server answered with an error"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервер бота ответил ошибкой"
+          }
+        }
+      }
+    },
+    "kit.connection.lastKnown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing the last known data, from %@. Commands are off until the connection is back."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показаны последние известные данные на %@. Команды недоступны, пока связь не вернётся."
+          }
+        }
+      }
+    },
+    "kit.connection.noBotStatusBody" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Mac answers, but the bot has no status to show. Entries are not possible."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac отвечает, но у бота нет состояния для показа. Входы невозможны."
+          }
+        }
+      }
+    },
+    "kit.connection.noBotStatusTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot has not reported yet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот ещё не прислал состояние"
+          }
+        }
+      }
+    },
+    "kit.connection.notConfiguredBody" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair this device with the Mac in the connection settings."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Свяжите это устройство с Mac в настройках связи."
+          }
+        }
+      }
+    },
+    "kit.connection.notConfiguredTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to your Mac"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключитесь к Mac"
+          }
+        }
+      }
+    },
+    "kit.connection.nothingYet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing received yet. Check that the Mac is awake and the bot is running. Commands are off."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Данных пока нет. Проверьте, что Mac не спит и бот запущен. Команды недоступны."
+          }
+        }
+      }
+    },
+    "kit.connection.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторить"
+          }
+        }
+      }
+    },
+    "kit.connection.settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connection settings"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Настройки связи"
+          }
+        }
+      }
+    },
+    "kit.connection.unreachableTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No connection to the bot"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет связи с ботом"
+          }
+        }
+      }
+    },
     "kit.environment.demo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3348,23 +3552,6 @@
         }
       }
     },
-    "kit.headline.fetchFailed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@. Entry status unknown."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@. Разрешены ли входы, неизвестно."
-          }
-        }
-      }
-    },
     "kit.headline.holding" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3419,6 +3606,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Держим 1 позицию · она защищена стопом у брокера"
+          }
+        }
+      }
+    },
+    "kit.headline.noConnection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No connection to the bot. Entry status unknown."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет связи с ботом. Разрешены ли входы, неизвестно."
           }
         }
       }
