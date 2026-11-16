@@ -8,6 +8,8 @@
   after the flatten time, "bot down with an open trade" during the session, and near the
   flatten time one start a day of a down bot job so the bot flattens (it never sends orders).
   Exit 0 all clear, 1 something alerted, 2 config invalid, 3 no session today.
+- `broker-flat`: one read-only broker read of positions and open orders (JSON), the proof
+  `release` and `rollback` require just before they switch.
 - `alert <kind> <text>`: show one alert (used to test notifications on the Mac).
 - `render-launchd`: write filled-in plists from ops/launchd into a folder; installs nothing.
 - `release [--commit REF]` / `rollback`: switch what the launchd jobs run to a pinned release
@@ -239,6 +241,34 @@ def _render(args: argparse.Namespace) -> int:
     return 0
 
 
+# Replaced in tests: the broker factory of `broker-flat`; it is only ever held through
+# watchdog.ReadOnlyBroker (positions and open orders, nothing that sends).
+FLAT_BROKER: Callable[[config_module.Config, Callable[[], None]], Broker] = _webull_broker
+
+
+def _broker_flat(config_path: Path) -> int:
+    """One read-only broker read for `release`: the symbols of every position and open order,
+    or the cause the read failed. Exit 0 when read (flat or not), 1 when the read failed."""
+    cfg = config_module.load(config_path)
+
+    def pending() -> None:
+        _emit("token-pending", {"wait_seconds": cfg.environment.token_check_duration_seconds})
+
+    try:
+        broker = watchdog.ReadOnlyBroker(FLAT_BROKER(cfg, pending))
+        positions = sorted(p.symbol for p in broker.positions())
+        orders = sorted(o.symbol for o in broker.open_orders())
+    except BrokerError as exc:  # typed causes: names only, no values
+        _emit(release_module.BROKER_FLAT, {"error": str(exc) or type(exc).__name__})
+        return int(ExitCode.FAILED)
+    except Exception as exc:  # noqa: BLE001 - any failed read refuses; the type is the cause
+        _emit(release_module.BROKER_FLAT, {"error": type(exc).__name__})
+        return int(ExitCode.FAILED)
+    _emit(release_module.BROKER_FLAT, {"error": None, "positions": positions,
+                                       "open_orders": orders})
+    return 0
+
+
 # Replaced in tests: the command runner of `release` and `rollback`.
 RELEASE_RUNNER: release_module.Runner = release_module.run_process
 
@@ -269,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("preflight", help="may the bot start today?")
     sub.add_parser("watchdog", help="read-only end-of-day checks, separate from the bot")
+    sub.add_parser(release_module.BROKER_FLAT,
+                   help="read positions and open orders once (read-only), for release")
     run = sub.add_parser("run-bot", help="preflight, then run the bot command after --")
     run.add_argument("bot_command", nargs=argparse.REMAINDER)
     alert = sub.add_parser("alert", help="show one alert")
@@ -300,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_bot(args.config, args.bot_command)
         if args.command == "watchdog":
             return _watchdog(args.config)
+        if args.command == release_module.BROKER_FLAT:
+            return _broker_flat(args.config)
         if args.command == "alert":
             _alert(args.config, None, AlertKind(args.kind), args.text)
             return 0

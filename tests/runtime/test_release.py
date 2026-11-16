@@ -11,14 +11,14 @@ import os
 import shutil
 import subprocess
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from tickr import config as config_module
-from tickr.api.contract import AccountOrder, AccountPosition, AccountV1, write_account
+from tickr.api.contract import AccountPosition, AccountV1, write_account
 from tickr.runtime import release
 from tickr.runtime.__main__ import main
 from tickr.store import DATABASE_FILE, Store
@@ -27,6 +27,7 @@ from tickr.version import code_version
 from .conftest import ROOT
 
 T0 = datetime(2026, 11, 16, 21, 0, tzinfo=UTC)
+NOW = T0 + timedelta(seconds=5)  # the account file written at T0 is fresh
 BOT, WATCHDOG, API = release.BOT_JOB, release.WATCHDOG_JOB, release.API_JOB
 GIT_ID = ("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false")
 
@@ -83,7 +84,7 @@ class World:
     def context(self) -> release.Context:
         ctx = release.context(self.cfg, self.config_path, self.releases, self.env_file,
                               self.fake, os.environ, self.lines.append)
-        return replace(ctx, sleep=self.fake.sleep, clock=self.fake.clock)
+        return replace(ctx, sleep=self.fake.sleep, clock=self.fake.clock, now=lambda: NOW)
 
     def live(self) -> str | None:
         link = self.releases / release.LIVE
@@ -105,6 +106,8 @@ class FakeRunner:
         self.preflight_exit = 0
         self.preflight_override: dict[str, object] = {}
         self.processes: list[str] = []
+        # What the broker shows to `broker-flat`; a string is the cause its read fails with.
+        self.broker: dict[str, list[str]] | str = {"positions": [], "open_orders": []}
         self.now = 0.0
         self.next_pid = 500
 
@@ -128,7 +131,14 @@ class FakeRunner:
             python.parent.mkdir(parents=True, exist_ok=True)
             python.touch()
             return release.Done(0, "", "")
+        if argv[0] == release.SH and argv[7] == release.BROKER_FLAT:
+            if isinstance(self.broker, str):
+                body = {"record": release.BROKER_FLAT, "error": self.broker}
+                return release.Done(1, json.dumps(body) + "\n", "")
+            body = {"record": release.BROKER_FLAT, "error": None, **self.broker}
+            return release.Done(0, json.dumps(body) + "\n", "")
         if argv[0] == release.SH:
+            assert argv[7] == release.PREFLIGHT
             return self._preflight(Path(argv[4]), argv[6])
         if argv[:2] == [release.LAUNCHCTL, "list"]:
             pid = self.pids.get(argv[2])
@@ -169,17 +179,50 @@ def world(tmp_path) -> World:
 # --- refusals: nothing running is touched -------------------------------------------------
 
 
-@pytest.mark.parametrize("account,cause", [
-    (_account(positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12")),)), "position"),
-    (_account(orders=(AccountOrder("c1", "ABCD", "SELL", "STOP_LOSS", "ACCEPTED", Decimal("10"),
-                                   None, Decimal("11"), True),)), "open order"),
-    (_account(matches_records=False, mismatch="extra position"), "disagrees"),
-])
-def test_not_flat_refuses_before_any_command(world, account, cause):
-    write_account(world.account, account)
-    with pytest.raises(release.ReleaseRefused, match=cause):
+def test_a_fresh_account_file_with_a_position_refuses_early(world):
+    write_account(world.account,
+                  _account(positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12")),)))
+    with pytest.raises(release.ReleaseRefused, match="5 s ago shows 1 position"):
         release.release(world.context(), release.DEFAULT_COMMIT)
     assert world.fake.calls == [] and world.live() is None
+
+
+def test_a_stale_account_file_proves_nothing_the_broker_decides(world):
+    # The file says flat, but it is older than broker_read_max_age_seconds: the broker read
+    # just before the switch shows a position and refuses; nothing was stopped or switched.
+    stale = NOW - timedelta(seconds=int(world.cfg.orders.broker_read_max_age_seconds) + 1)
+    write_account(world.account, _account(read_at=stale))
+    world.fake.broker = {"positions": ["ABCD"], "open_orders": ["ABCD"]}
+    with pytest.raises(release.ReleaseRefused, match="broker shows positions"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() is None and "launchctl kill" not in world.fake.kinds()
+    assert world.fake.kinds()[-1] == release.SH  # refused at the broker read
+
+
+def test_a_stale_position_in_the_account_file_is_not_a_refusal(world):
+    stale = NOW - timedelta(seconds=int(world.cfg.orders.broker_read_max_age_seconds) + 1)
+    write_account(world.account, _account(
+        read_at=stale, positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12")),)))
+    release.release(world.context(), release.DEFAULT_COMMIT)  # the broker shows flat
+    assert world.live() == world.first
+
+
+def test_a_failed_broker_read_refuses(world):
+    world.fake.broker = "RateLimited: request budget exhausted"
+    with pytest.raises(release.ReleaseRefused, match="broker read failed: RateLimited"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() is None and "launchctl kill" not in world.fake.kinds()
+
+
+def test_rollback_also_reads_the_broker(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    _commit(world.repo, "second")
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    live = world.live()
+    world.fake.broker = {"positions": ["ABCD"], "open_orders": []}
+    with pytest.raises(release.ReleaseRefused, match="broker shows positions"):
+        release.rollback(world.context())
+    assert world.live() == live
 
 
 def test_an_open_trade_in_the_database_refuses(world):
@@ -194,10 +237,11 @@ def test_an_open_trade_in_the_database_refuses(world):
     assert world.fake.calls == []
 
 
-def test_no_account_file_refuses(world):
+def test_no_account_file_leaves_the_proof_to_the_broker(world):
     world.account.unlink()
-    with pytest.raises(release.ReleaseRefused, match="no account file"):
-        release.release(world.context(), release.DEFAULT_COMMIT)
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() == world.first
+    assert any(c[0] == release.SH and c[7] == release.BROKER_FLAT for c in world.fake.calls)
 
 
 def test_a_commit_not_on_main_is_refused(world):
@@ -223,6 +267,7 @@ def test_preflight_failure_leaves_the_running_release_untouched(world):
         release.release(world.context(), release.DEFAULT_COMMIT)
     assert world.live() == world.first and world.previous() is None
     assert world.fake.kinds() == ["uv", release.SH]  # prepared and checked; nothing stopped
+    assert world.fake.calls[-1][7] == release.PREFLIGHT  # the broker was not even read
     assert (world.releases / second / ".venv").is_dir()  # left for a look; pruned later
 
 
@@ -272,7 +317,9 @@ def test_release_pins_the_commit_and_shares_the_one_data_folder(world):
     # Prepared and checked before anything was stopped; running jobs were then stopped,
     # waited for and started again, a stopped one left to its schedule.
     kinds = world.fake.kinds()
-    assert kinds[:2] == ["uv", release.SH] and kinds.index("launchctl kill") > 1
+    assert kinds[:3] == ["uv", release.SH, release.SH] and kinds.index("launchctl kill") > 2
+    sh = [c[7] for c in world.fake.calls if c[0] == release.SH]
+    assert sh == [release.PREFLIGHT, release.BROKER_FLAT]  # the broker read last
     killed = [c[-1] for c in world.fake.calls if c[:2] == [release.LAUNCHCTL, "kill"]]
     started = [c[-1] for c in world.fake.calls if c[:2] == [release.LAUNCHCTL, "kickstart"]]
     uid = os.getuid()
@@ -439,9 +486,46 @@ def test_cli_refusal_says_the_running_release_is_unchanged(world, monkeypatch, c
     from tickr.runtime import __main__ as runtime_main
 
     monkeypatch.setattr(runtime_main, "RELEASE_RUNNER", world.fake)
-    write_account(world.account, _account(matches_records=False, mismatch="x"))
+    write_account(world.account,
+                  _account(read_at=datetime.now(UTC),
+                           positions=(AccountPosition("ABCD", Decimal("1"), None),)))
     code = main(["--config", str(world.config_path), "release", "--releases",
                  str(world.releases), "--env-file", str(world.env_file)])
     assert code == 1
     assert "running release is unchanged" in capsys.readouterr().err
     assert world.fake.calls == []
+
+
+def test_broker_flat_command_reads_positions_and_orders_only(world, monkeypatch, capsys):
+    from tickr.runtime import __main__ as runtime_main
+    from tickr.types import Position
+
+    class Broker:
+        def positions(self):
+            return [Position("ABCD", Decimal("10"), None)]
+
+        def open_orders(self):
+            return []
+
+        def place(self, *a, **k):  # pragma: no cover - never reachable through the wrapper
+            raise AssertionError("send")
+
+    monkeypatch.setattr(runtime_main, "FLAT_BROKER", lambda cfg, pending: Broker())
+    assert main(["--config", str(world.config_path), release.BROKER_FLAT]) == 0
+    row = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert row == {"record": release.BROKER_FLAT, "error": None, "positions": ["ABCD"],
+                   "open_orders": []}
+
+
+def test_broker_flat_command_reports_a_failed_read(world, monkeypatch, capsys):
+    from tickr.broker.base import RateLimited
+    from tickr.runtime import __main__ as runtime_main
+
+    class Broker:
+        def positions(self):
+            raise RateLimited("request budget exhausted")
+
+    monkeypatch.setattr(runtime_main, "FLAT_BROKER", lambda cfg, pending: Broker())
+    assert main(["--config", str(world.config_path), release.BROKER_FLAT]) == 1
+    row = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert row["error"] == "request budget exhausted"

@@ -247,8 +247,9 @@ release, the links and the jobs exactly as they were (exit 1, `refused: ...`):
 
 1. Refuses when `live` exists and its `data` resolves to another folder than the data folder of
    the `--config` given (a command started from another checkout would check flatness in, and
-   switch the bot onto, another database). Then refuses unless flat: the bot's account file (its latest broker read) shows no position and no
-   open order and agrees with its records, and the database has no open trade.
+   switch the bot onto, another database). Then refuses early on an open trade in the database,
+   or when the bot's account file is at most `[orders] broker_read_max_age_seconds` old and
+   shows a position. The account file never proves flat (it is refreshed only by a running bot).
 2. Refuses on uncommitted config changes in the checkout; fetches `origin`; refuses unless the
    commit (default `origin/main`) is on `origin/main`.
 3. Prepares `<sha>/` (worktree, data link, `uv sync`) and runs its own preflight exactly as the
@@ -262,8 +263,12 @@ release, the links and the jobs exactly as they were (exit 1, `refused: ...`):
    prove the code it would start. To deploy then: after the close, `tickr clear-stop`, release,
    and, if the bot must stay stopped tomorrow, send stop-bot again from the apps once it runs
    (or `launchctl kill TERM` it and keep the scheduled start in mind).
-4. Checks flat again, points `previous` at the running release and switches `live` (an atomic
-   rename of a new link).
+4. Proves flat with a fresh read: `python -m tickr.runtime broker-flat` of the new release, run
+   like a job (env file sourced by `sh`), reads positions and open orders once through the
+   release's Webull adapter, read-only (never an order). Refuses when the broker shows any
+   position or open order, when the database has an open trade, or when the read fails (the
+   cause is printed). Then points `previous` at the running release and switches `live` (an
+   atomic rename of a new link).
 5. Restarts the jobs that run: stops the watchdog first (so it never sees the stopping bot
    missing), then the bot, then the API, each with SIGTERM (`launchctl kill TERM`) and waited
    for (at most `[runtime] release_stop_wait_seconds`); then starts the bot, the API and the
@@ -276,7 +281,7 @@ release, the links and the jobs exactly as they were (exit 1, `refused: ...`):
    unlinked first, then `git worktree remove` without force. The data folder is never touched.
 
 `rollback` (same arguments, no `--commit`) switches back to `previous` the same way, flat only,
-and needs no network: it does not fetch, it verifies the folder (HEAD at its commit, no changes
+and needs no GitHub: it does not fetch (it still reads the broker in step 4), it verifies the folder (HEAD at its commit, no changes
 to tracked files, its `data` link naming the data folder, its `.venv` present) and runs its
 preflight. `live` and `previous` swap, so a rollback can itself be rolled back.
 

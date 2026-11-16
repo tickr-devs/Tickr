@@ -28,11 +28,14 @@ Decisions:
   with `git worktree remove` without force, after unlinking its data link (never a delete
   that could follow the link into the data).
 
-Order of `release`: lock; refuse unless flat (the bot's account file: no positions, no open
-orders, records match; and no open trade in the database); refuse unless the commit is on
-origin/main; prepare the folder and run its preflight BEFORE anything running is touched (a
-refusal up to here leaves the running release as it was); check flat again; switch; restart;
-prune. `rollback` switches to `previous` without any network: it verifies that folder (HEAD
+Order of `release`: lock; an early refusal (an open trade in the database, or the bot's
+account file at most [orders] broker_read_max_age_seconds old showing a position: that file is
+never trusted as proof of flat); refuse unless the commit is on origin/main; prepare the folder
+and run its preflight BEFORE anything running is touched; then the proof of flat: a fresh
+read-only broker read (`python -m tickr.runtime broker-flat` of the new release, positions and
+open orders) showing neither, and no open trade in the database, a failed read refusing (a
+refusal up to here leaves the running release as it was); switch; restart; prune.
+`rollback` switches to `previous` without GitHub (no fetch): it verifies that folder (HEAD
 at its commit, clean, data link) and runs its preflight. Both first refuse when the live
 release uses another data folder than this command. Every step is printed.
 """
@@ -46,7 +49,9 @@ import re
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from tickr import config as config_module
@@ -77,10 +82,13 @@ UV_SYNC = ("uv", "sync", "--frozen", "--extra", "webull")
 LAUNCHCTL = "/bin/launchctl"
 PS = ("/bin/ps", "-axo", "command=")
 SH = "/bin/sh"
-# The new release's preflight, run as the launchd preflight job runs it (templates): the
-# credentials file sourced by sh, the folder resolved, its own interpreter and config.
-_PREFLIGHT_SCRIPT = ('set -a; . "$0"; set +a; cd -P "$1" || exit; '
-                     'exec "$PWD/$2" -m tickr.runtime --config "$PWD/$3" preflight')
+# A `python -m tickr.runtime` command of a release, run as the launchd jobs run it (templates):
+# the credentials file sourced by sh, the folder resolved, its own interpreter and config; $4
+# is the command (preflight, broker-flat).
+_JOB_SCRIPT = ('set -a; . "$0"; set +a; cd -P "$1" || exit; '
+               'exec "$PWD/$2" -m tickr.runtime --config "$PWD/$3" "$4"')
+PREFLIGHT = "preflight"
+BROKER_FLAT = "broker-flat"
 # Environment variables that would make a release's interpreter or uv use another checkout's
 # code or environment (an activated developer venv): removed for every command run here.
 _FOREIGN_ENVIRONMENT = ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV",
@@ -138,6 +146,8 @@ class Context:
     run: Runner
     environ: Mapping[str, str]
     say: Callable[[str], None]
+    account_max_age: Decimal  # [orders] broker_read_max_age_seconds
+    now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
     sleep: Callable[[float], None] = time.sleep
     clock: Callable[[], float] = time.monotonic
 
@@ -187,39 +197,78 @@ def context(cfg: config_module.Config, config_path: Path, releases: Path, env_fi
     return Context(repo=cfg.root, releases=releases, data=data, data_dir=data_dir,
                    config_rel=config_rel, account_file=data / cfg.api.account_file,
                    env_file=env_file, runtime=runtime, uid=os.getuid(), run=run,
-                   environ=environ, say=say)
+                   environ=environ, say=say,
+                   account_max_age=cfg.orders.broker_read_max_age_seconds)
 
 
 # --- checks -------------------------------------------------------------------------------
 
 
-def flat_cause(account_file: Path, database: Path) -> str | None:
-    """Why the bot is not provably flat, or None: the bot's latest broker read (its account
-    file) shows no position and no open order and agrees with its records, and its database
-    has no open trade."""
+def early_cause(account_file: Path, database: Path, now: datetime,
+                max_age: Decimal) -> str | None:
+    """An early refusal before anything is prepared, or None. It never proves flat: the
+    account file counts only when it is at most `max_age` seconds old ([orders]
+    broker_read_max_age_seconds) and shows a position; an open trade in the database counts
+    always. The proof is `_require_broker_flat`, a fresh broker read, just before the switch."""
     try:
         account = read_account(account_file)
-    except FileNotFoundError:
-        return f"no account file {account_file}: no broker read proves the bot flat"
-    except (ContractError, OSError, ValueError) as exc:
-        return f"account file {account_file} unreadable ({type(exc).__name__})"
-    if account.positions:
-        return f"broker shows {len(account.positions)} position(s) at {account.read_at}"
-    if account.orders:
-        return f"broker shows {len(account.orders)} open order(s) at {account.read_at}"
-    if not account.matches_records:
-        return f"broker read at {account.read_at} disagrees with records: {account.mismatch}"
+    except (FileNotFoundError, ContractError, OSError, ValueError):
+        account = None
+    if account is not None and account.positions:
+        age = (now - account.read_at).total_seconds()
+        if age <= max_age:
+            return (f"the bot's broker read {age:.0f} s ago shows "
+                    f"{len(account.positions)} position(s)")
     count = open_trades(database)
     if count:
         return f"the database has {count} open trade(s)"
     return None
 
 
-def _require_flat(ctx: Context) -> None:
-    cause = flat_cause(ctx.account_file, ctx.data / DATABASE_FILE)
+def _require_early_flat(ctx: Context) -> None:
+    cause = early_cause(ctx.account_file, ctx.data / DATABASE_FILE, ctx.now(),
+                        ctx.account_max_age)
     if cause is not None:
         raise ReleaseRefused(f"not flat: {cause}")
-    ctx.say("flat: no position, no open order, no open trade")
+    ctx.say("no open trade in the database, no fresh position in the bot's account file")
+
+
+def _require_broker_flat(ctx: Context, folder: Path) -> None:
+    """The proof, just before the switch: the broker itself, read now (positions and open
+    orders only, through the release's own adapter and config, run as launchd runs a job: the
+    env file sourced by sh), and no open trade in the database. A failed read refuses."""
+    ctx.say(f"broker read (positions, open orders) from {folder}")
+    done = ctx.step([SH, "-c", _JOB_SCRIPT, str(ctx.env_file), str(folder),
+                     VENV_PYTHON.as_posix(), ctx.config_rel.as_posix(), BROKER_FLAT])
+    body = _record(done.out, BROKER_FLAT)
+    if body is None:
+        # Only the exit code: the shell's error text could quote the credentials file.
+        raise ReleaseRefused(f"broker read printed no result (exit {done.code})")
+    if done.code != 0 or body.get("error"):
+        raise ReleaseRefused(f"broker read failed: {body.get('error')}")
+    positions, orders = body.get("positions"), body.get("open_orders")
+    if not isinstance(positions, list) or not isinstance(orders, list):
+        raise ReleaseRefused("broker read result has no positions or open_orders list")
+    if positions or orders:
+        raise ReleaseRefused(f"not flat: the broker shows positions {positions} and open "
+                             f"orders {orders}")
+    count = open_trades(ctx.data / DATABASE_FILE)
+    if count:
+        raise ReleaseRefused(f"not flat: the database has {count} open trade(s)")
+    ctx.say("flat: the broker shows no position and no open order; no open trade")
+
+
+def _record(out: str, name: str) -> dict | None:
+    """The last JSON line of `out` whose record is `name`."""
+    found = None
+    for line in out.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("record") == name:
+            found = row
+    return found
 
 
 def _commit(ctx: Context, ref: str) -> str:
@@ -355,22 +404,14 @@ def _preflight(ctx: Context, folder: Path, sha: str) -> None:
     """Run the release's own preflight as launchd will; refuse unless it passes (or says no
     session today) with this commit, this config and the shared data folder."""
     ctx.say(f"preflight from {folder}")
-    done = ctx.step([SH, "-c", _PREFLIGHT_SCRIPT, str(ctx.env_file), str(folder),
-                     VENV_PYTHON.as_posix(), ctx.config_rel.as_posix()])
+    done = ctx.step([SH, "-c", _JOB_SCRIPT, str(ctx.env_file), str(folder),
+                     VENV_PYTHON.as_posix(), ctx.config_rel.as_posix(), PREFLIGHT])
     for line in done.out.splitlines():
         ctx.say(f"  {line}")
-    records = []
-    for line in done.out.splitlines():
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(row, dict) and row.get("record") == "preflight":
-            records.append(row)
-    if not records:
+    body = _record(done.out, PREFLIGHT)
+    if body is None:
         # Only the exit code: the shell's error text could quote the credentials file.
         raise ReleaseRefused(f"preflight printed no result (exit {done.code})")
-    body = records[-1]
     if done.code not in _PREFLIGHT_PASSES or body.get("exit_code") != done.code:
         raise ReleaseRefused(f"preflight failed (exit {done.code}): {body.get('cause')}")
     version = next((c.get("detail") for c in body.get("checks", [])
@@ -473,8 +514,8 @@ def _prune(ctx: Context, keep: set[str]) -> None:
                 f"keep {folder}: git worktree remove failed: {_first(done.err)}")
 
 
-def _switch(ctx: Context, sha: str, running: str | None) -> None:
-    _require_flat(ctx)  # again: preflight may have taken minutes
+def _switch(ctx: Context, folder: Path, sha: str, running: str | None) -> None:
+    _require_broker_flat(ctx, folder)  # read now: preflight may have taken minutes
     try:
         if running is not None:
             _point(ctx.previous, running)
@@ -518,7 +559,7 @@ def release(ctx: Context, ref: str) -> None:
     """Release `ref` (see the module docstring for the order)."""
     def work() -> None:
         _require_live_data(ctx)
-        _require_flat(ctx)
+        _require_early_flat(ctx)
         _require_committed_config(ctx)
         sha = _commit(ctx, ref)
         running = _target(ctx.live)
@@ -529,7 +570,7 @@ def release(ctx: Context, ref: str) -> None:
         folder = _prepare(ctx, sha)
         _report_config(ctx, folder, sha, running)
         _preflight(ctx, folder, sha)
-        _switch(ctx, sha, running)
+        _switch(ctx, folder, sha, running)
     _locked(ctx, work)
 
 
@@ -537,7 +578,7 @@ def rollback(ctx: Context) -> None:
     """Switch back to `previous`: live and previous swap, so a rollback can be rolled back."""
     def work() -> None:
         _require_live_data(ctx)
-        _require_flat(ctx)
+        _require_early_flat(ctx)
         running = _target(ctx.live)
         back = _target(ctx.previous)
         if running is None or back is None:
@@ -546,5 +587,5 @@ def rollback(ctx: Context) -> None:
         folder = _verify(ctx, sha)
         _report_config(ctx, folder, sha, running)
         _preflight(ctx, folder, sha)
-        _switch(ctx, sha, running)
+        _switch(ctx, folder, sha, running)
     _locked(ctx, work)
