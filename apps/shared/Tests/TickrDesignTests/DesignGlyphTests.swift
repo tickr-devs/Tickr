@@ -42,4 +42,12 @@ import Testing
     let path = DesignGlyphShape(.home).path(in: CGRect(x: 0, y: 0, width: 48, height: 48))
     #expect(path.boundingRect == CGRect(x: 8, y: 8, width: 32, height: 32))
   }
+
+  @Test("The settings gear is the design's: teeth out to 2.87...21.13 and a closed hub ring")
+  func settingsGearSpansItsTeeth() {
+    let bounds = SVGPath.parse(DesignGlyph.settingsPath).boundingRect
+    #expect(abs(bounds.minX - 2.87) < 0.1 && abs(bounds.maxX - 21.13) < 0.1)
+    #expect(abs(bounds.minY - 2.87) < 0.1 && abs(bounds.maxY - 21.13) < 0.1)
+    #expect(DesignGlyph.settings.gridStroke == Tokens.Stroke.gear)
+  }
 }
