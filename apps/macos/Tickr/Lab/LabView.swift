@@ -941,9 +941,11 @@ private struct ReplayCard: View {
     colored: Bool = true, format: (Decimal) -> String, delta: (Decimal) -> String
   ) -> some View {
     GridRow {
+      // A name longer than its column ("доля прибыльных") wraps onto a second line, never cut.
       Text(title)
         .font(Tokens.Typography.callout)
         .foregroundStyle(Palette.textTertiary)
+        .fixedSize(horizontal: false, vertical: true)
         .gridColumnAlignment(.leading)
       cell(first, format, colored: colored)
       if compared {
