@@ -67,7 +67,8 @@ struct LabView: View {
   @Environment(AppModel.self) private var model
 
   private var versions: some View { VersionsCard().gridColumn().rise(step: Order.versions.rawValue) }
-  private var curves: some View { CurvesCard().gridColumn().rise(step: Order.curves.rawValue) }
+  /// Sized to its content: a few rows under the chart, never an empty lower half.
+  private var curves: some View { CurvesCard().hugsContent().gridColumn().rise(step: Order.curves.rawValue) }
   private var replay: some View { ReplayCard().gridColumn().rise(step: Order.replay.rawValue) }
   private var advisorCard: some View { AdvisorCard().gridColumn().rise(step: Order.advisor.rawValue) }
   private var refusals: some View { RefusalsCard().gridColumn().rise(step: Order.refusals.rawValue) }
@@ -230,8 +231,7 @@ private struct VersionsCard: View {
 private struct CurvesCard: View {
   @Environment(AppModel.self) private var model
 
-  /// Widths of the legend's columns, in points: the swatch, the figures and the result.
-  static let figuresWidth: CGFloat = 84
+  /// Least width of the legend's result column, in points, so the results line up.
   static let resultWidth: CGFloat = 68
 
   var body: some View {
@@ -251,7 +251,6 @@ private struct CurvesCard: View {
         } else {
           TickrLoader(L10n.Common.loading)
         }
-        Spacer(minLength: 0)
         Text(L10n.Lab.curvesNote)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
@@ -276,36 +275,35 @@ private struct CurvesCard: View {
     }
   }
 
-  /// The design's legend: swatch, name, figures, result; a reason line under a row without one.
+  /// The design's legend: swatch, the version and what sets it apart ("v3 · rel vol 1.5×"), the
+  /// result; under it, on full-width lines of their own (never squeezed into a narrow column),
+  /// the figures or since when it watched, the symbols the active strategy skipped, and a reason.
   private func legend(_ lines: [DayCurveLine], _ observers: [ObserverV1]) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       if let active = lines.first(where: \.active) {
-        legendRow(color: active.color, curve: active.curve, name: Text(L10n.Lab.activeLine(active.name)),
-          figures: Text(L10n.Lab.closedWinsLosses(model.shownTradeCount, model.shownWins, model.shownLosses)),
+        legendRow(color: active.color, curve: active.curve, name: ObserverLabel.active(active.name),
+          notes: [String(localized: L10n.Lab.closedWinsLosses(model.shownTradeCount, model.shownWins,
+            model.shownLosses))],
           result: model.shownResult)
       }
       ForEach(Array(observers.enumerated()), id: \.element.id) { index, observer in
         legendRow(color: DayCurveLine.color(observerIndex: index), curve: DayCurve.observer(observer),
-          name: Text(verbatim: observer.name), figures: figures(observer), result: observer.resultGrossUSD?.value,
-          cause: cause(observer))
+          name: ObserverLabel.observer(observer), notes: notes(observer), result: observer.resultGrossUSD?.value)
           .help(help(observer))
           .transition(.opacity)
       }
     }
   }
 
-  private func legendRow(
-    color: Color, curve: DayCurve?, name: Text, figures: Text, result: Decimal?, cause: String? = nil
-  ) -> some View {
+  private func legendRow(color: Color, curve: DayCurve?, name: String, notes: [String], result: Decimal?) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
       HStack(spacing: Tokens.Space.s) {
         CurveSwatch(color: color, curve: curve)
-        name
+        Text(verbatim: name)
           .foregroundStyle(Palette.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+          .layoutPriority(1)
         Spacer(minLength: Tokens.Space.xs)
-        figures
-          .foregroundStyle(Palette.textQuaternary)
-          .frame(width: Self.figuresWidth, alignment: .leading)
         Group {
           if let result {
             MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono)
@@ -313,26 +311,36 @@ private struct CurvesCard: View {
             Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
           }
         }
-        .frame(width: Self.resultWidth, alignment: .trailing)
+        .fixedSize()
+        .frame(minWidth: Self.resultWidth, alignment: .trailing)
       }
       .font(Tokens.Typography.calloutMono)
-      if let cause {
-        Text(verbatim: cause)
+      ForEach(notes, id: \.self) { note in
+        Text(verbatim: note)
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.textQuaternary)
           .padding(.leading, CurveSwatch.width + Tokens.Space.s)
           .fixedSize(horizontal: false, vertical: true)
       }
     }
+    .accessibilityElement(children: .combine)
   }
 
-  /// "6/6 also traded": how many symbols the observer would have entered the bot also traded;
-  /// "no entries" when it would have entered none.
-  private func figures(_ observer: ObserverV1) -> Text {
-    guard let traded else { return Text(L10n.Lab.decisionCount(observer.decisions.count)) }
-    let summary = ObserverSummary(observer, traded: traded)
-    guard summary.agreement != nil else { return Text(L10n.Lab.noEntries) }
-    return Text(L10n.Lab.alsoTraded(summary.shared.count, summary.entered.count))
+  /// The lines under an observer: since when it watched ("watching since 15:08 · no entries
+  /// yet") or, from an older bot, its figures; then the symbols it would have entered that the
+  /// active strategy skipped, once there are any; then why it has no result or line.
+  private func notes(_ observer: ObserverV1) -> [String] {
+    let summary = traded.map { ObserverSummary(observer, traded: $0) }
+    var figures: [String] = []
+    if let since = ObserverLabel.since(observer) { figures.append(since) }
+    if let summary, summary.agreement != nil {
+      figures.append(String(localized: L10n.Lab.alsoTraded(summary.shared.count, summary.entered.count)))
+    } else if figures.isEmpty {
+      figures.append(String(localized: summary == nil ? L10n.Lab.decisionCount(observer.decisions.count)
+        : L10n.Lab.noEntries))
+    }
+    let first = figures.joined(separator: Format.itemSeparator)
+    return [first, summary.flatMap(ObserverLabel.skipped), cause(observer)].compactMap { $0 }
   }
 
   /// Why the row has no result, no line, or a dashed one.
@@ -372,8 +380,8 @@ private struct CurvesCard: View {
     let active = DayCurveLine(name: name, color: Palette.accent,
       curve: DayCurve.trades(model.shownTrades, reported: model.shownResult), active: true)
     return [active] + observers.enumerated().map { index, observer in
-      DayCurveLine(name: observer.name + Format.itemSeparator + observer.version,
-        color: DayCurveLine.color(observerIndex: index), curve: DayCurve.observer(observer), active: false)
+      DayCurveLine(name: observer.id, color: DayCurveLine.color(observerIndex: index),
+        curve: DayCurve.observer(observer), active: false)
     }
   }
 
@@ -533,7 +541,8 @@ struct ObserverRow: View {
           // The bot says why it has no result (no captured bars, no decisions...).
           Text(verbatim: Format.missing)
             .foregroundStyle(Palette.textQuaternary)
-            .help(observer.resultCause.map { Text(verbatim: $0) } ?? Text(L10n.Lab.resultPending))
+            .help(ApiText.prose(observer.resultCauseCodes, text: observer.resultCause).map { Text(verbatim: $0) }
+              ?? Text(L10n.Lab.resultPending))
         }
       }
       HStack(spacing: Tokens.Space.s) {
@@ -606,8 +615,9 @@ extension Verdict {
 /// The Lab's replay, as the design's compare card: a strategy version SIMULATED over the last
 /// sessions of data fetched on the Mac, or over one of its days, optionally against a second
 /// version over the same days (GET/POST /lab/replay), started here and read while the Lab is
-/// open. The result is a table with a column per version and their difference. A refusal (the
-/// session is open, a run is going, no data) reads as a calm reason.
+/// open. The result is a table with a column per version and their difference. While the regular
+/// session refuses a start (`LabReplayV1.availableAt`), the button rests with the time it opens
+/// and a countdown; any other refusal (a run going, no data) reads as a calm reason in words.
 private struct ReplayCard: View {
   @Environment(AppModel.self) private var model
   /// The chosen folders and day; nil means the API's default (the active version, no comparison,
@@ -619,6 +629,8 @@ private struct ReplayCard: View {
 
   /// Symbol of a refusal.
   static let refusalSymbol = "info.circle"
+  /// Symbol of the wait for the session to close.
+  static let waitSymbol = "clock"
   /// Width of the header's note, which wraps so the title keeps its line, in points.
   static let noteWidth: CGFloat = 96
   /// Symbol of a chip's menu.
@@ -666,12 +678,14 @@ private struct ReplayCard: View {
         }
         .buttonStyle(.action(.secondary))
         .disabled(running || model.labReplayStarting || replay == nil || (first == nil && !listsNone)
-          || (oneDay && chosenDay == nil))
+          || (oneDay && chosenDay == nil) || waitsUntil != nil)
+        if let waitsUntil, !running {
+          availability(waitsUntil)
+        }
         if running || model.labReplayStarting {
           TickrLoader(L10n.Common.loading)
         }
         status
-        Spacer(minLength: 0)
         Text(L10n.Lab.replayPriority)
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.textTertiary)
@@ -679,6 +693,31 @@ private struct ReplayCard: View {
       }
     })
     .task(id: model.baseURL) { await model.followLabReplay() }
+  }
+
+  /// When a start is allowed again while the regular session refuses one, from the bot's own
+  /// document (never found out by a refused start).
+  private var waitsUntil: Date? { replay?.waitsUntil(now: model.botNow) }
+
+  /// Why the button rests: "Available after 16:00 ET · in 1:12:03", counting down; the parts
+  /// wrap whole in a narrow card.
+  private func availability(_ until: Date) -> some View {
+    Label {
+      ChipFlow {
+        Text(L10n.Lab.replayAvailableAfter(Format.marketMinute(until)))
+        HStack(spacing: Tokens.Space.xs) {
+          Text(verbatim: Format.itemSeparator)
+          Text(L10n.Lab.replayAvailableIn)
+          Text(timerInterval: Date.now...Date.now.addingTimeInterval(until.timeIntervalSince(model.botNow)))
+            .monospacedDigit()
+        }
+      }
+    } icon: {
+      Image(systemName: Self.waitSymbol)
+    }
+    .font(Tokens.Typography.caption)
+    .foregroundStyle(Palette.textSecondary)
+    .accessibilityElement(children: .combine)
   }
 
   /// "Run again" once a replay has a result, else what the next run does.
@@ -690,14 +729,16 @@ private struct ReplayCard: View {
   /// Which version, which second version and which days the next run replays, as the design's
   /// chips and two-part switch.
   @ViewBuilder private var choices: some View {
-    if runnable.isEmpty, let cause = replay?.versions.first?.cause {
+    if runnable.isEmpty, let cause = replay?.versions.first?.causeText {
       // Every version the bot lists is refused: say why rather than leave the start dead.
       Text(verbatim: cause)
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.warningText)
     }
     if !runnable.isEmpty {
-      HStack(spacing: Tokens.Space.s) {
+      // As the design's board: the two pickers side by side with "vs" between, on a new row only
+      // when the card is too narrow for both.
+      ChipFlow(spacing: Tokens.Space.s) {
         Menu {
           Picker(selection: Binding(get: { first ?? "" }, set: { version = $0 })) {
             ForEach(runnable, id: \.folder) { item in
@@ -718,29 +759,29 @@ private struct ReplayCard: View {
         Text(L10n.Lab.replayVersus)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-      }
-      Menu {
-        Picker(selection: Binding(get: { second }, set: { compare = $0 })) {
-          Text(L10n.Lab.replayCompareNone).tag(String?.none)
-          ForEach(runnable.filter { $0.folder != first }, id: \.folder) { item in
-            Text(name(item)).tag(String?.some(item.folder))
+        Menu {
+          Picker(selection: Binding(get: { second }, set: { compare = $0 })) {
+            Text(L10n.Lab.replayCompareNone).tag(String?.none)
+            ForEach(runnable.filter { $0.folder != first }, id: \.folder) { item in
+              Text(name(item)).tag(String?.some(item.folder))
+            }
+          } label: {
+            Text(L10n.Lab.replayCompare)
           }
+          .pickerStyle(.inline)
         } label: {
-          Text(L10n.Lab.replayCompare)
+          if let second, let item = item(second) {
+            chip(name(item), color: Palette.highlight, text: Palette.highlightText)
+          } else {
+            chip(String(localized: L10n.Lab.replayCompareNone), color: Palette.separatorStrong, text: Palette.textTertiary)
+          }
         }
-        .pickerStyle(.inline)
-      } label: {
-        if let second, let item = item(second) {
-          chip(name(item), color: Palette.highlight, text: Palette.highlightText)
-        } else {
-          chip(String(localized: L10n.Lab.replayCompareNone), color: Palette.separatorStrong, text: Palette.textTertiary)
-        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(Text(L10n.Lab.replayCompare))
       }
-      .menuStyle(.button)
-      .buttonStyle(.plain)
-      .menuIndicator(.hidden)
-      .fixedSize()
-      .accessibilityLabel(Text(L10n.Lab.replayCompare))
       .onChange(of: first) { _, now in
         if compare == now { compare = nil }
       }
@@ -865,14 +906,17 @@ private struct ReplayCard: View {
         if let summary = replay.summary {
           table(replay, summary)
         }
-        if let cause = replay.cause { Footnote(verbatim: cause) }
+        if let cause = replay.causeText { Footnote(verbatim: cause) }
         if let day = replay.day { Footnote(L10n.Lab.replayOneDayNote(DayText.day(day))) }
       case .failed:
-        Text(verbatim: replay.cause ?? Format.missing)
+        Text(verbatim: replay.causeText ?? Format.missing)
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.warningText)
       case .idle:
-        Footnote(L10n.Lab.replayIdle)
+        // The apps' empty state, sized to its content: no run yet is a calm state, not a gap.
+        ContentUnavailableView {
+          Label { Text(L10n.Lab.replayIdle) } icon: { BrandMark.empty() }
+        }
       }
     } else if let error = model.labReplayError {
       ReadFailureNote(L10n.ReadFailed.replay, detail: error)
@@ -927,7 +971,7 @@ private struct ReplayCard: View {
       }
       if let second = replay.compare, second.summary == nil {
         Text(L10n.Lab.replayCompareFailed(String(localized: L10n.Lab.versionName(second.strategy, second.version)),
-          second.cause ?? Format.missing))
+          second.causeText ?? Format.missing))
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.warningText)
       }
