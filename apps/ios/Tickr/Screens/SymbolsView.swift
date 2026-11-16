@@ -552,7 +552,7 @@ private struct SymbolDetailScreen: View {
     case .ahead: String(localized: SymbolsText.stepNotReached)
     case .passed, .here(.passed): nil
     }
-    return PathStep(systemImage: glyph, color: color, title: step.stage.title,
+    return SymbolPathStep(systemImage: glyph, color: color, title: step.stage.title,
       time: step.mark == .ahead ? Format.missing : reachedAt.map(Format.time) ?? Format.missing, detail: detail,
       detailColor: step.mark == .ahead ? Palette.textQuaternary : color, reached: step.mark != .ahead)
   }
