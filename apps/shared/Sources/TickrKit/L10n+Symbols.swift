@@ -111,7 +111,6 @@ extension L10n {
     _ volume: String, _ move: String, _ dollars: String, _ floor: String, _ bars: Int
   ) -> LocalizedStringResource {
     LocalizedStringResource("kit.mover.rules",
-      // swiftlint:disable:next line_length
       defaultValue: "vol ≥ \(volume)× · move ≥ \(move) ATR · $ vol ≥ \(dollars)× · bar ≥ \(floor) · vs last \(bars) bars",
       bundle: bundle)
   }
