@@ -875,8 +875,9 @@ private struct AxisTags: View {
   /// closer than `CandleChart.tagSpacing`; a coloured plate (last price, entry, stop) keeps its
   /// place and a plain high or low moves out of its way.
   static func placed(_ tags: [AxisTag], proxy: ChartProxy, height: CGFloat) -> [(tag: AxisTag, y: CGFloat)] {
-    let inside = tags.compactMap { tag in
-      proxy.position(forY: tag.value).flatMap { $0 >= 0 && $0 <= height ? (tag: tag, y: $0) : nil }
+    let inside: [(tag: AxisTag, y: CGFloat)] = tags.compactMap { tag in
+      guard let y = proxy.position(forY: tag.value), y >= 0, y <= height else { return nil }
+      return (tag: tag, y: y)
     }
     let plates = inside.filter { !$0.tag.plain }.sorted { $0.y < $1.y }
     var placed: [(tag: AxisTag, y: CGFloat)] = []
