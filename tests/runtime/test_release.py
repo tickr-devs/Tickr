@@ -1,0 +1,363 @@
+"""`python -m tickr.runtime release` / `rollback` (runtime/release.py).
+
+Git runs for real on temporary repositories (an origin with `main`, a clone, worktrees);
+uv, the release's preflight, launchctl and ps are a fake runner: no launchd is touched.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+from dataclasses import replace
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from tickr import config as config_module
+from tickr.api.contract import AccountOrder, AccountPosition, AccountV1, write_account
+from tickr.runtime import release
+from tickr.runtime.__main__ import main
+from tickr.store import DATABASE_FILE, Store
+from tickr.version import code_version
+
+from .conftest import ROOT
+
+T0 = datetime(2026, 11, 16, 21, 0, tzinfo=UTC)
+BOT, WATCHDOG, API = release.RESTARTED_JOBS
+GIT_ID = ("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false")
+
+
+def _git(folder: Path, *args: str) -> str:
+    return subprocess.run(["git", *GIT_ID, "-C", str(folder), *args], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _commit(repo: Path, name: str, *, push: bool = True) -> str:
+    (repo / "src" / "tickr" / f"{name}.py").write_text(f"# {name}\n", "utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", name)
+    if push:
+        _git(repo, "push", "-q", "origin", "HEAD:main")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _account(**overrides) -> AccountV1:
+    values = dict(read_at=T0, equity_usd=None, buying_power_usd=None, positions=(), orders=(),
+                  matches_records=True, mismatch=None)
+    values.update(overrides)
+    return AccountV1(**values)
+
+
+class World:
+    """An origin, the operator's checkout (with THE data folder) and a releases folder."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        origin = tmp_path / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+        self.repo = tmp_path / "Tickr"
+        (self.repo / "src" / "tickr").mkdir(parents=True)
+        for part in ("config", "strategies", "ops"):
+            shutil.copytree(ROOT / part, self.repo / part)
+        (self.repo / ".gitignore").write_text("/data/\n.venv/\n", "utf-8")
+        _git(self.repo, "init", "-q", "-b", "main")
+        _git(self.repo, "remote", "add", "origin", str(origin))
+        self.first = _commit(self.repo, "first")
+        self.config_path = self.repo / "config" / "bot.toml"
+        self.cfg = config_module.load(self.config_path)
+        self.data = self.repo / "data"
+        self.data.mkdir()
+        Store.open(self.data / DATABASE_FILE, busy_timeout_seconds=Decimal(5)).close()
+        (self.data / "keep.txt").write_text("accumulated data", "utf-8")
+        self.account = self.data / self.cfg.api.account_file
+        write_account(self.account, _account())
+        self.releases = tmp_path / "releases"
+        self.env_file = tmp_path / "env"
+        self.env_file.write_text("", "utf-8")
+        self.fake = FakeRunner(self)
+        self.lines: list[str] = []
+
+    def context(self) -> release.Context:
+        ctx = release.context(self.cfg, self.config_path, self.releases, self.env_file,
+                              self.fake, os.environ, self.lines.append)
+        return replace(ctx, sleep=self.fake.sleep, clock=self.fake.clock)
+
+    def live(self) -> str | None:
+        link = self.releases / release.LIVE
+        return Path(os.readlink(link)).name if link.is_symlink() else None
+
+    def previous(self) -> str | None:
+        link = self.releases / release.PREVIOUS
+        return Path(os.readlink(link)).name if link.is_symlink() else None
+
+
+class FakeRunner:
+    """git for real; uv, the preflight, launchctl and ps faked and recorded."""
+
+    def __init__(self, world: World) -> None:
+        self.world = world
+        self.calls: list[list[str]] = []
+        self.pids: dict[str, int | None] = {BOT: 101, WATCHDOG: None, API: 103}
+        self.stuck: set[str] = set()
+        self.preflight_exit = 0
+        self.preflight_override: dict[str, object] = {}
+        self.processes: list[str] = []
+        self.now = 0.0
+        self.next_pid = 500
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+    def clock(self) -> float:
+        return self.now
+
+    def kinds(self) -> list[str]:
+        return [call[0] if call[0] != release.LAUNCHCTL else f"launchctl {call[1]}"
+                for call in self.calls if call[0] != release.GIT]
+
+    def __call__(self, argv, cwd, env, timeout) -> release.Done:
+        argv = list(argv)
+        self.calls.append(argv)
+        if argv[0] == release.GIT:
+            return release.run_process(argv, cwd, env, timeout)
+        if tuple(argv) == release.UV_SYNC:
+            (cwd / ".venv").mkdir(exist_ok=True)
+            return release.Done(0, "", "")
+        if argv[0] == release.SH:
+            return self._preflight(Path(argv[4]), argv[6])
+        if argv[:2] == [release.LAUNCHCTL, "list"]:
+            pid = self.pids.get(argv[2])
+            out = '{\n\t"Label" = "x";\n' + (f'\t"PID" = {pid};\n' if pid else "") + "};\n"
+            return release.Done(0, out, "")
+        label = argv[-1].rsplit("/", 1)[-1]
+        if argv[:2] == [release.LAUNCHCTL, "kill"]:
+            if label not in self.stuck:
+                self.pids[label] = None
+            return release.Done(0, "", "")
+        if argv[:2] == [release.LAUNCHCTL, "kickstart"]:
+            self.next_pid += 1
+            self.pids[label] = self.next_pid
+            return release.Done(0, "", "")
+        if argv[0] == release.PS[0]:
+            return release.Done(0, "\n".join(self.processes), "")
+        raise AssertionError(f"unexpected command {argv}")
+
+    def _preflight(self, folder: Path, config: str) -> release.Done:
+        real = folder.resolve()
+        cfg = config_module.load(real / config)
+        body = {"record": "preflight", "exit_code": self.preflight_exit,
+                "cause": None if self.preflight_exit == 0 else "token-unusable",
+                "config_path": str((real / config).resolve()),
+                "config_digest": cfg.digest,
+                "data_dir": str((cfg.root / cfg.run.data_dir).resolve()),
+                "checks": [{"name": "code-version", "passed": True,
+                            "detail": code_version(real, {}, Decimal(5))}]}
+        body.update(self.preflight_override)
+        return release.Done(self.preflight_exit, json.dumps(body) + "\n", "")
+
+
+@pytest.fixture
+def world(tmp_path) -> World:
+    return World(tmp_path)
+
+
+# --- refusals: nothing running is touched -------------------------------------------------
+
+
+@pytest.mark.parametrize("account,cause", [
+    (_account(positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12")),)), "position"),
+    (_account(orders=(AccountOrder("c1", "ABCD", "SELL", "STOP_LOSS", "ACCEPTED", Decimal("10"),
+                                   None, Decimal("11"), True),)), "open order"),
+    (_account(matches_records=False, mismatch="extra position"), "disagrees"),
+])
+def test_not_flat_refuses_before_any_command(world, account, cause):
+    write_account(world.account, account)
+    with pytest.raises(release.ReleaseRefused, match=cause):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.fake.calls == [] and world.live() is None
+
+
+def test_an_open_trade_in_the_database_refuses(world):
+    store = Store.open(world.data / DATABASE_FILE, busy_timeout_seconds=Decimal(5))
+    store._db.execute(
+        "INSERT INTO trades (trade_id, run_id, symbol, state, entry_quantity, entry_limit_price,"
+        " stop_price, planned_loss_usd, opened_at) VALUES ('t1', 'r1', 'ABCD', 'open', '10',"
+        " '10', '9.5', '5', '2026-11-16T15:00:00+00:00')")
+    store.close()
+    with pytest.raises(release.ReleaseRefused, match="open trade"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.fake.calls == []
+
+
+def test_no_account_file_refuses(world):
+    world.account.unlink()
+    with pytest.raises(release.ReleaseRefused, match="no account file"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+
+
+def test_a_commit_not_on_main_is_refused(world):
+    side = _commit(world.repo, "side", push=False)
+    with pytest.raises(release.ReleaseRefused, match="not on origin/main"):
+        release.release(world.context(), side)
+    assert world.fake.kinds() == [] and not (world.releases / side).exists()
+
+
+def test_uncommitted_config_in_the_checkout_is_refused(world):
+    world.config_path.write_text(world.config_path.read_text("utf-8") + "\n", "utf-8")
+    with pytest.raises(release.ReleaseRefused, match="uncommitted changes under config"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.fake.kinds() == []
+
+
+def test_preflight_failure_leaves_the_running_release_untouched(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    second = _commit(world.repo, "second")
+    world.fake.calls.clear()
+    world.fake.preflight_exit = 1
+    with pytest.raises(release.ReleaseRefused, match="preflight failed"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() == world.first and world.previous() is None
+    assert world.fake.kinds() == ["uv", release.SH]  # prepared and checked; nothing stopped
+    assert (world.releases / second / ".venv").is_dir()  # left for a look; pruned later
+
+
+@pytest.mark.parametrize("override,match", [
+    ({"checks": [{"name": "code-version", "detail": "abc-dirty"}]}, "code version"),
+    ({"data_dir": "/elsewhere/data"}, "not .*data"),
+    ({"config_path": "/elsewhere/bot.toml"}, "not the release config"),
+])
+def test_preflight_of_other_code_config_or_data_is_refused(world, override, match):
+    world.fake.preflight_override = override
+    with pytest.raises(release.ReleaseRefused, match=match):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() is None and "launchctl kill" not in world.fake.kinds()
+
+
+def test_context_refuses_an_empty_data_folder(world):
+    (world.data / DATABASE_FILE).unlink()
+    with pytest.raises(release.ReleaseRefused, match="existing data folder"):
+        world.context()
+
+
+def test_context_refuses_data_inside_the_releases_folder(world):
+    with pytest.raises(release.ReleaseRefused, match="contain each other"):
+        release.context(world.cfg, world.config_path, world.data / "releases", world.env_file,
+                        world.fake, os.environ, world.lines.append)
+
+
+def test_context_refuses_a_stop_wait_below_the_bot_exit_timeout(world):
+    runtime = replace(world.cfg.runtime, release_stop_wait_seconds=60)
+    with pytest.raises(release.ReleaseRefused, match="release_stop_wait_seconds"):
+        release.context(replace(world.cfg, runtime=runtime), world.config_path, world.releases,
+                        world.env_file, world.fake, os.environ, world.lines.append)
+
+
+# --- release, restart, prune, rollback ------------------------------------------------------
+
+
+def test_release_pins_the_commit_and_shares_the_one_data_folder(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    folder = world.releases / world.first
+    assert world.live() == world.first
+    assert (folder / ".git").is_file()  # a worktree, detached at the commit
+    assert code_version(folder, {}, Decimal(5)) == world.first  # the data link is not "dirty"
+    link = folder / "data"
+    assert link.is_symlink() and link.resolve() == world.data.resolve()
+    assert (world.releases / release.LIVE / "data" / "keep.txt").read_text() == "accumulated data"
+    # Prepared and checked before anything was stopped; running jobs were then stopped,
+    # waited for and started again, a stopped one left to its schedule.
+    kinds = world.fake.kinds()
+    assert kinds[:2] == ["uv", release.SH] and kinds.index("launchctl kill") > 1
+    killed = [c[-1] for c in world.fake.calls if c[:2] == [release.LAUNCHCTL, "kill"]]
+    started = [c[-1] for c in world.fake.calls if c[:2] == [release.LAUNCHCTL, "kickstart"]]
+    uid = os.getuid()
+    assert killed == started == [f"gui/{uid}/{BOT}", f"gui/{uid}/{API}"]
+    assert any(f"config release {(folder / 'config' / 'bot.toml').resolve()}" in line
+               for line in world.lines)
+    # Again: nothing to do.
+    world.fake.calls.clear()
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.fake.kinds() == [] and "already live" in world.lines[-1]
+
+
+def test_switches_keep_live_and_previous_and_prune_the_rest_never_the_data(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    second = _commit(world.repo, "second")
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    assert (world.live(), world.previous()) == (second, world.first)
+    third = _commit(world.repo, "third")
+    world.fake.processes = [f"{(world.releases / world.first).resolve()}/.venv/bin/python -m x"]
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    assert (world.releases / world.first).is_dir()  # a process still runs from it: kept
+    fourth = _commit(world.repo, "fourth")
+    world.fake.processes = []
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    assert (world.live(), world.previous()) == (fourth, third)
+    left = sorted(p.name for p in world.releases.iterdir() if not p.name.startswith("."))
+    assert left == sorted([release.LIVE, release.PREVIOUS, third, fourth])
+    assert world.first not in _git(world.repo, "worktree", "list")
+    assert (world.data / "keep.txt").read_text() == "accumulated data"
+    assert (world.data / DATABASE_FILE).is_file()
+
+
+def test_rollback_swaps_live_and_previous(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    second = _commit(world.repo, "second")
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    release.rollback(world.context())
+    assert (world.live(), world.previous()) == (world.first, second)
+    release.rollback(world.context())
+    assert (world.live(), world.previous()) == (second, world.first)
+
+
+def test_rollback_without_a_previous_release_is_refused(world):
+    release.release(world.context(), release.DEFAULT_COMMIT)
+    with pytest.raises(release.ReleaseRefused, match="no live and previous"):
+        release.rollback(world.context())
+
+
+def test_a_job_that_does_not_stop_is_reported(world):
+    world.fake.stuck = {BOT}
+    with pytest.raises(release.ReleaseFailed, match=f"{BOT}: pid 101 still running"):
+        release.release(world.context(), release.DEFAULT_COMMIT)
+    assert world.live() == world.first  # switched; the old process keeps its own release
+    assert world.fake.now >= world.cfg.runtime.release_stop_wait_seconds
+    started = [c[-1] for c in world.fake.calls if c[:2] == [release.LAUNCHCTL, "kickstart"]]
+    assert started == [f"gui/{os.getuid()}/{API}"]
+
+
+def test_a_developer_environment_never_reaches_the_release(world):
+    ctx = replace(world.context(), environ={"PATH": "/usr/bin:/bin", "VIRTUAL_ENV": "/dev/venv",
+                                            "PYTHONPATH": "/dev/src"})
+    seen: list[dict] = []
+    ctx = replace(ctx, run=lambda argv, cwd, env, timeout: (seen.append(dict(env)),
+                                                           world.fake(argv, cwd, env, timeout))[1])
+    release.release(ctx, release.DEFAULT_COMMIT)
+    assert seen and all("VIRTUAL_ENV" not in env and "PYTHONPATH" not in env for env in seen)
+
+
+# --- version and CLI ------------------------------------------------------------------------
+
+
+def test_version_of_a_release_worktree(world):
+    folder = world.releases / world.first
+    _git(world.repo, "worktree", "add", "-q", "--detach", str(folder), world.first)
+    (folder / "data").symlink_to(world.data)
+    assert code_version(folder, {}, Decimal(5)) == world.first
+    (folder / "src" / "tickr" / "first.py").write_text("# changed\n", "utf-8")
+    assert code_version(folder, {}, Decimal(5)) == world.first + "-dirty"
+
+
+def test_cli_refusal_says_the_running_release_is_unchanged(world, monkeypatch, capsys):
+    from tickr.runtime import __main__ as runtime_main
+
+    monkeypatch.setattr(runtime_main, "RELEASE_RUNNER", world.fake)
+    write_account(world.account, _account(matches_records=False, mismatch="x"))
+    code = main(["--config", str(world.config_path), "release", "--releases",
+                 str(world.releases), "--env-file", str(world.env_file)])
+    assert code == 1
+    assert "running release is unchanged" in capsys.readouterr().err
+    assert world.fake.calls == []

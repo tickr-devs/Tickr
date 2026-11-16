@@ -10,6 +10,8 @@
   Exit 0 all clear, 1 something alerted, 2 config invalid, 3 no session today.
 - `alert <kind> <text>`: show one alert (used to test notifications on the Mac).
 - `render-launchd`: write filled-in plists from ops/launchd into a folder; installs nothing.
+- `release [--commit REF]` / `rollback`: switch what the launchd jobs run to a pinned release
+  (runtime/release.py); refused unless the bot is flat.
 
 Output lines are JSON objects with a "record" field; launchd writes them to the job's log file.
 The bot process itself journals its alerts in the database; these commands run outside the bot
@@ -33,6 +35,7 @@ from tickr import config as config_module
 from tickr.broker.base import Broker, BrokerError
 from tickr.calendar import CalendarRefused
 from tickr.runtime import launchd, watchdog
+from tickr.runtime import release as release_module
 from tickr.runtime.alerts import (
     Alerter,
     AlertKind,
@@ -226,13 +229,36 @@ def _render(args: argparse.Namespace) -> int:
     launchd.check_timings(cfg)
     launchd.check_env_file(args.env_file)
     launchd.check_lab_folder(cfg)
-    paths = launchd.Paths(
-        repo=cfg.root, python=args.python, config=args.config.resolve(),
+    paths = launchd.Paths(  # the config's root is the folder above its own folder (config.load)
+        release=args.release, config=args.config.resolve().relative_to(cfg.root),
         env_file=args.env_file, log_dir=args.log_dir)
     written = launchd.render_all(cfg.root / TEMPLATE_DIR, args.out,
                                  launchd.values(cfg.runtime, paths))
     for path in written:
         print(path)
+    return 0
+
+
+# Replaced in tests: the command runner of `release` and `rollback`.
+RELEASE_RUNNER: release_module.Runner = release_module.run_process
+
+
+def _release(args: argparse.Namespace) -> int:
+    cfg = config_module.load(args.config)
+    try:
+        ctx = release_module.context(cfg, args.config, args.releases, args.env_file,
+                                     RELEASE_RUNNER, os.environ,
+                                     lambda line: print(line, flush=True))
+        if args.command == "release":
+            release_module.release(ctx, args.commit)
+        else:
+            release_module.rollback(ctx)
+    except release_module.ReleaseRefused as exc:
+        print(f"refused: {exc}; the running release is unchanged", file=sys.stderr)
+        return int(ExitCode.FAILED)
+    except release_module.ReleaseFailed as exc:
+        print(f"failed after the switch: {exc}", file=sys.stderr)
+        return int(ExitCode.FAILED)
     return 0
 
 
@@ -249,11 +275,23 @@ def main(argv: list[str] | None = None) -> int:
     alert.add_argument("kind", choices=[k.value for k in AlertKind])
     alert.add_argument("text")
     render = sub.add_parser("render-launchd", help="write plists for the owner to install")
-    render.add_argument("--python", type=Path, required=True, help="absolute venv python")
+    render.add_argument("--release", type=Path, required=True,
+                        help="absolute folder the jobs run from: <releases>/live on the Mac "
+                             "(never resolved: the jobs resolve it when they start)")
     render.add_argument("--env-file", type=Path, required=True,
                         help="absolute path of the credentials file sourced by the jobs")
     render.add_argument("--log-dir", type=Path, required=True, help="absolute log folder")
     render.add_argument("--out", type=Path, required=True, help="output folder")
+    for name, text in (("release", "run a commit of origin/main from now on (flat only)"),
+                       ("rollback", "run the previous release again (flat only)")):
+        cmd = sub.add_parser(name, help=text)
+        cmd.add_argument("--releases", type=Path, required=True,
+                         help="absolute folder of the releases and the live link")
+        cmd.add_argument("--env-file", type=Path, required=True,
+                         help="absolute path of the credentials file the jobs source")
+        if name == "release":
+            cmd.add_argument("--commit", default=release_module.DEFAULT_COMMIT,
+                             help="commit or ref on origin/main (default: origin/main)")
     args = parser.parse_args(argv)
     try:
         if args.command == "preflight":
@@ -267,6 +305,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "render-launchd":
             return _render(args)
+        if args.command in ("release", "rollback"):
+            return _release(args)
     except config_module.ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         if args.command == "watchdog":
