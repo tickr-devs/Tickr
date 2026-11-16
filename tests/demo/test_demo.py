@@ -6,6 +6,7 @@ import http.client
 import json
 import re
 import shutil
+import socket
 import sys
 import threading
 from dataclasses import replace
@@ -502,7 +503,7 @@ def test_live_loop_prices_compound_from_where_each_symbol_was_left():
     plan = SymbolPlan("AAA", D(20), D(3000), ScreenerKind.GAINERS,
                       (("09:30", "09:40", D(22), HOT),))
     legs = ((0, 2, D("0.10"), HOT), (3, 4, D("-0.5"), HOT))
-    loop = LiveLoop(5, (LoopRole("up", ("AAA",), legs),),
+    loop = LiveLoop(5, 3, (LoopRole("up", ("AAA",), legs),),
                     (LoopCommand(90, api.CommandKind.FLATTEN, "up"),
                      LoopCommand(150, api.CommandKind.ENTRY_STOP_ON, None)))
     scenario = unroll(replace(base, today=(plan,), commands=(), clock="10:00",
@@ -570,3 +571,99 @@ def test_live_loop_makes_the_real_bot_trade_and_refuse_every_cycle(tmp_path):
                for line in decisions.read_text("utf-8").splitlines()
                if json.loads(line)["admission"] == "refused"}
     assert {"OWN_POSITION_OPEN", "ENTRY_STOP_SET"} <= refused
+
+
+def test_symbols_only_the_loop_moves_are_listed_shortly_before_the_clock():
+    """The fast part of the day does not evaluate the loop's idle symbols: the screeners list
+    them only `listed_minutes_before_clock` before the clock (startup time of the demo)."""
+    scenario = load(ROOT / "config" / "demo.toml")
+    loop = scenario.live
+    assert loop is not None
+    listed = dict(scenario.listed)
+    morning = {p.symbol for p in load(ROOT / "config" / "demo.toml").today
+               if p.legs and p.legs[0][0] < scenario.clock}
+    role_symbols = {s for role in loop.roles for s in role.symbols}
+    assert set(listed) == role_symbols - morning and "MVLD" not in listed
+    at = (datetime.combine(FRIDAY, time.fromisoformat(scenario.clock))
+          - timedelta(minutes=loop.listed_minutes_before_clock)).time().isoformat()
+    assert set(listed.values()) == {at}
+
+    calendar = SessionCalendar.load(ROOT / "config" / "calendar")
+    market_day = calendar.day(FRIDAY)
+    world = World(ny(FRIDAY, "12:00"), market_day, D("0.01"), D(500), "demo")
+    bars = day_bars("AAA", market_day, D(20), D(3000), (), D("0.05"))
+    world.add_symbol("AAA", bars, [], listed_from=ny(FRIDAY, "12:05"))
+    world.add_symbol("BBB", day_bars("BBB", market_day, D(30), D(3000), (), D("0.05")), [])
+    assert [r.symbol for r in world.feed.screener(ScreenerKind.GAINERS)] == ["BBB"]
+    world.advance(5 * 60)
+    assert {r.symbol for r in world.feed.screener(ScreenerKind.GAINERS)} == {"AAA", "BBB"}
+
+
+def _demo_port(root: Path, port: int) -> Path:
+    bot = root / "config" / "bot.toml"
+    text, count = re.subn(r"(?m)^demo_port = \d+$", f"demo_port = {port}",
+                          bot.read_text("utf-8"))
+    assert count == 1
+    bot.write_text(text, "utf-8")
+    return root
+
+
+def test_a_busy_demo_port_is_refused_before_any_session(tmp_path):
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        root = _demo_port(repo(tmp_path), busy.getsockname()[1])
+        scenario = load(root / "config" / "demo.toml")
+        with pytest.raises(demo.DemoRefused, match="cannot listen"):
+            demo.run_demo(root, scenario, SUNDAY, log=lambda line: None)
+    assert not (root / scenario.root_dir / "data").exists()  # no session ran
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_live_api_answers_while_the_loop_runs(tmp_path):
+    """`tickr demo` serves its API in the live part of the day, inside a loop cycle, and stops
+    itself at live_until. Before that nothing holds the port: a client is refused at once (the
+    bot's /demo forward answers 503), never left on a socket nobody serves (reset or hanging
+    connections)."""
+    root = _demo_port(repo(tmp_path), port := _free_port())
+    full = load(root / "config" / "demo.toml")
+    assert full.live is not None
+    roles = {s for role in full.live.roles for s in role.symbols}
+    quiet = tuple(replace(p, legs=()) for p in full.today if p.symbol in roles)
+    looped = unroll(replace(full, past=(), today=quiet, commands=(), clock="09:50",
+                            live_until="10:10"))
+    # Go live inside the second cycle for a few seconds of real time.
+    scenario = replace(looped, clock="10:03", live_until="10:03:08")
+    answers: list[dict] = []
+    failures: list[type[BaseException]] = []
+
+    def poll() -> None:
+        while not answers:
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+                conn.request("GET", "/status", headers={"Host": f"127.0.0.1:{port}"})
+                resp = conn.getresponse()
+                body = json.loads(resp.read())
+                conn.close()
+                if resp.status == 200 and body["status"] is not None:
+                    answers.append(body)
+                    return
+            except (OSError, http.client.HTTPException) as exc:
+                failures.append(type(exc))
+            threading.Event().wait(0.2)
+
+    poller = threading.Thread(target=poll, daemon=True)
+    poller.start()
+    assert demo.run_demo(root, scenario, SUNDAY, live=True, log=lambda line: None) == 0
+    poller.join(timeout=1)
+    assert answers, "the live API never answered"
+    assert failures and set(failures) == {ConnectionRefusedError}
+    status = answers[0]["status"]
+    assert status["environment"] == scenario.environment
+    written = api.parse_time(status["written_at"]).astimezone(NEW_YORK)
+    assert "10:02" <= written.strftime("%H:%M") <= "10:03"  # the live part of the loop

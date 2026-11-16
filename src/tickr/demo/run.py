@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import sys
 import threading
 from collections.abc import Callable, Iterator
@@ -33,7 +34,7 @@ from pathlib import Path
 from tickr import cli
 from tickr import config as config_module
 from tickr.api import contract as api
-from tickr.api.server import ApiServer, make_server, settings_from_config
+from tickr.api.server import ApiServer, ApiSettings, make_server, settings_from_config
 from tickr.calendar import CalendarRefused, SessionCalendar, ny_date_of
 from tickr.demo.scenario import DemoCommand, Scenario, SymbolPlan
 from tickr.demo.world import (
@@ -196,8 +197,12 @@ class Session:
     history_days: list[date]
     chart: bool = False  # the demo day: D charts get [market] chart_days older days
 
-    def world(self, plans: tuple[SymbolPlan, ...]) -> World:
+    def world(self, plans: tuple[SymbolPlan, ...],
+              listed: tuple[tuple[str, str], ...] = ()) -> World:
+        """The simulated exchange for `plans`; `listed` = (symbol, New York time) of symbols
+        the screeners list only from that time."""
         s = self.scenario
+        listed_from = {symbol: ny(self.day, at) for symbol, at in listed}
         market_day = self.calendar.day(self.day)
         world = World(ny(self.day, s.bot_start), market_day, s.half_spread, s.quote_size,
                       s.provider)
@@ -212,7 +217,7 @@ class Session:
                                       plan.base, s.history_volume * session_minutes(market_day),
                                       s.chart_walk)
             world.add_symbol(plan.symbol, textured(today, s.texture), history, (plan.screener,),
-                             daily)
+                             daily, listed_from.get(plan.symbol))
         return world
 
     def run(self, world: World) -> int:
@@ -246,8 +251,37 @@ def _command_writer(inbox: Path, world: World, command: DemoCommand) -> Callable
     return write
 
 
+class LiveApi:
+    """The demo's API port. It is only checked at the start (bound and released at once), so a
+    busy port is refused before any session runs, and it is not held while the past sessions
+    and the morning replay run: a client asking then is refused at once (the bot's /demo
+    forward answers 503), never left hanging on a port nobody serves (a socket bound but not
+    accepting makes macOS clients time out or reset). `start` (at [demo] clock) binds the real
+    server; should another process have taken the port meanwhile, the demo stops."""
+
+    def __init__(self, settings: ApiSettings) -> None:
+        self.settings = settings
+        self.server: ApiServer | None = None
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind((settings.host, settings.port))
+
+    def start(self, world: World) -> ApiServer:
+        """Listen and serve the live world; returns the running server."""
+        server = make_server(self.settings, world.clock)
+        server.chart.use(world.feed)  # GET /chart serves the simulated world
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.server = server
+        return server
+
+    def close(self) -> None:
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
+            self.server = None
+
+
 def _demo_day(session: Session, world: World, cfg: config_module.Config,
-              server: ApiServer | None, log: Callable[[str], None]) -> int:
+              live_api: LiveApi | None, log: Callable[[str], None]) -> int:
     """Run the demo day: fast up to `clock`, then live with the API (or, without a server,
     stop there)."""
     scenario = session.scenario
@@ -258,16 +292,19 @@ def _demo_day(session: Session, world: World, cfg: config_module.Config,
         world.at(ny(session.day, fault.at),
                  lambda symbol=fault.symbol: world.exchange.unverify_stops(symbol))
 
-    if server is None:
+    if live_api is None:
         world.at(ny(session.day, scenario.clock), _stop_self)
     else:
-        live = server
+        api_port = live_api
 
         def go_live() -> None:
             world.go_live()
-            live.clock = world.clock
-            live.chart.use(world.feed)  # GET /chart serves the simulated world
-            threading.Thread(target=live.serve_forever, daemon=True).start()
+            try:
+                live = api_port.start(world)
+            except OSError as exc:  # another process took the port during the replay
+                log(f"demo refused: cannot listen on port {api_port.settings.port}: {exc}")
+                _stop_self()
+                return
             log(f"demo: live on http://{live.settings.host}:{live.server_port}/ "
                 f"(New York {scenario.clock} on {session.day.isoformat()}) until "
                 f"{scenario.live_until}; Ctrl-C stops it")
@@ -275,11 +312,7 @@ def _demo_day(session: Session, world: World, cfg: config_module.Config,
         world.at(ny(session.day, scenario.clock), go_live)
         world.at(ny(session.day, scenario.live_until), _stop_self)
     log(f"demo: session {session.day.isoformat()} (the demo day)")
-    try:
-        return session.run(world)
-    finally:
-        if server is not None:
-            server.shutdown()
+    return session.run(world)
 
 
 def run_demo(repo: Path, scenario: Scenario, today: date, *, live: bool = True,
@@ -298,11 +331,11 @@ def _run_demo(repo: Path, scenario: Scenario, today: date, *, live: bool,
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
     history_count = cfg.market_data.history_sessions
     days = sessions(calendar, today, len(scenario.past) + 1 + history_count)
-    server = None
-    if live:  # bound now, so a busy port is refused before any session runs
+    live_api = None
+    if live:  # checked now, so a busy port is refused before any session runs
         try:
             # GET /config shows the demo's copy; the Lab replay stays off as before.
-            server = make_server(replace(settings_from_config(cfg), config_file=config_path))
+            live_api = LiveApi(replace(settings_from_config(cfg), config_file=config_path))
         except OSError as exc:
             raise DemoRefused(f"cannot listen on port {cfg.api.port}: {exc}") from exc
     try:
@@ -310,17 +343,18 @@ def _run_demo(repo: Path, scenario: Scenario, today: date, *, live: bool,
             index = history_count + n
             session = Session(config_path, scenario, calendar, days[index],
                               days[index - history_count:index], n == len(scenario.past))
-            world = session.world(plans)
-            if n == len(scenario.past):
-                return _demo_day(session, world, cfg, server, log)
+            demo_day = n == len(scenario.past)
+            world = session.world(plans, scenario.listed if demo_day else ())
+            if demo_day:
+                return _demo_day(session, world, cfg, live_api, log)
             log(f"demo: session {session.day.isoformat()} (past)")
             world.at(ny(session.day, scenario.past_stop), _stop_self)
             code = session.run(world)
             if code != 0:
                 raise DemoRefused(f"the bot ended {session.day} with exit code {code}")
     finally:
-        if server is not None:
-            server.server_close()
+        if live_api is not None:
+            live_api.close()
     raise AssertionError("unreachable: the loop ends on the demo day")
 
 
@@ -329,7 +363,10 @@ def main(repo: Path, scenario_path: Path) -> int:
 
     try:
         scenario = load(scenario_path)
-        return run_demo(repo, scenario, ny_date_of(cli.NOW()))
+        # Flushed at once: under launchd stdout is a file, and a buffered line would show up
+        # only when the process ends (or in the next demo's log), never while it runs.
+        return run_demo(repo, scenario, ny_date_of(cli.NOW()),
+                        log=lambda line: print(line, flush=True))
     except (ScenarioError, DemoRefused, config_module.ConfigError, OSError) as exc:
         print(f"demo refused: {exc}", file=sys.stderr)
         return 2
