@@ -42,7 +42,7 @@ struct FlowChips: View {
 
   var body: some View {
     ChipsMarquee(
-      items: chips, moving: moving, hint: { L10n.Common.openOnChart($0.symbol) },
+      items: chips, moving: moving, leastChipWidth: Tokens.Size.flowChip, hint: { L10n.Common.openOnChart($0.symbol) },
       help: { Text(verbatim: FlowChip.help($0)) },
       // A symbol the universe left out has no chart to open.
       opens: { $0.excludedCause == nil },
@@ -143,7 +143,7 @@ struct LatestEvent: View {
     guard let trade = model.shownTrades.max(by: { $0.closedAt.date < $1.closedAt.date }) else { return nil }
     let result = trade.resultUsd.value
     return Line(time: trade.closedAt.date, tag: Board.exitReasonTitle(trade.exitReason),
-      text: "\(trade.symbol) \(Money.signed(result))", color: result >= 0 ? Palette.profitText : Palette.lossText)
+      text: "\(trade.symbol) \(Money.signed(result))", color: Palette.result(result))
   }
 
   var body: some View {
@@ -301,7 +301,7 @@ struct WatchingRow: View {
       ZStack(alignment: .leading) {
         if let share {
           Capsule().fill(Palette.separator)
-          Capsule().fill(row.verdict.watchingColor).frame(width: proxy.size.width * share)
+          Capsule().fill(row.verdict.color).frame(width: proxy.size.width * share)
         } else {
           // Unknown is a dashed outline, never an empty track that reads as 0 %.
           Capsule().strokeBorder(Palette.separatorStrong,
@@ -330,18 +330,9 @@ struct VerdictTag: View {
       .font(Tokens.Typography.badge)
       .padding(.horizontal, Tokens.Space.xs)
       .padding(.vertical, Tokens.Space.xxs)
-      .foregroundStyle(verdict.watchingColor)
-      .overlay(shape.strokeBorder(verdict.watchingColor, lineWidth: Tokens.Stroke.thin))
+      .foregroundStyle(verdict.color)
+      .overlay(shape.strokeBorder(verdict.color, lineWidth: Tokens.Stroke.thin))
       .fixedSize()
-  }
-}
-
-extension Verdict {
-  /// A watched symbol's colour, for its tag and its closeness bar: the decision's colour, with
-  /// IGNORE in the design's pink rather than grey, so a symbol the strategy turned away reads apart
-  /// from a quiet value.
-  var watchingColor: Color {
-    self == .ignore ? Palette.seriesATRText : color
   }
 }
 
@@ -419,8 +410,7 @@ private struct FastMoverRow: View {
       }
       ChipFlow(spacing: Tokens.Space.s) {
         MoverFigure(text: SymbolsBoard.volume(mover), fired: mover.fired(.volume))
-        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move),
-          color: mover.moveAtr.isNegative ? Palette.lossText : Palette.profitText)
+        MoverFigure(text: SymbolsBoard.move(mover), fired: mover.fired(.move))
         MoverFigure(text: SymbolsBoard.dollars(mover), fired: mover.fired(.dollars))
       }
     }
