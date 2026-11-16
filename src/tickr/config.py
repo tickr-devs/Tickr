@@ -266,6 +266,7 @@ class ObserversConfig:
     decisions_dir: str
     forget_symbol_seconds: Decimal
     history_sends_per_pass: int
+    ignition: str
 
 
 @dataclass(frozen=True)
