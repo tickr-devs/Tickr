@@ -149,6 +149,7 @@ class ProbeConfig:
     chart_client_reads: int
     chart_client_interval_seconds: int
     extended_end_margin_minutes: int
+    extended_max_quote_age_seconds: Decimal
     extended_far_stop_percent: Decimal
     extended_stop_limit_percent: Decimal
     extended_observe_seconds: int
@@ -311,6 +312,7 @@ class RuntimeConfig:
     watchdog_restart_command: tuple[str, ...]
     watchdog_restart_timeout_seconds: int
     watchdog_restart_file: str
+    watchdog_entry_restart_file: str
     evaluation_budget_seconds: Decimal
     discovery_stop_seconds: Decimal
     stop_marker_file: str
