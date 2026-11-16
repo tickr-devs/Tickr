@@ -2197,7 +2197,15 @@ enum L10n {
     }
     /// Day header badge: the journal, the broker and the bot's records agreed.
     static var cleanBadge: LocalizedStringResource {
-      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day · broker and records agree", bundle: L10n.bundle)
+      LocalizedStringResource("trades.cleanBadge", defaultValue: "Clean day", bundle: L10n.bundle)
+    }
+    /// Note after the clean-day badge on Trades & days.
+    static var recordsAgree: LocalizedStringResource {
+      LocalizedStringResource("trades.recordsAgree", defaultValue: "records agree", bundle: L10n.bundle)
+    }
+    /// Note after the needs-a-look badge on Trades & days.
+    static var recordsDiffer: LocalizedStringResource {
+      LocalizedStringResource("trades.recordsDiffer", defaultValue: "records differ", bundle: L10n.bundle)
     }
     /// Day header badge: the day was not clean.
     static var needsLookBadge: LocalizedStringResource {

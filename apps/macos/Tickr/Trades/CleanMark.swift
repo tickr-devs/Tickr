@@ -42,30 +42,37 @@ struct CleanMark: View {
   }
 }
 
-/// The shown day's verdict in its header: a clean day, or one that needs a look, with what made
-/// it so in the tooltip; nothing while the verdict is unknown.
+/// The shown day's verdict in its header, as the boards draw it: the shared `Badge` saying a clean
+/// day or one that needs a look, with what made it so in the tooltip; nothing while the verdict is
+/// unknown. Trades & days follows it with the records' agreement in words (`showsNote`), as
+/// MacTrades does; the Overview header draws the badge alone.
 struct CleanBadge: View {
   let clean: CleanDay
-  /// The verdict's symbol before the badge; the Overview header draws the badge alone.
-  var showsSymbol = true
+  /// The note after the badge ("records agree", "records differ").
+  var showsNote = false
 
   /// Accessibility id of the badge, for the UI tests.
   static let id = "trades-clean-badge"
 
   var body: some View {
     switch clean.verdict {
-    case .clean: badge(L10n.Trades.cleanBadge, symbol: CleanMark.cleanSymbol, color: Palette.profitText)
-    case .notClean: badge(L10n.Trades.needsLookBadge, symbol: CleanMark.notCleanSymbol, color: Palette.warningText)
+    case .clean: badge(L10n.Trades.cleanBadge, note: L10n.Trades.recordsAgree, color: Palette.profitText)
+    case .notClean: badge(L10n.Trades.needsLookBadge, note: L10n.Trades.recordsDiffer, color: Palette.warningText)
     case .unknown: EmptyView()
     }
   }
 
-  /// The design's day badge: the shared `Badge` in the verdict's colour, with the verdict's symbol
-  /// before the words (Trades) or without it (the Overview header).
-  private func badge(_ title: LocalizedStringResource, symbol: String, color: Color) -> some View {
-    Badge(title, color: color, systemImage: showsSymbol ? symbol : nil)
-      .help(Text(verbatim: CleanMark.text(clean)))
-      .accessibilityElement(children: .combine)
-      .accessibilityIdentifier(Self.id)
+  private func badge(_ title: LocalizedStringResource, note: LocalizedStringResource, color: Color) -> some View {
+    HStack(spacing: Tokens.Space.s) {
+      Badge(title, color: color)
+      if showsNote {
+        Text(note)
+          .font(Tokens.Typography.captionMono)
+          .foregroundStyle(Palette.textQuaternary)
+      }
+    }
+    .help(Text(verbatim: CleanMark.text(clean)))
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier(Self.id)
   }
 }

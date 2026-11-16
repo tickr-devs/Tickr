@@ -13746,13 +13746,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clean day · broker and records agree"
+            "value" : "Clean day"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чистый день · брокер и записи сходятся"
+            "value" : "Чистый день"
           }
         }
       }
@@ -14734,6 +14734,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Причина"
+          }
+        }
+      }
+    },
+    "trades.recordsAgree" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "records agree"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "записи сходятся"
+          }
+        }
+      }
+    },
+    "trades.recordsDiffer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "records differ"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "записи расходятся"
           }
         }
       }
