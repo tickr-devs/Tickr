@@ -151,7 +151,7 @@ public struct Swatch: Sendable, Hashable {
   public static let textPrimary = Swatch(light: 0x0E1430, dark: 0xE7EAF6)
   public static let loss = Swatch(light: 0xEF4444, dark: 0xF87171)
   public static let lossText = Swatch(light: 0xB91C1C, dark: 0xFCA5A5)
-  public static let lossFill = Swatch(light: 0xB91C1C, dark: 0xB91C1C)
+  public static let lossFill = Swatch(light: 0xB91C1C, dark: 0x991B1B)
   public static let onLoss = Swatch(light: 0xFFFFFF, dark: 0xFFFFFF)
   public static let scrim = Swatch(light: 0x080C1E, dark: 0x080C1E)
 }

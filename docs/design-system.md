@@ -57,7 +57,7 @@ emergency command tiers from the palette's values (`Swatch`) and fails below 4.5
 | `accent` / `accentText` | Live, brand, running bot, focus | `#0EA5A0` / `#0B766F` | `#2DD4BF` / `#5EEAD4` |
 | `profit` / `profitText` | Gains, verified stop, healthy | `#10B981` / `#047857` | `#34D399` / `#6EE7B7` |
 | `loss` / `lossText` | Losses, missing stop, alarm, destructive | `#EF4444` / `#B91C1C` | `#F87171` / `#FCA5A5` |
-| `lossFill` / `onLoss` | A solid red with text or a symbol on it: the emergency stop, a destructive command's glyph tile (white on it 6.5:1) | `#B91C1C` / `#FFFFFF` | `#B91C1C` / `#FFFFFF` |
+| `lossFill` / `onLoss` | A solid red with text or a symbol on it: the emergency stop, a destructive command's glyph tile (white on it 6.5:1 light, 8.3:1 dark) | `#B91C1C` / `#FFFFFF` | `#991B1B` / `#FFFFFF` |
 | `warning` / `warningText` | Paused, blocked, stale, closed gate, environment chip | `#F59E0B` / `#B45309` | `#FBBF24` / `#FCD34D` |
 | `info` / `infoText` | Entries, orders, commands in flight | `#3B82F6` / `#1D4ED8` | `#60A5FA` / `#93C5FD` |
 | `highlight` / `highlightText` | Recorded day, BACKLOG, observers | `#8B5CF6` / `#6D28D9` | `#A78BFA` / `#C4B5FD` |
