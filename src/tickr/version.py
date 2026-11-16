@@ -50,6 +50,8 @@ def _git(root: Path, timeout: float, *args: str) -> str:
     except subprocess.TimeoutExpired as exc:
         raise CodeVersionUnknown(f"git {args[0]} in {root} took longer than {timeout:g} s "
                                  "([run] code_version_timeout_seconds)") from exc
+    except OSError as exc:  # not runnable (permissions, broken install): a cause, no crash
+        raise CodeVersionUnknown(f"git {args[0]} in {root} could not run: {exc}") from exc
     if done.returncode != 0:
         first = (done.stderr.strip().splitlines() or ["no message"])[0]
         raise CodeVersionUnknown(f"git {args[0]} in {root} failed "
