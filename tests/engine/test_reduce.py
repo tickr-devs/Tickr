@@ -88,16 +88,20 @@ def test_a_reduce_sells_the_planned_part_and_the_rest_stays_stopped(store):
     assert [r.body for r in store.journal("reduce-done", t)] == [{"sold": "5"}]
 
 
-def test_without_a_planned_split_the_rest_is_stopped_again_after_the_sale(store):
-    b, e, t = scaled(store, split=None)
-    assert e.request_reduce(t, D(4), "strategy-scale-out")
+def test_a_reduce_without_a_planned_split_is_refused_with_its_cause(store):
+    b, e, t = scaled(store, split=None)  # one stop of 10
+    assert not e.request_reduce(t, D(4), "strategy-scale-out")
+    assert "not the planned scale-out" in e.reduce_refusal(t, D(4))
     drive(e, b, 3)
-    (sale,) = legs(e, t, Leg.EXIT)
-    assert sale.quantity == D(4)
-    assert working_stops(b) == D(6)  # re-protected right after the sale was sent
-    b.fill(sale.client_order_id, D(4), D("10.20"))
+    assert legs(e, t, Leg.EXIT) == [] and working_stops(b) == D(10) == held(b)
+
+
+def test_a_reduce_other_than_the_planned_split_is_refused(store):
+    b, e, t = scaled(store, split="5")  # stops 5 + 5
+    assert not e.request_reduce(t, D(3), "strategy-scale-out")
     drive(e, b, 3)
-    assert e.expected_quantity(e.orders(t)) == D(6) == working_stops(b) == held(b)
+    assert legs(e, t, Leg.EXIT) == [] and working_stops(b) == D(10) == held(b)
+    assert store.journal("reduce-requested", t) == []
 
 
 def test_a_second_reduce_and_bad_quantities_are_refused(store):
@@ -150,15 +154,49 @@ def test_a_refused_sale_ends_the_reduce_and_restores_the_stop(store):
     assert working_stops(b) == D(10) == held(b)
 
 
-def test_a_stop_filled_during_the_reduce_ends_it_without_selling(store):
+def test_a_reduce_is_refused_once_a_stop_has_sold_the_rest(store):
     b, e, t = scaled(store)
     first, second = legs(e, t, Leg.STOP)
-    b.fill(second.client_order_id, D(5), D("9.80"))  # half stopped out before the release
-    e.request_reduce(t, D(5), "x")
+    b.fill(second.client_order_id, D(5), D("9.80"))  # half stopped out before the request
+    run(e, 3)
+    assert not e.request_reduce(t, D(5), "x")
+    assert "would leave nothing" in e.reduce_refusal(t, D(5))
+
+
+def test_a_kept_stop_filling_during_the_release_closes_the_released_shares_at_market(store):
+    b, e, t = scaled(store)
+    first, second = legs(e, t, Leg.STOP)
+    assert e.request_reduce(t, D(5), "x")
+    run(e)  # the first stop's release is sent
+    assert e.order(first.client_order_id).cancelling
+    b.fill(second.client_order_id, D(5), D("9.80"))  # the kept stop fires meanwhile
     drive(e, b, 4)
-    assert legs(e, t, Leg.EXIT) == []
+    trade = e.trade(t)
+    assert trade.reduce_state is ReduceState.DONE
+    assert [r.body["cause"] for r in store.journal("exit-requested", t)] == [
+        "stop-filled-during-scale-out"]
+    # never stopped again at a price the market traded through: one MARKET close of the 5
+    stop_cids = {s.client_order_id for s in legs(e, t, Leg.STOP)}
+    assert stop_cids == {first.client_order_id, second.client_order_id}
+    (close,) = legs(e, t, Leg.EXIT)
+    assert (close.quantity, close.order_type) == (D(5), OrderType.MARKET)
+    b.fill(close.client_order_id, D(5), D("9.70"))
+    drive(e, b, 3)
+    assert e.trade(t).state is TradeState.CLOSED and held(b) == 0
+    assert_single_sends(b)
+
+
+def test_stops_that_change_before_the_release_end_the_reduce_unsent(store):
+    b, e, t = scaled(store)
+    first, second = legs(e, t, Leg.STOP)
+    assert e.request_reduce(t, D(5), "x")
+    b.fill(first.client_order_id, D(2), D("9.80"))  # stops now 3 + 5, holds 8: release 5
+    b.fill(second.client_order_id, D(1), D("9.80"))  # stops 3 + 4, holds 7: no exact 5
+    drive(e, b, 4)
     assert e.trade(t).reduce_state is ReduceState.DONE
-    assert working_stops(b) == D(5) == held(b)
+    assert legs(e, t, Leg.EXIT) == []
+    assert working_stops(b) == D(7) == held(b) and not has(e, Fence.UNPROTECTED)
+    assert "no live stops cover exactly" in store.journal("reduce-done", t)[0].body["not_sent"]
 
 
 def test_release_picks_stops_that_add_up_exactly():
@@ -173,5 +211,5 @@ def test_release_picks_stops_that_add_up_exactly():
     stops = [stop(1, 3), stop(2, 2), stop(3, 5)]
     assert [s.client_order_id for s in _stops_to_release(stops, D(5))] == ["s1", "s2"]
     assert [s.client_order_id for s in _stops_to_release(stops, D(7))] == ["s3", "s2"]
-    assert [s.client_order_id for s in _stops_to_release(stops, D(4))] == ["s3"]
+    assert _stops_to_release(stops, D(4)) is None  # no exact set: nothing is released
     assert CFG.orders.stop_retry_attempts >= 0

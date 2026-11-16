@@ -307,7 +307,9 @@ class EntryDesk:
                     # Journaled once per trade: the strategy asks again every bar.
                     with self.engine.store.transaction():
                         self.engine.store.append(REDUCE_REFUSED, {
-                            "quantity": decision.quantity, "state": trade.state},
+                            "quantity": decision.quantity, "state": trade.state,
+                            "cause": self.engine.reduce_refusal(trade.trade_id,
+                                                                decision.quantity)},
                             key=trade.trade_id, run_id=self.engine.run_id)
         return self._write(DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission,
                                           cause))

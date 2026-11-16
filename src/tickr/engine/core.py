@@ -54,6 +54,10 @@ class SendState(StrEnum):
     ABSENT = "absent"  # resolved: not in Detail and not in open orders
 
 
+# The exit cause when a kept stop filled while a partial sale's stops were being released.
+STOP_FILLED_DURING_REDUCE = "stop-filled-during-scale-out"
+
+
 class ReduceState(StrEnum):
     """One partial sale of a trade (`request_reduce`)."""
 
@@ -303,15 +307,17 @@ def _stop_pieces(trade: TradeRow, covered: Decimal, quantity: Decimal) -> list[D
     return [split - covered, covered + quantity - split]
 
 
-def _stops_to_release(live: list[OrderRow], amount: Decimal) -> list[OrderRow]:
-    """Stops (placement order) to cancel so that `amount` fewer shares stay covered: stops
-    already being cancelled count first; then the earliest stops if their quantities add up
-    to exactly the rest, else the latest ones, else the largest first until it is reached
-    (a larger release the caller re-protects)."""
+def _stops_to_release(live: list[OrderRow], amount: Decimal) -> list[OrderRow] | None:
+    """Stops (placement order) to cancel so that exactly `amount` fewer shares stay covered:
+    stops already being cancelled count first; then the earliest stops if their quantities
+    add up to exactly the rest, else the latest ones. None when no such set exists: a larger
+    release would leave shares unstopped until a later pass (hard rule 2), so none is made."""
     cancelling = [s for s in live if s.cancelling]
     need = amount - sum((s.open_quantity for s in cancelling), ZERO)
-    if need <= 0:
+    if need == 0:
         return cancelling
+    if need < 0:
+        return None
     keep = [s for s in live if not s.cancelling]
     for ordered in (keep, keep[::-1]):
         total = ZERO
@@ -321,13 +327,7 @@ def _stops_to_release(live: list[OrderRow], amount: Decimal) -> list[OrderRow]:
                 return cancelling + ordered[:index + 1]
             if total > need:
                 break
-    chosen: list[OrderRow] = []
-    for stop in sorted(keep, key=lambda s: s.open_quantity, reverse=True):
-        if need <= 0:
-            break
-        chosen.append(stop)
-        need -= stop.open_quantity
-    return cancelling + chosen
+    return None
 
 
 @dataclass(frozen=True)
@@ -584,21 +584,15 @@ class Engine:
 
     def request_reduce(self, trade_id: str, quantity: Decimal, cause: str) -> bool:
         """Ask to sell `quantity` shares of an open trade at market and keep the rest under
-        its stop (a scale-out). One per trade. Refused (False, nothing recorded) unless the
-        trade is open with no exit asked, no earlier reduce and no refused close, its entry is
-        no longer working, and `quantity` is a whole number below what Detail says is held.
-        The sale goes out once stops for exactly the other shares remain (`_reduce_step`)."""
+        its stop (a scale-out). One per trade. Refused (False, nothing recorded; the cause is
+        `reduce_refusal`) unless the sale is the trade's planned scale-out and its live stops
+        cover what Detail says is held, some of them exactly the shares to sell
+        (`_stops_to_release`): the other shares then stay stopped throughout. The sale goes
+        out once those stops have ended (`_reduce_step`)."""
         with self.store.transaction():
-            trade = self.trade(trade_id)
-            orders = self.orders(trade_id)
-            expected = self.expected_quantity(orders)
-            if (trade.state is not TradeState.OPEN or trade.exit_requested is not None
-                    or trade.reduce_state is not None
-                    or self._has_fence(Fence.EXIT_REFUSED, trade_id)
-                    or any(o.live for o in orders if o.leg is Leg.ENTRY)
-                    or not ZERO < quantity < expected
-                    or quantity != quantity.to_integral_value()):
+            if self.reduce_refusal(trade_id, quantity) is not None:
                 return False
+            expected = self.expected_quantity(self.orders(trade_id))
             self.store.execute(
                 "UPDATE trades SET reduce_quantity = ?, reduce_cause = ?, reduce_state = ? "
                 "WHERE trade_id = ?", (str(quantity), cause, ReduceState.REQUESTED, trade_id))
@@ -606,6 +600,32 @@ class Engine:
                                                    "held": expected},
                               key=trade_id, run_id=self.run_id)
         return True
+
+    def reduce_refusal(self, trade_id: str, quantity: Decimal) -> str | None:
+        """Why `request_reduce(trade_id, quantity)` is refused now, or None if it is taken."""
+        trade = self.trade(trade_id)
+        orders = self.orders(trade_id)
+        expected = self.expected_quantity(orders)
+        live = [o for o in orders if o.leg is Leg.STOP and o.live]
+        if trade.state is not TradeState.OPEN or trade.exit_requested is not None:
+            return f"trade is {trade.state}" + (", exit asked" if trade.exit_requested else "")
+        if trade.reduce_state is not None:
+            return "a partial sale was already asked for this trade"
+        if self._has_fence(Fence.EXIT_REFUSED, trade_id):
+            return "an earlier close was refused"
+        if any(o.live for o in orders if o.leg is Leg.ENTRY):
+            return "the entry is still working"
+        if trade.scale_out_quantity is None or quantity != trade.scale_out_quantity:
+            return f"{quantity} is not the planned scale-out ({trade.scale_out_quantity})"
+        if not ZERO < quantity < expected:
+            return f"holds {expected}, selling {quantity} would leave nothing"
+        covered = sum((s.open_quantity for s in live), ZERO)
+        if any(s.cancelling for s in live) or covered != expected:
+            return f"live stops cover {covered} of {expected}"
+        if _stops_to_release(live, quantity) is None:
+            return (f"no live stops cover exactly {quantity}: "
+                    f"{' + '.join(str(s.open_quantity) for s in live)}")
+        return None
 
     def _set_reduce(self, trade: TradeRow, state: ReduceState, body: dict[str, Any]) -> None:
         """Inside or outside a transaction: move the trade's partial sale to `state`."""
@@ -1222,8 +1242,8 @@ class Engine:
         under their stops all along), then one MARKET SELL for them, never resent. Stops are
         released only after this process read their Detail (as for a close); the sale goes
         out only once Detail shows them ended and the broker position agrees with Detail.
-        When no set of stops matches exactly, the smallest larger set is released and the
-        shares beyond the sale are stopped again at once by `_protect`."""
+        When no set of stops matches exactly any more, nothing is released and the reduce
+        ends unsent."""
         assert trade.reduce_quantity is not None
         sales = self._reduce_sales(trade, exits)
         if trade.reduce_state is ReduceState.SENT:
@@ -1239,8 +1259,18 @@ class Engine:
             self._protect(trade, stops, expected)
             return
         target = expected - trade.reduce_quantity
-        refusal = (f"holds {expected}, selling {trade.reduce_quantity} would leave nothing"
-                   if target <= 0 else self.close_refusal())
+        if target <= 0:
+            # A kept stop filled while the sale's stops were being released: the price traded
+            # through the stop, so the released shares are not stopped again at it (Webull's
+            # answer to a sell stop above the market is unproven). They are closed at market
+            # by the exit (`_exit_step`); the fact is journaled first.
+            with self.store.transaction():
+                self._set_reduce(trade, ReduceState.DONE, {
+                    "not_sent": f"a kept stop filled; holds {expected}, closing at market"})
+                if expected > 0:
+                    self.exit_request_row(trade.trade_id, STOP_FILLED_DURING_REDUCE)
+            return
+        refusal = self.close_refusal()
         if refusal is not None:
             with self.store.transaction():
                 self._set_reduce(trade, ReduceState.DONE, {"not_sent": refusal})
@@ -1254,7 +1284,14 @@ class Engine:
         live_stops = [s for s in stops if s.live]
         covered = sum((s.open_quantity for s in live_stops), ZERO)
         if covered > target:
-            for stop in _stops_to_release(live_stops, covered - target):
+            release = _stops_to_release(live_stops, covered - target)
+            if release is None:  # the stops changed (a partial stop fill, say): no exact set
+                with self.store.transaction():
+                    self._set_reduce(trade, ReduceState.DONE, {
+                        "not_sent": f"no live stops cover exactly {covered - target}"})
+                self._protect(trade, stops, expected)
+                return
+            for stop in release:
                 if stop.client_order_id in self._detail_answered_ids:
                     self._cancel(stop)
             return  # the sale waits until Detail shows the released stops ended
