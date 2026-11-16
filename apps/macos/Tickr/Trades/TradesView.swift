@@ -11,11 +11,16 @@ struct TradesView: View {
   @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
   @State private var selection: DayTrade.ID?
 
-  /// Narrowest screen, in points, that shows the days column beside the trades: the column, the
-  /// four figures of the day at full size and the trades table's columns at their least widths
-  /// (the selected trade beside Not taken needs less). Narrower, the days follow the trades (the
-  /// toolbar's day picker stays at the top).
-  static let sideBySideMinWidth: CGFloat = 1180
+  /// Narrowest screen, in points, that shows the days column beside the trades: the screen's
+  /// padding, the days column and its gap, and the day column's widest part, the trades table at
+  /// its least width inside its card (the four figures of the day and the selected trade beside
+  /// Not taken need less). Narrower, the days follow the trades (the toolbar's day picker stays
+  /// at the top). Derived, not set: a set 1180 left the table 6 points short of its columns, so
+  /// the columns were cut to "10:07:…". The screen's padding is `Space.xl`, the gap and a card's
+  /// own padding `Space.l`.
+  static let sideBySideMinWidth: CGFloat = Tokens.Space.xl * CardArrangement.paddedEdges
+    + Tokens.Size.sideColumn + Tokens.Space.l + Tokens.Space.l * CardArrangement.paddedEdges
+    + TradesTable.leastWidth
   /// Width of the selected trade's card beside Not taken, in points.
   static let detailWidth: CGFloat = 330
 
@@ -337,29 +342,47 @@ private struct TradesTable: View {
   @Binding var selection: DayTrade.ID?
   let showOnChart: (String) -> Void
 
-  /// Least and preferred widths of the table's columns, in points: the least keeps a time, a
-  /// symbol, a price or a figure whole in a narrow window; the preferred share out a wide one.
+  /// Least and preferred widths of the table's columns, in points. Each least width holds the
+  /// column's widest content and its heading whole, in English and Russian (measured in the
+  /// table's fonts: values in 12-point mono, headings and badges in 10-point mono; a heading cell
+  /// keeps a few points of inset, a value cell none); the preferred widths share out a wide table.
   private enum Column {
-    /// Least and preferred width of each column, in points: the preferred widths (with the
-    /// table's cell spacing) add up to what the day column leaves the table beside the side
-    /// column, so every column shows without scrolling.
-    static let timeMin: CGFloat = 56
-    static let time: CGFloat = 60
-    static let symbolMin: CGFloat = 52
+    /// "10:07:00" (59.3).
+    static let timeMin: CGFloat = 60
+    static let time: CGFloat = 64
+    /// A five-letter symbol such as "BRK.B" and the heading "SYMBOL" (37.1 each).
+    static let symbolMin: CGFloat = 40
     static let symbol: CGFloat = 56
-    static let quantityMin: CGFloat = 32
-    static let quantity: CGFloat = 40
+    /// The Russian heading "КОЛ-ВО" (37.1, and the header cell's own inset: at 38 it read
+    /// "КОЛ-…"); a four-digit quantity takes 29.7.
+    static let quantityMin: CGFloat = 46
+    static let quantity: CGFloat = 48
+    /// A four-digit price "1234.56" (51.9).
     static let priceMin: CGFloat = 52
     static let price: CGFloat = 58
-    /// The reason badge's column holds the widest exit reason whole, the Russian "ЗАКРЫТО
-    /// ОПЕРАТОРОМ" (it ran into the R column at 96).
-    static let reasonMin: CGFloat = 144
-    static let reason: CGFloat = 150
-    static let figureMin: CGFloat = 48
-    static let figure: CGFloat = 52
-    static let moneyMin: CGFloat = 72
+    /// The reason badge with the widest exit reason, the Russian "ВРЕМЯ УДЕРЖАНИЯ ВЫШЛО" (129.8
+    /// and the badge's padding, 146).
+    static let reasonMin: CGFloat = 148
+    static let reason: CGFloat = 152
+    /// "−10.0 R" (51.9).
+    static let figureMin: CGFloat = 52
+    static let figure: CGFloat = 56
+    /// "−$1,234.56" (74.2).
+    static let moneyMin: CGFloat = 76
     static let money: CGFloat = 80
+    /// The least widths of the nine columns in the table's order.
+    static let leastWidths = [timeMin, symbolMin, quantityMin, priceMin, priceMin, priceMin, reasonMin, figureMin, moneyMin]
   }
+
+  /// AppKit's table layout around the columns, in points (measured with Accessibility on macOS
+  /// 27): the inset at each edge of the table and the gap between two cells.
+  static let edgeInset: CGFloat = 16
+  static let cellSpacing: CGFloat = 17
+
+  /// Width the table needs for every column at its least width, in points: below it the columns
+  /// are cut.
+  static let leastWidth: CGFloat = Column.leastWidths.reduce(0, +)
+    + cellSpacing * CGFloat(Column.leastWidths.count - 1) + edgeInset * CardArrangement.paddedEdges
 
   /// Height of the "no trades" message in place of the table, in points.
   static let emptyHeight: CGFloat = 280
