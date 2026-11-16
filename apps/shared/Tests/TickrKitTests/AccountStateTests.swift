@@ -31,4 +31,27 @@ import Testing
     let stale = text.replacingOccurrences(of: "\"stale\": false", with: "\"stale\": true")
     #expect(try response(text).state != response(stale).state)
   }
+
+  @Test func accountValues() throws {
+    let fresh = try Wire.decoder().decode(AccountResponseV1.self, from: fixture("account-response-v1.json"))
+    #expect(!fresh.stale)
+    #expect(fresh.account.matchesRecords)
+    #expect(fresh.account.mismatch == nil)
+    let balances = try #require(fresh.account.balances)
+    #expect(balances.equityUsd.text == "100123.40")
+    #expect(balances.buyingPowerUsd.text == "400493.60")
+    #expect(balances.dayPlUsd.text == "-1.00")
+    #expect(balances.marginCalls == 0)
+    #expect(balances.dayTradesLeft == nil)
+    #expect(fresh.account.accountLabel == "Individual Margin")
+    #expect(fresh.account.orders.first?.stopPrice?.text == "11.90")
+    let stale = try Wire.decoder().decode(AccountResponseV1.self, from: fixture("account-response-v1.stale.json"))
+    #expect(stale.stale)
+    #expect(!stale.account.matchesRecords)
+    #expect(stale.account.positions.last?.avgPrice == nil)
+    #expect(stale.account.orders.map(\.ours) == [true, false])
+    #expect(stale.account.orders.last?.limitPrice?.text == "19.80")
+    #expect(stale.account.balances == nil)
+    #expect(stale.account.accountLabel == nil)
+  }
 }

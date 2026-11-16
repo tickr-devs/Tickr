@@ -8,11 +8,16 @@ from datetime import timedelta
 from decimal import Decimal as D
 
 from tickr.api import contract as api
-from tickr.broker.base import BrokerError
+from tickr.broker.base import AccountBalance, BrokerError
 from tickr.broker.fake import FakeBroker
 from tickr.engine.core import BrokerView, Fence, TradeState
 from tickr.runtime import entries, service
-from tickr.runtime.account import NOT_AGREED, RECONCILE_CHECKED, record_reconcile
+from tickr.runtime.account import (
+    BALANCE_READ_FAILED,
+    NOT_AGREED,
+    RECONCILE_CHECKED,
+    record_reconcile,
+)
 from tickr.types import OrderDetail, OrderState, OrderType, Position, Side
 
 from .test_service import CFG, ROOT, Bot, opened
@@ -34,7 +39,8 @@ def test_bot_writes_what_reconciliation_read(tmp_path):
     assert bot.run(2)
     doc = read(bot)
     assert doc.matches_records and doc.mismatch is None
-    assert (doc.equity_usd, doc.buying_power_usd) == (None, None)  # the adapter reads no balance
+    assert (doc.equity_usd, doc.buying_power_usd) == (None, None)  # no balance scripted
+    assert doc.balance_read_at is None and doc.cash_usd is None
     assert doc.positions == (api.AccountPosition("ABC", D(2), D(10)),)
     (stop,) = doc.orders
     assert (stop.symbol, stop.side, stop.type, stop.status, stop.quantity, stop.ours) == (
@@ -221,3 +227,81 @@ def test_the_loop_records_reconcile_rows_but_not_after_a_failed_read(tmp_path):
     failing = Bot(tmp_path / "failing", broker=broker)
     failing.run(3)
     assert _checked(failing) == []
+
+
+FUNDS = AccountBalance(net_liquidation=D("1000.50"), cash=D("980.50"), market_value=D("20"),
+                       unrealized_profit_loss=D("0.40"), day_profit_loss=D("-1.10"),
+                       day_buying_power=D("4002"), overnight_buying_power=D("2001"),
+                       maintenance_margin=D("5"), margin_calls=0, day_trades_left=None)
+
+
+def balance_rows(bot: Bot) -> list:
+    return bot.engine.store.query("SELECT body FROM journal WHERE kind = ?",
+                                  (BALANCE_READ_FAILED,))
+
+
+def test_the_balance_and_account_kind_reach_the_document(tmp_path):
+    broker = FakeBroker(funds=FUNDS, account_label="Individual Margin")
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    doc = read(bot)
+    assert (doc.equity_usd, doc.buying_power_usd) == (D("1000.50"), D("4002"))
+    assert (doc.cash_usd, doc.positions_value_usd) == (D("980.50"), D("20"))
+    assert (doc.unrealized_pl_usd, doc.day_pl_usd) == (D("0.40"), D("-1.10"))
+    assert (doc.overnight_buying_power_usd, doc.maintenance_margin_usd) == (D("2001"), D("5"))
+    assert (doc.margin_calls, doc.day_trades_left) == (0, None)
+    assert doc.account_label == "Individual Margin"
+    assert doc.balance_read_at == bot.now
+
+
+def test_the_balance_is_read_at_most_once_per_interval(tmp_path):
+    broker = FakeBroker(funds=FUNDS)
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    interval = CFG.orders.balance_read_seconds
+    bot.service.write_account()
+    first = bot.now
+    bot.now += timedelta(seconds=float(interval) - 1)
+    bot.service.write_account()
+    assert broker.balance_reads == 1
+    assert read(bot).balance_read_at == first  # the document says how old the balance is
+    bot.now += timedelta(seconds=1)
+    bot.service.write_account()
+    assert broker.balance_reads == 2 and read(bot).balance_read_at == bot.now
+
+
+def test_a_failed_balance_read_keeps_the_last_one_and_is_journaled_once(tmp_path):
+    broker = FakeBroker(funds=FUNDS)
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    good = bot.now
+    broker.funds = None  # every read fails from now on
+    for _ in range(3):
+        bot.now += timedelta(seconds=float(CFG.orders.balance_read_seconds))
+        bot.service.write_account()
+    doc = read(bot)
+    assert doc.equity_usd == D("1000.50") and doc.balance_read_at == good
+    assert doc.read_at == bot.now  # positions and orders stay current
+    assert len(balance_rows(bot)) == 1
+    assert not bot.engine.fences()  # display only: nothing blocks trading
+    broker.funds = FUNDS
+    bot.now += timedelta(seconds=float(CFG.orders.balance_read_seconds))
+    bot.service.write_account()
+    broker.funds = None
+    bot.now += timedelta(seconds=float(CFG.orders.balance_read_seconds))
+    bot.service.write_account()
+    assert len(balance_rows(bot)) == 2  # a new stretch of failures
+
+
+def test_an_open_limit_order_shows_its_limit_price(tmp_path):
+    broker = FakeBroker()
+    broker.orders["manual-2"] = OrderDetail("manual-2", "XYZ", Side.BUY, OrderType.LIMIT, D(5),
+                                            D(0), None, OrderState.ACCEPTED, "SUBMITTED",
+                                            limit_price=D("4.25"))
+    bot = with_account(Bot(tmp_path, broker=broker), tmp_path)
+    bot.engine.recover()
+    bot.service.write_account()
+    (order,) = read(bot).orders
+    assert order.limit_price == D("4.25")

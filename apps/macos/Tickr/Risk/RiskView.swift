@@ -878,9 +878,10 @@ private struct SessionCard: View {
   static let dash = "\u{2013}"
 }
 
-/// The broker account at the bot's last read, as the design's list: balances (once the bot reads
-/// them), then positions and open orders as the broker reports them. The broker is the source of
-/// truth; whether they match the bot's records is on the reconciliation card.
+/// The broker account at the bot's last read, as the design's list: balances, then positions and
+/// open orders as the broker reports them. The broker is the source of truth; whether they match
+/// the bot's records is on the reconciliation card. Balances are display only: the bot's limits
+/// are its settings, never these numbers.
 private struct AccountCard: View {
   @Environment(AppModel.self) private var model
 
@@ -889,8 +890,10 @@ private struct AccountCard: View {
 
   var body: some View {
     Card(L10n.Risk.account, tint: tint, trailing: {
-      Badge(L10n.Risk.accountBacklog, tone: .highlight, planned: true)
-        .help(Text(L10n.Planned.backlogHelp))
+      if let label = model.account?.account.accountLabel {
+        Badge(verbatim: label, color: Palette.textSecondary)
+          .help(Text(L10n.Risk.accountKindHelp))
+      }
     }, content: {
       if let response = model.account {
         content(response)
@@ -912,10 +915,11 @@ private struct AccountCard: View {
   private func content(_ response: AccountResponseV1) -> some View {
     let account = response.account
     return VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      balance(L10n.Risk.equity, account.equityUsd, font: Self.equityFont)
-      balance(L10n.Risk.buyingPower, account.buyingPowerUsd, font: Tokens.Typography.bodyMono.bold(),
-        color: Palette.accentText)
-      if account.equityUsd == nil || account.buyingPowerUsd == nil {
+      if let balances = account.balances {
+        balanceRows(balances, readAt: account.balanceReadAt)
+      } else {
+        balance(L10n.Risk.equity, nil, font: Self.equityFont)
+        balance(L10n.Risk.buyingPower, nil, font: Self.figureFont)
         Footnote(L10n.Risk.balanceNote)
       }
       SectionHeader(Text(L10n.Risk.brokerPositions)) { note(L10n.Risk.positionsColumns) }
@@ -957,6 +961,8 @@ private struct AccountCard: View {
         .lineLimit(1)
         .minimumScaleFactor(Tokens.Shrink.standard)
       }
+      PlannedLine(text: L10n.Risk.accountPlanned)
+        .padding(.top, Tokens.Space.xs)
       Spacer(minLength: 0)
       Text(L10n.Risk.readAt(Format.marketTime(account.readAt.date), Format.wholeSeconds(response.ageSeconds.value)))
         .font(Tokens.Typography.annotation)
@@ -976,9 +982,32 @@ private struct AccountCard: View {
       .foregroundStyle(Palette.textQuaternary)
   }
 
-  /// A balance row with a hairline below, as the design draws them.
+  /// The other balance figures: one size below equity.
+  static let figureFont = Tokens.Typography.bodyMono.bold()
+
+  /// The balance rows of a read, then the account's margin facts in one line.
+  @ViewBuilder
+  private func balanceRows(_ b: AccountBalances, readAt: WireTime?) -> some View {
+    balance(L10n.Risk.equity, b.equityUsd, font: Self.equityFont)
+    balance(L10n.Risk.cash, b.cashUsd, font: Self.figureFont)
+    balance(L10n.Risk.buyingPower, b.buyingPowerUsd, font: Self.figureFont, color: Palette.accentText)
+    balance(L10n.Risk.overnightBuyingPower, b.overnightBuyingPowerUsd, font: Self.figureFont)
+    balance(L10n.Risk.positionsValue, b.positionsValueUsd, font: Self.figureFont)
+    balance(L10n.Risk.unrealized, b.unrealizedPlUsd, font: Self.figureFont, signed: true)
+    balance(L10n.Risk.dayResult, b.dayPlUsd, font: Self.figureFont, signed: true)
+    Text(L10n.Risk.marginLine(
+      b.dayTradesLeft.map { String($0) } ?? String(localized: L10n.Risk.noLimit),
+      String(b.marginCalls), Format.usd(b.maintenanceMarginUsd.value),
+      Format.marketTime(readAt?.date)))
+      .font(Tokens.Typography.annotation)
+      .foregroundStyle(b.marginCalls > 0 ? Palette.warningText : Palette.textQuaternary)
+  }
+
+  /// A balance row with a hairline below, as the design draws them. `signed`: a result, shown
+  /// with its sign and coloured as a gain or a loss.
   private func balance(
-    _ label: LocalizedStringResource, _ value: DecimalString?, font: Font, color: Color = Palette.textPrimary
+    _ label: LocalizedStringResource, _ value: DecimalString?, font: Font, color: Color = Palette.textPrimary,
+    signed: Bool = false
   ) -> some View {
     HStack(alignment: .firstTextBaseline) {
       Text(label)
@@ -988,13 +1017,15 @@ private struct AccountCard: View {
       Group {
         if let value {
           // Counts up as it appears and on to each new balance the broker reports.
-          CountingText(NSDecimalNumber(decimal: value.value).doubleValue) { Format.usd(Decimal($0)) }
+          CountingText(NSDecimalNumber(decimal: value.value).doubleValue) {
+            signed ? Money.signedUSD(Decimal($0)) : Format.usd(Decimal($0))
+          }
         } else {
           Text(verbatim: Format.missing)
         }
       }
       .font(font)
-      .foregroundStyle(value == nil ? Palette.textQuaternary : color)
+      .foregroundStyle(value.map { signed ? Palette.result($0.value) : color } ?? Palette.textQuaternary)
     }
     .padding(.vertical, Tokens.Space.xxs)
     .overlay(alignment: .bottom) {
