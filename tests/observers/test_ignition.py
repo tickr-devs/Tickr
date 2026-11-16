@@ -167,7 +167,7 @@ def test_each_trail_exits_at_the_bid_and_the_flat_ends_the_rest(tmp_path):
     assert [(e["trail_percent"], e["exit_bid"], e["cause"], e["main"]) for e in exits] == [
         ("10", "1.34", ig.TRAIL, False), ("20", "1.19", ig.TRAIL, True)]
     assert exits[1]["result_percent"] == "-5.56"  # 1.19 / 1.26 - 1
-    assert exits[1]["result_usd"] == "-138.89" and exits[1]["high_bid"] == "1.50"
+    assert exits[1]["result_usd"] == "-55.56" and exits[1]["high_bid"] == "1.50"  # on $1,000
     assert exits[1]["quotes"] == {"stream": 5, "snapshot": 1}
     assert world.obs.watching() == {SYM}  # the 30% trail is still out
     flat = DAY.before_close(RULES.flat_minutes_before_close)
