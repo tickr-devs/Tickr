@@ -931,8 +931,6 @@ private struct AccountCard: View {
             .foregroundStyle(position.unrealizedPlUsd.map { Palette.result($0.value) } ?? Palette.textQuaternary)
         }
         .font(Tokens.Typography.calloutMono)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       }
       SectionHeader(Text(L10n.Risk.brokerOrders)) { note(L10n.Risk.ordersOpen) }
         .padding(.top, Tokens.Space.xs)
@@ -978,8 +976,6 @@ private struct AccountCard: View {
           }
         }
         .font(Tokens.Typography.calloutMono)
-        .lineLimit(1)
-        .minimumScaleFactor(Tokens.Shrink.standard)
       }
       Spacer(minLength: 0)
       Text(L10n.Risk.readAt(Format.marketTime(account.readAt.date), Format.wholeSeconds(response.ageSeconds.value)))
