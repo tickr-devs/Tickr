@@ -329,6 +329,26 @@ def test_the_flatten_of_split_stops_leaves_shares_bare_for_one_cancel_read(tmp_p
     assert steps * POLL <= slots * STOPS * 2 * POLL <= WINDOW
 
 
+@pytest.mark.parametrize("fill_delay", [0, 2])
+def test_three_stops_per_position_flatten_as_fast_when_closes_fill_at_once(tmp_path,
+                                                                          fill_delay):
+    """Entries filled 3 + 7 with a scale-out hold three stops each. A close that fills at
+    once moves the position, but that move is our own close: the symbol's other stops are
+    not read ahead of its cancel, so instant fills are no slower than late ones."""
+    desk = Desk(tmp_path, wide(MAX, max_daily_loss_usd=D(MAX * 10)))
+    for symbol in SYMBOLS:
+        assert desk.enter(symbol, scale_out=D(4)).admission == "taken"
+        entry = desk.engine.orders(desk.trade_of(symbol).trade_id)[0]
+        for piece in (D(3), D(7)):
+            desk.broker.fill(entry.client_order_id, piece, D("10.05"))
+            desk.step(3)
+    desk.step(2 * MAX)
+    assert {len([s for s in desk.stops(x) if s.live]) for x in SYMBOLS} == {3}
+    steps, worst = flatten(desk, fill_delay)
+    assert worst <= 3  # three stops, one poll each
+    assert steps <= MAX * 3 + 3
+
+
 def test_with_one_slot_an_entry_filling_in_pieces_fills_to_its_size(tmp_path):
     """Owner 2026-11-17: the stop cap applies only with several slots. With one, an entry
     filling 1 + 2 + 3 + 4 ends holding all 10, each piece under its stop."""
