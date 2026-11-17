@@ -280,7 +280,7 @@ def bare_shares(broker: FakeBroker) -> dict[str, D]:
     return {p.symbol: p.quantity - covered.get(p.symbol, D(0)) for p in broker.positions()}
 
 
-def flatten(desk: Desk, fill_delay: int) -> tuple[int, int]:
+def flatten(desk: Desk, fill_delay: int, symbols: list[str] = SYMBOLS) -> tuple[int, int]:
     """Request the session flatten of every trade; closes fill `fill_delay` polls after they
     are sent. Returns the polls until the broker is flat and the most consecutive polls any
     symbol had bare shares."""
@@ -301,7 +301,7 @@ def flatten(desk: Desk, fill_delay: int) -> tuple[int, int]:
             if order is not None and not order.state.terminal and steps - at >= fill_delay:
                 desk.broker.fill(cid, order.quantity - order.filled_quantity, D("10.00"))
         bare = bare_shares(desk.broker)
-        for symbol in SYMBOLS:
+        for symbol in symbols:
             streak[symbol] = streak.get(symbol, 0) + 1 if bare.get(symbol, D(0)) > 0 else 0
             worst = max(worst, streak[symbol])
         assert steps <= 4 * MAX * STOPS, "the flatten did not finish"
@@ -347,6 +347,29 @@ def test_three_stops_per_position_flatten_as_fast_when_closes_fill_at_once(tmp_p
     steps, worst = flatten(desk, fill_delay)
     assert worst <= 3  # three stops, one poll each
     assert steps <= MAX * 3 + 3
+
+
+@pytest.mark.parametrize("fill_delay", [0, 1, 2])
+@pytest.mark.parametrize("pieces", [8, 10])
+def test_at_one_slot_a_position_with_many_stops_flattens_in_two_polls_per_stop(tmp_path,
+                                                                              pieces,
+                                                                              fill_delay):
+    """One slot (no stop cap): an entry filled one share per observation holds a stop per
+    piece. Each close of ours moves the position, which must not put the other stops' reads
+    ahead of the waiting cancel: the flatten takes at most two polls per stop, and the
+    shares are bare for one poll per stop at most, whatever the closes' fill delay."""
+    desk = Desk(tmp_path, wide(1))
+    assert desk.enter("AAA", quantity=D(pieces)).admission == "taken"
+    entry = desk.engine.orders(desk.trade_of("AAA").trade_id)[0]
+    for _ in range(pieces):
+        desk.broker.fill(entry.client_order_id, D(1), D("10.05"))
+        desk.step(3)
+    desk.step(6)
+    stops = len([s for s in desk.stops("AAA") if s.live])
+    assert stops >= 7
+    steps, worst = flatten(desk, fill_delay, ["AAA"])
+    assert steps <= 2 * stops
+    assert worst <= stops
 
 
 def test_with_one_slot_an_entry_filling_in_pieces_fills_to_its_size(tmp_path):
