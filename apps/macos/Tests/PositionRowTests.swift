@@ -66,4 +66,18 @@ struct BarCurrentTests {
     #expect(!fresh.isStale)
     #expect(fresh.unrealized == fresh.latestUnrealized)
   }
+
+  @Test("The live bid is the price over any bar: result, R and the line follow it, and it is never stale")
+  func livePrice() throws {
+    let position = try #require(try fixture(StatusResponseV1.self, "status-response-v1.json").status?.position)
+    let live = try #require(LivePrice(position: position, stream: .fresh, statusStale: false))
+    let close = position.entryPrice.value
+    let row = PositionRow(position: position, lastBarClose: nil, lastBarAt: Date(), closes: [close],
+      latestClose: close, live: live)
+    #expect(row.price == live.bid)
+    #expect(!row.isStale)
+    #expect(row.unrealized == (live.bid - row.entry) * row.quantity)
+    #expect(row.resultR == Risk.multiple(entry: row.entry, stop: row.stop, price: live.bid))
+    #expect(row.line == [close, live.bid])
+  }
 }

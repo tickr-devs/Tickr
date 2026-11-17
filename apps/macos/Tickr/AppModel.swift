@@ -63,17 +63,25 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   public let closes: [Decimal]
   /// Close of the newest captured bar however old it is; shown as history when it is not fresh.
   public var latestClose: Decimal?
+  /// The live bid of the bot's quote stream (`LivePrice`); nil without one, and then the price is
+  /// the fresh bar's close.
+  public var live: LivePrice?
+
+  /// The position's current price: the live bid, else the close of a fresh captured bar.
+  public var price: Decimal? { live?.bid ?? lastBarClose }
+  /// The small chart's line: the closes, ending at the live bid when there is one.
+  public var line: [Decimal] { closes + (live.map { [$0.bid] } ?? []) }
 
   public var id: String { position.symbol }
   public var entry: Decimal { position.entryPrice.value }
   public var stop: Decimal? { position.stop.price?.value }
   public var quantity: Decimal { position.quantity.value }
 
-  public var unrealized: Decimal? { lastBarClose.map { ($0 - entry) * quantity } }
+  public var unrealized: Decimal? { price.map { ($0 - entry) * quantity } }
   /// Result at the newest captured bar, fresh or not.
   public var latestUnrealized: Decimal? { latestClose.map { ($0 - entry) * quantity } }
   /// The newest bar is too old to be the current price: figures are shown greyed, as of its time.
-  public var isStale: Bool { lastBarClose == nil && latestClose != nil }
+  public var isStale: Bool { price == nil && latestClose != nil }
   /// What the bot did to the position, as its OPEN tag's dot marks it: a fill (the quantity), a
   /// stop placed, verified or moved. A change is one pulse; a newer price is not an event.
   public var event: PositionEvent {
@@ -81,7 +89,7 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   }
 
   public var resultR: Decimal? {
-    guard let last = lastBarClose else { return nil }
+    guard let last = price else { return nil }
     return Risk.multiple(entry: entry, stop: stop, price: last)
   }
   /// R at the newest captured bar, fresh or not.
@@ -315,7 +323,8 @@ public final class AppModel {
       let last = read.last
       let fresh = last.map { barIsFresh(start: $0.start.date, now: botNow) } ?? false
       return PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
-        closes: [position.entryPrice.value] + bars.map(\.close.value), latestClose: last?.close.value)
+        closes: [position.entryPrice.value] + bars.map(\.close.value), latestClose: last?.close.value,
+        live: LivePrice(position: position, stream: status.freshness.stream, statusStale: response?.stale ?? true))
     }
   }
 

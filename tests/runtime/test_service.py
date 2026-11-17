@@ -235,6 +235,25 @@ def test_flatten_command_closes_through_the_exit_path(tmp_path):
     assert done.strategy is None  # opened by hand here: no strategy journaled
 
 
+def test_an_open_position_carries_its_live_stream_quote_in_the_status_file(tmp_path):
+    from tickr.types import Quote
+
+    bot = Bot(tmp_path)
+    opened(bot)
+    market = StubMarket()
+    bot.service.market = market  # type: ignore[assignment]
+    bot.service.write_status()
+    assert bot.status().position.quote is None  # no quote on the stream yet
+    quoted = bot.now - timedelta(seconds=1)
+    market.inbox.on_quote(Quote("ABC", D("10.10"), D("10.12"), D(100), D(200), quoted, bot.now))
+    bot.service.write_status()
+    (position,) = bot.status().positions
+    assert position.quote == api.PositionQuote(D("10.10"), D("10.12"), quoted, bot.now)
+    market.inbox.on_quote(Quote("ABC", D("10.13"), D("10.12"), D(1), D(1), bot.now, bot.now))
+    bot.service.write_status()
+    assert bot.status().position.quote is None  # crossed: not a valid quote, never shown
+
+
 def test_a_closed_trade_in_status_names_the_strategy_that_opened_it(tmp_path):
     bot = Bot(tmp_path)
     t = bot.engine.open_trade("ABC", D(2), D(10), D("9.80"), D(1),

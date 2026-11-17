@@ -682,8 +682,16 @@ class Service:
             entry, cause = self._entry_send(trade.trade_id, final=False)
             found.append(api.Position(trade.symbol, quantity, entry_price,
                                       self._opened_at(trade.trade_id), self._stop(trade, stops),
-                                      entry, cause))
+                                      entry, cause, quote=self._position_quote(trade.symbol)))
         return tuple(found)
+
+    def _position_quote(self, symbol: str) -> api.PositionQuote | None:
+        """The stream's newest quote of `symbol` for display; None without a market or a valid
+        quote (a bid above zero and not above the ask)."""
+        quote = self.market.inbox.latest(symbol) if self.market is not None else None
+        if quote is None or not ZERO < quote.bid <= quote.ask:
+            return None
+        return api.PositionQuote(quote.bid, quote.ask, quote.provider_time, quote.receipt_time)
 
     def _daily_money(self) -> tuple[Decimal | None, Decimal, Decimal | None]:
         """(net realized loss today, open reservations, room) as admission computes them;

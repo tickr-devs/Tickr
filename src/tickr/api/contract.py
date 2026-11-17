@@ -241,6 +241,17 @@ class EntrySend:
 
 
 @dataclass(frozen=True)
+class PositionQuote:
+    """The newest L1 quote of a position's symbol on the bot's quote stream, as the bot held it
+    when it wrote the status. Display only: the bot's decisions read the stream themselves."""
+
+    bid: Decimal
+    ask: Decimal
+    quoted_at: datetime  # the provider's time of the quote
+    received_at: datetime  # when the bot received it
+
+
+@dataclass(frozen=True)
 class Position:
     symbol: str
     quantity: Decimal
@@ -251,6 +262,9 @@ class Position:
     entry_cause: str | None  # why a field of `entry` is null; null when none is
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
+    # Added after v1 shipped (2026-11-17): the live quote of the symbol, null while the
+    # stream holds no valid quote for it (bid above zero and not above the ask).
+    quote: PositionQuote | None = _added_later(None)
 
 @dataclass(frozen=True)
 class Trade:

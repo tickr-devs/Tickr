@@ -351,6 +351,14 @@ shipped: a reader takes a document without them as `null`.
 Every `positions` element (so also `position`) and every `trades_today` entry has `entry` and
 `entry_cause`, the first link of the protection chain (see "Entry send" below).
 
+Every `positions` element also has `quote`: the newest L1 quote of its symbol on the bot's quote
+stream when the bot wrote the status (`{bid, ask, quoted_at, received_at}`: the provider's time
+and the bot's receipt time), `null` while the stream holds no valid quote for it (a bid above
+zero and not above the ask). The status is written every loop pass, so this is the live price of
+the position; the apps show the position's price and unrealized result at `bid`, what the
+position would sell at. Display only. Added after version 1 shipped (2026-11-17): a reader takes
+a position without it as `null`.
+
 ### GET /account
 
 `account` is the bot's `account-v1` document, written (temp file + fsync + rename, like status)

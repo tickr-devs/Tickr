@@ -57,4 +57,53 @@ struct PositionMarksTests {
     #expect(marks.closes == [10, Decimal(string: "10.80")!])
     #expect(PositionMarks(bars: bars, entry: 10, stop: 9, quantity: 1, openedAt: try time(5)) == nil)
   }
+
+  @Test("The live bid replaces the last close: result, R and extremes follow it, the line ends at it")
+  func live() throws {
+    let bars = [try bar(1, low: "9.80", high: "10.20", close: "10.10")]
+    let marks = try #require(PositionMarks(bars: bars, entry: 10, stop: Decimal(string: "9.50"), quantity: 100,
+      openedAt: try time(1)))
+    #expect(!marks.isLive)
+    let position = try fixturePosition()
+    let price = try #require(LivePrice(position: position, stream: .fresh, statusStale: false))
+    #expect(price.bid == Decimal(string: "12.50"))
+    let now = marks.live(price)
+    #expect(now.isLive)
+    #expect(now.last == price.bid)
+    #expect(now.lastAt == price.quotedAt)
+    #expect(now.unrealized == 250)
+    #expect(now.resultR == 5)
+    #expect(now.high == price.bid)
+    #expect(now.favorable == Decimal(string: "2.50"))
+    #expect(now.closes == marks.closes + [price.bid])
+    // Live marks are current whatever the bars' age.
+    #expect(now.isFresh(now: try time(30), staleSeconds: 0))
+    #expect(marks.live(nil) == marks)
+  }
+
+  @Test("No live price from a stale status, a lost or absent stream, or a position without a quote")
+  func noLivePrice() throws {
+    let position = try fixturePosition()
+    #expect(LivePrice(position: position, stream: .quiet, statusStale: false) != nil)
+    #expect(LivePrice(position: position, stream: .fresh, statusStale: true) == nil)
+    #expect(LivePrice(position: position, stream: .lost, statusStale: false) == nil)
+    #expect(LivePrice(position: position, stream: .off, statusStale: false) == nil)
+    // A bot older than the key writes no quote: the position decodes without one.
+    var json = try #require(try JSONSerialization.jsonObject(with: fixture("status-response-v1.json")) as? [String: Any])
+    var status = try #require(json["status"] as? [String: Any])
+    var first = try #require(status["position"] as? [String: Any])
+    first.removeValue(forKey: "quote")
+    status["position"] = first
+    json["status"] = status
+    let older = try Wire.decoder().decode(StatusResponseV1.self, from: JSONSerialization.data(withJSONObject: json))
+    let without = try #require(older.status?.position)
+    #expect(without.quote == nil)
+    #expect(LivePrice(position: without, stream: .fresh, statusStale: false) == nil)
+  }
+
+  /// The first position of the shared status fixture (bid 12.50, ask 12.52).
+  func fixturePosition() throws -> Position {
+    let response = try Wire.decoder().decode(StatusResponseV1.self, from: fixture("status-response-v1.json"))
+    return try #require(response.status?.position)
+  }
 }
