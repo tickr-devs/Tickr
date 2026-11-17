@@ -1197,7 +1197,11 @@ class Engine:
             due += self._lost_fill_suspects(held)
             self._note_moved(held)
         poll = float(self.config.orders.detail_poll_seconds)
-        cancelling = {row.symbol for row in due if self._awaits_cancel_read(row)}
+        # A symbol being closed moves because of our own closes: its other stops are not read
+        # ahead of its cancel (they would only delay it).
+        closing = {o.symbol for o in self.orders() if o.leg is Leg.EXIT and o.live}
+        cancelling = {row.symbol for row in due
+                      if self._awaits_cancel_read(row) and row.symbol not in closing}
         due.sort(key=lambda row: (self._read_first(row, cancelling),
                                   _detail_priority(row, poll)))
         for row in due[:self.config.orders.detail_reads_per_step]:
@@ -1706,6 +1710,10 @@ class Engine:
                 self._protect(trade, stops, expected)
             return
         for stop in live_stops:
+            if self._has_fence(Fence.CANCEL_FAILED, stop.client_order_id):
+                # Still working after every cancel (the fence alerts the operator): it keeps
+                # covering its shares, and the trade's other stops go on without it.
+                continue
             if stop.client_order_id not in self._detail_answered_ids:
                 # Spec 9: a cancel only Detail can confirm is sent only after this process's
                 # latest Detail read of the stop was answered; while it fails the stop keeps
