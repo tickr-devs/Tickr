@@ -23,6 +23,7 @@ from tickr.calendar import (
     SessionCalendar,
 )
 from tickr.config import Config, trading_gate
+from tickr.data.base import MarketDataError
 from tickr.engine.core import (
     STOP_PLACES_PER_FILL,
     Engine,
@@ -82,14 +83,16 @@ def entry_cancel_cause(trade: TradeRow, quote: Quote | None, now: datetime,
 
 class EntryQuotes:
     """The quote a working entry is judged by (`guard_entries`): the stream's newest, or, while
-    that is older than `[risk] max_quote_age_seconds`, a REST snapshot whichever has the newer
-    provider time. `refresh` reads the snapshots of every such symbol in one request, at most
-    every `[risk] entry_snapshot_interval_seconds` per symbol. A thin stock's L1 stream can
-    stay silent for seconds while its book moves (owner 2026-11-17, SHAZ: snapshots 1-2 s old
-    during 40-230 s of stream silence). The snapshot quote passes the same age and window
-    checks, so a stuck one (OMH: its snapshot time stood still for minutes) still cancels the
-    entry. A failed or refused read leaves the stream quote. Each read is journaled
-    (`entry-quote-snapshot`, one row per symbol)."""
+    that is older than `[risk] max_quote_age_seconds`, a REST snapshot, whichever has the
+    newer provider time. `refresh` reads the snapshots of every such symbol in one request, at
+    most once every `[risk] entry_snapshot_interval_seconds` for all symbols together. A thin
+    stock's L1 stream can stay silent for seconds while its book moves (owner 2026-11-17,
+    SHAZ: snapshots 1-2 s old during 40-230 s of stream silence). The snapshot quote passes
+    the same age and window checks, so a stuck one (OMH: its snapshot time stood still for
+    minutes) still cancels the entry. A failed or refused read (a broker error, or a
+    market-data refusal such as an INVALID_SYMBOL 417, which refuses the whole batched
+    request) leaves the stream quote of every symbol in that read. Each read is journaled
+    (`entry-quote-snapshot`, one row per symbol, with the read's duration on the loop clock)."""
 
     def __init__(self, engine: Engine, config: Config, stream: Callable[[str], Quote | None],
                  snapshot: Callable[[list[str]], list[Quote]] | None,
@@ -100,7 +103,7 @@ class EntryQuotes:
         self._clock = clock
         self._max_age = timedelta(seconds=float(config.risk.max_quote_age_seconds))
         self._interval = float(config.risk.entry_snapshot_interval_seconds)
-        self._read_at: dict[str, float] = {}
+        self._last_read: float | None = None  # loop clock of the last request
         self._read: dict[str, Quote] = {}
 
     def __call__(self, symbol: str, now: datetime) -> Quote | None:
@@ -114,34 +117,36 @@ class EntryQuotes:
 
     def refresh(self, symbols: set[str], now: datetime) -> None:
         """Read in one request the snapshot of every symbol in `symbols` (those with a working
-        entry) whose stream quote is too old and whose last read is at least the interval
-        ago; drop what is held for any other symbol."""
-        for symbol in set(self._read_at) - symbols:
-            self._read_at.pop(symbol, None)
+        entry) whose stream quote is too old, at most once per interval for all symbols
+        together (so at most 60 / interval requests a minute, whatever the number of entries);
+        drop what is held for any other symbol."""
+        for symbol in set(self._read) - symbols:
             self._read.pop(symbol, None)
         read = self._snapshot
         if read is None:
             return
+        if self._last_read is not None and self._clock() - self._last_read < self._interval:
+            return
         streams = {s: self._stream(s) for s in sorted(symbols)}
         due = [s for s, q in streams.items()
-               if (q is None or now - q.provider_time > self._max_age)
-               and (s not in self._read_at or self._clock() - self._read_at[s] >= self._interval)]
+               if q is None or now - q.provider_time > self._max_age]
         if not due:
             return
-        for symbol in due:
-            self._read_at[symbol] = self._clock()
+        self._last_read = self._clock()
         error = None
         found: dict[str, Quote] = {}
+        started = self._clock()
         try:
             found = {q.symbol: q for q in read(due) if q.symbol in due}
-        except BrokerError as exc:
+        except (MarketDataError, BrokerError) as exc:
             error = type(exc).__name__
+        seconds = self._clock() - started
         self._read.update(found)
         with self._engine.store.transaction():
             for symbol in due:
                 stream, snap = streams[symbol], found.get(symbol)
                 body: dict[str, object] = {"stream_age": None if stream is None else (
-                    now - stream.provider_time).total_seconds()}
+                    now - stream.provider_time).total_seconds(), "read_seconds": seconds}
                 if error is not None:
                     body["error"] = error
                 if snap is not None:
