@@ -162,6 +162,19 @@ def test_minutes_page_back_in_batches_and_record_status(tmp_path):
     assert again.requests == 0
 
 
+def test_minutes_skip_a_symbol_the_route_refuses_and_keep_the_others(tmp_path):
+    window = fetch.sessions_between(calendar(), date(2026, 11, 9), date(2026, 11, 13))
+    history = {s: [b for d in DAYS for b in flat_bars(s, d)] for s in ("AAA", "BBB")}
+    source = FakeHistory({}, {}, history, invalid=frozenset({"ODD"}))
+    runs = {s: fetch.needed_runs([DAYS[-1]], window, 4) for s in ("AAA", "BBB", "ODD")}
+    fetch.fetch_minutes(source, cfg(), SETTINGS, runs, tmp_path, no_sleep, quiet)
+    statuses = {s["symbol"]: s for s in fetch.load_statuses(tmp_path)}
+    assert statuses["AAA"]["complete"] and statuses["BBB"]["complete"]
+    assert not statuses["ODD"]["complete"]
+    assert statuses["ODD"]["cause"] == fetch.REFUSED_CAUSE
+    assert (tmp_path / "minutes" / "ODD.jsonl").read_text() == ""
+
+
 def test_minutes_ignore_bars_outside_the_run(tmp_path):
     window = fetch.sessions_between(calendar(), date(2026, 11, 9), date(2026, 11, 13))
     bars = [b for d in DAYS for b in flat_bars("AAA", d)]
