@@ -135,6 +135,7 @@ class OrdersConfig:
     max_unprotected_seconds: Decimal
     max_stops_per_trade: int
     stop_listing_polls: int
+    stop_split_tick_share: Decimal
     detail_unreadable_seconds: Decimal
     max_exit_seconds: Decimal
     shutdown_deadline_seconds: Decimal
@@ -708,6 +709,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                               f"and below the bot's bars route limit of [environments.{name}] "
                               f"({bot_count}), or discovery could never read bars")
     orders, api = built["orders"], built["api"]
+    if not 0 < orders.stop_split_tick_share <= 1:
+        raise ConfigError("[orders] stop_split_tick_share must be above 0 and at most 1")
     if not orders.reconcile_interval_seconds < api.broker_read_warn_seconds \
             < orders.broker_read_max_age_seconds:
         raise ConfigError("[api] broker_read_warn_seconds must be above [orders] "
