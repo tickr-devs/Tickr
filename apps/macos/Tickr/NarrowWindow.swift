@@ -19,15 +19,15 @@ struct WindowWidthFit: Equatable {
   /// The fit for a window `width` points wide; nil (not measured yet) is `wide`.
   @MainActor
   static func make(width: CGFloat?, model: AppModel, chart: ChartModel) -> WindowWidthFit {
-    // The first layout passes run at a few points wide, under any window's least width (the
-    // window is capped to a display, never narrower than one Overview column and the rail).
-    guard let width, width >= leastMeasured else { return .wide }
+    guard let width else { return .wide }
     let rail = width < railBelowWidth
     let lead = rail ? TitleBarWidth.hiddenSidebarLead : RootView.sidebarMax
     return WindowWidthFit(titleBar: TitleBarFit.make(width: width, lead: lead, model: model, chart: chart), rail: rail)
   }
 
-  /// Narrowest width taken for a real window's: one Overview column beside the icon rail.
+  /// Narrowest width taken for a real window's, in points: one Overview column beside the icon
+  /// rail. A split view's first layout passes run narrower (1 and 237 points, read on the
+  /// fixtures): `RootView` ignores those widths.
   @MainActor static let leastMeasured: CGFloat = RootView.railWidth + OverviewView.leastSize.width
 
   /// Narrowest window, in points, with the full sidebar: the sidebar at its preferred width

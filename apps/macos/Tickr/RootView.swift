@@ -124,8 +124,13 @@ struct RootView: View {
     // when the binding's source changes under it, which hid the full sidebar of a widened window.
     .id(fit.rail)
     // The window's width, for its narrow-width fit; only a crossing of a threshold changes what
-    // is drawn, and no fit changes the window's least size.
-    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+    // is drawn, and no fit changes the window's least size. A width under any real window's
+    // (`WindowWidthFit.leastMeasured`) is a split view's first layout pass, also of the one made
+    // anew when the rail comes or goes: taken, it flipped the rail back and forth for good (UI
+    // test at 640 points, 2026-11-17).
+    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+      if width >= WindowWidthFit.leastMeasured { windowWidth = width }
+    }
     // The advisor's runs for the Overview's advisor row and the Lab, read again now and then.
     .task(id: model.baseURL) { await advisor.follow(model.baseURL) }
     // The window's bot command questions (Overview's Safety card), on the view that lives as long
