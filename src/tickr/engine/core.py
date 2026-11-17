@@ -384,6 +384,9 @@ class Engine:
         # The symbol's live orders not read since then go to the head of the Detail queue
         # (`_observe`), once each per new disagreement. Memory only.
         self._moved: dict[str, tuple[Decimal, Decimal, float]] = {}
+        # Whether this step's open-orders read for new stops answered (`_verify_listed`);
+        # while it does not, new stops go to Detail first.
+        self._list_answered = False
 
     # --- fences ----------------------------------------------------------------------------
 
@@ -1223,7 +1226,9 @@ class Engine:
         showed, counts as verified. Only acknowledged stops never seen
         working and not being cancelled; anything else in the list (a fill, a cancel, a
         different row) and any absence prove nothing and are left to Detail. A failed or
-        budget-refused read leaves them to Detail too."""
+        budget-refused read leaves them to Detail too. The list is read every step while a new
+        stop is unverified, so one listed a few polls late costs no Detail read."""
+        self._list_answered = False
         new = {o.client_order_id: o for o in self.orders()
                if o.leg is Leg.STOP and o.send_state is SendState.ACKNOWLEDGED
                and o.broker_state is None and o.cancel_state is None}
@@ -1233,6 +1238,7 @@ class Engine:
             rows = self.broker.open_orders()
         except BrokerError:
             return
+        self._list_answered = True
         for listed in rows:
             row = new.get(listed.client_order_id)
             if (row is None or listed.state not in _WORKING or listed.symbol != row.symbol
@@ -1275,9 +1281,12 @@ class Engine:
         (a kept stop filling while a scale-out's stops are released). 1: a stop or entry
         whose cancel waits for Detail, not read since that cancel (a stop's position may have
         no stop until the read confirms it, and its close waits for it; an entry's read shows
-        its last fills, which need their stops), and a stop never read (entries filling in
-        the same poll each get their stops verified before the next entry is read, so the
-        first fills are not left waiting behind the last). 2: the other live orders in a
+        its last fills, which need their stops), and, while the open-orders list cannot be
+        read, a stop never read (entries filling in the same poll each get their stops
+        verified before the next entry is read, so the first fills are not left waiting
+        behind the last). While the list answers it verifies new stops, however late it shows
+        them, and their Detail stays in the common queue (a rejected stop is never listed),
+        so the fills' reads are never spent on them. 2: the other live orders in a
         moved symbol, not read since the move. 3: the common queue. Once each per event:
         after that read the order is back in the common queue, so a lasting disagreement
         (shares bought by hand) never starves the others. A read stamped at the same instant
@@ -1285,7 +1294,8 @@ class Engine:
         as the read after it."""
         if self._awaits_cancel_read(row):
             return 1
-        if row.leg is Leg.STOP and row.live and not row.verified and row.last_detail_at is None:
+        if (row.leg is Leg.STOP and row.live and not row.verified and row.last_detail_at is None
+                and not self._list_answered):
             return 1
         moved = self._moved.get(row.symbol)
         if moved is not None and row.live and (row.last_detail_at or 0.0) <= moved[2]:

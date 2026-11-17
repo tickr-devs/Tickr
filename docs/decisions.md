@@ -4,6 +4,7 @@ Newest first. Only decisions that are in force. Each line: date, decision, where
 
 | Date | Decision | Applies to |
 |---|---|---|
+| 2026-11-17 | A broker stop counts as verified when the open-orders list shows it working as sent, not only when its own Detail read does; one list read verifies every new stop. Absence from the list proves nothing; fills are still sized by Detail. | engine/core.py (`_verify_listed`), spec-v1 section 9 |
 | 2026-11-17 | The stops-per-trade cap (`[orders] max_stops_per_trade`: an entry still working when its trade holds that many stops minus two is cancelled) applies only with several positions (`[risk] max_open_positions` above 1). With one slot an entry filling in pieces keeps filling to its full size. | engine/core.py (`_cap_stops`), runtime/launchd.py, spec-v1 section 9 |
 | 2026-11-16 | A bot the watchdog starts early (a resting entry may still work at Webull while the bot is down) protects only: it cancels working entries, keeps stops and flattens, and takes no new entry until the operator clears the `watchdog-started` fence (`tickr clear-fence watchdog-started`). An unattended start never opens a trade. | runtime/watchdog.py, runtime/service.py |
 | 2026-11-16 | Backlog versions: extended hours and half days (X4) and the limit-exit chase (X3) go to v2; several positions with top-up (X1) and risk as percent of equity (X2) to v3; short selling (X5) to v3 only if the short-side research finds an edge, the 2026-10-23 ban staying until then. | docs/backlog.md |
