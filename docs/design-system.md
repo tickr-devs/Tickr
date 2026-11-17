@@ -390,7 +390,7 @@ size unchanged.
 | `priceMinHeight` / `priceMaxHeight` | 240 / 420 | The Mac's price pane fills what the study panes leave of the card, clamped (420 with the default panes) |
 | `timeAxisHeight` | 22 | The time axis's labels under the Mac chart's bottom pane |
 | `axisLabelHeight` / `levelTagHeight` | 13 / 17 | A price axis label and a level tag; a label closer to a tag than half of both is hidden |
-| `extendedBandOpacity` | 0.05 | The pre-market and after-hours band: `textPrimary` at this share, price area and volume |
+| `extendedBandOpacityLight` / `extendedBandOpacityDark` | 0.05 / 0.09 | The pre-market and after-hours band: `textPrimary` at this share in light / dark (mockup v114), price area and volume |
 | `sessionBoundaryOpacity` | 0.7 | A session boundary: 1 pt, `Stroke.dashFine` (3 3), `textQuaternary` at this share |
 | `extendedVolumeShare` | 0.6 | Extended-hours volume bars, share of a regular bar's opacity |
 | `bandCaptionSize` / `bandCaptionInset` | 9 / 6 Mac, 8.5 / 4 iOS | "PRE" / "AFTER" on a band, mono semibold, tracking `bandCaptionTracking` (.06 em); left out when the band is narrower |
