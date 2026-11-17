@@ -176,6 +176,16 @@ stop_listing_polls = 2
 # parts are new and fit [orders] max_stops_per_trade; below it, or when they do not, the price moves a tick. 0.1:
 # a 2 % stop under 5 USD; read by the engine.
 stop_split_tick_share = 0.1
+# Seconds between the engine's order-history reads for fills (each up to history_fill_max_pages pages), made only
+# while an entry of ours is working and more orders wait for Detail than [orders] detail_reads_per_step: entries
+# filling together are then all seen by one read instead of one Detail read each (a row counts only when it shows
+# more filled than recorded; Detail still finishes every order). Its pages must fit the order-history route limit on their own (checked at load; Sandbox 5 of
+# 10 per 60 s, leaving the display's history_max_pages every balance_read_seconds room); a read refused by our budget
+# is tried again the next step; read by the engine.
+history_fill_poll_seconds = 12
+# Most order-history pages one engine fill read takes before it stops (it stops as soon as every working entry was
+# seen); a page's size is unproven (no multi-page body recorded); read by the engine and the config check above.
+history_fill_max_pages = 1
 # Seconds an order's Detail reads may keep failing (no answered read in between) before the engine sets the
 # detail-unreadable fence (entries blocked, alert at once): the order's state is then unknown, a stop is no longer
 # counted as verified and an entry or close no longer excuses a quantity mismatch; read by the engine.
