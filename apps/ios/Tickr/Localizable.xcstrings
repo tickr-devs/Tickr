@@ -8497,6 +8497,23 @@
         }
       }
     },
+    "risk.liveOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live: today's limits and the broker now. %@ is a recorded day."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сейчас: лимиты на сегодня и брокер в эту минуту. %@ — записанный день."
+          }
+        }
+      }
+    },
     "risk.marginLine" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -611,6 +611,11 @@ enum L10n {
   }
 
   enum Risk {
+    /// Over the loss room while a recorded day is picked: this screen stays on today.
+    static func liveOnly(_ day: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.liveOnly",
+        defaultValue: "Live: today's limits and the broker now. \(day) is a recorded day.", bundle: L10n.bundle)
+    }
     static var title: LocalizedStringResource {
       LocalizedStringResource("risk.title", defaultValue: "Risk", bundle: L10n.bundle)
     }
