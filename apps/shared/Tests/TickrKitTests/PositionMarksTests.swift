@@ -93,6 +93,18 @@ struct PositionMarksTests {
     #expect(LivePrice(quote: nil, now: quoted, maxAgeSeconds: 60) == nil)
   }
 
+  @Test("An unchanged quote stays live while the stream delivers, and none is live once it stops")
+  func liveWhileStreamDelivers() throws {
+    let quote = try fixtureQuote("EFGH")  // quoted two minutes before the stream's last delivery
+    let received = try #require(Wire.decoder().decode(QuotesResponseV1.self, from: fixture("quotes-response-v1.json"))
+      .quotes.streamReceivedAt?.date)
+    let later = received.addingTimeInterval(1)
+    #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60, streamReceivedAt: received) != nil)
+    #expect(LivePrice(quote: quote, now: received.addingTimeInterval(61), maxAgeSeconds: 60, streamReceivedAt: received) == nil)
+    // Without the stream's receipt (an older bot) the quote's own age decides.
+    #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60) == nil)
+  }
+
   /// A quote of the shared GET /quotes fixture (ABCD: bid 12.50, ask 12.52).
   func fixtureQuote(_ symbol: String) throws -> LiveQuoteV1 {
     let response = try Wire.decoder().decode(QuotesResponseV1.self, from: fixture("quotes-response-v1.json"))

@@ -38,6 +38,25 @@ def test_the_file_holds_every_valid_quote_and_is_written_only_when_one_changes(t
     assert api.read_quotes(path).quotes[0].bid == D("10.11")
 
 
+def test_an_unchanged_quote_received_again_moves_the_stream_receipt(tmp_path):
+    """A quote that has not changed is still the market: the apps judge it live by when the
+    stream last delivered anything, so a new receipt rewrites the file."""
+    inbox = StreamInbox()
+    path = tmp_path / "quotes.json"
+    writer = QuoteFile(inbox, path, 0.5, lambda: T0)
+    assert writer.write_once()
+    assert api.read_quotes(path).stream_received_at is None  # nothing received yet
+    inbox.on_quote(quote("AAA", "10.10", "10.12"))
+    inbox.on_quote(quote("ZZZ", "0", "1.00", T0 + timedelta(seconds=2)))  # unshown, a receipt
+    assert writer.write_once()
+    written = api.read_quotes(path)
+    assert [q.symbol for q in written.quotes] == ["AAA"]
+    assert written.stream_received_at == T0 + timedelta(seconds=2, milliseconds=50)
+    inbox.on_quote(quote("ZZZ", "0", "1.00", T0 + timedelta(seconds=9)))
+    assert writer.write_once()
+    assert api.read_quotes(path).stream_received_at == T0 + timedelta(seconds=9, milliseconds=50)
+
+
 def test_a_failed_write_is_journaled_once_per_stretch(tmp_path):
     class Store:
         def __init__(self) -> None:
