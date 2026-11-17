@@ -6,15 +6,16 @@ import TickrKit
 /// `Text` and the components, or read them with `String(localized:)`. Generated keys are
 /// `<namespace>.<name>`.
 enum L10n {
-  /// Where the String Catalog is: the package's resource bundle in a `swift build`, the app
-  /// bundle in the Xcode build.
-  static var bundle: LocalizedStringResource.BundleDescription {
+  /// Where the String Catalog is: the package's resource bundle in a `swift build` (in the
+  /// language given at launch, if any: `StringsBundle`), the app bundle in the Xcode build. Read
+  /// once, at the first text.
+  static let bundle: LocalizedStringResource.BundleDescription = {
     #if SWIFT_PACKAGE
-    return .atURL(Bundle.module.bundleURL)
+    return StringsBundle.description(of: .module)
     #else
     return .main
     #endif
-  }
+  }()
 
   enum About {
     static var tagline: LocalizedStringResource {
@@ -53,7 +54,7 @@ enum L10n {
   }
 
   enum Common {
-    /// VoiceOver's name of the loader (`TickrLoader`) while a card's data is read.
+    /// VoiceOver's name of a skeleton (`Skeleton`) while a card's data is read.
     static var loading: LocalizedStringResource {
       LocalizedStringResource("common.loading", defaultValue: "Loading…", bundle: L10n.bundle)
     }
@@ -435,10 +436,6 @@ enum L10n {
     static var pickDayHelp: LocalizedStringResource {
       LocalizedStringResource("toolbar.pickDayHelp", defaultValue: "Pick a recorded trading day", bundle: L10n.bundle)
     }
-    /// The chip next to the day while the demo day is on.
-    static var demoChip: LocalizedStringResource {
-      LocalizedStringResource("toolbar.demoChip", defaultValue: "DEMO", bundle: L10n.bundle)
-    }
     static var demoHelp: LocalizedStringResource {
       LocalizedStringResource("toolbar.demoHelp",
         defaultValue: "Demo day: the made-up day only. Turn it off in Settings › General to pick another day.",
@@ -473,14 +470,6 @@ enum L10n {
     /// Under the day's result while it does not count the broker's fees yet.
     static var beforeFees: LocalizedStringResource {
       LocalizedStringResource("overview.beforeFees", defaultValue: "before broker fees", bundle: L10n.bundle)
-    }
-    static var fixtures: LocalizedStringResource {
-      LocalizedStringResource("overview.fixtures", defaultValue: "Fixtures", bundle: L10n.bundle)
-    }
-    static var fixturesHelp: LocalizedStringResource {
-      LocalizedStringResource("overview.fixturesHelp",
-        defaultValue: "Debug build reading the recorded contract fixtures, not a running bot.",
-        bundle: L10n.bundle)
     }
     static var gateOpen: LocalizedStringResource {
       LocalizedStringResource("overview.gateOpen", defaultValue: "Gate open", bundle: L10n.bundle)
@@ -789,7 +778,7 @@ enum L10n {
       LocalizedStringResource("riskRoom.details", defaultValue: "Details", bundle: L10n.bundle)
     }
     static func left(_ limit: String) -> LocalizedStringResource {
-      LocalizedStringResource("riskRoom.left", defaultValue: "of \(limit) USD left", bundle: L10n.bundle)
+      LocalizedStringResource("riskRoom.left", defaultValue: "of \(limit) left", bundle: L10n.bundle)
     }
     static var netResult: LocalizedStringResource {
       LocalizedStringResource("riskRoom.netResult", defaultValue: "net day result", bundle: L10n.bundle)
@@ -3189,6 +3178,10 @@ enum L10n {
     /// Button: read the decisions on the symbol.
     static var explainRun: LocalizedStringResource {
       LocalizedStringResource("lab.explainRun", defaultValue: "Explain", bundle: L10n.bundle)
+    }
+    /// The Explain button while the decisions are read (its spinner beside it).
+    static var explainReading: LocalizedStringResource {
+      LocalizedStringResource("lab.explainReading", defaultValue: "Reading decisions", bundle: L10n.bundle)
     }
     /// Explain card: planned detail (BACKLOG).
     static var explainBacklog: LocalizedStringResource {

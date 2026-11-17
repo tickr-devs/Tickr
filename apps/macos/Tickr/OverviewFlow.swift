@@ -143,7 +143,7 @@ struct LatestEvent: View {
     guard let trade = model.shownTrades.max(by: { $0.closedAt.date < $1.closedAt.date }) else { return nil }
     let result = trade.resultUsd.value
     return Line(time: trade.closedAt.date, tag: Board.exitReasonTitle(trade.exitReason),
-      text: "\(trade.symbol) \(Money.signed(result))", color: Palette.result(result))
+      text: "\(trade.symbol) \(Money.signedUSD(result))", color: Palette.result(result))
   }
 
   var body: some View {
@@ -237,7 +237,7 @@ struct WatchingCard: View {
       } else if let error = model.watchingError {
         Footnote(L10n.Watching.unavailable(error), color: Palette.warningText)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonRows(Tokens.Loading.fewRows, badge: true) }
       }
     }
     .accessibilityElement(children: .contain)
@@ -401,7 +401,7 @@ struct FastMoversCard: View {
       } else if let error = model.moversError {
         Footnote(L10n.FastMovers.unavailable(error), color: Palette.warningText)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonRows(Self.rowCap) }
       }
     }
     .accessibilityElement(children: .contain)

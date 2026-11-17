@@ -51,7 +51,8 @@ public extension ButtonStyle where Self == CommandButtonStyle {
 }
 
 private struct CommandButtonBody: View {
-  @Environment(\.isEnabled) private var enabled
+  @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.commandInFlight) private var inFlight
   @Environment(\.colorScheme) private var scheme
   @State private var hovered = false
   let configuration: ButtonStyleConfiguration
@@ -65,7 +66,7 @@ private struct CommandButtonBody: View {
     let shape = RoundedRectangle(cornerRadius: small ? Tokens.Command.smallRadius : Tokens.Command.radius, style: .continuous)
     let pressed = configuration.isPressed && enabled
     configuration.label
-      .labelStyle(CommandLabelStyle(tier: tier, small: small, detail: detail, tag: tag))
+      .labelStyle(CommandLabelStyle(tier: tier, small: small, detail: detail, tag: tag, inFlight: inFlight))
       .font(small ? Tokens.Typography.buttonCompact : Tokens.Command.title)
       .foregroundStyle(foreground)
       .padding(.leading, small ? Tokens.Space.xxs + Tokens.Stroke.thin : Tokens.Space.xs + Tokens.Space.xxs)
@@ -96,7 +97,11 @@ private struct CommandButtonBody: View {
       .animation(Tokens.Motion.quick, value: pressed)
       .animation(Tokens.Motion.quick, value: hovered)
       .onHover { hovered = $0 }
+      .inFlightBehaviour(inFlight)
   }
+
+  /// In flight a command is off but drawn as on: the spinner in it says why nothing answers.
+  private var enabled: Bool { isEnabled || inFlight != nil }
 
   private var height: CGFloat {
     switch size {
@@ -146,11 +151,20 @@ private struct CommandLabelStyle: LabelStyle {
   let small: Bool
   let detail: Text?
   let tag: Text?
+  /// The in-progress title while the command is in flight: the spinner then takes the glyph's
+  /// place on a clear tile, as the board's busy command.
+  let inFlight: Text?
 
   func makeBody(configuration: Configuration) -> some View {
     HStack(spacing: small ? Tokens.Space.xs + Tokens.Space.xxs : Tokens.Command.gap) {
-      CommandGlyph(icon: configuration.icon, small: small, color: glyphColor, fill: glyphFill)
-      configuration.title
+      if inFlight != nil {
+        CommandGlyph(icon: Spinner(), small: small, color: glyphColor, fill: .clear)
+      } else {
+        CommandGlyph(icon: configuration.icon, small: small, color: glyphColor, fill: glyphFill)
+      }
+      Group {
+        if let inFlight { inFlight } else { configuration.title }
+      }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: small ? nil : .infinity, alignment: .leading)
@@ -206,7 +220,8 @@ private struct CommandGlyph<Icon: View>: View {
 }
 
 /// The small violet pill at a command's end while commands go to the demo day ("DEMO"); white on
-/// the emergency stop's red.
+/// the emergency stop's red. Its edge is dashed like the demo day's `EnvironmentBadge` (the
+/// IOSHome board's `.dm`), so the demo reads in one look on every surface.
 public struct CommandTag: View {
   let text: Text
   let onFill: Bool
@@ -228,7 +243,8 @@ public struct CommandTag: View {
       .background(Capsule().fill(onFill ? Palette.onLoss.opacity(Tokens.Opacity.glow)
         : Palette.highlight.opacity(Tokens.Opacity.glow)))
       .overlay(Capsule().strokeBorder(onFill ? Palette.onLoss.opacity(Tokens.Opacity.medium)
-        : Palette.highlight.opacity(Tokens.Opacity.border), lineWidth: Tokens.Stroke.thin))
+        : Palette.highlight.opacity(Tokens.Opacity.border),
+        style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dashFine)))
   }
 }
 
