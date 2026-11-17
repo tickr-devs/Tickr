@@ -22,12 +22,16 @@ final class TickrUITests: XCTestCase {
   static let screenPrefix = "screen-"
   /// The open position in status-response-v1.json and its flatten button id (BotAction.id).
   static let flattenButton = "flatten-ABCD"
-  /// English texts from the catalog: the confirmation's cancel button, the account badge for a
-  /// broker read that matches the bot's records (account-response-v1.json), and the observer in
-  /// observers-v1.json.
+  /// English texts from the catalog: the confirmation's cancel button and the account badge for a
+  /// broker read that matches the bot's records (account-response-v1.json).
   static let cancel = "Cancel"
   static let matches = "MATCHES"
+  /// The first observer in observers-v1.json (price-action-v1, version 2, three decisions), as its
+  /// row on Strategy lab's versions card reads: its name and the English note of its decision
+  /// count (lab.observerNote). The active strategy (status-response-v1.json) is price-action-v1
+  /// too, so the name alone also matches the active version's row.
   static let observer = "price-action-v1"
+  static let observerNote = "observer · decisions: 3"
   /// The Overview badge for fixture data (overview.fixtures, upper-cased as every badge is).
   static let fixturesBadge = "FIXTURES"
   /// The toolbar's connection status (ConnectionStatus.id).
@@ -281,7 +285,12 @@ final class TickrUITests: XCTestCase {
   func testLabShowsTheObservers() {
     let app = launch()
     open(Self.sections[4], in: app)
-    XCTAssertTrue(app.staticTexts[Self.observer].firstMatch.waitForExistence(timeout: Self.timeout))
+    // A version's row reads as one accessibility element (its texts combined into its label), so
+    // the observer's name and note are parts of a longer label. The day chart's legend names an
+    // observer by what sets it apart ("v2 · rel vol 1.5×"), not by its name.
+    let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@",
+      Self.observer, Self.observerNote)).firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "observer row\n\(app.debugDescription)")
   }
 
   /// The chart with every study and the decisions inspector opens, survives a narrower window
