@@ -884,8 +884,8 @@ class SettingsV1:
     broker_read_max_age_seconds: Decimal
     broker_read_warn_seconds: Decimal
     api_version: int = _const(API_VERSION)
-    # Oldest live position quote (status `positions[].quote.quoted_at`) clients show as the
-    # position's price ([api] live_quote_max_age_seconds); older ones are not shown as live.
+    # Oldest live quote (GET /quotes, by `quoted_at`) clients show as a live price ([api]
+    # live_quote_max_age_seconds); older ones are not shown as live.
     # Added after v1 shipped (2026-11-17); null from an older API, and then no quote is live.
     live_quote_max_age_seconds: Decimal | None = _added_later(None)
     # Seconds between two client reads of GET /quotes ([api] quotes_poll_seconds). Added after
