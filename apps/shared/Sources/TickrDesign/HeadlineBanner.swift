@@ -53,8 +53,10 @@ public struct HeadlineBanner: View {
 
   /// `pulse`: what a new pulse marks (`Headline.pulse`); nil for a headline that never pulses (a
   /// recorded day, a past view). `alarm`: the headline's severity is `.alarm`.
-  public init(_ title: String, detail: String? = nil, tone: Tone, alarm: Bool = false, pulse: AnyHashable? = nil,
-    arrangement: Arrangement = .inline, facts: Facts? = nil) {
+  public init(
+    _ title: String, detail: String? = nil, tone: Tone, alarm: Bool = false, pulse: AnyHashable? = nil,
+    arrangement: Arrangement = .inline, facts: Facts? = nil
+  ) {
     self.title = title
     self.detail = detail
     self.tone = tone
