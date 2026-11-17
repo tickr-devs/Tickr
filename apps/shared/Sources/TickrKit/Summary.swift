@@ -15,8 +15,8 @@ public struct Headline: Equatable, Sendable {
   /// state. Not `text`: a stale status's text counts its age, which grows with every read of the
   /// same stale status.
   public let pulse: Pulse
-  /// The line after the headline about a trusted status (`detail(_:)`); nil when the headline has
-  /// none (no trusted status) or already says it (held positions, all protected).
+  /// The line after the headline about a trusted status: the open positions (`detail(_:)`), "stops
+  /// verified" after the holding headline, or why entries are off; nil without a trusted status.
   public let detail: String?
 
   /// The event key of `Headline.pulse`.
@@ -67,7 +67,8 @@ public struct Headline: Equatable, Sendable {
     if !status.positions.isEmpty {
       let count = status.positions.count
       let text = count == 1 ? L10n.headlineHoldingOne : L10n.headlineHolding(count)
-      return Headline(text: String(localized: text), severity: .ok)
+      let detail = count == 1 ? L10n.headlineStopVerified : L10n.headlineStopsVerified
+      return Headline(text: String(localized: text), severity: .ok, detail: String(localized: detail))
     }
     if gateClosed {
       return Headline(text: String(localized: L10n.headlineEntriesOff), severity: .ok,

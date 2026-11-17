@@ -73,6 +73,11 @@ import Testing
       == "Откроется через 9 ч 25 м")
     #expect(try russian("kit.countdown.closesIn") + " " + filled(try russian("kit.countdown.minutes"), 42)
       == "Закроется через 42 м")
+    // Mockup v111: «Позиции: 2 · стопы подтверждены» beside a closed gate's badge.
+    #expect(filled(try russian("kit.headline.holding"), 2) + " · " + (try russian("kit.headline.stopsVerified"))
+      == "Позиции: 2 · стопы подтверждены")
+    #expect(String(localized: L10n.headlineHolding(2)) + " · " + String(localized: L10n.headlineStopsVerified)
+      == "Holding 2 positions · stops verified")
     #expect(try russian("kit.entryGate.open") == "Шлюз открыт")
     #expect(try russian("kit.entryGate.paused") == "Входы на паузе")
   }
@@ -133,7 +138,8 @@ import Testing
     let response = try gateClosed(flat: false)
     #expect(response.status?.positions.isEmpty == false)
     let headline = Headline.make(response: response, readFailed: false)
-    #expect(headline.text == "Holding 1 position · protected by a broker stop")
+    #expect(headline.text == "Holding 1 position")
+    #expect(headline.detail == "stop verified")
     #expect(headline.severity == .ok)
     #expect(EntryGate.make(response.status, headline: headline) == .closed)
   }
