@@ -241,9 +241,7 @@ private struct DemoDaySection: View {
           Text(L10n.Settings.demoDay)
         }
         .labelsHidden()
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .tint(Palette.warning)
+        .toggleStyle(.designSwitch(tint: Palette.warning))
         .accessibilityIdentifier(Self.id)
         Text(L10n.Settings.demoDay)
           .font(Tokens.Typography.callout)
@@ -252,7 +250,11 @@ private struct DemoDaySection: View {
         Spacer(minLength: Tokens.Space.s)
       }
     } trailing: {
-      if model.demoDay { Badge(L10n.Toolbar.demoChip, tone: .highlight) }
+      // On: the demo day's own environment badge (dashed violet), the one look of the demo.
+      if model.demoDay {
+        let demo = EnvironmentBadge.Kind.demo.rawValue
+        EnvironmentBadge(ApiText.environment(demo), raw: demo, accessibilityLabel: ApiText.environmentLabel(demo))
+      }
     }
     .animation(Tokens.Motion.quick, value: model.demoDay)
   }
@@ -571,6 +573,7 @@ private struct BotServiceCard: View {
         // Start is the card's main action; Stop is a destructive bot command, as on Overview.
         .buttonStyle(.action(.primary, size: .compact))
         .disabled(!model.canStartBot)
+        .inFlight(model.botStarting ? Text(InFlightText.startBot) : nil)
         .hint(L10n.Settings.startBotHint)
         Button(role: .destructive) { question = .stop } label: {
           Label { Text(L10n.Settings.stopBotAction) } icon: { Image(systemName: BotAction.stopSymbol) }
@@ -578,6 +581,7 @@ private struct BotServiceCard: View {
         .buttonStyle(.command(.destructive, tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
         .fixedSize()
         .disabled(!model.canStopBot)
+        .inFlight(model.inFlight == .stopBot ? Text(OperatorCommand.stopBot.inFlightTitle) : nil)
         .hint(verbatim: BotAction.stopBot.explanation)
       }
       if let question {
@@ -709,7 +713,7 @@ private struct ConfigCard: View {
       } else if let error = model.configError {
         ReadFailureNote(L10n.ReadFailed.config, detail: error)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonLines(Tokens.Loading.manyLines) }
       }
     } trailing: {
       HStack(spacing: Tokens.Space.xs) {
@@ -803,7 +807,7 @@ struct JobsSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonRows(Tokens.Loading.rows, badge: true) }
       }
     } trailing: {
       Text(L10n.Settings.timesET)
@@ -1097,7 +1101,7 @@ private struct BackupSection: View {
       } else if let error = model.jobsError {
         ReadFailureNote(L10n.ReadFailed.jobs, detail: error)
       } else {
-        TickrLoader(L10n.Common.loading)
+        Skeleton(L10n.Common.loading) { SkeletonLines(Tokens.Loading.fewLines) }
       }
       Label {
         Text(L10n.Settings.cleanup)
