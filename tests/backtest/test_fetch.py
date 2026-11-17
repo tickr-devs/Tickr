@@ -15,6 +15,7 @@ from tickr.backtest.universe import (
     active_screen,
     drop_unpriced,
     read_pool,
+    select_all,
     select_liquid,
     select_pool,
     write_pool,
@@ -215,6 +216,24 @@ def test_liquid_ranks_by_previous_day_only():
     pool, caps = select_liquid(rows, [date(2026, 11, 12), date(2026, 11, 13)], 3, Decimal(10))
     assert [(e.rank, e.symbol) for e in pool] == [(1, "B"), (2, "A")]
     assert pool[1].day_high_change_percent == Decimal(50)
+    assert (caps[0].candidates, caps[0].kept, caps[0].dropped) == (3, 2, 1)
+
+
+def test_all_keeps_every_symbol_above_the_price_floor_whatever_its_move():
+    def bar(symbol, day, close, volume, high=None):
+        return {"symbol": symbol, "date": day, "open": close, "high": high or close,
+                "low": close, "close": close, "volume": volume}
+    rows = [
+        bar("A", "2026-11-12", "1", "10"),
+        bar("A", "2026-11-13", "1", "10"),               # flat day: kept
+        bar("B", "2026-11-12", "2", "1000"),
+        bar("B", "2026-11-13", "2", "1", high="3"),      # jumped and faded: kept
+        bar("C", "2026-11-12", "0.2", "100000"),         # previous close below the floor
+        bar("C", "2026-11-13", "0.5", "100000"),
+        bar("E", "2026-11-12", "5", "1"),                # no bar on the day
+    ]
+    pool, caps = select_all(rows, [date(2026, 11, 12), date(2026, 11, 13)], Decimal("0.30"))
+    assert [(e.rank, e.symbol) for e in pool] == [(1, "B"), (2, "A")]
     assert (caps[0].candidates, caps[0].kept, caps[0].dropped) == (3, 2, 1)
 
 
