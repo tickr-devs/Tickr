@@ -2003,8 +2003,8 @@ class LatestSizeV1:
     binding_cause: str | None
 
     binding_cause_codes: tuple[ReasonV1, ...] = _reasons_of("binding_cause")
-    price: Decimal | None = None
-    limits: tuple[SizeLimitV1, ...] = ()
+    price: Decimal | None = _added_later(None)
+    limits: tuple[SizeLimitV1, ...] = _added_later(())
 
 @dataclass(frozen=True)
 class WatchingV1:

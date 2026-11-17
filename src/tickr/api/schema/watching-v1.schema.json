@@ -373,9 +373,7 @@
             "verdict",
             "quantity",
             "binding",
-            "binding_cause",
-            "price",
-            "limits"
+            "binding_cause"
           ],
           "additionalProperties": false
         },
