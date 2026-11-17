@@ -16,7 +16,7 @@ from tickr import config
 from tickr.broker.base import BrokerError
 from tickr.broker.fake import FakeBroker
 from tickr.config import GateResult
-from tickr.engine.core import STOPS_PER_FILL, Engine, EntryRefused, Fence, Leg, TradeState
+from tickr.engine.core import Engine, EntryRefused, Fence, Leg, TradeState
 from tickr.observers.log import DecisionLog
 from tickr.runtime import launchd
 from tickr.runtime.entries import EntryDesk, slots_in_use
@@ -241,22 +241,22 @@ def fill_together(desk: Desk, symbols: list[str]) -> list[int]:
     return sorted(done.values())
 
 
-# The most slots the start-time check lets through: a fill's read plus up to two stop reads
-# each, within `max_unprotected_seconds` less a poll.
-BURST = int((float(CFG.orders.max_unprotected_seconds) - POLL) / ((1 + STOPS_PER_FILL) * POLL))
+# The most slots the start-time check lets through: one Detail read per fill, then one
+# open-orders read for the new stops, within `max_unprotected_seconds` less a poll.
+BURST = int((float(CFG.orders.max_unprotected_seconds) - POLL) / POLL) - 1
 
 
 def test_entries_filling_in_the_same_poll_get_their_stops_in_turn(tmp_path):
-    """Every working entry fills at once: each fill is read, then its new stop, before the
-    next fill, so the k-th position has a verified stop after 2 k polls, not after all the
-    fills were read."""
+    """Every working entry fills at once: the fills are read one per poll, each fill's stop
+    goes out at once, and the next open-orders read verifies it, so the k-th position has a
+    verified stop after k + 1 polls, not after all the fills were read."""
     desk = full(tmp_path, filled=0)
-    assert fill_together(desk, SYMBOLS) == [2 * k for k in range(1, MAX + 1)]
+    assert fill_together(desk, SYMBOLS) == [k + 1 for k in range(1, MAX + 1)]
 
 
 def test_split_fills_in_the_same_poll_are_protected_in_time_at_the_allowed_slots(tmp_path):
-    """With a scale-out each fill gets two stops: three reads each. At the slot count the
-    start-time check allows, the last position is fully stopped within
+    """With a scale-out each fill gets two stops, both verified by the same open-orders read.
+    At the slot count the start-time check allows, the last position is fully stopped within
     `max_unprotected_seconds` with a poll to spare."""
     desk = Desk(tmp_path, wide(BURST, max_daily_loss_usd=D(MAX * 10)))
     symbols = SYMBOLS[:BURST]
@@ -264,7 +264,7 @@ def test_split_fills_in_the_same_poll_are_protected_in_time_at_the_allowed_slots
         assert desk.enter(symbol, scale_out=D(4)).admission == "taken"
     desk.step(2 * BURST)
     done = fill_together(desk, symbols)
-    assert done == [(1 + STOPS_PER_FILL) * k for k in range(1, BURST + 1)]
+    assert done == [k + 1 for k in range(1, BURST + 1)]
     assert done[-1] * POLL <= float(CFG.orders.max_unprotected_seconds) - POLL
 
 

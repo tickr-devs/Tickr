@@ -1187,7 +1187,9 @@ class Engine:
     def _observe(self, held: dict[str, Decimal] | None) -> None:
         """Detail reads within `detail_reads_per_step`, one queue for everything: orders still
         open, and orders we gave up on in a symbol whose position we cannot explain. `held`
-        is None when the positions read failed."""
+        is None when the positions read failed. New stops are verified first, all of them by
+        one open-orders read."""
+        self._verify_listed()
         due = [o for o in self.orders()
                if o.send_state in (SendState.ACKNOWLEDGED, SendState.UNKNOWN)
                and (o.broker_state is None or not o.broker_state.terminal)]
@@ -1208,6 +1210,43 @@ class Engine:
                 self._set_fence(Fence.DETAIL_BUDGET, "", "Detail reads refused by the budget")
                 return
         self._clear_fence(Fence.DETAIL_BUDGET)
+
+    def _verify_listed(self) -> None:
+        """Verify every new stop with one open-orders read (owner decision 2026-11-17), so
+        fills arriving together do not wait for a Detail read per stop: a stop the list shows
+        working, as sent (symbol, side, type, quantity; prices are listed rounded, as in
+        Detail, which does not compare them either) and with no more filled than Detail
+        showed, counts as verified. Only acknowledged stops never seen
+        working and not being cancelled; anything else in the list (a fill, a cancel, a
+        different row) and any absence prove nothing and are left to Detail. A failed or
+        budget-refused read leaves them to Detail too."""
+        new = {o.client_order_id: o for o in self.orders()
+               if o.leg is Leg.STOP and o.send_state is SendState.ACKNOWLEDGED
+               and o.broker_state is None and o.cancel_state is None}
+        if not new:
+            return
+        try:
+            rows = self.broker.open_orders()
+        except BrokerError:
+            return
+        for listed in rows:
+            row = new.get(listed.client_order_id)
+            if (row is None or listed.state not in _WORKING or listed.symbol != row.symbol
+                    or listed.side is not row.side or listed.order_type is not row.order_type
+                    or listed.quantity != row.quantity
+                    or listed.filled_quantity != row.filled_quantity):
+                continue
+            with self.store.transaction():
+                self.store.execute(
+                    "UPDATE orders SET broker_state = ?, updated_at = ? "
+                    "WHERE client_order_id = ? AND broker_state IS NULL",
+                    (listed.state, self.store.stamp(), row.client_order_id))
+                # The same observation row a Detail read writes, marked with its source.
+                self.store.append(ORDER_OBSERVED, {
+                    "state": listed.state, "raw_status": listed.raw_status,
+                    "filled_quantity": listed.filled_quantity,
+                    "average_fill_price": listed.average_fill_price, "source": "open-orders"},
+                    key=row.client_order_id, run_id=self.run_id)
 
     def _note_moved(self, held: dict[str, Decimal]) -> None:
         """Record each open trade's symbol whose broker position differs from what Detail
