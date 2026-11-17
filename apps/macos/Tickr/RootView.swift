@@ -80,66 +80,45 @@ struct RootView: View {
 
   private var fit: WindowWidthFit { WindowWidthFit.make(width: windowWidth, model: model, chart: chart) }
 
-  /// The sidebar's visibility: the person's choice, except that a window narrow enough for the
-  /// icon rail hides the full sidebar unless the sidebar button asked for it. In that window the
-  /// split view's own changes are not taken: it collapses and expands its sidebar by the width
-  /// itself, and taking that as a choice swapped the sidebar and the rail back and forth.
-  private var visibility: Binding<NavigationSplitViewVisibility> {
-    let rail = fit.rail
-    return Binding {
-      rail ? (railExpanded ? .all : .detailOnly) : columns
-    } set: { shown in
-      if !rail { columns = shown }
-    }
-  }
-
-  /// What the sidebar button switches: the sidebar, or in a window narrow enough for the icon
-  /// rail, the full sidebar in place of the rail.
-  private var sidebarToggle: Binding<NavigationSplitViewVisibility> {
-    let rail = fit.rail
-    return Binding {
-      visibility.wrappedValue
-    } set: { shown in
-      if rail { railExpanded = shown != .detailOnly } else { columns = shown }
-    }
+  /// In a window narrow enough for the icon rail, what the sidebar button switches: the full
+  /// sidebar in place of the rail.
+  private var railToggle: Binding<NavigationSplitViewVisibility> {
+    Binding { railExpanded ? .all : .detailOnly } set: { railExpanded = $0 != .detailOnly }
   }
 
   var body: some View {
     @Bindable var model = model
     let fit = fit
-    // The window's own size, whatever the split view inside asks for: a split view made anew
-    // (below) first lays out at a size of its own, which read as the window's width flipped the
-    // rail back and forth for good (UI test at 640 points, 2026-11-17).
+    // The window's own size, whatever the view inside asks for: a view made anew when the rail
+    // comes or goes first lays out at a size of its own.
     WindowFrame(minSize: .zero) {
-      NavigationSplitView(columnVisibility: visibility) {
-        Sidebar(selection: $model.section)
-          // The design's own sidebar button right after the window buttons replaces the system's.
-          .toolbar(removing: .sidebarToggle)
-          .toolbar {
-            ToolbarItem(placement: .automatic) { SidebarButton(columns: sidebarToggle) }
-              .sharedBackgroundVisibility(.hidden)
-            ToolbarSpacer(.flexible)
-          }
-          .navigationSplitViewColumnWidth(min: Self.sidebarMin, ideal: Self.sidebarIdeal, max: Self.sidebarMax)
-      } detail: {
+      if fit.rail {
+        // No split view in the rail's window: a split view collapses and expands its sidebar by
+        // the width itself, which fought the rail for good (UI test at 640 points, 2026-11-17).
         HStack(spacing: 0) {
-          if fit.rail && !railExpanded {
+          if railExpanded {
+            Sidebar(selection: $model.section).frame(width: Self.sidebarIdeal)
+          } else {
             SidebarRail(selection: $model.section)
           }
           screen
         }
-        .environment(\.windowFit, fit)
-        // The window keeps the section's name (Window menu, Mission Control); the title bar shows
-        // the design's one centred line instead.
-        .navigationTitle(Text(section.title))
-        .toolbar(removing: .title)
-        .toolbar { WindowToolbar(fit: fit.titleBar) }
-        .toolbarBackground(Palette.titleBar, for: .windowToolbar)
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        .modifier(WindowChrome(fit: fit, section: section, sidebarButton: railToggle))
+      } else {
+        NavigationSplitView(columnVisibility: $columns) {
+          Sidebar(selection: $model.section)
+            // The design's own sidebar button right after the window buttons replaces the system's.
+            .toolbar(removing: .sidebarToggle)
+            .toolbar {
+              ToolbarItem(placement: .automatic) { SidebarButton(columns: $columns) }
+                .sharedBackgroundVisibility(.hidden)
+              ToolbarSpacer(.flexible)
+            }
+            .navigationSplitViewColumnWidth(min: Self.sidebarMin, ideal: Self.sidebarIdeal, max: Self.sidebarMax)
+        } detail: {
+          screen.modifier(WindowChrome(fit: fit, section: section, sidebarButton: nil))
+        }
       }
-      // A new split view when the rail comes or goes: the split view writes its own visibility back
-      // when the binding's source changes under it, which hid the full sidebar of a widened window.
-      .id(fit.rail)
     }
     // The window's width, for its narrow-width fit; only a crossing of a threshold changes what
     // is drawn, and no fit changes the window's least size. A width under any real window's
@@ -483,11 +462,38 @@ private struct BotStateCard: View {
 /// trailing edge the connection status, the day stepper ‹ day › and Today, a flexible space
 /// between them. The window is never narrower than both whole (`TitleBarWidth`), so neither is
 /// cut nor moved into the toolbar's overflow menu.
+/// The window's title and title bar around the shown screen: the section's name for the Window
+/// menu, the design's line and status in the title bar (`WindowToolbar`), and in the rail's window,
+/// where no split view holds it, the sidebar button.
+private struct WindowChrome: ViewModifier {
+  let fit: WindowWidthFit
+  let section: AppSection
+  let sidebarButton: Binding<NavigationSplitViewVisibility>?
+
+  func body(content: Content) -> some View {
+    content
+      .environment(\.windowFit, fit)
+      // The window keeps the section's name (Window menu, Mission Control); the title bar shows
+      // the design's one centred line instead.
+      .navigationTitle(Text(section.title))
+      .toolbar(removing: .title)
+      .toolbar { WindowToolbar(fit: fit.titleBar, sidebarButton: sidebarButton) }
+      .toolbarBackground(Palette.titleBar, for: .windowToolbar)
+      .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+  }
+}
+
 private struct WindowToolbar: ToolbarContent {
   /// What the title bar holds in a window narrower than its comfortable width (`TitleBarFit`).
   let fit: TitleBarFit
+  /// The sidebar button, in the rail's window (elsewhere the sidebar column holds it).
+  var sidebarButton: Binding<NavigationSplitViewVisibility>?
 
   var body: some ToolbarContent {
+    if let sidebarButton {
+      ToolbarItem(placement: .navigation) { SidebarButton(columns: sidebarButton) }
+        .sharedBackgroundVisibility(.hidden)
+    }
     ToolbarItem(placement: .navigation) {
       WindowLine(code: fit.code)
     }
