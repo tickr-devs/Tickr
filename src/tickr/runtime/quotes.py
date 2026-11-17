@@ -30,15 +30,21 @@ ZERO = 0
 class QuoteSource(Protocol):
     def snapshot(self) -> dict[str, Quote]: ...
 
+    def connected_at(self) -> datetime | None: ...
 
-def quotes_document(quotes: dict[str, Quote], written_at: datetime) -> api.QuotesV1:
+
+def quotes_document(quotes: dict[str, Quote], written_at: datetime,
+                    connected_at: datetime | None) -> api.QuotesV1:
     """Every valid quote (a bid above zero and not above the ask), by symbol; others are left
     out, never shown as a price. `stream_received_at`: the newest receipt of any quote held
-    (valid or not), so the apps can tell the stream is still delivering."""
+    (valid or not), so the apps can tell the stream is still delivering; `stream_connected_at`:
+    when the transport last came up, so a quote received before a reconnect is not taken as
+    current."""
     received = max((q.receipt_time for q in quotes.values()), default=None)
     rows = tuple(api.LiveQuote(q.symbol, q.bid, q.ask, q.provider_time, q.receipt_time)
                  for _, q in sorted(quotes.items()) if ZERO < q.bid <= q.ask)
-    return api.QuotesV1(written_at=written_at, quotes=rows, stream_received_at=received)
+    return api.QuotesV1(written_at=written_at, quotes=rows, stream_received_at=received,
+                       stream_connected_at=connected_at)
 
 
 class QuoteFile:
@@ -49,8 +55,9 @@ class QuoteFile:
         self._interval = interval_seconds
         self._now = now
         self._lock = threading.Lock()
-        # The quotes and stream receipt last written: the file is rewritten when either changed.
-        self._written: tuple[tuple[api.LiveQuote, ...], datetime | None] | None = None
+        # The quotes, stream receipt and connect time last written: rewritten when one changed.
+        self._written: tuple[tuple[api.LiveQuote, ...], datetime | None,
+                             datetime | None] | None = None
         self._failing = False
         self._failures: list[dict[str, str]] = []
         self._stop = threading.Event()
@@ -75,8 +82,11 @@ class QuoteFile:
         """Write the file when a quote changed since the last write; True when it wrote. Called
         by the thread; tests call it directly. Never raises: a failure is kept for the loop."""
         try:
-            document = quotes_document(self._source.snapshot(), self._now())
-            if (document.quotes, document.stream_received_at) == self._written:
+            document = quotes_document(self._source.snapshot(), self._now(),
+                                       self._source.connected_at())
+            written = (document.quotes, document.stream_received_at,
+                       document.stream_connected_at)
+            if written == self._written:
                 return False
             api.write_quotes(self._path, document)
         except Exception as exc:  # noqa: BLE001 - the display thread must outlive a bug
@@ -85,7 +95,7 @@ class QuoteFile:
                     self._failures.append({"error": type(exc).__name__})
                 self._failing = True
             return False
-        self._written = (document.quotes, document.stream_received_at)
+        self._written = written
         with self._lock:
             self._failing = False
         return True

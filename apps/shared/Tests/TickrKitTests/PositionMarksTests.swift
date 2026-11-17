@@ -99,10 +99,17 @@ struct PositionMarksTests {
     let received = try #require(Wire.decoder().decode(QuotesResponseV1.self, from: fixture("quotes-response-v1.json"))
       .quotes.streamReceivedAt?.date)
     let later = received.addingTimeInterval(1)
-    #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60, streamReceivedAt: received) != nil)
-    #expect(LivePrice(quote: quote, now: received.addingTimeInterval(61), maxAgeSeconds: 60, streamReceivedAt: received) == nil)
+    let stream = StreamTimes(receivedAt: received)
+    #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60, stream: stream) != nil)
+    #expect(LivePrice(quote: quote, now: received.addingTimeInterval(61), maxAgeSeconds: 60, stream: stream) == nil)
     // Without the stream's receipt (an older bot) the quote's own age decides.
     #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60) == nil)
+    // Received before the stream last came up: it predates a gap, never live, however fresh the
+    // stream's other quotes are.
+    let reconnected = StreamTimes(receivedAt: received, connectedAt: quote.receivedAt.date.addingTimeInterval(1))
+    #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60, stream: reconnected) == nil)
+    let before = StreamTimes(receivedAt: received, connectedAt: quote.receivedAt.date)
+    #expect(LivePrice(quote: quote, now: later, maxAgeSeconds: 60, stream: before) != nil)
   }
 
   /// A quote of the shared GET /quotes fixture (ABCD: bid 12.50, ask 12.52).

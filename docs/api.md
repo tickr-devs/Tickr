@@ -365,7 +365,10 @@ file + rename, like status) only when a quote changed or another arrived, so the
 waits for it. `stream_received_at` (added after version 1 shipped; `null` before the first quote)
 is the newest receipt of any quote the stream holds: a symbol's newest quote is replaced on every
 change and dropped when the symbol is unsubscribed, so while the stream delivers it is the
-symbol's market however long it has not changed. A failed write keeps
+symbol's market however long it has not changed. `stream_connected_at` (added after version 1
+shipped; `null` before the first connect) is when the transport last came up: the inbox keeps its
+quotes across a reconnect, so a quote whose `received_at` is before it predates the gap and is not
+shown as live, however fresh other symbols keep `stream_received_at`. A failed write keeps
 the old file and is journaled once per stretch (`quotes-write-failed`). Display only: no decision
 reads it.
 

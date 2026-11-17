@@ -428,7 +428,8 @@ def documents() -> dict[str, object]:
                 LiveQuote("EFGH", Decimal("3.4100"), Decimal("3.4300"),
                           T0 - timedelta(minutes=2), T0 - timedelta(minutes=2) +
                           timedelta(milliseconds=300))),
-            stream_received_at=T0 + timedelta(milliseconds=1200))),
+            stream_received_at=T0 + timedelta(milliseconds=1200),
+            stream_connected_at=T0 - timedelta(minutes=10))),
         "account-v1.mismatch": mismatch,
         "account-response-v1": AccountResponseV1(T0 + timedelta(seconds=4), account(),
                                                  Decimal("4.000"), False),

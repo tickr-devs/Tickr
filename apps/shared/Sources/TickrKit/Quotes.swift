@@ -28,12 +28,16 @@ public struct QuotesV1: Codable, Hashable, Sendable {
   /// When the stream last delivered any quote: while it delivers, every quote here is its symbol's
   /// market however old (added after version 1 shipped: nil from an older bot or before the first).
   public let streamReceivedAt: WireTime?
+  /// When the stream's transport last came up: a quote received before it predates a gap and is
+  /// not live (added after version 1 shipped: nil from an older bot or before the first connect).
+  public let streamConnectedAt: WireTime?
 
   enum CodingKeys: String, CodingKey {
     case quotes
     case writtenAt = "written_at"
     case schemaVersion = "schema_version"
     case streamReceivedAt = "stream_received_at"
+    case streamConnectedAt = "stream_connected_at"
   }
 
   public init(from decoder: Decoder) throws {
@@ -42,6 +46,7 @@ public struct QuotesV1: Codable, Hashable, Sendable {
     writtenAt = try c.decode(WireTime.self, forKey: .writtenAt)
     quotes = try c.decode([LiveQuoteV1].self, forKey: .quotes)
     streamReceivedAt = try c.decodeIfPresent(WireTime.self, forKey: .streamReceivedAt)
+    streamConnectedAt = try c.decodeIfPresent(WireTime.self, forKey: .streamConnectedAt)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -50,6 +55,7 @@ public struct QuotesV1: Codable, Hashable, Sendable {
     try c.encode(quotes, forKey: .quotes)
     try c.encode(schemaVersion, forKey: .schemaVersion)
     try c.encodeNullable(streamReceivedAt, forKey: .streamReceivedAt)
+    try c.encodeNullable(streamConnectedAt, forKey: .streamConnectedAt)
   }
 }
 

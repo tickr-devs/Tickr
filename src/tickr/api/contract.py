@@ -493,6 +493,10 @@ class QuotesV1:
     # is replaced on every change and dropped when the symbol is unsubscribed, so the apps judge
     # liveness by this, not by each quote's own age (a quote that has not changed is current).
     stream_received_at: datetime | None = _added_later(None)
+    # When the stream's transport last came up (added after version 1 shipped; null before the
+    # first connect). The inbox keeps quotes across a reconnect, so a quote whose `received_at`
+    # is before this predates the gap and is not shown as live, whatever other symbols deliver.
+    stream_connected_at: datetime | None = _added_later(None)
 
 
 @dataclass(frozen=True)

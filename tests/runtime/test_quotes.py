@@ -84,3 +84,22 @@ def test_a_failed_write_is_journaled_once_per_stretch(tmp_path):
     writer.journal_failures(engine)  # type: ignore[arg-type]
     writer.journal_failures(engine)  # type: ignore[arg-type]
     assert [kind for kind, _ in engine.store.rows] == [QUOTES_WRITE_FAILED]
+
+
+def test_the_file_names_the_last_reconnect(tmp_path):
+    """The inbox keeps quotes across a reconnect: the file says when the transport last came up,
+    so the apps never show a quote received before the gap as live."""
+    inbox = StreamInbox()
+    path = tmp_path / "quotes.json"
+    writer = QuoteFile(inbox, path, 0.5, lambda: T0)
+    inbox.on_transport(True, T0, "connected")
+    inbox.on_quote(quote("AAA", "10.10", "10.12", T0 + timedelta(seconds=1)))
+    assert writer.write_once()
+    assert api.read_quotes(path).stream_connected_at == T0
+    inbox.on_transport(False, T0 + timedelta(seconds=5), "lost")
+    assert not writer.write_once()  # down: nothing changed yet
+    inbox.on_transport(True, T0 + timedelta(seconds=9), "reconnected")
+    assert writer.write_once()
+    written = api.read_quotes(path)
+    assert written.stream_connected_at == T0 + timedelta(seconds=9)
+    assert written.quotes[0].received_at < written.stream_connected_at  # AAA predates the gap
