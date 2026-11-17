@@ -32,8 +32,10 @@ final class TickrUITests: XCTestCase {
   /// too, so the name alone also matches the active version's row.
   static let observer = "price-action-v1"
   static let observerNote = "observer · decisions: 3"
-  /// The Overview badge for fixture data (overview.fixtures, upper-cased as every badge is).
-  static let fixturesBadge = "FIXTURES"
+  /// The Overview header's one environment badge for the fixtures' environment (sandbox in
+  /// status-response-v1.json), as its English text reads (environmentLabel, upper-cased as every
+  /// badge is).
+  static let environmentBadge = "ENVIRONMENT: SANDBOX"
   /// The toolbar's connection status (ConnectionStatus.id).
   static let connectionItem = "toolbar-connection"
   /// The refusal detail of the first signal in skipped-v1.json, as the English app words it
@@ -185,11 +187,13 @@ final class TickrUITests: XCTestCase {
   }
 
   @MainActor
-  func testOverviewSaysItShowsFixtures() {
+  func testOverviewSaysWhereItsDataComesFrom() {
     let app = launch()
     open(Self.sections[0], in: app)
-    XCTAssertTrue(app.staticTexts[Self.fixturesBadge].firstMatch.waitForExistence(timeout: Self.timeout),
-      "fixtures badge\n\(app.debugDescription)")
+    // The header's one environment badge names the environment the data comes from (#543 removed
+    // the separate FIXTURES badge: one badge, no second tag beside it).
+    XCTAssertTrue(app.staticTexts[Self.environmentBadge].firstMatch.waitForExistence(timeout: Self.timeout),
+      "environment badge\n\(app.debugDescription)")
     // The title bar names the bot's address (the fixture API answers as 127.0.0.1).
     let connection = app.descendants(matching: .any)[Self.connectionItem].firstMatch
     XCTAssertTrue(connection.waitForExistence(timeout: Self.timeout), "connection\n\(app.debugDescription)")
