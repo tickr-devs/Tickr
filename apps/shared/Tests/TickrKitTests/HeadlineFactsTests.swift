@@ -97,14 +97,45 @@ import Testing
     #expect(String(localized: EntryGate.paused.title) == "Entries paused")
   }
 
-  @Test("A trading gate closed in config is a calm \"Entries off\", not a warning (mockup v109)")
-  func gateClosedHeadline() throws {
-    let closed = try status {
-      $0.replacingOccurrences(of: "\"open\": true", with: "\"open\": false")
+  /// The fixture with the trading gate closed in config: the bot's block and gate say so.
+  func gateClosed(flat: Bool) throws -> StatusResponseV1 {
+    try status {
+      var text = $0.replacingOccurrences(of: "\"open\": true", with: "\"open\": false")
         .replacingOccurrences(of: "\"cause\": \"own_trade_open\"", with: "\"cause\": \"trading_gate_closed\"")
+        .replacingOccurrences(of: "\"attention\": false", with: "\"attention\": true")
+      if flat {
+        let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        if var object, var inner = object["status"] as? [String: Any] {
+          inner["positions"] = []
+          inner["position"] = NSNull()
+          object["status"] = inner
+          if let data = try? JSONSerialization.data(withJSONObject: object),
+            let flatText = String(bytes: data, encoding: .utf8) {
+            text = flatText
+          }
+        }
+      }
+      return text
     }
-    let headline = Headline.make(response: closed, readFailed: false)
+  }
+
+  @Test("Gate closed in config and flat: a calm \"Entries off\" with the grey gate badge (mockup v109)")
+  func gateClosedFlat() throws {
+    let response = try gateClosed(flat: true)
+    #expect(response.status?.positions.isEmpty == true)
+    let headline = Headline.make(response: response, readFailed: false)
     #expect(headline == Headline(text: "Entries off", severity: .ok, detail: "trading gate closed in config"))
+    #expect(EntryGate.make(response.status, headline: headline) == .closed)
+  }
+
+  @Test("Gate closed in config with a position open: holding wins, the grey gate badge beside it")
+  func gateClosedHolding() throws {
+    let response = try gateClosed(flat: false)
+    #expect(response.status?.positions.isEmpty == false)
+    let headline = Headline.make(response: response, readFailed: false)
+    #expect(headline.text == "Holding 1 position · protected by a broker stop")
+    #expect(headline.severity == .ok)
+    #expect(EntryGate.make(response.status, headline: headline) == .closed)
   }
 
   @Test("An alarm headline hides the gate badge; without a status there is none")
