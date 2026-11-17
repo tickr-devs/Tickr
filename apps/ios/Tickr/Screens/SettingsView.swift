@@ -15,7 +15,6 @@ struct SettingsView: View {
   static let startSymbol = "play.fill"
   static let gateClosedSymbol = "lock.fill"
   static let configSymbol = "doc.plaintext.fill"
-  static let lockScreenSymbol = "bell.badge.fill"
   static let appSymbol = "app.fill"
   static let contractSymbol = "doc.text.fill"
   static let demoSymbol = "theatermasks.fill"
@@ -58,12 +57,7 @@ struct SettingsView: View {
       }
       .cardRise(step: Order.demo.rawValue)
 
-      SettingsCard(L10n.Settings.notifications, note: L10n.Settings.notificationsFooter) {
-        SettingsRow(L10n.Settings.lockScreen, systemImage: Self.lockScreenSymbol, tone: .warning) {
-          Badge(L10n.Settings.notYet, tone: .highlight, planned: true)
-        }
-      }
-      .cardRise(step: Order.notifications.rawValue)
+      NotificationsSection().cardRise(step: Order.notifications.rawValue)
 
       if let status = model.status {
         EnvironmentSection(status: status).cardRise(step: Order.environment.rawValue)
@@ -150,12 +144,14 @@ struct SettingsView: View {
         }
         .buttonStyle(.command(.destructive, tag: tag))
         .fixedSize(horizontal: false, vertical: true)
+        .inFlight(model.inFlight == .stopBot ? Text(OperatorCommand.stopBot.inFlightTitle) : nil)
       } else if model.canStartBot && (status.botState == .stopped || model.response?.stale == true) {
         Button { confirmStart = true } label: {
           Label { Text(L10n.Control.startBot) } icon: { Image(systemName: Self.startSymbol) }
         }
         .buttonStyle(.command(.primary, tag: tag))
         .fixedSize(horizontal: false, vertical: true)
+        .inFlight(model.botStarting ? Text(InFlightText.startBot) : nil)
       }
       NavigationLink {
         ConfigView()

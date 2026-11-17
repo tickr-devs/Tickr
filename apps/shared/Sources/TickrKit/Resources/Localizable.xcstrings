@@ -1242,6 +1242,40 @@
         }
       }
     },
+    "kit.api.notRecordedDemo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the demo day's recording does not hold it yet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "в записи демо-дня этого пока нет"
+          }
+        }
+      }
+    },
+    "kit.api.notServed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this bot version does not provide it yet; update the bot"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "эта версия бота этого ещё не умеет; обновите бота"
+          }
+        }
+      }
+    },
     "kit.api.refused" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2403,6 +2437,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "закрыта"
+          }
+        }
+      }
+    },
+    "kit.exit.endOfData" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bars ran out"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "бары закончились"
           }
         }
       }
@@ -4063,6 +4114,176 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Статус бота недоступен: %@. Входы невозможны."
+          }
+        }
+      }
+    },
+    "kit.inFlight.cancelOrders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelling the bot's orders"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ордера бота отменяются"
+          }
+        }
+      }
+    },
+    "kit.inFlight.emergency" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopping everything"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всё останавливается"
+          }
+        }
+      }
+    },
+    "kit.inFlight.flatten" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Closing all positions"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все позиции закрываются"
+          }
+        }
+      }
+    },
+    "kit.inFlight.flattenSymbol" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Closing %@ position"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позиция %@ закрывается"
+          }
+        }
+      }
+    },
+    "kit.inFlight.pauseEntries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausing entries"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы приостанавливаются"
+          }
+        }
+      }
+    },
+    "kit.inFlight.replayRunning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replaying"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Идёт прогон"
+          }
+        }
+      }
+    },
+    "kit.inFlight.replayStarting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting the replay"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прогон запускается"
+          }
+        }
+      }
+    },
+    "kit.inFlight.resumeEntries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resuming entries"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Входы возобновляются"
+          }
+        }
+      }
+    },
+    "kit.inFlight.startBot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting the bot"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот запускается"
+          }
+        }
+      }
+    },
+    "kit.inFlight.stopBot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopping the bot"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот останавливается"
           }
         }
       }
