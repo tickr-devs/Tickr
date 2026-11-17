@@ -188,7 +188,8 @@ final class TickrUITests: XCTestCase {
   func testOverviewSaysItShowsFixtures() {
     let app = launch()
     open(Self.sections[0], in: app)
-    XCTAssertTrue(app.staticTexts[Self.fixturesBadge].firstMatch.waitForExistence(timeout: Self.timeout))
+    XCTAssertTrue(app.staticTexts[Self.fixturesBadge].firstMatch.waitForExistence(timeout: Self.timeout),
+      "fixtures badge\n\(app.debugDescription)")
     // The title bar names the bot's address (the fixture API answers as 127.0.0.1).
     let connection = app.descendants(matching: .any)[Self.connectionItem].firstMatch
     XCTAssertTrue(connection.waitForExistence(timeout: Self.timeout), "connection\n\(app.debugDescription)")
