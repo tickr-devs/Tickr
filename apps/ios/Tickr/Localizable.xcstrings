@@ -4652,13 +4652,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "−N dropped here today"
+            "value" : "pink: dropped at this stage today"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "−N отсеяно здесь сегодня"
+            "value" : "розовым: отсеяно на этом этапе сегодня"
           }
         }
       }

@@ -473,7 +473,7 @@ enum L10n {
     }
     /// The legend of the tiles' pink counts, as on the board.
     static var droppedLegend: LocalizedStringResource {
-      LocalizedStringResource("flow.droppedLegend", defaultValue: "−N dropped here today", bundle: L10n.bundle)
+      LocalizedStringResource("flow.droppedLegend", defaultValue: "pink: dropped at this stage today", bundle: L10n.bundle)
     }
     /// In place of the slots when the status is stale, failed or from an earlier session.
     static var notCurrent: LocalizedStringResource {
