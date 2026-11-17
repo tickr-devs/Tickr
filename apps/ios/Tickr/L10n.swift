@@ -1793,6 +1793,12 @@ enum L10n {
     static var checkStreamFresh: LocalizedStringResource {
       LocalizedStringResource("settings.checkStreamFresh", defaultValue: "Quote stream fresh", bundle: L10n.bundle)
     }
+    static var streamNoPosition: LocalizedStringResource {
+      LocalizedStringResource("settings.streamNoPosition", defaultValue: "off · no open position", bundle: L10n.bundle)
+    }
+    static var notNeeded: LocalizedStringResource {
+      LocalizedStringResource("settings.notNeeded", defaultValue: "Not needed now", bundle: L10n.bundle)
+    }
     static var checkBrokerMatches: LocalizedStringResource {
       LocalizedStringResource("settings.checkBrokerMatches", defaultValue: "Broker matches records", bundle: L10n.bundle)
     }
