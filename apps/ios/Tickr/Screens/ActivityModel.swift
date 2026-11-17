@@ -21,8 +21,9 @@ final class ActivityModel {
   private(set) var days: [DaySummary] = []
   /// Why the recorded days could not be listed, if they could not.
   private(set) var daysFailure: String?
-  /// The chosen past day; nil while today is shown.
-  private(set) var selectedDay: WireDate?
+  /// The chosen past day, the app's one shown day (`AppModel.selectedDay`); nil while today is
+  /// shown.
+  var selectedDay: WireDate? { Container.shared.appModel().selectedDay }
   /// The chosen past day's trades, once loaded.
   private(set) var day: DayV1?
   /// The record of the status's session (GET /days/<date>), for what the status leaves out.
@@ -37,6 +38,8 @@ final class ActivityModel {
   var month = DayCalendar.Month(Container.shared.appModel().today)
   /// Number of the newest load of a day; an answer to an older one is dropped.
   @ObservationIgnored private var latestRequest = 0
+  /// The past day this tab last began reading; another tab's pick is read when it differs.
+  @ObservationIgnored private var askedDay: WireDate?
   /// Number of the newest load of the days list, likewise.
   @ObservationIgnored private var latestDaysRequest = 0
   /// The bot's address `session` was read from.
@@ -155,7 +158,9 @@ final class ActivityModel {
       return
     }
     let request = begin()
-    selectedDay = day
+    askedDay = day
+    Container.shared.appModel().selectedDay = day
+    month = DayCalendar.Month(day)
     // A day read before shows at once; it is read again behind it.
     self.day = pastDays.parts(of: day)?.day
     phase = self.day == nil ? .loading : .loaded
@@ -181,10 +186,22 @@ final class ActivityModel {
   /// Back to today, live from the status.
   func showToday() {
     _ = begin()
-    selectedDay = nil
+    askedDay = nil
+    Container.shared.appModel().selectedDay = nil
     day = nil
     phase = .idle
     month = DayCalendar.Month(today)
+  }
+
+  /// Follows the app's shown day when another tab changed it (Home's arrows, the Chart's day
+  /// menu): reads that day's trades, or goes back to today.
+  func follow(from url: URL) async {
+    if let picked = selectedDay {
+      guard picked != askedDay else { return }  // read (or being read) here already
+      await show(picked, from: url)
+    } else if phase != .idle {
+      showToday()
+    }
   }
 
   private func begin() -> Int {
