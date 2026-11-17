@@ -84,8 +84,8 @@ struct ChartView: View {
   /// the history scroller.
   static let columnParts = 4
 
-  /// Least height of the Chart screen, in points: with every study pane on, no pane is under its
-  /// least height (`CandleChart.priceMinHeight`, `paneMinHeight`) and the history scroller stays
+  /// Least height of the Chart screen, in points: with every study pane on, the panes at their
+  /// least (`PaneStack`: the price pane at `Tokens.Chart.priceMinHeight`) and the history scroller stays
   /// in the window. The screen's padding, the header (one line of the 24-point symbol), the
   /// controls (`leastControlRows` rows of chips, a chip being one label line with its padding), the
   /// chart's card (its padding around the panes) and the scroller, `m` apart (`columnParts`).
@@ -96,7 +96,7 @@ struct ChartView: View {
     let chip = TextMeasure.lineHeight(label) + (Tokens.Space.xs + Tokens.Space.xxs) * edges
     let rows = CGFloat(leastControlRows)
     let controls = chip * rows + Tokens.Space.s * (rows - 1)
-    let panes = CandleChart.priceMinHeight + CGFloat(paneKeys.count) * CandleChart.paneMinHeight
+    let panes = PaneStack.height(available: 0, studies: paneKeys.count)
     let card = panes + Tokens.Space.s * edges
     let gaps = Tokens.Space.m * CGFloat(columnParts - 1)
     return Tokens.Space.l * edges + header + controls + card + scrollerHeight + gaps
