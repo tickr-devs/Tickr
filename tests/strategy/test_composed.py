@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from strategy_bars import SYMBOL, TODAY, bar, d, quote
+from strategy_bars import SYMBOL, TODAY, bar, d, minute, quote
 
 from tickr import config
 from tickr.observers.loader import load_strategy, parse_modules
@@ -36,8 +36,11 @@ def ignition(count=20, low=1.00, close=1.20, volume=10_000):
     return bars
 
 
-def ctx(bars, q=None, position=None):
-    return SymbolContext(SYMBOL, bars, (), q, position)
+OPEN = minute(TODAY, 0)
+
+
+def ctx(bars, q=None, position=None, session_open=OPEN):
+    return SymbolContext(SYMBOL, bars, (), q, position, session_open=session_open)
 
 
 def rules(decision):
@@ -93,6 +96,28 @@ def test_the_low_is_taken_only_over_the_window():
     assert decision.decisive.rule == "rise_from_low_percent"
 
 
+def test_a_session_without_the_0930_bar_is_decided_when_the_read_reached_the_open():
+    bars = ignition()[3:]  # no trade in the first three minutes: no bars for them
+    decision = make().evaluate(ctx(bars, quote("1.20", "1.21")))
+    assert decision.verdict is Verdict.ENTER, rules(decision)
+
+
+def test_bars_not_proven_to_reach_the_open_are_refused():
+    decision = make().evaluate(ctx(ignition(), quote("1.20", "1.21"), session_open=None))
+    assert decision.verdict is Verdict.IGNORE
+    assert decision.decisive.rule == "session_whole"
+
+
+def test_minutes_after_open_counts_the_clock_not_the_bars():
+    bars = [bar(TODAY, i, 1.00, 1.00, 1.00, 1.00, 10_000) for i in (2, 3)]
+    bars.append(bar(TODAY, 4, 1.00, 1.20, 1.00, 1.20, 10_000))  # 09:34: 4 minutes in, 3 bars
+    decision = make().evaluate(ctx(bars, quote("1.20", "1.21")))
+    assert decision.decisive.rule == "minutes_after_open"
+    later = [bar(TODAY, i, 1.00, 1.00, 1.00, 1.00, 10_000) for i in (2, 3)]
+    later.append(bar(TODAY, 5, 1.00, 1.20, 1.00, 1.20, 10_000))  # 09:35: 5 minutes in
+    assert make().evaluate(ctx(later, quote("1.20", "1.21"))).verdict is Verdict.ENTER
+
+
 def test_the_trailing_exit_fires_twenty_percent_under_the_high_since_the_fill():
     bars = ignition()
     filled = bars[-1].start + timedelta(minutes=1)
@@ -111,6 +136,32 @@ def test_the_bid_alone_can_fire_the_trail():
     position = PositionView(d("1.20"), d(800), d("0.96"), filled_at=bars[-1].start)
     decision = make().evaluate(ctx(bars, quote("0.95", "0.97"), position))
     assert decision.verdict is Verdict.EXIT
+
+
+def test_a_broken_book_never_fires_the_trail_the_last_close_decides():
+    bars = ignition()  # last close 1.20 at its high
+    position = PositionView(d("1.20"), d(800), d("0.96"), filled_at=bars[-1].start)
+    decision = make().evaluate(ctx(bars, quote("0.50", "1.21"), position))
+    assert decision.verdict is Verdict.HOLD, rules(decision)
+    assert decision.checks[-1].note.startswith("last close (bid not used: spread ratio")
+
+
+def test_an_exit_on_the_close_with_a_wide_book_names_the_trail_as_decisive():
+    bars = ignition()
+    bars.append(bar(TODAY, 20, 1.20, 1.20, 0.90, 0.90, 10_000))  # 25% under 1.20
+    position = PositionView(d("1.20"), d(800), d("0.96"), filled_at=bars[-2].start)
+    decision = make().evaluate(ctx(bars, quote("0.50", "1.21"), position))
+    assert decision.verdict is Verdict.EXIT
+    assert all(c.passed for c in decision.checks if c.rule != "trailing_stop")
+    assert decision.checks[-1].rule == "trailing_stop" and decision.checks[-1].passed
+
+
+def test_without_a_quote_the_last_close_decides():
+    bars = ignition()
+    position = PositionView(d("1.20"), d(800), d("0.96"), filled_at=bars[-1].start)
+    decision = make().evaluate(ctx(bars, None, position))
+    assert decision.verdict is Verdict.HOLD
+    assert decision.checks[-1].note.startswith("last close (bid not used: no valid fresh quote)")
 
 
 def test_without_a_fill_time_the_high_counts_from_the_first_bar_seen():

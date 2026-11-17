@@ -176,6 +176,10 @@ class ProbeConfig:
     trailing_trigger_seconds: int
     trailing_close_percent: Decimal
     trailing_unit_factor: Decimal
+    history_wait_seconds: int
+    listing_stops: int
+    listing_far_percent: Decimal
+    listing_wait_seconds: int
 
 
 @dataclass(frozen=True)
@@ -500,6 +504,31 @@ def build_section(name: str, table: Any, cls: type) -> Any:
     return cls(**values)
 
 
+
+EXTENDED_SESSIONS = ("premarket", "postmarket")
+
+
+def check_extended_sessions(session: SessionConfig) -> None:
+    """Refuse an extended session turned on before the path that trades it exists (it would
+    be a silent no-op), and offsets or a size the windows could never use. Whether the offsets
+    fit the day's session length is checked by `risk.timers.trading_windows`, which has the
+    calendar."""
+    for name in EXTENDED_SESSIONS:
+        if getattr(session, f"{name}_enabled"):
+            raise ConfigError(f"[session] {name}_enabled = true is not supported yet: nothing "
+                              f"trades that session (docs/decisions.md 2026-11-16)")
+        first = getattr(session, f"{name}_first_entry_minutes_after_open")
+        last = getattr(session, f"{name}_last_entry_minutes_before_close")
+        flatten = getattr(session, f"{name}_flatten_minutes_before_close")
+        if not (first >= 0 and last > flatten > 0):
+            raise ConfigError(f"[session] {name}: needs first_entry_minutes_after_open >= 0 and "
+                              f"last_entry_minutes_before_close > "
+                              f"flatten_minutes_before_close > 0")
+        fraction = getattr(session, f"{name}_size_fraction")
+        if not 0 < fraction <= 1:
+            raise ConfigError(f"[session] {name}_size_fraction must be above 0 and at most 1")
+
+
 def load(path: Path | str, root: Path | str | None = None) -> Config:
     """Load and validate `config/bot.toml`. `root` is the repo root for relative paths."""
     path = Path(path)
@@ -579,14 +608,17 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     probe: ProbeConfig = built["probe"]
     if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
             or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
-            or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1):
-        raise ConfigError("[probe] trailing_* values must be above 0 and "
-                          "trailing_unit_factor above 1")
+            or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1
+            or probe.history_wait_seconds <= 0 or probe.listing_stops < 1
+            or probe.listing_far_percent <= 0 or probe.listing_wait_seconds <= 0):
+        raise ConfigError("[probe] trailing_*, history_wait_seconds and listing_* values must be "
+                          "above 0 and trailing_unit_factor above 1")
     if probe.trailing_tight_percent >= probe.trailing_wide_percent:
         raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
     if not 1 <= risk.max_open_positions <= md.stream_reserved_symbols:
         raise ConfigError("[risk] max_open_positions must be at least 1 and at most "
                           "[market_data] stream_reserved_symbols (a stream slot per position)")
+    check_extended_sessions(built["session"])
     if risk.max_entry_rest_bars < 1:
         raise ConfigError("[risk] max_entry_rest_bars must be at least 1")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
