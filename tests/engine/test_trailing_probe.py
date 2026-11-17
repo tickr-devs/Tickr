@@ -199,6 +199,7 @@ def test_rising_price_answers_every_question_and_ends_flat(tmp_path: Path) -> No
     assert summary["t1_accepted"].startswith("accepted")
     assert summary["t2_unit"] == tp.UNIT_RATIO
     assert summary["t3_follows"] == tp.FOLLOWED
+    assert summary["t3_tight_follows"] == tp.FOLLOWED
     assert summary["t4_open_orders"] == tp.LISTED
     assert summary["t5_cancel"] == tp.CANCELLED
     assert summary["p1_positions_lag_seconds"] == 0 and "poll-granular" in summary["p1_note"]

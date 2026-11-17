@@ -157,6 +157,15 @@ def unit_of(step: Decimal, bid: Decimal, stop: Decimal | None, factor: Decimal) 
     return min(fits)[1] if fits else UNIT_UNCLEAR
 
 
+def follows(seen: list[tuple[Decimal, Decimal]]) -> str:
+    """T3 from (bid, stop price) per poll: did the stop rise when the bid rose above where it
+    was at the first read."""
+    bid, stop = seen[0]
+    if max(s for _, s in seen) > stop:
+        return FOLLOWED
+    return NOT_FOLLOWED if max(b for b, _ in seen) > bid else PRICE_DID_NOT_RISE
+
+
 @dataclass
 class TrailingProbe(Probe):
     """The plumbing of the extended-hours probe (record, send once, Detail, cancel and
@@ -500,9 +509,7 @@ class TrailingProbe(Probe):
         if seen:
             bid, stop = seen[0]
             answers["t2_unit"] = unit_of(step, bid, stop, self.config.probe.trailing_unit_factor)
-            rose = max(b for b, _ in seen) > bid
-            answers["t3_follows"] = (FOLLOWED if max(s for _, s in seen) > stop
-                                     else NOT_FOLLOWED if rose else PRICE_DID_NOT_RISE)
+            answers["t3_follows"] = follows(seen)
         elif row is not None:
             answers["t2_unit"] = UNIT_NOT_SHOWN
         triggered = row is not None and row.state in TRIGGER_STATES
@@ -537,8 +544,12 @@ class TrailingProbe(Probe):
         if cid is None:
             answers["t6_triggers"] = NOT_TESTED
             return answers
-        row, absent, _ = self._watch(name, cid,
-                                     float(self.config.probe.trailing_trigger_seconds))
+        row, absent, seen = self._watch(name, cid,
+                                        float(self.config.probe.trailing_trigger_seconds))
+        # T3 again: a tight stop moves a cent for about a cent of rise, so a stop price that
+        # stays put while the bid rises says Detail does not show the trailing stop's level.
+        answers["t3_tight_follows"] = follows(seen) if seen else UNIT_NOT_SHOWN
+        self.out(f"t3_tight_follows: {answers['t3_tight_follows']}")
         row = self.finish(name, cid, row,
                           row is None and absent >= self.config.orders.unknown_absent_reads)
         if row is not None and row.filled_quantity > 0:
