@@ -329,11 +329,27 @@ def test_the_flatten_of_split_stops_leaves_shares_bare_for_one_cancel_read(tmp_p
     assert steps * POLL <= slots * STOPS * 2 * POLL <= WINDOW
 
 
-def test_an_entry_filling_in_pieces_is_capped_at_the_stop_limit(tmp_path):
-    """Each fill observation adds a stop (two across the scale-out boundary); once the trade
-    holds the limit minus what one more observation adds, the entry's rest is cancelled, so
-    the flatten bound's stop count holds."""
+def test_with_one_slot_an_entry_filling_in_pieces_fills_to_its_size(tmp_path):
+    """Owner 2026-11-17: the stop cap applies only with several slots. With one, an entry
+    filling 1 + 2 + 3 + 4 ends holding all 10, each piece under its stop."""
     desk = Desk(tmp_path, wide(1))
+    assert desk.enter("AAA").admission == "taken"
+    entry = desk.engine.orders(desk.trade_of("AAA").trade_id)[0]
+    for piece in (1, 2, 3, 4):
+        desk.broker.fill(entry.client_order_id, D(piece), D("10.05"))
+        desk.step(4)
+    assert desk.broker.holdings["AAA"].quantity == 10
+    live = [s for s in desk.stops("AAA") if s.live]
+    assert len(live) == 4 and all(s.verified for s in live)
+    assert sum((s.quantity for s in live), D(0)) == 10
+    assert not desk.store.journal("entry-capped", desk.trade_of("AAA").trade_id)
+
+
+def test_an_entry_filling_in_pieces_is_capped_at_the_stop_limit(tmp_path):
+    """With several slots, each fill observation adds a stop (two across the scale-out
+    boundary); once the trade holds the limit minus what one more observation adds, the
+    entry's rest is cancelled, so the flatten bound's stop count holds."""
+    desk = Desk(tmp_path, wide(2))
     assert desk.enter("AAA", scale_out=D(6)).admission == "taken"
     entry = desk.engine.orders(desk.trade_of("AAA").trade_id)[0]
     for _ in range(4):
