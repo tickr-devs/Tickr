@@ -230,6 +230,24 @@ def test_history_lag_is_measured_for_the_entry_and_the_close(tmp_path: Path, pol
     assert summary["t4_open_orders"] == tp.LISTED
 
 
+def test_the_trailing_stop_goes_out_when_it_did_whatever_the_history_does(
+        tmp_path: Path) -> None:
+    """H1 is read only after the stop is placed: the time from the start to the wide
+    trailing stop is the same with the history on time, late or never showing the fill."""
+    first_stop = []
+    for n, lag in enumerate([0, 1, 3, None]):
+        (tmp_path / str(n)).mkdir()
+        world = World(tmp_path / str(n), history_lag_polls=lag)
+        world.run()
+        sent = [r.client_order_id for r in world.broker.sent
+                if r.order_type is OrderType.TRAILING_STOP_LOSS]
+        steps = [json.loads(line) for line in
+                 (world.folder / "steps.jsonl").read_text("utf-8").splitlines()]
+        first_stop.append(next(row["at"] for row in steps if row["step"] == "intent"
+                               and row["client_order_id"] == sent[0]))
+    assert len(set(first_stop)) == 1
+
+
 def test_a_history_that_never_shows_the_fill_is_recorded_and_changes_nothing(
         tmp_path: Path) -> None:
     world = World(tmp_path, history_lag_polls=None)
