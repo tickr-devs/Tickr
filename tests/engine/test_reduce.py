@@ -215,3 +215,27 @@ def test_release_picks_stops_that_add_up_exactly():
     assert [s.client_order_id for s in _stops_to_release(stops, D(7))] == ["s3", "s2"]
     assert _stops_to_release(stops, D(4)) is None  # no exact set: nothing is released
     assert CFG.orders.stop_retry_attempts >= 0
+
+
+def test_a_stop_still_working_after_every_cancel_does_not_hold_back_the_trades_other_stop(store):
+    """Teardown of a split position: one stop's cancels never take (cancel-failed fence,
+    alerted); it keeps covering its shares, and the other stop is cancelled and its shares
+    closed without waiting for it."""
+    from tickr.broker.base import OutcomeUnknown
+
+    b, e, t = scaled(store)
+    first, second = legs(e, t, Leg.STOP)
+    real = b.cancel
+
+    def cancel(cid):
+        if cid == first.client_order_id:
+            raise OutcomeUnknown("lost")
+        real(cid)
+
+    b.cancel = cancel
+    e.request_exit(t, "x")
+    drive(e, b, 60)
+    assert has(e, Fence.CANCEL_FAILED)
+    (close,) = legs(e, t, Leg.EXIT)
+    assert close.quantity == second.quantity
+    assert not b.orders[first.client_order_id].state.terminal  # still covering its shares
