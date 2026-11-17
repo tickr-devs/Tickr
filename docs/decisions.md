@@ -4,6 +4,7 @@ Newest first. Only decisions that are in force. Each line: date, decision, where
 
 | Date | Decision | Applies to |
 |---|---|---|
+| 2026-11-17 | The session flatten starts 10 minutes before the close (15:50 ET) and the last entry is 20 minutes before it (15:40 ET), so the flatten of every slot (one stop at a time) fits before the close-order cutoff. | config `session`, runtime.launchd.check_timings |
 | 2026-11-17 | A broker stop counts as verified when the open-orders list shows it working as sent, not only when its own Detail read does; one list read verifies every new stop. Absence from the list proves nothing; fills are still sized by Detail. | engine/core.py (`_verify_listed`), spec-v1 section 9 |
 | 2026-11-17 | The stops-per-trade cap (`[orders] max_stops_per_trade`: an entry still working when its trade holds that many stops minus two is cancelled) applies only with several positions (`[risk] max_open_positions` above 1). With one slot an entry filling in pieces keeps filling to its full size. | engine/core.py (`_cap_stops`), runtime/launchd.py, spec-v1 section 9 |
 | 2026-11-16 | A bot the watchdog starts early (a resting entry may still work at Webull while the bot is down) protects only: it cancels working entries, keeps stops and flattens, and takes no new entry until the operator clears the `watchdog-started` fence (`tickr clear-fence watchdog-started`). An unattended start never opens a trade. | runtime/watchdog.py, runtime/service.py |
@@ -39,7 +40,7 @@ Newest first. Only decisions that are in force. Each line: date, decision, where
 | 2026-11-14 | Standing requirements: all numbers in commented config; Sandbox/Production only an environment switch; strategies swappable and versioned; record every signal (taken or not) and all inputs from day one for "what if we had entered" and "what if another strategy" analysis; live observer strategy versions; AI advisor that proposes strategy versions (never applies them). | everything |
 | 2026-11-07 | Planned loss per trade 50 USD. | config `risk` |
 | 2026-10-31 | Per-position notional cap 2,500 USD. | config `risk` |
-| 2026-10-31 | Regular session only for now: last entry about 15:45 ET, everything closed by 15:55 ET. | config `session` |
+| 2026-10-31 | Regular session only for now. | config `session` |
 | 2026-10-28 | Ceiling reached with a position open: keep the position and its stop, block new entries only. | risk |
 | 2026-10-28 | No price floor; protection against thin stocks comes from liquidity rules. Minimum stop distance = max(3 spreads, 0.5 percent of price); closer = refuse. | strategy |
 | 2026-10-23 | No short selling in the first Sandbox cycle. | spec-v1 |
