@@ -850,7 +850,7 @@ private struct PositionTab: View {
     Button(action: action) {
       HStack(spacing: Tokens.Space.xs) {
         StopDot(row.position.stop.state)
-        Text(verbatim: row.position.symbol).foregroundStyle(Palette.textPrimary)
+        SymbolText(row.position.symbol).foregroundStyle(Palette.textPrimary)
         if let value = row.unrealized {
           Text(verbatim: Money.signedUSD(value)).foregroundStyle(Palette.result(value))
         }
@@ -890,7 +890,7 @@ private struct PositionDetail: View {
   /// The price line; it opens the Chart on the position, as its "Open chart" does.
   private var chart: some View {
     ChartLink(row.position.symbol) {
-      MiniChart(closes: row.closes, entry: row.entry, stop: row.stop)
+      MiniChart(closes: row.line, entry: row.entry, stop: row.stop)
         .frame(minWidth: Self.chartMinWidth, minHeight: Self.chartMinHeight)
     }
   }
@@ -901,7 +901,7 @@ private struct PositionDetail: View {
       HStack(spacing: Tokens.Space.s) {
         StopGlyph(state: row.position.stop.state, symbol: row.position.symbol, price: row.position.stop.price,
           style: .tile)
-        Text(verbatim: row.position.symbol).font(Tokens.Typography.metric)
+        SymbolText(row.position.symbol).font(Tokens.Typography.metric)
         Spacer()
         if let value = row.unrealized {
           DeltaTag(value, text: Money.signedUSD(value), large: true)
@@ -925,7 +925,7 @@ private struct PositionDetail: View {
       if let range = stopToLast {
         MeterBar(fraction: range.fraction, tone: range.tone, marks: [
           MeterMark(Format.price(row.stop), tone: .loss),
-          MeterMark(Format.price(row.lastBarClose)),
+          MeterMark(Format.price(row.price)),
         ])
         .hint(L10n.Position.chartLabel)
       }
@@ -976,13 +976,16 @@ private struct PositionDetail: View {
   /// Where the last close sits between the stop (empty) and the entry's mirror above it (full):
   /// half way is the entry. Nothing without a stop or a close.
   private var stopToLast: (fraction: Double, tone: Tone)? {
-    guard let stop = row.stop, let last = row.lastBarClose, row.entry > stop else { return nil }
+    guard let stop = row.stop, let last = row.price, row.entry > stop else { return nil }
     let span = (row.entry - stop) * Self.meterRisks
     let fraction = NSDecimalNumber(decimal: (last - stop) / span).doubleValue
     return (fraction, last >= row.entry ? .profit : .warning)
   }
 
   private var lastBarLabel: Text {
+    if let live = row.live {
+      return Text(L10n.Position.bidAt(ClockText.seconds(live.quotedAt)))
+    }
     if let time = row.lastBarAt {
       return Text(L10n.Position.lastBarCloseAt(Format.marketMinute(time)))
     }
@@ -990,7 +993,7 @@ private struct PositionDetail: View {
   }
 
   private var lastBarValue: String {
-    (row.lastBarClose ?? row.latestClose).map { Format.price($0) } ?? Format.missing
+    (row.price ?? row.latestClose).map { Format.price($0) } ?? Format.missing
   }
 
   /// The newest bar is too old to be the current price: shown greyed, as of its time.

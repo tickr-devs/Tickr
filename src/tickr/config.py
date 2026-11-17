@@ -178,7 +178,8 @@ class ProbeConfig:
     attached_observe_seconds: int
     attached_stop_wait_seconds: int
     trailing_wide_percent: Decimal
-    trailing_tight_percent: Decimal
+    trailing_tight_percents: tuple[Decimal, ...]
+    trailing_amount_steps_usd: tuple[Decimal, ...]
     trailing_observe_seconds: int
     trailing_trigger_seconds: int
     trailing_close_percent: Decimal
@@ -208,6 +209,10 @@ class ApiConfig:
     commands_dir: str
     status_stale_seconds: Decimal
     broker_read_warn_seconds: Decimal
+    live_quote_max_age_seconds: Decimal
+    quotes_file: str
+    quotes_write_seconds: Decimal
+    quotes_poll_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
     request_timeout_seconds: Decimal
@@ -258,6 +263,7 @@ class MarketDataConfig:
     history_max_pages_per_symbol: int
     history_max_lookback_days: int
     history_sessions: int
+    history_memory_symbols: int
     candidate_subscriptions: int
     observer_subscriptions: int
     observer_resync_seconds: Decimal
@@ -298,6 +304,7 @@ class ObserversConfig:
     strategy_modules: tuple[str, ...]
     max_observers: int
     max_evaluation_seconds: Decimal
+    max_slow_evaluations_in_row: int
     queue_size: int
     watching_seconds: Decimal
     decisions_dir: str
@@ -593,6 +600,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[market_data] refused_symbol_recheck_seconds must be above 0")
     if md.failure_detail_max_chars < 1:
         raise ConfigError("[market_data] failure_detail_max_chars must be at least 1")
+    if md.history_memory_symbols < 1:
+        raise ConfigError("[market_data] history_memory_symbols must be at least 1")
     if md.history_cache_max_age_days < 1:
         raise ConfigError("[market_data] history_cache_max_age_days must be at least 1 (today's "
                           "cache is in use)")
@@ -611,6 +620,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[observers] watching_seconds must be above 0")
     if built["observers"].forget_symbol_seconds <= 0:
         raise ConfigError("[observers] forget_symbol_seconds must be above 0")
+    if built["observers"].max_slow_evaluations_in_row < 1:
+        raise ConfigError("[observers] max_slow_evaluations_in_row must be at least 1")
     if built["observers"].history_sends_per_pass < 1:
         raise ConfigError("[observers] history_sends_per_pass must be at least 1")
     risk: RiskConfig = built["risk"]
@@ -618,15 +629,21 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
                           "turn the cooldown off set symbol_cooldown_after_loss_enabled = false")
     probe: ProbeConfig = built["probe"]
-    if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
+    if (probe.trailing_wide_percent <= 0 or not probe.trailing_tight_percents
+            or not probe.trailing_amount_steps_usd
+            or min(probe.trailing_tight_percents + probe.trailing_amount_steps_usd) <= 0
             or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
             or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1
             or probe.history_wait_seconds <= 0 or probe.listing_stops < 1
             or probe.listing_far_percent <= 0 or probe.listing_wait_seconds <= 0):
         raise ConfigError("[probe] trailing_*, history_wait_seconds and listing_* values must be "
                           "above 0 and trailing_unit_factor above 1")
-    if probe.trailing_tight_percent >= probe.trailing_wide_percent:
-        raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
+    if max(probe.trailing_tight_percents) >= probe.trailing_wide_percent:
+        raise ConfigError("[probe] trailing_tight_percents must be below trailing_wide_percent")
+    for name, values in (("trailing_tight_percents", probe.trailing_tight_percents),
+                         ("trailing_amount_steps_usd", probe.trailing_amount_steps_usd)):
+        if list(values) != sorted(set(values)):
+            raise ConfigError(f"[probe] {name} must be ascending, without repeats")
     if not 1 <= risk.max_open_positions <= md.stream_reserved_symbols:
         raise ConfigError("[risk] max_open_positions must be at least 1 and at most "
                           "[market_data] stream_reserved_symbols (a stream slot per position)")
@@ -686,6 +703,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[api] broker_read_warn_seconds must be above [orders] "
                           "reconcile_interval_seconds and below [orders] "
                           "broker_read_max_age_seconds")
+    for key in ("quotes_write_seconds", "quotes_poll_seconds", "live_quote_max_age_seconds"):
+        if not getattr(api, key) > 0:
+            raise ConfigError(f"[api] {key} must be above 0")
+    if not api.quotes_file.strip():
+        raise ConfigError("[api] quotes_file must name a file")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")

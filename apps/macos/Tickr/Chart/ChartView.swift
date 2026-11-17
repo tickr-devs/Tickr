@@ -189,6 +189,13 @@ struct ChartView: View {
   /// Whether the chart shows the shown day (with its trades and decisions), not a longer range.
   private var showsDay: Bool { range == .oneDay }
 
+  /// The shown symbol's live bid (GET /quotes) while the chart shows the live day; nil otherwise or
+  /// without a live quote, and then the last closed candle stands for the price.
+  private var livePrice: Double? {
+    guard model.isLive, showsDay, let symbol, let live = model.livePrice(symbol) else { return nil }
+    return NSDecimalNumber(decimal: live.bid).doubleValue
+  }
+
   private func keepLoading() async {
     chart.clear()
     chart.hasSymbol = symbol != nil
@@ -256,15 +263,17 @@ struct ChartView: View {
         .fixedSize()
       }
       if !loadingBars, let last = plot?.candles.last {
-        Text(verbatim: Money.price(last.close))
+        // The live bid where the bot's quotes have one, else the last closed candle's close.
+        let price = livePrice ?? last.close
+        Text(verbatim: Money.price(price))
           .font(Tokens.Typography.quote)
-          // Coloured as the day's change beside it when the screeners reported one, so the two
-          // never disagree; else by the last candle.
-          .foregroundStyle(Palette.result(dayChange ?? Money.decimal(last.close - last.open)))
-          .contentTransition(.numericText(value: last.close))
-          .animation(Tokens.Motion.quick, value: last.close)
+          // Coloured as the day's change beside it when there is one, so the two never disagree;
+          // else by the last candle.
+          .foregroundStyle(Palette.result(dayChange(price) ?? Money.decimal(price - last.open)))
+          .contentTransition(.numericText(value: price))
+          .animation(Tokens.Motion.quick, value: price)
       }
-      if !loadingBars, let change = dayChange {
+      if !loadingBars, let last = plot?.candles.last, let change = dayChange(livePrice ?? last.close) {
         Text(verbatim: Percent.signed(fraction: change))
           .font(Tokens.Typography.calloutMono)
           .foregroundStyle(Palette.result(change))
@@ -290,15 +299,13 @@ struct ChartView: View {
     return chart.loading || !chart.hasRead(timeframe: interval, range: range)
   }
 
-  /// The day's change of the shown symbol from the previous close, when the screeners reported
-  /// it (the bars carry no previous close).
-  private var dayChange: Decimal? {
-    guard let symbol, let pct = model.flow?.chips.first(where: { $0.symbol == symbol })?.changePct else { return nil }
-    return pct.value / Self.percentFactor
+  /// The day's change of the shown symbol at `price` from the previous close (`DayChange`), as
+  /// Webull shows it; nil unless today's session is shown live and a screener listed the symbol
+  /// today (the bars carry no previous close).
+  private func dayChange(_ price: Double) -> Decimal? {
+    guard model.isLive, showsDay, let symbol else { return nil }
+    return DayChange.fraction(price: Money.decimal(price), previousClose: DayChange.previousClose(symbol, flow: model.flow))
   }
-
-  /// A percent of 1 is 0.01.
-  static let percentFactor: Decimal = 100
 
   private var symbolMenu: some View {
     Menu {
@@ -597,6 +604,7 @@ struct ChartView: View {
             place: plot.drawnTime) : [],
         // Only the shown live day and intraday ranges reaching today still change.
         live: model.isLive && (showsDay || interval.isIntraday),
+        livePrice: livePrice,
         viewport: $viewport, pointer: pointer)
         // The bot's status arrives every few seconds and redraws this screen; the chart itself
         // only when what it draws changed.

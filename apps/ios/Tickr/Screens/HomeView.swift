@@ -444,7 +444,7 @@ private struct PositionRow: View {
         VStack(alignment: .leading, spacing: Tokens.Space.xs) {
           HStack(spacing: Tokens.Space.s) {
             StopGlyph(state: position.stop.state, symbol: position.symbol, price: position.stop.price)
-            Text(verbatim: position.symbol)
+            SymbolText(position.symbol)
               .font(.headline.monospaced())
               .foregroundStyle(Palette.textPrimary)
               .fixedSize()
@@ -475,7 +475,7 @@ private struct PositionRow: View {
                 .frame(width: Self.sparkWidth, height: Self.sparkHeight)
                 .accessibilityHidden(true)
               if current {
-                Text(L10n.Positions.last(Money.price(marks.last)))
+                Text(marks.priceText)
                   .font(Tokens.Typography.annotation)
                   .foregroundStyle(Palette.textQuaternary)
               }

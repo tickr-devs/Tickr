@@ -184,7 +184,7 @@ struct MenuPosition: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-        Text(verbatim: position.symbol)
+        SymbolText(position.symbol)
           .font(Tokens.Typography.headingMono.weight(.bold))
           .foregroundStyle(Palette.textPrimary)
         Text(L10n.MenuBar.shares(Format.quantity(position.quantity.value)))
@@ -217,8 +217,8 @@ struct MenuPosition: View {
         Text(L10n.MenuBar.entry(Format.price(position.entryPrice.value)))
           .hint(L10n.Position.entryLevel(Format.price(position.entryPrice.value)))
         Spacer()
-        Text(verbatim: Format.price(row?.lastBarClose ?? row?.latestClose))
-          .hint(L10n.Position.lastBarClose)
+        Text(verbatim: Format.price(row?.price ?? row?.latestClose))
+          .hint(row?.live == nil ? L10n.Position.lastBarClose : L10n.Position.bid)
       }
       .font(Tokens.Typography.annotation)
       .foregroundStyle(Palette.textQuaternary)

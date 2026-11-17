@@ -41,6 +41,8 @@ final class AppModel {
   private(set) var settings: SettingsV1?
   /// Why the settings could not be read, if they could not.
   private(set) var settingsError: String?
+  /// The API start (`StatusResponseV1.apiStartedAt`) the settings were read after: a new one reads them again.
+  @ObservationIgnored private var settingsReadFor: WireTime?
   /// The bot's last broker read (GET /account), read while Settings is on screen.
   private(set) var account: AccountResponseV1?
   /// Why the broker read could not be fetched, if it could not.
@@ -103,6 +105,10 @@ final class AppModel {
   @ObservationIgnored private var pollTask: Task<Void, Never>?
   /// The read of a newly shown day; another day cancels it.
   @ObservationIgnored private var dayRead: Task<Void, Never>?
+  @ObservationIgnored private var quotesTask: Task<Void, Never>?
+  /// The bot's live quotes (GET /quotes), read every `settings.quotes_poll_seconds` while the app
+  /// runs: every live price the app shows comes from here.
+  @ObservationIgnored @Injected(\.liveQuotes) var quotes
   /// The current moment (Container.now; tests pin it).
   @ObservationIgnored @Injected(\.now) private var now
   /// Commands this phone queued whose outcome has not appeared in recent_commands yet.
@@ -182,11 +188,32 @@ final class AppModel {
         try? await Task.sleep(for: .seconds(self.pollSeconds))
       }
     }
+    quotesTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        await self.refreshQuotes()
+        // Until the settings say how often (an older API has no /quotes), wait as the status does.
+        try? await Task.sleep(for: .seconds(LiveQuotes.pollSeconds(self.settings) ?? self.pollSeconds))
+      }
+    }
   }
 
   func stop() {
     pollTask?.cancel()
     pollTask = nil
+    quotesTask?.cancel()
+    quotesTask = nil
+  }
+
+  /// Reads the bot's live quotes once, when its API has them; nothing without an address.
+  func refreshQuotes() async {
+    guard let url = connection.url, LiveQuotes.pollSeconds(settings) != nil else { return }
+    await quotes.refresh(Container.shared.apiClient(connection.endpoint(for: url)))
+  }
+
+  /// The live price of `symbol` now, from the bot's quotes; nil when there is none (`LivePrice`).
+  func livePrice(_ symbol: String) -> LivePrice? {
+    quotes.price(symbol, now: botNow, settings: settings)
   }
 
   private func restart() {
@@ -197,6 +224,7 @@ final class AppModel {
     botClockOffset = 0
     settings = nil
     settingsError = nil
+    quotes.clear()
     account = nil
     accountError = nil
     jobs = nil
@@ -248,7 +276,7 @@ final class AppModel {
       readFailure = ReadFailure(error) ?? readFailure
       return
     }
-    if settings == nil { await refreshSettings(url) }
+    if response?.needsSettings(settings, readFor: settingsReadFor) ?? (settings == nil) { await refreshSettings(url) }
     // Today's session and the next one for the headline's countdown: read once per bot day, and
     // again once the next session has opened (it then names the one after).
     if jobsReadDay != today || jobs?.nextSession.map({ $0.regularOpen.date <= botNow }) == true {
@@ -443,10 +471,12 @@ final class AppModel {
 
   /// Reads the bot's configuration; the answer is dropped when the address changed meanwhile.
   private func refreshSettings(_ url: URL) async {
+    let startedAt = response?.apiStartedAt
     do {
       let read = try await Container.shared.apiClient(connection.endpoint(for: url)).settings()
       guard connection.url == url else { return }
       settings = read
+      settingsReadFor = startedAt
       settingsError = nil
     } catch {
       if connection.url == url { settingsError = Self.describe(error) ?? settingsError }

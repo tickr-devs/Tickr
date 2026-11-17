@@ -278,9 +278,14 @@ attached_stop_wait_seconds = 30
 # trailing_stop_step = this / 100, the SDK sample's ratio form, and the stop price Detail shows says which unit Webull
 # reads; read by the probe-trailing command.
 trailing_wide_percent = 20
-# probe-trailing: the tight trailing stop's distance, percent, so it triggers within trailing_trigger_seconds on an active
-# stock; sent only once the wide stop proved the unit; read by the probe-trailing command.
-trailing_tight_percent = 0.5
+# probe-trailing (T6, T7): tight trailing stop distances, percent, tried smallest first until Webull accepts one (0.5
+# sent as the ratio 0.005 was refused with OPENAPI_PARAM_ERR on 2026-11-17); the accepted one should trigger within
+# trailing_trigger_seconds on an active stock; sent only once the wide stop proved the unit; read by the probe-trailing
+# command.
+trailing_tight_percents = [0.5, 1, 2, 3]
+# probe-trailing (A3): AMOUNT trailing stop steps, USD, tried smallest first until Webull accepts one, which is cancelled
+# at once; the smallest accepted is the answer; read by the probe-trailing command.
+trailing_amount_steps_usd = [0.01, 0.02, 0.05, 0.1]
 # probe-trailing: seconds the wide trailing stop is watched (Detail and a quote each [orders] detail_poll_seconds) for
 # its stop price and whether it rises with the price, before it is cancelled; read by the probe-trailing command.
 trailing_observe_seconds = 120
@@ -346,6 +351,20 @@ status_stale_seconds = 15
 # broker_read_max_age_seconds); keep it above [orders] reconcile_interval_seconds and below broker_read_max_age_seconds;
 # read by the api server and returned to clients at GET /settings.
 broker_read_warn_seconds = 15
+# Oldest live quote (GET /quotes, by its quoted_at on the bot's clock) the apps show as a live price, in seconds,
+# above 0; an older quote is not shown as live and the apps use the captured one-minute bars or the screener's price
+# instead (one bar long: past it a bar is as current as the quote). Read by the api server and returned to clients
+# at GET /settings.
+live_quote_max_age_seconds = 60
+# Live quotes file the bot writes (the newest valid quote of every symbol on its quote stream) and the API serves at
+# GET /quotes, relative to data_dir; read by the bot's quotes file thread and the api server.
+quotes_file = "quotes.json"
+# Seconds between two looks of the bot's quotes file thread at the stream; it rewrites the file only when a quote
+# changed; above 0. Display only, its own thread, never the trading loop; read by runtime.quotes.
+quotes_write_seconds = 0.5
+# Seconds between two reads of GET /quotes by the apps (returned to them at GET /settings); with quotes_write_seconds
+# this bounds how far a shown live price trails the stream; above 0; read by the api server.
+quotes_poll_seconds = 1
 # Seconds between refreshes of the status page, also returned to clients as a polling hint; read by the api server and the status page.
 poll_seconds = 3
 # Largest accepted command request body in bytes; larger = refused; read by the api server.
@@ -470,6 +489,12 @@ history_max_lookback_days = 14
 # cached), count; must be at least the active strategy's relative_volume_sessions or it refuses for missing history;
 # read by runtime.evaluation.
 history_sessions = 5
+# Most symbols' prior-session histories the bot keeps in memory, the most recently asked; the others are read again
+# from their cache file under history_dir, with no request (one 5-session history is about 2 MB; 2026-11-16 the bot
+# evaluated at most 251 symbols in any 10 minutes, while the pre-open preload reads several hundred); a minute that
+# reads histories back from disk is journaled as history-reloaded (raise this when those rows appear every minute);
+# count; read by data.history.
+history_memory_symbols = 300
 # Prior-session bar cache folder relative to [run] data_dir; files go to <history_dir>/<environment>/<NY date asked
 # on>/<symbol>-<sessions>.jsonl (replay bar format); read by data.history.
 history_dir = "history"
@@ -549,8 +574,12 @@ strategy_modules = ["price-action-v1=tickr.strategy.price_action_v1", "price-act
 # Most observer strategies [strategy] observers may list (each costs observer-process time per bar, not the trading
 # thread's); read by observers.loader.
 max_observers = 4
-# Seconds one observer evaluation may take; slower = that observer is switched off for the run with a cause; read by observers.runner.
+# Seconds one observer evaluation may take; slower counts as slow (see the next key); read by observers.runner.
 max_evaluation_seconds = 0.5
+# Slow evaluations in a row that switch an observer off for the run, with a cause (one slow evaluation is not proof: a
+# garbage collection or a busy Mac stretches any; 2026-11-17 one 0.509 s evaluation switched one off); count; read by
+# observers.runner.
+max_slow_evaluations_in_row = 3
 # Evaluations waiting for the observer process; when full, the rest of that pass is dropped for the observers and
 # journaled as observers-dropped (never blocks trading, observers go on with the next pass); read by observers.runner.
 queue_size = 256

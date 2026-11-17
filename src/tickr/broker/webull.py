@@ -108,8 +108,7 @@ ORDER_COMBO_TYPE = "NORMAL"
 ORDER_ENTRUST_TYPE = "QTY"
 ORDER_INSTRUMENT_TYPE = "EQUITY"
 ORDER_MARKET = "US"
-# Trailing stop parts, from the SDK v3 sample only (NOT probed: engine/trailing_probe.py).
-ORDER_TRAILING_TYPE = "PERCENTAGE"
+# Trailing stop trigger, from the SDK v3 sample (probe T, 2026-11-17: accepted with PERCENTAGE).
 ORDER_TRIGGER_PRICE_TYPE = "PRICE"
 
 SDK_API_VERSION = "v3"
@@ -581,6 +580,25 @@ def read_acknowledgement(body: Any, client_order_id: str, is_own: IsOwnAccount) 
     return Acknowledgement(client_order_id=echoed, broker_order_id=order_id)
 
 
+def read_combo_acknowledgement(body: Any, combo_id: str, master_client_order_id: str,
+                               is_own: IsOwnAccount) -> Acknowledgement:
+    """Combo place response -> the MASTER leg's Acknowledgement. The body is
+    `{client_combo_order_id, combo_order_id}` (probe F8, 2026-11-17): it must echo our combo id
+    and carry the broker's combo id, with no error envelope. It names no leg, so the MASTER's
+    broker order id stays None: Detail, by each leg's client_order_id, is the only proof of a
+    leg."""
+    where = "place combo"
+    if isinstance(body, Mapping) and "error_code" in body:
+        raise MalformedResponse(f"{where}: success status with an error envelope")
+    _check_account(body, is_own, where)
+    echoed = str(_require(body, "client_combo_order_id", where))
+    if echoed != combo_id:
+        raise MalformedResponse(f"{where}: acknowledgement is for another client_combo_order_id")
+    if not str(_require(body, "combo_order_id", where)).strip():
+        raise MalformedResponse(f"{where}: empty combo_order_id")
+    return Acknowledgement(client_order_id=master_client_order_id, broker_order_id=None)
+
+
 def read_accounts(body: Any, is_own: Callable[[str], bool]) -> AccountSnapshot:
     where = "accounts"
     rows = _unwrap_list(body, where)
@@ -695,8 +713,9 @@ def build_order_body(request: OrderRequest, client_order_id_max_length: int,
     if request.stop_price is not None:
         body["stop_price"] = _wire_decimal(request.stop_price)
     if request.trailing_stop_step is not None:
-        # SDK v3 sample (trade_client_v3.py, trailing stop loss): PERCENTAGE step, PRICE trigger.
-        body["trailing_type"] = ORDER_TRAILING_TYPE
+        # SDK v3 sample (trade_client_v3.py, trailing stop loss), PRICE trigger; the type is
+        # the SDK's TrailingType (PERCENTAGE or AMOUNT).
+        body["trailing_type"] = request.trailing_type.value
         body["trailing_stop_step"] = _wire_decimal(request.trailing_stop_step)
         body["trigger_price_type"] = ORDER_TRIGGER_PRICE_TYPE
     return body
@@ -937,9 +956,9 @@ class WebullBroker:
                     legs: Sequence[tuple[ComboRole, OrderRequest]]) -> Acknowledgement:
         """One combo in one place request (Webull docs: `client_combo_order_id` and one
         `new_orders[]` element per leg, each with its own `client_order_id` and its role as
-        `combo_type`). UNPROVEN: the attached-stop probe is its only caller. The
-        acknowledgement must echo the MASTER leg; any other success body is OutcomeUnknown,
-        with its top-level keys named so the probe's evidence records the shape."""
+        `combo_type`). The attached-stop probe is its only caller. The acknowledgement must
+        echo the combo id (`read_combo_acknowledgement`, shape from probe F8); any other
+        success body is OutcomeUnknown, with its top-level keys named in the evidence."""
         self._require_gate()
         if not combo_id or len(combo_id) > self._client_order_id_max_length:
             raise Refused("LOCAL_CLIENT_ORDER_ID", "combo id empty or longer than the limit")
@@ -952,8 +971,9 @@ class WebullBroker:
                                              "new_orders": bodies})
         if response.ok:
             try:
-                return read_acknowledgement(
-                    response.body, masters[0].client_order_id, self._transport.is_own_account)
+                return read_combo_acknowledgement(
+                    response.body, combo_id, masters[0].client_order_id,
+                    self._transport.is_own_account)
             except MalformedResponse as exc:
                 keys = sorted(response.body) if isinstance(response.body, Mapping) else []
                 raise OutcomeUnknown(

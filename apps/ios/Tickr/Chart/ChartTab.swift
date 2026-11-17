@@ -117,7 +117,7 @@ struct ChartTab: View {
             CandleChart(series: series, times: chart.times, studies: chart.studies, atr: chart.atr,
               trades: oneDay ? chart.trades : [], position: oneDay ? chart.openPosition : nil,
               events: oneDay ? chart.events : [], lines: lines, rangeTitle: RangePicker.title(chart.range),
-              pending: chart.pending, viewport: $viewport)
+              pending: chart.pending, livePrice: oneDay ? chart.livePrice : nil, viewport: $viewport)
               // Its panes have a fixed height: past this size the scale's tags and legends would
               // cover each other and the candles.
               .dynamicTypeSize(...CandleChart.largestText)
@@ -307,20 +307,25 @@ private struct DayBar: View {
     }
   }
 
-  /// The last price, coloured by the day so far, and its change from the day's first open.
+  /// The last price and its change: on today's one-day chart from the previous close
+  /// (`DayChange`, as Webull shows a day's change), else from the shown range's first open.
   @ViewBuilder
   private var quote: some View {
     if let candles = chart.series?.candles, let first = candles.first, let last = candles.last {
-      let amount = last.close - first.open
-      let change = first.open == 0 ? 0 : amount / first.open
+      // The live bid where the bot's quotes have one (today, one day shown), else the last close.
+      let price = (chart.range == .oneDay ? chart.livePrice : nil) ?? last.close
+      let day = chart.range == .oneDay
+        ? DayChange.fraction(price: Money.decimal(price), previousClose: chart.previousClose) : nil
+      let fromOpen = first.open == 0 ? 0 : Money.decimal((price - first.open) / first.open)
+      let change = day ?? fromOpen
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-        Text(verbatim: Money.price(last.close))
+        Text(verbatim: Money.price(price))
           .font(.headline.monospaced().bold())
-          .contentTransition(.numericText(value: last.close))
+          .contentTransition(.numericText(value: price))
         Text(verbatim: Percent.signed(fraction: change))
           .font(Tokens.Typography.captionMono)
       }
-      .foregroundStyle(Palette.result(Money.decimal(amount)))
+      .foregroundStyle(Palette.result(change))
       .accessibilityElement(children: .combine)
     }
   }
