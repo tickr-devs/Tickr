@@ -9,7 +9,8 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from tickr import config
+from baseline import load_baseline
+
 from tickr.broker.webull import DailyBar, InstrumentPage, InstrumentRow
 from tickr.calendar import SessionCalendar
 from tickr.data.base import SymbolsRefused
@@ -21,7 +22,8 @@ UTC = ZoneInfo("UTC")
 
 
 def cfg():
-    return config.load(ROOT / "config" / "bot.toml")
+    """The baseline config (tests/baseline.py): price-action-v3's liquidity chooses the pool."""
+    return load_baseline()
 
 
 def calendar() -> SessionCalendar:
@@ -73,6 +75,8 @@ class FakeHistory:
     def minute_bars(self, symbols: Sequence[str], end: datetime, count: int) -> list[Bar]:
         self.requests += 1
         self.calls.append(("minutes", tuple(symbols), end, count))
+        if any(s in self.invalid for s in symbols):
+            raise SymbolsRefused("BARS", 417, "INVALID_SYMBOL")
         out = []
         for s in symbols:
             out.extend(sorted((b for b in self.minutes.get(s, []) if b.start < end),

@@ -169,8 +169,12 @@ the probe, then enable and kickstart the bot, so the day loses only those few mi
 ## Trailing-stop probe (T)
 
 `tickr probe-trailing SYMBOL` answers whether Webull's TRAILING_STOP_LOSS can be the broker stop
-for several positions (backlog X1, rollout guide: a 20 % trail), and how long the positions read
-lags a fill (P1). Questions (docs/webull-facts.md, "T"): T1 is a SELL TRAILING_STOP_LOSS
+for several positions (backlog X1, rollout guide: a 20 % trail), how long the positions read
+lags a fill (P1), how long the order history lags a fill (H1: whether one history read can tell
+the bot about several fills at once) how long a new stop takes to be listed in open orders
+(L1), and how long several stops placed together take (L2: before the entry,
+`[probe] listing_stops` BUY stops far above the ask, then cancelled; the bot's slot count waits
+for this answer). H1 and L1 only read. Questions (docs/webull-facts.md, "T"): T1 is a SELL TRAILING_STOP_LOSS
 (PERCENTAGE, DAY, CORE) accepted; T2 which unit `trailing_stop_step` is read in (0.2 = 20 % or
 0.2 %), from the stop price Detail shows; T3 does that stop price rise with the price; T4 is it
 listed in open orders; T5 does a cancel end it; T6 does a tight one trigger. Details:
@@ -178,7 +182,8 @@ listed in open orders; T5 does a cancel end it; T6 does a tight one trigger. Det
 
 When: in the regular session, between `[probe] window_start` and `window_end`, account flat and
 the bot stopped (it holds the lock for its whole run). It takes about 10 minutes and buys
-`[probe] quantity` share(s) at the ask; they are under the trailing stop being tested, and for
+`[probe] quantity` share(s) at the ask (the L2 buy stops lie `[probe] listing_far_percent`
+above the ask and are cancelled within a minute); the shares are under the trailing stop being tested, and for
 a few seconds between orders without one.
 
 1. Stop the bot and keep its job from starting, as in step 1 of the extended-hours probe.
@@ -216,7 +221,7 @@ chat at the end; an agent then writes webull-facts.md and the fixtures from them
    flat after the flatten time). While a manual trade is open it alerts
    `bot-down-with-open-trade` ("no live pid in its lock file" or a stale status file):
    expected on a probe day, because the manual command is not the bot. If a manual trade is
-   still open at 15:50 ET it also tries its one restart of the bot job; with the job booted out
+   still open at 15:45 ET it also tries its one restart of the bot job; with the job booted out
    that fails and alerts `watchdog-restart-failed`: close the manual trade before then.
 2. Terminal A, as in one-time setup: `cd`, `source`, load the env file, `tickr check-config`.
    Then `tickr status`: it must show `bot: not running`. (`status` does not list fences;

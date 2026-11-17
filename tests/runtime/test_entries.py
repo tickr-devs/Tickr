@@ -7,6 +7,7 @@ from decimal import Decimal as D
 from pathlib import Path
 
 import pytest
+from baseline import load_baseline
 
 from tickr import config
 from tickr.broker.fake import FakeBroker
@@ -26,7 +27,7 @@ from tickr.strategy.base import Check, Decision, Verdict
 from tickr.types import OrderDetail, OrderState, OrderType, Quote, Side
 
 ROOT = Path(__file__).resolve().parents[2]
-CFG = config.load(ROOT / "config" / "bot.toml")
+CFG = load_baseline()
 CALENDAR = SessionCalendar.load((ROOT / CFG.session.calendar_file).parent)
 NOW = datetime(2026, 11, 16, 11, 0, 30, tzinfo=NEW_YORK)
 BAR = datetime(2026, 11, 16, 10, 59, tzinfo=NEW_YORK)
@@ -271,7 +272,7 @@ def test_a_working_entry_is_cancelled_when_its_quote_leaves_the_window(tmp_path,
 def test_working_entries_are_cancelled_at_the_last_entry_time(tmp_path):
     desk = Desk(tmp_path)
     opened(desk)
-    last_entry = datetime(2026, 11, 16, 15, 45, tzinfo=NEW_YORK)
+    last_entry = datetime(2026, 11, 16, 15, 40, tzinfo=NEW_YORK)
     fresh = Quote("ABC", D("10.04"), D("10.05"), D(100), D(100), last_entry, last_entry)
     assert guard(desk, fresh, last_entry - timedelta(seconds=1)) == []
     (cause,) = guard(desk, fresh, last_entry)

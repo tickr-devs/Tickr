@@ -24,6 +24,7 @@ from typing import Any
 
 from tickr.broker.base import Broker, BrokerError, OrderNotFound, RateLimited, Refused
 from tickr.config import Config, GateResult
+from tickr.risk.timers import WindowKind
 from tickr.store import Store
 from tickr.types import (
     OrderDetail,
@@ -37,6 +38,10 @@ from tickr.types import (
 )
 
 ZERO = Decimal(0)
+# Trading windows the engine can protect a trade in: only the regular session has a broker
+# stop (F7). The pre-market and post-market join when the bot-watched stop and the LIMIT exits
+# exist (design v2.1, PRs 3 and 4).
+PROTECTED_WINDOWS = frozenset({WindowKind.REGULAR})
 
 
 class Leg(StrEnum):
@@ -237,6 +242,14 @@ class TradeRow:
     reduce_quantity: Decimal | None = None
     reduce_cause: str | None = None
     reduce_state: ReduceState | None = None
+    trading_window: WindowKind = WindowKind.REGULAR
+    reserved_usd: Decimal | None = None
+
+    @property
+    def reservation(self) -> Decimal:
+        """What the trade holds against the daily loss ceiling: its planned loss, or for an
+        extended-hours trade its whole position value (owner decision B2, 2026-11-17)."""
+        return self.planned_loss_usd if self.reserved_usd is None else self.reserved_usd
 
     @property
     def reducing(self) -> bool:
@@ -280,6 +293,8 @@ def _trade(row: Any) -> TradeRow:
         scale_out_quantity=_dec(row["scale_out_quantity"]),
         reduce_quantity=_dec(row["reduce_quantity"]), reduce_cause=row["reduce_cause"],
         reduce_state=None if row["reduce_state"] is None else ReduceState(row["reduce_state"]),
+        trading_window=WindowKind(row["trading_window"]),
+        reserved_usd=_dec(row["reserved_usd"]),
     )
 
 
@@ -384,6 +399,9 @@ class Engine:
         # The symbol's live orders not read since then go to the head of the Detail queue
         # (`_observe`), once each per new disagreement. Memory only.
         self._moved: dict[str, tuple[Decimal, Decimal, float]] = {}
+        # Whether this step's open-orders read for new stops answered (`_verify_listed`);
+        # while it does not, new stops go to Detail first.
+        self._list_answered = False
 
     # --- fences ----------------------------------------------------------------------------
 
@@ -548,7 +566,9 @@ class Engine:
                    entry_low_price: Decimal | None = None,
                    strategy: tuple[str, str] | None = None,
                    rest_until: datetime | None = None,
-                   scale_out_quantity: Decimal | None = None) -> str:
+                   scale_out_quantity: Decimal | None = None,
+                   window: WindowKind = WindowKind.REGULAR,
+                   reserved_usd: Decimal | None = None) -> str:
         """Record and send a LIMIT BUY entry. Refuses (EntryRefused) instead of guessing.
 
         With `stop_percent_below_fill`, the stop is re-derived from the first observed average
@@ -561,7 +581,14 @@ class Engine:
         (`runtime.entries.entry_cancel_cause`); it needs `entry_low_price`.
         `scale_out_quantity` (whole, below `quantity`) is the part the strategy plans to sell
         first: stops are placed so that some of them cover exactly that part, and a later
-        `request_reduce` of it leaves the rest protected throughout."""
+        `request_reduce` of it leaves the rest protected throughout. `window` is the trading
+        window admission found; a trade is opened only in a window the engine can protect
+        (`PROTECTED_WINDOWS`). `reserved_usd`: what it reserves against the daily ceiling when
+        that is not its planned loss."""
+        if window not in PROTECTED_WINDOWS:
+            # Second barrier behind config.load (Fable on #574): admission may admit an
+            # extended entry, but nothing here protects one yet (no broker stop exists there).
+            raise EntryRefused(f"no protection path for a {window} trade yet")
         gate = self.gate()
         if not gate.open:
             raise EntryRefused(f"trading gate closed: {gate.cause}")
@@ -593,15 +620,17 @@ class Engine:
             self.store.execute(
                 "INSERT INTO trades(trade_id, run_id, symbol, state, entry_quantity, "
                 "entry_limit_price, stop_price, stop_percent_below_fill, planned_loss_usd, "
-                "opened_at, entry_low_price, entry_rest_until, scale_out_quantity) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "opened_at, entry_low_price, entry_rest_until, scale_out_quantity, "
+                "trading_window, reserved_usd) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (trade_id, self.run_id, symbol, TradeState.OPENING, str(quantity),
                  str(limit_price), str(stop_price),
                  None if stop_percent_below_fill is None else str(stop_percent_below_fill),
                  str(planned_loss_usd), self.store.stamp(),
                  None if entry_low_price is None else str(entry_low_price),
                  None if rest_until is None else rest_until.astimezone(UTC).isoformat(),
-                 None if scale_out_quantity is None else str(scale_out_quantity)))
+                 None if scale_out_quantity is None else str(scale_out_quantity),
+                 window, None if reserved_usd is None else str(reserved_usd)))
             self.store.append(TRADE_OPENED, {
                 "symbol": symbol, "quantity": quantity, "limit_price": limit_price,
                 "stop_price": stop_price, "planned_loss_usd": planned_loss_usd,
@@ -1187,7 +1216,9 @@ class Engine:
     def _observe(self, held: dict[str, Decimal] | None) -> None:
         """Detail reads within `detail_reads_per_step`, one queue for everything: orders still
         open, and orders we gave up on in a symbol whose position we cannot explain. `held`
-        is None when the positions read failed."""
+        is None when the positions read failed. New stops are verified first, all of them by
+        one open-orders read."""
+        self._verify_listed()
         due = [o for o in self.orders()
                if o.send_state in (SendState.ACKNOWLEDGED, SendState.UNKNOWN)
                and (o.broker_state is None or not o.broker_state.terminal)]
@@ -1213,6 +1244,46 @@ class Engine:
                 return
         self._clear_fence(Fence.DETAIL_BUDGET)
 
+    def _verify_listed(self) -> None:
+        """Verify every new stop with one open-orders read (owner decision 2026-11-17), so
+        fills arriving together do not wait for a Detail read per stop: a stop the list shows
+        working, as sent (symbol, side, type, quantity; prices are listed rounded, as in
+        Detail, which does not compare them either) and with no more filled than Detail
+        showed, counts as verified. Only acknowledged stops never seen
+        working and not being cancelled; anything else in the list (a fill, a cancel, a
+        different row) and any absence prove nothing and are left to Detail. A failed or
+        budget-refused read leaves them to Detail too. The list is read every step while a new
+        stop is unverified, so one listed a few polls late costs no Detail read."""
+        self._list_answered = False
+        new = {o.client_order_id: o for o in self.orders()
+               if o.leg is Leg.STOP and o.send_state is SendState.ACKNOWLEDGED
+               and o.broker_state is None and o.cancel_state is None}
+        if not new:
+            return
+        try:
+            rows = self.broker.open_orders()
+        except BrokerError:
+            return
+        self._list_answered = True
+        for listed in rows:
+            row = new.get(listed.client_order_id)
+            if (row is None or listed.state not in _WORKING or listed.symbol != row.symbol
+                    or listed.side is not row.side or listed.order_type is not row.order_type
+                    or listed.quantity != row.quantity
+                    or listed.filled_quantity != row.filled_quantity):
+                continue
+            with self.store.transaction():
+                self.store.execute(
+                    "UPDATE orders SET broker_state = ?, updated_at = ? "
+                    "WHERE client_order_id = ? AND broker_state IS NULL",
+                    (listed.state, self.store.stamp(), row.client_order_id))
+                # The same observation row a Detail read writes, marked with its source.
+                self.store.append(ORDER_OBSERVED, {
+                    "state": listed.state, "raw_status": listed.raw_status,
+                    "filled_quantity": listed.filled_quantity,
+                    "average_fill_price": listed.average_fill_price, "source": "open-orders"},
+                    key=row.client_order_id, run_id=self.run_id)
+
     def _note_moved(self, held: dict[str, Decimal]) -> None:
         """Record each open trade's symbol whose broker position differs from what Detail
         says we hold (a fill or a stop-out Detail has not shown yet, usually), keeping the
@@ -1236,13 +1307,21 @@ class Engine:
         (a kept stop filling while a scale-out's stops are released). 1: a stop or entry
         whose cancel waits for Detail, not read since that cancel (a stop's position may have
         no stop until the read confirms it, and its close waits for it; an entry's read shows
-        its last fills, which need their stops). 2: the other live orders in a
+        its last fills, which need their stops), and, while the open-orders list cannot be
+        read, a stop never read (entries filling in the same poll each get their stops
+        verified before the next entry is read, so the first fills are not left waiting
+        behind the last). While the list answers it verifies new stops, however late it shows
+        them, and their Detail stays in the common queue (a rejected stop is never listed),
+        so the fills' reads are never spent on them. 2: the other live orders in a
         moved symbol, not read since the move. 3: the common queue. Once each per event:
         after that read the order is back in the common queue, so a lasting disagreement
         (shares bought by hand) never starves the others. A read stamped at the same instant
         as the event may have come before it (a step reads, then cancels): it does not count
         as the read after it."""
         if self._awaits_cancel_read(row):
+            return 1
+        if (row.leg is Leg.STOP and row.live and not row.verified and row.last_detail_at is None
+                and not self._list_answered):
             return 1
         moved = self._moved.get(row.symbol)
         if moved is not None and row.live and (row.last_detail_at or 0.0) <= moved[2]:

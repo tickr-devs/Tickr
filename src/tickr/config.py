@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import re
 import tomllib
 import warnings
@@ -77,6 +78,7 @@ class RunConfig:
 class StrategySelection:
     active: str
     observers: tuple[str, ...]
+    extended_hours_strategies: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,10 @@ class SessionConfig:
     postmarket_last_entry_minutes_before_close: int
     postmarket_flatten_minutes_before_close: int
     postmarket_size_fraction: Decimal
+    premarket_max_quote_age_seconds: Decimal
+    postmarket_max_quote_age_seconds: Decimal
+    premarket_max_spread_ratio: Decimal
+    postmarket_max_spread_ratio: Decimal
 
 
 @dataclass(frozen=True)
@@ -128,6 +134,7 @@ class OrdersConfig:
     cancel_not_sent_alert_seconds: Decimal
     max_unprotected_seconds: Decimal
     max_stops_per_trade: int
+    stop_listing_polls: int
     detail_unreadable_seconds: Decimal
     max_exit_seconds: Decimal
     shutdown_deadline_seconds: Decimal
@@ -176,6 +183,10 @@ class ProbeConfig:
     trailing_trigger_seconds: int
     trailing_close_percent: Decimal
     trailing_unit_factor: Decimal
+    history_wait_seconds: int
+    listing_stops: int
+    listing_far_percent: Decimal
+    listing_wait_seconds: int
 
 
 @dataclass(frozen=True)
@@ -523,6 +534,10 @@ def check_extended_sessions(session: SessionConfig) -> None:
         fraction = getattr(session, f"{name}_size_fraction")
         if not 0 < fraction <= 1:
             raise ConfigError(f"[session] {name}_size_fraction must be above 0 and at most 1")
+        if getattr(session, f"{name}_max_quote_age_seconds") <= 0:
+            raise ConfigError(f"[session] {name}_max_quote_age_seconds must be above 0")
+        if not 0 < getattr(session, f"{name}_max_spread_ratio") < 1:
+            raise ConfigError(f"[session] {name}_max_spread_ratio must be above 0 and below 1")
 
 
 def load(path: Path | str, root: Path | str | None = None) -> Config:
@@ -604,9 +619,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     probe: ProbeConfig = built["probe"]
     if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
             or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
-            or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1):
-        raise ConfigError("[probe] trailing_* values must be above 0 and "
-                          "trailing_unit_factor above 1")
+            or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1
+            or probe.history_wait_seconds <= 0 or probe.listing_stops < 1
+            or probe.listing_far_percent <= 0 or probe.listing_wait_seconds <= 0):
+        raise ConfigError("[probe] trailing_*, history_wait_seconds and listing_* values must be "
+                          "above 0 and trailing_unit_factor above 1")
     if probe.trailing_tight_percent >= probe.trailing_wide_percent:
         raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
     if not 1 <= risk.max_open_positions <= md.stream_reserved_symbols:
@@ -770,6 +787,15 @@ def credential_variables(config: Config) -> frozenset[str]:
     for env in config.environments.values():
         names |= {env.app_key_variable, env.app_secret_variable, env.account_variable}
     return frozenset(names)
+
+
+def environ_without(names: frozenset[str]) -> dict[str, str]:
+    """A copy of this process's environment without `names` (credential variables), for a child
+    process that needs none of them. Never printed or logged."""
+    env = os.environ.copy()
+    for name in names:
+        env.pop(name, None)
+    return env
 
 
 def trading_gate(config: Config) -> GateResult:

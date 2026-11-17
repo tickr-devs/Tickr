@@ -134,11 +134,11 @@ public struct StopDot: View {
 // MARK: - headline severity
 
 extension Severity {
-  /// The tone of a headline with this severity: calm in profit, attention in warning, alarm in
-  /// loss. `Headline.tone` refines the calm one.
+  /// The tone of a headline with this severity (mockup v108): calm in the accent (teal), attention
+  /// in warning (amber), alarm in loss (red).
   public var tone: Tone {
     switch self {
-    case .ok: return .profit
+    case .ok: return .accent
     case .attention: return .warning
     case .alarm: return .loss
     }
@@ -146,11 +146,24 @@ extension Severity {
 }
 
 extension Headline {
-  /// The headline's tone, as the boards draw it: a calm headline about held positions, every one
-  /// protected, in the accent (Main "holding", MacMenuBar, IOSHome); a calm one with nothing held
-  /// ("Entries allowed") in profit (Main "scanning"); attention in warning; alarm in loss.
+  /// The headline's tone, as the boards draw it (mockup v108): its severity's.
+  public var tone: Tone { severity.tone }
+}
+
+extension EntryGate {
+  /// The gate badge's tone beside the headline: open in profit (green), paused in warning
+  /// (amber), closed neutral grey (mockup v109: a setting, not a fault).
   public var tone: Tone {
-    severity == .ok && holding ? .accent : severity.tone
+    switch self {
+    case .open: return .profit
+    case .paused: return .warning
+    case .closed: return .neutral
+    }
+  }
+
+  /// The symbol before the badge's words: the lock of a closed gate, none otherwise.
+  public var symbol: String? {
+    self == .closed ? Symbols.gateClosed : nil
   }
 }
 

@@ -50,13 +50,18 @@ import TickrKit
     #expect(StopGlyph.label(.pending, symbol: "ABCD") == "ABCD · " + Board.stopStateTitle(.pending))
   }
 
-  @Test("Severity: calm profit, attention warning, alarm loss; a calm headline about held positions in the accent")
+  @Test("Headline tones (mockup v108): calm teal, attention amber, alarm red")
   func headlineTones() {
-    #expect([Severity.ok, .attention, .alarm].map(\.tone) == [.profit, .warning, .loss])
-    #expect(Headline(text: "", severity: .ok, holding: true).tone == .accent)
-    #expect(Headline(text: "", severity: .ok).tone == .profit)
-    #expect(Headline(text: "", severity: .alarm, holding: true).tone == .loss)
+    #expect([Severity.ok, .attention, .alarm].map(\.tone) == [.accent, .warning, .loss])
+    #expect(Headline(text: "", severity: .ok).tone == .accent)
     #expect(Headline(text: "", severity: .attention).tone == .warning)
+    #expect(Headline(text: "", severity: .alarm).tone == .loss)
+  }
+
+  @Test("The gate badge (mockup v109): open green, paused amber, closed grey with a lock")
+  func gateTones() {
+    #expect([EntryGate.open, .paused, .closed].map(\.tone) == [.profit, .warning, .neutral])
+    #expect([EntryGate.open, .paused, .closed].map(\.symbol) == [nil, nil, Symbols.gateClosed])
   }
 
   @Test("Verdicts: ENTER and HOLD accent, WATCH info, IGNORE pink, EXIT warning, all text roles")

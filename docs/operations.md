@@ -15,7 +15,7 @@ renders the job files, reads them, and loads them. Manual trades and the Sandbox
 The bot job has one starter besides its schedule: near the flatten time the watchdog may start it once a day (see "Watchdog", `watchdog-restarted-bot`).
 | test-alert | `local.tickr.test-alert` | only on `launchctl kickstart` (grants the Messages permission, see below) | never |
 | nightly-fetch | `local.tickr.nightly-fetch` | `[runtime] nightly_fetch_start_local` on `launch_weekdays` (after the close); stops itself before the next open | never |
-| api | `local.tickr.api` | at login, always on, loopback only | launchd keeps it alive |
+| api | `local.tickr.api` | at login, always on, loopback only; with `[chart] webull_enabled` it holds the app key and secret only (see "The API job and the Webull keys") | launchd keeps it alive |
 
 Times in `[runtime]` are the **Mac's local time**. The calendar decides whether there is a
 session: on weekends, market closures and half days (unless `half_days_enabled`) preflight reports
@@ -186,6 +186,47 @@ done
 
 `render-launchd` refuses (exit 2) when the env file is missing or has any group or other
 permission bit: `chmod 600` it first.
+
+### The API job and the Webull keys
+
+The API is the one job that listens on the network (loopback, and the remote listener when
+configured), so it gets as little as possible. While `[chart] webull_enabled` is false it gets no
+credential: its plist never names the env file. While it is true, the chart client in the API
+(GET /chart) needs the active environment's Webull app key and app secret, and the API job gets
+exactly those two variables, named by `[environments.<env>] app_key_variable` and
+`app_secret_variable` of `[run] environment`, and nothing else: never `account_variable` (the
+chart client reads no account id), never another environment's keys, never the alert recipient,
+the advisor key or any other line of the env file. Its shell reads each of the two in a
+subshell that sources the env file and prints only that one value (the file's own output is
+discarded), then exports it; the API process itself never reads the env file. No process the
+API starts gets any credential variable: the Lab replay child, the start-bot command
+(`launchctl kickstart`; the bot job sources the env file itself, launchd never hands it the
+caller's environment) and the alert's notification commands.
+
+At its start the API checks the credential variables it holds (names only). Any beyond those
+above (any at all with the chart off; the account id, another environment's keys or any other
+credential with it on) raise the `api-credentials-unexpected` alert and a line in api.log
+naming them; the API still serves. Its plist is then stale or edited: render and reinstall it as
+below. The API sends this alert as a Mac notification only: it has no iMessage recipient
+variable.
+
+The variable names are fixed when the plist is rendered: after changing `[chart]
+webull_enabled` or `[run] environment`, render again and reinstall the API job only:
+
+```sh
+cd ~/Development/Tickr
+.venv/bin/python -m tickr.runtime render-launchd \
+    --release ~/Development/Tickr-releases/live \
+    --env-file ~/.config/tickr/env \
+    --log-dir ~/Library/Logs/Tickr \
+    --out data/launchd
+# Read data/launchd/local.tickr.api.plist (it names the two variables, never a value), then:
+launchctl bootout gui/$(id -u)/local.tickr.api
+cp data/launchd/local.tickr.api.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.tickr.api.plist
+```
+
+`bootstrap` starts the API at once (`RunAtLoad`); the bot and the other jobs are not touched.
 
 The nightly fetch is loaded on its own, and only when no other history fetch is running on the
 Mac: both draw on the same Webull request budget. Its first run seeds `nightly/current/` from a
@@ -477,7 +518,8 @@ straight to the supervisor. Limits:
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
 `exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`,
-`flatten-after-close`, and from
+`flatten-after-close`, from the API `api-credentials-unexpected` (Mac notification only, see
+"The API job and the Webull keys"), and from
 the watchdog `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`,
 `watchdog-restarted-bot`, `watchdog-restart-refused`, `watchdog-restart-failed`. Every alert goes to
 the Mac notification and to iMessage (`[alerts] imessage_recipient_variable`, see setup step 4).
@@ -586,7 +628,7 @@ measured (`fill_to_observed_seconds` is null). Only the first fill of a trade is
 
 ## End of the day
 
-`[session] flatten_grace_seconds` after the flatten time (15:55 ET on a normal day), the bot
+`[session] flatten_grace_seconds` after the flatten time (15:50 ET on a normal day), the bot
 checks the latest broker reads (positions and open orders read after the flatten time, never
 our records alone) and journals one `day-end` row per trading day: `broker_flat`,
 `own_positions`, `own_open_orders`, `trades_today`, `trades_closed`, `open_trades`, `agree`
@@ -650,7 +692,7 @@ stop with exit 4 and print the fence.
 ## Watchdog
 
 The bot's own day-end check dies with the bot. The protective stop is a DAY order and launchd
-never relaunches a crashed bot, so after a crash nothing would flatten at 15:55 ET and the
+never relaunches a crashed bot, so after a crash nothing would flatten at 15:50 ET and the
 position would go overnight without a broker-side stop. The watchdog job (`python -m tickr.runtime watchdog`)
 is a separate process that covers this:
 
@@ -665,7 +707,7 @@ is a separate process that covers this:
   day-end check and before the close. Started late (the Mac woke after these times), it checks
   once at once.
 - One restart a day (below): from `[runtime] watchdog_restart_before_flatten_seconds` before
-  the flatten time (15:50 ET on a normal day), if the bot is down while its database shows an
+  the flatten time (15:45 ET on a normal day), if the bot is down while its database shows an
   open trade, the watchdog starts the bot job once. It still sends nothing itself.
 - Every check and alert is one JSON line in `data/watchdog.jsonl` (`[runtime]
   watchdog_journal_file`) and in `~/Library/Logs/Tickr/watchdog.log`.
@@ -703,7 +745,7 @@ open trade. Running means both: its lock file names a live process, and `data/st
 (written every loop pass) is at most `[runtime] watchdog_status_stale_seconds` old. The text
 says which failed: "no live pid in its lock file" (crashed or stopped), "status file older
 than ..." (hung, or the pid now belongs to another process after a crash or reboot), "no status
-file" or "status file unreadable". Nothing will flatten that trade at 15:55 ET.
+file" or "status file unreadable". Nothing will flatten that trade at 15:50 ET.
 A mid-session restart of the bot can raise this alert once while the new bot starts and
 recovers (no live pid, or a status file not yet rewritten); if the next check is quiet and
 `data/status.json` is fresh again, the bot is back.
@@ -712,7 +754,7 @@ recovers (no live pid, or a status file not yet rewritten); if the next check is
 2. Close the position by hand, or keep it with its stop and close it before 16:00 ET yourself.
 3. Do not restart the bot over an open position without reading the bot log; startup
    reconciles first, but you decide. If you do nothing, the watchdog starts the bot job once
-   at 15:50 ET (below).
+   at 15:45 ET (below).
 
 ### One restart a day: `watchdog-restarted-bot`
 
