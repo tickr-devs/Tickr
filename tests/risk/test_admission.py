@@ -31,7 +31,7 @@ def test_limits_come_from_config(lim):
     assert lim.planned_loss_usd == D(50)
     assert lim.position_notional_cap_usd == D(2500)
     assert lim.max_daily_loss_usd == D(300)
-    assert lim.max_open_positions == 6
+    assert lim.max_open_positions == 1
     assert lim.max_quote_age_seconds == D(5)
     assert lim.max_clock_skew_seconds == D(1)
     assert lim.active_strategy == "price-action-v3"
@@ -103,7 +103,7 @@ REFUSALS = [
     (C.COUNT_INVALID, lambda: inputs(open_positions=True)),
     (C.OWN_POSITION_OPEN, lambda: inputs(own_open_positions=1, open_positions=1)),
     (C.OWN_ORDER_WORKING, lambda: inputs(own_working_orders=1)),
-    (C.POSITION_LIMIT_REACHED, lambda: inputs(open_positions=6)),
+    (C.POSITION_LIMIT_REACHED, lambda: inputs(open_positions=1)),
     (C.SYMBOL_COOLDOWN, lambda: inputs(symbol_last_loss_at=NOW - timedelta(minutes=29))),
     (C.SYMBOL_COOLDOWN, lambda: inputs(symbol_last_loss_at=NOW + timedelta(seconds=1))),
     (C.CLOCK_INVALID, lambda: inputs(symbol_last_loss_at=datetime(2026, 11, 16, 9, 45))),
