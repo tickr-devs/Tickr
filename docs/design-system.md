@@ -418,7 +418,10 @@ keeps the rest of the day as empty slots, from the calendar's session (GET /jobs
 never jumps: the pre-market and regular session to their end, the after-hours as many slots as the
 session before had (`previous_after_candles`). A new candle never moves the person's zoom or
 scroll (`ChartViewport.take`): a fitted chart stays fitted, a window at the live edge follows it. Today's session comes from market data (GET /chart, 1d); a
-recorded day from the bot's capture (regular session only). Choosing Day opens the whole session in
+recorded day from the bot's capture (regular session only). Every screen that shows a symbol's
+bars or last price of a day (the Chart, the Overview's and the Positions tab's position cards, the
+Symbols detail's line) reads them through `DayBars` (TickrKit), so they never show two prices
+for one moment (owner rule: one source of truth per value). Choosing Day opens the whole session in
 5-minute candles, 5D in 30-minute ones. A cold 5D the chart's request budget fills shows how far
 it got (`ProgressLine`, "Loading 3 of 5 days") and asks again when the bot says (`pending`).
 
