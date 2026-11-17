@@ -135,7 +135,7 @@ extension AppModelTests {
     #expect(model.dayDocument?.day == (try WireDate(Self.unreadDay)))
   }
 
-  @Test("Retry reads the whole day again: its trades first, then the day's other reads")
+  @Test("Retry reads the whole day again: its trades and every other part, all at once")
   func retryReadsTheWholeDay() async throws {
     let model = try await Self.modelWithDays()
     model.selectedDay = try WireDate(Self.unreadDay)
@@ -144,13 +144,13 @@ extension AppModelTests {
     model.retryShownDay()
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: Self.pickWait)
-    while !RouteProtocol.routes.withLock({ $0.paths.contains("/performance") }), clock.now < deadline {
+    let parts: Set = ["/days/\(Self.unreadDay)", "/flow", "/skipped", "/performance"]
+    while !parts.isSubset(of: Set(RouteProtocol.routes.withLock { $0.paths })), clock.now < deadline {
       try await Task.sleep(for: Self.pickPoll)
     }
+    // The parts are read concurrently (no order among them): every one is asked for again.
     let paths = RouteProtocol.routes.withLock { $0.paths }
-    #expect(paths.first == "/days/\(Self.unreadDay)")
-    #expect(paths.contains("/skipped"))
-    #expect(paths.contains("/performance"))
+    #expect(parts.isSubset(of: Set(paths)), "not all asked for again: \(paths)")
   }
 
   @Test("An answer for another day than the one asked is refused with its cause, never shown")
