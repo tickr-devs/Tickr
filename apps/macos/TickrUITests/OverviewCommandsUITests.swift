@@ -69,6 +69,8 @@ final class OverviewCommandsUITests: XCTestCase {
   static let timeout: TimeInterval = 10
   static let settlePoll: TimeInterval = 0.2
   static let settleQuiet: TimeInterval = 1
+  /// Frames a "kept moving" failure names, the latest.
+  static let movesShown = 12
 
   override func setUpWithError() throws {
     continueAfterFailure = false
@@ -219,16 +221,19 @@ final class OverviewCommandsUITests: XCTestCase {
     let deadline = Date.now.addingTimeInterval(Self.timeout)
     var frame = element.frame
     var stillSince = Date.now
+    // The frames it moved through, so a failure says how it moved.
+    var moves = [frame]
     while Date.now < deadline {
       _ = XCTWaiter.wait(for: [XCTestExpectation(description: "settle")], timeout: Self.settlePoll)
       let now = element.frame
       if now != frame {
         frame = now
         stillSince = .now
+        moves.append(now)
       } else if Date.now.timeIntervalSince(stillSince) >= Self.settleQuiet {
         return
       }
     }
-    XCTFail("\(name) kept moving\n\(app.debugDescription)")
+    XCTFail("\(name) kept moving through \(moves.suffix(Self.movesShown))\n\(app.debugDescription)")
   }
 }
