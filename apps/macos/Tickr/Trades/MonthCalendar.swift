@@ -170,9 +170,6 @@ private struct CalendarDay: View {
   /// Inset of a tile's content, in points: the board's 5 (top, bottom) and 4 (sides) on the
   /// spacing scale.
   static let inset: CGFloat = Tokens.Space.xs
-  /// Point sizes the result is tried in, largest first: the board's 12, smaller only for a
-  /// result that would not fit whole ("−$1,234.56" in a 378-point days column takes 10).
-  static let resultSizes: [CGFloat] = [12, 11, 10, 9]
   /// SF Symbol before the trade count.
   static let countSymbol = "list.bullet"
 
@@ -208,9 +205,9 @@ private struct CalendarDay: View {
         if let summary, let result {
           // The largest size that holds the whole result: never cut, never scaled down.
           ViewThatFits(in: .horizontal) {
-            ForEach(Self.resultSizes, id: \.self) { size in
+            ForEach(Tokens.Typography.calendarResultFonts.indices, id: \.self) { index in
               Text(verbatim: Money.signedUSD(result))
-                .font(.system(size: size, weight: .bold, design: .monospaced))
+                .font(Tokens.Typography.calendarResultFonts[index])
                 .fixedSize()
             }
           }
