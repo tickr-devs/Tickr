@@ -169,7 +169,10 @@ def check_timings(config: Config) -> None:
                           f"below the flatten-to-close time ({window} s)")
     # The session flatten cancels one stop at a time across every trade: the cancel goes out,
     # the next poll's read confirms it and the shares' close goes out at once (at most two
-    # polls per stop): every slot's stops must be closed before the cutoff.
+    # polls per stop): every slot's stops must be closed before the cutoff. It counts no entry
+    # reads, which go ahead of a cancel's read (`Engine._read_first`): it relies on no entry
+    # working at flatten time (working entries are cancelled at the last-entry time, before
+    # the flatten).
     stops = config.orders.max_stops_per_trade
     if stops < 3:
         raise ConfigError(f"[orders] max_stops_per_trade ({stops}) must be at least 3: one "

@@ -640,3 +640,41 @@ def test_working_entries_filling_with_a_stop_out_and_a_flatten_at_twenty_slots(
     assert done[-1] * POLL <= float(CFG.orders.max_unprotected_seconds) - POLL
     if flatten:
         assert any(o.leg is Leg.EXIT and o.symbol == flattened for o in desk.engine.orders())
+
+
+@pytest.mark.parametrize("cause", ["exit", "session-flatten"])
+def test_an_exit_during_working_entry_fills_waits_at_most_those_reads(tmp_path, cause):
+    """The other side of reading fills first (Fable, review of #637): an exit or a flatten
+    requested in the same poll as `max_working_entries` fills waits behind those entries'
+    reads. Its first stop is cancelled at once; the cancel's Detail read comes after at most
+    the working entries' reads, and the shares are sold at once: they are without a stop
+    or a sell for at most working + 1 polls (spec section 9), inside
+    `max_unprotected_seconds`, and the close is sent within working + 3 polls."""
+    working = int(CFG.risk.max_working_entries)
+    held = MAX - working
+    broker = FakeBroker(history_down=True)
+    desk = Desk(tmp_path, wide(MAX, max_daily_loss_usd=D(MAX * 10)), broker)
+    for symbol in SYMBOLS[:held]:
+        assert desk.enter(symbol, scale_out=D(4)).admission == "taken"
+        desk.fill(symbol)
+    for symbol in SYMBOLS[held:]:
+        assert desk.enter(symbol, scale_out=D(4)).admission == "taken"
+    desk.step(4 * MAX)
+    leaving = SYMBOLS[0]
+    for symbol in SYMBOLS[held:]:
+        entry = desk.engine.orders(desk.trade_of(symbol).trade_id)[0]
+        broker.fill(entry.client_order_id, D(10), D("10.05"))
+    desk.engine.request_exit(desk.trade_of(leaving).trade_id, cause)
+    first = desk.stops(leaving)[0].client_order_id
+    bare = steps = 0
+    sold = False
+    while not sold and steps < 4 * working:
+        desk.step()
+        steps += 1
+        stop_working = any(o.client_order_id == first for o in broker.open_orders())
+        sold = any(o.leg is Leg.EXIT and o.symbol == leaving for o in desk.engine.orders())
+        if not sold and not stop_working:
+            bare += 1
+    assert sold and steps <= working + 3
+    assert bare <= working + 1
+    assert (bare + 1) * POLL <= float(CFG.orders.max_unprotected_seconds)
