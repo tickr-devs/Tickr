@@ -11,7 +11,10 @@ public enum CheckValue {
     NSDecimalRound(&whole, &source, 0, .plain)
     if whole == value { return value.formatted(.number.precision(.fractionLength(0))) }
     let digits = abs(value) >= 1 ? wholeDigits : smallDigits
-    return value.formatted(.number.precision(.fractionLength(abs(value) >= 1 ? digits...digits : 0...digits)))
+    // Half rounds up (owner rule): the number style alone rounds half to even ("…555.285" to .28).
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &source, digits, .plain)
+    return rounded.formatted(.number.precision(.fractionLength(abs(value) >= 1 ? digits...digits : 0...digits)))
   }
 
   /// The operator in mathematical signs; any other is shown as recorded.

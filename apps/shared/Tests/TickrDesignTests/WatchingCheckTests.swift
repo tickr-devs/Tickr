@@ -112,7 +112,8 @@ private func row(
 
   @Test("A check's numbers read as numbers: grouped, a price's decimals, signs not ASCII")
   func checkValues() throws {
-    #expect(CheckValue.text(try #require(Decimal(string: "12627555.2850"))) == (12_627_555.29 as Decimal)
+    // Half rounds up: .2850 is .29, never the number style's half-to-even .28.
+    #expect(CheckValue.text(try #require(Decimal(string: "12627555.2850"))) == (try #require(Decimal(string: "12627555.29")))
       .formatted(.number.precision(.fractionLength(2))))
     #expect(CheckValue.text(5_000_000) == (5_000_000 as Decimal).formatted(.number.precision(.fractionLength(0))))
     #expect(CheckValue.text(try #require(Decimal(string: "0.0031"))) == (0.0031 as Decimal)
