@@ -34,6 +34,7 @@
       "extended": false
     }
   ],
+  "pending": null,
   "api_version": 1,
   "cause_codes": []
 }

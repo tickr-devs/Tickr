@@ -729,10 +729,24 @@ class ChartBarV1:
 
 
 @dataclass(frozen=True)
+class ChartPendingV1:
+    """A chart answered before the chart's request budget let it read everything: `read` of
+    `total` parts are in `bars` (sessions for 1d/5d, newest first; the one daily series for
+    1m/3m/1y, so 0 of 1), and asking again after `retry_after_seconds` (the budget's own wait)
+    reads more. The apps draw what is there and say how far it has got."""
+
+    read: int
+    total: int
+    retry_after_seconds: Decimal
+
+
+@dataclass(frozen=True)
 class ChartV1:
     """GET /chart?symbol=&interval=&range=: candles of any US stock from market data, oldest
     first. `source` names the provider; `cached_at` is when the oldest data in the answer was
-    read from it; `cause` says why `bars` is empty (null when it is not)."""
+    read from it (the answer's time when nothing was read); `cause` says why `bars` is empty
+    (null when it is not, and while `pending`); `pending` is null for a complete answer, else
+    how much the spent budget let it read (added after version 1 shipped)."""
 
     symbol: str
     interval: ChartInterval
@@ -741,6 +755,7 @@ class ChartV1:
     cached_at: datetime
     cause: str | None
     bars: tuple[ChartBarV1, ...]
+    pending: ChartPendingV1 | None = _added_later(None)
     api_version: int = _const(API_VERSION)
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")

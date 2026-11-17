@@ -30,6 +30,7 @@ from tickr.api.contract import (
     BotState,
     ChartBarV1,
     ChartInterval,
+    ChartPendingV1,
     ChartRange,
     ChartV1,
     CheckV1,
@@ -368,6 +369,20 @@ def documents() -> dict[str, object]:
                 ("12.10", "12.18", "12.05", "12.16", "3120"),
                 ("12.16", "12.31", "12.15", "12.30", "5410"),
                 ("12.30", "12.52", "12.28", "12.47", "182300"))))),
+        # A cold 5D whose chart budget ran out after the newest four sessions: the 09:30 New
+        # York 1h candle of 2026-11-11 to 2026-11-16; the oldest session (2026-11-10) follows
+        # once the budget refills.
+        "chart-v1.pending": ChartV1("ABCD", ChartInterval.H1, ChartRange.D5, "webull",
+                                    datetime(2026, 11, 16, 14, 41, 2, 250000, tzinfo=UTC), None,
+                                    tuple(
+            ChartBarV1(datetime(2026, 11, d, 14, 30, tzinfo=UTC), Decimal(o), Decimal(h),
+                       Decimal(lo), Decimal(c), Decimal(v), False)
+            for d, (o, h, lo, c, v) in zip((11, 12, 13, 16), (
+                ("12.10", "12.40", "12.05", "12.30", "41200"),
+                ("12.30", "12.35", "11.90", "12.00", "38900"),
+                ("12.00", "12.60", "11.95", "12.55", "52100"),
+                ("12.55", "12.70", "12.40", "12.47", "182300")), strict=True)),
+            ChartPendingV1(4, 5, Decimal("37.250"))),
         "chart-v1.empty": ChartV1("ABCD", ChartInterval.D1, ChartRange.Y1, "webull",
                                   datetime(2026, 11, 16, 14, 41, 2, 250000, tzinfo=UTC),
                                   "no 1d bars from webull for ABCD in range 1y", ()),
