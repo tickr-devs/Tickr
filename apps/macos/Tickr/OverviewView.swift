@@ -153,12 +153,6 @@ private struct Header: View {
           }
           // The product name never wraps ("Tickr Operat / or" in a narrow window): badges give way first.
           .fixedSize()
-          #if DEBUG
-          // Fixture data looks live; say so on the screen it would be mistaken on.
-          if PreviewAPI.servesFixtures {
-            Badge(L10n.Overview.fixtures, color: Palette.warningText).help(Text(L10n.Overview.fixturesHelp))
-          }
-          #endif
           if let status = model.status {
             EnvironmentBadge(ApiText.environment(status.environment), raw: status.environment,
               accessibilityLabel: ApiText.environmentLabel(status.environment))
@@ -249,7 +243,7 @@ private struct DayResult: View {
   var body: some View {
     VStack(alignment: .trailing, spacing: Tokens.Space.xxs) {
       CardLabel(L10n.Overview.dayResult)
-      MoneyText(value: counted, usd: true, font: Tokens.Typography.display)
+      MoneyText(value: counted, font: Tokens.Typography.display)
       Text(verbatim: subtitle).font(Tokens.Typography.annotation).foregroundStyle(Palette.textQuaternary)
       if model.shownResultBeforeFees {
         // Wraps rather than cuts, in either language.
@@ -272,7 +266,7 @@ private struct DayResult: View {
     let unrealized = model.positions.compactMap(\.unrealized)
     // Only when every open position has a fresh price; a partial sum would mislead.
     if model.isLive && !model.positions.isEmpty && unrealized.count == model.positions.count {
-      text += String(localized: L10n.Overview.openResult(Money.signed(unrealized.reduce(0, +))))
+      text += String(localized: L10n.Overview.openResult(Money.signedUSD(unrealized.reduce(0, +))))
     }
     return text
   }
@@ -759,7 +753,7 @@ private struct PositionTab: View {
         StopDot(row.position.stop.state)
         Text(verbatim: row.position.symbol).foregroundStyle(Palette.textPrimary)
         if let value = row.unrealized {
-          Text(verbatim: Money.signed(value)).foregroundStyle(Palette.result(value))
+          Text(verbatim: Money.signedUSD(value)).foregroundStyle(Palette.result(value))
         }
       }
     }
@@ -792,7 +786,7 @@ private struct PositionDetail: View {
           Text(verbatim: row.position.symbol).font(Tokens.Typography.metric)
           Spacer()
           if let value = row.unrealized {
-            DeltaTag(value, text: Money.signed(value), large: true)
+            DeltaTag(value, text: Money.signedUSD(value), large: true)
               .hint(L10n.Position.unrealized)
           } else {
             Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
@@ -842,7 +836,7 @@ private struct PositionDetail: View {
         symbol: Self.lastBarSymbol)
         .help(staleHelp)
       StatLine(L10n.Position.maxLoss,
-        value: Risk.plannedLoss(entry: row.entry, stop: row.stop, quantity: row.quantity).map { Money.plain($0) }
+        value: Risk.plannedLoss(entry: row.entry, stop: row.stop, quantity: row.quantity).map(Money.usd)
           ?? Format.missing, symbol: Self.maxLossSymbol)
         .help(Text(L10n.Position.maxLossHelp))
       if isStale, let time = row.lastBarAt {
@@ -1091,15 +1085,17 @@ private struct SafetyCard: View {
     // the commands never do, so they are always in reach.
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       // Stop bot beside the bot's state; under the header when the card is too narrow for both.
+      // The state is one short word, always on one line: a pill that may wrap was squeezed by
+      // the header's spacer to one letter per line instead of the button moving down.
       ViewThatFits(in: .horizontal) {
         SectionHeader(L10n.Safety.titleWithBot) {
           HStack(spacing: Tokens.Space.s) {
-            BotPill()
+            BotPill().fixedSize()
             BotStopButton()
           }
         }
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          SectionHeader(L10n.Safety.titleWithBot) { BotPill() }
+          SectionHeader(L10n.Safety.titleWithBot) { BotPill().fixedSize() }
           BotStopButton()
         }
       }
@@ -1293,14 +1289,14 @@ private struct RiskRoomCard: View {
           } else {
             Text(verbatim: Format.missing).font(Tokens.Typography.metric).foregroundStyle(Palette.textQuaternary)
           }
-          Text(L10n.RiskRoom.left(Money.plain(limit))).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary)
+          Text(L10n.RiskRoom.left(Money.usd(limit))).font(Tokens.Typography.callout).foregroundStyle(Palette.textTertiary)
         }
         bar(room: fraction, reserved: reserved)
         VStack(spacing: Tokens.Space.s) {
           // The design's order: the net day, what open orders hold, the positions, the records.
-          StatLine(L10n.RiskRoom.netResult, value: Money.signed(model.shownResult), color: Palette.result(model.shownResult))
-          StatLine(L10n.RiskRoom.reservations, value: reservations.map { Money.plain($0) } ?? Format.missing,
-            color: reservations.map { $0 > 0 ? Palette.warningText : Palette.textPrimary } ?? Palette.textQuaternary)
+          StatLine(L10n.RiskRoom.netResult, value: Money.signedUSD(model.shownResult), color: Palette.result(model.shownResult))
+          StatLine(L10n.RiskRoom.reservations, value: reservations.map(Money.usd) ?? Format.missing,
+            color: reservations.map { Tone.amount($0, .warning).text } ?? Palette.textQuaternary)
           let count = String(localized: L10n.Common.countOf(model.positions.count, risk.maxOpenPositions))
           StatLine(L10n.RiskRoom.positions, value: count)
           let records = FlowStages.reconcile(liveFences: model.isLive ? model.status?.fences : nil,
@@ -1420,13 +1416,20 @@ private struct AdvisorRow: View {
 
   var body: some View {
     // On one line while everything fits whole; in a narrow column the pill and the link go on
-    // a line of their own, so no word is broken or cut.
+    // a line of their own, and in the narrowest one each on its own line, so no word is broken
+    // or cut. The last arrangement is the narrowest: a `ViewThatFits` keeps its last child even
+    // when it is wider than the column, which pushed the card over its neighbour (Fast movers).
     ViewThatFits(in: .horizontal) {
       HStack(spacing: Tokens.Space.s) {
         words.fixedSize()
         Spacer(minLength: Tokens.Space.s)
-        actions
+        HStack(spacing: Tokens.Space.s) { actions }
       }
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        words
+        HStack(spacing: Tokens.Space.s) { actions }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
       VStack(alignment: .leading, spacing: Tokens.Space.s) {
         words
         actions
@@ -1459,14 +1462,13 @@ private struct AdvisorRow: View {
     }
   }
 
-  private var actions: some View {
-    HStack(spacing: Tokens.Space.s) {
-      if let count = advisor.runs?.awaitingReview, count > 0 {
-        StatusPill(AdvisorWords.awaiting(count), tone: .highlight).fixedSize()
-      }
-      HeaderLink(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, tone: .highlight, action: open)
-        .fixedSize()
+  /// The pill and the link, laid out by the stack around them (a row, or one under the other).
+  @ViewBuilder private var actions: some View {
+    if let count = advisor.runs?.awaitingReview, count > 0 {
+      StatusPill(AdvisorWords.awaiting(count), tone: .highlight).fixedSize()
     }
+    HeaderLink(advisor.runs?.lead == nil ? L10n.Observers.lab : AdvisorWords.review, tone: .highlight, action: open)
+      .fixedSize()
   }
 
   /// Opens the Lab, on the latest proposal when there is one.
@@ -1492,7 +1494,7 @@ private struct OverviewObserverRow: View {
         Text(verbatim: ObserverLabel.observer(observer))
         Spacer(minLength: Tokens.Space.s)
         if let result {
-          Text(verbatim: Money.signed(result)).foregroundStyle(Palette.result(result))
+          Text(verbatim: Money.signedUSD(result)).foregroundStyle(Palette.result(result))
         } else {
           Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
         }

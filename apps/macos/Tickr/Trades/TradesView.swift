@@ -294,7 +294,7 @@ private struct DayRow: View {
           .foregroundStyle(Palette.textQuaternary)
           .help(Text(L10n.Trades.noBarsHelp))
       }
-      MoneyText(value: day.resultUsd.value, usd: true, font: Tokens.Typography.calloutMono)
+      MoneyText(value: day.resultUsd.value, font: Tokens.Typography.calloutMono)
     }
     .padding(.horizontal, Tokens.Space.s)
     .padding(.vertical, Tokens.Space.s)
@@ -337,7 +337,7 @@ private struct DayStatsRow: View {
 
   private var result: some View {
     Stat(L10n.Trades.resultGross) {
-      MoneyText(value: model.shownResult, usd: true, font: Tokens.Typography.figure)
+      MoneyText(value: model.shownResult, font: Tokens.Typography.figure)
     }
   }
 
@@ -367,8 +367,8 @@ private struct DayStatsRow: View {
     Stat(L10n.Trades.bestWorst) {
       HStack(spacing: Tokens.Space.s) {
         if let best = results.max(), let worst = results.min() {
-          MoneyText(value: best, usd: true, font: Tokens.Typography.figure)
-          MoneyText(value: worst, usd: true, font: Tokens.Typography.figure)
+          MoneyText(value: best, font: Tokens.Typography.figure)
+          MoneyText(value: worst, font: Tokens.Typography.figure)
         } else {
           Text(verbatim: Format.missing)
             .font(Tokens.Typography.figure)
@@ -557,7 +557,7 @@ private struct TradesTable: View {
                 // One pulse per thing the bot did to the position (a fill, a stop placed or
                 // verified), never a loop.
                 PulseDot(Palette.accent, size: Tokens.Size.dotSmall, event: position.event)
-                Badge(L10n.Trades.open, color: Palette.accentText)
+                Badge(L10n.Trades.open, tone: Tone.openPosition)
               }
             }
             .buttonStyle(.plain)
@@ -584,7 +584,7 @@ private struct TradesTable: View {
         cell(row, step: steps[row.id]) {
           if let result = row.result {
             // Greyed while it is as of an older bar, as in the menu-bar panel.
-            MoneyText(value: result, usd: true, font: Tokens.Typography.calloutMono, muted: row.isStale)
+            MoneyText(value: result, font: Tokens.Typography.calloutMono, muted: row.isStale)
           } else {
             Text(L10n.Trades.open)
               .textCase(.lowercase)
@@ -769,7 +769,7 @@ private struct TradeDetailCard: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .fixedSize(horizontal: false, vertical: true)
                 MoneyText(
-                  value: trade.plannedLossUsd.value, usd: true, font: Tokens.Typography.calloutMono, colored: false,
+                  value: trade.plannedLossUsd.value, font: Tokens.Typography.calloutMono, colored: false,
                   signed: false)
                   // The values line up on the right, as in the design; the labels take the rest.
                   .gridColumnAlignment(.trailing)
@@ -857,7 +857,7 @@ private struct TradeDetailCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
       if let value {
-        MoneyText(value: value.value, usd: true, font: Tokens.Typography.calloutMono)
+        MoneyText(value: value.value, font: Tokens.Typography.calloutMono)
       } else {
         Text(L10n.Trades.unknown).foregroundStyle(Palette.textQuaternary)
       }
@@ -921,7 +921,7 @@ private struct AnotherStrategyView: View {
         GridRow {
           Text(L10n.Trades.anotherBot).foregroundStyle(Palette.textSecondary)
           botR
-          MoneyText(value: trade.resultGrossUsd.value, usd: true, font: Tokens.Typography.calloutMono)
+          MoneyText(value: trade.resultGrossUsd.value, font: Tokens.Typography.calloutMono)
         }
         if chosen != nil { result }
       }
@@ -999,7 +999,7 @@ private struct AnotherStrategyView: View {
             Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
           }
           if let usd = found.resultGrossUsd?.value {
-            MoneyText(value: usd, usd: true, font: Tokens.Typography.calloutMono)
+            MoneyText(value: usd, font: Tokens.Typography.calloutMono)
           } else {
             Text(verbatim: Format.missing).foregroundStyle(Palette.textQuaternary)
           }

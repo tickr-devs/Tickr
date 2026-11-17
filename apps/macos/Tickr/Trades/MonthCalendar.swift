@@ -110,7 +110,7 @@ struct MonthCalendar: View {
       }
       Spacer(minLength: Tokens.Space.s)
       if let total {
-        Text(L10n.Trades.monthTotal(Money.signed(total)))
+        Text(L10n.Trades.monthTotal(Money.signedUSD(total)))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.result(total))
           .fixedSize()
