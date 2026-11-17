@@ -37,10 +37,19 @@ struct OverviewView: View {
   static let bottomRowMinHeight: CGFloat = 150
   /// Padding around the cards on each side: the screen's widths above are the grid's plus twice this.
   static let padding = Tokens.Space.l
+  /// Narrowest grid, in points, with the cards in two columns: two of the least grid column
+  /// (`Tokens.Size.gridColumnMin`) and the gap between. Narrower (a window capped to a small
+  /// display, `WindowFit`), the cards stack in one column, the Safety · bot card first after the
+  /// header and the result, so its commands are reached without a sideways scroll.
+  static let twoColumnsMinGridWidth: CGFloat = CardArrangement.columnsMinWidth(2)
+  /// Least size of the screen, in points: one column of cards and the padding; any height, the
+  /// cards scroll. The window never scrolls the Overview sideways (`ScreenRoomFrame`).
+  static let leastSize = CGSize(
+    width: CardArrangement.columnsMinWidth(1) + padding * CardArrangement.paddedEdges, height: 0)
 
   /// The design's grid at the widest, then two columns of cards with the result beside the
-  /// header, then the result under the header. The same cards in each: a resize moves them and
-  /// never makes them anew.
+  /// header, then the result under the header, then one column with the Safety · bot card first
+  /// after them. The same cards in each: a resize moves them and never makes them anew.
   static let arrangements: [CardArrangement] = [
     CardArrangement(minWidth: threeColumnsMinWidth - padding * CardArrangement.paddedEdges, rows: [
       headerBesideResult,
@@ -51,7 +60,8 @@ struct OverviewView: View {
     ]),
     CardArrangement(minWidth: headerBesideResultMinWidth - padding * CardArrangement.paddedEdges,
       rows: [headerBesideResult] + twoColumnRows),
-    CardArrangement(minWidth: 0, rows: [single(.header), single(.result)] + twoColumnRows),
+    CardArrangement(minWidth: twoColumnsMinGridWidth, rows: [single(.header), single(.result)] + twoColumnRows),
+    CardArrangement(minWidth: 0, rows: [single(.header), single(.result)] + oneColumnRows),
   ]
 
   /// The day's result in its own column beside the header, each at its own height.
@@ -71,8 +81,22 @@ struct OverviewView: View {
     weighted(twoColumnWeights, [.fastMovers, .journal]),
   ]
 
-  private static func single(_ slot: Slot) -> CardRow {
-    CardRow(columns: [CardColumn(width: .share(1), cards: [slot.rawValue])])
+  /// Below the result in one column: the Safety · bot card first, then the cards in the
+  /// order of the two-column rows; the Safety · bot card and Watching closely keep the middle
+  /// row's least height, as there.
+  private static let oneColumnRows: [CardRow] = [
+    single(.safety, height: .atLeast(middleRowHeight)),
+    single(.flow),
+    single(.positions),
+    single(.watching, height: .atLeast(middleRowHeight)),
+    single(.riskRoom),
+    single(.observers),
+    single(.fastMovers),
+    single(.journal),
+  ]
+
+  private static func single(_ slot: Slot, height: CardRow.Height = .natural) -> CardRow {
+    CardRow(columns: [CardColumn(width: .share(1), cards: [slot.rawValue])], height: height)
   }
 
   private static func weighted(_ weights: [CGFloat], _ slots: [Slot], height: CardRow.Height = .natural) -> CardRow {

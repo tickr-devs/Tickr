@@ -98,14 +98,14 @@ struct RootView: View {
             // screen's own cards then rise in. Sliding whole screens in and out kept two of them
             // (one maybe the chart) laid out and animating together, and stuttered.
             .id(section)
-            // A fixed least size for every screen, its content cut at it: a screen whose least
-            // size followed its content (a row of controls wider than the column, a layout
-            // that switches with the width) asked for more than the window beside the sidebar
-            // and the inspector, the split view shifted it inside its layout pass, and on
-            // macOS 27 AppKit threw ("needs another Update Constraints in Window pass").
-            .frame(minWidth: Self.screenMinWidth, maxWidth: .infinity, minHeight: Self.screenMinHeight,
-              maxHeight: .infinity, alignment: .topLeading)
-            .clipped()
+            // A fixed least size for every screen, scrolled to when the window leaves less (a
+            // window capped to a small display, `WindowFit`): a screen whose least size
+            // followed its content (a row of controls wider than the column, a layout that
+            // switches with the width) asked for more than the window beside the sidebar and
+            // the inspector, the split view shifted it inside its layout pass, and on macOS 27
+            // AppKit threw ("needs another Update Constraints in Window pass"). The room asks
+            // for nothing; the least size is a constant of the section.
+            .modifier(ScreenRoomFrame(least: screenLeast))
             .lastKnown(model.connectionState.isLastKnown)
         }
         if let unattended = model.unattendedPositions {
@@ -140,6 +140,14 @@ struct RootView: View {
     // The window's bot command questions (Overview's Safety card), on the view that lives as long
     // as the window: never on the card, which a layout change or a section switch rebuilds.
     .botCommandQuestions(in: .window)
+  }
+
+  /// Least size of the shown screen, in points: Overview stacks its cards down to one column
+  /// (`OverviewView.leastSize`); every other screen, the Symbols screen in Overview's place
+  /// included, needs the screens' least size (`screenMinWidth`, `screenMinHeight`).
+  private var screenLeast: CGSize {
+    if section == .overview && model.symbolsTab == nil { return OverviewView.leastSize }
+    return CGSize(width: Self.screenMinWidth, height: Self.screenMinHeight)
   }
 
   @ViewBuilder private var detail: some View {
@@ -666,6 +674,9 @@ struct UnattendedBanner: View {
 struct CommandToast: View {
   let command: SentCommand
 
+  /// Accessibility id of the toast, for the UI tests: a sent command always shows it.
+  static let id = "command-toast"
+
   /// Blur of the floating shadow under the toast, in points (its offset is the cards').
   static let shadowRadius: CGFloat = 12
 
@@ -684,6 +695,8 @@ struct CommandToast: View {
     .background(.regularMaterial, in: Capsule())
     .overlay(Capsule().strokeBorder(color.opacity(Tokens.Opacity.border)))
     .shadow(radius: Self.shadowRadius, y: Tokens.Size.shadowOffset)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier(Self.id)
   }
 
   private var headline: String {
