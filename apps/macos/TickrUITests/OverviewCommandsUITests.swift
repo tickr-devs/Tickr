@@ -55,6 +55,11 @@ final class OverviewCommandsUITests: XCTestCase {
   static let screenKey = "TICKR_SCREEN"
   static let laptop = (value: "1280x800", width: CGFloat(1280), height: CGFloat(800))
   static let smallDisplay = (value: "1024x768", width: CGFloat(1024), height: CGFloat(768))
+  /// The narrowest board (MainNarrow v110, 640 points): one column, the sidebar an icon rail.
+  static let narrowest = (value: "640x800", width: CGFloat(640), height: CGFloat(800))
+  /// The live flow's latest event (LatestEvent.id), inside the Live flow card: on the one-column
+  /// board the Safety · bot card comes before it.
+  static let latestEvent = "overview-latest-event"
   /// The command toast (CommandToast.id), shown whenever a command is sent; how long it is
   /// watched for after a confirmation is withdrawn, in seconds.
   static let toast = "command-toast"
@@ -99,16 +104,37 @@ final class OverviewCommandsUITests: XCTestCase {
     checkOnDisplay(Self.russian, Self.smallDisplay)
   }
 
+  @MainActor
+  func testSafetyComesFirstAndEveryCommandIsReachable640PointsWideInEnglish() {
+    checkOnDisplay(Self.english, Self.narrowest, safetyBeforeFlow: true)
+  }
+
+  @MainActor
+  func testSafetyComesFirstAndEveryCommandIsReachable640PointsWideInRussian() {
+    checkOnDisplay(Self.russian, Self.narrowest, safetyBeforeFlow: true)
+  }
+
   /// The narrowest window on the pretended display: never larger than it (its least size is
   /// capped to the display, `WindowFit`), as wide as it (the display is narrower than the
   /// comfortable least width), and every command reachable inside it.
   @MainActor
-  private func checkOnDisplay(_ arguments: [String], _ display: (value: String, width: CGFloat, height: CGFloat)) {
+  private func checkOnDisplay(
+    _ arguments: [String], _ display: (value: String, width: CGFloat, height: CGFloat), safetyBeforeFlow: Bool = false
+  ) {
     let app = launch(arguments, screen: display.value)
     let window = app.windows.firstMatch
     XCTAssertEqual(window.frame.width, display.width, accuracy: 1, "the window is not as wide as the display")
     XCTAssertLessThanOrEqual(window.frame.height, display.height + 1, "the window is taller than the display")
     checkCommands(in: app, window: window)
+    if safetyBeforeFlow {
+      // One column: the Safety · bot card sits above the Live flow card, first after the header
+      // and the day's result.
+      let card = app.descendants(matching: .any)[Self.safetyCard].firstMatch
+      let flow = app.descendants(matching: .any)[Self.latestEvent].firstMatch
+      XCTAssertTrue(flow.waitForExistence(timeout: Self.timeout), "latest event\n\(app.debugDescription)")
+      XCTAssertLessThanOrEqual(card.frame.maxY, flow.frame.minY,
+        "the Safety card \(card.frame) is not above the flow \(flow.frame)")
+    }
   }
 
   @MainActor

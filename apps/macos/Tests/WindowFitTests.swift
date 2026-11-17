@@ -1,5 +1,6 @@
 import CoreGraphics
 import Testing
+import TickrDesign
 @testable import TickrMac
 
 /// The main window fits the screen (owner decision 2026-11-16, option A): its least size is capped
@@ -102,5 +103,58 @@ struct WindowFitTests {
       let cards = arrangement.rows.flatMap { $0.columns.flatMap(\.cards) }.sorted()
       #expect(cards == Array(0..<10))
     }
+  }
+
+  @Test("Overview's board follows the grid width; the result is one line where it cannot sit beside the header")
+  func overviewLayouts() {
+    let three = OverviewView.threeColumnsMinWidth - OverviewView.padding * CardArrangement.paddedEdges
+    #expect(OverviewView.layout(gridWidth: three) == .board)
+    #expect(OverviewView.layout(gridWidth: three - 1) == .twoColumns)
+    let beside = OverviewView.headerBesideNarrowResultMinGridWidth
+    #expect(beside > OverviewView.twoColumnsMinGridWidth && beside < three)
+    #expect(OverviewView.layout(gridWidth: beside - 1) == .twoColumnsResultBelow)
+    #expect(OverviewView.layout(gridWidth: OverviewView.twoColumnsMinGridWidth - 1) == .oneColumn)
+    #expect(OverviewLayout.oneColumn.resultInline && OverviewLayout.twoColumnsResultBelow.resultInline)
+    #expect(!OverviewLayout.twoColumns.resultInline && !OverviewLayout.board.sized)
+    // The arrangement each layout names is the one the grid picks at that width.
+    let grid = CardGrid(arrangements: OverviewView.arrangements, spacing: 16, minHeight: 0)
+    #expect(grid.arrangement(for: beside)?.rows.first?.columns.count == 2)
+    #expect(grid.arrangement(for: beside - 1)?.rows.first?.columns.count == 1)
+  }
+
+  @Test("Stages share rows evenly when one row would break a word: 9 as 5 and 4")
+  func stageRows() {
+    #expect(StageRows.perRow(count: 9, width: 900, leastCellWidth: 80) == 9)
+    #expect(StageRows.perRow(count: 9, width: 719, leastCellWidth: 80) == 5)
+    #expect(StageRows.perRow(count: 9, width: 400, leastCellWidth: 80) == 5)
+    #expect(StageRows.perRow(count: 9, width: 399, leastCellWidth: 80) == 3)
+    #expect(StageRows.perRow(count: 9, width: 10, leastCellWidth: 80) == 1)
+    #expect(StageRows.perRow(count: 0, width: 900, leastCellWidth: 80) == 0)
+  }
+
+  @Test("A stage cell holds its longest word, never less than its ring")
+  func stageCellWidth() {
+    let short = StageRows.leastCellWidth(names: ["A"], values: [])
+    #expect(short == Tokens.Size.stage + Tokens.Space.xs * CardArrangement.paddedEdges)
+    let long = StageRows.leastCellWidth(names: ["broker stop", "reconcile"], values: ["котировкой: 141"])
+    #expect(long > short)
+    #expect(StageRows.leastCellWidth(names: ["reconcile reconcile"], values: [])
+      == StageRows.leastCellWidth(names: ["reconcile"], values: []))
+  }
+
+  @Test("The title bar gives up the day controls first, then the code version, then the status text")
+  func titleBarTiers() {
+    let tiers = TitleBarFit.tiers
+    #expect(tiers.first == .whole)
+    #expect(tiers.map(\.stepper) == [true, false, false, false])
+    #expect(tiers.map(\.code) == [true, true, false, false])
+    #expect(tiers.map(\.statusText) == [true, true, true, false])
+  }
+
+  @Test("The sidebar is an icon rail only where the full sidebar leaves Overview less than two columns")
+  func railThreshold() {
+    #expect(WindowWidthFit.railBelowWidth == RootView.sidebarIdeal + OverviewView.twoColumnsMinScreenWidth)
+    #expect(WindowWidthFit.railBelowWidth < 1024 && WindowWidthFit.railBelowWidth > 640)
+    #expect(WindowWidthFit.leastMeasured > 1)
   }
 }
