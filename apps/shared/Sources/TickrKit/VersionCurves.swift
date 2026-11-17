@@ -56,8 +56,9 @@ public struct VersionCurve: Hashable, Sendable, Identifiable {
   }
 
   /// The trading strategy's line from its closes (when, and the trade's result).
-  public static func active(name: String, version: String, closes: [(at: Date, result: Decimal)],
-    total: Decimal) -> VersionCurve {
+  public static func active(
+    name: String, version: String, closes: [(at: Date, result: Decimal)], total: Decimal
+  ) -> VersionCurve {
     let closes = closes.map { (at: $0.at, result: Optional($0.result)) }
     let curve = make(name: name, version: version, observer: false, closes: closes, truncated: false)
     var line = VersionCurve(name: name, version: version, observer: false, points: curve.points,
