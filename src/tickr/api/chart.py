@@ -56,7 +56,14 @@ from pathlib import Path
 from typing import Any
 
 from tickr.api import contract
-from tickr.api.contract import ChartBarV1, ChartInterval, ChartPendingV1, ChartRange, ChartV1
+from tickr.api.contract import (
+    ChartBarV1,
+    ChartInterval,
+    ChartPendingV1,
+    ChartRange,
+    ChartSession,
+    ChartV1,
+)
 from tickr.broker.base import BrokerError, RateLimited
 from tickr.calendar import (
     NEW_YORK,
@@ -81,6 +88,7 @@ RANGE_MONTHS = {ChartRange.M1: 1, ChartRange.M3: 3, ChartRange.Y1: MONTHS_PER_YE
 DAILY_INTERVALS = (ChartInterval.D1, ChartInterval.W1, ChartInterval.MO1)
 # Provider session labels of M1 bars (probe M4).
 PRE, REGULAR, POST = "PRE", "RTH", "ATH"
+CHART_SESSIONS = {PRE: ChartSession.PRE, REGULAR: ChartSession.REGULAR, POST: ChartSession.AFTER}
 ONE_DAY = timedelta(days=1)
 SKIPPED_DAYS = (CalendarCause.WEEKEND, CalendarCause.HOLIDAY)
 MILLISECOND = Decimal("0.001")  # unit factor: retry_after_seconds is given to the millisecond
@@ -172,6 +180,7 @@ class PlacedBar:
     bar: Bar
     part_start: datetime
     extended: bool
+    session: ChartSession
 
 
 def place(day: MarketDay, item: SessionBar) -> PlacedBar:
@@ -192,7 +201,7 @@ def place(day: MarketDay, item: SessionBar) -> PlacedBar:
         raise ChartRefused("unavailable", f"{item.bar.symbol} bar at "
                            f"{contract.format_time(start)}: the provider says {item.session}, "
                            f"the calendar says {part}")
-    return PlacedBar(item.bar, part_start, part != REGULAR)
+    return PlacedBar(item.bar, part_start, part != REGULAR, CHART_SESSIONS[part])
 
 
 def aggregate_intraday(placed: Sequence[PlacedBar], minutes: int) -> list[ChartBarV1]:
@@ -207,7 +216,8 @@ def aggregate_intraday(placed: Sequence[PlacedBar], minutes: int) -> list[ChartB
         previous = item.bar.start
         offset = (item.bar.start - item.part_start) // width
         buckets.setdefault(item.part_start + offset * width, []).append(item)
-    return [ChartBarV1(start, *merge([i.bar for i in items]), extended=items[0].extended)
+    return [ChartBarV1(start, *merge([i.bar for i in items]), extended=items[0].extended,
+                       session=items[0].session)
             for start, items in buckets.items()]
 
 

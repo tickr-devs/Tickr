@@ -32,6 +32,7 @@ from tickr.api.contract import (
     ChartInterval,
     ChartPendingV1,
     ChartRange,
+    ChartSession,
     ChartV1,
     CheckV1,
     CleanCause,
@@ -364,7 +365,8 @@ def documents() -> dict[str, object]:
         "chart-v1": ChartV1("ABCD", ChartInterval.M5, ChartRange.D1, "webull",
                             datetime(2026, 11, 16, 14, 41, 2, 250000, tzinfo=UTC), None, tuple(
             ChartBarV1(datetime(2026, 11, 16, 14, 20, tzinfo=UTC) + timedelta(minutes=5 * i),
-                       Decimal(o), Decimal(h), Decimal(lo), Decimal(c), Decimal(v), i < 2)
+                       Decimal(o), Decimal(h), Decimal(lo), Decimal(c), Decimal(v), i < 2,
+                       ChartSession.PRE if i < 2 else ChartSession.REGULAR)
             for i, (o, h, lo, c, v) in enumerate((
                 ("12.10", "12.18", "12.05", "12.16", "3120"),
                 ("12.16", "12.31", "12.15", "12.30", "5410"),
@@ -376,7 +378,7 @@ def documents() -> dict[str, object]:
                                     datetime(2026, 11, 16, 14, 41, 2, 250000, tzinfo=UTC), None,
                                     tuple(
             ChartBarV1(datetime(2026, 11, d, 14, 30, tzinfo=UTC), Decimal(o), Decimal(h),
-                       Decimal(lo), Decimal(c), Decimal(v), False)
+                       Decimal(lo), Decimal(c), Decimal(v), False, ChartSession.REGULAR)
             for d, (o, h, lo, c, v) in zip((11, 12, 13, 16), (
                 ("12.10", "12.40", "12.05", "12.30", "41200"),
                 ("12.30", "12.35", "11.90", "12.00", "38900"),

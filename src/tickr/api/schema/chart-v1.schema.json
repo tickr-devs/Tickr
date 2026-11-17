@@ -77,6 +77,21 @@
           },
           "extended": {
             "type": "boolean"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pre",
+                  "regular",
+                  "after"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

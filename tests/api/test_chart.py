@@ -113,6 +113,7 @@ def test_hour_candles_never_cross_a_session_edge_and_keep_partial_buckets():
     # last regular hour 15:30-15:59 is half an hour; the post-market starts its own at 16:00.
     assert starts == [("09:00", True), ("09:30", False), ("10:30", False), ("15:30", False),
                       ("16:00", True)]
+    assert [c.session for c in candles] == ["pre", "regular", "regular", "regular", "after"]
 
 
 def test_merge_is_exact_decimal_ohlcv_with_missing_minutes():
@@ -562,6 +563,8 @@ def test_http_chart_matches_the_schema(served, tmp_path):
     assert errors(schema("chart-v1"), body) == []
     assert body["interval"] == "5m" and body["range"] == "1d" and body["source"] == "fake"
     assert [b["extended"] for b in body["bars"]] == [True, True, False, False, True, True]
+    assert [b["session"] for b in body["bars"]] == ["pre", "pre", "regular", "regular", "after",
+                                                    "after"]
     resp, _ = request(served, "POST", "/chart", {})
     assert resp.status == 405
 

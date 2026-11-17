@@ -713,11 +713,21 @@ class ChartRange(StrEnum):
     Y1 = "1y"
 
 
+class ChartSession(StrEnum):
+    """The part of the day an intraday candle lies in, by the session calendar."""
+
+    PRE = "pre"
+    REGULAR = "regular"
+    AFTER = "after"
+
+
 @dataclass(frozen=True)
 class ChartBarV1:
     """One candle. `start` is the candle's first instant: for 1d/1w/1mo, 00:00 New York time
     of its first calendar day (the date, the Monday, the 1st). `extended` is true for a pre- or
-    post-market candle, decided by the session calendar; always false for 1d/1w/1mo."""
+    post-market candle, decided by the session calendar; always false for 1d/1w/1mo.
+    `session` names that part of the day (pre, regular, after) for 1m/5m/30m/1h candles, so a
+    chart can tell the pre-market from the after-hours without a clock; null for 1d/1w/1mo."""
 
     start: datetime
     open: Decimal
@@ -726,6 +736,7 @@ class ChartBarV1:
     close: Decimal
     volume: Decimal
     extended: bool
+    session: ChartSession | None = _added_later(None)
 
 
 @dataclass(frozen=True)
