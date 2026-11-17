@@ -114,8 +114,8 @@ public struct EntrySizing: Equatable, Sendable {
     } ?? String(localized: L10n.sizingLineNoPrice(size.symbol, shares))
     let meta = String(localized: L10n.sizingMeta(size.symbol, ClockText.minutes(size.at.date)))
     let limits = size.limits.map { limit in
-      row(limit.limit, usd: limit.limitUsd.value, perShare: limit.perShareUsd.value, shares: limit.shares.value,
-        size: quantity, binds: limit.limit == size.binding, text: text)
+      row(Allowance(kind: limit.limit, usd: limit.limitUsd.value, perShare: limit.perShareUsd.value,
+        shares: limit.shares.value), size: quantity, binds: limit.limit == size.binding, text: text)
     }
     let caption: String?
     if let binding = size.binding {
@@ -138,23 +138,21 @@ public struct EntrySizing: Equatable, Sendable {
     guard let configured else {
       return EntrySizing(meta: nil, line: line, lead: nil, limits: [], caption: nil, tone: .example)
     }
-    var allowed: [(SizeBinding, Decimal, Decimal)] = [
-      (.plannedLoss, configured.plannedLossUsd, exampleStop),
-      (.notionalCap, configured.notionalCapUsd, examplePrice),
+    var allowed = [
+      Allowance(kind: .plannedLoss, usd: configured.plannedLossUsd, perShare: exampleStop),
+      Allowance(kind: .notionalCap, usd: configured.notionalCapUsd, perShare: examplePrice),
     ]
     if let room = configured.dailyRoomUsd {
-      allowed.append((.dailyRoom, max(room, 0), exampleStop))
+      allowed.append(Allowance(kind: .dailyRoom, usd: max(room, 0), perShare: exampleStop))
     }
-    let shares = allowed.map { floor($0.1 / $0.2) }
-    guard let size = shares.min() else {
+    guard let size = allowed.map(\.shares).min() else {
       return EntrySizing(meta: nil, line: line, lead: nil, limits: [], caption: nil, tone: .example)
     }
-    let roomBinds = configured.dailyRoomUsd.map { $0 < configured.plannedLossUsd } == true && shares.last == size
-    let binding = roomBinds ? SizeBinding.dailyRoom : allowed[shares.firstIndex(of: size) ?? 0].0
-    let limits = zip(allowed, shares).map { limit, allows in
-      row(limit.0, usd: limit.1, perShare: limit.2, shares: allows, size: size, binds: limit.0 == binding, text: text)
-    }
-    let bound = allowed.first { $0.0 == binding }?.1 ?? 0
+    let room = allowed.first { $0.kind == .dailyRoom }
+    let roomBinds = room.map { $0.shares == size && $0.usd < configured.plannedLossUsd } == true
+    let binding = roomBinds ? SizeBinding.dailyRoom : allowed.first(where: { $0.shares == size })?.kind ?? .plannedLoss
+    let limits = allowed.map { row($0, size: size, binds: $0.kind == binding, text: text) }
+    let bound = allowed.first { $0.kind == binding }?.usd ?? 0
     return EntrySizing(meta: nil, line: line,
       lead: String(localized: L10n.sizingExampleLead(text.usd(examplePrice), text.usd(exampleStop))),
       limits: limits,
@@ -162,9 +160,28 @@ public struct EntrySizing: Equatable, Sendable {
       tone: .example)
   }
 
-  private static func row(
-    _ kind: SizeBinding, usd: Decimal, perShare: Decimal, shares: Decimal, size: Decimal, binds: Bool, text: SizeText
-  ) -> Limit {
+  /// One limit's figures: its amount over a per-share figure allows `shares`.
+  private struct Allowance {
+    let kind: SizeBinding
+    let usd: Decimal
+    let perShare: Decimal
+    let shares: Decimal
+
+    init(kind: SizeBinding, usd: Decimal, perShare: Decimal, shares: Decimal) {
+      self.kind = kind
+      self.usd = usd
+      self.perShare = perShare
+      self.shares = shares
+    }
+
+    /// The shares the strategies would size: the amount over the per-share figure, rounded down.
+    init(kind: SizeBinding, usd: Decimal, perShare: Decimal) {
+      self.init(kind: kind, usd: usd, perShare: perShare, shares: EntrySizing.floor(usd / perShare))
+    }
+  }
+
+  private static func row(_ allowance: Allowance, size: Decimal, binds: Bool, text: SizeText) -> Limit {
+    let kind = allowance.kind, usd = allowance.usd, perShare = allowance.perShare, shares = allowance.shares
     let label: LocalizedStringResource = switch kind {
     case .plannedLoss: L10n.sizingRowPlannedLoss(text.usd(usd), text.price(perShare))
     case .notionalCap: L10n.sizingRowNotionalCap(text.usd(usd), text.price(perShare))
@@ -186,7 +203,7 @@ public struct EntrySizing: Equatable, Sendable {
   }
 
   /// Rounded down to whole shares.
-  private static func floor(_ value: Decimal) -> Decimal {
+  fileprivate static func floor(_ value: Decimal) -> Decimal {
     var input = value
     var output = Decimal()
     NSDecimalRound(&output, &input, 0, .down)

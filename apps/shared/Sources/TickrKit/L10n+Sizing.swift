@@ -141,9 +141,18 @@ public struct RecordsAgreement: Equatable, Sendable {
       return
     }
     switch latest?.agreement {
-    case .match: (value, agrees, note) = (String(localized: RiskRoomText.match), true, nil)
-    case .mismatch: (value, agrees, note) = (String(localized: RiskRoomText.mismatch), false, nil)
-    case nil: (value, agrees, note) = (nil, nil, latest?.agreementCauseText)
+    case .match:
+      value = String(localized: RiskRoomText.match)
+      agrees = true
+      note = nil
+    case .mismatch:
+      value = String(localized: RiskRoomText.mismatch)
+      agrees = false
+      note = nil
+    case nil:
+      value = nil
+      agrees = nil
+      note = latest?.agreementCauseText
     }
   }
 }
