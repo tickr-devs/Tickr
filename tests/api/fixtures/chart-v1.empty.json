@@ -7,6 +7,7 @@
   "cause": "no 1d bars from webull for ABCD in range 1y",
   "bars": [],
   "pending": null,
+  "previous_after_candles": null,
   "api_version": 1,
   "cause_codes": [
     {

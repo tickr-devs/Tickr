@@ -157,6 +157,8 @@ struct ChartView: View {
     }
     .padding(Tokens.Space.l)
     .animation(Tokens.Motion.standard, value: showDecisions)
+    // Mockup v113: a range opens on its own interval (Day 5m, 5D 30m).
+    .onChange(of: range) { _, new in timeframe = new.openingInterval }
     .task(id: LoadKey(
       baseURL: model.baseURL, symbol: symbol, day: model.shownDay, live: model.isLive, range: range,
       interval: interval)

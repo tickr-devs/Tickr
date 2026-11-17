@@ -194,15 +194,16 @@ final class ChartModel {
     }
   }
 
-  /// Show the chart over `range`, keeping the interval when the range offers it, else its
-  /// shortest. A range beyond one day waits for `loadRange`.
+  /// Show the chart over `range` in the interval it opens on. A range beyond one day waits for
+  /// `loadRange`.
   func choose(range: ChartRange) {
     guard range != self.range else { return }
     self.range = range
     rangeChart = nil
     rangeWarmup = nil
     rangeFailure = nil
-    if range.intervals.contains(timeframe) { rebuild() } else { timeframe = range.openingInterval }
+    // Mockup v113: a range opens on its own interval (Day 5m, 5D 30m).
+    if timeframe == range.openingInterval { rebuild() } else { timeframe = range.openingInterval }
   }
 
   /// Read the chosen symbol's candles over the chosen range beyond one day (GET /chart). An
@@ -349,7 +350,8 @@ final class ChartModel {
       series = drawn
       atr = warm?.atr ?? bars.map { ChartSeries.atr(bars: $0.bars, timeframe: timeframe) } ?? []
       studies = warm?.studies ?? CandleStudies(candles: real.candles)
-      times = ChartTimes(real: real, drawn: drawn, range: .oneDay, today: dayChart != nil ? todaySession : nil)
+      times = ChartTimes(real: real, drawn: drawn, range: .oneDay, today: dayChart != nil ? todaySession : nil,
+        afterSlots: dayChart?.previousAfterCandles)
     } else if let rangeChart, rangeChart.symbol == symbol, rangeChart.range == range, rangeChart.interval == timeframe {
       let warm = WarmChart(chart: rangeChart, warmup: rangeWarmup)
       let drawn = warm.series.gapless()
@@ -414,8 +416,9 @@ struct ChartTimes: Equatable {
   }
 
   /// `drawn` is `real.gapless()`: the same candles, index for index. `today`: the calendar's
-  /// session on today's Day chart, whose rest is reserved up to the extended close.
-  init(real: ChartSeries, drawn: ChartSeries, range: ChartRange, today: SessionSpan? = nil) {
+  /// session on today's Day chart, whose rest is reserved (`SessionAxis`), the after-hours as
+  /// `afterSlots` slots when the bot said how many the session before had.
+  init(real: ChartSeries, drawn: ChartSeries, range: ChartRange, today: SessionSpan? = nil, afterSlots: Int? = nil) {
     let starts = real.candles.map(\.start)
     self.range = range
     timeframe = real.timeframe
@@ -424,7 +427,8 @@ struct ChartTimes: Equatable {
     clock = GaplessClock(real: real)
     origin = drawn.candles.first?.start
     let intraday = real.timeframe.isIntraday
-    sessions = intraday ? SessionAxis(candles: real.candles, timeframe: real.timeframe, today: today) : nil
+    sessions = intraday
+      ? SessionAxis(candles: real.candles, timeframe: real.timeframe, today: today, afterSlots: afterSlots) : nil
     extendedClose = intraday ? (today?.end ?? real.candles.last?.end) : nil
     guard !intraday else {
       marks = []

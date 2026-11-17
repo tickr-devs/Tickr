@@ -38,6 +38,7 @@
     }
   ],
   "pending": null,
+  "previous_after_candles": null,
   "api_version": 1,
   "cause_codes": []
 }

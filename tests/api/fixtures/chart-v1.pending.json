@@ -52,6 +52,7 @@
     "total": 5,
     "retry_after_seconds": "37.250"
   },
+  "previous_after_candles": null,
   "api_version": 1,
   "cause_codes": []
 }

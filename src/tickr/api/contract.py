@@ -757,7 +757,11 @@ class ChartV1:
     first. `source` names the provider; `cached_at` is when the oldest data in the answer was
     read from it (the answer's time when nothing was read); `cause` says why `bars` is empty
     (null when it is not, and while `pending`); `pending` is null for a complete answer, else
-    how much the spent budget let it read (added after version 1 shipped)."""
+    how much the spent budget let it read (added after version 1 shipped).
+    `previous_after_candles`: on a 1d range while its session runs, how many after-hours candles
+    the session before it had in this interval, so the apps reserve as many slots for today's
+    after-hours (mockup v113); null otherwise, or when the budget did not let it be read (added
+    after version 1 shipped)."""
 
     symbol: str
     interval: ChartInterval
@@ -767,6 +771,7 @@ class ChartV1:
     cause: str | None
     bars: tuple[ChartBarV1, ...]
     pending: ChartPendingV1 | None = _added_later(None)
+    previous_after_candles: int | None = _added_later(None)
     api_version: int = _const(API_VERSION)
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")

@@ -59,10 +59,37 @@ public struct SessionAxis: Equatable, Sendable {
   public static let hourStepMinutes = [15, 30, 60, 120, 180, 240]
 
   /// The segments of `candles` (real times, oldest first) in `timeframe`; with `today`, the
-  /// calendar's session of the day the last candle is in, the rest of that day is reserved up to
-  /// its extended close (the Day range of the current session only).
-  public init(candles: [Candle], timeframe: Timeframe, today: SessionSpan? = nil) {
+  /// calendar's session of the day the last candle is in, the rest of that day is reserved (the
+  /// Day range of the current session only): the pre-market and the regular session to their
+  /// end, the after-hours as many slots as the session before had (`afterSlots`: its prints are
+  /// sparse, so the whole 16:00-20:00 would leave a wide empty band; mockup v113), or to the
+  /// extended close when that is not known.
+  public init(candles: [Candle], timeframe: Timeframe, today: SessionSpan? = nil, afterSlots: Int? = nil) {
     length = timeframe.seconds
+    var segments = Self.segments(candles)
+    candleSlots = candles.count
+    var slot = candles.count
+    var reserved: [Segment] = []
+    for part in Self.reserve(candles, length: length, today: today, afterSlots: afterSlots) {
+      reserved.append(Segment(
+        first: slot, last: slot + part.count - 1, session: part.session, realStart: part.begin, newDay: false,
+        future: true))
+      if let last = segments.last, last.session == part.session {
+        segments[segments.count - 1] = Segment(
+          first: last.first, last: last.last + part.count, session: part.session, realStart: last.realStart,
+          newDay: last.newDay, future: last.future)
+      } else {
+        segments.append(reserved[reserved.count - 1])
+      }
+      slot += part.count
+    }
+    self.segments = segments
+    self.reserved = reserved
+    slots = slot
+  }
+
+  /// Runs of candles in one part of one New York day.
+  private static func segments(_ candles: [Candle]) -> [Segment] {
     var segments: [Segment] = []
     let calendar = WireDate.newYork
     for (index, candle) in candles.enumerated() {
@@ -78,38 +105,32 @@ public struct SessionAxis: Equatable, Sendable {
           first: index, last: index, session: candle.session, realStart: candle.start, newDay: !sameDay, future: false))
       }
     }
-    candleSlots = candles.count
-    var slot = candles.count
-    var reserved: [Segment] = []
-    if let today, let lastCandle = candles.last,
-      calendar.startOfDay(for: lastCandle.start) == calendar.startOfDay(for: today.start) {
-      let lastEnd = lastCandle.end
-      var from = lastEnd
-      let parts: [(ChartSession, Date, Date)] = [
-        (.pre, today.start, today.regularOpen), (.regular, today.regularOpen, today.regularClose),
-        (.after, today.regularClose, today.end),
-      ]
-      for (session, start, end) in parts where from < end {
-        let begin = max(from, start)
-        let count = Int((end.timeIntervalSince(begin) / length).rounded(.up))
-        from = end
-        guard count > 0 else { continue }
-        reserved.append(Segment(
-          first: slot, last: slot + count - 1, session: session, realStart: begin, newDay: false, future: true))
-        if let last = segments.last, last.session == session {
-          segments[segments.count - 1] = Segment(
-            first: last.first, last: last.last + count, session: session, realStart: last.realStart,
-            newDay: last.newDay, future: last.future)
-        } else {
-          segments.append(Segment(
-            first: slot, last: slot + count - 1, session: session, realStart: begin, newDay: false, future: true))
-        }
-        slot += count
-      }
+    return segments
+  }
+
+  /// The slots reserved after the last candle on today's Day chart, part by part (see `init`).
+  private static func reserve(_ candles: [Candle], length: TimeInterval, today: SessionSpan?, afterSlots: Int?)
+    -> [(session: ChartSession, begin: Date, count: Int)] {
+    let calendar = WireDate.newYork
+    guard let today, let lastCandle = candles.last,
+      calendar.startOfDay(for: lastCandle.start) == calendar.startOfDay(for: today.start) else { return [] }
+    var from = lastCandle.end
+    var parts: [(session: ChartSession, begin: Date, count: Int)] = []
+    let spans: [(ChartSession, Date, Date)] = [
+      (.pre, today.start, today.regularOpen), (.regular, today.regularOpen, today.regularClose),
+      (.after, today.regularClose, today.end),
+    ]
+    for (session, start, end) in spans where from < end {
+      let begin = max(from, start)
+      let byTime = Int((end.timeIntervalSince(begin) / length).rounded(.up))
+      // Into the after-hours already: what is left of yesterday's count.
+      let afterSoFar = candles.filter { $0.session == .after && $0.start >= start }.count
+      let afterLeft = afterSlots.map { max($0 - afterSoFar, 0) }
+      let count = session == .after ? (afterLeft ?? byTime) : byTime
+      from = end
+      if count > 0 { parts.append((session, begin, count)) }
     }
-    self.segments = segments
-    self.reserved = reserved
-    slots = slot
+    return parts
   }
 
   /// Slots where a boundary is drawn: every segment's first but the chart's left edge (a segment
@@ -181,11 +202,14 @@ public enum AxisLabelPlacer {
     /// Widths of its texts, the preferred first (a session label's short form after it).
     public let widths: [Double]
     public let anchor: ChartAxis.Anchor
+    /// A session label: never left out to keep another label's long form.
+    public let required: Bool
 
-    public init(x: Double, widths: [Double], anchor: ChartAxis.Anchor) {
+    public init(x: Double, widths: [Double], anchor: ChartAxis.Anchor, required: Bool = false) {
       self.x = x
       self.widths = widths
       self.anchor = anchor
+      self.required = required
     }
   }
 
@@ -196,12 +220,30 @@ public enum AxisLabelPlacer {
     public let left: Double
   }
 
+  /// When a required label finds no room, the labels are placed again with every label in its
+  /// short form ("Pre 04:00" gives way to "04:00" so "09:30" stays).
   public static func place(_ items: [Item], width: Double, gap: Double, inset: Double) -> [Placed] {
+    let placed = placeOnce(items, width: width, gap: gap, inset: inset)
+    let kept = Set(placed.map(\.item))
+    let lost = items.indices.contains { items[$0].required && !kept.contains($0) && onAxis(items[$0], width: width) }
+    guard lost else { return placed }
+    let short = items.map { Item(x: $0.x, widths: $0.widths.suffix(1), anchor: $0.anchor, required: $0.required) }
+    return placeOnce(short, width: width, gap: gap, inset: inset).map { found in
+      Placed(item: found.item, text: items[found.item].widths.count - 1, left: found.left)
+    }
+  }
+
+  /// Whether a label's time is on the axis, to the whole point.
+  static func onAxis(_ item: Item, width: Double) -> Bool {
+    item.x.rounded() >= 0 && item.x.rounded() <= width
+  }
+
+  static func placeOnce(_ items: [Item], width: Double, gap: Double, inset: Double) -> [Placed] {
     var taken: [ClosedRange<Double>] = []
     var placed: [Placed] = []
     for (index, item) in items.enumerated() {
       // To the whole point: the end label's time is the right edge itself.
-      guard item.x.rounded() >= 0, item.x.rounded() <= width else { continue }
+      guard onAxis(item, width: width) else { continue }
       let x = min(max(item.x, 0), width)
       for (text, textWidth) in item.widths.enumerated() {
         var left: Double

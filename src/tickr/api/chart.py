@@ -34,6 +34,8 @@ How an answer is built:
   is cached, because the refused one would leave a gap), for a daily range nothing (0 of 1). Every
   session read is cached as usual, so asking again after the wait reads only what is missing. A
   refusal that cannot say when the budget refills stays `rate_limited`.
+- 1d while its session runs also says how many after-hours candles the session before had
+  (`previous_after_candles`), read after the answer's own session and only if the budget allows.
 - Concurrency: the provider is read outside the shared state lock. Answers for one symbol run one
   at a time (a per-symbol lock), so a second request for the same symbol waits and then finds the
   first one's cache instead of spending budget twice; other symbols are not held up. A symbol's
@@ -292,10 +294,13 @@ class Chart:
         if source is None:
             raise ChartRefused("unavailable", off_cause)
         with symbol_lock:
+            previous_after: int | None = None
             try:
                 if interval in INTRADAY_MINUTES:
                     read_at, bars, pending = self._intraday(source, symbol, interval,
                                                             RANGE_SESSIONS[span], now)
+                    if span is ChartRange.D1 and pending is None:
+                        previous_after = self._previous_after(source, symbol, interval, now)
                 else:
                     read_at, bars, pending = self._daily_or_pending(source, symbol, interval,
                                                                     RANGE_MONTHS[span], now)
@@ -312,7 +317,7 @@ class Chart:
         cause = None if bars or pending else (f"no {interval.value} bars from {source.provider} "
                                               f"for {symbol} in range {span.value}")
         return ChartV1(symbol, interval, span, source.provider, read_at, cause, tuple(bars),
-                       pending)
+                       pending, previous_after)
 
     # ------------------------------------------------------------ intraday
 
@@ -368,6 +373,24 @@ class Chart:
         placed = [place(day, row) for day, _, rows in read for row in rows]
         oldest = min((read_at for _, read_at, _ in read), default=now)
         return oldest, aggregate_intraday(placed, INTRADAY_MINUTES[interval]), pending
+
+    def _previous_after(self, source: MarketData, symbol: str, interval: ChartInterval,
+                        now: datetime) -> int | None:
+        """While the latest session runs: how many after-hours candles of `interval` the session
+        before it had, for the apps to reserve as many slots for today's after-hours (they are
+        sparse, so the whole 16:00-20:00 would leave a wide empty band). Read after today's
+        session, from the disk cache once settled; None after the session, or when the budget
+        refuses the read (the answer itself never waits for it)."""
+        before, latest = self._sessions(now, 2)
+        if now >= latest.extended_close:
+            return None
+        try:
+            _, rows = self._minutes(source, symbol, before, now)
+        except RateLimited:
+            return None
+        candles = aggregate_intraday([place(before, row) for row in rows],
+                                     INTRADAY_MINUTES[interval])
+        return sum(1 for candle in candles if candle.session is ChartSession.AFTER)
 
     def _minutes(self, source: MarketData, symbol: str, day: MarketDay,
                  now: datetime) -> tuple[datetime, list[SessionBar]]:

@@ -134,6 +134,16 @@
         }
       ]
     },
+    "previous_after_candles": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "api_version": {
       "type": "integer",
       "const": 1

@@ -122,6 +122,10 @@ public struct ChartV1: Codable, Hashable, Sendable {
   /// Nil when the answer is complete; else what is still to come (added after version 1 shipped:
   /// nil from an older API).
   public let pending: ChartPendingV1?
+  /// On a 1d range while its session runs, the after-hours candles the session before had in
+  /// this interval: today's after-hours reserves as many slots (mockup v113). Nil otherwise
+  /// (added after version 1 shipped).
+  public let previousAfterCandles: Int?
   public let apiVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -129,6 +133,7 @@ public struct ChartV1: Codable, Hashable, Sendable {
     case cachedAt = "cached_at"
     case apiVersion = "api_version"
     case causeCodes = "cause_codes"
+    case previousAfterCandles = "previous_after_candles"
   }
 
   public init(from decoder: Decoder) throws {
@@ -143,6 +148,7 @@ public struct ChartV1: Codable, Hashable, Sendable {
     causeCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .causeCodes) ?? []
     bars = try c.decode([ChartBarV1].self, forKey: .bars)
     pending = try c.decodeIfPresent(ChartPendingV1.self, forKey: .pending)
+    previousAfterCandles = try c.decodeIfPresent(Int.self, forKey: .previousAfterCandles)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -156,6 +162,7 @@ public struct ChartV1: Codable, Hashable, Sendable {
     try c.encode(causeCodes, forKey: .causeCodes)
     try c.encode(bars, forKey: .bars)
     try c.encodeNullable(pending, forKey: .pending)
+    try c.encodeNullable(previousAfterCandles, forKey: .previousAfterCandles)
     try c.encode(apiVersion, forKey: .apiVersion)
   }
 

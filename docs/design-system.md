@@ -414,9 +414,11 @@ hole; a trade, decision or entry is placed by `GaplessClock`. `SessionAxis` (Tic
 parts of the day: a band behind the pre-market and after-hours, a dashed boundary where a part or a
 day begins (none at the left edge), and the labels, placed in order by `AxisLabelPlacer` (sessions,
 then the end, then round times; a session label falls back to its short form). Today's Day chart
-keeps the rest of the day to the extended close as empty slots, from the calendar's session
-(GET /jobs), so the scale never jumps. Today's session comes from market data (GET /chart, 1d); a
-recorded day from the bot's capture (regular session only). Day opens on the whole session in
+keeps the rest of the day as empty slots, from the calendar's session (GET /jobs), so the scale
+never jumps: the pre-market and regular session to their end, the after-hours as many slots as the
+session before had (`previous_after_candles`). A new candle never moves the person's zoom or
+scroll (`ChartViewport.take`): a fitted chart stays fitted, a window at the live edge follows it. Today's session comes from market data (GET /chart, 1d); a
+recorded day from the bot's capture (regular session only). Choosing Day opens the whole session in
 5-minute candles, 5D in 30-minute ones. A cold 5D the chart's request budget fills shows how far
 it got (`ProgressLine`, "Loading 3 of 5 days") and asks again when the bot says (`pending`).
 

@@ -192,10 +192,11 @@ struct CandleChart: View {
       if newBar && !reduceMotion { growing = new.last }
       grownThrough = new.last
     }
+    // Another chart (interval, range, day) opens on the whole range; a new read of the same
+    // chart keeps the person's window (`ChartViewport.take`).
     .onChange(of: series.timeframe) { place() }
     .onChange(of: series.candles.first?.start) { place() }
-    .onChange(of: series.candles.last) { place() }
-    .onChange(of: slotCount) { place() }
+    .onChange(of: series) { old, new in viewport.take(new, slots: slotCount, previous: old) }
     .sensoryFeedback(.selection, trigger: selectedCandle)
   }
 
@@ -941,7 +942,8 @@ struct CandleChart: View {
       let time = times.slotTime(label.slot) ?? shown.lowerBound
       items.append(AxisLabelPlacer.Item(
         x: time.timeIntervalSince(shown.lowerBound) * perSecond,
-        widths: forms.map { Double(($0 as NSString).size(withAttributes: [.font: font]).width) }, anchor: label.anchor))
+        widths: forms.map { Double(($0 as NSString).size(withAttributes: [.font: font]).width) }, anchor: label.anchor,
+        required: SessionAxisText.isSession(label.kind)))
     }
     return AxisLabelPlacer.place(
       items, width: plot, gap: Double(Tokens.Chart.axisLabelGap), inset: Double(Tokens.Chart.axisLabelInset)
@@ -1253,62 +1255,6 @@ private struct SessionBand: Identifiable {
   let caption: String?
 
   var id: Date { start }
-}
-
-/// Which stretch of the day the chart shows: how many candles fit on screen and where the view
-/// starts. Kept by the Chart tab so its controls can zoom and follow the newest candle.
-struct ChartViewport: Equatable {
-  /// Candles on screen when the chart opens, and the fewest and most zooming allows.
-  static let defaultVisible = 40.0
-  static let fewestVisible = 15.0
-  static let mostVisible = 390.0
-
-  var visible = ChartViewport.defaultVisible
-  var scroll = Date.distantPast
-  /// Most candles the zoom may show: `mostVisible` until the chart is fitted, then every slot.
-  var most = ChartViewport.mostVisible
-
-  /// Seconds of the day on screen.
-  func window(_ series: ChartSeries) -> TimeInterval { visible * series.timeframe.seconds }
-
-  /// Candles on screen: the zoom, or all of them when the day has fewer.
-  func barsShown(_ series: ChartSeries) -> Int {
-    min(Int(visible.rounded()), series.candles.count)
-  }
-
-  func canZoomOut(_ series: ChartSeries) -> Bool {
-    visible < min(most, Double(series.candles.count))
-  }
-
-  var canZoomIn: Bool { visible > Self.fewestVisible }
-
-  /// Whether the newest candle is on screen.
-  func showsEnd(_ series: ChartSeries) -> Bool {
-    guard let last = series.candles.last else { return true }
-    return last.end <= scroll.addingTimeInterval(window(series))
-  }
-
-  /// Show `factor` times as many candles, keeping the right edge where it is.
-  mutating func zoom(by factor: Double, _ series: ChartSeries) {
-    let end = scroll.addingTimeInterval(window(series))
-    visible = min(max(visible * factor, min(Self.fewestVisible, most)), most)
-    scroll = end.addingTimeInterval(-window(series))
-  }
-
-  /// Every candle on screen, first to last, and the `slots` reserved after them on today's Day
-  /// chart.
-  mutating func fit(_ series: ChartSeries, slots: Int) {
-    guard let first = series.candles.first else { return }
-    most = Double(max(slots, series.candles.count))
-    visible = most
-    scroll = first.start
-  }
-
-  /// Scroll so the newest candle sits at the right edge.
-  mutating func followEnd(_ series: ChartSeries) {
-    guard let last = series.candles.last, let first = series.candles.first else { return }
-    scroll = max(first.start, last.end.addingTimeInterval(-window(series)))
-  }
 }
 
 /// Names of the plotted values, read by VoiceOver; built once, not for every mark.

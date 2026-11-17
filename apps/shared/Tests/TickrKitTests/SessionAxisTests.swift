@@ -90,6 +90,21 @@ struct SessionAxisTests {
       slot: 26, kind: .hour(try time("2026-11-16T17:00:00.000Z")), anchor: .centre)))
   }
 
+  @Test("Today's after-hours reserves as many slots as the session before had, less those already drawn")
+  func afterHoursAsYesterday() throws {
+    let morning = [try candle("2026-11-16T09:00:00.000Z", .pre), try candle("2026-11-16T14:55:00.000Z", .regular)]
+    let axis = SessionAxis(candles: morning, timeframe: .m5, today: try today(), afterSlots: 7)
+    // 72 regular slots to 16:00, then 7 after-hours ones (yesterday's), not the 48 of 16:00-20:00.
+    #expect(axis.slots == 2 + 72 + 7)
+    #expect(axis.segments.last?.session == .after)
+    #expect(axis.segments.last.map { $0.last - $0.first + 1 } == 7)
+    let evening = morning + [try candle("2026-11-16T21:00:00.000Z", .after), try candle("2026-11-16T21:30:00.000Z", .after)]
+    let later = SessionAxis(candles: evening, timeframe: .m5, today: try today(), afterSlots: 7)
+    #expect(later.slots == evening.count + 5)
+    // Busier than yesterday: nothing more is reserved.
+    #expect(SessionAxis(candles: evening, timeframe: .m5, today: try today(), afterSlots: 1).slots == evening.count)
+  }
+
   @Test("A past day reserves nothing; round hours are a whole number of candles apart")
   func pastDayAndSteps() throws {
     let candles = [try candle("2026-11-13T14:30:00.000Z", .regular)]
@@ -120,6 +135,14 @@ struct SessionAxisTests {
     let tight = AxisLabelPlacer.place(crowded, width: 300, gap: 2, inset: 0)
     #expect(tight.map(\.text) == [0, 0])
     #expect(AxisLabelPlacer.place(crowded, width: 300, gap: 8, inset: 0).map(\.item) == [0])
+    // "Премаркет 04:00" would leave no room for "09:30": every label takes its short form.
+    let russian = [
+      AxisLabelPlacer.Item(x: 0, widths: [90, 30], anchor: .leading, required: true),
+      AxisLabelPlacer.Item(x: 80, widths: [30], anchor: .centre, required: true),
+    ]
+    let both = AxisLabelPlacer.place(russian, width: 300, gap: 6, inset: 0)
+    #expect(both.map(\.item) == [0, 1])
+    #expect(both.map(\.text) == [1, 0])
     let edge = [AxisLabelPlacer.Item(x: 0, widths: [30], anchor: .centre)]
     let inset = AxisLabelPlacer.place(edge, width: 300, gap: 6, inset: 8)
     #expect(inset.first?.left == 8)

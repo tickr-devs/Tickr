@@ -794,13 +794,20 @@ from the bot's capture). Code: `src/tickr/api/chart.py`; settings: `[chart]` in 
   class suffix, e.g. `BRK.B`), `interval` and `range`. Served pairs: `1m`, `5m`, `30m`, `1h` with
   `1d` (the latest session) or `5d` (the latest five); `1d`, `1w`, `1mo` with `1m`, `3m`, `1y`
   (calendar months back from today). Anything else is `400 bad_request`.
-- `chart-v1`: `{symbol, interval, range, source, cached_at, cause, bars[], pending, api_version}`;
+- `chart-v1`: `{symbol, interval, range, source, cached_at, cause, bars[], pending, previous_after_candles,
+  api_version}`;
   each bar `{start, open, high, low, close, volume, extended, session}`, oldest first; `session`
   (added after version 1 shipped) is the part of the day by the calendar, `pre`, `regular` or
   `after`, for 1m/5m/30m/1h candles and null for daily ones. `source` names the
   provider (`webull`, or the demo's own). `cached_at` is when the oldest data in the answer was read
   from it (the answer's time when nothing was read). `cause` is null, or says why `bars` is empty
   (no data for that symbol and range); it is null while `pending`.
+- `previous_after_candles` (added after version 1 shipped; absent = null): on a `1d` range while
+  its session runs, how many after-hours candles of the asked interval the session before it had,
+  so the apps reserve as many slots for today's after-hours (mockup v113: those prints are sparse,
+  the whole 16:00-20:00 would leave a wide empty band). Read after the answer's own session, from
+  the disk cache once that day has settled; null after the session, on other ranges, or when the
+  budget refused that one read (the answer itself is never held back for it).
 - `pending` (added after version 1 shipped; absent in older documents = null): null when the
   answer is complete, else `{read, total, retry_after_seconds}`: the chart's budget let it read
   only `read` of `total` parts, and asking again after `retry_after_seconds` (a decimal string,

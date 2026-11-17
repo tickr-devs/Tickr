@@ -77,6 +77,10 @@ struct ChartPlotTests {
     #expect(plot.extendedClose == today.end)
     #expect(plot.timeText(0).hasSuffix(String(localized: ChartSessionWords.preMarket)))
     #expect(plot.timeText(1) == "09:30")
+    // The bot says the session before had 5 after-hours candles: 5 slots, not 16:00-20:00.
+    let withYesterday = try Wire.decoder().decode(ChartV1.self, from: Data(json.replacingOccurrences(
+      of: "\"pending\": null", with: "\"pending\": null, \"previous_after_candles\": 5").utf8))
+    #expect(ChartPlot(chart: withYesterday, today: today, revision: 0).sessions?.slots == 2 + 77 + 5)
     // Without today's session the chart ends after its last candle.
     #expect(ChartPlot(chart: chart, revision: 0).sessions?.slots == 2)
   }

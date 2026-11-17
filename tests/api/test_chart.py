@@ -215,11 +215,41 @@ def test_live_day_is_read_again_only_after_the_ttl(tmp_path):
     fake, chart = a_day(tmp_path)
     now = ny(MONDAY, "19:00")  # the session day is still running (post-market)
     chart.answer("ABCD", IV.M1, R.D1, now)
-    chart.answer("ABCD", IV.M30, R.D1, now + TTL - timedelta(seconds=1))
-    assert len(fake.calls) == 1
-    chart.answer("ABCD", IV.M1, R.D1, now + TTL)
+    # Monday, then Friday for its after-hours count (no bars there: kept in memory too).
     assert len(fake.calls) == 2
+    chart.answer("ABCD", IV.M30, R.D1, now + TTL - timedelta(seconds=1))
+    assert len(fake.calls) == 2
+    chart.answer("ABCD", IV.M1, R.D1, now + TTL)
+    assert len(fake.calls) == 4
     assert not (tmp_path / "chart").exists()  # an unfinished day is never written to disk
+
+
+def test_a_running_day_says_how_many_after_hours_candles_the_session_before_had(tmp_path):
+    """Mockup v113: today's after-hours is reserved as wide as yesterday's was, in candles of
+    the asked interval; nothing after the session, and nothing when the budget is spent."""
+    fake = FakeMarketData("fake")
+    fake.add_history_bars(BarSpan.M1, [
+        m1(FRIDAY, "15:59", "RTH"), m1(FRIDAY, "16:00", "ATH"), m1(FRIDAY, "16:04", "ATH"),
+        m1(FRIDAY, "16:05", "ATH"), m1(FRIDAY, "19:30", "ATH"),
+        m1(MONDAY, "09:30", "RTH")])
+    chart = Chart(settings(tmp_path), fake)
+    running = ny(MONDAY, "10:00")
+    assert chart.answer("ABCD", IV.M5, R.D1, running).previous_after_candles == 3
+    assert chart.answer("ABCD", IV.M1, R.D1, running).previous_after_candles == 4
+    assert chart.answer("ABCD", IV.H1, R.D1, running).previous_after_candles == 2
+    assert chart.answer("ABCD", IV.M5, R.D5, running).previous_after_candles is None
+    over = ny(MONDAY, "20:30")
+    assert chart.answer("ABCD", IV.M5, R.D1, over).previous_after_candles is None
+
+
+def test_the_after_hours_count_never_spends_the_answer(tmp_path):
+    fake = FakeMarketData("fake")
+    fake.add_history_bars(BarSpan.M1, [m1(MONDAY, "09:30", "RTH")])
+    chart = Chart(settings(tmp_path), fake)
+    fake.limit("history_bars", 1)  # the second read (Friday) is refused by the budget
+    answer = chart.answer("ABCD", IV.M5, R.D1, ny(MONDAY, "10:00"))
+    assert len(answer.bars) == 1 and answer.pending is None
+    assert answer.previous_after_candles is None
 
 
 def test_a_day_is_written_only_after_it_settles(tmp_path):

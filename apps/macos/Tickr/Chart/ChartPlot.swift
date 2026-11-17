@@ -56,7 +56,7 @@ struct ChartPlot: Sendable {
     let series = ChartSeries(bars: bars, timeframe: timeframe)
     self.init(
       real: series, atr: ChartSeries.atr(bars: bars, timeframe: timeframe), studies: CandleStudies(candles: series.candles),
-      range: .oneDay, today: nil, revision: revision)
+      range: .oneDay, today: nil, afterSlots: nil, revision: revision)
   }
 
   /// Candles of a GET /chart answer, their lines and studies warmed up on the earlier candles of
@@ -66,11 +66,12 @@ struct ChartPlot: Sendable {
     let warm = WarmChart(chart: chart, warmup: warmup)
     self.init(
       real: warm.series, atr: warm.atr, studies: warm.studies, range: chart.range,
-      today: chart.range == .oneDay ? today : nil, revision: revision)
+      today: chart.range == .oneDay ? today : nil, afterSlots: chart.previousAfterCandles, revision: revision)
   }
 
   private init(
-    real: ChartSeries, atr: [Double?], studies: CandleStudies, range: ChartRange, today: SessionSpan?, revision: Int
+    real: ChartSeries, atr: [Double?], studies: CandleStudies, range: ChartRange, today: SessionSpan?,
+    afterSlots: Int?, revision: Int
   ) {
     self.revision = revision
     self.range = range
@@ -82,7 +83,8 @@ struct ChartPlot: Sendable {
     clock = GaplessClock(real: real)
     let intraday = real.timeframe.isIntraday
     self.today = today
-    sessions = intraday ? SessionAxis(candles: real.candles, timeframe: real.timeframe, today: today) : nil
+    sessions = intraday ? SessionAxis(candles: real.candles, timeframe: real.timeframe, today: today, afterSlots: afterSlots)
+      : nil
     extendedClose = intraday ? (today?.end ?? real.candles.last?.end) : nil
     axisMarks = intraday
       ? [] : ChartAxisMark.marks(starts: starts, drawn: series.candles, range: range, timeframe: series.timeframe)

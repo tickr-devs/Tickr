@@ -603,7 +603,8 @@ struct CandleChart: View {
     let items = zip(labels, texts).map { label, forms in
       AxisLabelPlacer.Item(
         x: plot.slotTime(label.slot).timeIntervalSince(shown.lowerBound) * perSecond,
-        widths: forms.map { Double(TextMeasure.width($0, font: font)) }, anchor: label.anchor)
+        widths: forms.map { Double(TextMeasure.width($0, font: font)) }, anchor: label.anchor,
+        required: SessionAxisText.isSession(label.kind))
     }
     return AxisLabelPlacer.place(
       items, width: Double(plotWidth), gap: Double(Tokens.Chart.axisLabelGap), inset: Double(Tokens.Chart.axisLabelInset)
