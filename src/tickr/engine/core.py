@@ -1241,7 +1241,7 @@ class Engine:
         closing = {o.symbol for o in self.orders() if o.leg is Leg.EXIT and o.live}
         cancelling = {row.symbol for row in due
                       if self._awaits_cancel_read(row) and row.symbol not in closing}
-        moved = self._read_history(due)
+        moved = self._read_history(due, held)
         due = [self.order(row.client_order_id) if row.client_order_id in moved else row
                for row in due]
         due.sort(key=lambda row: (self._read_first(row, cancelling),
@@ -1257,23 +1257,30 @@ class Engine:
                 return
         self._clear_fence(Fence.DETAIL_BUDGET)
 
-    def _read_history(self, due: list[OrderRow]) -> set[str]:
+    def _read_history(self, due: list[OrderRow], held: dict[str, Decimal] | None) -> set[str]:
         """Entries filling together, seen by one order-history read instead of one Detail read
         each (`[orders] history_fill_poll_seconds`): only while one of our entries is working
         and more orders are due than this step's Detail reads. A history row is the order as
         the broker lists it, shaped like its Detail; it counts only for a working acknowledged
-        entry of ours, as sent (symbol, side, quantity), showing more filled than recorded:
-        the fill and its average price are recorded (journal row marked "history") and the
-        trade is protected at once. Nothing else is taken from it: the order's state, fees,
-        send and cancel bookkeeping stay with Detail, which still reads the order in turn, so a
-        stale row can never move an order back nor end it. A failed or budget-refused read
-        changes nothing (Detail reads go on); its streak is journaled once. One refused by our
-        budget is tried again next step. Returns the ids of the orders it updated."""
+        entry of ours, as sent (symbol, side, quantity), showing more filled than recorded,
+        and only when this step's positions read holds at least what the trade would then be
+        expected to hold: a history fill never sizes a stop on its own (a row ahead of the
+        position waits for a later read, or for Detail). The fill and its average price are
+        then recorded (journal row marked "history") and the trade is protected at once.
+        Nothing else is taken from it: the order's state, fees, send and cancel bookkeeping
+        stay with Detail, which still reads the order in turn and stays the truth: a row can
+        never end an order, and a later Detail read showing less moves the fill back (the
+        extra stop is then trimmed as for any Detail read). No read without a positions read
+        (`held` None). A failed or budget-refused read changes nothing (Detail reads go on);
+        its streak is journaled once; one refused by our budget is tried again next step. The
+        read is synchronous: a hung request holds the loop until the HTTP read timeout, as a
+        Detail read does. With one page of a size and order not recorded yet (H2) it may miss
+        some entries; they are left to Detail. Returns the ids of the orders it updated."""
         entries = {o.client_order_id: o for o in due
                    if o.leg is Leg.ENTRY and o.send_state is SendState.ACKNOWLEDGED}
         orders = self.config.orders
         updated: set[str] = set()
-        if not entries or len(due) <= orders.detail_reads_per_step:
+        if held is None or not entries or len(due) <= orders.detail_reads_per_step:
             return updated
         now = self.clock()
         if (self._history_read_at is not None
@@ -1306,6 +1313,10 @@ class Engine:
                         "average_fill_price": listed.average_fill_price},
                         key=row.client_order_id, run_id=self.run_id)
                 continue
+            expected = (self.expected_quantity(self.orders(row.trade_id))
+                        + listed.filled_quantity - row.filled_quantity)
+            if held.get(row.symbol, ZERO) < expected:
+                continue  # the position does not show it yet: a later read, or Detail
             with self.store.transaction():
                 written = self.store.execute(
                     "UPDATE orders SET filled_quantity = ?, average_fill_price = ?, "

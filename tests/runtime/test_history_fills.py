@@ -166,3 +166,42 @@ def test_a_read_refused_by_the_budget_is_tried_again_next_step(tmp_path):
     assert len(calls) == 2  # refused, then read the very next step
     assert len(journal(desk, HISTORY_READ_FAILED)) == 1
     assert all(o.leg is not Leg.STOP for o in desk.engine.orders())
+
+
+def test_a_history_fill_ahead_of_the_position_never_sizes_a_stop(tmp_path):
+    """Fable's #614 case: the broker filled 4 of 10, the history row says 10. The engine waits
+    until the positions read holds what the trade would then hold; Detail sizes the stop for
+    the 4 meanwhile, never one for shares not held."""
+    broker = FakeBroker()
+    desk = working(tmp_path, broker, 2)
+    first = entry(desk, SYMBOLS[0])
+    broker.fill(first.client_order_id, D(4), D("10.05"))
+    ahead = replace(broker.orders[first.client_order_id], filled_quantity=first.quantity,
+                    state=OrderState.FILLED)
+    real_history, real_detail = broker.order_history, broker.order_detail
+    broker.order_history = lambda wanted, pages: [
+        ahead if o.client_order_id == first.client_order_id else o
+        for o in real_history(wanted, pages)]
+
+    def unreadable(cid):
+        if cid == first.client_order_id:
+            raise BrokerError("detail down")
+        return real_detail(cid)
+
+    broker.order_detail = unreadable
+    desk.step(3 * int(-(-EVERY // POLL)))
+    assert entry(desk, SYMBOLS[0]).filled_quantity == 0  # positions hold 4, not 10
+    assert not desk.stops(SYMBOLS[0])
+    broker.order_detail = real_detail
+    desk.step(3)
+    assert entry(desk, SYMBOLS[0]).filled_quantity == D(4)
+    assert sum((s.quantity for s in desk.stops(SYMBOLS[0]) if s.live), D(0)) == D(4)
+
+
+def test_no_history_read_without_a_positions_read(tmp_path):
+    broker = FakeBroker()
+    desk = working(tmp_path, broker, 2)
+    reads = broker.history_reads
+    broker.positions = lambda: (_ for _ in ()).throw(BrokerError("down"))
+    desk.step(6)
+    assert broker.history_reads == reads
