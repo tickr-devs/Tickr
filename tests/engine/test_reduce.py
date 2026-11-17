@@ -123,7 +123,10 @@ def test_a_reduce_is_refused_while_the_entry_works(store):
     assert not e.request_reduce(t, D(2), "x")
 
 
-def test_an_exit_during_a_reduce_waits_for_the_sale_then_closes_the_rest(store):
+def test_an_exit_during_a_reduce_closes_the_rest_while_the_sale_works(store):
+    """The working sale counts as a close in flight: the kept stop is cancelled and its
+    shares are closed without waiting for the sale's fill, and working sells never exceed
+    what is held (`drive` checks every pass)."""
     b, e, t = scaled(store)
     e.request_reduce(t, D(5), "x")
     drive(e, b, 3)
@@ -131,11 +134,10 @@ def test_an_exit_during_a_reduce_waits_for_the_sale_then_closes_the_rest(store):
     e.request_exit(t, "session-flatten")
     drive(e, b, 3)
     assert e.trade(t).reduce_state is ReduceState.DONE
-    assert len(legs(e, t, Leg.EXIT)) == 1  # nothing more while the sale works
-    b.fill(sale.client_order_id, D(5), D("10.20"))
-    drive(e, b, 4)
     close = [x for x in legs(e, t, Leg.EXIT) if x.client_order_id != sale.client_order_id]
     assert [c.quantity for c in close] == [D(5)]
+    assert not b.orders[sale.client_order_id].state.terminal  # the sale still works
+    b.fill(sale.client_order_id, D(5), D("10.20"))
     b.fill(close[0].client_order_id, D(5), D("10.10"))
     drive(e, b, 3)
     assert e.trade(t).state is TradeState.CLOSED and held(b) == 0
