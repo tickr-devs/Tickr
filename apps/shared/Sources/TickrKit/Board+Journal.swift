@@ -9,6 +9,9 @@ public enum OrderLeg: String, Sendable {
 enum BotStop: String {
   case finished, interrupted, refused
   case deadline = "shutdown-deadline"
+
+  /// An ordinary stop reads quiet; an interrupted or unfinished one amber.
+  var calm: Bool { self != .deadline && self != .interrupted }
 }
 
 extension Board {
@@ -24,52 +27,72 @@ extension Board {
     document.events.reversed().compactMap { line($0, price: price) }
   }
 
+  /// A line's tag, text and tone.
+  typealias LineParts = (tag: LocalizedStringResource, text: String, tone: Event.Tone)
+
   static func line(_ event: DayEventV1, price: (Decimal) -> String) -> Event? {
     guard let kind = event.event else { return nil }
+    let parts = orderParts(kind, event, price: price) ?? otherParts(kind, event)
+    return Event(id: "\(journalID)\(event.seq)", time: event.at.date, tag: String(localized: parts.tag),
+      text: parts.text, tone: parts.tone)
+  }
+
+  /// A line about a trade's orders; nil for any other kind.
+  static func orderParts(_ kind: DayEventKind, _ event: DayEventV1, price: (Decimal) -> String) -> LineParts? {
     let symbol = event.symbol
     let quantity = event.quantity.map { CheckValue.text($0.value) }
-    func at(_ value: DecimalString?) -> String? { value.map { price($0.value) } }
-    let parts: (tag: LocalizedStringResource, text: String, tone: Event.Tone)
+    let shown = event.price.map { price($0.value) }
+    let stop = event.stopPrice.map { price($0.value) }
+    let leg = event.leg.flatMap(OrderLeg.init(rawValue:))
+    switch kind {
+    case .entrySent:
+      return (L10n.tagEnter, joined(quantityAt(symbol, quantity, shown),
+        stop.map { String(localized: L10n.journalStopAt($0)) }), .teal)
+    case .filled:
+      return (filledTag(leg), quantityAt(symbol, quantity, shown), filledTone(leg))
+    case .orderRefused:
+      return (L10n.tagRefused, joined(symbol, String(localized: refusedText(leg))), leg == .stop ? .red : .amber)
+    case .stopPlaced:
+      return (L10n.journalStopPlaced, quantityAt(symbol, quantity, stop), .green)
+    case .stopMoved:
+      return (L10n.journalStopMoved, joined(symbol, stop.map { String(localized: L10n.journalTo($0)) }), .green)
+    default:
+      return nil
+    }
+  }
+
+  /// A line about the bot, a trade's close, a fence or a command.
+  static func otherParts(_ kind: DayEventKind, _ event: DayEventV1) -> LineParts {
+    let symbol = event.symbol
+    let cause = event.cause ?? ""
     switch kind {
     case .botStarted:
-      parts = (L10n.journalBotOn, startedText(event.subject), .blue)
+      return (L10n.journalBotOn, startedText(event.subject), .blue)
     case .botStopped:
       let stop = event.cause.flatMap(BotStop.init(rawValue:))
-      let calm = stop != .deadline && stop != .interrupted
-      parts = (L10n.journalBotOff, String(localized: stopTitle(stop)), calm ? .muted : .amber)
-    case .entrySent:
-      parts = (L10n.tagEnter, joined(quantityAt(symbol, quantity, at(event.price)),
-        at(event.stopPrice).map { String(localized: L10n.journalStopAt($0)) }), .teal)
-    case .filled:
-      let leg = event.leg.flatMap(OrderLeg.init(rawValue:))
-      parts = (filledTag(leg), quantityAt(symbol, quantity, at(event.price)),
-        leg == .entry ? .teal : leg == .exit ? .blue : .muted)
-    case .orderRefused:
-      let leg = event.leg.flatMap(OrderLeg.init(rawValue:))
-      parts = (L10n.tagRefused, joined(symbol, String(localized: refusedText(leg))), leg == .stop ? .red : .amber)
-    case .stopPlaced:
-      parts = (L10n.journalStopPlaced, quantityAt(symbol, quantity, at(event.stopPrice)), .green)
-    case .stopMoved:
-      parts = (L10n.journalStopMoved, joined(symbol, at(event.stopPrice).map { String(localized: L10n.journalTo($0)) }), .green)
+      return (L10n.journalBotOff, String(localized: stopTitle(stop)), stop?.calm ?? true ? .muted : .amber)
     case .exitRequested:
-      let cause = event.cause ?? ""
-      parts = (L10n.journalExit, joined(symbol, exitReasonTitle(cause)), exitKind(cause) == .ordinary ? .blue : .amber)
-    case .tradeClosed:
-      let cause = event.cause ?? ""
-      parts = (L10n.journalClosed, joined(symbol, exitReasonTitle(cause)), closedTone(cause))
+      return (L10n.journalExit, joined(symbol, exitReasonTitle(cause)), exitKind(cause) == .ordinary ? .blue : .amber)
     case .fenceSet, .fenceCleared:
       let title = String(localized: event.subject.flatMap(ApiText.fenceKindCase)?.title ?? L10n.fenceOther)
-      parts = (kind == .fenceSet ? L10n.tagFence : L10n.journalFenceCleared, joined(symbol, title),
-        kind == .fenceSet ? .amber : .green)
+      return kind == .fenceSet
+        ? (L10n.tagFence, joined(symbol, title), .amber) : (L10n.journalFenceCleared, joined(symbol, title), .green)
     case .commandDone, .commandRefused:
       let title = event.subject.flatMap(CommandKind.init(rawValue:)).map(commandTitle)
         ?? String(localized: L10n.journalCommandOther)
-      let done = kind == .commandDone
-      parts = (done ? L10n.tagDone : L10n.tagRefused,
-        done ? title : joined(title, event.cause), done ? .blue : .red)
+      return kind == .commandDone ? (L10n.tagDone, title, .blue) : (L10n.tagRefused, joined(title, event.cause), .red)
+    default:
+      // A trade closed (the order kinds are `orderParts`').
+      return (L10n.journalClosed, joined(symbol, exitReasonTitle(cause)), closedTone(cause))
     }
-    return Event(id: "\(journalID)\(event.seq)", time: event.at.date, tag: String(localized: parts.tag),
-      text: parts.text, tone: parts.tone)
+  }
+
+  static func filledTone(_ leg: OrderLeg?) -> Event.Tone {
+    switch leg {
+    case .entry: .teal
+    case .exit: .blue
+    case .stop, nil: .muted
+    }
   }
 
   /// "ABCD 100 @ 4.12" (the cards' own wording) when all three are known, else the known ones.

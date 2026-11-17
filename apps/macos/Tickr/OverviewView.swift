@@ -1713,7 +1713,6 @@ private struct JournalCard: View {
   }
 }
 
-
 #if DEBUG
 #Preview {
   OverviewView()
