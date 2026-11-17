@@ -88,8 +88,8 @@ half_days_enabled = false
 # Extended sessions (owner 2026-11-16). Each enabled session is its own trading window that flattens itself before it
 # ends: no position is carried into the next session or overnight. Orders in them are LIMIT only with Webull session ALL.
 # The offsets and sizes below are proposals awaiting the owner's confirmation before either session is enabled.
-# Off until the bot-watched protection outside the regular session is built (Webull takes no stop there: F7 in
-# docs/webull-facts.md; owner decision 2026-11-16 in docs/decisions.md).
+# config.load refuses either *_enabled = true until the bot-watched protection outside the regular session is built
+# (Webull takes no stop there: F7 in docs/webull-facts.md; owner decision 2026-11-16 in docs/decisions.md).
 # Trade in the pre-market (calendar premarket_open to regular_open, 04:00-09:30 ET); read by risk.timers.
 premarket_enabled = false
 # Pre-market: first entry this many minutes after the pre-market opens (05:00 ET: the first hour is the thinnest); read by risk.timers.
@@ -278,6 +278,20 @@ trailing_close_percent = 1
 # shows; the two candidates differ a hundredfold and the stop follows the high, not the bid read with it, so cents do
 # not decide; a ratio; read by the probe-trailing command.
 trailing_unit_factor = 3
+# probe-trailing: seconds the order history is read (once per [orders] detail_poll_seconds) after Detail shows the entry
+# or the close filled, until it shows the same filled quantity (H1, how fresh one history read for all fills is);
+# read-only, decides nothing; read by the probe-trailing command.
+history_wait_seconds = 30
+# probe-trailing (L2): BUY STOP_LOSS orders sent back to back before the entry, to measure how long open orders take to
+# list stops placed together (the bot's bulk stop check and fills-together bound rely on it); a count; read by the
+# probe-trailing command.
+listing_stops = 5
+# probe-trailing (L2): those stops lie this many percent above the ask, so none triggers while it is watched; read by the
+# probe-trailing command.
+listing_far_percent = 20
+# probe-trailing (L2): seconds the open orders are read (once per [orders] detail_poll_seconds) until every stop placed
+# together is listed, before all are cancelled; read by the probe-trailing command.
+listing_wait_seconds = 30
 
 [api]
 # Local API bind address; loopback only; read by the api server.
@@ -682,7 +696,7 @@ mac_app_timeout_seconds = 2
 # does not prove Production); C3 must pass before daily ranges (1m/3m/1y) are trusted, C4 before the newest minute and
 # half days are; C5 is optional. false = GET /chart answers 503 unavailable (the demo serves its simulated world
 # instead); read by the api server and the request budget.
-webull_enabled = false
+webull_enabled = true
 # Webull bars requests the API may send per 60 s for charts, count: the chart's own request budget, never the bot's;
 # exhausted = GET /chart answers 429 rate_limited, nothing is queued or retried. With webull_enabled the bot's budget for
 # the bars route is lowered by this many, so the two processes together stay within one route limit (in case Webull

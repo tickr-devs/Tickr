@@ -43,6 +43,7 @@ visible.
 tickr check-config
 tickr status                                 # environment, gate, bot pid, last run
 tickr check-quote SYMBOL                     # read-only: is the snapshot quote fresh?
+tickr probe-quote-sources SYM [SYM...]       # read-only probe Q1: which read is fresh outside RTH
 tickr trade SYMBOL --limit 12.34            # quantity and stop default from [probe]
 tickr trade SYMBOL --limit 12.34 --stop 12.10
 tickr probe-replace-stop --to 12.20          # probe F5, see below
@@ -168,8 +169,12 @@ the probe, then enable and kickstart the bot, so the day loses only those few mi
 ## Trailing-stop probe (T)
 
 `tickr probe-trailing SYMBOL` answers whether Webull's TRAILING_STOP_LOSS can be the broker stop
-for several positions (backlog X1, rollout guide: a 20 % trail), and how long the positions read
-lags a fill (P1). Questions (docs/webull-facts.md, "T"): T1 is a SELL TRAILING_STOP_LOSS
+for several positions (backlog X1, rollout guide: a 20 % trail), how long the positions read
+lags a fill (P1), how long the order history lags a fill (H1: whether one history read can tell
+the bot about several fills at once) how long a new stop takes to be listed in open orders
+(L1), and how long several stops placed together take (L2: before the entry,
+`[probe] listing_stops` BUY stops far above the ask, then cancelled; the bot's slot count waits
+for this answer). H1 and L1 only read. Questions (docs/webull-facts.md, "T"): T1 is a SELL TRAILING_STOP_LOSS
 (PERCENTAGE, DAY, CORE) accepted; T2 which unit `trailing_stop_step` is read in (0.2 = 20 % or
 0.2 %), from the stop price Detail shows; T3 does that stop price rise with the price; T4 is it
 listed in open orders; T5 does a cancel end it; T6 does a tight one trigger. Details:
@@ -177,7 +182,8 @@ listed in open orders; T5 does a cancel end it; T6 does a tight one trigger. Det
 
 When: in the regular session, between `[probe] window_start` and `window_end`, account flat and
 the bot stopped (it holds the lock for its whole run). It takes about 10 minutes and buys
-`[probe] quantity` share(s) at the ask; they are under the trailing stop being tested, and for
+`[probe] quantity` share(s) at the ask (the L2 buy stops lie `[probe] listing_far_percent`
+above the ask and are cancelled within a minute); the shares are under the trailing stop being tested, and for
 a few seconds between orders without one.
 
 1. Stop the bot and keep its job from starting, as in step 1 of the extended-hours probe.

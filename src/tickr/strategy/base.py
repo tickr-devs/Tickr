@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -110,6 +110,10 @@ class SymbolContext:
     leaves (owner decision 2026-11-14: near the ceiling, size down to fit). None = no
     platform cap (replay, research). A strategy sizes on the smaller of this and its own
     planned loss; the platform still checks the ceiling on admission."""
+    session_open: datetime | None = None
+    """The regular open of the current session when the platform proved that `bars` hold every
+    bar of the session from it (its read reached back that far); None = not proven. Minutes
+    without trades have no bar, so the first session bar may start after the open."""
 
 
 class Liquidity(Protocol):
@@ -156,3 +160,21 @@ class Strategy(Liquidity, Protocol):
 StrategyFactory = Callable[[Mapping[str, Any]], Strategy]
 """Each strategy module exposes `create(values) -> Strategy`, where `values` is the parsed
 `strategies/<name>/strategy.toml`. Unknown or missing keys must raise ValueError."""
+
+
+def usable_quote(quote: Quote | None, at: datetime, max_age: timedelta,
+                  max_skew: timedelta) -> Quote | None:
+    """The quote when entry admission would accept its times at `at`: aware provider and
+    receipt times, received no later than `at`, provider time at most `max_skew` ahead and at
+    most `max_age` old. Otherwise None. The platform passes only such a quote ([risk]
+    max_quote_age_seconds and max_clock_skew_seconds) to observers and to the active strategy
+    deciding a held position, so no exit rests on an old quote."""
+    if quote is None:
+        return None
+    times = (quote.provider_time, quote.receipt_time)
+    if any(t.tzinfo is None or t.utcoffset() is None for t in times):
+        return None
+    if quote.receipt_time > at:
+        return None
+    age = at - quote.provider_time
+    return quote if -max_skew <= age <= max_age else None
