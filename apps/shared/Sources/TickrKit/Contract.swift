@@ -288,9 +288,7 @@ public struct StatusResponseV1: Codable, Hashable, Sendable {
   public let summary: String
   public let pollSeconds: DecimalString
   public let apiVersion: Int
-  /// When the API process started; its settings are fixed for its life, so the apps read GET
-  /// /settings again when this changes (added after version 1 shipped: nil from an older API).
-  public let apiStartedAt: WireTime?
+  public let apiStartedAt: WireTime? // the API's start: /settings are read again on a change (nil from an older API)
 
   enum CodingKeys: String, CodingKey {
     case status, stale, summary

@@ -10,7 +10,8 @@ import Testing
     // ABCD: 4.12 at +12.40%.
     let previous = try #require(DayChange.previousClose("ABCD", flow: flow))
     #expect(previous == Decimal(string: "4.12")! * 100 / Decimal(string: "112.40")!)
-    #expect(DayChange.fraction(price: Decimal(string: "4.12")!, previousClose: previous) == Decimal(string: "4.12")! / previous - 1)
+    let price = try #require(Decimal(string: "4.12"))
+    #expect(DayChange.fraction(price: price, previousClose: previous) == price / previous - 1)
     // No change without a screener row or a price on it.
     #expect(DayChange.previousClose("NONE", flow: flow) == nil)
     #expect(DayChange.previousClose("SPY", flow: flow) == nil)
