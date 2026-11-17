@@ -63,8 +63,8 @@ public struct PositionRow: Identifiable, Equatable, Sendable {
   public let closes: [Decimal]
   /// Close of the newest captured bar however old it is; shown as history when it is not fresh.
   public var latestClose: Decimal?
-  /// The live bid of the bot's quote stream (`LivePrice`); nil without one, and then the price is
-  /// the fresh bar's close.
+  /// The live bid of the bot's quotes (`LivePrice`); nil without one, and then the price is the
+  /// fresh bar's close.
   public var live: LivePrice?
 
   /// The position's current price: the live bid, else the close of a fresh captured bar.
@@ -128,6 +128,9 @@ public final class AppModel {
   @ObservationIgnored private var client: APIClient
   /// The current moment (Container.now; tests pin it).
   @ObservationIgnored @Injected(\.now) private var now
+  /// The bot's live quotes (GET /quotes), read every `settings.quotes_poll_seconds`: every live
+  /// price the app shows comes from here.
+  @ObservationIgnored @Injected(\.liveQuotes) public var quotes
   /// How far the bot's clock is ahead of this Mac's, from the last status's `served_at`. The
   /// bot's clock decides what "today" is and how old its reads are: the Mac's clock can drift,
   /// and `tickr demo` plays a past day on a clock of its own.
@@ -324,8 +327,7 @@ public final class AppModel {
       let fresh = last.map { barIsFresh(start: $0.start.date, now: botNow) } ?? false
       return PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
         closes: [position.entryPrice.value] + bars.map(\.close.value), latestClose: last?.close.value,
-        live: LivePrice(position: position, stream: status.freshness.stream, statusStale: response?.stale ?? true,
-          now: botNow, maxAgeSeconds: settings?.liveQuoteMaxAgeSeconds?.value))
+        live: livePrice(position.symbol))
     }
   }
 
@@ -459,6 +461,20 @@ public final class AppModel {
         try? await Task.sleep(for: .seconds(Pace.accountSeconds))
       }
     })
+    tasks.append(Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        // Until the settings say how often (an older API has no /quotes), wait as the status does.
+        let seconds = LiveQuotes.pollSeconds(self.settings)
+        if seconds != nil { await self.quotes.refresh(self.client) }
+        try? await Task.sleep(for: .seconds(seconds ?? self.pollSeconds))
+      }
+    })
+  }
+
+  /// The live price of `symbol` now, from the bot's quotes; nil when there is none (`LivePrice`).
+  public func livePrice(_ symbol: String) -> LivePrice? {
+    quotes.price(symbol, now: botNow, settings: settings)
   }
 
   public func stop() {
@@ -494,6 +510,7 @@ public final class AppModel {
     readFailure = nil
     lastReadAt = nil
     settings = nil
+    quotes.clear()
     days = []
     dayDocument = nil
     todayDocument = nil

@@ -52,6 +52,7 @@ API_VERSION = 1
 STATUS_SCHEMA_VERSION = 1
 COMMAND_SCHEMA_VERSION = 1
 ACCOUNT_SCHEMA_VERSION = 1
+QUOTES_SCHEMA_VERSION = 1
 
 INBOX = "inbox"
 PROCESSED = "processed"
@@ -241,17 +242,6 @@ class EntrySend:
 
 
 @dataclass(frozen=True)
-class PositionQuote:
-    """The newest L1 quote of a position's symbol on the bot's quote stream, as the bot held it
-    when it wrote the status. Display only: the bot's decisions read the stream themselves."""
-
-    bid: Decimal
-    ask: Decimal
-    quoted_at: datetime  # the provider's time of the quote
-    received_at: datetime  # when the bot received it
-
-
-@dataclass(frozen=True)
 class Position:
     symbol: str
     quantity: Decimal
@@ -262,9 +252,6 @@ class Position:
     entry_cause: str | None  # why a field of `entry` is null; null when none is
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
-    # Added after v1 shipped (2026-11-17): the live quote of the symbol, null while the
-    # stream holds no valid quote for it (bid above zero and not above the ask).
-    quote: PositionQuote | None = _added_later(None)
 
 @dataclass(frozen=True)
 class Trade:
@@ -475,6 +462,39 @@ class AccountResponseV1:
     account: AccountV1
     age_seconds: Decimal
     stale: bool
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
+class LiveQuote:
+    """The newest L1 quote of one symbol on the bot's quote stream. Display only."""
+
+    symbol: str
+    bid: Decimal
+    ask: Decimal
+    quoted_at: datetime  # the provider's time of the quote
+    received_at: datetime  # when the bot received it
+
+
+@dataclass(frozen=True)
+class QuotesV1:
+    """The bot's live quotes file (runtime/quotes.py): the newest valid quote of every symbol on
+    its stream, rewritten within `[api] quotes_write_seconds` of a change. Written by the bot,
+    never by the API."""
+
+    written_at: datetime
+    quotes: tuple[LiveQuote, ...]  # by symbol
+    schema_version: int = _const(QUOTES_SCHEMA_VERSION)
+
+
+@dataclass(frozen=True)
+class QuotesResponseV1:
+    """GET /quotes: the bot's quotes file as it was last written. A missing or invalid file is
+    503 unavailable instead. Each quote's age (`quoted_at`) says how live it is; the file is
+    rewritten only when a quote changes, so its own age says nothing."""
+
+    served_at: datetime
+    quotes: QuotesV1
     api_version: int = _const(API_VERSION)
 
 
@@ -868,6 +888,9 @@ class SettingsV1:
     # position's price ([api] live_quote_max_age_seconds); older ones are not shown as live.
     # Added after v1 shipped (2026-11-17); null from an older API, and then no quote is live.
     live_quote_max_age_seconds: Decimal | None = _added_later(None)
+    # Seconds between two client reads of GET /quotes ([api] quotes_poll_seconds). Added after
+    # v1 shipped (2026-11-17); null from an older API, which has no /quotes.
+    quotes_poll_seconds: Decimal | None = _added_later(None)
 
 
 # ---------------------------------------------------------------- jobs (read-only)
@@ -2264,6 +2287,8 @@ SCHEMA_TYPES: dict[str, type] = {
     "performance-v1": PerformanceV1,
     "account-v1": AccountV1,
     "account-response-v1": AccountResponseV1,
+    "quotes-v1": QuotesV1,
+    "quotes-response-v1": QuotesResponseV1,
 }
 
 
@@ -2557,6 +2582,16 @@ def read_status(path: Path | str) -> StatusV1:
 def write_account(path: Path | str, account: AccountV1) -> None:
     """Called by the bot after each successful broker read of positions and open orders."""
     write_atomic(Path(path), dumps(account))
+
+
+def write_quotes(path: Path | str, quotes: QuotesV1) -> None:
+    """Called by the bot's quotes file thread when a quote changed."""
+    write_atomic(Path(path), dumps(quotes))
+
+
+def read_quotes(path: Path | str) -> QuotesV1:
+    """Raises FileNotFoundError when the bot has not written one yet, else ContractError."""
+    return loads(QuotesV1, Path(path).read_bytes())
 
 
 def read_account(path: Path | str) -> AccountV1:

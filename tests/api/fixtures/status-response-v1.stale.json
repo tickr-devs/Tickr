@@ -51,13 +51,7 @@
         "filled_at": "2026-11-16T15:00:01.625Z"
       },
       "entry_cause": null,
-      "entry_cause_codes": [],
-      "quote": {
-        "bid": "12.50",
-        "ask": "12.52",
-        "quoted_at": "2026-11-16T15:00:01.123Z",
-        "received_at": "2026-11-16T15:00:01.323Z"
-      }
+      "entry_cause_codes": []
     },
     "trades_today": [
       {
@@ -131,13 +125,7 @@
           "filled_at": "2026-11-16T15:00:01.625Z"
         },
         "entry_cause": null,
-        "entry_cause_codes": [],
-        "quote": {
-          "bid": "12.50",
-          "ask": "12.52",
-          "quoted_at": "2026-11-16T15:00:01.123Z",
-          "received_at": "2026-11-16T15:00:01.323Z"
-        }
+        "entry_cause_codes": []
       }
     ],
     "code_version": "6c4eec8b0f3a91d2e5b7c6a8d9e0f1a2b3c4d5e6-dirty",

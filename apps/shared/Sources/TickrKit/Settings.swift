@@ -52,6 +52,8 @@ public struct SettingsV1: Codable, Hashable, Sendable {
   /// Oldest live position quote, in seconds, shown as the position's price (`LivePrice`); nil from
   /// an older API, and then no quote is live (added after version 1 shipped).
   public let liveQuoteMaxAgeSeconds: DecimalString?
+  /// Seconds between two reads of GET /quotes; nil from an older API, which has none.
+  public let quotesPollSeconds: DecimalString?
   public let apiVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -62,6 +64,7 @@ public struct SettingsV1: Codable, Hashable, Sendable {
     case brokerReadMaxAgeSeconds = "broker_read_max_age_seconds"
     case brokerReadWarnSeconds = "broker_read_warn_seconds"
     case liveQuoteMaxAgeSeconds = "live_quote_max_age_seconds"
+    case quotesPollSeconds = "quotes_poll_seconds"
     case apiVersion = "api_version"
   }
 
@@ -78,5 +81,6 @@ public struct SettingsV1: Codable, Hashable, Sendable {
     brokerReadMaxAgeSeconds = try c.decode(DecimalString.self, forKey: .brokerReadMaxAgeSeconds)
     brokerReadWarnSeconds = try c.decode(DecimalString.self, forKey: .brokerReadWarnSeconds)
     liveQuoteMaxAgeSeconds = try c.decodeIfPresent(DecimalString.self, forKey: .liveQuoteMaxAgeSeconds)
+    quotesPollSeconds = try c.decodeIfPresent(DecimalString.self, forKey: .quotesPollSeconds)
   }
 }

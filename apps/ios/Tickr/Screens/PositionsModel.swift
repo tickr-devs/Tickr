@@ -6,8 +6,8 @@ import TickrKit
 /// Marks of the open positions for the Positions tab: each one's bars of the status's session
 /// where the Chart reads them too (`DayBars`: market data, else the capture), so both show one
 /// price for one moment; read again every few seconds while the tab is on screen. The last price
-/// and the results are the live bid of the latest status (`LivePrice`) when it has one, so they
-/// follow the market every status read, not every captured bar. Display only: the bot never acts
+/// and the results are the live bid of the bot's quotes (`LivePrice`) when there is one, so they
+/// follow the market every second, not every captured bar. Display only: the bot never acts
 /// on them, and a failed read leaves a position without marks, never with guessed ones.
 @MainActor
 @Observable
@@ -15,20 +15,11 @@ final class PositionsModel {
   /// Marks by symbol from the bars alone, for the positions whose bars could be read.
   private var barMarks: [String: PositionMarks] = [:]
 
-  /// Marks by symbol, for the positions whose bars could be read, at the live bid where the
-  /// latest status has one.
+  /// Marks by symbol, for the positions whose bars could be read, at the live bid where the bot's
+  /// quotes have one (`AppModel.livePrice`).
   var marks: [String: PositionMarks] {
     let app = Container.shared.appModel()
-    guard let status = app.status else { return barMarks }
-    let stale = app.response?.stale ?? true
-    let positions = Dictionary(status.positions.map { ($0.symbol, $0) }, uniquingKeysWith: { first, _ in first })
-    return barMarks.reduce(into: [:]) { found, entry in
-      let live = positions[entry.key].flatMap {
-        LivePrice(position: $0, stream: status.freshness.stream, statusStale: stale, now: app.botNow,
-          maxAgeSeconds: app.settings?.liveQuoteMaxAgeSeconds?.value)
-      }
-      found[entry.key] = entry.value.live(live)
-    }
+    return barMarks.reduce(into: [:]) { found, entry in found[entry.key] = entry.value.live(app.livePrice(entry.key)) }
   }
 
   /// The bot's API at `url`, from the container, with the paired token only where it may go.

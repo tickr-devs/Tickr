@@ -28,23 +28,6 @@ public struct Stop: Codable, Hashable, Sendable {
   }
 }
 
-/// The newest L1 quote of a position's symbol on the bot's quote stream, as the bot held it when
-/// it wrote the status (docs/api.md, GET /status). Display only.
-public struct PositionQuote: Codable, Hashable, Sendable {
-  public let bid: DecimalString
-  public let ask: DecimalString
-  /// The provider's time of the quote.
-  public let quotedAt: WireTime
-  /// When the bot received it.
-  public let receivedAt: WireTime
-
-  enum CodingKeys: String, CodingKey {
-    case bid, ask
-    case quotedAt = "quoted_at"
-    case receivedAt = "received_at"
-  }
-}
-
 public struct Position: Codable, Hashable, Sendable {
   public let symbol: String
   public let quantity: DecimalString
@@ -57,12 +40,9 @@ public struct Position: Codable, Hashable, Sendable {
   public let entryCause: String?
   /// `entry_cause` as codes (docs/api.md, "Reason codes"); empty when there is none.
   public let entryCauseCodes: [ReasonV1]
-  /// The live quote of the symbol; nil while the stream holds no valid quote for it, and from a
-  /// bot older than the key (added after version 1 shipped).
-  public let quote: PositionQuote?
 
   enum CodingKeys: String, CodingKey {
-    case symbol, quantity, stop, entry, quote
+    case symbol, quantity, stop, entry
     case entryPrice = "entry_price"
     case openedAt = "opened_at"
     case entryCause = "entry_cause"
@@ -79,7 +59,6 @@ public struct Position: Codable, Hashable, Sendable {
     entry = try c.decode(EntrySend.self, forKey: .entry)
     entryCause = try c.decodeNullable(String.self, forKey: .entryCause)
     entryCauseCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .entryCauseCodes) ?? []
-    quote = try c.decodeIfPresent(PositionQuote.self, forKey: .quote)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -92,7 +71,6 @@ public struct Position: Codable, Hashable, Sendable {
     try c.encode(entry, forKey: .entry)
     try c.encodeNullable(entryCause, forKey: .entryCause)
     try c.encode(entryCauseCodes, forKey: .entryCauseCodes)
-    try c.encodeNullable(quote, forKey: .quote)
   }
 }
 

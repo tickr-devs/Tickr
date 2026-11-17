@@ -209,6 +209,9 @@ class ApiConfig:
     status_stale_seconds: Decimal
     broker_read_warn_seconds: Decimal
     live_quote_max_age_seconds: Decimal
+    quotes_file: str
+    quotes_write_seconds: Decimal
+    quotes_poll_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
     request_timeout_seconds: Decimal

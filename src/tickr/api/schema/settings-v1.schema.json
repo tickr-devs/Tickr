@@ -107,6 +107,17 @@
           "type": "null"
         }
       ]
+    },
+    "quotes_poll_seconds": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

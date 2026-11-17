@@ -20,7 +20,6 @@ from tickr.api.contract import (
     Freshness,
     Gate,
     Position,
-    PositionQuote,
     SendOutcome,
     StatusV1,
     Stop,
@@ -41,10 +40,7 @@ def entry(cid: str, at: datetime) -> EntrySend:
 
 POSITION = Position("ABCD", Decimal("10"), Decimal("12.34"), T0,
                     Stop(StopState.VERIFIED, Decimal("11.90"), "ap-0001-s"),
-                    entry("ap-0001-e", T0), None,
-                    quote=PositionQuote(Decimal("12.50"), Decimal("12.52"),
-                                        T0 + timedelta(seconds=1),
-                                        T0 + timedelta(milliseconds=1200)))
+                    entry("ap-0001-e", T0), None)
 
 
 def status(written_at: datetime = T0, **overrides) -> StatusV1:
