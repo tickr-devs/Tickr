@@ -285,10 +285,10 @@ final class TickrUITests: XCTestCase {
   func testLabShowsTheObservers() {
     let app = launch()
     open(Self.sections[4], in: app)
-    // A version's row reads as one accessibility element (its texts combined into its label), so
-    // the observer's name and note are parts of a longer label. The day chart's legend names an
+    // A version's row reads as one text element (its texts combined into its value), so the
+    // observer's name and note are parts of a longer value. The day chart's legend names an
     // observer by what sets it apart ("v2 · rel vol 1.5×"), not by its name.
-    let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@",
+    let row = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@",
       Self.observer, Self.observerNote)).firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "observer row\n\(app.debugDescription)")
   }
