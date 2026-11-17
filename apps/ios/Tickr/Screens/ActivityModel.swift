@@ -43,6 +43,9 @@ final class ActivityModel {
   @ObservationIgnored private var sessionSource: URL?
   /// The bot's address the days were listed from; another address starts again from today.
   @ObservationIgnored private var source: URL?
+  /// What was read of the past days shown last: a day picked again shows at once, then is read
+  /// again behind it (`PastDays`, as on the Mac).
+  @ObservationIgnored private var pastDays = PastDays<ActivityDayParts>()
 
   /// Today in New York, on the bot's clock.
   var today: WireDate { Container.shared.appModel().today }
@@ -90,6 +93,7 @@ final class ActivityModel {
     if url != source {
       source = url
       days = []
+      pastDays = PastDays()
       showToday()
     }
     latestDaysRequest += 1
@@ -125,15 +129,17 @@ final class ActivityModel {
   /// Read the skipped entries of `day`. Another day's list is never shown under this one.
   func loadSkipped(_ url: URL, day: WireDate) async {
     if skippedDay != day {
-      skipped = nil
+      skipped = pastDays.parts(of: day)?.skipped
       skippedFailure = nil
       skippedDay = day
     }
     do {
       let read = try await client(url).skipped(day: day)
       guard read.day == day, day == skippedDay else { return }
-      skipped = SkippedGroup.make(read.signals)
+      let groups = SkippedGroup.make(read.signals)
+      skipped = groups
       skippedFailure = nil
+      pastDays.keep(day, today: today, empty: ActivityDayParts()) { $0.skipped = groups }
     } catch is CancellationError {
       return
     } catch {
@@ -150,13 +156,15 @@ final class ActivityModel {
     }
     let request = begin()
     selectedDay = day
-    self.day = nil
-    phase = .loading
+    // A day read before shows at once; it is read again behind it.
+    self.day = pastDays.parts(of: day)?.day
+    phase = self.day == nil ? .loading : .loaded
     do {
       let loaded = try await client(url).day(day)
       guard request == latestRequest else { return }
       phase = Self.phase(of: loaded, asked: day)
-      if phase == .loaded { self.day = loaded }
+      self.day = phase == .loaded ? loaded : nil
+      if phase == .loaded { pastDays.keep(day, today: today, empty: ActivityDayParts()) { $0.day = loaded } }
     } catch {
       // A cancelled load (a refresh cut short by leaving the tab) fails too, so the day offers
       // a retry instead of a spinner that never ends.
@@ -183,6 +191,12 @@ final class ActivityModel {
     latestRequest += 1
     return latestRequest
   }
+}
+
+/// What the phone read of one past day (`ActivityModel.pastDays`); a part not read yet is nil.
+struct ActivityDayParts: Sendable {
+  var day: DayV1?
+  var skipped: [SkippedGroup]?
 }
 
 /// Why a what-if of another version could not be shown: the bot's refusal or a failed read, as
