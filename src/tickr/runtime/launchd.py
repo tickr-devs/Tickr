@@ -121,7 +121,8 @@ def check_timings(config: Config) -> None:
     and unless the session flatten can still send its close, for every slot:
     0 <= [session] close_order_cutoff_seconds < flatten_minutes_before_close (in seconds) and
     max_open_positions x max_stops_per_trade x 2 x detail_poll_seconds <= that time minus
-    the cutoff, with max_stops_per_trade >= 3;
+    the cutoff, with max_stops_per_trade >= 3 (the cap holds only with several slots; one
+    slot's position has the whole window);
     and unless every slot's entry can fill in the same poll and still have its stops verified
     in time, with a poll to spare: (max_open_positions + 1) x detail_poll_seconds <=
     [orders] max_unprotected_seconds - detail_poll_seconds."""

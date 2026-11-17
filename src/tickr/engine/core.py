@@ -1385,8 +1385,10 @@ class Engine:
         cancels them one at a time, so their number is bounded: once the trade holds
         `max_stops_per_trade` minus what one more observation adds, the entry's rest is
         cancelled (journaled), and the fills Detail shows by the read that confirms it still
-        get their stop (hard rule 2)."""
-        if not entry.live or entry.cancelling:
+        get their stop (hard rule 2). Only with several slots (owner 2026-11-17): with one, the
+        entry keeps filling to its size and the one position's flatten has the whole window."""
+        if (not entry.live or entry.cancelling
+                or self.config.risk.max_open_positions <= 1):
             return
         stops = [o for o in self.orders(trade.trade_id) if o.leg is Leg.STOP and o.live]
         room = self.config.orders.max_stops_per_trade - STOPS_PER_FILL
