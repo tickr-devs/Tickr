@@ -176,6 +176,9 @@ class ProbeConfig:
     trailing_close_percent: Decimal
     trailing_unit_factor: Decimal
     history_wait_seconds: int
+    listing_stops: int
+    listing_far_percent: Decimal
+    listing_wait_seconds: int
 
 
 @dataclass(frozen=True)
@@ -580,9 +583,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if (probe.trailing_wide_percent <= 0 or probe.trailing_tight_percent <= 0
             or probe.trailing_close_percent <= 0 or probe.trailing_observe_seconds <= 0
             or probe.trailing_trigger_seconds <= 0 or probe.trailing_unit_factor <= 1
-            or probe.history_wait_seconds <= 0):
-        raise ConfigError("[probe] trailing_* values and history_wait_seconds must be above 0 "
-                          "and trailing_unit_factor above 1")
+            or probe.history_wait_seconds <= 0 or probe.listing_stops < 1
+            or probe.listing_far_percent <= 0 or probe.listing_wait_seconds <= 0):
+        raise ConfigError("[probe] trailing_*, history_wait_seconds and listing_* values must be "
+                          "above 0 and trailing_unit_factor above 1")
     if probe.trailing_tight_percent >= probe.trailing_wide_percent:
         raise ConfigError("[probe] trailing_tight_percent must be below trailing_wide_percent")
     if not 1 <= risk.max_open_positions <= md.stream_reserved_symbols:

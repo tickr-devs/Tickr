@@ -36,9 +36,9 @@ class World:
     """Fake clock, broker and quote. `unit` is how the fake Webull reads trailing_stop_step
     (None: Detail shows no stop price); `drift` moves the bid each poll; a working trailing
     stop's stop price follows the highest bid since it was placed and fills when the bid
-    reaches it. The positions read answers as it was the given number of reads earlier; the
-    order history and the open-orders list as they were the given number of polls earlier
-    (None: the history never shows a fill)."""
+    reaches it. The positions read answers as it was the given number of reads earlier, the
+    order history as it was the given number of polls earlier (None: it never shows a fill),
+    and the open-orders list shows a working order the given number of polls late."""
 
     def __init__(self, tmp_path: Path, *, unit: str | None = tp.UNIT_RATIO,
                  drift: Decimal = Decimal("0.01"), fill_entry: bool = True,
@@ -76,7 +76,11 @@ class World:
         return self.histories[max(0, len(self.histories) - 1 - self.history_lag)]
 
     def _open(self):
-        return self.listings[max(0, len(self.listings) - 1 - self.listing_lag)]
+        """A working order is listed once it was working `listing_lag` polls ago; one that
+        ended leaves the list at once."""
+        earlier = {o.client_order_id for o in
+                   self.listings[max(0, len(self.listings) - 1 - self.listing_lag)]}
+        return [o for o in self._real_open() if o.client_order_id in earlier]
 
     def _quote(self) -> None:
         self.market.set_quote(Quote(SYMBOL, self.bid, self.ask, Decimal(100), Decimal(100),
@@ -241,6 +245,35 @@ def test_listing_delay_is_measured(tmp_path: Path) -> None:
     _, summary = world.run()
     assert summary["t4_open_orders"] == tp.LISTED
     assert summary["l1_listed_after_seconds"] == 3 * float(CFG.orders.detail_poll_seconds)
+
+
+@pytest.mark.parametrize("polls", [0, 2])
+def test_stops_placed_together_are_listed_measured_and_cancelled(tmp_path: Path, polls) -> None:
+    """L2: before the entry, several far BUY stops sent back to back; the open orders read
+    each poll until all are listed; every stop then cancelled and proven over."""
+    world = World(tmp_path, listing_lag_polls=polls)
+    code, summary = world.run()
+    n = CFG.probe.listing_stops
+    stops = [r for r in world.broker.sent if r.order_type is OrderType.STOP_LOSS]
+    assert len(stops) == n and all(r.side is Side.BUY for r in stops)
+    assert all(r.stop_price > Decimal("10.02") * (1 + CFG.probe.listing_far_percent / 100)
+               for r in stops)
+    assert world.broker.sent.index(stops[-1]) == n - 1  # before the entry
+    assert summary["l2_listed_after_seconds"] == [
+        (polls + 1) * float(CFG.orders.detail_poll_seconds)] * n
+    assert all(world.broker.orders[r.client_order_id].state is OrderState.CANCELLED
+               for r in stops)
+    assert code == tp.EXIT_ANSWERED and summary["close"] == "closed"
+
+
+def test_stops_never_listed_are_recorded_and_still_cancelled(tmp_path: Path) -> None:
+    world = World(tmp_path, listing_lag_polls=1000)
+    code, summary = world.run()
+    assert summary["l2_listed_after_seconds"] == [None] * CFG.probe.listing_stops
+    stops = [r for r in world.broker.sent if r.order_type is OrderType.STOP_LOSS]
+    assert all(world.broker.orders[r.client_order_id].state is OrderState.CANCELLED
+               for r in stops)
+    assert code == tp.EXIT_ANSWERED
 
 
 def test_unfilled_entry_ends_without_a_stop(tmp_path: Path) -> None:

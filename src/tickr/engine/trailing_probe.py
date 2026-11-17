@@ -8,6 +8,13 @@ until this probe answered (docs/webull-facts.md, T1-T6). The order body is the S
 sample's: `trailing_type` PERCENTAGE, `trailing_stop_step`, `trigger_price_type` PRICE,
 DAY, session CORE.
 
+0. Listing of stops placed together (L2, before the entry, account flat):
+   `[probe] listing_stops` BUY STOP_LOSS DAY CORE orders of `[probe] quantity` share(s), each
+   `[probe] listing_far_percent` above the ask so none triggers (a buy stop needs no shares, so
+   the probe's one share is not over-reserved), sent back to back in one poll. The open orders
+   are read each poll for `[probe] listing_wait_seconds`: per stop, seconds from its place
+   answer to the first read listing it. Then each is cancelled and must show CANCELLED; the
+   bot's bulk stop check and its fills-together bound rely on this delay.
 1. Entry: a BUY LIMIT DAY CORE for `[probe] quantity` shares at the ask. Unfilled within
    `[probe] entry_wait_seconds`, it is cancelled and the probe ends. While it waits, Detail
    and the positions are read each poll (P1: how long after Detail shows a fill the positions
@@ -147,6 +154,50 @@ class TrailingProbe(Probe):
     # L1: seconds from the wide stop's place answer to the first open-orders read listing it;
     # None = not listed while it was watched.
     listed_after: float | None = None
+    # L2: per stop placed together, seconds from its place answer to the first open-orders
+    # read listing it; None = not listed within `[probe] listing_wait_seconds`.
+    listed_together: list[float | None] | None = None
+
+    def listing(self, quote: Quote) -> str:
+        """Step 0 (L2): several far BUY stops sent together, the open orders read each poll
+        until all are listed, then every one cancelled and proven over."""
+        probe = self.config.probe
+        stop = floor_tick(quote.ask * (1 + probe.listing_far_percent / PERCENT))
+        stop += tick(stop)
+        placed: list[tuple[str, datetime]] = []
+        for n in range(probe.listing_stops):
+            cid = self._cid("listing")
+            sent = self.place(f"listing-{n}", self.request(
+                cid, Side.BUY, OrderType.STOP_LOSS, Decimal(probe.quantity), session=CORE,
+                stop=stop))
+            if sent in (REFUSED, NOT_SENT):
+                break
+            placed.append((cid, self.now()))
+        listed: dict[str, datetime] = {}
+        poll = float(self.config.orders.detail_poll_seconds)
+        for _ in range(max(1, int(probe.listing_wait_seconds // poll))):
+            if len(listed) == len(placed):
+                break
+            self.sleep(poll)
+            try:
+                ids = {o.client_order_id for o in self.broker.open_orders()}
+            except BrokerError as exc:
+                self._log("open-orders-failed", case="listing", error=str(exc))
+                continue
+            for cid, _ in placed:
+                if cid in ids and cid not in listed:
+                    listed[cid] = self.now()
+            self._log("open-orders", case="listing", listed=sorted(listed), of=len(placed))
+        self.listed_together = [
+            (listed[cid] - at).total_seconds() if cid in listed else None
+            for cid, at in placed]
+        for n, (cid, _) in enumerate(placed):
+            row, absent = self.settle(f"listing-{n}", cid, poll)
+            self.finish(f"listing-{n}", cid, row, absent)
+        verdict = (f"{len(placed)} of {probe.listing_stops} sent, listed after "
+                   f"{self.listed_together} s")
+        self.out(f"l2_listing: {verdict}")
+        return verdict
 
     def _history_shows(self, name: str, cid: str, filled: Decimal) -> bool:
         """One order-history read (today's fills, every page): whether it shows `cid` with
@@ -423,6 +474,9 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
             quote = probe.quote()
             if quote.ask > config.probe.max_price_usd:
                 raise ManualRefused(f"ask {quote.ask} is above [probe] max_price_usd")
+            summary["l2_listing"] = probe.listing(quote)
+            summary["l2_listed_after_seconds"] = probe.listed_together
+            quote = probe.quote()
             summary["entry"] = probe.entry(quote)
             summary["p1_positions_lag_seconds"] = probe.lag
             summary["p1_note"] = (
