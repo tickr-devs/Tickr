@@ -346,6 +346,10 @@ status_stale_seconds = 15
 # broker_read_max_age_seconds); keep it above [orders] reconcile_interval_seconds and below broker_read_max_age_seconds;
 # read by the api server and returned to clients at GET /settings.
 broker_read_warn_seconds = 15
+# Oldest live quote (status positions[].quote, by its quoted_at) the apps show as an open position's price and
+# result, in seconds; an older quote is not shown as live and the apps use the captured one-minute bars instead
+# (one bar long: past it a bar is as current as the quote). Read by the api server and returned to clients at GET /settings.
+live_quote_max_age_seconds = 60
 # Seconds between refreshes of the status page, also returned to clients as a polling hint; read by the api server and the status page.
 poll_seconds = 3
 # Largest accepted command request body in bytes; larger = refused; read by the api server.

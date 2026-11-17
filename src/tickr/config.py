@@ -208,6 +208,7 @@ class ApiConfig:
     commands_dir: str
     status_stale_seconds: Decimal
     broker_read_warn_seconds: Decimal
+    live_quote_max_age_seconds: Decimal
     poll_seconds: Decimal
     max_request_body_bytes: int
     request_timeout_seconds: Decimal

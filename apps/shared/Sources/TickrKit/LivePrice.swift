@@ -14,9 +14,15 @@ public struct LivePrice: Hashable, Sendable {
   public let quotedAt: Date
 
   /// Nil when the status cannot be trusted as live (`statusStale`), the bot's stream is lost or
-  /// off (its last quote may be far behind), or the bot holds no valid quote for the position.
-  public init?(position: Position, stream: StreamHealth, statusStale: Bool) {
-    guard !statusStale, stream == .fresh || stream == .quiet, let quote = position.quote else { return nil }
+  /// off (its last quote may be far behind), the bot holds no valid quote for the position, or the
+  /// quote is older at `now` (the bot's clock) than `maxAgeSeconds` (GET /settings
+  /// `live_quote_max_age_seconds`; nil, from an older API, means no quote is live): a thin stock's
+  /// last quote can be minutes old while the stream is healthy, and is then never shown as live.
+  public init?(position: Position, stream: StreamHealth, statusStale: Bool, now: Date, maxAgeSeconds: Decimal?) {
+    guard !statusStale, stream == .fresh || stream == .quiet, let quote = position.quote,
+      let maxAgeSeconds else { return nil }
+    let age = now.timeIntervalSince(quote.quotedAt.date)
+    guard age <= NSDecimalNumber(decimal: maxAgeSeconds).doubleValue else { return nil }
     bid = quote.bid.value
     ask = quote.ask.value
     quotedAt = quote.quotedAt.date

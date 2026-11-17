@@ -65,7 +65,7 @@ struct PositionMarksTests {
       openedAt: try time(1)))
     #expect(!marks.isLive)
     let position = try fixturePosition()
-    let price = try #require(LivePrice(position: position, stream: .fresh, statusStale: false))
+    let price = try #require(live(position))
     #expect(price.bid == Decimal(string: "12.50"))
     let now = marks.live(price)
     #expect(now.isLive)
@@ -84,10 +84,16 @@ struct PositionMarksTests {
   @Test("No live price from a stale status, a lost or absent stream, or a position without a quote")
   func noLivePrice() throws {
     let position = try fixturePosition()
-    #expect(LivePrice(position: position, stream: .quiet, statusStale: false) != nil)
-    #expect(LivePrice(position: position, stream: .fresh, statusStale: true) == nil)
-    #expect(LivePrice(position: position, stream: .lost, statusStale: false) == nil)
-    #expect(LivePrice(position: position, stream: .off, statusStale: false) == nil)
+    #expect(live(position, stream: .quiet) != nil)
+    #expect(live(position, statusStale: true) == nil)
+    #expect(live(position, stream: .lost) == nil)
+    #expect(live(position, stream: .off) == nil)
+    // A quote older than the limit is not live, however healthy the stream; at the limit it is.
+    let quoted = try #require(position.quote).quotedAt.date
+    #expect(live(position, ageSeconds: 60) != nil)
+    #expect(live(position, ageSeconds: 61) == nil)
+    // No limit from an older API: no quote is live.
+    #expect(LivePrice(position: position, stream: .fresh, statusStale: false, now: quoted, maxAgeSeconds: nil) == nil)
     // A bot older than the key writes no quote: the position decodes without one.
     var json = try #require(try JSONSerialization.jsonObject(with: fixture("status-response-v1.json")) as? [String: Any])
     var status = try #require(json["status"] as? [String: Any])
@@ -98,7 +104,15 @@ struct PositionMarksTests {
     let older = try Wire.decoder().decode(StatusResponseV1.self, from: JSONSerialization.data(withJSONObject: json))
     let without = try #require(older.status?.position)
     #expect(without.quote == nil)
-    #expect(LivePrice(position: without, stream: .fresh, statusStale: false) == nil)
+    #expect(live(without) == nil)
+  }
+
+  /// The live price of `position` `ageSeconds` after its quote, with a 60 s limit.
+  func live(_ position: Position, stream: StreamHealth = .fresh, statusStale: Bool = false,
+    ageSeconds: TimeInterval = 1) -> LivePrice? {
+    let quoted = position.quote?.quotedAt.date ?? Date()
+    return LivePrice(position: position, stream: stream, statusStale: statusStale,
+      now: quoted.addingTimeInterval(ageSeconds), maxAgeSeconds: 60)
   }
 
   /// The first position of the shared status fixture (bid 12.50, ask 12.52).

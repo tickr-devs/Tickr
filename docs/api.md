@@ -99,7 +99,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/chart?symbol=<ticker>&interval=<1m\|5m\|30m\|1h\|1d\|1w\|1mo>&range=<1d\|5d\|1m\|3m\|1y>` | `200` `chart-v1`: candles of any US stock from market data (`pending` while its budget lets it read only part); `400`, `429` `rate_limited` (only when the budget cannot say when it refills), `503` `unavailable`. |
 | GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, whether they matched its records, and the latest balances. `503 unavailable` when the file is missing, invalid or dated in the future. |
-| GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. |
+| GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. `live_quote_max_age_seconds` is the oldest `status` `positions[].quote` (by `quoted_at`) clients show as a position's live price; `null` from an older API, and then none is live. |
 | GET | `/config` | `200` `config-v1`: the configuration file the API was started with, as it is on disk now, read-only. Every `[section]` in file order, each key with its value as written (TOML text) and the comment above it. `valid`/`error`: whether the file loads now, as the next start would. `changed_since_start`: the file differs from the one this API loaded (running processes keep the old values until restarted). The file holds credential variable names only, never values. `503 unavailable` when the API was started without a file path (the demo) or the file is unreadable. |
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
 | GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
@@ -356,7 +356,8 @@ stream when the bot wrote the status (`{bid, ask, quoted_at, received_at}`: the 
 and the bot's receipt time), `null` while the stream holds no valid quote for it (a bid above
 zero and not above the ask). The status is written every loop pass, so this is the live price of
 the position; the apps show the position's price and unrealized result at `bid`, what the
-position would sell at. Display only. Added after version 1 shipped (2026-11-17): a reader takes
+position would sell at, while its `quoted_at` is at most `settings.live_quote_max_age_seconds`
+old (else they use the captured bars). Display only. Added after version 1 shipped (2026-11-17): a reader takes
 a position without it as `null`.
 
 ### GET /account

@@ -70,7 +70,9 @@ struct BarCurrentTests {
   @Test("The live bid is the price over any bar: result, R and the line follow it, and it is never stale")
   func livePrice() throws {
     let position = try #require(try fixture(StatusResponseV1.self, "status-response-v1.json").status?.position)
-    let live = try #require(LivePrice(position: position, stream: .fresh, statusStale: false))
+    let quoted = try #require(position.quote).quotedAt.date
+    let live = try #require(LivePrice(position: position, stream: .fresh, statusStale: false, now: quoted,
+      maxAgeSeconds: 60))
     let close = position.entryPrice.value
     let row = PositionRow(position: position, lastBarClose: nil, lastBarAt: Date(), closes: [close],
       latestClose: close, live: live)

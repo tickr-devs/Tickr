@@ -324,7 +324,8 @@ public final class AppModel {
       let fresh = last.map { barIsFresh(start: $0.start.date, now: botNow) } ?? false
       return PositionRow(position: position, lastBarClose: fresh ? last?.close.value : nil, lastBarAt: last?.start.date,
         closes: [position.entryPrice.value] + bars.map(\.close.value), latestClose: last?.close.value,
-        live: LivePrice(position: position, stream: status.freshness.stream, statusStale: response?.stale ?? true))
+        live: LivePrice(position: position, stream: status.freshness.stream, statusStale: response?.stale ?? true,
+          now: botNow, maxAgeSeconds: settings?.liveQuoteMaxAgeSeconds?.value))
     }
   }
 

@@ -24,7 +24,8 @@ final class PositionsModel {
     let positions = Dictionary(status.positions.map { ($0.symbol, $0) }, uniquingKeysWith: { first, _ in first })
     return barMarks.reduce(into: [:]) { found, entry in
       let live = positions[entry.key].flatMap {
-        LivePrice(position: $0, stream: status.freshness.stream, statusStale: stale)
+        LivePrice(position: $0, stream: status.freshness.stream, statusStale: stale, now: app.botNow,
+          maxAgeSeconds: app.settings?.liveQuoteMaxAgeSeconds?.value)
       }
       found[entry.key] = entry.value.live(live)
     }

@@ -270,7 +270,7 @@ def documents() -> dict[str, object]:
             RiskSettings(Decimal("50"), Decimal("2500"), Decimal("300"), 1, Decimal("5"),
                          Decimal("10")),
             SessionSettings("America/New_York", 15, 5, False), Decimal("15"), POLL,
-            Decimal("30"), Decimal("15")),
+            Decimal("30"), Decimal("15"), live_quote_max_age_seconds=Decimal("60")),
         # 10:00 New York on a Monday: the bot runs, its last broker read was 4 s ago.
         "jobs-v1": JobsV1(
             T0, BotState.RUNNING, False, T0.replace(hour=13, minute=12, second=4),
