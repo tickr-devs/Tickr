@@ -83,6 +83,37 @@ flatten_grace_seconds = 120
 close_order_cutoff_seconds = 60
 # Trade on half days: false = no trading on half days; read by safety.
 half_days_enabled = false
+# Extended sessions (owner 2026-11-16). Each enabled session is its own trading window that flattens itself before it
+# ends: no position is carried into the next session or overnight. Orders in them are LIMIT only with Webull session ALL.
+# The offsets and sizes below are proposals awaiting the owner's confirmation before either session is enabled.
+# Off until the bot-watched protection outside the regular session is built (Webull takes no stop there: F7 in
+# docs/webull-facts.md; owner decision 2026-11-16 in docs/decisions.md).
+# Trade in the pre-market (calendar premarket_open to regular_open, 04:00-09:30 ET); read by risk.timers.
+premarket_enabled = false
+# Pre-market: first entry this many minutes after the pre-market opens (05:00 ET: the first hour is the thinnest); read by risk.timers.
+premarket_first_entry_minutes_after_open = 60
+# Pre-market: last entry this many minutes before the regular open (09:15 ET); read by risk.timers.
+premarket_last_entry_minutes_before_close = 15
+# Pre-market: everything closed this many minutes before the regular open (09:25 ET), so nothing meets the opening
+# auction; read by risk.timers.
+premarket_flatten_minutes_before_close = 5
+# Pre-market: share of the planned loss per trade and of the notional cap an entry may use (0.5 = half size); read by
+# risk.timers.
+premarket_size_fraction = 0.5
+# Trade in the post-market (calendar regular_close to extended_close, 16:00-20:00 ET, 13:00-17:00 on half days); read
+# by risk.timers.
+postmarket_enabled = false
+# Post-market: first entry this many minutes after the regular close (16:05 ET: after the closing prints); read by
+# risk.timers.
+postmarket_first_entry_minutes_after_open = 5
+# Post-market: last entry this many minutes before the post-market closes (19:00 ET); read by risk.timers.
+postmarket_last_entry_minutes_before_close = 60
+# Post-market: everything closed this many minutes before the post-market closes (19:30 ET; assumed, not probed (F10
+# in docs/webull-facts.md): DAY orders with session ALL expire at 20:00 ET); read by risk.timers.
+postmarket_flatten_minutes_before_close = 30
+# Post-market: share of the planned loss per trade and of the notional cap an entry may use (0.5 = half size); read by
+# risk.timers.
+postmarket_size_fraction = 0.5
 
 [orders]
 # Prefix of bot client order ids; read by orders and reconciliation to recognise own orders.
@@ -214,7 +245,7 @@ extended_trigger_seconds = 180
 extended_close_percent = 2
 # probe-extended: seconds the positions read may take to agree with the fills Detail proved, read once per
 # [orders] detail_poll_seconds, before a SELL, the close or the final verdict; still different = the probe stops and
-# exits 4; read by the probe-extended command.
+# exits 4; read by the probe-extended and probe-trailing commands.
 extended_position_agree_seconds = 15
 # probe-attached-stop (F8): the shape tests' MASTER LIMIT BUY sits this many percent below the bid (and a bracket's
 # STOP_PROFIT LIMIT SELL this many percent above the ask), so neither can fill; read by the probe-attached-stop command.
@@ -225,6 +256,26 @@ attached_observe_seconds = 9
 # probe-attached-stop: seconds the stop leg is read after the MASTER fills, until it is working for the filled
 # quantity and listed in the open orders; read by the probe-attached-stop command.
 attached_stop_wait_seconds = 30
+# probe-trailing: the wide trailing stop's distance, percent (the rollout guide's 20 % trail for several positions); sent as
+# trailing_stop_step = this / 100, the SDK sample's ratio form, and the stop price Detail shows says which unit Webull
+# reads; read by the probe-trailing command.
+trailing_wide_percent = 20
+# probe-trailing: the tight trailing stop's distance, percent, so it triggers within trailing_trigger_seconds on an active
+# stock; sent only once the wide stop proved the unit; read by the probe-trailing command.
+trailing_tight_percent = 0.5
+# probe-trailing: seconds the wide trailing stop is watched (Detail and a quote each [orders] detail_poll_seconds) for
+# its stop price and whether it rises with the price, before it is cancelled; read by the probe-trailing command.
+trailing_observe_seconds = 120
+# probe-trailing: seconds the tight trailing stop is watched for a trigger before it is cancelled; read by the
+# probe-trailing command.
+trailing_trigger_seconds = 300
+# probe-trailing: the closing SELL LIMIT lies this many percent below the bid, so it fills at once; read by the
+# probe-trailing command.
+trailing_close_percent = 1
+# probe-trailing: T2 picks the unit (ratio or percent) whose distance is within this factor of the stop distance Detail
+# shows; the two candidates differ a hundredfold and the stop follows the high, not the bid read with it, so cents do
+# not decide; a ratio; read by the probe-trailing command.
+trailing_unit_factor = 3
 
 [api]
 # Local API bind address; loopback only; read by the api server.
@@ -458,7 +509,7 @@ capture_dir = "capture"
 [observers]
 # Strategy module per strategy NAME, as "name=importable.module" (the module exposes create(values)); an observer folder
 # strategies/<folder>/strategy.toml names its strategy in [strategy] name; read by observers.loader.
-strategy_modules = ["price-action-v1=tickr.strategy.price_action_v1", "price-action-v2=tickr.strategy.price_action_v2", "price-action-v3=tickr.strategy.price_action_v3", "volume-shock-v1=tickr.strategy.volume_shock_v1", "noise-band-v1=tickr.strategy.noise_band_v1"]
+strategy_modules = ["price-action-v1=tickr.strategy.price_action_v1", "price-action-v2=tickr.strategy.price_action_v2", "price-action-v3=tickr.strategy.price_action_v3", "volume-shock-v1=tickr.strategy.volume_shock_v1", "noise-band-v1=tickr.strategy.noise_band_v1", "ignition-v1=tickr.strategy.composed"]
 # Most observer strategies [strategy] observers may list (each costs observer-process time per bar, not the trading
 # thread's); read by observers.loader.
 max_observers = 4
