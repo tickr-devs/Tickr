@@ -11,21 +11,29 @@ DAY, session CORE.
 1. Entry: a BUY LIMIT DAY CORE for `[probe] quantity` shares at the ask. Unfilled within
    `[probe] entry_wait_seconds`, it is cancelled and the probe ends. While it waits, Detail
    and the positions are read each poll (P1: how long after Detail shows a fill the positions
-   read shows it; the bot's Detail priority for a moved symbol relies on it).
+   read shows it; the bot's Detail priority for a moved symbol relies on it) and the order
+   history (H1: how long after Detail shows a fill the history list shows it with the same
+   filled quantity; one history read for all orders could replace a Detail read per fill
+   when several entries fill together).
 2. Wide trailing stop (T1 accepted, T2 unit, T3 follows the price, T4 open orders, T5 cancel):
    a SELL TRAILING_STOP_LOSS for the held quantity with `trailing_stop_step` =
    `[probe] trailing_wide_percent` / 100 (the SDK sample's ratio form). Detail is read every
    poll for `[probe] trailing_observe_seconds` with a quote each time: the stop price Detail
    shows, compared with the bid, says which unit the step is in (T2: the distance is the
    ratio, or it is the percent, or Detail shows no stop price) and whether the stop rises
-   with the price (T3). One open-orders read says whether it is listed (T4). Then it is
-   cancelled and must show CANCELLED (T5); a trigger meanwhile is recorded as such.
+   with the price (T3). The open orders are read each poll until they list it (T4, and L1:
+   seconds from the place answer to the first listing; the bot verifies new stops from that
+   list). Then it is cancelled and must show CANCELLED (T5); a trigger meanwhile is recorded
+   as such.
 3. Tight trailing stop (T6 triggers): only when T2 found the unit, a SELL TRAILING_STOP_LOSS
    with `[probe] trailing_tight_percent` in that unit, watched for
    `[probe] trailing_trigger_seconds`; still working afterwards, it is cancelled.
 4. Close: whatever is still held is sold with a LIMIT DAY CORE `[probe] trailing_close_percent`
-   below the bid, watched for `[orders] max_exit_seconds`. Not filled: the probe says so loudly
-   and exits 4; the owner closes it in the Webull app.
+   below the bid, watched for `[orders] max_exit_seconds`; once Detail shows it filled, the
+   history is read each poll for H1 on a sell. Not filled: the probe says so loudly and exits
+   4; the owner closes it in the Webull app.
+
+The history and open-orders reads only read: they never decide an order or a verdict above.
 
 Hard rule 2: the shares are protected by the trailing stop under test, and between the fill and
 that stop, between the two stops, and after a stop that did not trigger, the probe holds
@@ -47,6 +55,7 @@ from pathlib import Path
 from typing import Any
 
 from tickr.broker.base import Broker, BrokerError
+from tickr.calendar import ny_date_of
 from tickr.config import Config
 from tickr.data.base import MarketData, MarketDataError
 from tickr.engine.manual import ManualRefused
@@ -132,6 +141,50 @@ class TrailingProbe(Probe):
     lag: float | None = None
     # The field names (never values) of the first trailing row Detail showed, logged once.
     _keys_logged: bool = False
+    # H1: per filled order ("entry", "close"), seconds from Detail first showing the fill to
+    # the history first showing the same filled quantity (poll-granular); None = never shown.
+    history_lag: dict[str, float | None] | None = None
+    # L1: seconds from the wide stop's place answer to the first open-orders read listing it;
+    # None = not listed while it was watched.
+    listed_after: float | None = None
+
+    def _history_shows(self, name: str, cid: str, filled: Decimal) -> bool:
+        """One order-history read (today's fills, every page): whether it shows `cid` with
+        `filled` shares. A failed read counts as not shown and is logged."""
+        try:
+            fills = self.broker.fills_today(ny_date_of(self.now()))
+        except BrokerError as exc:
+            self._log("history-failed", case=name, error=str(exc))
+            return False
+        quantity = next((f.filled_quantity for f in fills if f.client_order_id == cid), None)
+        self._log("history", case=name, client_order_id=cid, filled=quantity, rows=len(fills))
+        return quantity == filled
+
+    def _record_history_lag(self, name: str, detail_at: datetime,
+                            history_at: datetime | None) -> None:
+        lag = None if history_at is None else (history_at - detail_at).total_seconds()
+        if self.history_lag is None:
+            self.history_lag = {}
+        self.history_lag[name] = lag
+        self._log("history-lag", case=name, detail_fill_at=detail_at.isoformat(),
+                  history_at=None if history_at is None else history_at.isoformat(),
+                  seconds=lag)
+
+    def history_after(self, name: str, cid: str, row: OrderDetail | None) -> None:
+        """H1 for an order Detail just showed filled: the history each poll for
+        `[probe] history_wait_seconds` until it shows the same filled quantity."""
+        if row is None or row.filled_quantity <= 0:
+            return
+        detail_at = self.now()
+        poll = float(self.config.orders.detail_poll_seconds)
+        history_at = detail_at if self._history_shows(name, cid, row.filled_quantity) else None
+        for _ in range(int(self.config.probe.history_wait_seconds // poll)):
+            if history_at is not None:
+                break
+            self.sleep(poll)
+            if self._history_shows(name, cid, row.filled_quantity):
+                history_at = self.now()
+        self._record_history_lag(name, detail_at, history_at)
 
     def quote(self) -> Quote:
         quote = read_quote(self.market, self.symbol)
@@ -170,17 +223,20 @@ class TrailingProbe(Probe):
         return verdict
 
     def _entry_and_lag(self, cid: str) -> tuple[OrderDetail | None, bool]:
-        """`settle` for the entry, plus a positions read each poll (P1): when Detail first
-        showed the fill and when the positions read first did, so `positions_lag_seconds`
-        (positions minus Detail, poll-granular) is measured; the bot's Detail priority for a
-        moved symbol relies on the positions read showing a fill."""
+        """`settle` for the entry, plus a positions read (P1) and an order-history read (H1)
+        each poll: when Detail first showed the fill, and when the positions read and the
+        history first did, so both lags (minus Detail, poll-granular) are measured; the bot's
+        Detail priority for a moved symbol relies on the positions read showing a fill."""
         poll = float(self.config.orders.detail_poll_seconds)
         row: OrderDetail | None = None
         absent = 0
         detail_at: datetime | None = None
         position_at: datetime | None = None
+        history_at: datetime | None = None
         polls = max(1, int(self.config.probe.entry_wait_seconds // poll))
-        for n in range(polls + int(self.config.probe.extended_position_agree_seconds // poll)):
+        after = max(self.config.probe.extended_position_agree_seconds,
+                    self.config.probe.history_wait_seconds)
+        for n in range(polls + int(after // poll)):
             self.sleep(poll)
             if detail_at is None:
                 read = self.detail("entry", cid)
@@ -196,7 +252,10 @@ class TrailingProbe(Probe):
                     held = Decimal(0)
                 if held > 0:
                     position_at = self.now()
-            if detail_at is not None and position_at is not None:
+            if (history_at is None and row is not None and row.filled_quantity > 0
+                    and self._history_shows("entry", cid, row.filled_quantity)):
+                history_at = self.now()
+            if detail_at is not None and position_at is not None and history_at is not None:
                 break
             if detail_at is None and n + 1 >= polls:
                 break  # not filled in time: finish cancels it
@@ -208,6 +267,7 @@ class TrailingProbe(Probe):
             self._log("positions-lag", detail_fill_at=detail_at.isoformat(),
                       position_at=None if position_at is None else position_at.isoformat(),
                       seconds=self.lag)
+            self._record_history_lag("entry", detail_at, history_at)
         return row, row is None and absent >= self.config.orders.unknown_absent_reads
 
     def _send_trailing(self, name: str, step: Decimal) -> tuple[str, str | None]:
@@ -219,11 +279,13 @@ class TrailingProbe(Probe):
                                              session=CORE, trailing_step=step))
         return sent, (None if sent in (REFUSED, NOT_SENT) else cid)
 
-    def _watch(self, name: str, cid: str, seconds: float,
+    def _watch(self, name: str, cid: str, seconds: float, *, listing: bool = False,
                ) -> tuple[OrderDetail | None, int, list[tuple[Decimal, Decimal]]]:
-        """Detail and a quote every poll for `seconds`, stopping at a terminal row. Returns
+        """Detail and a quote every poll for `seconds`, stopping at a terminal row; with
+        `listing`, the open orders too until they list `cid` (L1, `listed_after`). Returns
         the last row, the run of "not present" answers at the end, and (bid, stop price) of
         every poll where both were read."""
+        placed_at = self.now()
         row: OrderDetail | None = None
         absent = 0
         seen: list[tuple[Decimal, Decimal]] = []
@@ -237,6 +299,8 @@ class TrailingProbe(Probe):
                 if not self._keys_logged and read.row_keys is not None:
                     self._keys_logged = True
                     self._log("trailing-row-fields", case=name, fields=list(read.row_keys))
+            if listing and self.listed_after is None and self._listed(cid) == LISTED:
+                self.listed_after = (self.now() - placed_at).total_seconds()
             bid = self._bid(name)
             if bid is not None and row is not None and row.stop_price is not None:
                 seen.append((bid, row.stop_price))
@@ -264,8 +328,11 @@ class TrailingProbe(Probe):
         if cid is None:
             return answers
         row, absent, seen = self._watch(name, cid,
-                                        float(self.config.probe.trailing_observe_seconds))
-        answers["t4_open_orders"] = self._listed(cid) if row is not None else NOT_TESTED
+                                        float(self.config.probe.trailing_observe_seconds),
+                                        listing=True)
+        answers["t4_open_orders"] = (NOT_TESTED if row is None
+                                     else LISTED if self.listed_after is not None
+                                     else NOT_LISTED)
         if row is None:
             answers["t1_accepted"] = UNKNOWN if sent == UNKNOWN else "acknowledged-not-in-detail"
         elif row.state is OrderState.ACCEPTED or row.state in TRIGGER_STATES:
@@ -334,7 +401,8 @@ class TrailingProbe(Probe):
         if self.place("close", request) in (REFUSED, NOT_SENT):
             return NOT_CLOSED
         row, absent = self.settle("close", cid, float(self.config.orders.max_exit_seconds))
-        self.finish("close", cid, row, absent)
+        row = self.finish("close", cid, row, absent)
+        self.history_after("close", cid, row)
         return CLOSED if self.held() <= 0 else NOT_CLOSED
 
 
@@ -364,6 +432,7 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
             if summary["entry"] == FILLED:
                 answers = probe.wide()
                 summary.update(answers)
+                summary["l1_listed_after_seconds"] = probe.listed_after
                 if "t6_triggers" not in answers:
                     summary["t6_triggers"] = probe.tight(answers["t2_unit"])
         except ManualRefused as exc:
@@ -379,6 +448,11 @@ def run(config: Config, broker: Broker, market: MarketData, symbol: str, folder:
         summary["error"] = f"{type(exc).__name__}: {exc}"
         summary.setdefault("close", NOT_CLOSED)
     finally:
+        summary["h1_history_lag_seconds"] = probe.history_lag
+        summary["h1_note"] = (
+            "per filled order, seconds from Detail first showing the fill to the order history "
+            "first showing the same filled quantity, poll-granular; null = not shown within "
+            "[probe] history_wait_seconds")
         summary["broker_after"] = after = probe.leftovers()
         summary["finished_at"] = now().isoformat()
         probe.evidence.summary(summary)

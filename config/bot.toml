@@ -263,6 +263,10 @@ trailing_close_percent = 1
 # shows; the two candidates differ a hundredfold and the stop follows the high, not the bid read with it, so cents do
 # not decide; a ratio; read by the probe-trailing command.
 trailing_unit_factor = 3
+# probe-trailing: seconds the order history is read (once per [orders] detail_poll_seconds) after Detail shows the entry
+# or the close filled, until it shows the same filled quantity (H1, how fresh one history read for all fills is);
+# read-only, decides nothing; read by the probe-trailing command.
+history_wait_seconds = 30
 
 [api]
 # Local API bind address; loopback only; read by the api server.

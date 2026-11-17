@@ -36,11 +36,14 @@ class World:
     """Fake clock, broker and quote. `unit` is how the fake Webull reads trailing_stop_step
     (None: Detail shows no stop price); `drift` moves the bid each poll; a working trailing
     stop's stop price follows the highest bid since it was placed and fills when the bid
-    reaches it."""
+    reaches it. The positions read answers as it was the given number of reads earlier; the
+    order history and the open-orders list as they were the given number of polls earlier
+    (None: the history never shows a fill)."""
 
     def __init__(self, tmp_path: Path, *, unit: str | None = tp.UNIT_RATIO,
                  drift: Decimal = Decimal("0.01"), fill_entry: bool = True,
-                 position_lag_polls: int = 0) -> None:
+                 position_lag_polls: int = 0, history_lag_polls: int | None = 0,
+                 listing_lag_polls: int = 0) -> None:
         self.at = NOON
         self.broker = FakeBroker()
         self.market = FakeMarketData()
@@ -55,11 +58,25 @@ class World:
         real = self.broker.positions
         self._real = real
         self.broker.positions = self._lagged  # type: ignore[method-assign]
+        self.history_lag, self.listing_lag = history_lag_polls, listing_lag_polls
+        self.histories: list[list] = [[]]  # before the first poll: nothing filled or placed
+        self.listings: list[list] = [[]]
+        self._real_history, self._real_open = self.broker.fills_today, self.broker.open_orders
+        self.broker.fills_today = self._history  # type: ignore[method-assign]
+        self.broker.open_orders = self._open  # type: ignore[method-assign]
         self._quote()
 
     def _lagged(self):
         self.seen.append(self._real())
         return self.seen[max(0, len(self.seen) - 1 - self.lag)]
+
+    def _history(self, day):  # noqa: ARG002 - one fake day
+        if self.history_lag is None:
+            return []
+        return self.histories[max(0, len(self.histories) - 1 - self.history_lag)]
+
+    def _open(self):
+        return self.listings[max(0, len(self.listings) - 1 - self.listing_lag)]
 
     def _quote(self) -> None:
         self.market.set_quote(Quote(SYMBOL, self.bid, self.ask, Decimal(100), Decimal(100),
@@ -93,6 +110,8 @@ class World:
                         "client_order_id", "status", "stop_price", "trailing_stop_step"))
                 else:
                     b.orders[cid] = replace(order, row_keys=("client_order_id", "status"))
+        self.histories.append(self._real_history(self.at.date()))
+        self.listings.append(self._real_open())
 
     def run(self) -> tuple[int, dict]:
         code = tp.run(CFG, self.broker, self.market, SYMBOL, self.folder, now=lambda: self.at,
@@ -145,6 +164,8 @@ def test_rising_price_answers_every_question_and_ends_flat(tmp_path: Path) -> No
     assert summary["t4_open_orders"] == tp.LISTED
     assert summary["t5_cancel"] == tp.CANCELLED
     assert summary["p1_positions_lag_seconds"] == 0 and "poll-granular" in summary["p1_note"]
+    assert summary["h1_history_lag_seconds"] == {"entry": 0, "close": 0}
+    assert summary["l1_listed_after_seconds"] == float(CFG.orders.detail_poll_seconds)
     fields = [json.loads(line) for line in
               (world.folder / "steps.jsonl").read_text("utf-8").splitlines()]
     (logged,) = [row for row in fields if row["step"] == "trailing-row-fields"]
@@ -191,6 +212,35 @@ def test_positions_lag_is_measured(tmp_path: Path) -> None:
     world = World(tmp_path, position_lag_polls=2)
     _, summary = world.run()
     assert summary["p1_positions_lag_seconds"] == 2 * float(CFG.orders.detail_poll_seconds)
+
+
+@pytest.mark.parametrize("polls", [1, 3])
+def test_history_lag_is_measured_for_the_entry_and_the_close(tmp_path: Path, polls) -> None:
+    """H1: the history read each poll after Detail shows a fill, until it shows the same
+    filled quantity; read-only, so the probe's verdicts and orders do not change."""
+    world = World(tmp_path, history_lag_polls=polls)
+    code, summary = world.run()
+    lag = polls * float(CFG.orders.detail_poll_seconds)
+    assert summary["h1_history_lag_seconds"] == {"entry": lag, "close": lag}
+    assert code == tp.EXIT_ANSWERED and summary["close"] == "closed"
+    assert summary["t4_open_orders"] == tp.LISTED
+
+
+def test_a_history_that_never_shows_the_fill_is_recorded_and_changes_nothing(
+        tmp_path: Path) -> None:
+    world = World(tmp_path, history_lag_polls=None)
+    code, summary = world.run()
+    assert summary["h1_history_lag_seconds"] == {"entry": None, "close": None}
+    assert code == tp.EXIT_ANSWERED and summary["close"] == "closed"
+    assert summary["p1_positions_lag_seconds"] == 0
+
+
+def test_listing_delay_is_measured(tmp_path: Path) -> None:
+    """L1: the open orders are read each poll until they list the wide stop."""
+    world = World(tmp_path, listing_lag_polls=2)
+    _, summary = world.run()
+    assert summary["t4_open_orders"] == tp.LISTED
+    assert summary["l1_listed_after_seconds"] == 3 * float(CFG.orders.detail_poll_seconds)
 
 
 def test_unfilled_entry_ends_without_a_stop(tmp_path: Path) -> None:
