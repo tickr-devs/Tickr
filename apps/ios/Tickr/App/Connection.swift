@@ -29,6 +29,11 @@ struct Connection: Equatable {
   static let builtAddressKey = "TickrAPIAddress"
   /// The address field's example when the build names none.
   static let exampleAddress = "https://mac.tailnet.ts.net"
+  /// The address field's example: the address this build starts with, else `exampleAddress`.
+  static var addressExample: String {
+    let built = builtAddress()
+    return built.isEmpty ? exampleAddress : built
+  }
 
   var address: String
   var token: String?
