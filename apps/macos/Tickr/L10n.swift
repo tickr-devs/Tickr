@@ -627,6 +627,10 @@ enum L10n {
         defaultValue: "Positions \(count) of \(limit)",
         bundle: L10n.bundle)
     }
+    /// The Positions card title while nothing was ever read: no count we do not know.
+    static var titleUnknown: LocalizedStringResource {
+      LocalizedStringResource("position.titleUnknown", defaultValue: "Positions", bundle: L10n.bundle)
+    }
     static func title(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("position.title", defaultValue: "Positions \(count)", bundle: L10n.bundle)
     }

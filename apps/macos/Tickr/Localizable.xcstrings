@@ -7550,6 +7550,23 @@
         }
       }
     },
+    "position.titleUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Positions"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Позиции"
+          }
+        }
+      }
+    },
     "position.unrealized" : {
       "extractionState" : "manual",
       "localizations" : {

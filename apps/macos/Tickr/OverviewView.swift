@@ -886,6 +886,7 @@ private struct PositionsCard: View {
   }
 
   private var title: LocalizedStringResource {
+    if model.connectionState.isNeverConnected { return L10n.Position.titleUnknown }
     let count = model.positions.count
     if let limit = model.settings?.risk.maxOpenPositions {
       return L10n.Position.titleOfLimit(count, limit)
