@@ -17,9 +17,6 @@ struct PulseLayer<S: Shape> {
   let scale: CGFloat
   /// What the pulse marks; a change plays one pulse. The first value plays none.
   let event: AnyHashable
-  /// A change while a pulse still plays lets that pulse finish instead of starting again: a live
-  /// price that changes many times a second beats steadily, and rests once the price stops.
-  var letsFinish = false
 }
 
 /// Holds the ring layer and plays its pulse.
@@ -86,7 +83,6 @@ final class PulseLayerView: PlatformView {
     place()
     defer { event = pulse.event }
     guard let event, event != pulse.event else { return }
-    if pulse.letsFinish, ring.animation(forKey: Self.pulseKey) != nil { return }
     play()
   }
 

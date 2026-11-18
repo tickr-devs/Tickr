@@ -911,7 +911,7 @@ private struct PositionDetail: View {
   /// The price line; it opens the Chart on the position, as its "Open chart" does.
   private var chart: some View {
     ChartLink(row.position.symbol) {
-      MiniChart(closes: row.line, entry: row.entry, stop: row.stop, live: row.live != nil)
+      MiniChart(closes: row.line, entry: row.entry, stop: row.stop, live: row.price != nil)
         .frame(minWidth: Self.chartMinWidth, minHeight: Self.chartMinHeight)
     }
   }
@@ -1052,14 +1052,14 @@ private struct MiniChart: View {
   let closes: [Decimal]
   let entry: Decimal
   let stop: Decimal?
-  /// The line ends at the live bid: its dot pulses.
+  /// The price is current (the live bid or a fresh bar): the dot rings; else the line is dim.
   let live: Bool
 
   var body: some View {
     let values = closes.map(Self.double)
     Group {
       if values.count > 1 {
-        let domain = priceDomain(values)
+        let domain = priceDomain(LiveSparkline.window(values, .large))
         let bars = 0...(values.count - 1)
         ZStack {
           Chart {
@@ -1069,9 +1069,9 @@ private struct MiniChart: View {
             }
           }
           .plain(bars: bars, prices: domain)
-          // Drawn in once; each new price moves the line's end and its dot, which pulses while
-          // the price is the live bid. The same line as on the iPhone's position cards.
-          LiveSparkline(values: values, color: Palette.accent, live: live, domain: domain, dotSize: Tokens.Size.dot)
+          // Drawn in once; each new price glides the line's end and its dot, which rings while the
+          // price is current. The same line as on the iPhone's position cards (mockup v116).
+          LiveSparkline(values: values, live: live, scale: .large, domain: domain)
         }
       } else {
         Text(L10n.Position.waitingForBars)
@@ -1086,7 +1086,8 @@ private struct MiniChart: View {
     .accessibilityLabel(Text(L10n.Position.chartLabel))
   }
 
-  /// The price range shown: every close and level, with some room above and below.
+  /// The price range shown: every close the line shows and each level, with some room above and
+  /// below.
   private func priceDomain(_ values: [Double]) -> ClosedRange<Double> {
     let all = values + [Self.double(entry)] + (stop.map { [Self.double($0)] } ?? [])
     let lowest = all.min() ?? 0
