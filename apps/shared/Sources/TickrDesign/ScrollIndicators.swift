@@ -39,13 +39,16 @@ struct ScrollEdges: Equatable {
 
   init() {}
 
+  /// `containerSize` is the visible height between the insets (measured on iPhone 18 Pro: an
+  /// 874 pt screen, insets 62 and 96, container 716), and the content's top sits at
+  /// `-insets.top` while scrolled to the top.
   init(_ geometry: ScrollGeometry) {
     let tolerance = Tokens.Scroll.edgeTolerance
     insetTop = geometry.contentInsets.top
     insetBottom = geometry.contentInsets.bottom
-    above = geometry.contentOffset.y + insetTop > tolerance
-    below = geometry.contentSize.height + insetBottom - geometry.contentOffset.y
-      - geometry.containerSize.height > tolerance
+    let shownTop = geometry.contentOffset.y + insetTop
+    above = shownTop > tolerance
+    below = geometry.contentSize.height - shownTop - geometry.containerSize.height > tolerance
   }
 }
 
@@ -58,8 +61,8 @@ struct ScrollEdges: Equatable {
 
   func follow(_ geometry: ScrollGeometry) {
     offset = geometry.contentOffset.y
-    visible = geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom
-    end = geometry.contentSize.height + geometry.contentInsets.bottom - geometry.containerSize.height
+    visible = geometry.containerSize.height
+    end = geometry.contentSize.height - geometry.containerSize.height - geometry.contentInsets.top
   }
 
   /// One page further down, never past the end.
@@ -85,11 +88,13 @@ struct ScrollEdgeHints: ViewModifier {
       .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, new in
         page.follow(new)
       }
-      .mask { fadeMask.animation(motion, value: edges) }
+      // The scroll view's frame stops at the insets while its content runs on under the bars:
+      // the mask reaches under them too, so content there shows as before unless more is beyond.
+      .mask { fadeMask.animation(motion, value: edges).ignoresSafeArea() }
       .overlay(alignment: .bottom) {
         if edges.below {
           chevron
-            .padding(.bottom, edges.insetBottom + Tokens.Space.s)
+            .padding(.bottom, Tokens.Space.s)
             .transition(.opacity)
         }
       }
