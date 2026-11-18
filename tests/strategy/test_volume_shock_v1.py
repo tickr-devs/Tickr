@@ -10,6 +10,7 @@ import pytest
 from strategy_bars import SYMBOL, TODAY, bar, d, prior_sessions, quote
 
 from tickr import config
+from tickr.api import contract
 from tickr.observers.loader import check_history, load_strategy, parse_modules
 from tickr.strategy import volume_shock_v1 as vs
 from tickr.strategy.base import PositionView, SymbolContext, Verdict
@@ -26,7 +27,9 @@ SIGNAL_TESTS_FLOOR = 1
 
 def make(**overrides):
     vals = copy.deepcopy(VALUES)
-    overrides = {"liquidity__min_dollar_volume_usd": SIGNAL_TESTS_FLOOR, **overrides}
+    # Written for a 2500 USD notional cap (the shipped one is 1000 since 2026-11-17, owner).
+    overrides = {"liquidity__min_dollar_volume_usd": SIGNAL_TESTS_FLOOR,
+                 "sizing__max_position_notional_usd": 2500, **overrides}
     for dotted, value in overrides.items():
         section, key = dotted.split("__")
         vals[section][key] = value
@@ -96,6 +99,9 @@ def test_loss_budget_sizes_down():
     small = make().evaluate(SymbolContext(SYMBOL, bars, prior_sessions(), q, None, d("5")))
     assert small.verdict is Verdict.ENTER and small.quantity < full.quantity
     assert ("daily_loss_budget_usd", True) in rules(small)
+    for decision in (full, small):
+        limits = contract.size_limits({c.rule: c for c in decision.checks})
+        assert min(x.shares for x in limits) == decision.quantity
 
 
 def test_a_signal_older_than_signal_valid_minutes_minutes_expires():

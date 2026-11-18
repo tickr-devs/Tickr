@@ -21,6 +21,7 @@ from strategy_bars import (
     strategy_values,
 )
 
+from tickr.api import contract
 from tickr.api.contract import TRIGGER_RULES
 from tickr.strategy import indicators as ind
 from tickr.strategy import price_action_v1 as pa
@@ -30,7 +31,10 @@ from tickr.strategy.base import PositionView, SymbolContext, Verdict
 def make(**overrides):
     """Strategy from the repo toml. Rule tests use a warm-up multiple of 1 so short generated
     sessions are enough; the warm-up itself is tested with the repo value."""
-    overrides = {"indicators__warmup_period_multiple": 1, **overrides}
+    # The sizing tests below were written for a 2500 USD notional cap (the shipped one is 1000
+    # since 2026-11-17, owner): pinned so their numbers still test the loss and cap sizing.
+    overrides = {"indicators__warmup_period_multiple": 1,
+                 "sizing__max_position_notional_usd": 2500, **overrides}
     values = copy.deepcopy(strategy_values())
     for dotted, value in overrides.items():
         section, key = dotted.split("__")
@@ -148,6 +152,9 @@ def test_breakout_enter():
         "round_trip_atr_ratio",
         "round_trip_risk_ratio",
         "sizing_risk_per_share",
+        "sizing_price",
+        "planned_loss_limit_usd",
+        "notional_cap_usd",
         "quantity",
     ]
     by_rule = {c.rule: c for c in decision.checks}
@@ -530,6 +537,13 @@ def test_quantity_shrinks_to_the_daily_loss_budget():
     # a budget at or above the strategy's own planned loss changes nothing
     assert quantity(sized(d(50))) == d(71) and "daily_loss_budget_usd" not in rules(sized(d(50)))
     assert quantity(sized(None)) == d(71)
+    # the recorded sizing inputs give the API the same size (api/contract.latest_size)
+    for budget in (d(20), d(50), d(500), None):
+        decision = sized(budget)
+        checks = {c.rule: c for c in decision.checks}
+        limits = contract.size_limits(checks)
+        assert min(x.shares for x in limits) == quantity(decision)
+        assert ("daily_loss_room_usd" in checks) is (budget is not None)
     # no room: refused with the quantity rule, never a negative or zero order
     assert_refused(sized(d(0)), Verdict.IGNORE, "quantity")
 
