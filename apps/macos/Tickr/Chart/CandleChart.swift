@@ -827,6 +827,8 @@ struct CandleChart: View {
     Binding(
       get: { pointer.time },
       set: { time in
+        // Held by a click: the pointer moving away changes nothing.
+        guard !pointer.pinned else { return }
         pointer.time = time
         let index = time.flatMap(plot.index(at:))
         if pointer.index != index { pointer.index = index }
@@ -969,6 +971,8 @@ private struct SharedAxis: ViewModifier {
     let pointer = chart.pointerModel
     scrolling(content)
       .chartXSelection(value: chart.selection)
+      // A click holds the crosshair on its candle; the next click lets it go.
+      .simultaneousGesture(TapGesture().onEnded { pointer.togglePin() })
       .onContinuousHover { phase in
         switch phase {
         case .active(let location): pointer.move(in: pane, to: location)
@@ -1102,9 +1106,10 @@ private struct Crosshair: View {
           if x >= frame.minX, x <= frame.maxX {
             let top = pane == .price ? frame.minY : 0
             let bottom = showsTime ? frame.maxY : geometry.size.height
+            // Held by a click: a firmer line in the accent, so it reads as fixed.
             Rectangle()
-              .fill(Palette.textTertiary.opacity(Tokens.Opacity.medium))
-              .frame(width: Tokens.Stroke.hairline, height: bottom - top)
+              .fill(pointer.pinned ? Palette.accent : Palette.textTertiary.opacity(Tokens.Opacity.medium))
+              .frame(width: pointer.pinned ? Tokens.Stroke.thin : Tokens.Stroke.hairline, height: bottom - top)
               .position(x: x, y: (top + bottom) / 2)
             highlight(marks(index), origin: geometry[plotFrame].origin)
             if showsTime {
