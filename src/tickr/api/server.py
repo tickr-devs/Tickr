@@ -571,6 +571,13 @@ TRADE_WHATIF = "/trades/whatif"  # GET: another version on one trade's day, simu
 FOLDER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 ADVISOR_DECISION = "/advisor/decision"  # POST only: the owner's note on a run, never a command
 DAY_PREFIX = "/days/"
+# Headers a proxy adds to a request it forwards (Go's ReverseProxy, which `tailscale serve` is,
+# adds X-Forwarded-For; Tailscale adds its identity headers). The remote port's loopback Host is
+# for a client on this Mac only: a request carrying any of these came through the proxy, whose
+# Host the remote caller chose, so the Simulator's Host is refused for it (protocol constants).
+FORWARDING_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+                      "X-Real-IP", "Tailscale-User-Login", "Tailscale-User-Name",
+                      "Tailscale-User-Profile-Pic", "Tailscale-Headers-Info")
 
 
 class BadQuery(ValueError):
@@ -653,7 +660,7 @@ class Handler(BaseHTTPRequestHandler):
                 return False
             if self.command == "POST" and self._path() == PAIR_ROUTE:
                 return True  # the pairing code in the body is the credential: see _redeem
-            return self._authorized()
+            return self._authorized(host)
         if host in self.server.allowed_host_headers:
             if origin is not None and origin not in self.server.allowed_origins:
                 self._error("forbidden_origin", f"Origin {origin!r} is not allowed")
@@ -664,40 +671,41 @@ class Handler(BaseHTTPRequestHandler):
 
     def _simulator_host(self, host: str) -> bool:
         """The remote port's own loopback address (host:port it listens on), which the iOS
-        Simulator on this Mac reads: answered only while a Simulator token is paired, and a
-        paired token is still required."""
+        Simulator on this Mac reads: answered only while a Simulator token is paired, only for a
+        request no proxy forwarded (`FORWARDING_HEADERS`: through `tailscale serve` the caller
+        chooses the Host), and a paired token is still required."""
         settings = self.server.settings
         return (host == f"{settings.host}:{self.server.server_port}"
-                and settings.simulator_token_hash_path.exists())
+                and settings.simulator_token_hash_path.exists()
+                and not any(self.headers.get(name) is not None for name in FORWARDING_HEADERS))
 
-    def _authorized(self) -> bool:
-        """A remote request must present a paired token: the phone's or the Simulator's. The
-        token is never logged or echoed."""
+    def _authorized(self, host: str) -> bool:
+        """A remote request must present the token paired for its Host: the phone's on the
+        Tailscale names, the Simulator's on this port's loopback address only, so a copy of the
+        Simulator's token (kept in a file on this Mac) opens nothing from the tailnet. The token
+        is never logged or echoed."""
         challenge = {"WWW-Authenticate": "Bearer"}
         settings = self.server.settings
-        expected: list[str] = []
-        for path in (settings.token_hash_path, settings.simulator_token_hash_path):
-            try:
-                expected.append(path.read_text("ascii").strip())
-            except FileNotFoundError:
-                continue
-            except (OSError, UnicodeDecodeError) as exc:
-                self._error("unavailable",
-                            f"a paired token's hash file is unreadable ({type(exc).__name__})")
-                return False
-        if not expected:
-            self._error("unauthorized", "no phone is paired; run `python -m tickr.api pair`",
-                        challenge)
+        simulator = host not in settings.remote_hosts
+        path = settings.simulator_token_hash_path if simulator else settings.token_hash_path
+        try:
+            expected = path.read_text("ascii").strip()
+        except FileNotFoundError:
+            command = "pair-simulator" if simulator else "pair"
+            self._error("unauthorized", f"nothing is paired here; run `python -m tickr.api "
+                        f"{command}`", challenge)
+            return False
+        except (OSError, UnicodeDecodeError) as exc:
+            self._error("unavailable",
+                        f"the paired token's hash file is unreadable ({type(exc).__name__})")
             return False
         header = self.headers.get("Authorization") or ""
         if not header.startswith(BEARER):
             self._error("unauthorized", "a bearer token is required", challenge)
             return False
         presented = hashlib.sha256(header[len(BEARER):].encode("utf-8")).hexdigest()
-        # Every hash is compared, so the time taken never says which one matched.
-        matches = [hmac.compare_digest(presented, digest) for digest in expected]
-        if not any(matches):
-            self._error("unauthorized", "the bearer token is not a paired one", challenge)
+        if not hmac.compare_digest(presented, expected):
+            self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
         return True
 
@@ -1281,18 +1289,30 @@ def _pairing_lock(settings: ApiSettings) -> Iterator[None]:
 
 def pair_simulator(settings: ApiSettings) -> Path:
     """Give the iOS Simulator on this Mac its own bearer token, beside the phone's: revoke the
-    Simulator's previous one, keep the new one's SHA-256 for the api server and the token itself
-    in a 0600 file for a Simulator build to read at launch. The phone's token is untouched.
-    Nothing secret is printed or logged. Returns the token file's path."""
+    Simulator's previous one, keep the new one's SHA-256 for the api server, and leave the token
+    with the address it opens (the remote port's loopback, from `[api] host` and `remote_port`:
+    the one source of that port) in a 0600 JSON file for a Simulator build to read at launch.
+    The token opens that loopback address only. The phone's token is untouched. Nothing secret
+    is printed or logged. Returns the file's path."""
     if not settings.remote_hosts:
         raise ConfigError(f"no remote host: write the Tailscale name of this Mac into "
                           f"{settings.remote_hosts_path} first (the remote port is off without it)")
     token = secrets.token_urlsafe(settings.token_bytes)
+    address = f"http://{settings.host}:{settings.remote_port}"
     with _pairing_lock(settings):
-        _write_private(settings.simulator_token_path, token + "\n")
+        _write_private(settings.simulator_token_path,
+                       json.dumps({"address": address, "token": token}) + "\n")
         _write_private(settings.simulator_token_hash_path,
                        hashlib.sha256(token.encode("utf-8")).hexdigest() + "\n")
     return settings.simulator_token_path
+
+
+def unpair_simulator(settings: ApiSettings) -> None:
+    """Revoke the Simulator's token: delete its hash (the api server refuses it at once) and the
+    file holding it. The phone's token is untouched."""
+    with _pairing_lock(settings):
+        settings.simulator_token_hash_path.unlink(missing_ok=True)
+        settings.simulator_token_path.unlink(missing_ok=True)
 
 
 def pair(settings: ApiSettings, now: datetime | None = None) -> Path:
