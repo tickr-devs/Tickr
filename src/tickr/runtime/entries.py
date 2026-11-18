@@ -36,7 +36,13 @@ from tickr.engine.core import (
 from tickr.observers.log import DecisionLog
 from tickr.research.records import Admission as RecordAdmission
 from tickr.research.records import DecisionRecord
-from tickr.risk.admission import AdmissionInputs, AdmissionLimits, Reconciliation, admit
+from tickr.risk.admission import (
+    AdmissionInputs,
+    AdmissionLimits,
+    BuyingPower,
+    Reconciliation,
+    admit,
+)
 from tickr.risk.causes import ENGINE_REFUSED
 from tickr.risk.ticks import round_to_tick
 from tickr.strategy.base import Decision, Role, Verdict
@@ -334,11 +340,29 @@ class EntryDesk:
         self.last_broker_read_at = last_broker_read_at
         self.log = log
         self.limits = AdmissionLimits.from_config(config)
+        # The latest successful balance read: (day buying power, when).
+        self._balance: tuple[Decimal, datetime] | None = None
 
     # --- money -----------------------------------------------------------------------------
 
     def _reservations(self) -> Decimal:
         return sum((t.reservation for t in self.engine.trades()), ZERO)
+
+    def _buying_power(self, now: datetime) -> BuyingPower:
+        """The day buying power for an entry: the broker's balance read again when the last
+        read is older than `[risk] buying_power_max_age_seconds` (a failed read keeps the old
+        one, which admission then finds too old), less the entry value of our open trades."""
+        max_age = timedelta(seconds=float(self.config.risk.buying_power_max_age_seconds))
+        if self._balance is None or now - self._balance[1] >= max_age:
+            try:
+                self._balance = (self.engine.broker.balance().day_buying_power, now)
+            except BrokerError:
+                pass
+        committed = sum((t.entry_quantity * t.entry_limit_price for t in self.engine.trades()),
+                        ZERO)
+        if self._balance is None:
+            return BuyingPower(None, None, committed)
+        return BuyingPower(self._balance[0], self._balance[1], committed)
 
     # --- admission -------------------------------------------------------------------------
 
@@ -375,6 +399,7 @@ class EntryDesk:
             quote=quote,
             realized_loss_today_usd=realized_loss_today(engine, now),
             open_reservations_usd=self._reservations(),
+            buying_power=self._buying_power(now),
             entry_budget_available=engine.broker.can_place(1),
             stop_budget_available=engine.broker.can_place(1 + stop_requests_owed(engine)),
         )

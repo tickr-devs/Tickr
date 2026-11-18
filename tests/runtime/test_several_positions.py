@@ -11,6 +11,7 @@ from datetime import timedelta
 from decimal import Decimal as D
 
 import pytest
+from funded import FUNDS
 
 from tickr import config
 from tickr.broker.base import BrokerError
@@ -39,7 +40,7 @@ def quote(symbol: str, ask: str = "10.05") -> Quote:
 
 class Desk:
     def __init__(self, tmp_path, cfg: config.Config, broker: FakeBroker | None = None) -> None:
-        self.broker = broker or FakeBroker()
+        self.broker = broker or FakeBroker(funds=FUNDS)
         self.store = Store.open(tmp_path / "db.sqlite3", busy_timeout_seconds=0)
         self.clock = [1_000_000.0]
         self.engine = Engine(self.store, self.broker, cfg, "desk0001",
@@ -250,7 +251,7 @@ def test_entries_filling_in_the_same_poll_get_their_stops_in_turn(tmp_path):
     poll, each fill's stop goes out at once, and the next open-orders read verifies it, so
     the k-th position has a verified stop after k + 1 polls, not after all the fills were
     read."""
-    desk = full(tmp_path, filled=0, broker=FakeBroker(history_down=True))
+    desk = full(tmp_path, filled=0, broker=FakeBroker(history_down=True, funds=FUNDS))
     assert fill_together(desk, SYMBOLS) == [k + 1 for k in range(1, MAX + 1)]
 
 
@@ -268,7 +269,7 @@ class NoList(FakeBroker):
 def test_without_the_open_orders_list_new_stops_are_read_by_detail_in_turn(tmp_path):
     """While the list cannot be read, each new stop's Detail is read right after its fill,
     before the next fill: the k-th position is stopped after 2 k polls."""
-    broker = NoList(history_down=True)  # Detail alone
+    broker = NoList(history_down=True, funds=FUNDS)  # Detail alone
     desk = Desk(tmp_path, wide(3, max_daily_loss_usd=D(MAX * 10)), broker)
     symbols = SYMBOLS[:3]
     for symbol in symbols:
@@ -282,7 +283,8 @@ class LateList(FakeBroker):
     """The open-orders list shows a new stop only from its `late`+1-th read on."""
 
     def __init__(self, late: int) -> None:
-        super().__init__(history_down=True)  # Detail alone: the start-time check's bound
+        # Detail alone: the start-time check's bound
+        super().__init__(history_down=True, funds=FUNDS)
         self.late = late
         self.unseen: dict[str, int] = {}
 

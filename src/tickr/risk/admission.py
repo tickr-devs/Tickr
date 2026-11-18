@@ -39,6 +39,8 @@ class AdmissionLimits:
     max_quote_age_seconds: Decimal
     max_clock_skew_seconds: Decimal
     broker_read_max_age_seconds: Decimal
+    buying_power_max_age_seconds: Decimal
+    """Oldest balance read whose day buying power an entry may rely on."""
     session: SessionConfig
     """The day's trading windows and the extended windows' own entry limits (`[session]`)."""
     active_strategy: str
@@ -62,6 +64,7 @@ class AdmissionLimits:
             max_quote_age_seconds=risk.max_quote_age_seconds,
             max_clock_skew_seconds=risk.max_clock_skew_seconds,
             broker_read_max_age_seconds=config.orders.broker_read_max_age_seconds,
+            buying_power_max_age_seconds=risk.buying_power_max_age_seconds,
             session=session,
             active_strategy=config.strategy.active,
             symbol_cooldown_minutes_after_loss=(
@@ -85,6 +88,20 @@ class Reconciliation:
     ignored (owner 2026-11-16)."""
     unresolved_exposure: bool
     """An own order with unknown outcome, a quantity mismatch, or anything not yet explained."""
+
+
+@dataclass(frozen=True)
+class BuyingPower:
+    """What the account can still pay for, from the broker's latest balance read."""
+
+    day_usd: Decimal | None
+    """The broker's day (intraday) buying power at the read; None = no successful read."""
+    read_at: datetime | None
+    """When that read was made (aware); None = no successful read."""
+    committed_usd: Decimal
+    """The entry value (quantity x entry limit) of every open trade of ours. The read may
+    predate any of them, so all are taken off; when the broker already counts one, it is
+    counted twice, the stricter answer."""
 
 
 @dataclass(frozen=True)
@@ -120,6 +137,7 @@ class AdmissionInputs:
     """Net realized loss today (wins offset losses) as a non-negative amount; None = unknown."""
     open_reservations_usd: Decimal | None
     """Planned loss reserved by open own trades and working entries; None = unknown."""
+    buying_power: BuyingPower
     entry_budget_available: bool
     stop_budget_available: bool
 
@@ -382,6 +400,34 @@ def _check_money(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     if not daily.ok:
         assert daily.cause is not None
         return _refuse(daily.cause, daily.detail)
+    return _check_buying_power(i, lim)
+
+
+def _check_buying_power(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
+    """The entry's value must fit the day buying power of a fresh broker read, less what the
+    bot's open trades committed (owner 2026-11-17: never send an order the account cannot
+    pay for). No read, an old one or an unreadable figure refuses."""
+    bp = i.buying_power
+    if bp.day_usd is None or bp.read_at is None:
+        return _refuse(C.BUYING_POWER_UNKNOWN, "no balance read")
+    if not _aware(bp.read_at):
+        return _refuse(C.CLOCK_INVALID, "balance read time is not an aware datetime")
+    age = Decimal(str((i.now - bp.read_at).total_seconds()))
+    if age < 0:
+        return _refuse(C.CLOCK_INVALID, f"balance read is {-age} s in the future")
+    if age > lim.buying_power_max_age_seconds:
+        return _refuse(C.BUYING_POWER_UNKNOWN,
+                       f"balance read {age} s ago > {lim.buying_power_max_age_seconds} s")
+    numbers = (bp.day_usd, bp.committed_usd)
+    if not all(isinstance(n, Decimal) and n.is_finite() for n in numbers) or bp.committed_usd < 0:
+        return _refuse(C.BUYING_POWER_UNKNOWN, f"buying power figures invalid: {numbers}")
+    assert i.decision.quantity is not None and i.limit_price is not None
+    value = i.decision.quantity * i.limit_price
+    free = bp.day_usd - bp.committed_usd
+    if value > free:
+        return _refuse(C.BUYING_POWER_SHORT,
+                       f"value {value} > buying power {bp.day_usd} - committed "
+                       f"{bp.committed_usd} = {free}")
     return None
 
 
