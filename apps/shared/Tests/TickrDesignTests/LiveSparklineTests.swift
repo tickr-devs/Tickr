@@ -2,7 +2,8 @@ import CoreGraphics
 import Testing
 @testable import TickrDesign
 
-@Suite struct LiveSparklineTests {
+// The layer view is a view: main-actor.
+@MainActor @Suite struct LiveSparklineTests {
   @Test("The line shows its last points and spans them; a flat line sits mid-height")
   func windowAndSpan() {
     let values = (0..<20).map(Double.init)

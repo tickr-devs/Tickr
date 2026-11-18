@@ -94,6 +94,8 @@ final class LiveSparkView: PlatformView {
   static let strokeColorPath = "strokeColor"
   static let fillColorPath = "fillColor"
 
+  /// Holds the layers below, with y growing down on both platforms.
+  private let canvas = CALayer()
   private let fill = CAShapeLayer()
   private let line = CAShapeLayer()
   private let dotGroup = CALayer()
@@ -118,20 +120,22 @@ final class LiveSparkView: PlatformView {
       dotGroup.addSublayer(ring)
     }
     dotGroup.addSublayer(dot)
+    canvas.addSublayer(fill)
+    canvas.addSublayer(line)
+    canvas.addSublayer(dotGroup)
     #if canImport(UIKit)
     isUserInteractionEnabled = false
-    let host = layer
+    layer.addSublayer(canvas)
     #else
     // A layer-hosting view: set our own layer before asking for one, as AppKit documents for
-    // views that add sublayers. Flipped, so y grows down as on iOS.
+    // views that add sublayers. AppKit owns the root layer's geometry, so the canvas under it is
+    // the one flipped: y grows down as on iOS.
     let host = CALayer()
-    host.isGeometryFlipped = true
     layer = host
     wantsLayer = true
+    canvas.isGeometryFlipped = true
+    host.addSublayer(canvas)
     #endif
-    host.addSublayer(fill)
-    host.addSublayer(line)
-    host.addSublayer(dotGroup)
   }
 
   @available(*, unavailable)
@@ -169,10 +173,11 @@ final class LiveSparkView: PlatformView {
   private func paint(animated: Bool) {
     guard let color, let config else { return }
     let fillColor = color.copy(alpha: color.alpha * CGFloat(Tokens.Sparkline.fillOpacity))
-    let changes: [(CALayer, String, CGColor?, CGColor?)] = [
-      (line, Self.strokeColorPath, line.strokeColor, color),
-      (fill, Self.fillColorPath, fill.fillColor, fillColor),
-      (dot, Self.fillColorPath, dot.fillColor, color),
+    // Each layer, the colour it fades, and the colour it fades from.
+    let changes: [(CALayer, String, CGColor?)] = [
+      (line, Self.strokeColorPath, line.strokeColor),
+      (fill, Self.fillColorPath, fill.fillColor),
+      (dot, Self.fillColorPath, dot.fillColor),
     ]
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -185,7 +190,7 @@ final class LiveSparkView: PlatformView {
     fill.isHidden = !config.scale.filled
     CATransaction.commit()
     guard animated else { return }
-    for (layer, path, from, _) in changes {
+    for (layer, path, from) in changes {
       let fade = CABasicAnimation(keyPath: path)
       fade.fromValue = from
       fade.duration = Tokens.Sparkline.toneSeconds
@@ -212,8 +217,9 @@ final class LiveSparkView: PlatformView {
 
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    line.frame = bounds
-    fill.frame = bounds
+    canvas.frame = bounds
+    line.frame = canvas.bounds
+    fill.frame = canvas.bounds
     line.path = Self.linePath(points)
     fill.path = Self.fillPath(points, bottom: size.height)
     let dotRect = CGRect(x: -Tokens.Sparkline.dot / 2, y: -Tokens.Sparkline.dot / 2, width: Tokens.Sparkline.dot,
