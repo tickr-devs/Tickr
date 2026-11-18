@@ -35,7 +35,9 @@ enum FlowStages {
     if clean.causes.contains(where: { $0.kind == .reconcileMismatch }) {
       return Reconcile(value: String(localized: L10n.Screener.mismatch), note: nil, agrees: false)
     }
-    guard clean.verdict != .unknown, clean.reconcileRows > 0 else { return Reconcile(value: nil, note: ApiText.prose(clean.causeCodes, text: clean.cause)) }
+    guard clean.verdict != .unknown, clean.reconcileRows > 0 else {
+      return Reconcile(value: nil, note: ApiText.prose(clean.causeCodes, text: clean.cause))
+    }
     return Reconcile(value: String(localized: L10n.Flow.match), note: nil, agrees: true)
   }
 }
