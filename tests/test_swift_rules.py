@@ -791,17 +791,20 @@ def test_scroll_indicators_are_hidden_once_per_scene(tmp_path):
         "ScrollView(.horizontal) { row }\n"
     ))
     assert [line for line, _ in module.scrollbar_violations(own)] == [1, 2]
-    scrolls = write(tmp_path, (
+    source = (
         "ScrollView { rows }\n"
         "ScrollView(.vertical) { rows }\n"
         "Form { rows }\n"
         "ScrollView(.horizontal) { chips }\n"
         "  .scrollEdgeHints()\n"
-        "  .scrollEdgeHints(position: $scroll)\n"
-    ))
-    assert [line for line, _ in module.scrollbar_violations(scrolls)] == [1, 2, 3]
-    hinted = scrolls.read_text().replace("Form { rows }\n", "Form { rows }.scrollEdgeHints()\n")
-    assert module.scrollbar_violations(write(tmp_path, hinted)) == []
+    )
+    assert [line for line, _ in module.scrollbar_violations(write(tmp_path, source))] == [1, 2, 3]
+    hinted = source.replace(
+        "Form { rows }\n", "Form { rows }.scrollEdgeHints(position: $scroll)\n")
+    assert [line for line, _ in module.scrollbar_violations(write(tmp_path, hinted))] == [3]
+    faded = source.replace("Form { rows }\n", "Form { rows }.scrollEdgeFades()\n")
+    faded += "  .scrollEdgeHints(position: $scroll)\n"
+    assert module.scrollbar_violations(write(tmp_path, faded)) == []
     app = (
         "struct TickrApp: App {\n"
         "  var body: some Scene {\n"

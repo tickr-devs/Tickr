@@ -19,13 +19,21 @@ public extension View {
   /// edge; a click or tap on it scrolls a page. At the top and the end the hints go away.
   /// Apply it on the scroll view itself (it reads that view's geometry and position).
   func scrollEdgeHints() -> some View {
-    modifier(ScrollEdgeHints(external: nil))
+    modifier(ScrollEdgeHints(external: nil, pages: true))
+  }
+
+  /// `scrollEdgeHints()` for a `Form` or `List`: the edge fades only, no chevron. A scroll
+  /// position cannot move a form (checked on the iPhone simulator, 2026-11-18: neither
+  /// `scrollTo(y:)` nor `scrollTo(edge:)` moves it), and a chevron that does nothing on a tap is
+  /// a control that lies.
+  func scrollEdgeFades() -> some View {
+    modifier(ScrollEdgeHints(external: nil, pages: false))
   }
 
   /// `scrollEdgeHints()` for a scroll view whose position the screen also drives (a pane that
   /// goes back to the top when another tab is picked): the hints scroll through the same binding.
   func scrollEdgeHints(position: Binding<ScrollPosition>) -> some View {
-    modifier(ScrollEdgeHints(external: position))
+    modifier(ScrollEdgeHints(external: position, pages: true))
   }
 }
 
@@ -71,6 +79,8 @@ struct ScrollEdges: Equatable {
 
 struct ScrollEdgeHints: ViewModifier {
   let external: Binding<ScrollPosition>?
+  /// Whether the chevron shows (it pages the scroll view down).
+  let pages: Bool
   @State private var own = ScrollPosition(edge: .top)
   @State private var edges = ScrollEdges()
   @State private var page = ScrollPage()
@@ -92,7 +102,7 @@ struct ScrollEdgeHints: ViewModifier {
       // the mask reaches under them too, so content there shows as before unless more is beyond.
       .mask { fadeMask.animation(motion, value: edges).ignoresSafeArea() }
       .overlay(alignment: .bottom) {
-        if edges.below {
+        if pages && edges.below {
           chevron
             .padding(.bottom, Tokens.Space.s)
             .transition(.opacity)
