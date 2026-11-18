@@ -984,12 +984,14 @@ private struct SkippedRow: View {
 
   private var refused: Bool { group.latest.admission == .refused }
 
-  /// "16:27" or, for repeats, "16:27–16:29 · ×3".
+  /// "16:27" or, for repeats, "16:27–16:29 · ×3"; repeats within one minute (or on one bar)
+  /// read "16:27 · ×3", never "16:27–16:27".
   private var when: String {
     let first = Format.time(group.first.at.date)
     guard group.count > 1 else { return first }
-    return first + Format.timeRange + Format.time(group.latest.at.date) + Format.separator
-      + String(localized: L10n.Activity.repeats(group.count))
+    let last = Format.time(group.latest.at.date)
+    let span = last == first ? first : first + Format.timeRange + last
+    return span + Format.separator + String(localized: L10n.Activity.repeats(group.count))
   }
 
   private func symbolText(_ symbol: String) -> some View {
