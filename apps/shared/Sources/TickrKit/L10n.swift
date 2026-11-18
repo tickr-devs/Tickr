@@ -210,6 +210,13 @@ enum L10n {
     LocalizedStringResource("kit.api.contract", defaultValue: "API answer does not match contract v1: \(detail)",
       bundle: bundle)
   }
+  /// An answer the app cannot read (a field it does not know): the app and the bot come from
+  /// different releases. Says what to do, never the field path or the contract.
+  static var apiUnreadable: LocalizedStringResource {
+    LocalizedStringResource("kit.api.unreadable",
+      defaultValue: "the app and the bot are from different releases: install the app from the bot's release",
+      bundle: bundle)
+  }
   /// Argument: the system's network error.
   static func apiUnreachable(_ detail: String) -> LocalizedStringResource {
     LocalizedStringResource("kit.api.unreachable", defaultValue: "Local API not reachable: \(detail)",
