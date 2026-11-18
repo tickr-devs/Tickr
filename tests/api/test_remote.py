@@ -493,3 +493,23 @@ def test_a_forwarded_request_never_gets_the_simulator_host(remote_api, remote_se
     resp, _ = request(remote_api, "GET", "/status", host=loopback,
                       headers={"Authorization": f"Bearer {token}", header: "100.64.0.9"})
     assert resp.status == 403
+
+
+def test_the_phone_reads_the_chart_source_attached_to_the_local_listener(local_api, remote_api,
+                                                                        remote_settings):
+    """`python -m tickr.api` attaches the chart source to the local listener only: the phone's
+    listener shares it (one source, one request budget), so its GET /chart is not left off."""
+    from tickr.api.chart import OFF_CAUSE
+    from tickr.data.base import FakeMarketData
+
+    assert remote_api.chart is local_api.chart
+    token = paired(remote_api, remote_settings)
+    path = "/chart?symbol=ABCD&interval=5m&range=1d"
+    resp, payload = remote(remote_api, "GET", path, token=token)
+    assert resp.status == 503 and doc(payload)["cause"] == OFF_CAUSE
+    local_api.chart.use(FakeMarketData("fake"))
+    resp, payload = remote(remote_api, "GET", path, token=token)
+    local, served_locally = request(local_api, "GET", path)
+    # Both listeners now answer from the same source (here without a calendar to read it by).
+    assert doc(payload).get("cause") != OFF_CAUSE
+    assert (resp.status, payload) == (local.status, served_locally)
