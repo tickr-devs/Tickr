@@ -114,7 +114,7 @@ private struct PositionChips: View {
     // else the tabs at their own width in a sideways scroll.
     ViewThatFits(in: .horizontal) {
       row(stretch: true)
-      ScrollView(.horizontal, showsIndicators: false) { row(stretch: false) }
+      ScrollView(.horizontal) { row(stretch: false) }
     }
     .animation(Tokens.Motion.standard, value: positions.map(\.symbol))
   }
