@@ -340,6 +340,37 @@ extension L10n {
   static var ruleSpikeLowHeld: LocalizedStringResource {
     LocalizedStringResource("kit.rule.spike_low_held", defaultValue: "Spike: its low held", bundle: bundle)
   }
+  /// Strategy check: relative_volume_available
+  static var ruleRelativeVolumeAvailable: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.relative_volume_available",
+      defaultValue: "Relative volume available", bundle: bundle)
+  }
+  /// Strategy check: impulse_atr
+  static var ruleImpulseAtr: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.impulse_atr", defaultValue: "Impulse in ATR", bundle: bundle)
+  }
+  /// Strategy check: base_range_atr
+  static var ruleBaseRangeAtr: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.base_range_atr", defaultValue: "Base range in ATR", bundle: bundle)
+  }
+  /// Strategy check: pre_breakout_distance_atr
+  static var rulePreBreakoutDistanceAtr: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.pre_breakout_distance_atr",
+      defaultValue: "Distance below base high, ATR", bundle: bundle)
+  }
+  /// Strategy check: breakout_pre_breakout_distance_atr
+  static var ruleBreakoutPreBreakoutDistanceAtr: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.breakout_pre_breakout_distance_atr",
+      defaultValue: "Breakout: distance below trigger, ATR", bundle: bundle)
+  }
+  /// Strategy check: sizing_risk_per_share
+  static var ruleSizingRiskPerShare: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.sizing_risk_per_share", defaultValue: "Risk per share for sizing", bundle: bundle)
+  }
+  /// Strategy check: quantity
+  static var ruleQuantity: LocalizedStringResource {
+    LocalizedStringResource("kit.rule.quantity", defaultValue: "Quantity", bundle: bundle)
+  }
   /// Why discovery dropped a symbol: CONFLICTING_ROWS
   static var discoveryConflictingRows: LocalizedStringResource {
     LocalizedStringResource("kit.discovery.CONFLICTING_ROWS", defaultValue: "Screeners disagree on it", bundle: bundle)

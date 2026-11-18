@@ -182,6 +182,21 @@ for code, en, ru in [
     ),
     ("spike_age_bars", "Spike: bars since it", "Всплеск: баров после него"),
     ("spike_low_held", "Spike: its low held", "Всплеск: минимум удержан"),
+    ("relative_volume_available", "Relative volume available", "Относительный объём доступен"),
+    ("impulse_atr", "Impulse in ATR", "Импульс в ATR"),
+    ("base_range_atr", "Base range in ATR", "Диапазон базы в ATR"),
+    (
+        "pre_breakout_distance_atr",
+        "Distance below base high, ATR",
+        "Расстояние до максимума базы, ATR",
+    ),
+    (
+        "breakout_pre_breakout_distance_atr",
+        "Breakout: distance below trigger, ATR",
+        "Пробой: расстояние до триггера, ATR",
+    ),
+    ("sizing_risk_per_share", "Risk per share for sizing", "Риск на акцию для размера"),
+    ("quantity", "Quantity", "Количество"),
 ]:
     add("rule_" + code, "kit.rule." + code, en, ru, R + code)
 
