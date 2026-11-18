@@ -213,7 +213,9 @@ performance `<name>_cause`. Codes (params in braces; wire times become `HH:MM` N
   {time}, `bars_end_before` {time, until}, `no_bar_for_minute` {time}, `no_reference_price`,
   `calendar_refuses` {day, detail}, `no_minute_before_close` {time}, `no_bar_after_exit`
   {until}, `planned_loss_not_positive` {planned_loss};
-- simulations: `simulation_refused` {detail}, `simulation_outcome` {outcome, detail},
+- simulations: `simulation_refused` {detail}, the replay's own outcomes `replay_before_open`,
+  `replay_after_last_entry`, `replay_half_day`, `replay_price_outside`, `replay_no_further_bars`,
+  `replay_position_open`, `replay_entry_pending`, else `simulation_outcome` {outcome, detail},
   `skipped_overlap` {symbol}, `skipped_same_signal` {setup, trigger, symbol}, `no_decisions`,
   `no_captured_bars` {day}, `capture_refused` {detail}, `replay_settings_unreadable` {detail},
   `calendar_unreadable` {detail}, `enters_not_simulated` {count}, `trades_without_quantity`
@@ -1098,7 +1100,7 @@ decision file keeps the text):
   code: both `null`.
 - `params`: the values in the detail, for a translated sentence (`{}` when the code has none or
   the detail is in no known shape; then show `message`): `POSITION_LIMIT_REACHED` `{open,
-  limit}`; `OWN_POSITION_OPEN` / `OWN_ORDER_WORKING` `{count}`; `BROKER_READ_STALE` and
+  limit}`; `WORKING_ENTRY_LIMIT_REACHED` `{working, limit}`; `OWN_POSITION_OPEN` / `OWN_ORDER_WORKING` `{count}`; `BROKER_READ_STALE` and
   `QUOTE_STALE` `{age, limit}`; `CLOCK_INVALID` `{seconds}` (a broker read in the future);
   `QUOTE_TIME_INVALID` `{seconds, limit}`; `CALENDAR_UNKNOWN` `{calendar}`;
   `CALENDAR_DAY_MISMATCH` `{calendar_day, today}`; `HALF_DAY` `{day}`;

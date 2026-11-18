@@ -834,6 +834,23 @@
         }
       }
     },
+    "activity.monthTotal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "month %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "месяц %@"
+          }
+        }
+      }
+    },
     "activity.nextMonth" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2156,6 +2173,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "до %@"
+          }
+        }
+      }
+    },
+    "cause.workingEntryLimit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many entries working at once"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слишком много активных входов"
           }
         }
       }
@@ -5003,6 +5037,23 @@
         }
       }
     },
+    "flow.titleRecorded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flow"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поток"
+          }
+        }
+      }
+    },
     "flowStages.bars" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5951,6 +6002,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "вживую · без ордеров"
+          }
+        }
+      }
+    },
+    "lab.noOrdersOnDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no orders"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "без ордеров"
           }
         }
       }
@@ -6927,6 +6995,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сегодня, если бы торговала каждая версия"
+          }
+        }
+      }
+    },
+    "lab.versionsOnDay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If each version traded"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Если бы торговала каждая версия"
           }
         }
       }
@@ -9802,6 +9887,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запуск бота"
+          }
+        }
+      }
+    },
+    "settings.job.nightlyFetch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nightly data fetch"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ночная загрузка данных"
           }
         }
       }

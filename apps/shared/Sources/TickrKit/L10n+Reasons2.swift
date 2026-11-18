@@ -3,6 +3,12 @@
 import Foundation
 
 extension L10n {
+  /// A refused entry's detail (`refusal.params`), after the rule's title. DAILY_CEILING total (values: realized, reserved, new, total, ceiling)
+  static var refusalReasonDailyCeilingTotal: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.DAILY_CEILING.total",
+      // swiftlint:disable:next line_length
+      defaultValue: "Realized {realized} + reserved {reserved} + this trade {new} = {total} USD, over the daily limit of {ceiling} USD", bundle: bundle)
+  }
   /// A refused entry's detail (`refusal.params`), after the rule's title. BUYING_POWER_UNKNOWN
   static var refusalReasonBuyingPowerUnknown: LocalizedStringResource {
     LocalizedStringResource("kit.refusal.BUYING_POWER_UNKNOWN",

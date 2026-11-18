@@ -4,14 +4,16 @@ the reader's language (docs/api.md, "Reason codes"). The English text stays the 
 Every function here reads a text the bot itself wrote (the trading gate, an engine fence, a
 recorded admission refusal) against the exact shapes that code writes. A text that matches no
 shape gets the code UNRECOGNIZED and no parameters, and clients show the text: a new shape is
-added here on purpose, never guessed. Parameter values are plain text: numbers as written,
-times as HH:MM New York (a close cutoff as HH:MM:SS), days as YYYY-MM-DD."""
+added here on purpose, never guessed. Parameter values are plain text: numbers as written
+(an age in seconds to a tenth), times as HH:MM New York (a close cutoff as HH:MM:SS), days
+as YYYY-MM-DD."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from tickr.calendar import NEW_YORK
 
@@ -19,6 +21,8 @@ UNRECOGNIZED = "unrecognized"
 
 _NUM = r"-?[0-9][0-9.E+-]*"
 _DAY = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+# Decimal exponent of a tenth: an age in seconds is shown to a tenth (unit factor, not a setting).
+TENTH_EXPONENT = -1
 
 
 @dataclass(frozen=True)
@@ -180,6 +184,8 @@ _REFUSAL = {
     "OWN_ORDER_WORKING": _shapes(("", r"(?P<count>[0-9]+) own order\(s\) working")),
     "POSITION_LIMIT_REACHED": _shapes(
         ("", r"(?P<open>[0-9]+) open position\(s\), limit (?P<limit>[0-9]+)")),
+    "WORKING_ENTRY_LIMIT_REACHED": _shapes(
+        ("", r"(?P<working>[0-9]+) entries working, limit (?P<limit>[0-9]+)")),
     "SYMBOL_COOLDOWN": _shapes(("", r"(?P<symbol>\S+) closed at a loss at \S+; no entry before "
                                     r"\S+")),
     "DECISION_NOT_ENTER": _shapes(("", r"verdict is (?P<verdict>\S+)")),
@@ -200,8 +206,10 @@ _REFUSAL = {
     "QUOTE_TIME_INVALID": _shapes(
         ("", r"provider time (?P<seconds>" + _NUM + r") s ahead of our clock > (?P<limit>" + _NUM
          + r") s")),
+    # The trading window ("(regular)", risk/admission.py) follows since extended hours.
     "QUOTE_STALE": _shapes(
-        ("", r"quote (?P<age>" + _NUM + r") s old > (?P<limit>" + _NUM + r") s")),
+        ("", r"quote (?P<age>" + _NUM + r") s old > (?P<limit>" + _NUM + r") s"
+             r"(?: \([a-z]+\))?")),
     "PRICE_OUTSIDE_WINDOW": _shapes(
         ("", r"ask (?P<ask>" + _NUM + r") outside (?P<entry_low>" + _NUM + r")\.\.limit "
          r"(?P<limit>" + _NUM + r")")),
@@ -249,7 +257,22 @@ def refusal_params(code: str, detail: str, since: datetime | None,
         params = {"time": _ny_time(since)}
     if code == "SYMBOL_COOLDOWN" and params and until is not None:
         params = {**params, "until": _ny_time(until)}
+    if "age" in params:
+        params = {**params, "age": _tenths(params["age"])}
     return params
+
+
+def _tenths(seconds: str) -> str:
+    """An age the bot measured to the microsecond ("183.415621"), as people read it: to a tenth
+    of a second ("183.4"); one already that short, or not a number, as written."""
+    try:
+        value = Decimal(seconds)
+    except InvalidOperation:
+        return seconds
+    exponent = value.as_tuple().exponent
+    if not isinstance(exponent, int) or exponent >= TENTH_EXPONENT:
+        return seconds
+    return str(value.quantize(Decimal(1).scaleb(TENTH_EXPONENT), rounding=ROUND_HALF_UP))
 
 
 # ---------------------------------------------------------------- the API's own prose
@@ -296,6 +319,15 @@ _PROSE = _shapes(
     ("skipped_same_signal", r"skipped_same_signal: the same signal \(setup (?P<setup>\S+), "
                             r"trigger (?P<trigger>\S+)\) already made a simulated trade of "
                             r"(?P<symbol>\S+) that day"),
+    # the replay engine's own fixed outcomes (replay/engine.py, replay/clock.py), before the
+    # general shape so the apps can put them in words
+    ("replay_before_open", r"rejected: before regular open"),
+    ("replay_after_last_entry", r"rejected: after last entry time|missed: last entry time"),
+    ("replay_half_day", r"rejected: half day: trading disabled"),
+    ("replay_price_outside", r"missed: price outside window"),
+    ("replay_no_further_bars", r"missed: no further bars"),
+    ("replay_position_open", r"ignored: position open"),
+    ("replay_entry_pending", r"ignored: entry pending"),
     ("simulation_outcome", r"(?P<outcome>filled|missed|rejected|ignored|not_simulated): "
                            r"(?P<detail>.*)"),
     ("no_decisions", r"no decisions recorded that day"),

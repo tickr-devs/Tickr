@@ -327,12 +327,20 @@ private struct DayPicker: View {
       }
       Spacer(minLength: 0)
       if let first = activity.month.firstDay {
-        Text(first, format: .dateTime.month(.wide).year())
-          .font(Tokens.Typography.calloutMono.bold())
-          .foregroundStyle(Palette.textPrimary)
-          // The month and year wrap ("Ноябрь 2026 г." at large text sizes), never shrink or get cut.
-          .multilineTextAlignment(.center)
-          .contentTransition(.opacity)
+        VStack(spacing: Tokens.Space.xxs) {
+          Text(first, format: .dateTime.month(.wide).year())
+            .font(Tokens.Typography.calloutMono.bold())
+            .foregroundStyle(Palette.textPrimary)
+          // The month's total result under its name, as the Mac shows it beside the month.
+          if let total = DayCalendar.total(of: activity.month, days: activity.days) {
+            Text(L10n.Activity.monthTotal(Money.signedUSD(total)))
+              .font(Tokens.Typography.label)
+              .foregroundStyle(Palette.result(total))
+          }
+        }
+        // The month and year wrap ("Ноябрь 2026 г." at large text sizes), never shrink or get cut.
+        .multilineTextAlignment(.center)
+        .contentTransition(.opacity)
       }
       // At accessibility sizes the button takes its own row under the month.
       if activity.selectedDay != nil && !dynamicTypeSize.isAccessibilitySize {
@@ -808,8 +816,11 @@ private struct TradesList: View {
         value: String(localized: L10n.Risk.seconds(Money.plain(after, fractionDigits: 1))), tone: .profit))
     }
     if let mae = trade.mae, let mfe = trade.mfe {
-      list.append(Figure(symbol: Self.maeSymbol, label: L10n.Activity.hintMae, value: Money.signedUSD(mae), tone: .series))
-      list.append(Figure(symbol: Self.mfeSymbol, label: L10n.Activity.hintMfe, value: Money.signedUSD(mfe), tone: .profit))
+      // Coloured by the value shown, so "↓ $0.00" is not pink.
+      list.append(Figure(symbol: Self.maeSymbol, label: L10n.Activity.hintMae, value: Money.signedUSD(mae),
+        tone: Tone.result(mae)))
+      list.append(Figure(symbol: Self.mfeSymbol, label: L10n.Activity.hintMfe, value: Money.signedUSD(mfe),
+        tone: Tone.result(mfe)))
     }
     if let code = trade.codeVersion {
       list.append(Figure(symbol: Self.codeSymbol, label: L10n.Activity.hintCodeVersion, value: code))
@@ -984,12 +995,14 @@ private struct SkippedRow: View {
 
   private var refused: Bool { group.latest.admission == .refused }
 
-  /// "16:27" or, for repeats, "16:27–16:29 · ×3".
+  /// "16:27" or, for repeats, "16:27–16:29 · ×3"; repeats within one minute (or on one bar)
+  /// read "16:27 · ×3", never "16:27–16:27".
   private var when: String {
     let first = Format.time(group.first.at.date)
     guard group.count > 1 else { return first }
-    return first + Format.timeRange + Format.time(group.latest.at.date) + Format.separator
-      + String(localized: L10n.Activity.repeats(group.count))
+    let last = Format.time(group.latest.at.date)
+    let span = last == first ? first : first + Format.timeRange + last
+    return span + Format.separator + String(localized: L10n.Activity.repeats(group.count))
   }
 
   private func symbolText(_ symbol: String) -> some View {

@@ -1380,6 +1380,23 @@
         }
       }
     },
+    "cause.workingEntryLimit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many entries working at once"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слишком много активных входов"
+          }
+        }
+      }
+    },
     "chart.atr" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4789,6 +4806,23 @@
         }
       }
     },
+    "flow.titleRecorded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flow · screeners → strategy → risk → order → broker stop"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поток · скринеры → стратегия → риск → ордер → стоп брокера"
+          }
+        }
+      }
+    },
     "flow.trayExcluded" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5477,6 +5511,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Объяснить"
+          }
+        }
+      }
+    },
+    "lab.explainShowAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All checks"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все проверки"
           }
         }
       }
@@ -6337,13 +6388,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Result · gross"
+            "value" : "Result"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Результат · брутто"
+            "value" : "Результат"
           }
         }
       }
@@ -6983,13 +7034,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Day result · gross"
+            "value" : "Day result"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Результат дня · брутто"
+            "value" : "Результат дня"
           }
         }
       }
@@ -11273,6 +11324,23 @@
         }
       }
     },
+    "settings.job.nightlyFetch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nightly data fetch"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ночная загрузка данных"
+          }
+        }
+      }
+    },
     "settings.job.other" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14806,6 +14874,23 @@
         }
       }
     },
+    "trades.repeatAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · ×%2$lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · ×%2$lld"
+          }
+        }
+      }
+    },
     "trades.repeatRange" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14846,13 +14931,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Result · gross"
+            "value" : "Result"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Результат · брутто"
+            "value" : "Результат"
           }
         }
       }
@@ -15237,13 +15322,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Another Strategy…"
+            "value" : "Another strategy"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Другая стратегия…"
+            "value" : "Другая стратегия"
           }
         }
       }

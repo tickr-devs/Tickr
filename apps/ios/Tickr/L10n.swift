@@ -429,6 +429,10 @@ enum L10n {
     static var title: LocalizedStringResource {
       LocalizedStringResource("flow.title", defaultValue: "Live flow", bundle: L10n.bundle)
     }
+    /// The flow card's title on a recorded day: nothing on it is live.
+    static var titleRecorded: LocalizedStringResource {
+      LocalizedStringResource("flow.titleRecorded", defaultValue: "Flow", bundle: L10n.bundle)
+    }
     static var screen: LocalizedStringResource {
       LocalizedStringResource("flow.screen", defaultValue: "screen", bundle: L10n.bundle)
     }
@@ -874,6 +878,10 @@ enum L10n {
     static var backToToday: LocalizedStringResource {
       LocalizedStringResource("activity.backToToday", defaultValue: "Today", bundle: L10n.bundle)
     }
+    /// The shown month's total result, under its name in the calendar.
+    static func monthTotal(_ result: String) -> LocalizedStringResource {
+      LocalizedStringResource("activity.monthTotal", defaultValue: "month \(result)", bundle: L10n.bundle)
+    }
     static var previousMonth: LocalizedStringResource {
       LocalizedStringResource("activity.previousMonth", defaultValue: "Previous month", bundle: L10n.bundle)
     }
@@ -1112,6 +1120,8 @@ enum L10n {
         defaultValue: "An order on this symbol is working", bundle: L10n.bundle)
       case .positionLimit: LocalizedStringResource("cause.positionLimit",
         defaultValue: "All position slots taken", bundle: L10n.bundle)
+      case .workingEntryLimit: LocalizedStringResource("cause.workingEntryLimit",
+        defaultValue: "Too many entries working at once", bundle: L10n.bundle)
       case .cooldown: LocalizedStringResource("cause.cooldown",
         defaultValue: "Pause after a loss", bundle: L10n.bundle)
       case .setupInvalidated: LocalizedStringResource("cause.setupInvalidated",
@@ -1368,6 +1378,14 @@ enum L10n {
     }
     static var versions: LocalizedStringResource {
       LocalizedStringResource("lab.versions", defaultValue: "Today if each version traded", bundle: L10n.bundle)
+    }
+    /// The versions card on a recorded day: no "Today".
+    static var versionsOnDay: LocalizedStringResource {
+      LocalizedStringResource("lab.versionsOnDay", defaultValue: "If each version traded", bundle: L10n.bundle)
+    }
+    /// The versions card's note on a recorded day: no "live".
+    static var noOrdersOnDay: LocalizedStringResource {
+      LocalizedStringResource("lab.noOrdersOnDay", defaultValue: "no orders", bundle: L10n.bundle)
     }
     static var noOrders: LocalizedStringResource {
       LocalizedStringResource("lab.noOrders", defaultValue: "live · no orders", bundle: L10n.bundle)
@@ -1720,6 +1738,10 @@ enum L10n {
     }
     static var jobWatchdog: LocalizedStringResource {
       LocalizedStringResource("settings.job.watchdog", defaultValue: "Watchdog", bundle: L10n.bundle)
+    }
+    /// The nightly job that fetches market data for the Lab's replays.
+    static var jobNightlyFetch: LocalizedStringResource {
+      LocalizedStringResource("settings.job.nightlyFetch", defaultValue: "Nightly data fetch", bundle: L10n.bundle)
     }
     /// A launchd job this app does not know by name.
     static var jobOther: LocalizedStringResource {

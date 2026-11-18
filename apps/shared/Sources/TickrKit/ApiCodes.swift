@@ -118,12 +118,16 @@ public enum OrderKind: String, CaseIterable, Sendable {
   case market = "MARKET"
   case limit = "LIMIT"
   case stopLoss = "STOP_LOSS"
+  case stopLossLimit = "STOP_LOSS_LIMIT"
+  case trailingStopLoss = "TRAILING_STOP_LOSS"
 
   public var title: LocalizedStringResource {
     switch self {
     case .market: L10n.orderTypeMarket
     case .limit: L10n.orderTypeLimit
     case .stopLoss: L10n.orderTypeStopLoss
+    case .stopLossLimit: L10n.orderTypeStopLossLimit
+    case .trailingStopLoss: L10n.orderTypeTrailingStopLoss
     }
   }
 }
@@ -179,6 +183,13 @@ public enum CheckRule: String, CaseIterable, Sendable {
   case spikeInvalidationBelowTrigger = "spike_invalidation_below_trigger"
   case spikeAgeBars = "spike_age_bars"
   case spikeLowHeld = "spike_low_held"
+  case relativeVolumeAvailable = "relative_volume_available"
+  case impulseAtr = "impulse_atr"
+  case baseRangeAtr = "base_range_atr"
+  case preBreakoutDistanceAtr = "pre_breakout_distance_atr"
+  case breakoutPreBreakoutDistanceAtr = "breakout_pre_breakout_distance_atr"
+  case sizingRiskPerShare = "sizing_risk_per_share"
+  case quantity = "quantity"
 
   public var title: LocalizedStringResource {
     switch self {
@@ -208,6 +219,13 @@ public enum CheckRule: String, CaseIterable, Sendable {
     case .spikeInvalidationBelowTrigger: L10n.ruleSpikeInvalidationBelowTrigger
     case .spikeAgeBars: L10n.ruleSpikeAgeBars
     case .spikeLowHeld: L10n.ruleSpikeLowHeld
+    case .relativeVolumeAvailable: L10n.ruleRelativeVolumeAvailable
+    case .impulseAtr: L10n.ruleImpulseAtr
+    case .baseRangeAtr: L10n.ruleBaseRangeAtr
+    case .preBreakoutDistanceAtr: L10n.rulePreBreakoutDistanceAtr
+    case .breakoutPreBreakoutDistanceAtr: L10n.ruleBreakoutPreBreakoutDistanceAtr
+    case .sizingRiskPerShare: L10n.ruleSizingRiskPerShare
+    case .quantity: L10n.ruleQuantity
     }
   }
 }
