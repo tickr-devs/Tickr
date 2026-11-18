@@ -55,7 +55,10 @@ public struct CappedList<Item, ID: Hashable, Row: View>: View {
         .overlay(alignment: .top) {
           VStack(alignment: .leading, spacing: spacing) {
             ForEach(shown, id: \.element.0) { index, pair in
+              // Each row at its own full height (text wraps, never cut), whatever the space: the
+              // count, not a squeezed row, is what fits the card.
               row(index, pair.1)
+                .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heights[pair.0] = $0 }
             }
           }
