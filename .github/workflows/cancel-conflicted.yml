@@ -44,20 +44,23 @@ jobs:
     steps:
       - name: Cancel the unfinished runs of merge-queue groups that no longer exist
         run: |
-          # The queue's branches that exist now. If GitHub does not answer, the step fails here and
-          # cancels nothing.
-          alive=$(gh api "repos/$GH_REPO/git/matching-refs/heads/gh-readonly-queue/" --paginate \
-            --jq '.[].ref | sub("^refs/heads/"; "")')
-          for status in queued in_progress; do
+          # The runs are read first and the queue's branches after them: a group made between the
+          # two reads then has its branch in the list, or no run in it, and is never cancelled (the
+          # other order would cancel a healthy group's required checks). If GitHub does not answer
+          # either question, the step fails here and cancels nothing.
+          runs=$(for status in queued in_progress; do
             gh api "repos/$GH_REPO/actions/runs?event=merge_group&status=$status&per_page=$PAGE" \
               --jq '.workflow_runs[] | "\(.id) \(.name) \(.head_branch)"'
-          done |
+          done)
+          alive=$(gh api "repos/$GH_REPO/git/matching-refs/heads/gh-readonly-queue/" --paginate \
+            --jq '.[].ref | sub("^refs/heads/"; "")')
           while read -r run workflow branch; do
-            if grep -qxF "$branch" <<<"$alive"; then continue; fi
+            # No unfinished run at all reads as one empty line.
+            if [ -z "$run" ] || grep -qxF "$branch" <<<"$alive"; then continue; fi
             echo "merge-queue group $branch is gone: cancelling $workflow run $run"
             # A run that finished in the meantime cannot be cancelled; that is not a failure.
             gh run cancel "$run" || echo "run $run was not cancelled (already finished?)"
-          done
+          done <<<"$runs"
       - name: Cancel the unfinished runs of pull requests that now conflict with main
         # A new merge-queue group changes no pull request's base: only a push to main does.
         if: ${{ github.event_name != 'merge_group' }}
