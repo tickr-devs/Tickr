@@ -195,13 +195,6 @@ final class ChartModel {
     selectedDay = day
     let app = Container.shared.appModel()
     app.selectedDay = day == app.today ? nil : day
-    // The last day's trades, chips and candles must never show under the new day's label while
-    // it loads (a past day can take seconds).
-    self.day = nil
-    bars = nil
-    dayChart = nil
-    clearDecisions()
-    rebuild()
     phase = .loading
     do {
       try await loadDay(url, preferring: symbol, request: request)

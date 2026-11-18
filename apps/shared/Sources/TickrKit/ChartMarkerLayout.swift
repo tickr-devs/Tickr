@@ -6,22 +6,17 @@ import Foundation
 /// steps toward the middle of the pane (up in its lower half, down in its upper half) until it
 /// covers none, so a stack never runs off the pane. A marker before or after the stretch on screen, or so near its
 /// edge that the plot would cut it, is not drawn at all, so it never piles up at the edge.
-/// A pinned marker (a trade's or the position's entry or exit) always sits at its own price: it is
-/// placed before the others and never moved, so only the strategy's dots step aside for it.
 public enum ChartMarkerLayout {
   /// One marker as the chart would draw it before any lifting.
   public struct Marker<ID: Hashable & Sendable>: Hashable, Sendable {
     public let id: ID
     public let time: Date
     public let price: Double
-    /// Never moved off its price (a fill the person reads the price of); placed first.
-    public let pinned: Bool
 
-    public init(id: ID, time: Date, price: Double, pinned: Bool = false) {
+    public init(id: ID, time: Date, price: Double) {
       self.id = id
       self.time = time
       self.price = price
-      self.pinned = pinned
     }
   }
 
@@ -55,8 +50,7 @@ public enum ChartMarkerLayout {
 
   /// How far each marker on screen is moved, in steps, by its id: 0 where it belongs, positive
   /// up, negative down. A marker missing from the result does not fit whole in the stretch on
-  /// screen and is not drawn. Pinned markers are placed first and stay at 0; then the rest,
-  /// oldest first; equal times keep the order given.
+  /// screen and is not drawn. Markers are placed oldest first; equal times keep the order given.
   public static func place<ID>(_ markers: [Marker<ID>], scale: Scale) -> [ID: Int] {
     // Half a marker in time: a centre closer than this to either edge would be cut.
     let half = scale.pointsPerSecond > 0 ? scale.side / 2 / scale.pointsPerSecond : 0
@@ -66,19 +60,17 @@ public enum ChartMarkerLayout {
       .filter { first <= $0.element.time && $0.element.time <= last }
       .sorted { ($0.element.time, $0.offset) < ($1.element.time, $1.offset) }
       .map(\.element)
-    let ordered = visible.filter(\.pinned) + visible.filter { !$0.pinned }
     var placed: [(x: Double, y: Double)] = []
     var lifts: [ID: Int] = [:]
     let middle = (scale.prices.lowerBound + scale.prices.upperBound) / 2
-    for marker in ordered {
+    for marker in visible {
       let x = marker.time.timeIntervalSince(scale.shown.lowerBound) * scale.pointsPerSecond
       // Screen points grow downward: a higher price sits higher, at a smaller y.
       let y = -marker.price * scale.pointsPerPrice
       let direction = marker.price > middle ? -1 : 1
       var lift = 0
       // A step of zero could never move a marker clear, so it is left where it belongs.
-      while !marker.pinned, scale.step > 0,
-        placed.contains(where: { covers($0, (x, y - Double(lift) * scale.step), scale.side) }) {
+      while scale.step > 0, placed.contains(where: { covers($0, (x, y - Double(lift) * scale.step), scale.side) }) {
         lift += direction
       }
       placed.append((x, y - Double(lift) * scale.step))

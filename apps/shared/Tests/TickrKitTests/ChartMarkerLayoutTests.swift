@@ -14,11 +14,8 @@ struct ChartMarkerLayoutTests {
     shown: base.addingTimeInterval(10 * minute)...base.addingTimeInterval(20 * minute), prices: 9...21,
     pointsPerSecond: 7 / minute, pointsPerPrice: 100, side: 16, step: 18)
 
-  func marker(
-    _ id: String, _ minute: Double, _ price: Double, pinned: Bool = false
-  ) -> ChartMarkerLayout.Marker<String> {
-    ChartMarkerLayout.Marker(
-      id: id, time: Self.base.addingTimeInterval(minute * Self.minute), price: price, pinned: pinned)
+  func marker(_ id: String, _ minute: Double, _ price: Double) -> ChartMarkerLayout.Marker<String> {
+    ChartMarkerLayout.Marker(id: id, time: Self.base.addingTimeInterval(minute * Self.minute), price: price)
   }
 
   @Test("A marker before or after the stretch on screen, or cut by its edge, is not drawn")
@@ -69,13 +66,5 @@ struct ChartMarkerLayoutTests {
   func oldestFirst() {
     let lifts = ChartMarkerLayout.place([marker("exit", 12.5, 10), marker("entry", 12, 10)], scale: Self.scale)
     #expect(lifts == ["entry": 0, "exit": 1])
-  }
-
-  @Test("A trade's entry stays at its own price; an earlier strategy dot steps aside for it")
-  func pinnedStaysAtItsPrice() {
-    let lifts = ChartMarkerLayout.place([
-      marker("enterDot", 12, 20), marker("entry", 12.5, 20, pinned: true), marker("exit", 13, 20, pinned: true),
-    ], scale: Self.scale)
-    #expect(lifts == ["entry": 0, "exit": 0, "enterDot": -1])
   }
 }
