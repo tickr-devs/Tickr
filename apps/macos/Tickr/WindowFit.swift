@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TickrDesign
 
 /// The main window fits the screen it is on (owner decision 2026-11-16, option A "Окно под экран").
 ///
