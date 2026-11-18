@@ -112,6 +112,8 @@ def test_every_symbol_with_its_furthest_stage_and_where_it_stands_now(api, cfg):
     assert rows["THIN"]["check"]["measured"] == "812345.1234"  # rounded like every check
     assert where("SLOW") == ("bars", "bars", "not_reached", "bars budget")
     assert where("LATE") == ("quote", "quote", "dropped", "QUOTE_STALE")
+    # An age to a tenth of a second, the signs as signs.
+    assert rows["LATE"]["detail"] == "7.2 s (needs \u2264 5.0 s)"
     assert rows["LATE"]["first_seen"] == "2026-11-16T14:55:00.000Z"
     # The detail panel: the price, when each stage was reached and the last decision's checks.
     assert rows["ABCD"]["price"] == "11.24"  # the latest screener row
@@ -157,6 +159,26 @@ def test_a_filled_trade_is_at_the_stop_stage():
     # Filled, its stop not seen working yet: it got to the stop stage and waits there.
     assert (rows["EFGH"].furthest, rows["EFGH"].stage, rows["EFGH"].state) == (
         contract.SymbolStage.STOP, contract.SymbolStage.STOP, contract.SymbolState.WAITING)
+
+
+def test_the_order_and_stop_stages_carry_the_journal_times_not_a_later_decisions():
+    folded = symbols.DiscoveryFolded()
+    folded.fold(_pass(0, candidates=("ABCD", "EFGH")))
+    filled, confirmed = BAR + timedelta(minutes=1), BAR + timedelta(minutes=1, seconds=4)
+    stops = (contract.FlowStopV1("t1", "ABCD", contract.FlowStopState.VERIFIED, filled, confirmed),
+             contract.FlowStopV1("t2", "EFGH", contract.FlowStopState.PENDING, filled))
+    # A HOLD long after the entry: never the time the stop stage shows.
+    records = (_watch("ABCD", 0, PASS, verdict=Verdict.ENTER, admission=Admission.TAKEN),
+               _watch("ABCD", 30, PASS, verdict=Verdict.HOLD),
+               _watch("EFGH", 0, PASS, verdict=Verdict.ENTER, admission=Admission.TAKEN))
+    rows = {r.symbol: r for r in symbols.symbols_document(DAY, folded, (), records, stops,
+                                                          4).rows}
+    reached = {r.stage: r.at for r in rows["ABCD"].reached}
+    assert reached[contract.SymbolStage.ORDER] == filled
+    assert reached[contract.SymbolStage.STOP] == confirmed
+    assert rows["ABCD"].at == confirmed
+    assert rows["EFGH"].at == filled
+    assert {r.stage: r.at for r in rows["EFGH"].reached}[contract.SymbolStage.ORDER] == filled
 
 
 def test_no_pass_yet_says_so(api):

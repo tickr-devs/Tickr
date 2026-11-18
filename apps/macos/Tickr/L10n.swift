@@ -383,9 +383,9 @@ enum L10n {
     static func statePaused(_ state: String) -> LocalizedStringResource {
       LocalizedStringResource("root.statePaused", defaultValue: "\(state) · entries paused", bundle: L10n.bundle)
     }
-    /// The bot card's time since the bot started ("uptime 01:42:20").
+    /// The bot card's time since the bot started ("running for 15h 54m").
     static func uptime(_ duration: String) -> LocalizedStringResource {
-      LocalizedStringResource("root.uptime", defaultValue: "uptime \(duration)", bundle: L10n.bundle)
+      LocalizedStringResource("root.uptime", defaultValue: "running for \(duration)", bundle: L10n.bundle)
     }
     /// The bot card's run: the start of the run's id ("run f17747de").
     static func run(_ id: String) -> LocalizedStringResource {
@@ -2472,6 +2472,10 @@ enum L10n {
         defaultValue: "Planned loss over the limit", bundle: L10n.bundle)
       case .dailyCeiling: LocalizedStringResource("cause.dailyCeiling",
         defaultValue: "Daily loss limit reached", bundle: L10n.bundle)
+      case .buyingPowerUnknown: LocalizedStringResource("cause.buyingPowerUnknown",
+        defaultValue: "Buying power not read", bundle: L10n.bundle)
+      case .buyingPowerShort: LocalizedStringResource("cause.buyingPowerShort",
+        defaultValue: "Not enough buying power", bundle: L10n.bundle)
       case .entryBudget: LocalizedStringResource("cause.entryBudget",
         defaultValue: "No request budget for the entry", bundle: L10n.bundle)
       case .stopBudget: LocalizedStringResource("cause.stopBudget",
@@ -2509,7 +2513,7 @@ enum L10n {
     }
     /// The broker's fees on today's fills; a dash until every fill is read.
     static var feesToday: LocalizedStringResource {
-      LocalizedStringResource("risk.feesToday", defaultValue: "broker fees today", bundle: L10n.bundle)
+      LocalizedStringResource("risk.feesToday", defaultValue: "broker fees today, already in the result", bundle: L10n.bundle)
     }
     /// How the daily limit works.
     static var lossRoomNote: LocalizedStringResource {
@@ -2518,9 +2522,10 @@ enum L10n {
         defaultValue: "Profits offset losses but never raise the room above the limit. Open reservations, the worst case of entries in flight, count against it. Near the limit the bot sizes trades down to the room left; below the minimum room it stops entering.",
         bundle: L10n.bundle)
     }
-    /// Loss counted against the daily limit so far.
+    /// Loss counted against the daily limit so far (net of fees: the same money as the day's
+    /// result when the day is down, so the label says what it is for, not a second total).
     static var realizedLoss: LocalizedStringResource {
-      LocalizedStringResource("risk.realizedLoss", defaultValue: "realized loss", bundle: L10n.bundle)
+      LocalizedStringResource("risk.realizedLoss", defaultValue: "loss counted against the limit", bundle: L10n.bundle)
     }
     /// Worst-case loss reserved by entries in flight.
     static var reservations: LocalizedStringResource {
@@ -2645,9 +2650,10 @@ enum L10n {
     static var unrealized: LocalizedStringResource {
       LocalizedStringResource("risk.unrealized", defaultValue: "Unrealized P&L", bundle: L10n.bundle)
     }
-    /// The broker's profit or loss for today.
+    /// The broker's profit or loss for today, open positions' unrealized P&L included: it can
+    /// differ in sign from the bot's closed-trade result, so the label says so.
     static var dayResult: LocalizedStringResource {
-      LocalizedStringResource("risk.dayResult", defaultValue: "Day P&L · broker", bundle: L10n.bundle)
+      LocalizedStringResource("risk.dayResult", defaultValue: "Broker P&L today, open positions included", bundle: L10n.bundle)
     }
     /// Day trades left when the broker sets no limit.
     static var noLimit: LocalizedStringResource {
@@ -3211,6 +3217,10 @@ enum L10n {
     static var replayDay: LocalizedStringResource {
       LocalizedStringResource("lab.replayDay", defaultValue: "Day", bundle: L10n.bundle)
     }
+    /// Replay on one day while the fetched data holds no day to pick: why there is no day chip.
+    static var replayNoDays: LocalizedStringResource {
+      LocalizedStringResource("lab.replayNoDays", defaultValue: "No fetched day to replay yet.", bundle: L10n.bundle)
+    }
     /// Card: one symbol decision, check by check.
     static var explain: LocalizedStringResource {
       LocalizedStringResource("lab.explain", defaultValue: "Explain a symbol", bundle: L10n.bundle)
@@ -3554,6 +3564,12 @@ enum L10n {
     /// Under the list: every row is shown, never capped.
     static func showingAll(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("symbols.showingAll", defaultValue: "Showing all \(count)", bundle: L10n.bundle)
+    }
+    /// Footer of the Fast movers tab: the flagged symbols, and the positions and watches pinned
+    /// above them that no fast-mover rule flagged.
+    static func showingMovers(_ flagged: Int, _ pinned: Int) -> LocalizedStringResource {
+      // swiftlint:disable:next line_length
+      LocalizedStringResource("symbols.showingMovers", defaultValue: "Showing all \(flagged) fast movers, plus \(pinned) held or watched on top", bundle: L10n.bundle)
     }
     /// The search left no row.
     static func noMatch(_ query: String) -> LocalizedStringResource {

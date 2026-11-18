@@ -1140,6 +1140,10 @@ enum L10n {
         defaultValue: "Planned loss over the limit", bundle: L10n.bundle)
       case .dailyCeiling: LocalizedStringResource("cause.dailyCeiling",
         defaultValue: "Daily loss limit reached", bundle: L10n.bundle)
+      case .buyingPowerUnknown: LocalizedStringResource("cause.buyingPowerUnknown",
+        defaultValue: "Buying power not read", bundle: L10n.bundle)
+      case .buyingPowerShort: LocalizedStringResource("cause.buyingPowerShort",
+        defaultValue: "Not enough buying power", bundle: L10n.bundle)
       case .entryBudget: LocalizedStringResource("cause.entryBudget",
         defaultValue: "No request budget for the entry", bundle: L10n.bundle)
       case .stopBudget: LocalizedStringResource("cause.stopBudget",
@@ -2048,6 +2052,9 @@ enum ChartText {
   static func noCandles(_ cause: String) -> LocalizedStringResource {
     LocalizedStringResource("chart.noCandles", defaultValue: "Market data has no candles for this symbol and range: \(cause)")
   }
+  /// Market data answered with no candles for the range and gave no cause.
+  static let noCandlesPlain = LocalizedStringResource("chart.noCandles.plain",
+    defaultValue: "Market data has no candles for this symbol and range.")
   static let m1 = LocalizedStringResource("chart.timeframe.m1", defaultValue: "1m")
   static let m5 = LocalizedStringResource("chart.timeframe.m5", defaultValue: "5m")
   static let m30 = LocalizedStringResource("chart.timeframe.m30", defaultValue: "30m")

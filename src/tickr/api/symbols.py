@@ -16,15 +16,17 @@ read are parsed and folded, so a request costs the new passes, not the whole day
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 from tickr.api import contract as api
+from tickr.api.reasons import TENTH_EXPONENT
 from tickr.archive import GZ_SUFFIX, existing, open_text
 from tickr.data.capture import DISCOVERY_FILE, CaptureError
 from tickr.observers.errors import ObserverError
@@ -64,6 +66,31 @@ def _time(value: Any, where: str) -> datetime:
     if at.tzinfo is None:
         raise ValueError(f"{where} has no UTC offset")
     return at
+
+
+# A platform cause's age in seconds as the bot writes it ("9.957056s", "<= 5.0s").
+_SECONDS = re.compile(r"(-?[0-9]+(?:\.[0-9]+)?)s\b")
+_SIGNS = (("<=", "\u2264"), (">=", "\u2265"))
+
+
+def _seconds(match: re.Match[str]) -> str:
+    """An age to a tenth of a second, as every shown age ("10.0 s", never "9.957056s")."""
+    tenth = Decimal(match.group(1)).quantize(Decimal(1).scaleb(TENTH_EXPONENT), ROUND_HALF_UP)
+    return f"{tenth} s"
+
+
+def _readable(text: str) -> str:
+    """A discovery pass's measured value or threshold as a person reads it: ages to a tenth of a
+    second and the signs as signs (owner, 2026-11-18: "9.957056s (needs <= 5.0s)")."""
+    text = _SECONDS.sub(_seconds, text)
+    for written, sign in _SIGNS:
+        text = text.replace(written, sign)
+    return text
+
+
+def _detail(measured: Any, threshold: Any) -> str:
+    """"10.0 s (needs \u2264 5.0 s)": what a discovery pass measured against what it needs."""
+    return f"{_readable(str(measured))} (needs {_readable(str(threshold))})"
 
 
 def _check(raw: Any) -> Check | None:
@@ -146,7 +173,7 @@ class DiscoveryFolded:
             check = _check(r["check"])
             self.latest[r["symbol"]] = _Outcome(
                 stage, api.SymbolState.DROPPED, finished, r["cause"],
-                None if check is not None else f"{r['measured']} (needs {r['threshold']})",
+                None if check is not None else _detail(r["measured"], r["threshold"]),
                 check)
         for symbol in raw["candidates"]:
             reach(symbol, S.STRATEGY)
@@ -278,13 +305,16 @@ def symbols_document(day: date, folded: DiscoveryFolded, chips: Sequence[api.Flo
         stop = stop_of.get(symbol)
         if stop is not None:
             furthest = _later(furthest, S.ORDER)
+            # Each stage at its own journal time (the fill, the stop seen working), never the
+            # time of a later decision on the symbol (owner test 2026-11-18: two trades of a
+            # day both showed 12:22, the minute of a later HOLD).
             if stop.state is api.FlowStopState.VERIFIED:
                 furthest = S.STOP
-                now = _Outcome(S.STOP, api.SymbolState.PASSED, now.at if now else None)
+                now = _Outcome(S.STOP, api.SymbolState.PASSED, stop.stop_confirmed_at)
             elif stop.state is api.FlowStopState.PENDING:
-                now = _Outcome(S.STOP, api.SymbolState.WAITING, now.at if now else None)
+                now = _Outcome(S.STOP, api.SymbolState.WAITING, stop.filled_at)
             else:
-                now = _Outcome(S.STOP, api.SymbolState.DROPPED, now.at if now else None,
+                now = _Outcome(S.STOP, api.SymbolState.DROPPED, stop.filled_at,
                                stop.state.value)
         if now is None:  # listed by a screener after the latest recorded pass
             now = _Outcome(S.UNIVERSE, api.SymbolState.NOT_REACHED, None, NO_PASS)
@@ -295,6 +325,11 @@ def symbols_document(day: date, folded: DiscoveryFolded, chips: Sequence[api.Flo
             times.setdefault(S.STRATEGY, first_record[symbol])
         if symbol in first_taken:
             times.setdefault(S.RISK, first_taken[symbol])
+        if stop is not None:
+            if stop.filled_at is not None:
+                times.setdefault(S.ORDER, stop.filled_at)
+            if stop.stop_confirmed_at is not None:
+                times.setdefault(S.STOP, stop.stop_confirmed_at)
         reached = tuple(api.SymbolReachV1(stage, times.get(stage))
                         for stage in ORDER[:ORDER.index(furthest) + 1])
         rows.append(api.SymbolRowV1(

@@ -200,6 +200,7 @@ struct ChartView: View {
     chart.clear()
     chart.hasSymbol = symbol != nil
     viewport = Viewport.opening
+    pointer.unpin()
     pointer.index = nil
     guard let symbol else { return }
     let baseURL = model.baseURL
@@ -572,7 +573,10 @@ struct ChartView: View {
 
   /// The shown bars or range as candles and lines; built once per new read, range or interval
   /// (ChartModel).
-  private var plot: ChartPlot? { chart.plot(timeframe: interval, range: range, today: todaySession) }
+  /// On a recorded day a range beyond one day ends on that day, not today.
+  private var plot: ChartPlot? {
+    chart.plot(timeframe: interval, range: range, today: todaySession, through: model.isLive ? nil : model.shownDay)
+  }
 
   /// Today's session from the calendar (GET /jobs) while the shown day is today: the Day chart
   /// keeps the rest of the day to the extended close (mockup v113).

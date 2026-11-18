@@ -955,6 +955,40 @@
         }
       }
     },
+    "cause.buyingPowerShort" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough buying power"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не хватает покупательной способности"
+          }
+        }
+      }
+    },
+    "cause.buyingPowerUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buying power not read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Покупательная способность не прочитана"
+          }
+        }
+      }
+    },
     "cause.cooldown" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5974,6 +6008,23 @@
         }
       }
     },
+    "lab.replayNoDays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No fetched day to replay yet."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пока нет загруженного дня для прогона."
+          }
+        }
+      }
+    },
     "lab.replayNote" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7913,13 +7964,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Day P&L · broker"
+            "value" : "Broker P&L today, open positions included"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "P&L за день · брокер"
+            "value" : "P&L брокера за день, с открытыми позициями"
           }
         }
       }
@@ -8015,13 +8066,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "broker fees today"
+            "value" : "broker fees today, already in the result"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "комиссии брокера за день"
+            "value" : "комиссии брокера, уже в результате"
           }
         }
       }
@@ -8848,13 +8899,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "realized loss"
+            "value" : "loss counted against the limit"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "реализованный убыток"
+            "value" : "убыток в счёт лимита"
           }
         }
       }
@@ -9477,7 +9528,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "uptime %@"
+            "value" : "running for %@"
           }
         },
         "ru" : {
@@ -12901,6 +12952,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Показаны все: %lld"
+          }
+        }
+      }
+    },
+    "symbols.showingMovers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing all %1$lld fast movers, plus %2$lld held or watched on top"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все быстрые: %1$lld, и ещё %2$lld в позиции или под наблюдением сверху"
           }
         }
       }

@@ -774,6 +774,12 @@ private struct ReplayCard: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel(Text(L10n.Lab.replayDay))
+      } else if oneDay {
+        // Never a bare switch with the start greyed out: say why there is no day to pick.
+        Text(L10n.Lab.replayNoDays)
+          .font(Tokens.Typography.caption)
+          .foregroundStyle(Palette.textTertiary)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
   }
@@ -836,10 +842,8 @@ private struct ReplayCard: View {
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.warningText)
       case .idle:
-        // The apps' empty state, sized to its content: no run yet is a calm state, not a gap.
-        ContentUnavailableView {
-          Label { Text(L10n.Lab.replayIdle) } icon: { BrandMark.empty() }
-        }
+        // The apps' empty state, centred in the card: no run yet is a calm state, not a gap.
+        EmptyState(L10n.Lab.replayIdle)
       }
     } else if let error = model.labReplayError {
       ReadFailureNote(L10n.ReadFailed.replay, detail: error)
@@ -1054,8 +1058,8 @@ private struct ExplainCard: View {
     }
   }
 
-  /// The decision's lines: each check by its position, then the admission (`checks.count`).
-  private static func lines(_ decision: DecisionV1) -> [Int] { Array(0...decision.checks.count) }
+  /// The decision's lines, why it was decided first (`DecisionV1.explainLines`).
+  private static func lines(_ decision: DecisionV1) -> [Int] { decision.explainLines }
 
   @ViewBuilder
   private func lineRow(_ line: Int, of decision: DecisionV1) -> some View {
