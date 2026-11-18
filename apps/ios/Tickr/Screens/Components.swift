@@ -545,7 +545,8 @@ struct ConnectionPrompt: View {
     if let message = model.connectionMessage {
       // A lost link is a banner over the cards (drawn as quiet outlines when nothing was read,
       // mockup "no connection" v2); only a bot not set up or silent fills the card area.
-      ConnectionNotice(state.hasNoData && !state.isNeverConnected ? .empty : .banner, title: message.title, subtitle: message.subtitle,
+      ConnectionNotice(state.hasNoData && !state.isNeverConnected ? .empty : .banner,
+        title: message.title, subtitle: message.subtitle,
         detailsLabel: ConnectionMessage.detailsLabel, details: details(message)) {
         // A refused address is fixed in Settings; reading it again never helps.
         if state != .notConfigured && !message.refused {
@@ -787,7 +788,9 @@ extension View {
   /// Sets what every `ReadFailureNote` below says: while the link to the bot is down, cards wait
   /// calmly and leave the failure to the connection banner.
   func readFailureContext(_ model: AppModel) -> some View {
-    environment(\.readFailureContext, ReadFailureContext(connectionDown: model.connectionState.failure != nil,
-      noData: model.connectionState.isNeverConnected, detailsLabel: ConnectionMessage.detailsLabel, waiting: ConnectionMessage.waiting))
+    environment(\.readFailureContext, ReadFailureContext(
+      connectionDown: model.connectionState.failure != nil,
+      noData: model.connectionState.isNeverConnected,
+      detailsLabel: ConnectionMessage.detailsLabel, waiting: ConnectionMessage.waiting))
   }
 }
