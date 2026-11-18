@@ -866,6 +866,27 @@ def cause_violations(path: Path) -> list[tuple[int, str]]:
             if RAW_CAUSE.search(code) and PROSE_CALL not in code]
 
 
+
+# Scroll indicators: the owner wants none, anywhere (2026-11-18). Each scene's root hides them once
+# with TickrDesign's `withoutScrollIndicators()`; an app never sets them view by view.
+OWN_INDICATORS = re.compile(r"\bshowsIndicators\s*:|\.scrollIndicators\s*\(")
+# A scene of an app: its root view must hide the indicators.
+SCENE = re.compile(r"\b(?:WindowGroup|Window|Settings|MenuBarExtra|DocumentGroup|UtilityWindow)\s*[({]")
+APP_TYPE = re.compile(r":\s*App\s*\{")
+NO_INDICATORS = ".withoutScrollIndicators()"
+
+
+def scrollbar_violations(path: Path) -> list[tuple[int, str]]:
+    """Scroll indicators set by an app's own view, or a scene whose root does not hide them."""
+    lines = _code_lines(path)
+    found = [(number, code.strip()) for number, code, _ in lines if OWN_INDICATORS.search(code)]
+    if any(APP_TYPE.search(code) for _, code, _ in lines):
+        scenes = [(number, code.strip()) for number, code, _ in lines if SCENE.search(code)]
+        hidden = sum(code.count(NO_INDICATORS) for _, code, _ in lines)
+        if hidden < len(scenes):
+            found.extend(scenes)
+    return found
+
 RULES = {
     "text": (text_violations, "words in code; define them in L10n.swift, translated to Russian"),
     "numbers": (number_violations, "magic number; use a token or a documented constant"),
@@ -897,6 +918,9 @@ RULES = {
       "Money.usd, Money.price, Percent or Volume (Formatting.swift)"),
   "stopsymbol": (stop_symbol_violations,
       "stop symbol written by hand; use StopState's symbols, or mark another meaning `// symbol:`"),
+  "scrollbars": (scrollbar_violations,
+      "scroll indicators set by hand, or a scene not hiding them; apply "
+      "withoutScrollIndicators() once at each scene's root (TickrDesign)"),
   "cause": (cause_violations,
       "a cause shown in the bot's words; use its `…Text` accessor (the person's language)"),
 }
@@ -904,6 +928,7 @@ RULES = {
 # are defined.
 APP_RULES = {
     "styles", "system-buttons", "controls", "symbols", "result", "format", "stopsymbol", "loaders",
+    "scrollbars",
 }
 
 

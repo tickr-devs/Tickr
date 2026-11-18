@@ -454,6 +454,15 @@ profit factor with 2 decimals, win rate and confidence in whole percents.
 | Pulse dot | `PulseDot` | `Size.dot`; while `pulsing`, one ring of `pulseSeconds` each time its `event` changes (a new status read, a fill). Still without an event: nothing on screen moves except on real events |
 | Headline pill | `HeadlineBanner` (`Tokens.Headline`) | See "One meaning, one look": the pill and, beside it, the countdown and the gate badge (mockup v108) |
 
+## Scrolling
+
+No scroll indicators anywhere, on the Mac or the phone (owner, 2026-11-18). Each scene's root
+(Mac main window, Settings and menu bar panel; iPhone window) applies TickrDesign's
+`withoutScrollIndicators()` once, which hides them in every scroll view, list and form below it,
+sheets and popovers included, even with the Mac's "Always show scroll bars" setting. The
+`scrollbars` rule of `check_swift_rules.py` rejects indicators set view by view in the apps and a
+scene that does not hide them.
+
 ## Loading (`Tokens.Loading`, mockup v102)
 
 Loading uses a skeleton or a spinner, never a radar: the radar is only the empty "no positions"

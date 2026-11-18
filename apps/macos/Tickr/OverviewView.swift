@@ -834,7 +834,6 @@ private struct PositionsCard: View {
             tabs(rows, shown: shown, results: true)
             tabs(rows, shown: shown, results: false)
             ScrollView(.horizontal) { tabs(rows, shown: shown, results: false) }
-              .scrollIndicators(.never)
           }
         }
         HeaderLink(L10n.Position.openChart, systemImage: AppSection.chartSymbol) {
