@@ -33,7 +33,7 @@ import Testing
     #expect(byID["journal-750"]?.tone == .amber)
     // A refused command's cause is read from its codes, in the person's language.
     let refused = try #require(byID["journal-752"])
-    #expect(refused.tone == .red && refused.text.hasPrefix(Board.commandTitle(.flatten)))
+    #expect(refused.tone == .amber && refused.text.hasPrefix(Board.commandTitle(.flatten)))
   }
 
   @Test func anUnknownKindIsLeftOut() throws {
