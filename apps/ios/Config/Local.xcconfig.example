@@ -7,5 +7,5 @@ DEVELOPMENT_TEAM = YOUR_TEAM_ID
 TICKR_TAILSCALE_HOST = YOUR_MAC.YOUR_TAILNET.ts.net
 
 // The file `python -m tickr.api pair-simulator` wrote (its full path, as it prints it): the
-// Simulator's own token, read by a Simulator build at launch.
+// Simulator's own token and the address it opens, read by a Simulator build at launch only.
 TICKR_SIMULATOR_TOKEN_FILE = /path/to/data/remote-simulator-token

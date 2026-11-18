@@ -46,7 +46,7 @@
 	<key>TickrAPIAddress</key>
 	<string>$(TICKR_API_ADDRESS)</string>
 	<key>TickrSimulatorTokenFile</key>
-	<string>$(TICKR_SIMULATOR_TOKEN_FILE)</string>
+	<string>$(TICKR_SIMULATOR_FILE)</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

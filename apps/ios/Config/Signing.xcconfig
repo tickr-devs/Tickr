@@ -4,16 +4,18 @@
 // fill it in. Do not pick the team in Xcode's Signing & Capabilities, which writes it into the
 // project.
 
-// The bot API address the app starts with until a pairing link sets one (Info.plist
-// TickrAPIAddress, read by Connection.load). The Simulator shares the Mac's network and reads the
-// phone's listener on loopback (`[api] remote_port`), the same server path as the iPhone; an
-// iPhone reads it through `tailscale serve` on this Mac (TICKR_TAILSCALE_HOST in Local.xcconfig).
+// Where the app reads the bot's API until a pairing link says otherwise (Info.plist, read by
+// Connection.load), per destination:
+// - an iPhone build starts at this Mac's Tailscale name (TICKR_TAILSCALE_HOST in Local.xcconfig),
+//   which `tailscale serve` forwards to the phone's listener; pairing gives it the token.
+// - a Simulator build reads the file `python -m tickr.api pair-simulator` wrote (its path in
+//   TICKR_SIMULATOR_TOKEN_FILE in Local.xcconfig): the phone's listener on this Mac's loopback,
+//   the same server path as the iPhone, and the Simulator's own token. The file names the
+//   address, made from config/bot.toml's [api] remote_port, so the port has one source.
 // "/$()/" keeps "//" from starting an xcconfig comment.
 TICKR_TAILSCALE_HOST =
-// The Simulator's own token file on this Mac (`python -m tickr.api pair-simulator` prints its
-// path; set it in Local.xcconfig). A Simulator build reads it at launch; empty = none.
 TICKR_SIMULATOR_TOKEN_FILE =
-TICKR_API_ADDRESS[sdk=iphonesimulator*] = http:/$()/127.0.0.1:8767
 TICKR_API_ADDRESS[sdk=iphoneos*] = https:/$()/$(TICKR_TAILSCALE_HOST)
+TICKR_SIMULATOR_FILE[sdk=iphonesimulator*] = $(TICKR_SIMULATOR_TOKEN_FILE)
 
 #include? "Local.xcconfig"

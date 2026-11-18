@@ -22,9 +22,7 @@ struct Connection: Equatable {
   /// the phone's listener on the Mac), since that traffic never leaves the machine.
   static let localScheme = "http"
   static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1"]
-  /// Info.plist key of the file holding the Simulator's own token on this Mac
-  /// (`TICKR_SIMULATOR_TOKEN_FILE`, written by `python -m tickr.api pair-simulator`).
-  static let simulatorTokenFileKey = "TickrSimulatorTokenFile"
+
   /// Info.plist key of the address the build starts with (`TICKR_API_ADDRESS` in
   /// Config/Signing.xcconfig: the phone listener on loopback for the Simulator, this Mac's
   /// Tailscale name for an iPhone).
@@ -79,11 +77,20 @@ struct Connection: Equatable {
     return token
   }
 
-  /// Whether a token may travel to `url`: over HTTPS, or over HTTP to this machine only.
+  /// Whether a token may go over plain HTTP to this machine: in a Simulator build only (its own
+  /// token to the phone's listener on the Mac); an iPhone build sends a token over HTTPS only.
+  #if targetEnvironment(simulator)
+  static let carriesOverLoopback = true
+  #else
+  static let carriesOverLoopback = false
+  #endif
+
+  /// Whether a token may travel to `url`: over HTTPS, or in a Simulator build over HTTP to this
+  /// machine only.
   static func carriesToken(_ url: URL) -> Bool {
     switch url.scheme?.lowercased() {
     case remoteScheme: true
-    case localScheme: url.host.map { loopbackHosts.contains($0.lowercased()) } ?? false
+    case localScheme: carriesOverLoopback && (url.host.map { loopbackHosts.contains($0.lowercased()) } ?? false)
     default: false
     }
   }
@@ -123,23 +130,15 @@ struct Connection: Equatable {
       return Connection(address: saved, token: Container.shared.keychain().readToken(),
         pairedAddress: defaults.string(forKey: pairedKey), demo: defaults.bool(forKey: demoKey))
     }
-    let address = builtAddress()
     #if targetEnvironment(simulator)
-    // The Simulator's own token (`pair-simulator`), read from the Mac at every launch: no
-    // pairing by hand for a new Simulator, and the phone's token is never touched.
-    if let token = simulatorToken() {
-      return Connection(address: address, token: token, pairedAddress: address, demo: defaults.bool(forKey: demoKey))
+    // The Simulator's own token and the address it opens (`pair-simulator`), read from the Mac
+    // at every launch: no pairing by hand for a new Simulator, the phone's token never touched.
+    if let pairing = SimulatorPairing.read() {
+      return Connection(address: pairing.address, token: pairing.token, pairedAddress: pairing.address,
+        demo: defaults.bool(forKey: demoKey))
     }
     #endif
-    return Connection(address: address, demo: defaults.bool(forKey: demoKey))
-  }
-
-  /// The Simulator's token from the file the build names, or nil without one. Never logged.
-  static func simulatorToken(_ bundle: Bundle = .main) -> String? {
-    guard let path = bundle.object(forInfoDictionaryKey: simulatorTokenFileKey) as? String, !path.isEmpty,
-      let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-    let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    return token.isEmpty ? nil : token
+    return Connection(address: builtAddress(), demo: defaults.bool(forKey: demoKey))
   }
 
   /// The address this build starts with (`builtAddressKey`), or "" when it names no host (an
@@ -161,5 +160,31 @@ struct Connection: Equatable {
       keychain.deleteToken()
       defaults.removeObject(forKey: Self.pairedKey)
     }
+  }
+}
+
+/// The Simulator's own pairing, from the file `python -m tickr.api pair-simulator` left on the Mac
+/// (JSON: the address it opens, made from bot.toml's [api] host and remote_port, and the token).
+/// Its path is Info.plist's `TickrSimulatorTokenFile`, set for Simulator builds only. The token is
+/// never logged.
+struct SimulatorPairing: Decodable, Equatable {
+  /// Info.plist key of the file's path (`TICKR_SIMULATOR_TOKEN_FILE` in Local.xcconfig).
+  static let fileKey = "TickrSimulatorTokenFile"
+
+  let address: String
+  let token: String
+
+  /// The pairing in the file the build names, or nil without a readable, complete one.
+  static func read(_ bundle: Bundle = .main) -> SimulatorPairing? {
+    guard let path = bundle.object(forInfoDictionaryKey: fileKey) as? String, !path.isEmpty,
+      let data = FileManager.default.contents(atPath: path) else { return nil }
+    return decode(data)
+  }
+
+  /// The pairing in `data`, or nil when it is not one: a missing field or an empty value.
+  static func decode(_ data: Data) -> SimulatorPairing? {
+    guard let pairing = try? JSONDecoder().decode(SimulatorPairing.self, from: data),
+      !pairing.token.isEmpty, URL(string: pairing.address)?.host != nil else { return nil }
+    return pairing
   }
 }

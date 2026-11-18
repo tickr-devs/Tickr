@@ -67,7 +67,7 @@ targets:
         # set per destination in Config/Signing.xcconfig.
         TickrAPIAddress: $(TICKR_API_ADDRESS)
         # The Simulator's own token file on this Mac, read by a Simulator build at launch.
-        TickrSimulatorTokenFile: $(TICKR_SIMULATOR_TOKEN_FILE)
+        TickrSimulatorTokenFile: $(TICKR_SIMULATOR_FILE)
         # tickr://pair?... links from `python -m tickr.api pair` open the app to pair.
         CFBundleURLTypes:
           - CFBundleURLName: local.tickr.pair
