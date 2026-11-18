@@ -40,7 +40,7 @@ import TickrKit
     let elsewhere = try #require(URL(string: "https://elsewhere.example/demo/status"))
     #expect(connection.bearer(for: elsewhere) == nil)
     // Over plain HTTP (the Simulator's loopback address) no token is ever sent.
-    let local = Connection(address: Connection.simulatorAddress)
+    let local = Connection(address: "http://127.0.0.1:8767")
     #expect(local.bearer == nil)
   }
 

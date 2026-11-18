@@ -18,8 +18,12 @@ struct Connection: Equatable {
   static let schemes: Set<String> = ["http", "https"]
   /// The only scheme a token is ever sent over.
   static let remoteScheme = "https"
-  /// The API's loopback address, which the Simulator reaches because it shares the Mac's network.
-  static let simulatorAddress = "http://127.0.0.1:8766"
+  /// Info.plist key of the address the build starts with (`TICKR_API_ADDRESS` in
+  /// Config/Signing.xcconfig: the phone listener on loopback for the Simulator, this Mac's
+  /// Tailscale name for an iPhone).
+  static let builtAddressKey = "TickrAPIAddress"
+  /// The address field's example when the build names none.
+  static let exampleAddress = "https://mac.tailnet.ts.net"
 
   var address: String
   var token: String?
@@ -103,11 +107,15 @@ struct Connection: Equatable {
       return Connection(address: saved, token: Container.shared.keychain().readToken(),
         pairedAddress: defaults.string(forKey: pairedKey), demo: defaults.bool(forKey: demoKey))
     }
-    #if targetEnvironment(simulator)
-    return Connection(address: simulatorAddress, demo: defaults.bool(forKey: demoKey))
-    #else
-    return Connection(address: "", demo: defaults.bool(forKey: demoKey))
-    #endif
+    return Connection(address: builtAddress(), demo: defaults.bool(forKey: demoKey))
+  }
+
+  /// The address this build starts with (`builtAddressKey`), or "" when it names no host (an
+  /// iPhone build without TICKR_TAILSCALE_HOST): Settings then asks for one.
+  static func builtAddress(_ bundle: Bundle = .main) -> String {
+    guard let address = bundle.object(forInfoDictionaryKey: builtAddressKey) as? String,
+      URL(string: address)?.host?.isEmpty == false else { return "" }
+    return address
   }
 
   func save(_ defaults: UserDefaults = .standard) {
