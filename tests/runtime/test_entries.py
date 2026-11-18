@@ -413,24 +413,48 @@ def test_manual_orders_without_an_id_are_all_seen(tmp_path, monkeypatch):
     assert other.admission == "taken", other.refusal_cause
 
 
-def test_the_desk_reads_buying_power_again_once_its_read_is_old(tmp_path):
-    """An entry is admitted on a balance read at most `buying_power_max_age_seconds` old: the
-    desk reads the balance again past that age, and a failed read leaves only the old one,
-    which admission refuses. Open trades' entry value comes off the buying power."""
-    desk = Desk(tmp_path)
-    max_age = timedelta(seconds=float(CFG.risk.buying_power_max_age_seconds))
-    assert desk.desk._inputs(decision(), quote(), NOW).buying_power.day_usd == D(4_000_000)
+def _later(desk: Desk, seconds: float) -> tuple[datetime, Quote]:
+    """An instant `seconds` after NOW with the broker read and a quote fresh at it."""
+    at = NOW + timedelta(seconds=seconds)
+    desk.read_at = at
+    return at, replace(quote(), provider_time=at, receipt_time=at)
+
+
+def test_a_failing_balance_read_is_tried_once_per_max_age_not_per_decision(tmp_path):
+    """Whatever its outcome, the desk tries the balance at most once per
+    `buying_power_max_age_seconds`: ten admissible entries while the read fails cost one
+    request and all refuse BUYING_POWER_UNKNOWN; past that age it tries again."""
+    desk = Desk(tmp_path, FakeBroker())  # no funds: every balance read fails
+    records = [desk.decide(decision()) for _ in range(10)]
     assert desk.broker.balance_reads == 1
-    desk.desk._inputs(decision(), quote(), NOW + max_age / 2)
-    assert desk.broker.balance_reads == 1  # still fresh: no new read
-    desk.broker.funds = None  # every read fails from now on
-    later = NOW + max_age + timedelta(seconds=1)
-    stale = desk.desk._inputs(decision(), quote(), later).buying_power
-    assert desk.broker.balance_reads == 2 and stale.read_at == NOW
-    desk.read_at = later
-    fresh = replace(quote(), provider_time=later, receipt_time=later)
-    record = desk.decide(decision(), q=fresh, now=later)
-    assert record.refusal_cause.startswith("BUYING_POWER_UNKNOWN")
+    assert {r.refusal_cause for r in records} == {"BUYING_POWER_UNKNOWN: no balance read"}
+    max_age = float(CFG.risk.buying_power_max_age_seconds)
+    at, q = _later(desk, max_age / 2)
+    assert desk.decide(decision(), q=q, now=at).refusal_cause.startswith("BUYING_POWER_UNKNOWN")
+    assert desk.broker.balance_reads == 1  # tried less than the age ago: no request
+    desk.broker.funds = FUNDS
+    at, q = _later(desk, max_age)
+    assert desk.decide(decision(), q=q, now=at).admission == "taken"
+    assert desk.broker.balance_reads == 2
+    assert desk.broker.sent  # only the admitted entry was sent
+
+
+def test_no_balance_read_for_a_decision_another_check_refuses(tmp_path):
+    """The balance is read only for an entry every other check admits: decisions refused by
+    the price window or by full slots cost no request, even with an old, failing read."""
+    desk = Desk(tmp_path)
+    for _ in range(5):
+        record = desk.decide(decision(), q=quote(ask="10.50"))
+        assert record.refusal_cause.startswith("PRICE_OUTSIDE_WINDOW")
+    assert desk.broker.balance_reads == 0
+    assert desk.decide(decision()).admission == "taken"
+    assert desk.broker.balance_reads == 1
+    desk.broker.funds = None
+    at, q = _later(desk, float(CFG.risk.buying_power_max_age_seconds) * 2)
+    for _ in range(10):  # the one slot is taken
+        record = desk.decide(decision(symbol="XYZ"), q=replace(q, symbol="XYZ"), now=at)
+        assert record.refusal_cause.startswith("POSITION_LIMIT_REACHED")
+    assert desk.broker.balance_reads == 1
 
 
 def test_an_entry_the_account_cannot_pay_for_is_refused_and_nothing_is_sent(tmp_path):

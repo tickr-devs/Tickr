@@ -10,7 +10,7 @@ import pytest
 from tickr.api.contract import RefusalCode, refusal_of
 from tickr.calendar import NEW_YORK, CalendarCause, CalendarRefused
 from tickr.config import GateResult
-from tickr.risk.admission import CHECKS, BuyingPower, admit
+from tickr.risk.admission import CHECKS, BuyingPower, admit, refusal_before_buying_power
 from tickr.risk.causes import AdmissionCause as C
 from tickr.strategy.base import Verdict
 
@@ -55,7 +55,17 @@ def test_cooldown_turned_off(lim):
 
 
 def test_there_are_seven_checks():
-    assert len(CHECKS) == 7
+    # Spec 7's seven, then check 6's buying power part, run last so the desk reads the
+    # balance only for an entry the others admit.
+    assert len(CHECKS) == 8 and CHECKS[-1].__name__ == "_check_buying_power"
+
+
+def test_the_buying_power_refusal_comes_after_every_other_check(lim):
+    unread = BuyingPower(None, None, D(0))
+    assert admit(inputs(buying_power=unread, stop_budget_available=False),
+                 lim).cause is C.STOP_BUDGET_UNAVAILABLE
+    assert refusal_before_buying_power(inputs(buying_power=unread), lim) is None
+    assert admit(inputs(buying_power=unread), lim).cause is C.BUYING_POWER_UNKNOWN
 
 
 def _at(hh: int, mm: int, day: date = TODAY) -> datetime:

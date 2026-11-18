@@ -409,13 +409,15 @@ def _check_money(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     if not daily.ok:
         assert daily.cause is not None
         return _refuse(daily.cause, daily.detail)
-    return _check_buying_power(i, lim)
+    return None
 
 
 def _check_buying_power(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     """The entry's value must fit the day buying power of a fresh broker read, less what the
     bot's open trades committed (owner 2026-11-17: never send an order the account cannot
-    pay for). No read, an old one or an unreadable figure refuses."""
+    pay for). No read, an old one or an unreadable figure refuses. Part of check 6, run
+    last, so the entry desk reads the balance only for an entry every other check admits
+    (`refusal_before_buying_power`)."""
     bp = i.buying_power
     if bp.day_usd is None or bp.read_at is None:
         return _refuse(C.BUYING_POWER_UNKNOWN, "no balance read")
@@ -467,8 +469,20 @@ CHECKS = (
     _check_quote_and_setup,
     _check_money,
     _check_budget,
+    _check_buying_power,
 )
-"""Spec section 7 checks 1..7, in order."""
+"""Spec section 7 checks 1..7, in order; the buying power part of check 6 runs last."""
+
+
+def refusal_before_buying_power(inputs: AdmissionInputs,
+                                limits: AdmissionLimits) -> Admission | None:
+    """The first refusal of every check but the buying power one, or None: the entry desk
+    reads the broker's balance only when this is None."""
+    for check in CHECKS[:-1]:
+        refused = check(inputs, limits)
+        if refused is not None:
+            return refused
+    return None
 
 
 def admit(inputs: AdmissionInputs, limits: AdmissionLimits) -> Admission:
