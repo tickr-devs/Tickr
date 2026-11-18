@@ -24,6 +24,8 @@ public extension Tokens {
     /// The chevron's point size.
     public static let chevronSize: CGFloat = 11
     #endif
+    /// The chevron's font.
+    public static let chevronFont = Font.system(size: chevronSize, weight: .semibold)
     /// How far content must reach past an edge, in points, before that edge hints at more: below
     /// this a rounding difference would leave a hint on a list that is already at its end.
     public static let edgeTolerance: CGFloat = 2

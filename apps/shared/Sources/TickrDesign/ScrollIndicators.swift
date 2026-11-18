@@ -117,7 +117,7 @@ struct ScrollEdgeHints: ViewModifier {
       }
     } label: {
       Image(systemName: Symbols.scrollMore)
-        .font(.system(size: Tokens.Scroll.chevronSize, weight: .semibold))
+        .font(Tokens.Scroll.chevronFont)
         .foregroundStyle(Palette.textTertiary)
         .frame(width: Tokens.Scroll.capsuleWidth, height: Tokens.Scroll.capsuleHeight)
         .background(Palette.surface, in: Capsule())
