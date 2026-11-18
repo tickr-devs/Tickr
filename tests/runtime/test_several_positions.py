@@ -642,6 +642,17 @@ def test_working_entries_filling_with_a_stop_out_and_a_flatten_at_twenty_slots(
         assert any(o.leg is Leg.EXIT and o.symbol == flattened for o in desk.engine.orders())
 
 
+def held_by(broker: FakeBroker, symbol: str) -> D:
+    return next((p.quantity for p in broker.positions() if p.symbol == symbol), D(0))
+
+
+def working_to_sell(broker: FakeBroker, symbol: str) -> D:
+    """Shares the broker's working SELL orders other than stops still sell, as it lists them."""
+    return sum((o.quantity - o.filled_quantity for o in broker.open_orders()
+                if o.symbol == symbol and o.side is Side.SELL
+                and o.order_type is not OrderType.STOP_LOSS), D(0))
+
+
 @pytest.mark.parametrize("cause", ["exit", "session-flatten"])
 def test_an_exit_during_working_entry_fills_waits_at_most_those_reads(tmp_path, cause):
     """The other side of reading fills first (Fable, review of #637): an exit or a flatten
@@ -649,7 +660,8 @@ def test_an_exit_during_working_entry_fills_waits_at_most_those_reads(tmp_path, 
     reads. Its first stop is cancelled at once; the cancel's Detail read comes after at most
     the working entries' reads, and the shares are sold at once: they are without a stop
     or a sell for at most working + 1 polls (spec section 9), inside
-    `max_unprotected_seconds`, and the close is sent within working + 3 polls."""
+    `max_unprotected_seconds`, the close is sent within working + 3 polls, and never more
+    shares are working to sell than the broker holds."""
     working = int(CFG.risk.max_working_entries)
     held = MAX - working
     broker = FakeBroker(history_down=True)
@@ -672,9 +684,20 @@ def test_an_exit_during_working_entry_fills_waits_at_most_those_reads(tmp_path, 
         desk.step()
         steps += 1
         stop_working = any(o.client_order_id == first for o in broker.open_orders())
+        assert working_to_sell(broker, leaving) <= held_by(broker, leaving)
         sold = any(o.leg is Leg.EXIT and o.symbol == leaving for o in desk.engine.orders())
         if not sold and not stop_working:
             bare += 1
     assert sold and steps <= working + 3
     assert bare <= working + 1
+    trade_id = desk.trade_of(leaving).trade_id
+    while desk.engine.trade(trade_id).state is not TradeState.CLOSED and steps < 8 * working:
+        for o in broker.open_orders():  # the market fills each close as it arrives
+            if (o.symbol == leaving and o.side is Side.SELL
+                    and o.order_type is not OrderType.STOP_LOSS):
+                broker.fill(o.client_order_id, o.quantity - o.filled_quantity, D("9.90"))
+        desk.step()
+        steps += 1
+        assert working_to_sell(broker, leaving) <= held_by(broker, leaving)
+    assert desk.engine.trade(trade_id).state is TradeState.CLOSED
     assert (bare + 1) * POLL <= float(CFG.orders.max_unprotected_seconds)
