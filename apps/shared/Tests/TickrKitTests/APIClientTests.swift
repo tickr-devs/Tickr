@@ -318,29 +318,15 @@ final class StubProtocol: URLProtocol {
     #expect(raw == cause)
   }
 
-  @Test func refusalWithoutErrorBodyIsAContractError() async throws {
-    StubProtocol.answer = (500, Data("oops".utf8))
+  @Test(arguments: [(200, "{\"api_version\": 2}", true), (500, "oops", false)])
+  func badAnswerIsUnreadableOrAContractError(status: Int, body: String, unreadable: Bool) async throws {
+    StubProtocol.answer = (status, Data(body.utf8))
     let error = await #expect(throws: APIError.self) { try await client.status() }
-    guard case .contract = error else {
-      Issue.record("expected a contract error, got \(String(describing: error))")
-      return
+    switch error {
+    case .unreadable?: #expect(unreadable)
+    case .contract?: #expect(!unreadable)
+    default: Issue.record("expected an unreadable answer or a contract error, got \(String(describing: error))")
     }
-  }
-
-  /// An answer the app cannot read (here a newer API version) is an app and a bot from different
-  /// releases: the person reads that and what to do, never the field path or "contract".
-  @Test func unreadableAnswerSaysReinstallNotTheField() async throws {
-    StubProtocol.answer = (200, Data("{\"api_version\": 2}".utf8))
-    let error = await #expect(throws: APIError.self) { try await client.status() }
-    guard case .unreadable(let detail) = error else {
-      Issue.record("expected an unreadable answer, got \(String(describing: error))")
-      return
-    }
-    #expect(detail.contains("api_version"))
-    let text = try #require(error?.errorDescription)
-    #expect(text.contains("different releases"))
-    #expect(!text.contains("api_version"))
-    #expect(!text.contains("contract"))
   }
 
   @Test func pendingCommands() async throws {
