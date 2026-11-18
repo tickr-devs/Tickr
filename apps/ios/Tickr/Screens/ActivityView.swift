@@ -327,12 +327,20 @@ private struct DayPicker: View {
       }
       Spacer(minLength: 0)
       if let first = activity.month.firstDay {
-        Text(first, format: .dateTime.month(.wide).year())
-          .font(Tokens.Typography.calloutMono.bold())
-          .foregroundStyle(Palette.textPrimary)
-          // The month and year wrap ("Ноябрь 2026 г." at large text sizes), never shrink or get cut.
-          .multilineTextAlignment(.center)
-          .contentTransition(.opacity)
+        VStack(spacing: Tokens.Space.xxs) {
+          Text(first, format: .dateTime.month(.wide).year())
+            .font(Tokens.Typography.calloutMono.bold())
+            .foregroundStyle(Palette.textPrimary)
+          // The month's total result under its name, as the Mac shows it beside the month.
+          if let total = DayCalendar.total(of: activity.month, days: activity.days) {
+            Text(L10n.Activity.monthTotal(Money.signedUSD(total)))
+              .font(Tokens.Typography.label)
+              .foregroundStyle(Palette.result(total))
+          }
+        }
+        // The month and year wrap ("Ноябрь 2026 г." at large text sizes), never shrink or get cut.
+        .multilineTextAlignment(.center)
+        .contentTransition(.opacity)
       }
       // At accessibility sizes the button takes its own row under the month.
       if activity.selectedDay != nil && !dynamicTypeSize.isAccessibilitySize {

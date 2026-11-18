@@ -874,6 +874,10 @@ enum L10n {
     static var backToToday: LocalizedStringResource {
       LocalizedStringResource("activity.backToToday", defaultValue: "Today", bundle: L10n.bundle)
     }
+    /// The shown month's total result, under its name in the calendar.
+    static func monthTotal(_ result: String) -> LocalizedStringResource {
+      LocalizedStringResource("activity.monthTotal", defaultValue: "month \(result)", bundle: L10n.bundle)
+    }
     static var previousMonth: LocalizedStringResource {
       LocalizedStringResource("activity.previousMonth", defaultValue: "Previous month", bundle: L10n.bundle)
     }

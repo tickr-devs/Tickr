@@ -834,6 +834,23 @@
         }
       }
     },
+    "activity.monthTotal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "month %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "месяц %@"
+          }
+        }
+      }
+    },
     "activity.nextMonth" : {
       "extractionState" : "manual",
       "localizations" : {
