@@ -871,7 +871,8 @@ def cause_violations(path: Path) -> list[tuple[int, str]]:
 # with TickrDesign's `withoutScrollIndicators()`; an app never sets them view by view.
 OWN_INDICATORS = re.compile(r"\bshowsIndicators\s*:|\.scrollIndicators\s*\(")
 # A scene of an app: its root view must hide the indicators.
-SCENE = re.compile(r"\b(?:WindowGroup|Window|Settings|MenuBarExtra|DocumentGroup|UtilityWindow)\s*[({]")
+SCENE = re.compile(
+    r"\b(?:WindowGroup|Window|Settings|MenuBarExtra|DocumentGroup|UtilityWindow)\s*[({]")
 APP_TYPE = re.compile(r":\s*App\s*\{")
 NO_INDICATORS = ".withoutScrollIndicators()"
 

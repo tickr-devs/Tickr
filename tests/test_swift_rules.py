@@ -805,7 +805,8 @@ def test_scroll_indicators_are_hidden_once_per_scene(tmp_path):
         "}\n"
     )
     assert [line for line, _ in module.scrollbar_violations(write(tmp_path, app))] == [3, 7]
-    fixed = app.replace("      SettingsView()\n", "      SettingsView()\n        .withoutScrollIndicators()\n")
+    fixed = app.replace(
+        "      SettingsView()\n", "      SettingsView()\n        .withoutScrollIndicators()\n")
     assert module.scrollbar_violations(write(tmp_path, fixed)) == []
 
 
