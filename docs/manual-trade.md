@@ -175,7 +175,10 @@ not raised to 20 before it is answered. Details: `src/tickr/engine/paging_probe.
 When, and the bot: as for the history paging probe above. It places `[probe]
 open_orders_paging_orders` BUY LIMIT orders, `[probe] paging_far_percent` below the bid and
 one tick apart so none fills, and keeps them all working; then it reads the list and cancels
-every order, proving each over. It takes about 20 minutes and buys nothing. If it is
+every order, proving each over. Before each order it reads the position: a share held (an
+earlier order filled) stops the placing and goes to the cancels. It is refused with less than
+`[probe] open_orders_end_margin_minutes` left in the session. It takes about 20 minutes and
+buys nothing; its orders stay in that day's order history. If it is
 interrupted, cancel every working `probe-` order in the Webull app before starting the bot.
 
 1. Step 1 of the extended-hours probe.

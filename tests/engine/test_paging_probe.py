@@ -249,3 +249,36 @@ def test_open_orders_probe_names_an_order_it_cannot_cancel(tmp_path):
     assert any(second in u for u in summary["unresolved"])
     assert summary["broker_after"]["working_probe_orders"] == [second]
     assert len(world.broker.open_orders()) == 1  # every other order was still cancelled
+
+
+def test_open_orders_probe_stops_placing_when_an_earlier_order_fills(tmp_path):
+    """Fable, review of #639: an order placed earlier fills while later ones are placed (a
+    falling stock); the position read before the next order stops the placing at once,
+    every working order is still cancelled, and the operator is told to sell the share."""
+    class FillsFirstAtFourth(OpenPagingBroker):
+        def place(self, request: Any) -> Any:
+            ack = super().place(request)
+            if len(self.sent) == 4:
+                first = self.sent[0]
+                self.fill(first.client_order_id, Decimal(1), first.limit_price)
+            return ack
+
+    world = World(tmp_path, FillsFirstAtFourth())
+    code, summary = run_open(world)
+    assert len(world.broker.sent) == 4  # nothing after the fill was seen
+    assert "before open-4" in summary["stopped"] and "holds 1" in summary["stopped"]
+    assert not world.broker.open_orders()
+    assert code == sp.EXIT_OPERATOR and summary["broker_after"]["position"] == "1"
+    assert "pages" not in summary
+
+
+def test_open_orders_probe_is_refused_too_close_to_the_session_end(tmp_path):
+    world = World(tmp_path, OpenPagingBroker())
+    margin = timedelta(minutes=CFG.probe.open_orders_end_margin_minutes)
+    code = pp.run_open_orders(CFG, world.broker, world.market, SYMBOL, world.folder,
+                              now=world.now, sleep=world.sleep, out=world.lines.append,
+                              session=sp.POST,
+                              session_end=POST_TIME + margin - timedelta(minutes=1))
+    summary = json.loads((world.folder / "summary.json").read_text("utf-8"))
+    assert code == sp.EXIT_ANSWERED and "min left" in summary["stopped"]
+    assert world.broker.sent == []

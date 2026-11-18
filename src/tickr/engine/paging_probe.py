@@ -33,7 +33,7 @@ paging-<UTC time>/steps.jsonl` and a `summary.json`.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -192,7 +192,10 @@ def run_open_orders(config: Config, broker: Broker, market: MarketData, symbol: 
     `open_orders_max_pages`), then every order cancelled and proven over, one by one. Each
     order is written to the evidence file before its one request, never resent; an unknown
     outcome is read back by Detail. An order Detail shows terminal while it should work
-    (filled or rejected) stops the placing at once; the cancels always run. Returns the exit
+    (filled or rejected), or a share of the symbol held before the next order (an earlier
+    order filled), stops the placing at once; the cancels always run. Refused within `[probe]
+    open_orders_end_margin_minutes` of the session's end. Every order of the run stays in
+    that day's order history (H2c: one page held 87 rows). Returns the exit
     code; the caller holds the bot's lock."""
     probe_cfg = config.probe
     started = now()
@@ -211,12 +214,25 @@ def run_open_orders(config: Config, broker: Broker, market: MarketData, symbol: 
         try:
             if shapes is None:
                 raise ManualRefused("this broker cannot read open-orders page shapes")
+            margin = timedelta(minutes=probe_cfg.open_orders_end_margin_minutes)
+            if now() > session_end - margin:
+                raise ManualRefused(f"the {session} ends at {session_end.isoformat()}: less "
+                                    f"than {probe_cfg.open_orders_end_margin_minutes} min left")
             require_flat(broker)
             quote = probe.quote()
             if quote.ask > probe_cfg.max_price_usd:
                 raise ManualRefused(f"ask {quote.ask} is above [probe] max_price_usd")
             limit = floor_tick(quote.bid * (1 - probe_cfg.paging_far_percent / PERCENT))
             for n in range(probe_cfg.open_orders_paging_orders):
+                # Any earlier order may fill while later ones are placed (a falling stock, no
+                # broker stop outside the regular session): a share held stops the placing.
+                try:
+                    held = probe._position()
+                except Unresolved as exc:
+                    raise ManualRefused(f"before open-{n}: {exc}: stopped") from exc
+                if held != 0:
+                    raise ManualRefused(f"before open-{n}: the broker holds {held} {symbol}: "
+                                        "stopped")
                 price = limit - n * tick(limit)
                 if price <= 0:
                     raise ManualRefused(f"order {n}: the price would fall to {price}")
