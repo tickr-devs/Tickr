@@ -3,10 +3,10 @@ values those tests were written for pinned.
 
 The owner's goal (2026-11-17) is that switching the live strategy, or its limits, is a change to
 config alone. The platform tests (rehearsals, admission, the daily room, the demo) are written
-around price-action-v3's breakout bars and the 50 / 300 / 2500 USD limits, so they read the shipped file
-with those few values pinned; every other key stays the shipped one, so the tests still run on
-the real config. Tests of the shipped config itself (tests/test_config.py, preflight of the real
-file) read config/bot.toml directly.
+around price-action-v3's breakout bars and the 50 / 300 / 2500 USD limits, so they read the
+shipped file with those few values pinned; every other key stays the shipped one, so the tests
+still run on the real config. Tests of the shipped config itself (tests/test_config.py,
+preflight of the real file) read config/bot.toml directly.
 """
 
 from __future__ import annotations
