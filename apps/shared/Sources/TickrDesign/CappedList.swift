@@ -75,11 +75,11 @@ public struct CappedList<Item, ID: Hashable, Row: View>: View {
           .sheet(isPresented: $showsAll) {
             let open = $showsAll
             let all = Array(zip(ids, items).enumerated())
-            AllRowsSheet(title: title, count: items.count, close: { open.wrappedValue = false }) {
+            AllRowsSheet(title: title, count: items.count, close: { open.wrappedValue = false }, rows: {
               VStack(alignment: .leading, spacing: spacing) {
                 ForEach(all, id: \.element.0) { index, pair in row(index, pair.1) }
               }
-            }
+            })
           }
       }
     }
