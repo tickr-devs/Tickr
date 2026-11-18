@@ -413,6 +413,8 @@ private struct DayCell: View {
           PulseDot(Palette.accent, size: Tokens.Size.dotSmall, event: todayEvent)
         }
       }
+      // A margin above and below, so a day's last line (its wins and losses) never sits on the edge.
+      .padding(.vertical, Tokens.Space.xxs)
       .frame(maxWidth: .infinity, minHeight: Self.height)
       .foregroundStyle(result == nil && !isToday ? Palette.textQuaternary : Palette.textPrimary)
       .background {
