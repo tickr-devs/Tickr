@@ -457,8 +457,8 @@ extension EnvironmentValues {
 }
 
 /// The design's tab bar: a floating capsule on a blurred surface with a hairline and a soft shadow;
-/// each tab an outline symbol over its name, the selected one in `infoText` on a quiet pill that
-/// spans the tab's width and stays inside the bar (as the system's iOS 26 tab bar).
+/// each tab an outline symbol over its name, the selected one in `textPrimary` on a quiet grey pill
+/// that spans the tab's width, stays inside the bar and slides to the tab chosen next.
 struct TickrTabBar: View {
   /// Height of the capsule, its distance from the screen's sides and bottom edge, in points.
   static let height: CGFloat = 58
@@ -469,7 +469,9 @@ struct TickrTabBar: View {
   /// Least width of one tab, in points.
   static let tabWidth: CGFloat = 56
   /// The selected tab's pill: a share of `textPrimary`, a neutral grey in light and dark.
-  static let selectedWash = 0.07
+  static let selectedWash = 0.08
+  /// The pill's identity in `pill`.
+  static let pillID = "selected"
   /// Shadow under the capsule: share of `shadow`, blur and drop, in points.
   static let shadowShare = 0.25
   static let shadowBlur: CGFloat = 15
@@ -477,6 +479,8 @@ struct TickrTabBar: View {
 
   @Environment(AppModel.self) private var model
   @Environment(\.screenBottomInset) private var bottomInset
+  /// The pill's one identity across the tabs, so a switch slides it instead of fading.
+  @Namespace private var pill
 
   var body: some View {
     HStack(spacing: 0) {
@@ -484,6 +488,8 @@ struct TickrTabBar: View {
         button(tab).frame(maxWidth: .infinity)
       }
     }
+    // Only the bar animates a switch (the pill slides); the screens change at once.
+    .animation(Tokens.Motion.standard, value: model.selectedTab)
     // The pill keeps this margin from the bar's edge on every side.
     .padding(Tokens.Space.xxs)
     .frame(minHeight: Self.height)
@@ -511,7 +517,7 @@ struct TickrTabBar: View {
         Text(tab.title)
           .font(Tokens.Typography.tabLabel)
       }
-      .foregroundStyle(selected ? Palette.infoText : Palette.textSecondary)
+      .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
       .padding(.vertical, Tokens.Space.xs)
       // The name gets the tab's whole width (no side padding inside it), so the longest Russian
       // name ("Лаборатория") stays on one line; the pill spans the tab, at least `tabWidth` wide,
@@ -520,6 +526,7 @@ struct TickrTabBar: View {
       .background {
         if selected {
           Capsule().fill(Palette.textPrimary.opacity(Self.selectedWash))
+            .matchedGeometryEffect(id: Self.pillID, in: pill)
         }
       }
       .contentShape(Rectangle())
