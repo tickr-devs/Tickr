@@ -273,6 +273,40 @@
         }
       }
     },
+    "activity.calendarLosses" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldL"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldУ"
+          }
+        }
+      }
+    },
+    "activity.calendarWins" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldW"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldП"
+          }
+        }
+      }
+    },
     "activity.chipLosses" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2355,13 +2389,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · %2$@ · %3$@ · drag to scroll · touch and hold to read"
+            "value" : "%1$@ · %2$@ · %3$@ · drag to scroll · pinch to zoom · touch and hold to read"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · %2$@ · %3$@ · листайте · удерживайте, чтобы прочитать свечу"
+            "value" : "%1$@ · %2$@ · %3$@ · листайте · сведите пальцы для масштаба · удерживайте, чтобы прочитать свечу"
           }
         }
       }

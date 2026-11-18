@@ -80,6 +80,7 @@ struct SettingsView: View {
       }
       .cardRise(step: Order.about.rawValue)
     }
+    .scrollEdgeFades()
     .scrollContentBackground(.hidden)
     .background(TickrBackground())
     .listSectionSpacing(Tokens.Space.m)
@@ -181,7 +182,7 @@ struct SettingsView: View {
   /// Where the bot is: the address, the connection's state, pairing.
   private var connectionCard: some View {
     SettingsCard(L10n.Settings.botOnMac, note: L10n.Settings.addressFooter) {
-      TextField(text: $draft, prompt: Text(verbatim: Connection.simulatorAddress)) {
+      TextField(text: $draft, prompt: Text(verbatim: Connection.addressExample)) {
         Text(L10n.Settings.botOnMac)
       }
       .keyboardType(.URL)
@@ -266,6 +267,7 @@ private struct PairingSheet: View {
           }
         }
       }
+      .scrollEdgeFades()
       .navigationTitle(Text(L10n.Pair.title))
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
