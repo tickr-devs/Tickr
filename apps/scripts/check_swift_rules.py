@@ -875,12 +875,21 @@ SCENE = re.compile(
     r"\b(?:WindowGroup|Window|Settings|MenuBarExtra|DocumentGroup|UtilityWindow)\s*[({]")
 APP_TYPE = re.compile(r":\s*App\s*\{")
 NO_INDICATORS = ".withoutScrollIndicators()"
+# A scroll view that may scroll vertically, a form or a list: each shows TickrDesign's
+# `scrollEdgeHints()` (edge fade and chevron) in place of the indicators (owner's pick, 2026-11-18).
+VERTICAL_SCROLL = re.compile(
+    r"\bScrollView\s*(?:\((?!\s*\.horizontal\b)|\{)|\b(?:Form|List)\s*[({]")
+EDGE_HINTS = ".scrollEdgeHints("
 
 
 def scrollbar_violations(path: Path) -> list[tuple[int, str]]:
-    """Scroll indicators set by an app's own view, or a scene whose root does not hide them."""
+    """Scroll indicators set by an app's own view, a scene whose root does not hide them, or a
+    vertical scroll view, form or list without its edge hints."""
     lines = _code_lines(path)
     found = [(number, code.strip()) for number, code, _ in lines if OWN_INDICATORS.search(code)]
+    scrolls = [(number, code.strip()) for number, code, _ in lines if VERTICAL_SCROLL.search(code)]
+    if sum(code.count(EDGE_HINTS) for _, code, _ in lines) < len(scrolls):
+        found.extend(scrolls)
     if any(APP_TYPE.search(code) for _, code, _ in lines):
         scenes = [(number, code.strip()) for number, code, _ in lines if SCENE.search(code)]
         hidden = sum(code.count(NO_INDICATORS) for _, code, _ in lines)
@@ -920,8 +929,8 @@ RULES = {
   "stopsymbol": (stop_symbol_violations,
       "stop symbol written by hand; use StopState's symbols, or mark another meaning `// symbol:`"),
   "scrollbars": (scrollbar_violations,
-      "scroll indicators set by hand, or a scene not hiding them; apply "
-      "withoutScrollIndicators() once at each scene's root (TickrDesign)"),
+      "scroll indicators set by hand, a scene not hiding them, or a vertical scroll without "
+      "scrollEdgeHints(); see docs/design-system.md, \"Scrolling\""),
   "cause": (cause_violations,
       "a cause shown in the bot's words; use its `…Text` accessor (the person's language)"),
 }

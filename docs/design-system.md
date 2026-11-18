@@ -463,6 +463,15 @@ sheets and popovers included, even with the Mac's "Always show scroll bars" sett
 `scrollbars` rule of `check_swift_rules.py` rejects indicators set view by view in the apps and a
 scene that does not hide them.
 
+In their place every vertical scroll view, form and list shows `scrollEdgeHints()` (owner's pick,
+variant B of the 2026-11-18 mockups, `Tokens.Scroll`): an edge with more content beyond it fades
+the content out over `fade` (72 pt iPhone, 56 pt Mac; above a bar such as the iPhone's tab bar,
+the content under the bar is hidden while more is below), and while more is below, a `surface`
+capsule with `Symbols.scrollMore` sits on the bottom edge; a click or tap scrolls 80% of the
+visible height. At the top and the end the hints fade away in 0.2 s (none with Reduce Motion).
+A screen that drives its scroll position itself passes it: `scrollEdgeHints(position:)`. The same
+rule rejects a vertical scroll view, form or list in a file with fewer `scrollEdgeHints` calls.
+
 ## Loading (`Tokens.Loading`, mockup v102)
 
 Loading uses a skeleton or a spinner, never a radar: the radar is only the empty "no positions"
