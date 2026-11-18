@@ -403,7 +403,7 @@ private struct LiveFlowCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    Card(L10n.Flow.title) {
+    Card(model.isLive ? L10n.Flow.title : L10n.Flow.titleRecorded) {
       // Live: a green dot and the New York time of the bot's last status write, as in the design.
       if model.isLive, let written = model.status?.writtenAt.date {
         HStack(spacing: Tokens.Space.xs) {

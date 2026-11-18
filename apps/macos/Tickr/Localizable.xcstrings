@@ -4755,6 +4755,23 @@
         }
       }
     },
+    "flow.titleRecorded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flow · screeners → strategy → risk → order → broker stop"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поток · скринеры → стратегия → риск → ордер → стоп брокера"
+          }
+        }
+      }
+    },
     "flow.trayExcluded" : {
       "extractionState" : "manual",
       "localizations" : {

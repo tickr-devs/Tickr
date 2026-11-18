@@ -544,6 +544,12 @@ enum L10n {
         defaultValue: "Live flow · screeners → strategy → risk → order → broker stop",
         bundle: L10n.bundle)
     }
+    /// The flow card's title on a recorded day: nothing on it is live.
+    static var titleRecorded: LocalizedStringResource {
+      LocalizedStringResource("flow.titleRecorded",
+        defaultValue: "Flow · screeners → strategy → risk → order → broker stop",
+        bundle: L10n.bundle)
+    }
     static var recorded: LocalizedStringResource {
       LocalizedStringResource("flow.recorded", defaultValue: "recorded", bundle: L10n.bundle)
     }
