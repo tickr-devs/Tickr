@@ -322,10 +322,8 @@ final class StubProtocol: URLProtocol {
   func badAnswerIsUnreadableOrAContractError(status: Int, body: String, unreadable: Bool) async throws {
     StubProtocol.answer = (status, Data(body.utf8))
     let error = await #expect(throws: APIError.self) { try await client.status() }
-    switch error {
-    case .unreadable?: #expect(unreadable)
-    case .contract?: #expect(!unreadable)
-    default: Issue.record("expected an unreadable answer or a contract error, got \(String(describing: error))")
+    if case .contract? = error { #expect(!unreadable) } else if case .unreadable? = error { #expect(unreadable) } else {
+      Issue.record("expected an unreadable answer or a contract error, got \(String(describing: error))")
     }
   }
 
