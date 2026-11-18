@@ -457,7 +457,8 @@ extension EnvironmentValues {
 }
 
 /// The design's tab bar: a floating capsule on a blurred surface with a hairline and a soft shadow;
-/// each tab an outline symbol over its name, the selected one in `infoText` on an `info` wash.
+/// each tab an outline symbol over its name, the selected one in `infoText` on a quiet pill that
+/// spans the tab's width and stays inside the bar (as the system's iOS 26 tab bar).
 struct TickrTabBar: View {
   /// Height of the capsule, its distance from the screen's sides and bottom edge, in points.
   static let height: CGFloat = 58
@@ -467,8 +468,8 @@ struct TickrTabBar: View {
   static let largestText = DynamicTypeSize.xLarge
   /// Least width of one tab, in points.
   static let tabWidth: CGFloat = 56
-  /// Wash under the selected tab, a share of `info`.
-  static let selectedWash = 0.16
+  /// The selected tab's pill: a share of `textPrimary`, a neutral grey in light and dark.
+  static let selectedWash = 0.07
   /// Shadow under the capsule: share of `shadow`, blur and drop, in points.
   static let shadowShare = 0.25
   static let shadowBlur: CGFloat = 15
@@ -483,7 +484,8 @@ struct TickrTabBar: View {
         button(tab).frame(maxWidth: .infinity)
       }
     }
-    .padding(.horizontal, Tokens.Space.xs)
+    // The pill keeps this margin from the bar's edge on every side.
+    .padding(Tokens.Space.xxs)
     .frame(minHeight: Self.height)
     .background(.ultraThinMaterial, in: Capsule())
     .background(Palette.surface.opacity(Tokens.Opacity.overlay), in: Capsule())
@@ -510,13 +512,14 @@ struct TickrTabBar: View {
           .font(Tokens.Typography.tabLabel)
       }
       .foregroundStyle(selected ? Palette.infoText : Palette.textSecondary)
-      .padding(.vertical, Tokens.Space.xs + Tokens.Space.xxs)
+      .padding(.vertical, Tokens.Space.xs)
       // The name gets the tab's whole width (no side padding inside it), so the longest Russian
-      // name ("Лаборатория") stays on one line; the wash hugs it, at least `tabWidth` wide.
-      .frame(minWidth: Self.tabWidth)
+      // name ("Лаборатория") stays on one line; the pill spans the tab, at least `tabWidth` wide,
+      // and the bar's own padding keeps it inside the bar.
+      .frame(minWidth: Self.tabWidth, maxWidth: .infinity, maxHeight: .infinity)
       .background {
         if selected {
-          Capsule().fill(Palette.info.opacity(Self.selectedWash))
+          Capsule().fill(Palette.textPrimary.opacity(Self.selectedWash))
         }
       }
       .contentShape(Rectangle())
