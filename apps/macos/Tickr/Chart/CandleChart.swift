@@ -25,6 +25,8 @@ struct CandleChart: View {
   /// The pointer state, for the shared axis and crosshair of every pane.
   var pointerModel: ChartPointer { pointer }
   @State private var appeared = false
+  /// Keyboard focus, taken while a click holds the crosshair so Esc lets it go.
+  @FocusState private var focused: Bool
   /// The theme on screen: the extended-hours band is stronger in dark (mockup v114).
   @Environment(\.colorScheme) private var colorScheme
   /// How many time labels fit across the price pane, `timeLabelSlot` apart. Kept as a count, not
@@ -124,6 +126,16 @@ struct CandleChart: View {
     .animation(Tokens.Motion.standard, value: lines)
     .animation(Tokens.Motion.quick, value: viewport.visible)
     .gesture(pinch)
+    // Esc lets a held crosshair go: the chart takes the keyboard while it is held.
+    .focusable(pointer.pinned)
+    .focusEffectDisabled()
+    .focused($focused)
+    .onChange(of: pointer.pinned) { _, held in focused = held }
+    .onKeyPress(.escape) {
+      guard pointer.pinned else { return .ignored }
+      pointer.unpin()
+      return .handled
+    }
   }
 
   // MARK: Price pane
