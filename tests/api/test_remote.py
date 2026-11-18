@@ -19,7 +19,15 @@ import pytest
 from tickr import config
 from tickr.api import __main__ as api_main
 from tickr.api import contract
-from tickr.api.server import make_remote_server, make_server, pair, settings_from_config
+from tickr.api.server import (
+    GET_ROUTES,
+    make_remote_server,
+    make_server,
+    pair,
+    pair_simulator,
+    settings_from_config,
+    unpair_simulator,
+)
 
 from .samples import T0
 from .schema_check import errors
@@ -422,3 +430,106 @@ def test_the_phones_listener_reads_through_the_local_caches(local_api, remote_ap
     for name in ("captured_bars", "history", "decisions", "observer_results", "screener_chips",
                  "discovery_day", "skipped", "warmer"):
         assert getattr(remote_api, name) is getattr(local_api, name), name
+
+
+def simulator(server, method, path, token=None):
+    """A request as the iOS Simulator on this Mac makes it: to the remote port's loopback."""
+    sent = {} if token is None else {"Authorization": f"Bearer {token}"}
+    loopback = f"{server.settings.host}:{server.server_port}"
+    return request(server, method, path, headers=sent, host=loopback)
+
+
+def test_the_simulator_has_a_token_of_its_own_beside_the_phone(remote_api, remote_settings):
+    phone = paired(remote_api, remote_settings)
+    # Before `pair-simulator` the loopback Host is not one the remote port answers.
+    resp, _ = simulator(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 403
+    token_file = pair_simulator(remote_settings)
+    assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
+    left = json.loads(token_file.read_text("ascii"))
+    # The address comes from [api] host and remote_port: the one source of the port.
+    assert left["address"] == f"http://{remote_settings.host}:{remote_settings.remote_port}"
+    token = left["token"]
+    assert remote_settings.simulator_token_hash_path.read_text("ascii").strip() == \
+        hashlib.sha256(token.encode("utf-8")).hexdigest()
+    resp, _ = simulator(remote_api, "GET", "/status", token=token)
+    assert resp.status == 200
+    resp, _ = simulator(remote_api, "GET", "/status")
+    assert resp.status == 401
+    # Each token opens its own Host only: a copy of the Simulator's file opens nothing from the
+    # tailnet, and the phone's token is not the Simulator's.
+    resp, _ = remote(remote_api, "GET", "/status", token=token)
+    assert resp.status == 401
+    resp, _ = simulator(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 401
+    # The phone keeps working: pairing the Simulator never revokes it.
+    resp, _ = remote(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 200
+    # A new Simulator token revokes the Simulator's old one only.
+    pair_simulator(remote_settings)
+    resp, _ = simulator(remote_api, "GET", "/status", token=token)
+    assert resp.status == 401
+    resp, _ = remote(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 200
+
+
+def test_unpair_simulator_revokes_its_token_only(remote_api, remote_settings):
+    phone = paired(remote_api, remote_settings)
+    token = json.loads(pair_simulator(remote_settings).read_text("ascii"))["token"]
+    unpair_simulator(remote_settings)
+    assert not remote_settings.simulator_token_path.exists()
+    assert not remote_settings.simulator_token_hash_path.exists()
+    resp, _ = simulator(remote_api, "GET", "/status", token=token)
+    assert resp.status == 403  # the loopback Host is closed again
+    resp, _ = remote(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 200
+
+
+@pytest.mark.parametrize("header", ["X-Forwarded-For", "Forwarded", "Tailscale-User-Login"])
+def test_a_forwarded_request_never_gets_the_simulator_host(remote_api, remote_settings, header):
+    """Through `tailscale serve` the caller picks the Host: a request a proxy forwarded is
+    refused the Simulator's loopback Host, even with the Simulator's token."""
+    token = json.loads(pair_simulator(remote_settings).read_text("ascii"))["token"]
+    loopback = f"{remote_settings.host}:{remote_api.server_port}"
+    resp, _ = request(remote_api, "GET", "/status", host=loopback,
+                      headers={"Authorization": f"Bearer {token}", header: "100.64.0.9"})
+    assert resp.status == 403
+
+
+def test_the_phone_reads_the_chart_source_attached_to_the_local_listener(local_api, remote_api,
+                                                                        remote_settings):
+    """`python -m tickr.api` attaches the chart source to the local listener only: the phone's
+    listener shares it (one source, one request budget), so its GET /chart is not left off."""
+    from tickr.api.chart import OFF_CAUSE
+    from tickr.data.base import FakeMarketData
+
+    assert remote_api.chart is local_api.chart
+    token = paired(remote_api, remote_settings)
+    path = "/chart?symbol=ABCD&interval=5m&range=1d"
+    resp, payload = remote(remote_api, "GET", path, token=token)
+    assert resp.status == 503 and doc(payload)["cause"] == OFF_CAUSE
+    local_api.chart.use(FakeMarketData("fake"))
+    resp, payload = remote(remote_api, "GET", path, token=token)
+    local, served_locally = request(local_api, "GET", path)
+    # Both listeners now answer from the same source (here without a calendar to read it by).
+    assert doc(payload).get("cause") != OFF_CAUSE
+    assert (resp.status, payload) == (local.status, served_locally)
+
+
+@pytest.mark.parametrize("path", [
+    *[route for route in GET_ROUTES if route != "/"], "/days/2026-11-16",
+    "/chart?symbol=ABCD&interval=5m&range=1d", "/days/2026-11-16/trades"])
+def test_every_get_route_answers_the_phone_as_it_answers_the_mac(local_api, remote_api,
+                                                                 remote_settings, path):
+    """The phone's listener reads through the local one's caches and sources: a route that
+    answers on the Mac's port answers the same on the phone's (#668: /chart was off there)."""
+    from tickr.data.base import FakeMarketData
+
+    local_api.chart.use(FakeMarketData("fake"))
+    token = paired(remote_api, remote_settings)
+    mac, mac_body = request(local_api, "GET", path)
+    phone, phone_body = remote(remote_api, "GET", path, token=token)
+    assert phone.status == mac.status, (path, phone_body)
+    if mac.status >= 400:
+        assert (doc(phone_body)["error"], doc(phone_body).get("cause")) == \
+            (doc(mac_body)["error"], doc(mac_body).get("cause")), path

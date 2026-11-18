@@ -774,6 +774,12 @@ private struct ReplayCard: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel(Text(L10n.Lab.replayDay))
+      } else if oneDay {
+        // Never a bare switch with the start greyed out: say why there is no day to pick.
+        Text(L10n.Lab.replayNoDays)
+          .font(Tokens.Typography.caption)
+          .foregroundStyle(Palette.textTertiary)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
   }
@@ -836,10 +842,8 @@ private struct ReplayCard: View {
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.warningText)
       case .idle:
-        // The apps' empty state, sized to its content: no run yet is a calm state, not a gap.
-        ContentUnavailableView {
-          Label { Text(L10n.Lab.replayIdle) } icon: { BrandMark.empty() }
-        }
+        // The apps' empty state, centred in the card: no run yet is a calm state, not a gap.
+        EmptyState(L10n.Lab.replayIdle)
       }
     } else if let error = model.labReplayError {
       ReadFailureNote(L10n.ReadFailed.replay, detail: error)
