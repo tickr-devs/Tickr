@@ -1,7 +1,8 @@
 """TickrKit strings for the bot's codes (ApiText), in English and Russian.
 
 `python3 apps/scripts/kit_api_strings.py` writes ApiCodes.swift, L10n+Codes.swift and
-L10n+Rules.swift (parts of the kit's L10n) and the kit's catalog entries; run apps/scripts/format_xcstrings.py after it.
+L10n+Rules.swift (parts of the kit's L10n) and the kit's catalog entries; run
+apps/scripts/format_xcstrings.py after it.
 `--check` writes nothing and fails when the committed files differ from this list
 (tests/test_api_codes.py runs it, and also checks this list against the bot's own codes).
 """
