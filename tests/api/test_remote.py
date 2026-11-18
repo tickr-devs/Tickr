@@ -19,7 +19,13 @@ import pytest
 from tickr import config
 from tickr.api import __main__ as api_main
 from tickr.api import contract
-from tickr.api.server import make_remote_server, make_server, pair, settings_from_config
+from tickr.api.server import (
+    make_remote_server,
+    make_server,
+    pair,
+    pair_simulator,
+    settings_from_config,
+)
 
 from .samples import T0
 from .schema_check import errors
@@ -422,3 +428,36 @@ def test_the_phones_listener_reads_through_the_local_caches(local_api, remote_ap
     for name in ("captured_bars", "history", "decisions", "observer_results", "screener_chips",
                  "discovery_day", "skipped", "warmer"):
         assert getattr(remote_api, name) is getattr(local_api, name), name
+
+
+def simulator(server, method, path, token=None):
+    """A request as the iOS Simulator on this Mac makes it: to the remote port's loopback."""
+    sent = {} if token is None else {"Authorization": f"Bearer {token}"}
+    loopback = f"{server.settings.host}:{server.server_port}"
+    return request(server, method, path, headers=sent, host=loopback)
+
+
+def test_the_simulator_has_a_token_of_its_own_beside_the_phone(remote_api, remote_settings):
+    phone = paired(remote_api, remote_settings)
+    # Before `pair-simulator` the loopback Host is not one the remote port answers.
+    resp, _ = simulator(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 403
+    token_file = pair_simulator(remote_settings)
+    assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
+    token = token_file.read_text("ascii").strip()
+    assert remote_settings.simulator_token_hash_path.read_text("ascii").strip() == \
+        hashlib.sha256(token.encode("utf-8")).hexdigest()
+    resp, _ = simulator(remote_api, "GET", "/status", token=token)
+    assert resp.status == 200
+    resp, _ = simulator(remote_api, "GET", "/status")
+    assert resp.status == 401
+    # The phone keeps working: pairing the Simulator never revokes it.
+    resp, _ = remote(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 200
+    # A new Simulator token revokes the Simulator's old one only.
+    pair_simulator(remote_settings)
+    resp, _ = simulator(remote_api, "GET", "/status", token=token)
+    assert resp.status == 401
+    resp, _ = remote(remote_api, "GET", "/status", token=phone)
+    assert resp.status == 200
+
