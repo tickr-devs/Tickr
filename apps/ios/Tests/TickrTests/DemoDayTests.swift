@@ -39,9 +39,14 @@ import TickrKit
     let connection = try paired().demo(true)
     let elsewhere = try #require(URL(string: "https://elsewhere.example/demo/status"))
     #expect(connection.bearer(for: elsewhere) == nil)
-    // Over plain HTTP (the Simulator's loopback address) no token is ever sent.
+    // Over plain HTTP no token is ever sent to another machine, only to this one (the
+    // Simulator reading the phone's listener on the Mac's loopback).
     let local = Connection(address: "http://127.0.0.1:8767")
     #expect(local.bearer == nil)
+    let lan = try #require(URL(string: "http://192.168.1.5:8767/status"))
+    let loopback = try #require(URL(string: "http://127.0.0.1:8767/status"))
+    #expect(!Connection.carriesToken(lan))
+    #expect(Connection.carriesToken(loopback))
   }
 
   @Test func editingTheAddressKeepsTheSwitch() throws {

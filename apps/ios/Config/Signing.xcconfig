@@ -10,6 +10,9 @@
 // iPhone reads it through `tailscale serve` on this Mac (TICKR_TAILSCALE_HOST in Local.xcconfig).
 // "/$()/" keeps "//" from starting an xcconfig comment.
 TICKR_TAILSCALE_HOST =
+// The Simulator's own token file on this Mac (`python -m tickr.api pair-simulator` prints its
+// path; set it in Local.xcconfig). A Simulator build reads it at launch; empty = none.
+TICKR_SIMULATOR_TOKEN_FILE =
 TICKR_API_ADDRESS[sdk=iphonesimulator*] = http:/$()/127.0.0.1:8767
 TICKR_API_ADDRESS[sdk=iphoneos*] = https:/$()/$(TICKR_TAILSCALE_HOST)
 
