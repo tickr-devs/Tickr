@@ -28,6 +28,8 @@ struct CandleChart: View {
   /// The stretch of time the price pane really draws across its plot, read from its own chart
   /// (`ShownWindow`); every pane below takes this as its time scale.
   @State var shown = ChartShownWindow()
+  /// Keyboard focus, taken while a click holds the crosshair so Esc lets it go.
+  @FocusState private var focused: Bool
   /// The theme on screen: the extended-hours band is stronger in dark (mockup v114).
   @Environment(\.colorScheme) private var colorScheme
   /// How many time labels fit across the price pane, `timeLabelSlot` apart. Kept as a count, not
@@ -127,6 +129,16 @@ struct CandleChart: View {
     .animation(Tokens.Motion.standard, value: lines)
     .animation(Tokens.Motion.quick, value: viewport.visible)
     .gesture(pinch)
+    // Esc lets a held crosshair go: the chart takes the keyboard while it is held.
+    .focusable(pointer.pinned)
+    .focusEffectDisabled()
+    .focused($focused)
+    .onChange(of: pointer.pinned) { _, held in focused = held }
+    .onKeyPress(.escape) {
+      guard pointer.pinned else { return .ignored }
+      pointer.unpin()
+      return .handled
+    }
   }
 
   // MARK: Price pane
@@ -837,6 +849,8 @@ struct CandleChart: View {
     Binding(
       get: { pointer.time },
       set: { time in
+        // Held by a click: the pointer moving away changes nothing.
+        guard !pointer.pinned else { return }
         pointer.time = time
         let index = time.flatMap(plot.index(at:))
         if pointer.index != index { pointer.index = index }
@@ -979,6 +993,8 @@ private struct SharedAxis: ViewModifier {
     let pointer = chart.pointerModel
     scrolling(content)
       .chartXSelection(value: chart.selection)
+      // A click holds the crosshair on its candle; the next click lets it go.
+      .simultaneousGesture(TapGesture().onEnded { pointer.togglePin() })
       .onContinuousHover { phase in
         switch phase {
         case .active(let location): pointer.move(in: pane, to: location)
@@ -1150,9 +1166,10 @@ private struct Crosshair: View {
           if x >= frame.minX, x <= frame.maxX {
             let top = pane == .price ? frame.minY : 0
             let bottom = showsTime ? frame.maxY : geometry.size.height
+            // Held by a click: a firmer line in the accent, so it reads as fixed.
             Rectangle()
-              .fill(Palette.textTertiary.opacity(Tokens.Opacity.medium))
-              .frame(width: Tokens.Stroke.hairline, height: bottom - top)
+              .fill(pointer.pinned ? Palette.accent : Palette.textTertiary.opacity(Tokens.Opacity.medium))
+              .frame(width: pointer.pinned ? Tokens.Stroke.thin : Tokens.Stroke.hairline, height: bottom - top)
               .position(x: x, y: (top + bottom) / 2)
             highlight(marks(index), origin: geometry[plotFrame].origin)
             if showsTime {
@@ -1297,14 +1314,18 @@ private struct ChartLegend: View {
     if let index = pointed ?? series.candles.indices.last {
       let items = entries(index)
       if !items.isEmpty {
-        // As many lines' values as fit across, the rest on the next row: none is cut.
-        ChipFlow(spacing: Tokens.Space.m) {
-          ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-            HStack(spacing: Tokens.Space.xs) {
-              Text(item.name)
-              Text(verbatim: Money.price(item.value))
+        // As many lines' values as fit across, the rest on the next row: none is cut. One item
+        // per line: its colour as a short stroke, the name muted, the value prominent; the price
+        // pane's lines, then the studies, apart by a divider (owner, 2026-11-18: one run of
+        // coloured names and numbers was hard to read).
+        ChipFlow(spacing: Tokens.Space.l) {
+          ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
+            if offset > 0, items[offset - 1].study != item.study {
+              Rectangle()
+                .fill(Palette.separator)
+                .frame(width: Tokens.Stroke.thin, height: Tokens.Space.m)
             }
-            .foregroundStyle(item.color)
+            LegendItem(entry: item)
           }
         }
         .font(Tokens.Typography.annotation)
@@ -1319,33 +1340,33 @@ private struct ChartLegend: View {
 
   private func entries(_ index: Int) -> [ReadoutEntry] {
     var items: [ReadoutEntry] = []
-    func add(_ name: LocalizedStringResource, _ value: Double?, _ color: Color) {
-      if let value { items.append(ReadoutEntry(name: name, value: value, color: color)) }
+    func add(_ name: LocalizedStringResource, _ value: Double?, _ color: Color, study: Bool = false) {
+      if let value { items.append(ReadoutEntry(name: name, value: value, color: color, study: study)) }
     }
-    if lines.vwap { add(L10n.Chart.vwap, series.vwap[index], Palette.warningText) }
-    if lines.fastEMA { add(L10n.Chart.ema(Indicators.fastEMAPeriod), series.fastEMA[index], Palette.accentText) }
-    if lines.slowEMA { add(L10n.Chart.ema(Indicators.slowEMAPeriod), series.slowEMA[index], Palette.highlightText) }
+    if lines.vwap { add(L10n.Chart.vwap, series.vwap[index], Palette.seriesVWAP) }
+    if lines.fastEMA { add(L10n.Chart.ema(Indicators.fastEMAPeriod), series.fastEMA[index], Palette.seriesFastEMA) }
+    if lines.slowEMA { add(L10n.Chart.ema(Indicators.slowEMAPeriod), series.slowEMA[index], Palette.seriesSlowEMA) }
     if lines.movingAverages {
       for (offset, period) in Studies.movingAveragePeriods.enumerated() {
         add(L10n.Chart.movingAverage(period), plot.movingAverages[offset][index], CandleChart.movingAverageColors[offset])
       }
     }
     if lines.bollinger {
-      add(L10n.Chart.bollingerUpper, plot.bollingerUpper[index], Palette.accentText)
-      add(L10n.Chart.bollingerMiddle, plot.bollingerMiddle[index], Palette.accentText)
-      add(L10n.Chart.bollingerLower, plot.bollingerLower[index], Palette.accentText)
+      add(L10n.Chart.bollingerUpper, plot.bollingerUpper[index], Palette.accent.opacity(Tokens.Opacity.medium))
+      add(L10n.Chart.bollingerMiddle, plot.bollingerMiddle[index], Palette.accent)
+      add(L10n.Chart.bollingerLower, plot.bollingerLower[index], Palette.accent.opacity(Tokens.Opacity.medium))
     }
     if lines.macd {
-      add(L10n.Chart.macd, plot.macd[index], Palette.infoText)
-      add(L10n.Chart.macdSignal, plot.macdSignal[index], Palette.warningText)
-      add(L10n.Chart.macdHistogram, plot.macdHistogram[index], Palette.textSecondary)
+      add(L10n.Chart.macd, plot.macd[index], Palette.info, study: true)
+      add(L10n.Chart.macdSignal, plot.macdSignal[index], Palette.warning, study: true)
+      add(L10n.Chart.macdHistogram, plot.macdHistogram[index], Palette.textSecondary, study: true)
     }
-    if lines.rsi { add(L10n.Chart.rsi(Studies.rsiPeriod), plot.rsi[index], Palette.infoText) }
+    if lines.rsi { add(L10n.Chart.rsi(Studies.rsiPeriod), plot.rsi[index], Palette.info, study: true) }
     if lines.stochastic {
-      add(L10n.Chart.stochasticK, plot.stochasticK[index], Palette.infoText)
-      add(L10n.Chart.stochasticD, plot.stochasticD[index], Palette.warningText)
+      add(L10n.Chart.stochasticK, plot.stochasticK[index], Palette.info, study: true)
+      add(L10n.Chart.stochasticD, plot.stochasticD[index], Palette.warning, study: true)
     }
-    if lines.atr { add(L10n.Chart.atr(Indicators.atrPeriod), plot.atr[index], Palette.seriesATRText) }
+    if lines.atr { add(L10n.Chart.atr(Indicators.atrPeriod), plot.atr[index], Palette.seriesATR, study: true) }
     return items
   }
 }
@@ -1373,7 +1394,33 @@ private struct MarkPlate: View {
 private struct ReadoutEntry {
   let name: LocalizedStringResource
   let value: Double
+  /// The colour its line is drawn in (the swatch), never a text tint of it.
   let color: Color
+  /// A study's value (MACD, RSI, stochastic, ATR) rather than a line on the price pane.
+  let study: Bool
+}
+
+/// One legend item: the line's colour as a short stroke, its name muted, its value prominent.
+private struct LegendItem: View {
+  let entry: ReadoutEntry
+
+  /// Length of the colour stroke, in points.
+  static let swatchLength: CGFloat = 10
+
+  var body: some View {
+    HStack(spacing: Tokens.Space.xs) {
+      Capsule()
+        .fill(entry.color)
+        .frame(width: Self.swatchLength, height: Tokens.Stroke.bold)
+      Text(entry.name)
+        .foregroundStyle(Palette.textTertiary)
+      Text(verbatim: Money.price(entry.value))
+        .fontWeight(.semibold)
+        .foregroundStyle(Palette.textPrimary)
+    }
+    .fixedSize()
+    .accessibilityElement(children: .combine)
+  }
 }
 
 /// Localized names of the plotted values (VoiceOver and Audio Graphs read them). Looked up once:

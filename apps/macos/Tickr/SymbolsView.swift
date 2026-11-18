@@ -218,7 +218,10 @@ struct SymbolsView: View {
       }
       Rectangle().fill(Palette.separator).frame(height: Tokens.Stroke.thin)
       HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.m) {
-        Text(L10n.Symbols.showingAll(shown.count))
+        // Fast movers: the flagged symbols, and apart from them the positions and watches pinned
+        // on top, so the tab's count and this line agree (owner test 2026-11-18: 74 vs 79).
+        let pinned = tab == .fastMovers ? shown.filter { $0.mover == nil }.count : 0
+        Text(pinned > 0 ? L10n.Symbols.showingMovers(shown.count - pinned, pinned) : L10n.Symbols.showingAll(shown.count))
         Spacer(minLength: 0)
         Text(SymbolsText.sortHint)
       }
@@ -392,9 +395,10 @@ private struct SymbolsGrid: View {
   static let symbolWidth: CGFloat = 130
   static let lastWidth: CGFloat = 66
   static let changeWidth: CGFloat = 80
-  static let volumeWidth: CGFloat = 48
-  static let atrWidth: CGFloat = 50
-  static let dollarsWidth: CGFloat = 56
+  /// Wide enough for the widest figure on its bold capsule ("40.1×", "-21.2", "51.8×").
+  static let volumeWidth: CGFloat = 60
+  static let atrWidth: CGFloat = 60
+  static let dollarsWidth: CGFloat = 64
   static let screenerWidth: CGFloat = 120
   static let stageWidth: CGFloat = 142
   static let timeWidth: CGFloat = 50
@@ -760,7 +764,7 @@ private struct SymbolsDetailPanel: View {
   }
 
   private func pathStep(_ step: SymbolsBoard.Step, row: SymbolRowV1) -> some View {
-    let reachedAt = row.reached.first { $0.stage == step.stage }?.at?.date
+    let reachedAt = SymbolsBoard.time(step, row: row)
     let (glyph, color): (String, Color) = switch step.mark {
     case .passed, .here(.passed): (Self.passedSymbol, Palette.profitText)
     case .here(.dropped): (Self.droppedSymbol, Palette.droppedText)

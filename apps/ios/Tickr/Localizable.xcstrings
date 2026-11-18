@@ -1735,6 +1735,40 @@
         }
       }
     },
+    "cause.buyingPowerShort" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough buying power"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не хватает покупательной способности"
+          }
+        }
+      }
+    },
+    "cause.buyingPowerUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buying power not read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Покупательная способность не прочитана"
+          }
+        }
+      }
+    },
     "cause.cooldown" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3248,6 +3282,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "В рыночных данных нет свечей по этой бумаге за этот период: %@"
+          }
+        }
+      }
+    },
+    "chart.noCandles.plain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Market data has no candles for this symbol and range."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В рыночных данных нет свечей по этой бумаге за этот период."
           }
         }
       }
