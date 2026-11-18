@@ -372,7 +372,7 @@ enum L10n {
 
   enum Root {
     static var apiUnreachable: LocalizedStringResource {
-      LocalizedStringResource("root.apiUnreachable", defaultValue: "API unreachable", bundle: L10n.bundle)
+      LocalizedStringResource("root.apiUnreachable", defaultValue: "No connection", bundle: L10n.bundle)
     }
     static var connecting: LocalizedStringResource {
       LocalizedStringResource("root.connecting", defaultValue: "connecting…", bundle: L10n.bundle)

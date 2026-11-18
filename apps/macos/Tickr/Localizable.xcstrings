@@ -9443,13 +9443,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API unreachable"
+            "value" : "No connection"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API недоступен"
+            "value" : "Нет связи"
           }
         }
       }
