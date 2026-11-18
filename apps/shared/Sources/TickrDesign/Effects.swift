@@ -11,19 +11,25 @@ public struct PulseDot: View {
   let size: CGFloat
   let pulsing: Bool
   let event: AnyHashable?
+  let letsFinish: Bool
 
-  public init(_ color: Color, size: CGFloat = Tokens.Size.dot, pulsing: Bool = true, event: AnyHashable? = nil) {
+  /// One pulse per change of `event` while `pulsing`. With `letsFinish`, a change while a pulse
+  /// still plays does not restart it (a live price that changes many times a second).
+  public init(_ color: Color, size: CGFloat = Tokens.Size.dot, pulsing: Bool = true, event: AnyHashable? = nil,
+    letsFinish: Bool = false) {
     self.color = color
     self.size = size
     self.pulsing = pulsing
     self.event = event
+    self.letsFinish = letsFinish
   }
 
   public var body: some View {
     Circle()
       .fill(color)
       .frame(width: size, height: size)
-      .eventPulse(Circle(), color: color, scale: Tokens.Motion.pulseScale, event: pulsing ? event : nil)
+      .eventPulse(Circle(), color: color, scale: Tokens.Motion.pulseScale, event: pulsing ? event : nil,
+        letsFinish: letsFinish)
       .accessibilityHidden(true)
   }
 }
@@ -37,11 +43,12 @@ struct EventPulse<S: Shape>: ViewModifier {
   let color: Color
   let scale: CGFloat
   let event: AnyHashable?
+  var letsFinish = false
 
   func body(content: Content) -> some View {
     content.overlay {
       if let event, !reduceMotion {
-        PulseLayer(shape: shape, color: color, scale: scale, event: event)
+        PulseLayer(shape: shape, color: color, scale: scale, event: event, letsFinish: letsFinish)
           .allowsHitTesting(false)
       }
     }
@@ -50,8 +57,10 @@ struct EventPulse<S: Shape>: ViewModifier {
 
 extension View {
   /// One pulse of `shape`'s outline per change of `event`; still without one.
-  public func eventPulse<S: Shape>(_ shape: S, color: Color, scale: CGFloat, event: AnyHashable?) -> some View {
-    modifier(EventPulse(shape: shape, color: color, scale: scale, event: event))
+  /// With `letsFinish`, a change while a pulse plays lets it finish instead of restarting it.
+  public func eventPulse<S: Shape>(_ shape: S, color: Color, scale: CGFloat, event: AnyHashable?,
+    letsFinish: Bool = false) -> some View {
+    modifier(EventPulse(shape: shape, color: color, scale: scale, event: event, letsFinish: letsFinish))
   }
 }
 

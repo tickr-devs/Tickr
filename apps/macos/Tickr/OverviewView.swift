@@ -911,7 +911,7 @@ private struct PositionDetail: View {
   /// The price line; it opens the Chart on the position, as its "Open chart" does.
   private var chart: some View {
     ChartLink(row.position.symbol) {
-      MiniChart(closes: row.line, entry: row.entry, stop: row.stop)
+      MiniChart(closes: row.line, entry: row.entry, stop: row.stop, live: row.live != nil)
         .frame(minWidth: Self.chartMinWidth, minHeight: Self.chartMinHeight)
     }
   }
@@ -1052,13 +1052,13 @@ private struct MiniChart: View {
   let closes: [Decimal]
   let entry: Decimal
   let stop: Decimal?
-  @State private var drawn: CGFloat = 0
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// The line ends at the live bid: its dot pulses.
+  let live: Bool
 
   var body: some View {
     let values = closes.map(Self.double)
     Group {
-      if let last = values.last, values.count > 1 {
+      if values.count > 1 {
         let domain = priceDomain(values)
         let bars = 0...(values.count - 1)
         ZStack {
@@ -1069,20 +1069,9 @@ private struct MiniChart: View {
             }
           }
           .plain(bars: bars, prices: domain)
-          Chart {
-            ForEach(Array(values.enumerated()), id: \.offset) { point in
-              LineMark(x: .value(Self.barKey, point.offset), y: .value(Self.priceKey, point.element))
-                .foregroundStyle(Palette.accent)
-                .lineStyle(StrokeStyle(lineWidth: Tokens.Stroke.bold, lineJoin: .round))
-            }
-            PointMark(x: .value(Self.barKey, values.count - 1), y: .value(Self.priceKey, last))
-              .symbol { PulseDot(Palette.accent, event: values.count) }
-          }
-          .plain(bars: bars, prices: domain)
-          // Each new M1 bar: the line and the last-price dot glide to their new places (and the
-          // dot pulses once), still in between.
-          .animation(reduceMotion ? nil : Tokens.Motion.standard, value: values.count)
-          .reveal(drawn)
+          // Drawn in once; each new price moves the line's end and its dot, which pulses while
+          // the price is the live bid. The same line as on the iPhone's position cards.
+          LiveSparkline(values: values, color: Palette.accent, live: live, domain: domain, dotSize: Tokens.Size.dot)
         }
       } else {
         Text(L10n.Position.waitingForBars)
@@ -1093,9 +1082,6 @@ private struct MiniChart: View {
     }
     .padding(Tokens.Space.s)
     .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Tokens.Radius.medium, style: .continuous))
-    .onAppear {
-      if reduceMotion { drawn = 1 } else { withAnimation(Tokens.Motion.draw) { drawn = 1 } }
-    }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(L10n.Position.chartLabel))
   }
