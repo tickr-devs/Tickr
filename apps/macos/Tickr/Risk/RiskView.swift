@@ -980,8 +980,28 @@ private struct AccountCard: View {
     .font(Tokens.Typography.calloutMono)
   }
 
-  /// A fill: its time, symbol, side, type and quantity, then its price and fees.
+  /// A fill: its time, symbol, side, type and quantity, then its price and fees. On one line when
+  /// it fits; else the order on the first line and price and fees on the second, each part whole
+  /// (a time or "Stop loss" never breaks inside).
   private func fillRow(_ fill: AccountFillV1) -> some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: Tokens.Space.s) {
+        fillOrder(fill)
+        Spacer()
+        fillMoney(fill)
+      }
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        fillOrder(fill)
+        HStack(spacing: Tokens.Space.s) {
+          Spacer()
+          fillMoney(fill)
+        }
+      }
+    }
+    .font(Tokens.Typography.calloutMono)
+  }
+
+  private func fillOrder(_ fill: AccountFillV1) -> some View {
     HStack(spacing: Tokens.Space.s) {
       Text(verbatim: Format.marketTime(fill.filledAt?.date))
         .foregroundStyle(Palette.textTertiary)
@@ -989,9 +1009,14 @@ private struct AccountCard: View {
       Text(verbatim: ApiText.orderSide(fill.side))
       Text(verbatim: ApiText.orderType(fill.type))
       Text(verbatim: fill.quantity.text)
-      Spacer()
-      // The price at its tick (two decimals from $1, four below); the exact fill stays in the
-      // records, the screen shows what a price reads as everywhere else.
+    }
+    .fixedSize()
+  }
+
+  /// The price at its tick (two decimals from $1, four below); the exact fill stays in the
+  /// records, the screen shows what a price reads as everywhere else. Then the fees.
+  private func fillMoney(_ fill: AccountFillV1) -> some View {
+    HStack(spacing: Tokens.Space.s) {
       Text(verbatim: (fill.exactPrice ?? fill.price).map { Money.price($0.value) } ?? Format.missing)
       Text(verbatim: fill.feesUsd.map { Money.usd($0.value) } ?? Format.missing)
         .foregroundStyle(Palette.warningText)
@@ -999,7 +1024,7 @@ private struct AccountCard: View {
         Badge(L10n.Risk.notOurs, color: Palette.warningText)
       }
     }
-    .font(Tokens.Typography.calloutMono)
+    .fixedSize()
   }
 
   private func note(_ text: LocalizedStringResource) -> some View {
