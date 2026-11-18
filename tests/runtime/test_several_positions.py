@@ -600,7 +600,7 @@ def test_a_fill_is_read_ahead_of_stop_outs_moving_in_the_same_poll(tmp_path):
     other symbol (a market-wide drop): a moved symbol's entry is read ahead of the other moved
     orders, so each fill still gets its verified stops as if the stop-outs were not there."""
     working = BURST
-    desk = full(tmp_path, filled=MAX - working, broker=FakeBroker(history_down=True))
+    desk = full(tmp_path, filled=MAX - working, broker=FakeBroker(history_down=True, funds=FUNDS))
     held = SYMBOLS[:MAX - working]
     for symbol in held:
         (stop,) = desk.stops(symbol)
@@ -666,7 +666,7 @@ def test_an_exit_during_working_entry_fills_waits_at_most_those_reads(tmp_path, 
     shares are working to sell than the broker holds."""
     working = int(CFG.risk.max_working_entries)
     held = MAX - working
-    broker = FakeBroker(history_down=True)
+    broker = FakeBroker(history_down=True, funds=FUNDS)
     desk = Desk(tmp_path, wide(MAX, max_daily_loss_usd=D(MAX * 10)), broker)
     for symbol in SYMBOLS[:held]:
         assert desk.enter(symbol, scale_out=D(4)).admission == "taken"
