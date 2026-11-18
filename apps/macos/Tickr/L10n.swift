@@ -3560,6 +3560,7 @@ enum L10n {
     /// Footer of the Fast movers tab: the flagged symbols, and the positions and watches pinned
     /// above them that no fast-mover rule flagged.
     static func showingMovers(_ flagged: Int, _ pinned: Int) -> LocalizedStringResource {
+      // swiftlint:disable:next line_length
       LocalizedStringResource("symbols.showingMovers", defaultValue: "Showing all \(flagged) fast movers, plus \(pinned) held or watched on top", bundle: L10n.bundle)
     }
     /// The search left no row.
