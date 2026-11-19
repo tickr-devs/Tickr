@@ -365,9 +365,8 @@ private struct DayBar: View {
 
   private func dayLabel(live: Bool) -> some View {
     HStack(spacing: Tokens.Space.xs) {
-      if let day = chart.selectedDay {
-        Text(verbatim: DayText.day(day.noonInNewYork))
-      }
+      // Before the day is known, a date of the same length stands as skeleton (`dayMenu`).
+      Text(verbatim: DayText.day(chart.selectedDay?.noonInNewYork ?? .now))
       if live {
         Text(verbatim: Format.separator.trimmingCharacters(in: .whitespaces))
         Text(ChartText.todayLive)
