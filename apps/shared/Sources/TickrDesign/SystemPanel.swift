@@ -246,7 +246,9 @@ struct RestartRow: View {
           Spacer(minLength: Tokens.Space.s)
           Text(Self.outcome(restart.outcome)).font(Tokens.Typography.captionMono).foregroundStyle(tone.text)
         }
-        Text(Self.why(restart)).font(Tokens.Typography.caption).foregroundStyle(Palette.textTertiary)
+        if let why = Self.why(restart) {
+          why.font(Tokens.Typography.caption).foregroundStyle(Palette.textTertiary)
+        }
       }
     }
     .accessibilityElement(children: .combine)
@@ -269,10 +271,12 @@ struct RestartRow: View {
   }
 
   /// The cause when it failed or was refused; otherwise why the bot was started.
-  static func why(_ restart: WatchdogRestartV1) -> Text {
+  /// Why it ran: its cause, an early restart for a resting entry, or the trades open while the bot was
+  /// down; nothing when the record says none of these.
+  static func why(_ restart: WatchdogRestartV1) -> Text? {
     if let cause = restart.causeText { return Text(verbatim: cause) }
     if restart.early { return Text(SystemText.restartEarly) }
-    return Text(SystemText.restartDown(restart.openTrades ?? 0))
+    return restart.openTrades.map { Text(SystemText.restartDown($0)) }
   }
 }
 
