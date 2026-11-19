@@ -100,9 +100,39 @@ resource "aws_iam_role" "machine" {
   assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
 }
 
-resource "aws_iam_role_policy_attachment" "machine_ssm" {
-  role       = aws_iam_role.machine.name
-  policy_arn = "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+# Only what the SSM agent needs for Run Command and Session Manager. Not the managed
+# AmazonSSMManagedInstanceCore: it also reads every Parameter Store value of the account, and a
+# shell on this machine would then reach them.
+data "aws_iam_policy_document" "machine_agent" {
+  statement {
+    sid = "SsmAgent"
+    actions = [
+      "ssm:UpdateInstanceInformation",
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+      "ec2messages:AcknowledgeMessage",
+      "ec2messages:DeleteMessage",
+      "ec2messages:FailMessage",
+      "ec2messages:GetEndpoint",
+      "ec2messages:GetMessages",
+      "ec2messages:SendReply",
+    ]
+    resources = ["*"]
+  }
+  statement {
+    sid       = "NoAccountSecrets"
+    effect    = "Deny"
+    actions   = ["ssm:GetParameter*", "ssm:DescribeParameters", "secretsmanager:*"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "machine_agent" {
+  name   = "ssm-agent-only"
+  role   = aws_iam_role.machine.id
+  policy = data.aws_iam_policy_document.machine_agent.json
 }
 
 resource "aws_iam_role_policy" "machine_bucket" {
@@ -133,6 +163,17 @@ resource "aws_security_group" "machine" {
   }
 }
 
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
+  }
+}
+
 data "aws_ssm_parameter" "ubuntu" {
   name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
@@ -159,6 +200,7 @@ resource "aws_launch_template" "training" {
   network_interfaces {
     # A public address only for outbound traffic (SSM, S3, packages); no inbound rule exists.
     associate_public_ip_address = true
+    subnet_id                   = coalesce(var.subnet_id, sort(data.aws_subnets.default.ids)[0])
     security_groups             = [aws_security_group.machine.id]
     delete_on_termination       = true
   }
@@ -205,8 +247,27 @@ resource "aws_launch_template" "training" {
 
 data "aws_iam_policy_document" "research" {
   statement {
-    sid       = "ReadOnlyDescribe"
-    actions   = ["ec2:Describe*", "ssm:DescribeInstanceInformation", "ssm:GetCommandInvocation", "ssm:ListCommandInvocations", "ssm:ListCommands", "ssm:DescribeSessions"]
+    sid = "ReadOnlyDescribe"
+    # No ec2:DescribeInstanceAttribute: it returns the user data of every instance, the bot's too.
+    # The SSM command-output reads cannot be limited by resource (README).
+    actions = [
+      "ec2:DescribeInstances",
+      "ec2:DescribeInstanceStatus",
+      "ec2:DescribeInstanceTypes",
+      "ec2:DescribeSpotInstanceRequests",
+      "ec2:DescribeSpotPriceHistory",
+      "ec2:DescribeLaunchTemplates",
+      "ec2:DescribeLaunchTemplateVersions",
+      "ec2:DescribeImages",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeVolumes",
+      "ssm:DescribeInstanceInformation",
+      "ssm:GetCommandInvocation",
+      "ssm:ListCommandInvocations",
+      "ssm:ListCommands",
+      "ssm:DescribeSessions",
+    ]
     resources = ["*"]
   }
 
@@ -223,6 +284,12 @@ data "aws_iam_policy_document" "research" {
       test     = "Bool"
       variable = "ec2:IsLaunchTemplateResource"
       values   = ["true"]
+    }
+    # The instance resource carries ec2:InstanceType; the others pass this check.
+    condition {
+      test     = "StringEqualsIfExists"
+      variable = "ec2:InstanceType"
+      values   = var.allowed_instance_types
     }
   }
 
@@ -252,6 +319,11 @@ data "aws_iam_policy_document" "research" {
     sid       = "PassMachineRole"
     actions   = ["iam:PassRole"]
     resources = [aws_iam_role.machine.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ec2.amazonaws.com"]
+    }
   }
 
   statement {
@@ -311,7 +383,7 @@ resource "aws_iam_user_policy" "research_bucket" {
 # --- Budget ---------------------------------------------------------------------------------
 
 resource "aws_budgets_budget" "account" {
-  name         = "tickr-monthly"
+  name         = "tickr-account-monthly"
   budget_type  = "COST"
   limit_amount = tostring(var.monthly_budget_usd)
   limit_unit   = "USD"

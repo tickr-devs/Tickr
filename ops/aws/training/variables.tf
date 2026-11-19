@@ -8,6 +8,22 @@ variable "instance_type" {
   description = "Training machine type: CPU only, 32-64 vCPU and 128-256 GB RAM (training spec, stage 4)."
   type        = string
   default     = "c7a.16xlarge"
+  validation {
+    condition     = contains(var.allowed_instance_types, var.instance_type)
+    error_message = "instance_type must be one of allowed_instance_types."
+  }
+}
+
+variable "allowed_instance_types" {
+  description = "The only machine types the research user may start (IAM condition): no GPU, no larger sizes."
+  type        = list(string)
+  default     = ["c7a.16xlarge", "m7a.16xlarge"]
+}
+
+variable "subnet_id" {
+  description = "Subnet for the training machine; null = the first default subnet of the default VPC."
+  type        = string
+  default     = null
 }
 
 variable "disk_gb" {

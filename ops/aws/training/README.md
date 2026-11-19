@@ -14,7 +14,7 @@ What it creates:
 - IAM user `tickr-research`: may start machines only from that template, stop or terminate
   only machines tagged `tickr:role=training`, run SSM commands and sessions only on them, and
   read and write only the bucket. No Secrets Manager, no bot server, no IAM, no billing.
-- Budget `tickr-monthly` (default 280 USD: the bot's ~80 plus 200 for training) with mail at
+- Budget `tickr-account-monthly` (the only budget for the whole account; the bot's stack must not add another) (default 280 USD: the bot's ~80 plus 200 for training) with mail at
   50 % spent and at a forecast over 100 %.
 
 ## Apply (owner, on the Mac)
@@ -38,3 +38,30 @@ Put the two values into the project's cloud environment as the secrets
 Delete the key with `aws iam delete-access-key` when the training round ends.
 
 Every machine start still needs the owner's yes on a named sum.
+
+## Limits IAM cannot hold
+
+The research user may start only `allowed_instance_types` from this template, but IAM cannot
+limit how many machines, their user data (so the 24-hour power-off can be dropped) or spot versus
+on-demand. Those rest on:
+- the account's EC2 vCPU quotas, set to what one machine needs: in Service Quotas, "All Standard
+  (A, C, D, H, I, M, R, T, Z) Spot Instance Requests" = 64 and the on-demand standard quota no
+  higher than the bot needs. A new account may start lower than 64: request the spot increase
+  right after the account is created, it can take a day;
+- deleting the research key when the training round ends;
+- the budget mail.
+
+The research user can read the output of any SSM command run in the account
+(`ssm:GetCommandInvocation` cannot be limited by resource). While this user exists, no SSM command
+on the bot server may print anything secret.
+
+## Check after apply
+
+As the research user, before the first real start:
+
+```sh
+aws ec2 run-instances --launch-template LaunchTemplateName=tickr-training --dry-run
+```
+
+`DryRunOperation` = allowed. `UnauthorizedOperation` = tell the cloud-move thread.
+Commit `.terraform.lock.hcl` after the first `terraform init`.
