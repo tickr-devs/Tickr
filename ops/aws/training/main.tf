@@ -368,16 +368,26 @@ resource "aws_iam_user" "research" {
   name = "tickr-research"
 }
 
-resource "aws_iam_user_policy" "research" {
-  name   = "training-only"
-  user   = aws_iam_user.research.name
+# Customer managed policies, not inline user policies: IAM caps all inline policies of one user
+# at 2048 characters together, and these two exceed it; a managed policy may hold 6144 each.
+resource "aws_iam_policy" "research" {
+  name   = "tickr-research-training-only"
   policy = data.aws_iam_policy_document.research.json
 }
 
-resource "aws_iam_user_policy" "research_bucket" {
-  name   = "research-bucket"
-  user   = aws_iam_user.research.name
+resource "aws_iam_user_policy_attachment" "research" {
+  user       = aws_iam_user.research.name
+  policy_arn = aws_iam_policy.research.arn
+}
+
+resource "aws_iam_policy" "research_bucket" {
+  name   = "tickr-research-bucket"
   policy = data.aws_iam_policy_document.bucket_rw.json
+}
+
+resource "aws_iam_user_policy_attachment" "research_bucket" {
+  user       = aws_iam_user.research.name
+  policy_arn = aws_iam_policy.research_bucket.arn
 }
 
 # --- Budget ---------------------------------------------------------------------------------
