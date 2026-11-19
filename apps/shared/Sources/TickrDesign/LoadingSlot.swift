@@ -21,16 +21,15 @@ public struct LoadingSlot<Value, Content: View, Placeholder: View>: View {
   let value: Value?
   let content: (Value) -> Content
   let placeholder: Placeholder
-  /// The placeholder has been on screen: the content then takes its place without rising.
-  @State private var stoodIn = false
 
   /// - Parameters:
   ///   - value: what the content shows; nil while it is being read.
   ///   - content: the content, built from the value.
   ///   - placeholder: the skeleton (or, where the read can fail or come back empty, whatever
   ///     stands in that place), the content's size.
-  public init(_ value: Value?, @ViewBuilder content: @escaping (Value) -> Content,
-    @ViewBuilder placeholder: () -> Placeholder) {
+  public init(
+    _ value: Value?, @ViewBuilder content: @escaping (Value) -> Content, @ViewBuilder placeholder: () -> Placeholder
+  ) {
     self.value = value
     self.content = content
     self.placeholder = placeholder()
@@ -40,23 +39,30 @@ public struct LoadingSlot<Value, Content: View, Placeholder: View>: View {
     ZStack(alignment: .topLeading) {
       if let value {
         content(value)
-          .environment(\.arrivesInPlace, stoodIn)
           .transition(.identity)
       } else {
         placeholder
           .transition(.identity)
-          .onAppear { stoodIn = true }
       }
     }
-    // Whatever animation the screen runs as the value arrives, the swap itself is not animated.
-    .animation(nil, value: value != nil)
+    .loadsInPlace(value != nil)
   }
 }
 
-public extension LoadingSlot where Value == Bool {
-  /// A slot whose content needs no value: `ready` while it can be shown.
-  init(ready: Bool, @ViewBuilder content: @escaping () -> Content, @ViewBuilder placeholder: () -> Placeholder) {
-    self.init(ready ? true : nil, content: { _ in content() }, placeholder: placeholder)
+/// Content that takes a skeleton's place arrives in place (see `View.loadsInPlace(_:)`).
+struct LoadsInPlace: ViewModifier {
+  let loaded: Bool
+  /// The skeleton has been on screen: what replaces it shows at once, without rising. Content
+  /// already read when the place appears still rises in with its screen.
+  @State private var stoodIn = false
+
+  func body(content: Content) -> some View {
+    content
+      .environment(\.arrivesInPlace, stoodIn || !loaded)
+      .onAppear { if !loaded { stoodIn = true } }
+      .onChange(of: loaded) { _, now in if !now { stoodIn = true } }
+      // Whatever animation the screen runs as the data arrives, the swap itself is not animated.
+      .animation(nil, value: loaded)
   }
 }
 
@@ -82,6 +88,17 @@ struct SkeletonFit: ViewModifier {
 }
 
 public extension View {
+  /// Marks where a screen (or a part of one: a card, a `Form`) swaps a skeleton for its content:
+  /// `loaded` is false while the skeleton shows. Once the skeleton has been on screen, every
+  /// `rise` of the content shows at once, in place, and the swap is never animated: the content
+  /// takes the skeleton's place without a fade, a slide or a jump. `LoadingSlot` does this
+  /// itself; use this where the content is not one view (the sections of a `Form`). Put it on
+  /// one view (a screen, a card, a `Form`), never on a `Group` of several, which would give each
+  /// of them its own memory of the skeleton.
+  func loadsInPlace(_ loaded: Bool) -> some View {
+    modifier(LoadsInPlace(loaded: loaded))
+  }
+
   /// While `loading`, this view keeps its place and its size but shows as a skeleton block of its
   /// width (a text line by default): a price, a figure or a line of text that is not read yet.
   /// Give the view sample values of the real ones' length ("$00.00"), so its size is the real
