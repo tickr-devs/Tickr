@@ -7856,10 +7856,10 @@
             "value" : "No broker read recorded yet"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Чтений брокера пока нет"
+            "value" : "Aún no hay lecturas del bróker"
           }
         }
       }
@@ -8072,10 +8072,10 @@
             "value" : "This machine has no watchdog or sleep services to show"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "На этой машине нет watchdog и защиты от сна"
+            "value" : "Esta máquina no tiene watchdog ni control de reposo que mostrar"
           }
         }
       }
@@ -8252,10 +8252,10 @@
             "value" : "No morning check recorded yet"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Утренняя проверка ещё не записана"
+            "value" : "Aún no hay verificación matinal registrada"
           }
         }
       }
@@ -8396,10 +8396,10 @@
             "value" : "No training job is reporting"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ни одно обучение не сообщает о себе"
+            "value" : "Ningún entrenamiento está informando"
           }
         }
       }
@@ -8702,10 +8702,10 @@
             "value" : "The morning check's record cannot be read ({error})"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Запись утренней проверки не читается ({error})"
+            "value" : "El registro de la verificación matinal no se puede leer ({error})"
           }
         }
       }
@@ -9098,10 +9098,10 @@
             "value" : "The start command ended with code {code}"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Команда запуска завершилась с кодом {code}"
+            "value" : "El comando de inicio terminó con el código {code}"
           }
         }
       }
@@ -9116,10 +9116,10 @@
             "value" : "The start command failed ({error})"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Команда запуска не сработала ({error})"
+            "value" : "El comando de inicio falló ({error})"
           }
         }
       }
@@ -9134,10 +9134,10 @@
             "value" : "You had stopped the bot: the watchdog never starts it then"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Бот остановлен вами: watchdog его тогда не запускает"
+            "value" : "Usted había detenido el bot: el watchdog nunca lo inicia entonces"
           }
         }
       }
@@ -9440,10 +9440,10 @@
             "value" : "The sleep check ended with code {code}"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Проверка сна завершилась с кодом {code}"
+            "value" : "La comprobación del reposo terminó con el código {code}"
           }
         }
       }
@@ -9458,10 +9458,10 @@
             "value" : "The sleep check could not run ({error})"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Проверка сна не запустилась ({error})"
+            "value" : "No se pudo comprobar el reposo ({error})"
           }
         }
       }
@@ -9890,10 +9890,10 @@
             "value" : "The training progress cannot be read ({error})"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Прогресс обучения не читается ({error})"
+            "value" : "El progreso del entrenamiento no se puede leer ({error})"
           }
         }
       }
@@ -10070,10 +10070,10 @@
             "value" : "The watchdog's journal cannot be read ({error})"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Журнал watchdog не читается ({error})"
+            "value" : "El registro del watchdog no se puede leer ({error})"
           }
         }
       }
@@ -13910,10 +13910,10 @@
             "value" : "All good"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Всё в порядке"
+            "value" : "Todo bien"
           }
         }
       }
@@ -13927,10 +13927,10 @@
             "value" : "The bot does not start on this result"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "С таким результатом бот не запускается"
+            "value" : "Con este resultado el bot no inicia"
           }
         }
       }
@@ -13944,10 +13944,10 @@
             "value" : "Alert channel"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Канал оповещений"
+            "value" : "Canal de alertas"
           }
         }
       }
@@ -13961,10 +13961,10 @@
             "value" : "Alert recipient"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Получатель оповещений"
+            "value" : "Destinatario de alertas"
           }
         }
       }
@@ -13978,10 +13978,10 @@
             "value" : "Trading calendar"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Торговый календарь"
+            "value" : "Calendario bursátil"
           }
         }
       }
@@ -13995,10 +13995,10 @@
             "value" : "Code version"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Версия кода"
+            "value" : "Versión del código"
           }
         }
       }
@@ -14012,10 +14012,10 @@
             "value" : "Configuration"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Конфигурация"
+            "value" : "Configuración"
           }
         }
       }
@@ -14029,10 +14029,10 @@
             "value" : "Broker credentials"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ключи брокера"
+            "value" : "Credenciales del bróker"
           }
         }
       }
@@ -14046,10 +14046,10 @@
             "value" : "Database"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "База данных"
+            "value" : "Base de datos"
           }
         }
       }
@@ -14063,10 +14063,10 @@
             "value" : "Disk space"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Место на диске"
+            "value" : "Espacio en disco"
           }
         }
       }
@@ -14080,10 +14080,10 @@
             "value" : "Another check"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Другая проверка"
+            "value" : "Otra comprobación"
           }
         }
       }
@@ -14097,10 +14097,10 @@
             "value" : "Stopped by you"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Остановлен вами"
+            "value" : "Detenido por usted"
           }
         }
       }
@@ -14114,10 +14114,10 @@
             "value" : "Strategy"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стратегия"
+            "value" : "Estrategia"
           }
         }
       }
@@ -14131,10 +14131,10 @@
             "value" : "Webull token"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Токен Webull"
+            "value" : "Token de Webull"
           }
         }
       }
@@ -14148,10 +14148,10 @@
             "value" : "Token folder"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Папка токена"
+            "value" : "Carpeta del token"
           }
         }
       }
@@ -14165,10 +14165,10 @@
             "value" : "Config invalid"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Конфигурация неверна"
+            "value" : "Configuración no válida"
           }
         }
       }
@@ -14182,10 +14182,10 @@
             "value" : "Failed: %@"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не пройдена: %@"
+            "value" : "Falló: %@"
           }
         }
       }
@@ -14199,10 +14199,10 @@
             "value" : "caffeinate holds: %lld"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "удержаний caffeinate: %lld"
+            "value" : "bloqueos de caffeinate: %lld"
           }
         }
       }
@@ -14216,10 +14216,10 @@
             "value" : "%lld h ago"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld ч назад"
+            "value" : "hace %lld h"
           }
         }
       }
@@ -14233,10 +14233,10 @@
             "value" : "Idle"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не идёт"
+            "value" : "Inactivo"
           }
         }
       }
@@ -14250,10 +14250,10 @@
             "value" : "Kept awake"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не спит"
+            "value" : "Despierto"
           }
         }
       }
@@ -14267,10 +14267,10 @@
             "value" : "Last check %@ ET · broker read failed"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Последняя проверка %@ ET · чтение брокера не удалось"
+            "value" : "Última revisión %@ ET · falló la lectura del bróker"
           }
         }
       }
@@ -14284,10 +14284,10 @@
             "value" : "Last check %@ ET · nothing open"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Последняя проверка %@ ET · ничего не открыто"
+            "value" : "Última revisión %@ ET · nada abierto"
           }
         }
       }
@@ -14301,10 +14301,10 @@
             "value" : "Last check %@ ET · something left open"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Последняя проверка %@ ET · что-то осталось открытым"
+            "value" : "Última revisión %@ ET · algo quedó abierto"
           }
         }
       }
@@ -14318,10 +14318,10 @@
             "value" : "Webull link"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Связь с Webull"
+            "value" : "Conexión con Webull"
           }
         }
       }
@@ -14335,10 +14335,10 @@
             "value" : "Last broker read · new entries need it under %@ s"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Последнее чтение брокера · новым входам нужно моложе %@ с"
+            "value" : "Última lectura del bróker · las entradas nuevas la piden en menos de %@ s"
           }
         }
       }
@@ -14352,10 +14352,10 @@
             "value" : "Mac may sleep"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac может уснуть"
+            "value" : "El Mac puede dormir"
           }
         }
       }
@@ -14369,10 +14369,10 @@
             "value" : "%lld min ago"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld мин назад"
+            "value" : "hace %lld min"
           }
         }
       }
@@ -14386,10 +14386,10 @@
             "value" : "Morning check"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Утренняя проверка"
+            "value" : "Verificación matinal"
           }
         }
       }
@@ -14403,10 +14403,10 @@
             "value" : "Needs a look: %lld"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Посмотреть: %lld"
+            "value" : "Para revisar: %lld"
           }
         }
       }
@@ -14420,10 +14420,10 @@
             "value" : "No broker check recorded yet"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Проверок брокера пока нет"
+            "value" : "Aún no hay revisiones del bróker"
           }
         }
       }
@@ -14437,10 +14437,10 @@
             "value" : "None yet: the bot was never found down with an open trade"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пока нет: бот ни разу не лежал с открытой сделкой"
+            "value" : "Ninguno: nunca se encontró el bot caído con una operación abierta"
           }
         }
       }
@@ -14454,10 +14454,10 @@
             "value" : "No session that day"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "В тот день нет сессии"
+            "value" : "Sin sesión ese día"
           }
         }
       }
@@ -14471,10 +14471,10 @@
             "value" : "Not needed while the bot is not running"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не нужно, пока бот не работает"
+            "value" : "No hace falta mientras el bot no funciona"
           }
         }
       }
@@ -14488,10 +14488,10 @@
             "value" : "Not started today"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Сегодня не запускался"
+            "value" : "No iniciado hoy"
           }
         }
       }
@@ -14505,10 +14505,10 @@
             "value" : "Passed %@"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пройдена %@"
+            "value" : "Superada %@"
           }
         }
       }
@@ -14522,10 +14522,10 @@
             "value" : "Before the bot started · %1$@ · %2$@ ET"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перед запуском бота · %1$@ · %2$@ ET"
+            "value" : "Antes de iniciar el bot · %1$@ · %2$@ ET"
           }
         }
       }
@@ -14539,10 +14539,10 @@
             "value" : "Morning job · %1$@ · %2$@ ET"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Утренняя задача · %1$@ · %2$@ ET"
+            "value" : "Tarea matinal · %1$@ · %2$@ ET"
           }
         }
       }
@@ -14556,10 +14556,10 @@
             "value" : "System state could not be read"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Состояние системы не прочитано"
+            "value" : "No se pudo leer el estado del sistema"
           }
         }
       }
@@ -14573,10 +14573,10 @@
             "value" : "Bot down · open trades: %lld"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Бот лежал · открытых сделок: %lld"
+            "value" : "Bot caído · operaciones abiertas: %lld"
           }
         }
       }
@@ -14590,10 +14590,10 @@
             "value" : "Bot down with an entry resting"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Бот лежал с ожидающим входом"
+            "value" : "Bot caído con una entrada pendiente"
           }
         }
       }
@@ -14607,10 +14607,10 @@
             "value" : "Failed"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Не удалось"
+            "value" : "Falló"
           }
         }
       }
@@ -14624,10 +14624,10 @@
             "value" : "Refused"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отказ"
+            "value" : "Rechazado"
           }
         }
       }
@@ -14641,10 +14641,10 @@
             "value" : "Watchdog restarts"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перезапуски watchdog"
+            "value" : "Reinicios del watchdog"
           }
         }
       }
@@ -14658,10 +14658,10 @@
             "value" : "Started"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Запущен"
+            "value" : "Iniciado"
           }
         }
       }
@@ -14675,10 +14675,10 @@
             "value" : "%lld s ago"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld с назад"
+            "value" : "hace %lld s"
           }
         }
       }
@@ -14692,10 +14692,10 @@
             "value" : "Sleep prevention"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Защита от сна"
+            "value" : "Evitar el reposo"
           }
         }
       }
@@ -14709,10 +14709,10 @@
             "value" : "Started today"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Запущен сегодня"
+            "value" : "Iniciado hoy"
           }
         }
       }
@@ -14726,10 +14726,10 @@
             "value" : "Quotes live"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Котировки идут"
+            "value" : "Cotizaciones en vivo"
           }
         }
       }
@@ -14743,10 +14743,10 @@
             "value" : "Quotes lost"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Котировки потеряны"
+            "value" : "Cotizaciones perdidas"
           }
         }
       }
@@ -14760,10 +14760,10 @@
             "value" : "No quote stream"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет потока котировок"
+            "value" : "Sin flujo de cotizaciones"
           }
         }
       }
@@ -14777,10 +14777,10 @@
             "value" : "Quotes quiet"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Котировки молчат"
+            "value" : "Cotizaciones en pausa"
           }
         }
       }
@@ -14794,10 +14794,10 @@
             "value" : "This Mac"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Этот Mac"
+            "value" : "Este Mac"
           }
         }
       }
@@ -14811,10 +14811,10 @@
             "value" : "System"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Система"
+            "value" : "Sistema"
           }
         }
       }
@@ -14828,10 +14828,10 @@
             "value" : "Model training"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Обучение модели"
+            "value" : "Entrenamiento del modelo"
           }
         }
       }
@@ -14845,10 +14845,10 @@
             "value" : "Done"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Готово"
+            "value" : "Terminado"
           }
         }
       }
@@ -14862,10 +14862,10 @@
             "value" : "Stopped"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Остановлено"
+            "value" : "Detenido"
           }
         }
       }
@@ -14879,10 +14879,10 @@
             "value" : "%1$@ · %2$lld of %3$lld · updated %4$@"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · %2$lld из %3$lld · обновлено %4$@"
+            "value" : "%1$@ · %2$lld de %3$lld · actualizado %4$@"
           }
         }
       }
@@ -14896,10 +14896,10 @@
             "value" : "Unknown"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Неизвестно"
+            "value" : "Desconocido"
           }
         }
       }
@@ -14913,7 +14913,7 @@
             "value" : "Watchdog"
           }
         },
-        "ru" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watchdog"
