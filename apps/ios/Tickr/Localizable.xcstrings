@@ -8463,7 +8463,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "comisiones %@"
+            "value" : "com. %@"
           }
         }
       }
@@ -10248,7 +10248,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Compuerta de trading real · pendiente"
+            "value" : "Puerta de trading real · pendiente"
           }
         }
       }

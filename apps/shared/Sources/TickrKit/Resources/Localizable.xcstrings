@@ -336,7 +336,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Comprobación fuera de muestra"
+            "value" : "Días reservados"
           }
         }
       }
@@ -353,7 +353,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "fuera de muestra %@"
+            "value" : "reservados desde %@"
           }
         }
       }
@@ -863,7 +863,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Evaluada"
+            "value" : "Validada"
           }
         }
       }
