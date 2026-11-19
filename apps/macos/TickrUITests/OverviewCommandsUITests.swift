@@ -43,11 +43,11 @@ final class OverviewCommandsUITests: XCTestCase {
   /// The narrowest window on the fixtures, in points: TickrMacApp.leastWidth, which this test
   /// target cannot read from the app. The title bar's need is wider than the screens' (1086): the
   /// sidebar's widest 260, AppKit's insets 4 + 4 and gap 8, the fixtures' longest line (Overview,
-  /// 572 points in English) and the right-hand group (512, Today), each item 8.5 wider than its
-  /// content. The Spanish width is not measured yet: the English one stands in until the first
-  /// `ui-tests` run in Spanish reports the window's real least width.
-  static let minWidthEnglish: CGFloat = 1377
-  static let minWidthSpanish: CGFloat = 1377
+  /// "tickr — paper trading — …") and the right-hand group (Today), each item 8.5 wider than its
+  /// content. Measured by this test on CI (#695, 2026-11-19): 1421 in English, 1446 in Spanish,
+  /// whose line and group are the longer.
+  static let minWidthEnglish: CGFloat = 1421
+  static let minWidthSpanish: CGFloat = 1446
   /// Environment variable that opens the window at its least size (LayoutSweep.smallestKey).
   static let smallestKey = "TICKR_SMALLEST_WINDOW"
   /// Environment variable that opens Overview with the Safety · bot card at its top
