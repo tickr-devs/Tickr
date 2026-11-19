@@ -205,10 +205,10 @@ private struct IconButtonBody: View {
 /// (`.chipFace(selected: false, small: true)`). On iOS a regular chip is at least `minHeight`
 /// (32 pt) tall and answers taps over `Size.touchTarget` (`touchTarget()`).
 ///
-/// Under the Mac's pointer an enabled regular chip lights its outline in its tone at
-/// `Opacity.medium` (`.u-chip:hover`), its words in `textPrimary`; the fill and size stay, so the
-/// chosen chip (full tone outline and wash) still reads apart and nothing moves (owner
-/// 2026-11-19). A small chip shows data and does not answer the pointer.
+/// Under the Mac's pointer an enabled regular chip lights its outline in its full tone
+/// (`.u-chip:hover`), its words in `textPrimary`; the fill and size stay, so the chosen chip (the
+/// same outline plus the tone's wash) still reads apart and nothing moves (owner 2026-11-19: a
+/// softer outline did not read as lit). A small chip shows data and does not answer the pointer.
 public struct ChipFace: ViewModifier {
   @Environment(\.isEnabled) private var enabled
   @State private var hovered = false
@@ -236,8 +236,7 @@ public struct ChipFace: ViewModifier {
   private var lit: Bool { hovered && enabled && !small }
 
   private var outline: Color {
-    if selected { return tone.fill }
-    return lit ? tone.fill.opacity(Tokens.Opacity.medium) : Palette.separatorStrong
+    selected || lit ? tone.fill : Palette.separatorStrong
   }
 
   @ViewBuilder public func body(content: Content) -> some View {
