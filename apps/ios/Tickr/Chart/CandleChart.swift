@@ -1351,6 +1351,7 @@ private struct Scrolling: ViewModifier {
     content
       .chartXScale(domain: domain)
       .chartScrollableAxes(.horizontal)
+      .withoutScrollIndicators()
       .chartXVisibleDomain(length: window)
       .chartScrollPosition(x: $scroll)
   }

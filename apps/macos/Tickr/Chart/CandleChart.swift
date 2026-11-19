@@ -1024,6 +1024,7 @@ extension SharedAxis {
       content
         .chartXScale(domain: chart.xDomain)
         .chartScrollableAxes(chart.zoomed ? .horizontal : [])
+        .withoutScrollIndicators()
         .chartXVisibleDomain(length: chart.visibleLength)
         .chartScrollPosition(x: chart.scrollPosition)
         .chartPlotStyle { $0.clipped() }
