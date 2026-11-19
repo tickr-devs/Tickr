@@ -206,7 +206,7 @@ private struct IconButtonBody: View {
 /// (32 pt) tall and answers taps over `Size.touchTarget` (`touchTarget()`).
 ///
 /// Under the Mac's pointer an enabled regular chip lights its outline in its tone at
-/// `Opacity.border` (`.u-chip:hover`), its words in `textPrimary`; the fill and size stay, so the
+/// `Opacity.medium` (`.u-chip:hover`), its words in `textPrimary`; the fill and size stay, so the
 /// chosen chip (full tone outline and wash) still reads apart and nothing moves (owner
 /// 2026-11-19). A small chip shows data and does not answer the pointer.
 public struct ChipFace: ViewModifier {
@@ -237,7 +237,7 @@ public struct ChipFace: ViewModifier {
 
   private var outline: Color {
     if selected { return tone.fill }
-    return lit ? tone.fill.opacity(Tokens.Opacity.border) : Palette.separatorStrong
+    return lit ? tone.fill.opacity(Tokens.Opacity.medium) : Palette.separatorStrong
   }
 
   @ViewBuilder public func body(content: Content) -> some View {
