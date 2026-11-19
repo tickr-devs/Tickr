@@ -60,7 +60,7 @@ struct LabView: View {
       .filling()
       .padding(Tokens.Space.l)
     }
-    .scrollEdgeHints()
+    .scrollEdgeHints(.screen)
     // Session times for the chart's axis, and the reconcile clock other screens read.
     .task(id: model.baseURL) { await model.followJobs() }
   }

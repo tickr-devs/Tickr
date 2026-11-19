@@ -49,7 +49,7 @@ struct RiskView: View {
         }
         .padding(Tokens.Space.l)
       }
-      .scrollEdgeHints()
+      .scrollEdgeHints(.screen)
     }
   }
 

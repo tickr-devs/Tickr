@@ -149,7 +149,7 @@ struct OverviewView: View {
           .environment(\.overviewLayout,
             Self.layout(gridWidth: viewport.size.width - Self.padding * CardArrangement.paddedEdges))
         }
-        .scrollEdgeHints()
+        .scrollEdgeHints(.screen)
         // Also when the cards below grow: until they load, the page can be too short to bring the
         // card to the top.
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in

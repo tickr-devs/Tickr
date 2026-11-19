@@ -224,6 +224,25 @@ extension NSColor {
 /// The app background: flat dark ink in dark mode; in light mode a pale blue-grey with two soft
 /// indigo and teal glows in the corners, as on the canvas.
 public struct TickrBackground: View {
+  /// Where the background is drawn, in the window (`.global`), for the scroll fades that paint it
+  /// over a screen's edges (`ScrollFade.screen`, read from `EnvironmentValues.screenBackdrop`).
+  let frame: Binding<CGRect?>?
+
+  /// - Parameter frame: written with the background's frame in the window whenever it changes
+  ///   (a resize, never a scroll); nil where no scroll fade paints it.
+  public init(frame: Binding<CGRect?>? = nil) {
+    self.frame = frame
+  }
+
+  public var body: some View {
+    TickrBackdrop()
+      .ignoresSafeArea()
+      .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame?.wrappedValue = $0 }
+  }
+}
+
+/// The background's layers at the size offered (`TickrBackground` without the safe area).
+struct TickrBackdrop: View {
   @Environment(\.colorScheme) private var scheme
 
   /// How far each light-mode glow reaches from its centre, in points.
@@ -231,9 +250,7 @@ public struct TickrBackground: View {
   /// Centre of the teal glow: the right edge, a fifth of the way down.
   static let tealGlowCenter = UnitPoint(x: 1, y: 0.2)
 
-  public init() {}
-
-  public var body: some View {
+  var body: some View {
     ZStack {
       Palette.background
       if scheme == .light {
@@ -245,8 +262,13 @@ public struct TickrBackground: View {
           center: Self.tealGlowCenter, startRadius: 0, endRadius: Self.glowRadius)
       }
     }
-    .ignoresSafeArea()
   }
+}
+
+extension EnvironmentValues {
+  /// The screen's `TickrBackground` frame in the window, for scroll fades painted over a screen's
+  /// edges (`ScrollFade.screen`); nil where none is known (the iPhone, a sheet).
+  @Entry public var screenBackdrop: CGRect?
 }
 
 /// A rounded card: hairline border in dark mode; white with a soft blue-tinted shadow in light mode.
