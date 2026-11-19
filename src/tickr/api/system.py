@@ -65,7 +65,7 @@ class SystemSettings:
             warn_seconds=config.api.broker_read_warn_seconds,
             max_age_seconds=config.orders.broker_read_max_age_seconds,
             preflight_record=record_path(config),
-            training_progress=data / config.api.training_progress_file,
+            training_progress=data / Path(config.api.training_progress_file).expanduser(),
             host=config.api.system_services,
             watchdog_journal=data / config.runtime.watchdog_journal_file,
             sleep_command=config.api.sleep_check_command,

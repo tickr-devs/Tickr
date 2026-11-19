@@ -773,8 +773,8 @@ machine's own services follow under `host`, so a bot on a server keeps the rest 
   `morning_check_cause` when no record exists yet or it cannot be read. A preflight whose config
   does not load, or whose data folder is missing, writes no record (it does not know where, and
   never creates the data folder): the previous record stays, with its older `day`.
-- `training`: the model training job's progress file (`[api] training_progress_file` under
-  `data_dir`), `training-progress-v1`, which the job writes atomically whenever it moves on:
+- `training`: the model training job's progress file (`[api] training_progress_file`, under
+  `data_dir` or an absolute or `~/` path outside the release), `training-progress-v1`, which the job writes atomically whenever it moves on:
   `{"schema_version": 1, "job": "<its own name>", "state": "running" | "done" | "failed",
   "done": <steps done>, "total": <steps>, "started_at": <ISO time with offset>, "updated_at":
   <ISO time with offset>, "cause": <text when failed, else null>}`, `done` at most `total`.

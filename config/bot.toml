@@ -512,8 +512,9 @@ sleep_check_timeout_seconds = 2
 # Newest watchdog restart records GET /system returns (newest first; the apps show a few and the rest on demand);
 # read by the api server.
 system_restart_rows = 50
-# Training progress file a model training job writes (training-progress-v1, docs/api.md "GET /system"), relative to
-# data_dir; missing = no job reporting; read by the api server.
+# Training progress file a model training job writes (training-progress-v1, docs/api.md "GET /system"): relative to
+# data_dir, or an absolute or ~/ path outside the release (research jobs never write into it); missing = no job
+# reporting; read by the api server.
 training_progress_file = "training-progress.json"
 
 [market_data]

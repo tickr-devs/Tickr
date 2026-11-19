@@ -155,6 +155,13 @@ def test_training_progress_file(cfg):
         "wide model", contract.TrainingState.RUNNING, 130, 209)
 
 
+def test_training_progress_file_may_live_outside_the_release(cfg, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    api = replace(cfg.api, training_progress_file="~/research/progress.json")
+    path = SystemSettings.from_config(replace(cfg, api=api)).training_progress
+    assert path == tmp_path / "research" / "progress.json"
+
+
 @pytest.mark.parametrize("body", [{"done": 210}, {"done": -1}, {"total": "209"},
                                   {"state": "paused"}, {"updated_at": "2026-11-16T14:58:00"}])
 def test_training_file_out_of_shape_is_refused(cfg, body):
