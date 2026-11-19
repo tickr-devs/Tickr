@@ -1014,6 +1014,66 @@ GROUPS = [
                 "Итог ночного обновления не читается ({error})",
             ),
             (
+                "no_broker_read",
+                "No broker read recorded yet",
+                "Чтений брокера пока нет",
+            ),
+            (
+                "no_preflight_record",
+                "No morning check recorded yet",
+                "Утренняя проверка ещё не записана",
+            ),
+            (
+                "preflight_record_unreadable",
+                "The morning check's record cannot be read ({error})",
+                "Запись утренней проверки не читается ({error})",
+            ),
+            (
+                "no_training_job",
+                "No training job is reporting",
+                "Ни одно обучение не сообщает о себе",
+            ),
+            (
+                "training_progress_unreadable",
+                "The training progress cannot be read ({error})",
+                "Прогресс обучения не читается ({error})",
+            ),
+            (
+                "no_host_services",
+                "This machine has no watchdog or sleep services to show",
+                "На этой машине нет watchdog и защиты от сна",
+            ),
+            (
+                "watchdog_journal_unreadable",
+                "The watchdog's journal cannot be read ({error})",
+                "Журнал watchdog не читается ({error})",
+            ),
+            (
+                "sleep_check_failed",
+                "The sleep check could not run ({error})",
+                "Проверка сна не запустилась ({error})",
+            ),
+            (
+                "sleep_check_exited",
+                "The sleep check ended with code {code}",
+                "Проверка сна завершилась с кодом {code}",
+            ),
+            (
+                "restart_command_exited",
+                "The start command ended with code {code}",
+                "Команда запуска завершилась с кодом {code}",
+            ),
+            (
+                "restart_command_failed",
+                "The start command failed ({error})",
+                "Команда запуска не сработала ({error})",
+            ),
+            (
+                "restart_refused_operator_stop",
+                "You had stopped the bot: the watchdog never starts it then",
+                "Бот остановлен вами: watchdog его тогда не запускает",
+            ),
+            (
                 "nightly_in_session",
                 "Refused during the regular session",
                 "Отклонено во время основной сессии",

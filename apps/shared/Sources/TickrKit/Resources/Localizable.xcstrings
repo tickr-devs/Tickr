@@ -7846,6 +7846,24 @@
         }
       }
     },
+    "kit.prose.no_broker_read" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). no_broker_read",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No broker read recorded yet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чтений брокера пока нет"
+          }
+        }
+      }
+    },
     "kit.prose.no_cached_history" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). no_cached_history",
       "extractionState" : "manual",
@@ -8044,6 +8062,24 @@
         }
       }
     },
+    "kit.prose.no_host_services" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). no_host_services",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This machine has no watchdog or sleep services to show"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На этой машине нет watchdog и защиты от сна"
+          }
+        }
+      }
+    },
     "kit.prose.no_intent_row" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). no_intent_row",
       "extractionState" : "manual",
@@ -8206,6 +8242,24 @@
         }
       }
     },
+    "kit.prose.no_preflight_record" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). no_preflight_record",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No morning check recorded yet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Утренняя проверка ещё не записана"
+          }
+        }
+      }
+    },
     "kit.prose.no_quotes_file" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). no_quotes_file",
       "extractionState" : "manual",
@@ -8328,6 +8382,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "В диапазоне нет учтённых сделок"
+          }
+        }
+      }
+    },
+    "kit.prose.no_training_job" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). no_training_job",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No training job is reporting"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ни одно обучение не сообщает о себе"
           }
         }
       }
@@ -8616,6 +8688,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Записанное предыдущее закрытие не положительное: {value}"
+          }
+        }
+      }
+    },
+    "kit.prose.preflight_record_unreadable" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). preflight_record_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The morning check's record cannot be read ({error})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запись утренней проверки не читается ({error})"
           }
         }
       }
@@ -8998,6 +9088,60 @@
         }
       }
     },
+    "kit.prose.restart_command_exited" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). restart_command_exited",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The start command ended with code {code}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Команда запуска завершилась с кодом {code}"
+          }
+        }
+      }
+    },
+    "kit.prose.restart_command_failed" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). restart_command_failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The start command failed ({error})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Команда запуска не сработала ({error})"
+          }
+        }
+      }
+    },
+    "kit.prose.restart_refused_operator_stop" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). restart_refused_operator_stop",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You had stopped the bot: the watchdog never starts it then"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот остановлен вами: watchdog его тогда не запускает"
+          }
+        }
+      }
+    },
     "kit.prose.result_in_r_only" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). result_in_r_only",
       "extractionState" : "manual",
@@ -9282,6 +9426,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Этот же сигнал (сетап {setup}, триггер {trigger}) уже дал симулированную сделку по {symbol} в этот день"
+          }
+        }
+      }
+    },
+    "kit.prose.sleep_check_exited" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). sleep_check_exited",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sleep check ended with code {code}"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверка сна завершилась с кодом {code}"
+          }
+        }
+      }
+    },
+    "kit.prose.sleep_check_failed" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). sleep_check_failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sleep check could not run ({error})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверка сна не запустилась ({error})"
           }
         }
       }
@@ -9700,6 +9880,24 @@
         }
       }
     },
+    "kit.prose.training_progress_unreadable" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). training_progress_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The training progress cannot be read ({error})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прогресс обучения не читается ({error})"
+          }
+        }
+      }
+    },
     "kit.prose.universe_conflicting_rows" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). universe_conflicting_rows",
       "extractionState" : "manual",
@@ -9858,6 +10056,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Версия стратегии {version} — не целое число"
+          }
+        }
+      }
+    },
+    "kit.prose.watchdog_journal_unreadable" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). watchdog_journal_unreadable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The watchdog's journal cannot be read ({error})"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Журнал watchdog не читается ({error})"
           }
         }
       }
@@ -13681,6 +13897,1026 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ждём сетап"
+          }
+        }
+      }
+    },
+    "kit.system.allGood" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All good"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всё в порядке"
+          }
+        }
+      }
+    },
+    "kit.system.botWillNotStart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bot does not start on this result"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "С таким результатом бот не запускается"
+          }
+        }
+      }
+    },
+    "kit.system.check.alertChannel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alert channel"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Канал оповещений"
+          }
+        }
+      }
+    },
+    "kit.system.check.alertRecipient" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alert recipient"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Получатель оповещений"
+          }
+        }
+      }
+    },
+    "kit.system.check.calendar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trading calendar"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торговый календарь"
+          }
+        }
+      }
+    },
+    "kit.system.check.codeVersion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code version"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Версия кода"
+          }
+        }
+      }
+    },
+    "kit.system.check.config" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфигурация"
+          }
+        }
+      }
+    },
+    "kit.system.check.credentials" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker credentials"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключи брокера"
+          }
+        }
+      }
+    },
+    "kit.system.check.database" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "База данных"
+          }
+        }
+      }
+    },
+    "kit.system.check.disk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disk space"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Место на диске"
+          }
+        }
+      }
+    },
+    "kit.system.check.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another check"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другая проверка"
+          }
+        }
+      }
+    },
+    "kit.system.check.stopMarker" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped by you"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остановлен вами"
+          }
+        }
+      }
+    },
+    "kit.system.check.strategy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strategy"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стратегия"
+          }
+        }
+      }
+    },
+    "kit.system.check.token" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webull token"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Токен Webull"
+          }
+        }
+      }
+    },
+    "kit.system.check.tokenDir" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token folder"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Папка токена"
+          }
+        }
+      }
+    },
+    "kit.system.configInvalid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Config invalid"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфигурация неверна"
+          }
+        }
+      }
+    },
+    "kit.system.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не пройдена: %@"
+          }
+        }
+      }
+    },
+    "kit.system.holds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "caffeinate holds: %lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "удержаний caffeinate: %lld"
+          }
+        }
+      }
+    },
+    "kit.system.hoursAgo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld h ago"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld ч назад"
+          }
+        }
+      }
+    },
+    "kit.system.idle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idle"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не идёт"
+          }
+        }
+      }
+    },
+    "kit.system.keptAwake" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kept awake"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не спит"
+          }
+        }
+      }
+    },
+    "kit.system.lastCheckFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last check %@ ET · broker read failed"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последняя проверка %@ ET · чтение брокера не удалось"
+          }
+        }
+      }
+    },
+    "kit.system.lastCheckFlat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last check %@ ET · nothing open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последняя проверка %@ ET · ничего не открыто"
+          }
+        }
+      }
+    },
+    "kit.system.lastCheckOpen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last check %@ ET · something left open"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последняя проверка %@ ET · что-то осталось открытым"
+          }
+        }
+      }
+    },
+    "kit.system.link" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webull link"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Связь с Webull"
+          }
+        }
+      }
+    },
+    "kit.system.linkNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last broker read · new entries need it under %@ s"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последнее чтение брокера · новым входам нужно моложе %@ с"
+          }
+        }
+      }
+    },
+    "kit.system.maySleep" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac may sleep"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac может уснуть"
+          }
+        }
+      }
+    },
+    "kit.system.minutesAgo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld min ago"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld мин назад"
+          }
+        }
+      }
+    },
+    "kit.system.morningCheck" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morning check"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Утренняя проверка"
+          }
+        }
+      }
+    },
+    "kit.system.needALook" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs a look: %lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Посмотреть: %lld"
+          }
+        }
+      }
+    },
+    "kit.system.noCheckYet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No broker check recorded yet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверок брокера пока нет"
+          }
+        }
+      }
+    },
+    "kit.system.noRestarts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet: the bot was never found down with an open trade"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пока нет: бот ни разу не лежал с открытой сделкой"
+          }
+        }
+      }
+    },
+    "kit.system.noSession" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No session that day"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В тот день нет сессии"
+          }
+        }
+      }
+    },
+    "kit.system.notNeededNow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not needed while the bot is not running"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не нужно, пока бот не работает"
+          }
+        }
+      }
+    },
+    "kit.system.notStartedToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not started today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сегодня не запускался"
+          }
+        }
+      }
+    },
+    "kit.system.passed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passed %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пройдена %@"
+          }
+        }
+      }
+    },
+    "kit.system.ranByBotStart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before the bot started · %1$@ · %2$@ ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перед запуском бота · %1$@ · %2$@ ET"
+          }
+        }
+      }
+    },
+    "kit.system.ranByMorningJob" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morning job · %1$@ · %2$@ ET"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Утренняя задача · %1$@ · %2$@ ET"
+          }
+        }
+      }
+    },
+    "kit.system.readFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System state could not be read"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Состояние системы не прочитано"
+          }
+        }
+      }
+    },
+    "kit.system.restartDown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot down · open trades: %lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот лежал · открытых сделок: %lld"
+          }
+        }
+      }
+    },
+    "kit.system.restartEarly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot down with an entry resting"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бот лежал с ожидающим входом"
+          }
+        }
+      }
+    },
+    "kit.system.restartFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось"
+          }
+        }
+      }
+    },
+    "kit.system.restartRefused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refused"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отказ"
+          }
+        }
+      }
+    },
+    "kit.system.restarts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchdog restarts"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перезапуски watchdog"
+          }
+        }
+      }
+    },
+    "kit.system.restartStarted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Started"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запущен"
+          }
+        }
+      }
+    },
+    "kit.system.secondsAgo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld s ago"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld с назад"
+          }
+        }
+      }
+    },
+    "kit.system.sleep" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sleep prevention"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Защита от сна"
+          }
+        }
+      }
+    },
+    "kit.system.startedToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Started today"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запущен сегодня"
+          }
+        }
+      }
+    },
+    "kit.system.streamFresh" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quotes live"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Котировки идут"
+          }
+        }
+      }
+    },
+    "kit.system.streamLost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quotes lost"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Котировки потеряны"
+          }
+        }
+      }
+    },
+    "kit.system.streamOff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No quote stream"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет потока котировок"
+          }
+        }
+      }
+    },
+    "kit.system.streamQuiet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quotes quiet"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Котировки молчат"
+          }
+        }
+      }
+    },
+    "kit.system.thisMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот Mac"
+          }
+        }
+      }
+    },
+    "kit.system.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Система"
+          }
+        }
+      }
+    },
+    "kit.system.training" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model training"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обучение модели"
+          }
+        }
+      }
+    },
+    "kit.system.trainingDone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Готово"
+          }
+        }
+      }
+    },
+    "kit.system.trainingFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остановлено"
+          }
+        }
+      }
+    },
+    "kit.system.trainingNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$lld of %3$lld · updated %4$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$lld из %3$lld · обновлено %4$@"
+          }
+        }
+      }
+    },
+    "kit.system.unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неизвестно"
+          }
+        }
+      }
+    },
+    "kit.system.watchdog" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchdog"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchdog"
           }
         }
       }
