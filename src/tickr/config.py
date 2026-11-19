@@ -123,7 +123,7 @@ class SessionConfig:
     postmarket_max_quote_age_seconds: Decimal
     premarket_max_spread_ratio: Decimal
     postmarket_max_spread_ratio: Decimal
-    extended_stop_confirm_quotes: int
+    extended_stop_confirm_checks: int
     extended_watch_max_gap_seconds: Decimal
     extended_blind_seconds: Decimal
 
@@ -581,8 +581,8 @@ def check_extended_sessions(session: SessionConfig) -> None:
             raise ConfigError(f"[session] {name}_max_quote_age_seconds must be above 0")
         if not 0 < getattr(session, f"{name}_max_spread_ratio") < 1:
             raise ConfigError(f"[session] {name}_max_spread_ratio must be above 0 and below 1")
-    if session.extended_stop_confirm_quotes < 1:
-        raise ConfigError("[session] extended_stop_confirm_quotes must be at least 1")
+    if session.extended_stop_confirm_checks < 1:
+        raise ConfigError("[session] extended_stop_confirm_checks must be at least 1")
     if not 0 < session.extended_watch_max_gap_seconds < session.extended_blind_seconds:
         raise ConfigError("[session] needs 0 < extended_watch_max_gap_seconds < "
                           "extended_blind_seconds")
