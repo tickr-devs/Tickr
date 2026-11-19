@@ -28,6 +28,12 @@ struct CandleChart: View {
     var panes: [Pane] {
       [macd ? .macd : nil, stochastic ? .stochastic : nil, rsi ? .rsi : nil, atr ? .atr : nil].compactMap { $0 }
     }
+
+    /// Whether the price pane's legend line shows (a line over the candles is drawn), so the
+    /// loading chart keeps its line too. VWAP is drawn on intraday candles only.
+    func legendShows(intraday: Bool) -> Bool {
+      (vwap && intraday) || fastEMA || slowEMA || movingAverages || bollinger
+    }
   }
 
   /// Candles, or a line of closes with a fill under it.
@@ -172,16 +178,18 @@ struct CandleChart: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      if let pending {
-        // Days still to come while the chart's budget fills a cold 5D (mockup v102's progress).
-        ProgressLine(fraction: pending.fraction, label: PendingText.caption(pending))
-        Text(PendingText.caption(pending))
-          .font(Tokens.Typography.captionMono)
-          .foregroundStyle(Palette.textQuaternary)
+      // Days still to come while the chart's budget fills a cold 5D (mockup v102's progress) say
+      // so on the readout's own line, and the progress runs along the card's top edge: the chart
+      // keeps its height as the days arrive, the loading chart's height (`LoadingChart`).
+      Group {
+        if let pending, selected == nil {
+          Text(PendingText.caption(pending))
+        } else {
+          readout
+        }
       }
-      readout
-        .font(Tokens.Typography.captionMono)
-        .foregroundStyle(selected == nil ? Palette.textQuaternary : Palette.textSecondary)
+      .font(Tokens.Typography.captionMono)
+      .foregroundStyle(selected == nil ? Palette.textQuaternary : Palette.textSecondary)
       legend(priceLegend)
       VStack(spacing: 0) {
         priceChart
@@ -202,6 +210,11 @@ struct CandleChart: View {
     }
     .padding(Tokens.Space.l)
     .tickrCard()
+    .overlay(alignment: .top) {
+      if let pending {
+        ProgressLine(fraction: pending.fraction, label: PendingText.caption(pending))
+      }
+    }
     .animation(Tokens.Motion.standard, value: lines)
     .onAppear {
       place()
