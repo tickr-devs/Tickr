@@ -189,7 +189,7 @@ struct ChartTab: View {
       caption: chart.pending.map(PendingText.caption) ?? chart.symbol.map {
         ChartText.loadingBars($0, interval: String(localized: ChartFormat.title(chart.timeframe)))
       } ?? L10n.Common.loading,
-      lines: lines, intraday: chart.timeframe.isIntraday, pending: chart.pending)
+      lines: lines, rangeTitle: RangePicker.title(chart.range), timeframe: chart.timeframe, pending: chart.pending)
   }
 
   /// Changes whenever a different chart is on screen, restarting the reload loop.
@@ -718,11 +718,14 @@ private struct RangePicker: View {
 private struct LoadingChart: View {
   let caption: LocalizedStringResource
   let lines: CandleChart.Lines
-  /// The chosen interval is intraday (VWAP is drawn, so its legend shows).
-  let intraday: Bool
+  /// The chosen range and interval, which the chart's caption names.
+  let rangeTitle: LocalizedStringResource
+  let timeframe: Timeframe
   /// How far a read the chart's request budget holds back has got, shown as a progress line.
   var pending: ChartPendingV1?
 
+  /// Bars the caption is laid out with: a count of the usual length.
+  static let sampleBars = 100
   /// The silhouette's candles and the price pane's grid lines across and down, as the board's.
   static let candles = 34
   static let rows = 5
@@ -730,18 +733,20 @@ private struct LoadingChart: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      // The readout's line: "Loading ABCD · 1 min bars".
-      Text(caption)
-        .font(Tokens.Typography.captionMono)
-        .foregroundStyle(Palette.textQuaternary)
-        .fixedSize(horizontal: false, vertical: true)
-      if lines.legendShows(intraday: intraday) {
-        // The legend's line, in its own font and inset.
-        Text(ChartText.vwap)
-          .font(Tokens.Typography.annotation)
-          .skeleton(true)
-          .padding(.top, Tokens.Space.xxs)
+      // The readout's line: "Loading ABCD · 1 min bars" over the chart's own caption, laid out
+      // but not drawn, so the line is as tall as the readout it gives way to.
+      ZStack(alignment: .topLeading) {
+        Text(ChartText.caption(String(localized: rangeTitle), String(localized: ChartFormat.title(timeframe)),
+          String(localized: ChartText.bars(Self.sampleBars))))
+          .hidden()
+        Text(caption)
+          .foregroundStyle(Palette.textQuaternary)
       }
+      .font(Tokens.Typography.captionMono)
+      .fixedSize(horizontal: false, vertical: true)
+      // The legend's names in their own row, values to come, as skeleton of their own size.
+      CandleChart.legend(CandleChart.priceLegend(lines, intraday: timeframe.isIntraday))
+        .skeleton(true)
       Skeleton(nil) {
         VStack(spacing: 0) {
           SkeletonCandles(candles: Self.candles, rows: Self.rows, columns: Self.columns,

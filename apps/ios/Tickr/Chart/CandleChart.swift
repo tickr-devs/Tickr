@@ -29,11 +29,6 @@ struct CandleChart: View {
       [macd ? .macd : nil, stochastic ? .stochastic : nil, rsi ? .rsi : nil, atr ? .atr : nil].compactMap { $0 }
     }
 
-    /// Whether the price pane's legend line shows (a line over the candles is drawn), so the
-    /// loading chart keeps its line too. VWAP is drawn on intraday candles only.
-    func legendShows(intraday: Bool) -> Bool {
-      (vwap && intraday) || fastEMA || slowEMA || movingAverages || bollinger
-    }
   }
 
   /// Candles, or a line of closes with a fill under it.
@@ -602,24 +597,39 @@ struct CandleChart: View {
 
   private var priceLegend: [LegendItem] {
     guard let index = legendIndex else { return [] }
+    return Self.priceLegend(lines, intraday: series.timeframe.isIntraday, series: series, studies: studies, at: index)
+  }
+
+  /// The price pane's legend for `lines`: each drawn line's name and colour, with its value at
+  /// candle `index`; without a series (the loading chart) the names alone, so it takes the
+  /// legend's real size. VWAP is drawn on intraday candles only.
+  static func priceLegend(
+    _ lines: Lines, intraday: Bool, series: ChartSeries? = nil, studies: CandleStudies? = nil, at index: Int? = nil
+  ) -> [LegendItem] {
+    func value(_ values: [Double?]?) -> Double? {
+      guard let values, let index, values.indices.contains(index) else { return nil }
+      return values[index]
+    }
+    let band = index.flatMap { index in studies.flatMap { $0.bollinger.indices.contains(index) ? $0.bollinger[index] : nil } }
     var items: [LegendItem] = []
-    if showsVWAP { items.append(LegendItem(name: ChartText.vwap, value: series.vwap[index], colour: Palette.seriesVWAP)) }
+    if lines.vwap && intraday {
+      items.append(LegendItem(name: ChartText.vwap, value: value(series?.vwap), colour: Palette.seriesVWAP))
+    }
     if lines.fastEMA {
-      items.append(LegendItem(name: ChartText.ema(Indicators.fastEMAPeriod), value: series.fastEMA[index],
+      items.append(LegendItem(name: ChartText.ema(Indicators.fastEMAPeriod), value: value(series?.fastEMA),
         colour: CandleChart.fastEMAColour))
     }
     if lines.slowEMA {
-      items.append(LegendItem(name: ChartText.ema(Indicators.slowEMAPeriod), value: series.slowEMA[index],
+      items.append(LegendItem(name: ChartText.ema(Indicators.slowEMAPeriod), value: value(series?.slowEMA),
         colour: CandleChart.slowEMAColour))
     }
     if lines.movingAverages {
       for (offset, period) in Studies.movingAveragePeriods.enumerated() {
-        items.append(LegendItem(name: ChartText.movingAverage(period), value: studies.movingAverages[offset][index],
+        items.append(LegendItem(name: ChartText.movingAverage(period), value: value(studies?.movingAverages[offset]),
           colour: Self.averageColours[offset]))
       }
     }
     if lines.bollinger {
-      let band = studies.bollinger[index]
       items.append(LegendItem(name: ChartText.bollingerUpper, value: band?.upper, colour: Palette.accentText))
       items.append(LegendItem(name: ChartText.bollingerMiddle, value: band?.middle, colour: Palette.accentText))
       items.append(LegendItem(name: ChartText.bollingerLower, value: band?.lower, colour: Palette.accentText))
@@ -653,8 +663,11 @@ struct CandleChart: View {
   }
 
   /// A row of names and values, each in its line's colour; empty when nothing is drawn.
+  private func legend(_ items: [LegendItem]) -> some View { Self.legend(items) }
+
+  /// A legend row; the loading chart lays out the price legend's names with it (`LoadingChart`).
   @ViewBuilder
-  private func legend(_ items: [LegendItem]) -> some View {
+  static func legend(_ items: [LegendItem]) -> some View {
     if !items.isEmpty {
       HStack(spacing: Tokens.Space.s) {
         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
