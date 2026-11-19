@@ -23,22 +23,22 @@
       {
         "name": "config",
         "passed": true,
-        "detail": "valid"
+        "cause": null
       },
       {
         "name": "calendar",
         "passed": true,
-        "detail": "regular session"
+        "cause": null
       },
       {
         "name": "credentials",
         "passed": true,
-        "detail": "WEBULL_APP_KEY, WEBULL_APP_SECRET set"
+        "cause": null
       },
       {
         "name": "token",
         "passed": true,
-        "detail": "usable"
+        "cause": null
       }
     ]
   },

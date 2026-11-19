@@ -1274,12 +1274,12 @@ class PreflightJobName(StrEnum):
 
 @dataclass(frozen=True)
 class PreflightCheckV1:
-    """One preflight check: `name` is a check code (docs/api.md, "GET /system"), `detail` its
-    own words (credential checks name variables, never values)."""
+    """One preflight check: `name` is a check code (docs/api.md, "GET /system"), `cause` the
+    cause code of a failed check (null when it passed)."""
 
     name: str
     passed: bool
-    detail: str
+    cause: str | None
 
 
 @dataclass(frozen=True)

@@ -136,7 +136,8 @@ def _morning_check(path: Path) -> tuple[api.MorningCheckV1 | None, str | None]:
         body = _read_json(path, RECORD_SCHEMA_VERSION)
         if body is None:
             return None, NO_PREFLIGHT
-        checks = tuple(api.PreflightCheckV1(str(c["name"]), _flag(c["passed"]), str(c["detail"]))
+        checks = tuple(api.PreflightCheckV1(str(c["name"]), _flag(c["passed"]),
+                                            None if c["cause"] is None else str(c["cause"]))
                        for c in body["checks"])
         cause = body["cause"]
         return api.MorningCheckV1(

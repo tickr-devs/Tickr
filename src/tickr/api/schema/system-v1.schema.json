@@ -174,14 +174,21 @@
                   "passed": {
                     "type": "boolean"
                   },
-                  "detail": {
-                    "type": "string"
+                  "cause": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "name",
                   "passed",
-                  "detail"
+                  "cause"
                 ],
                 "additionalProperties": false
               }

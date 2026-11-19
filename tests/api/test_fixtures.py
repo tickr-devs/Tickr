@@ -341,11 +341,10 @@ def documents() -> dict[str, object]:
                 contract.PreflightJobName.PREFLIGHT, T0.replace(hour=8, minute=30),
                 T0.replace(hour=8, minute=30, second=41), DAY, contract.PreflightOutcome.READY,
                 False, None, (
-                    contract.PreflightCheckV1("config", True, "valid"),
-                    contract.PreflightCheckV1("calendar", True, "regular session"),
-                    contract.PreflightCheckV1("credentials", True,
-                                              "WEBULL_APP_KEY, WEBULL_APP_SECRET set"),
-                    contract.PreflightCheckV1("token", True, "usable"))), None,
+                    contract.PreflightCheckV1("config", True, None),
+                    contract.PreflightCheckV1("calendar", True, None),
+                    contract.PreflightCheckV1("credentials", True, None),
+                    contract.PreflightCheckV1("token", True, None))), None,
             contract.TrainingV1("wide model", contract.TrainingState.RUNNING, 130, 209,
                                 T0 - timedelta(hours=9), T0 - timedelta(minutes=2), None), None,
             contract.HostV1("mac", contract.WatchdogV1(
@@ -368,8 +367,8 @@ def documents() -> dict[str, object]:
                 contract.PreflightJobName.BOT_START, T0.replace(hour=9),
                 T0.replace(hour=9, minute=5),
                 DAY, contract.PreflightOutcome.FAILED, True, "token-unusable", (
-                    contract.PreflightCheckV1("config", True, "valid"),
-                    contract.PreflightCheckV1("token", False, "TimeoutError"))), None,
+                    contract.PreflightCheckV1("config", True, None),
+                    contract.PreflightCheckV1("token", False, "token-unusable"))), None,
             None, "no training job is reporting",
             contract.HostV1("mac", contract.WatchdogV1(
                 None, T0 - timedelta(days=3), True, False, (

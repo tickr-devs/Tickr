@@ -103,9 +103,13 @@ public enum SystemText {
 
   /// A preflight check's name in the person's language; an unknown one reads "Another check".
   public static func check(_ name: String) -> LocalizedStringResource {
-    guard let check = PreflightCheckName(rawValue: name) else {
-      return LocalizedStringResource("kit.system.check.other", defaultValue: "Another check", bundle: bundle)
-    }
+    let other = LocalizedStringResource("kit.system.check.other", defaultValue: "Another check", bundle: bundle)
+    guard let check = PreflightCheckName(rawValue: name) else { return other }
+    return setupCheck(check) ?? runCheck(check) ?? other
+  }
+
+  /// The names of the checks of the machine and its setup; nil for a check of the run itself.
+  private static func setupCheck(_ check: PreflightCheckName) -> LocalizedStringResource? {
     switch check {
     case .config: return LocalizedStringResource("kit.system.check.config", defaultValue: "Configuration", bundle: bundle)
     case .codeVersion:
@@ -115,6 +119,14 @@ public enum SystemText {
       return LocalizedStringResource("kit.system.check.calendar", defaultValue: "Trading calendar", bundle: bundle)
     case .credentials:
       return LocalizedStringResource("kit.system.check.credentials", defaultValue: "Broker credentials", bundle: bundle)
+    case .database: return LocalizedStringResource("kit.system.check.database", defaultValue: "Database", bundle: bundle)
+    case .alertChannel, .alertRecipient, .tokenDir, .token, .strategy, .stopMarker: return nil
+    }
+  }
+
+  /// The names of the checks of the run itself (token, alerts, strategy, stop); nil for a setup check.
+  private static func runCheck(_ check: PreflightCheckName) -> LocalizedStringResource? {
+    switch check {
     case .alertChannel:
       return LocalizedStringResource("kit.system.check.alertChannel", defaultValue: "Alert channel", bundle: bundle)
     case .alertRecipient:
@@ -124,7 +136,7 @@ public enum SystemText {
     case .strategy: return LocalizedStringResource("kit.system.check.strategy", defaultValue: "Strategy", bundle: bundle)
     case .stopMarker:
       return LocalizedStringResource("kit.system.check.stopMarker", defaultValue: "Stopped by you", bundle: bundle)
-    case .database: return LocalizedStringResource("kit.system.check.database", defaultValue: "Database", bundle: bundle)
+    case .config, .codeVersion, .disk, .calendar, .credentials, .database: return nil
     }
   }
 

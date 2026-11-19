@@ -295,8 +295,10 @@ struct SystemRow<Value: View>: View {
   let note: Text?
   let value: Value
 
-  init(_ title: LocalizedStringResource, symbol: String, health: SystemCard.Health, tone: Tone? = nil, note: Text?,
-    @ViewBuilder value: () -> Value) {
+  init(
+    _ title: LocalizedStringResource, symbol: String, health: SystemCard.Health, tone: Tone? = nil, note: Text?,
+    @ViewBuilder value: () -> Value
+  ) {
     self.title = title
     self.symbol = symbol
     self.tone = tone ?? health.tone

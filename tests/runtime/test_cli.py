@@ -174,7 +174,7 @@ def test_preflight_writes_its_record_for_the_apps(config_path, monkeypatch):
     record = json.loads(record_path(cfg).read_text("utf-8"))
     assert record["schema_version"] == 1 and record["job"] == "preflight"
     assert record["outcome"] == "ready" and record["cause"] is None
-    assert record["checks"] == [{"name": "config", "passed": True, "detail": "ok"}]
+    assert record["checks"] == [{"name": "config", "passed": True, "cause": None}]
     assert "config_path" not in record and "data_dir" not in record
 
 
@@ -185,6 +185,18 @@ def test_bot_job_preflight_record_names_its_job(config_path, monkeypatch):
     assert main(["--config", str(config_path), "run-bot", "--", sys.executable, "-c",
                  "pass"]) == 0
     assert json.loads(record_path(cfg).read_text("utf-8"))["job"] == "bot-start"
+
+
+def test_real_preflight_record_holds_no_path_or_digest(config_path):
+    cfg = config_module.load(config_path)
+    data = cfg.root / cfg.run.data_dir
+    data.mkdir(parents=True)
+    main(["--config", str(config_path), "preflight"])
+    text = record_path(cfg).read_text("utf-8")
+    record = json.loads(text)
+    assert record["checks"] and all(set(c) == {"name", "passed", "cause"} for c in record["checks"])
+    for secret_ish in (str(cfg.root), str(data), cfg.digest):
+        assert secret_ish not in text
 
 
 def test_preflight_record_never_creates_the_data_folder(config_path):
@@ -206,3 +218,20 @@ def test_preflight_record_write_failure_does_not_change_the_outcome(config_path,
     assert main(["--config", str(config_path), "preflight"]) == 0
     records = _records(capsys.readouterr().out)
     assert {"record": "preflight-record-failed", "error": "PermissionError"} in records
+
+
+def test_any_record_failure_never_stops_the_bot_start(config_path, monkeypatch, tmp_path, capsys):
+    _ready_preflight(monkeypatch, config_path)
+
+    def broken(*args):
+        raise ValueError("bad record")
+
+    monkeypatch.setattr(runtime_main, "record_text", broken)
+    marker = tmp_path / "started"
+    cfg = config_module.load(config_path)
+    (cfg.root / cfg.run.data_dir).mkdir(parents=True)
+    assert main(["--config", str(config_path), "run-bot", "--", sys.executable, "-c",
+                 f"open({str(marker)!r}, 'w')"]) == 0
+    assert marker.exists()
+    records = _records(capsys.readouterr().out)
+    assert {"record": "preflight-record-failed", "error": "ValueError"} in records

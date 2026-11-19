@@ -23,12 +23,12 @@
       {
         "name": "config",
         "passed": true,
-        "detail": "valid"
+        "cause": null
       },
       {
         "name": "token",
         "passed": false,
-        "detail": "TimeoutError"
+        "cause": "token-unusable"
       }
     ]
   },

@@ -74,11 +74,11 @@ public enum PreflightCheckName: String, Sendable {
   case stopMarker = "stop-marker"
 }
 
-/// One preflight check: a check code and its own words.
+/// One preflight check: a check code and, when it failed, its cause code.
 public struct PreflightCheckV1: Codable, Hashable, Sendable {
   public let name: String
   public let passed: Bool
-  public let detail: String
+  public let cause: String?
 }
 
 /// The latest preflight, as its record file says.
@@ -392,11 +392,4 @@ public struct SystemV1: Codable, Hashable, Sendable {
     try c.encode(trainingCauseCodes, forKey: .trainingCauseCodes)
     try c.encode(hostCauseCodes, forKey: .hostCauseCodes)
   }
-
-  /// Whether the bot runs now by a status that is not stale.
-  public var botRunning: Bool { botState == .running && !statusStale }
-  public var morningCheckCauseText: String? { ApiText.prose(morningCheckCauseCodes, text: morningCheckCause) }
-  public var trainingCauseText: String? { ApiText.prose(trainingCauseCodes, text: trainingCause) }
-  /// The Mac's services when the API reports a kind this app knows.
-  public var mac: HostV1? { host.flatMap { $0.kind == HostV1.mac ? $0 : nil } }
 }

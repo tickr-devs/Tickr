@@ -189,8 +189,8 @@ class PreflightJob(StrEnum):
 def record_text(result: PreflightResult, job: PreflightJob, started_at: datetime,
                 finished_at: datetime) -> str:
     """The record file's text: when and by which job it ran, the outcome, the single cause and
-    every check by name. Details are the checks' own words (credential checks name variables,
-    never values); no path or digest is written, the file is served to the apps."""
+    every check by name with its cause code. The checks' own words are left out: they hold
+    paths, the config digest and folder names, and the file is served to the apps."""
     return json.dumps({
         "schema_version": RECORD_SCHEMA_VERSION,
         "job": job.value,
@@ -200,7 +200,8 @@ def record_text(result: PreflightResult, job: PreflightJob, started_at: datetime
         "outcome": OUTCOMES[result.exit_code],
         "blocks_start": result.blocks_start,
         "cause": result.cause.value if result.cause else None,
-        "checks": [{"name": c.name.value, "passed": c.passed, "detail": c.detail}
+        "checks": [{"name": c.name.value, "passed": c.passed,
+                    "cause": c.cause.value if c.cause else None}
                    for c in result.checks],
     }, sort_keys=True) + "\n"
 

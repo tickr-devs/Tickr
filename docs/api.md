@@ -768,8 +768,9 @@ machine's own services follow under `host`, so a bot on a server keeps the rest 
   strategy alone does not block); `cause` the first failed check's cause code
   (`runtime/preflight.py` PreflightCause, e.g. `token-unusable`). `checks[].name` is a check
   code: `config`, `code-version`, `disk`, `calendar`, `credentials`, `alert-channel`,
-  `alert-recipient`, `token-dir`, `stop-marker`, `database`, `strategy`, `token`; `detail` is the
-  check's own words (credential checks name variables, never values). Null with
+  `alert-recipient`, `token-dir`, `stop-marker`, `database`, `strategy`, `token`; `cause` is a
+  failed check's cause code, null when it passed (the checks' own words stay in the job's log:
+  they hold paths and the config digest). Null with
   `morning_check_cause` when no record exists yet or it cannot be read. A preflight whose config
   does not load, or whose data folder is missing, writes no record (it does not know where, and
   never creates the data folder): the previous record stays, with its older `day`.

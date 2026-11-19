@@ -132,14 +132,17 @@ def _preflight(config_path: Path, failure: AlertKind, job: PreflightJob) -> Pref
 def _record(result: PreflightResult, job: PreflightJob, started: datetime) -> None:
     """The preflight's record for GET /system. Only with a loaded config (it names the data
     folder) that exists: the record never creates the data folder, whose absence is itself a
-    preflight failure. A failed write is printed and changes nothing else: the job goes on."""
+    preflight failure. It is for display only: any failure is printed and changes nothing else,
+    the job goes on (a bot start never waits on it)."""
     cfg = result.config
-    if cfg is None or not (cfg.root / cfg.run.data_dir).is_dir():
+    if cfg is None:
         return
     try:
+        if not (cfg.root / cfg.run.data_dir).is_dir():
+            return
         contract.write_atomic(record_path(cfg),
                               record_text(result, job, started, datetime.now(UTC)))
-    except OSError as exc:
+    except Exception as exc:  # noqa: BLE001 - a display record never stops the job
         _emit("preflight-record-failed", {"error": type(exc).__name__})
 
 

@@ -97,9 +97,22 @@ public enum SystemCard {
 
     public init(since date: Date, now: Date) {
       let seconds = max(0, Int(now.timeIntervalSince(date)))
-      if seconds < Self.minute { self = .seconds(seconds) }
-      else if seconds < Self.hour { self = .minutes(seconds / Self.minute) }
-      else { self = .hours(seconds / Self.hour) }
+      if seconds < Self.minute {
+        self = .seconds(seconds)
+      } else if seconds < Self.hour {
+        self = .minutes(seconds / Self.minute)
+      } else {
+        self = .hours(seconds / Self.hour)
+      }
     }
   }
+}
+
+public extension SystemV1 {
+  /// Whether the bot runs now by a status that is not stale.
+  var botRunning: Bool { botState == .running && !statusStale }
+  var morningCheckCauseText: String? { ApiText.prose(morningCheckCauseCodes, text: morningCheckCause) }
+  var trainingCauseText: String? { ApiText.prose(trainingCauseCodes, text: trainingCause) }
+  /// The Mac's services when the API reports a kind this app knows.
+  var mac: HostV1? { host.flatMap { $0.kind == HostV1.mac ? $0 : nil } }
 }
