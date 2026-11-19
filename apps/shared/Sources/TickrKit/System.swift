@@ -64,21 +64,18 @@ public enum PreflightJobName: String, Codable, Sendable {
   case botStart = "bot-start"
 }
 
-/// The preflight's check codes (`PreflightCheckV1.name`).
-public enum PreflightCheckName: String, Sendable {
-  case config, disk, calendar, credentials, token, strategy, database
-  case codeVersion = "code-version"
-  case alertChannel = "alert-channel"
-  case alertRecipient = "alert-recipient"
-  case tokenDir = "token-dir"
-  case stopMarker = "stop-marker"
-}
-
 /// One preflight check: a check code and, when it failed, its cause code.
 public struct PreflightCheckV1: Codable, Hashable, Sendable {
   public let name: String
   public let passed: Bool
   public let cause: String?
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(name, forKey: .name)
+    try c.encode(passed, forKey: .passed)
+    try c.encodeNullable(cause, forKey: .cause)
+  }
 }
 
 /// The latest preflight, as its record file says.

@@ -116,3 +116,13 @@ public extension SystemV1 {
   /// The Mac's services when the API reports a kind this app knows.
   var mac: HostV1? { host.flatMap { $0.kind == HostV1.mac ? $0 : nil } }
 }
+
+/// The preflight's check codes (`PreflightCheckV1.name`).
+public enum PreflightCheckName: String, Sendable {
+  case config, disk, calendar, credentials, token, strategy, database
+  case codeVersion = "code-version"
+  case alertChannel = "alert-channel"
+  case alertRecipient = "alert-recipient"
+  case tokenDir = "token-dir"
+  case stopMarker = "stop-marker"
+}
