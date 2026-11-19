@@ -15,6 +15,7 @@ from tickr.runtime.preflight import (
     ExitCode,
     PreflightCause,
     PreflightResult,
+    record_path,
 )
 
 
@@ -163,3 +164,45 @@ def test_token_probe_returns_the_refusal_cause(config_path, monkeypatch, capsys)
     monkeypatch.setattr(webull, "check_token", lambda cfg, hook: 1 / 0)
     assert probe(config_module.load(config_path)) == "ZeroDivisionError"
     assert _records(capsys.readouterr().out) == []
+
+
+def test_preflight_writes_its_record_for_the_apps(config_path, monkeypatch):
+    _ready_preflight(monkeypatch, config_path)
+    cfg = config_module.load(config_path)
+    (cfg.root / cfg.run.data_dir).mkdir(parents=True)
+    assert main(["--config", str(config_path), "preflight"]) == 0
+    record = json.loads(record_path(cfg).read_text("utf-8"))
+    assert record["schema_version"] == 1 and record["job"] == "preflight"
+    assert record["outcome"] == "ready" and record["cause"] is None
+    assert record["checks"] == [{"name": "config", "passed": True, "detail": "ok"}]
+    assert "config_path" not in record and "data_dir" not in record
+
+
+def test_bot_job_preflight_record_names_its_job(config_path, monkeypatch):
+    _ready_preflight(monkeypatch, config_path)
+    cfg = config_module.load(config_path)
+    (cfg.root / cfg.run.data_dir).mkdir(parents=True)
+    assert main(["--config", str(config_path), "run-bot", "--", sys.executable, "-c",
+                 "pass"]) == 0
+    assert json.loads(record_path(cfg).read_text("utf-8"))["job"] == "bot-start"
+
+
+def test_preflight_record_never_creates_the_data_folder(config_path):
+    cfg = config_module.load(config_path)
+    assert main(["--config", str(config_path), "preflight"]) == 1
+    assert not (cfg.root / cfg.run.data_dir).exists()
+
+
+def test_preflight_record_write_failure_does_not_change_the_outcome(config_path, monkeypatch,
+                                                                    capsys):
+    _ready_preflight(monkeypatch, config_path)
+    cfg = config_module.load(config_path)
+    (cfg.root / cfg.run.data_dir).mkdir(parents=True)
+
+    def refuse(path, text):
+        raise PermissionError(path)
+
+    monkeypatch.setattr(runtime_main.contract, "write_atomic", refuse)
+    assert main(["--config", str(config_path), "preflight"]) == 0
+    records = _records(capsys.readouterr().out)
+    assert {"record": "preflight-record-failed", "error": "PermissionError"} in records
