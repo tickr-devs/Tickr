@@ -827,6 +827,14 @@ enum L10n {
     static var hintOpen: LocalizedStringResource {
       LocalizedStringResource("activity.hintOpen", defaultValue: "Open positions", bundle: L10n.bundle)
     }
+    /// A calendar cell's wins, compact: "2W".
+    static func calendarWins(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("activity.calendarWins", defaultValue: "\(count)W", bundle: L10n.bundle)
+    }
+    /// A calendar cell's losses, compact: "1L".
+    static func calendarLosses(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("activity.calendarLosses", defaultValue: "\(count)L", bundle: L10n.bundle)
+    }
     static func chipWins(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("activity.chipWins", defaultValue: "\(count) W", bundle: L10n.bundle)
     }
@@ -2145,7 +2153,7 @@ enum ChartText {
   /// already formatted), and how to move and read the chart.
   static func caption(_ range: String, _ timeframe: String, _ bars: String) -> LocalizedStringResource {
     LocalizedStringResource("chart.caption",
-      defaultValue: "\(range) · \(timeframe) · \(bars) · drag to scroll · touch and hold to read")
+      defaultValue: "\(range) · \(timeframe) · \(bars) · drag to scroll · pinch to zoom · touch and hold to read")
   }
 
   /// Candles on screen, for `caption`.

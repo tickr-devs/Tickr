@@ -218,6 +218,7 @@ struct ScrollsWhenTall<Content: View>: View {
     ViewThatFits(in: .vertical) {
       content
       ScrollView(.vertical) { content }.scrollBounceBehavior(.basedOnSize)
+        .scrollEdgeHints()
     }
   }
 }
