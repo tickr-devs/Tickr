@@ -36,26 +36,41 @@ public enum FigureShapes {
     _ items: some Sequence<Item>, by value: (Item) -> Double, part: (Item) -> Bool = { _ in false },
     _ format: (Item) -> String
   ) -> [String] {
-    var buckets: [Bucket: (low: Item, lowValue: Double, high: Item, highValue: Double)] = [:]
+    var buckets: [Bucket: Ends<Item>] = [:]
     for item in items {
       let figure = value(item)
       guard figure.isFinite else { continue }
       let key = Bucket(figure, part: part(item))
       if var ends = buckets[key] {
-        if figure < ends.lowValue { (ends.low, ends.lowValue) = (item, figure) }
-        if figure > ends.highValue { (ends.high, ends.highValue) = (item, figure) }
+        ends.take(item, figure)
         buckets[key] = ends
       } else {
-        buckets[key] = (low: item, lowValue: figure, high: item, highValue: figure)
+        buckets[key] = Ends(item, figure)
       }
     }
-    let ends = buckets.sorted { $0.key < $1.key }.flatMap { [$0.value.low, $0.value.high] }
+    let ends = buckets.sorted { $0.key < $1.key }.flatMap { [$0.value.low.item, $0.value.high.item] }
     return shapes(ends.map(format))
   }
 
   /// The longest of `shapes`: in a monospaced font (both apps' chart figures) the widest.
   public static func longest(_ shapes: [String]) -> String {
     shapes.max { $0.count < $1.count } ?? ""
+  }
+
+  /// The items with the smallest and the largest figure of a bucket.
+  private struct Ends<Item> {
+    var low: (item: Item, figure: Double)
+    var high: (item: Item, figure: Double)
+
+    init(_ item: Item, _ figure: Double) {
+      low = (item, figure)
+      high = (item, figure)
+    }
+
+    mutating func take(_ item: Item, _ figure: Double) {
+      if figure < low.figure { low = (item, figure) }
+      if figure > high.figure { high = (item, figure) }
+    }
   }
 
   /// A value's sign and power of ten.
@@ -92,9 +107,9 @@ public struct ReadoutShapes: Sendable {
     volume = FigureShapes.of(candles.lazy.map(\.volume), Volume.compact)
     let changes = candles.indices.lazy.compactMap { candles.change(at: $0) }
     change = FigureShapes.of(changes, by: \.fraction) { Percent.signed(fraction: $0.fraction) }
-    priceChange = FigureShapes.of(changes, by: \.amount, part: { abs(Money.decimal($0.price)) < Money.subPennyBelow }) {
-      Money.priceChange($0.amount, at: $0.price)
-    }
+    let subPenny = { (change: CandleChange) in abs(Money.decimal(change.price)) < Money.subPennyBelow }
+    let written = { (change: CandleChange) in Money.priceChange(change.amount, at: change.price) }
+    priceChange = FigureShapes.of(changes, by: \.amount, part: subPenny, written)
   }
 }
 
