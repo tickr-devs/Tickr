@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-import TickrKit
 @testable import TickrDesign
+import TickrKit
 
 @Suite struct SteadyFiguresTests {
   /// The longest shape among all of `texts` (a monospaced font draws it widest).
