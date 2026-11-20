@@ -735,16 +735,16 @@ private struct LoadingChart: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.xs) {
       // The readout's line: "Loading ABCD · 1 min bars" over the chart's own caption, laid out
-      // but not drawn, so the line is as tall as the readout it gives way to.
+      // but not drawn, so the line is as tall as the readout it gives way to: one line, always.
       ZStack(alignment: .topLeading) {
-        Text(ChartText.caption(String(localized: rangeTitle), String(localized: ChartFormat.title(timeframe)),
-          String(localized: ChartText.bars(Self.sampleBars))))
+        CandleChart.caption(rangeTitle, timeframe, bars: Self.sampleBars)
           .hidden()
         Text(caption)
           .foregroundStyle(Palette.textQuaternary)
+          .fixedSize()
       }
       .font(Tokens.Typography.captionMono)
-      .fixedSize(horizontal: false, vertical: true)
+      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
       // The legend's names in their own row, values to come, as skeleton of their own size.
       CandleChart.legend(CandleChart.priceLegend(lines, intraday: timeframe.isIntraday))
         .skeleton(true)
