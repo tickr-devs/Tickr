@@ -84,6 +84,10 @@ aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --
 
 Always create the scheduled action before setting 1; never start a group without it.
 
+Check once after the first apply, as the research user: a scheduled action that tries to lift the
+size must be refused (`put-scheduled-update-group-action ... --max-size 2` returns AccessDenied),
+and a test start with a deadline ten minutes ahead must end with the group back at 0.
+
 Stop it early: `set-desired-capacity ... 0` (the machine gets SIGTERM and saves), or write a past
 time into `until`.
 

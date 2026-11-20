@@ -433,19 +433,34 @@ data "aws_iam_policy_document" "research" {
 
   statement {
     sid       = "ReadGroups"
-    actions   = ["autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeScalingActivities"]
+    actions   = ["autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeScalingActivities", "autoscaling:DescribeScheduledActions"]
     resources = ["*"]
   }
 
   statement {
-    sid = "StartStopJobGroups"
-    actions = [
-      "autoscaling:SetDesiredCapacity",
-      "autoscaling:PutScheduledUpdateGroupAction",
-      "autoscaling:DeleteScheduledAction",
-    ]
+    sid     = "StartStopJobGroups"
+    actions = ["autoscaling:SetDesiredCapacity", "autoscaling:DeleteScheduledAction"]
     resources = [for name in values(local.job_groups) :
     "arn:${local.partition}:autoscaling:${var.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${name}"]
+  }
+
+  # The deadline backstop. A scheduled action could also lift the group's size limits; never
+  # above one machine (two machines on one job would write the same checkpoints).
+  statement {
+    sid     = "ScheduleDeadline"
+    actions = ["autoscaling:PutScheduledUpdateGroupAction"]
+    resources = [for name in values(local.job_groups) :
+    "arn:${local.partition}:autoscaling:${var.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${name}"]
+    condition {
+      test     = "NumericLessThanEqualsIfExists"
+      variable = "autoscaling:MaxSize"
+      values   = ["1"]
+    }
+    condition {
+      test     = "NumericLessThanEqualsIfExists"
+      variable = "autoscaling:MinSize"
+      values   = ["1"]
+    }
   }
 
   statement {
