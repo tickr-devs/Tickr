@@ -118,6 +118,27 @@ may write the bucket, so they could move it. The budget mail is the hard backsto
 The spot quota is shared: download (4 x 16 = 64) and train (64) together need 128 vCPU, more
 than the 64 approved, so they run one after the other unless the spot quota is raised.
 
+### The download job (`jobs/`)
+
+`jobs/tickboot.sh` is the job script of `tickr-download` and `jobs/tickrun.py` the runner it
+starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
+`scripts/fleet/tickrun.py`) and writes the md5 of the reviewed runner to
+`jobs/download/runner.md5`, so a machine refuses any other file. How 4 machines share the days:
+
+- A day is taken by creating `claims/ticks/<day>.json` with `If-None-Match: *`; S3 lets only
+  one machine create it. The holder refreshes it; a claim not refreshed for 20 minutes is taken
+  over with `If-Match` on the stale object, again by one machine only.
+- Only the claim holder converts and stores a day. A machine that finds its claim taken kills
+  that day's converter. Scratch is per machine and per day; stored objects are per day.
+- A day is done when the frozen converter's manifest exists and the stored tables have the
+  sizes it records (plus the raw-archive record when `jobs/download/raw` says `on`).
+- Exit 0 only when every day is done, whoever did it; a machine whose share is finished waits
+  for the others. SIGTERM (spot notice): claims released, exit 3 inside a minute.
+- One day is first compared with the Mac's files of the same day; a mismatch writes
+  `jobs/download/crosscheck = FAIL`, sets `until` to 0 and the group to 0.
+
+`tests/ops/test_tickrun.py` runs these rules in the runner's local test mode.
+
 ## Limits IAM cannot hold
 
 A second template, `tickr-training-ondemand`, is the same machine at the regular price (never
