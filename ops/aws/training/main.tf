@@ -264,6 +264,10 @@ resource "aws_launch_template" "training" {
   user_data = base64encode(templatefile("${path.module}/user-data.sh", {
     max_runtime_minutes = var.max_runtime_hours * 60
     bucket              = aws_s3_bucket.research.id
+    region              = var.region
+    job                 = ""
+    job_script          = ""
+    group               = ""
   }))
 
   tag_specifications {
@@ -424,6 +428,19 @@ data "aws_iam_policy_document" "research" {
       "arn:${local.partition}:ssm:${var.region}::document/AWS-RunShellScript",
       "arn:${local.partition}:ssm:${var.region}:${local.account}:document/SSM-SessionManagerRunShell",
     ]
+  }
+
+  statement {
+    sid       = "ReadGroups"
+    actions   = ["autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeScalingActivities"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "StartStopJobGroups"
+    actions = ["autoscaling:SetDesiredCapacity"]
+    resources = [for name in values(local.job_groups) :
+    "arn:${local.partition}:autoscaling:${var.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${name}"]
   }
 
   statement {

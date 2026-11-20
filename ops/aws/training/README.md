@@ -58,6 +58,43 @@ inside the download script only; never echo or log it.
 
 Every machine start still needs the owner's yes on a named sum.
 
+## Auto-restart groups (no idle time on spot)
+
+`autorestart.tf` adds one Auto Scaling group per job in `var.jobs`: `tickr-download` (8 vCPU
+types, 150 GB disk, runs `scripts/tickboot.sh`) and `tickr-train` (64 vCPU types, 500 GB disk,
+runs `scripts/l1boot.sh`). Each keeps at most one spot machine, picks among several instance
+types in every zone (`capacity-optimized`, the least interrupted pools) and replaces a machine
+AWS takes back within minutes. Desired capacity is 0 after every apply; nothing runs until it is
+set to 1.
+
+Start a job (research user, only after the owner's yes on a named sum):
+
+```sh
+# deadline = how long the approved sum lasts; the wrapper refuses to run past it
+date -u -d '+30 hours' +%s | aws s3 cp - s3://tickr-research-<account>/jobs/download/until
+aws s3 rm s3://tickr-research-<account>/jobs/download/done   # only when re-running a finished job
+aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --desired-capacity 1
+```
+
+Stop it early: `set-desired-capacity ... 0` (the machine gets SIGTERM and saves), or write a past
+time into `until`.
+
+The boot wrapper (`user-data.sh`) runs the job script and:
+- watches the spot interruption notice every 5 s; on it, creates `/work/STOP` and sends SIGTERM
+  so the job saves within the 2-minute warning;
+- checks `jobs/<job>/until` every minute and stops the job and the group when it has passed;
+- on exit 0 writes `jobs/<job>/done` and sets the group to 0, so a finished job never restarts;
+- on any other exit records `jobs/<job>/last-failure` and powers off; the group starts a fresh
+  machine (bounded by the deadline).
+
+The 24-hour power-off stays: the group simply replaces that machine and the job resumes.
+
+The deadline is a working rule, not a security barrier: the research user and the job machine
+may write the bucket, so they could move it. The budget mail is the hard backstop.
+
+The spot quota is shared: download (8) and train (64) together need 72 vCPU, more than the 64
+approved, so they run one after the other unless the spot quota is raised.
+
 ## Limits IAM cannot hold
 
 A second template, `tickr-training-ondemand`, is the same machine at the regular price (never
