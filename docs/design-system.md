@@ -473,7 +473,9 @@ the content out over `fade` (72 pt iPhone, 56 pt Mac; above a bar such as the iP
 the content under the bar is hidden while more is below), and while more is below, a `surface`
 capsule with `Symbols.scrollMore` sits on the bottom edge; a click or tap scrolls 80% of the
 visible height. At the top and the end the hints fade away in 0.2 s (none with Reduce Motion).
-A screen that drives its scroll position itself passes it: `scrollEdgeHints(position:)`. A `Form`
+A scroll view at its end stays at its end when content grows under it while nobody scrolls
+(the first bars widening the Positions tiles brought the chevron back, owner 2026-11-20); at the
+top, growth leaves the top in view and the chevron appears. A screen that drives its scroll position itself passes it: `scrollEdgeHints(position:)`. A `Form`
 or `List` gets `scrollEdgeFades()`, the fades without the chevron: a scroll position cannot move a
 form (checked on the iPhone simulator), and a chevron that does nothing would be a dead control.
 The same rule rejects a file with fewer `scrollEdgeHints` calls than vertical scroll views, or
