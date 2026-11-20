@@ -77,6 +77,8 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
     nightly = _local_time("nightly_fetch_start_local", runtime.nightly_fetch_start_local)
     if (preflight.hour, preflight.minute) >= (bot.hour, bot.minute):
         raise ConfigError("[runtime] preflight_start_local must be before bot_start_local")
+    if (watchdog.hour, watchdog.minute) > (bot.hour, bot.minute):
+        raise ConfigError("[runtime] watchdog_start_local must be at or before bot_start_local")
     days = runtime.launch_weekdays
     if not days or len(set(days)) != len(days) or any(d < 0 or d > _WEEKDAY_MAX for d in days):
         raise ConfigError(
@@ -90,6 +92,8 @@ def schedule(runtime: RuntimeConfig) -> Schedule:
         raise ConfigError("[runtime] supervisor_poll_seconds must be positive")
     if runtime.min_free_disk_mb <= 0:
         raise ConfigError("[runtime] min_free_disk_mb must be positive")
+    if runtime.disk_warn_free_mb <= runtime.min_free_disk_mb:
+        raise ConfigError("[runtime] disk_warn_free_mb must be above min_free_disk_mb")
     if runtime.watchdog_bot_check_seconds <= 0:
         raise ConfigError("[runtime] watchdog_bot_check_seconds must be positive")
     for key in ("nightly_fetch_out", "nightly_fetch_seed"):

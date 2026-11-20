@@ -367,6 +367,7 @@ class AdvisorConfig:
 @dataclass(frozen=True)
 class RuntimeConfig:
     min_free_disk_mb: int
+    disk_warn_free_mb: int
     supervisor_poll_seconds: Decimal
     bot_exit_timeout_seconds: int
     stop_alert_after_seconds: int
@@ -404,6 +405,7 @@ class AlertsConfig:
     imessage_recipient_variable: str
     mac_app: str
     mac_app_timeout_seconds: Decimal
+    feed_file: str
 
 
 @dataclass(frozen=True)
@@ -791,6 +793,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             raise ConfigError(f"[api] {key} must be above 0")
     if not api.quotes_file.strip():
         raise ConfigError("[api] quotes_file must name a file")
+    if not built["alerts"].feed_file.strip():
+        raise ConfigError("[alerts] feed_file must name a file")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
