@@ -102,8 +102,8 @@ struct ChartTab: View {
         // The bot's trades, position and strategy marks belong to the chosen day: on a longer
         // range they stay off it.
         let oneDay = chart.range == .oneDay
-        CandleChart(series: series, times: chart.times, studies: chart.studies, atr: chart.atr,
-          trades: oneDay ? chart.trades : [], position: oneDay ? chart.openPosition : nil,
+        CandleChart(series: series, times: chart.times, studies: chart.studies, readoutShapes: chart.readoutShapes,
+          atr: chart.atr, trades: oneDay ? chart.trades : [], position: oneDay ? chart.openPosition : nil,
           events: oneDay ? chart.events : [], lines: lines, rangeTitle: RangePicker.title(chart.range),
           pending: chart.pending, livePrice: oneDay ? chart.livePrice : nil, viewport: $viewport)
           // Its panes have a fixed height: past this size the scale's tags and legends would

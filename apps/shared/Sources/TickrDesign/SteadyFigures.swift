@@ -93,7 +93,8 @@ public enum FigureShapes {
 
 /// The shapes of a chart readout's columns over all of a chart's candles (both apps): its open,
 /// high, low and close share one slot width, its volume and its change from the candle before
-/// each their own.
+/// each their own. It formats every volume: build it once per series (`ChartPlot`, the iPhone's
+/// `ChartModel`), never in a view's body.
 public struct ReadoutShapes: Sendable {
   public let price: [String]
   public let volume: [String]
@@ -104,7 +105,9 @@ public struct ReadoutShapes: Sendable {
 
   public init(_ candles: [Candle]) {
     price = FigureShapes.of(candles.lazy.flatMap { [$0.low, $0.high, $0.open, $0.close] }, Money.price)
-    volume = FigureShapes.of(candles.lazy.map(\.volume), Volume.compact)
+    // Every volume: a compact volume drops a ".0" ("100K", "123.4K", "980K"), so the ends of a
+    // power of ten do not stand for the figures between them. Built once per series.
+    volume = FigureShapes.shapes(candles.lazy.map { Volume.compact($0.volume) })
     let changes = candles.indices.lazy.compactMap { candles.change(at: $0) }
     change = FigureShapes.of(changes, by: \.fraction) { Percent.signed(fraction: $0.fraction) }
     let subPenny = { (change: CandleChange) in abs(Money.decimal(change.price)) < Money.subPennyBelow }

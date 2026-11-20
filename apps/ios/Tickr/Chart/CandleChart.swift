@@ -116,6 +116,8 @@ struct CandleChart: View {
   var times = ChartTimes.day
   /// Moving averages, Bollinger, MACD, RSI and stochastic of `series`' candles.
   let studies: CandleStudies
+  /// The shapes of the readout's figures over all of `series`' candles (`ChartModel`).
+  let readoutShapes: ReadoutShapes
   /// The ATR line, one value per candle of `series`.
   let atr: [Double?]
   let trades: [DayTrade]
@@ -1123,7 +1125,7 @@ struct CandleChart: View {
   @ViewBuilder
   private var readout: some View {
     if let candle = selectedCandle, let index = legendIndex {
-      let shapes = ReadoutShapes(series.candles)
+      let shapes = readoutShapes
       OneLineFit(font: Tokens.Typography.captionMono, compactFont: Tokens.Typography.annotation,
         spacing: Tokens.Space.s, tightSpacing: Tokens.Space.xs) { spacing in
         HStack(spacing: spacing) {
