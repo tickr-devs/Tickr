@@ -476,13 +476,6 @@ form (checked on the iPhone simulator), and a chevron that does nothing would be
 The same rule rejects a file with fewer `scrollEdgeHints` calls than vertical scroll views, or
 fewer `scrollEdgeFades` calls than forms and lists.
 
-A scroll view that sits straight on the screen's background (a Mac screen's cards, its room)
-passes `.screen`: `scrollEdgeHints(.screen)` paints the screen's background over the edge
-instead of masking the content, which looks the same and costs nothing per frame. The default
-`.mask` is only for small scroll views in a card, popover or sheet: a mask makes the render server
-draw the whole masked area again on every frame of a scroll (Overview stuttered under two
-full-window masks, 2026-11-19).
-
 ## Loading (`Tokens.Loading`, mockup v102)
 
 Loading uses a skeleton or a spinner, never a radar: the radar is only the empty "no positions"

@@ -75,9 +75,6 @@ struct RootView: View {
   /// In a window narrow enough for the icon rail, the sidebar button shows the full sidebar
   /// instead, until it is pressed again.
   @State private var railExpanded = false
-  /// Where the screen's background is in the window, for the scroll fades painted over a
-  /// screen's edges (`ScrollFade.screen`).
-  @State private var backdrop: CGRect?
 
   private var section: AppSection { model.section }
 
@@ -140,7 +137,7 @@ struct RootView: View {
   /// banner and the command toast over it.
   private var screen: some View {
     ZStack(alignment: .bottom) {
-      TickrBackground(frame: $backdrop)
+      TickrBackground()
       // The strip stacked above the screen rather than a top safe-area inset whose content
       // comes and goes, which made the screen's safe area change during layout.
       VStack(spacing: 0) {
@@ -166,7 +163,6 @@ struct RootView: View {
           .modifier(ScreenRoomFrame(least: screenLeast))
           .lastKnown(model.connectionState.isLastKnown)
       }
-      .environment(\.screenBackdrop, backdrop)
       if let unattended = model.unattendedPositions {
         UnattendedBanner(unattended: unattended)
           .padding(Tokens.Space.l)

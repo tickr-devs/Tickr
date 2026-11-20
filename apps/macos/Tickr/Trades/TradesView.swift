@@ -75,7 +75,7 @@ struct TradesView: View {
         .frame(maxWidth: Tokens.Size.contentMaxWidth)
         .frame(maxWidth: .infinity)
       }
-      .scrollEdgeHints(.screen)
+      .scrollEdgeHints()
       // A picked day is shown from its title: the pick is often made below it.
       .onChange(of: model.shownDay) {
         withAnimation(Tokens.Motion.standard) { proxy.scrollTo(Self.dayTopID, anchor: .top) }
@@ -99,7 +99,7 @@ struct TradesView: View {
         .padding(.vertical, beside ? Self.verticalPadding : 0)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { columnHeights[part] = $0 }
     }
-    .scrollEdgeHints(.screen)
+    .scrollEdgeHints()
     .scrollDisabled(!beside)
     .frame(height: beside ? screenSize.height : columnHeights[part] ?? 0)
   }
