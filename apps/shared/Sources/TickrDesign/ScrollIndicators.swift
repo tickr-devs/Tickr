@@ -191,19 +191,24 @@ struct EdgeFade: ViewModifier {
     case .mask:
       content.mask { fadeMask.animation(motion, value: edges).ignoresSafeArea() }
     case .screen:
-      content.overlay {
-        VStack(spacing: 0) {
-          BackdropEdge(top: true, solid: edges.above ? edges.insetTop : 0, backdrop: backdrop)
-            .frame(height: edges.above ? edges.insetTop + Tokens.Scroll.fade : 0)
-          Spacer(minLength: 0)
-          BackdropEdge(top: false, solid: edges.below ? edges.insetBottom : 0, backdrop: backdrop)
-            .frame(height: edges.below ? edges.insetBottom + Tokens.Scroll.fade : 0)
+      // One strip per edge, each only as large as its fade: nothing lies over the content
+      // between them, so clicks and the accessibility hit test reach it as before.
+      content
+        .overlay(alignment: .top) {
+          if edges.above {
+            BackdropEdge(top: true, solid: edges.insetTop, backdrop: backdrop)
+              .frame(height: edges.insetTop + Tokens.Scroll.fade)
+              .transition(.opacity)
+          }
+        }
+        .overlay(alignment: .bottom) {
+          if edges.below {
+            BackdropEdge(top: false, solid: edges.insetBottom, backdrop: backdrop)
+              .frame(height: edges.insetBottom + Tokens.Scroll.fade)
+              .transition(.opacity)
+          }
         }
         .animation(motion, value: edges)
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-      }
     }
   }
 
@@ -225,8 +230,10 @@ struct EdgeFade: ViewModifier {
 /// The screen's background over one edge of a scroll view: opaque for `solid` points from the
 /// edge (under a bar), then fading to clear toward the content over the rest of its height. It
 /// is drawn where the screen's background is (`backdrop`), so a light-mode glow lines up with
-/// the one behind; the strip sits outside the scrolled content, so a scroll never moves it.
+/// the one behind; the strip sits outside the scrolled content, so a scroll never moves it. A
+/// canvas of the strip's own size draws it: no view larger than the strip lies over the screen.
 struct BackdropEdge: View {
+  @Environment(\.colorScheme) private var scheme
   /// The top edge (else the bottom).
   let top: Bool
   /// How much of the strip, from the edge, is wholly opaque.
@@ -237,12 +244,11 @@ struct BackdropEdge: View {
   var body: some View {
     GeometryReader { proxy in
       let strip = proxy.frame(in: .global)
-      let frame = backdrop ?? strip
-      TickrBackdrop()
-        .frame(width: frame.width, height: frame.height)
-        .offset(x: frame.minX - strip.minX, y: frame.minY - strip.minY)
+      let frame = (backdrop ?? strip).offsetBy(dx: -strip.minX, dy: -strip.minY)
+      Canvas { context, size in
+        TickrBackdrop.draw(in: &context, size: size, backdrop: frame, scheme: scheme)
+      }
     }
-    .clipped()
     .mask {
       VStack(spacing: 0) {
         if !top { LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom) }
@@ -250,5 +256,8 @@ struct BackdropEdge: View {
         if top { LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom) }
       }
     }
+    .ignoresSafeArea()
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 }

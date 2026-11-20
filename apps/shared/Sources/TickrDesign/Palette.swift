@@ -263,6 +263,24 @@ struct TickrBackdrop: View {
       }
     }
   }
+
+  /// Draws the same background into `context` (of `size`), as it lies at `backdrop` (in the
+  /// context's coordinates): a part of the screen's background, glows in their places.
+  static func draw(in context: inout GraphicsContext, size: CGSize, backdrop: CGRect, scheme: ColorScheme) {
+    let bounds = Path(CGRect(origin: .zero, size: size))
+    context.fill(bounds, with: .color(Palette.background))
+    guard scheme == .light else { return }
+    let glows = [
+      (Palette.glowIndigo, UnitPoint.topLeading),
+      (Palette.glowTeal, tealGlowCenter),
+    ]
+    for (color, centre) in glows {
+      let point = CGPoint(x: backdrop.minX + backdrop.width * centre.x, y: backdrop.minY + backdrop.height * centre.y)
+      context.fill(bounds, with: .radialGradient(
+        Gradient(colors: [color.opacity(Tokens.Opacity.glow), .clear]),
+        center: point, startRadius: 0, endRadius: glowRadius))
+    }
+  }
 }
 
 extension EnvironmentValues {
