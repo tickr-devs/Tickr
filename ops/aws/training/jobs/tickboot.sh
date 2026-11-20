@@ -3,10 +3,14 @@
 # WHOLE tick history with the FROZEN converter, fed by the fleet runner tickrun.py (same folder in the repo) (claims: several machines share one day list; a machine that is taken away loses only its days in flight).
 # Contract with the wrapper: resumes from S3 (a day is done by its manifest); on SIGTERM stops inside a minute; exit 0 ONLY when every day is done.
 # Settings are objects under s3://<bucket>/jobs/download/ written by the research thread before the start:
-#   raw        "on" = every raw day file is also stored under raw/ in the DEEP_ARCHIVE class with a record under rawman/; anything else = raw files are not kept
+#   raw        OFF unless this object says "on". The owner's recorded decision (2026-11-20) is NOT to keep raw files; the research thread writes "on"
+#              only after the owner chooses the archive option on the launch card. "on" = every raw day file is also stored under raw/ in the
+#              DEEP_ARCHIVE class with a record under rawman/. Off = nothing is written to raw/ or rawman/, raw files are deleted after conversion.
 #   duckdb     the engine version the Mac converts with (same version here, or the machine refuses)
 #   runner.md5 the md5 of the reviewed tickrun.py (a different file in the bucket: the machine refuses)
-#   crosscheck written HERE: the result of the Mac-against-cloud comparison of one day. "PASS ..." lets the fleet work; "FAIL ..." stops the whole fleet (until := 0, desired := 0).
+#   machines   how many machines the group gets after a PASS (one digit, default 4; the group's own maximum still holds)
+#   crosscheck written HERE: the result of the Mac-against-cloud comparison of one day. The group starts with ONE machine; it compares first.
+#              "PASS ..." raises the group and lets every machine work; "FAIL ..." stops everything (until := 0, desired := 0).
 # Nothing here reads, prints or stores a credential: the Massive keys are read by the converter and the runner from the secret named in TICK_SECRET through the machine's role.
 set -u
 export HOME=/root PATH=/usr/local/bin:/root/.local/bin:$PATH AWS_DEFAULT_REGION=us-east-1
@@ -33,29 +37,55 @@ say "type $(curl -s -m 2 -H "X-aws-ec2-metadata-token: $(curl -s -m 2 -X PUT htt
 [ "$(m $D/wm2tick-v11.py)" = "$CONV_MD5" ] && [ "$(m $D/tickrun.py)" = "$RUN_MD5_WANT" ] && [ "$(m $D/cmpday.py)" = "$CMP_MD5" ] && [ "$(m $TP)" = "$TYPES_MD5" ] || { say "REFUSED: a file is not the frozen one"; exit 1; }
 export TICK_SECRET=tickr-research/massive-flatfiles TICK_TYPES=$TP
 
-# --- Mac against cloud, one day, once for the fleet. The machine that creates the claim object does it BEFORE its own runner; the others start working at once.
-# A machine taken away during the comparison leaves the claim without a result: the research thread watches the first hour and removes the claim by hand (no automatic retake).
-R=$(aws s3 cp $J/crosscheck - 2>/dev/null | head -c 4)
-if [ "$R" = FAIL ]; then stop_fleet "an earlier comparison failed"; exit 1; fi
-if [ "$R" != PASS ] && $PY - <<EOF
-import boto3, botocore, sys
-try: boto3.client('s3').put_object(Bucket='$BK', Key='jobs/download/crosscheck.claim', Body=b'$IID', IfNoneMatch='*')
-except botocore.exceptions.ClientError: sys.exit(1)
-EOF
-then
-  T0=$(date +%s); mkdir -p $D/wx $D/cmp/mac $D/cmp/aws; say "comparison of $XDAY with the Mac: started here"
-  TICK_PX=$B/fleet-test/px TICK_THREADS=$(nproc) TICK_MEM=20GB $PY -W ignore $D/wm2tick-v11.py $XDAY $XDAY $D/wx $B/fleet-test/tk61 > $D/cross.out 2>&1; RC=$?
-  say "comparison day converted rc=$RC in $(( $(date +%s) - T0 )) s: $(grep -h '^day \|^redo \|^skip \|FAILED\|REFUSED' $D/cross.out | tr '\n' ' ' | cut -c1-400)"
-  OK=1
-  for f in tk61:tk px:px s10:s10; do aws s3 cp $B/${f%%:*}/2026/$XDAY.parquet $D/cmp/mac/${f##*:}.parquet --only-show-errors && aws s3 cp $B/fleet-test/${f%%:*}/2026/$XDAY.parquet $D/cmp/aws/${f##*:}.parquet --only-show-errors || OK=0; done
-  if [ $RC -eq 0 ] && [ $OK -eq 1 ] && $PY $D/cmpday.py $D/cmp/mac $D/cmp/aws > $D/cmp.out 2>&1; then
-    cat $D/cmp.out >> $LOG; echo "PASS $IID $(date -u +%FT%TZ)" | aws s3 cp - $J/crosscheck --only-show-errors; say "comparison PASS"
-  elif [ -e /work/STOP ]; then say "comparison interrupted by a stop"; aws s3 rm $J/crosscheck.claim --only-show-errors; exit 3
+# --- Mac against cloud, one day, BEFORE anything else. The group is started with ONE machine. That machine converts one day into fleet-test/ and
+# compares it with the Mac's files of the same day. PASS: it raises the group to jobs/download/machines (default 4) and goes on to its own work.
+# FAIL: until := 0, desired := 0; nothing but fleet-test/ was written. A machine never starts the runner without a PASS.
+# The comparison is taken by a claim object. A machine that finds the claim of another waits for the result; a claim older than 45 minutes without
+# a result (its machine was taken away) is taken over.
+want_machines() { N=$(aws s3 cp $J/machines - 2>/dev/null | tr -dc '0-9' | head -c 1); echo "${N:-4}"; }
+take_check() { $PY - <<PYEOF
+import boto3, botocore, datetime, sys
+s3 = boto3.client('s3'); K = 'jobs/download/crosscheck.claim'
+def put(**kw):
+    try: s3.put_object(Bucket='$BK', Key=K, Body=b'$IID', **kw); return True
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] in ('PreconditionFailed', 'ConditionalRequestConflict', 'NoSuchKey'): return False
+        raise
+if put(IfNoneMatch='*'): sys.exit(0)
+try: h = s3.head_object(Bucket='$BK', Key=K)
+except botocore.exceptions.ClientError: sys.exit(0 if put(IfNoneMatch='*') else 1)
+age = (datetime.datetime.now(datetime.timezone.utc) - h['LastModified']).total_seconds()
+sys.exit(0 if age > 2700 and put(IfMatch=h['ETag']) else 1)
+PYEOF
+}
+W0=$(date +%s)
+while :; do
+  R=$(aws s3 cp $J/crosscheck - 2>/dev/null | head -c 4)
+  [ "$R" = PASS ] && break
+  if [ "$R" = FAIL ]; then stop_fleet "an earlier comparison failed"; exit 1; fi
+  [ -e /work/STOP ] && { say "stopped while waiting for the comparison"; exit 3; }
+  if take_check; then
+    T0=$(date +%s); rm -rf $D/wx $D/cmp; mkdir -p $D/wx $D/cmp/mac $D/cmp/aws; say "comparison of $XDAY with the Mac: started here"
+    TICK_PX=$B/fleet-test/px TICK_THREADS=$(nproc) TICK_MEM=20GB $PY -W ignore $D/wm2tick-v11.py $XDAY $XDAY $D/wx $B/fleet-test/tk61 > $D/cross.out 2>&1; RC=$?
+    say "comparison day converted rc=$RC in $(( $(date +%s) - T0 )) s: $(grep -h '^day \|^redo \|^skip \|FAILED\|REFUSED' $D/cross.out | tr '\n' ' ' | cut -c1-400)"
+    [ -e /work/STOP ] && { say "comparison interrupted by a stop"; aws s3 rm $J/crosscheck.claim --only-show-errors; exit 3; }
+    OK=1
+    for f in tk61:tk px:px s10:s10; do aws s3 cp $B/${f%%:*}/2026/$XDAY.parquet $D/cmp/mac/${f##*:}.parquet --only-show-errors && aws s3 cp $B/fleet-test/${f%%:*}/2026/$XDAY.parquet $D/cmp/aws/${f##*:}.parquet --only-show-errors || OK=0; done
+    if [ $RC -eq 0 ] && [ $OK -eq 1 ] && $PY $D/cmpday.py $D/cmp/mac $D/cmp/aws > $D/cmp.out 2>&1; then
+      cat $D/cmp.out >> $LOG; echo "PASS $IID $(date -u +%FT%TZ)" | aws s3 cp - $J/crosscheck --only-show-errors
+      M=$(want_machines); say "comparison PASS; group goes to $M machines"
+      aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --desired-capacity "$M" || say "the group could NOT be raised to $M: this machine works alone"
+    else
+      cat $D/cmp.out >> $LOG 2>/dev/null; echo "FAIL $IID $(date -u +%FT%TZ)" | aws s3 cp - $J/crosscheck --only-show-errors
+      stop_fleet "the cloud's files of $XDAY differ from the Mac's (or the day could not be made)"; exit 1
+    fi
+    rm -rf $D/wx $D/cmp
   else
-    cat $D/cmp.out >> $LOG 2>/dev/null; echo "FAIL $IID $(date -u +%FT%TZ)" | aws s3 cp - $J/crosscheck --only-show-errors; stop_fleet "the cloud's files of $XDAY differ from the Mac's (or the day could not be made)"; exit 1
+    # time limit: two leases of the comparison claim. After it this machine gives up with a failure (counted by the wrapper), it never starts the runner.
+    [ $(( $(date +%s) - W0 )) -gt ${CHECK_LIMIT_SEC:-5400} ] && { say "REFUSED: no comparison result after the time limit"; exit 1; }
+    say "waiting: another machine holds the comparison"; sleep ${CHECK_WAIT_SEC:-30}
   fi
-  rm -rf $D/wx $D/cmp
-fi
+done
 
 # --- the run. One converter with every core; two days are fetched ahead of it. Oldest day first (the Mac goes newest first; whoever meets a finished day skips it).
 RAWSET=$(aws s3 cp $J/raw - 2>/dev/null | tr -dc 'a-z' | head -c 3)
@@ -66,6 +96,5 @@ TICK_PX=$B/px TICK_THREADS=$(nproc) TICK_MEM=20GB RUN_MD5=$CONV_MD5 RUN_FETCH=2 
 RC=$?
 # A comparison that failed while this machine worked: its exit must not mark the job as finished.
 [ "$(aws s3 cp $J/crosscheck - 2>/dev/null | head -c 4)" = FAIL ] && { say "runner ended rc=$RC, but the comparison failed: not finished"; exit 1; }
-[ $RC -eq 0 ] && [ "$(aws s3 cp $J/crosscheck - 2>/dev/null | head -c 4)" != PASS ] && { say "runner ended rc=0, but there is no comparison result yet: not finished"; exit 1; }
 say "runner ended rc=$RC: $(tail -2 $D/run/tickrun.log | tr '\n' ' ' | cut -c1-400)"
 exit $RC

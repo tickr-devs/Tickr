@@ -23,7 +23,8 @@ time.sleep(float(os.environ.get("STUB_SLEEP", "0.2")))
 os.makedirs(os.path.join(out, dt[:4]), exist_ok=True)
 with open(os.path.join(out, "ledger.txt"), "a") as f:
     f.write(dt + "\\n")
-open(os.path.join(out, dt[:4], dt + ".parquet"), "w").write(dt)
+if not os.environ.get("STUB_NO_TABLE"):
+    open(os.path.join(out, dt[:4], dt + ".parquet"), "w").write(dt)
 [os.remove(f) for f in raw]
 print("day", dt)
 """
@@ -168,3 +169,11 @@ def test_lost_claim_kills_the_converter_and_writes_nothing(tmp_path):
     assert p.wait(WAIT) == 3
     assert mine.read_text() == "other"  # the other machine's claim is not deleted
     assert tables(tmp_path) == [] and "FAILED" not in log.read_text()
+
+
+def test_exit_zero_needs_every_day_done_in_the_store(tmp_path):
+    stub = setup(tmp_path)
+    # the converter reports success and stores no table: the counters say done, the store not
+    p = start(tmp_path, stub, "a", STUB_NO_TABLE="1", RUN_RAW="")
+    assert p.wait(WAIT) == 1
+    assert "converted here but not done in the store" in (tmp_path / "a.log").read_text()

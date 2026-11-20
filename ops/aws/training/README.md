@@ -132,10 +132,18 @@ starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
   that day's converter. Scratch is per machine and per day; stored objects are per day.
 - A day is done when the frozen converter's manifest exists and the stored tables have the
   sizes it records (plus the raw-archive record when `jobs/download/raw` says `on`).
-- Exit 0 only when every day is done, whoever did it; a machine whose share is finished waits
-  for the others. SIGTERM (spot notice): claims released, exit 3 inside a minute.
-- One day is first compared with the Mac's files of the same day; a mismatch writes
-  `jobs/download/crosscheck = FAIL`, sets `until` to 0 and the group to 0.
+- Exit 0 only when every day is done, whoever did it: before it ends, the runner reads every
+  day of the list again in S3. A machine whose share is finished waits for the others.
+  SIGTERM (spot notice): claims released, exit 3 inside a minute.
+- Start the group with desired 1, never 4. The first machine converts one day into
+  `fleet-test/` and compares it with the Mac's files of that day; no machine starts the runner
+  before `jobs/download/crosscheck` says `PASS`. PASS: that machine raises the group to
+  `jobs/download/machines` (default 4). FAIL: `until` := 0 and the group := 0, with nothing
+  written outside `fleet-test/`. The comparison has a 45-minute lease (a replacement machine
+  takes it over) and waiting for it has a 90-minute limit.
+- The raw archive is off unless `jobs/download/raw` says `on`. The owner's recorded decision is
+  not to keep raw files; the research thread writes `on` only after he chooses the archive
+  option on the launch card.
 
 `tests/ops/test_tickrun.py` runs these rules in the runner's local test mode.
 

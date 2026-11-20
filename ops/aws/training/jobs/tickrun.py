@@ -106,6 +106,7 @@ S3 = out.startswith("s3://")
 px = E("TICK_PX")
 if E("RUN_ORDER") == "desc":
     days.reverse()
+ALL_DAYS = list(days)
 if S3:
     import boto3
     import botocore
@@ -299,6 +300,8 @@ def done(dt):
 # write a day's files)
 MINE = {}
 LOST = set()
+HOLIDAYS = set()  # days with no source file, found by this run
+DONE_HERE = set()  # days this run converted or archived with success
 
 
 def claim(dt):
@@ -502,6 +505,7 @@ def fetcher(i):
                 release(dt)
                 with L:
                     ST["holiday"] += 1
+                    HOLIDAYS.add(dt)
                     ST["fetching"] -= 1
                 say("no file", dt, "(holiday)")
                 continue
@@ -622,6 +626,7 @@ def converter(w):
         with L:
             ST["converting"] -= 1
             if good:
+                DONE_HERE.add(dt)
                 ST["done"] += 1
                 ST["failrow"] = 0
             else:
@@ -749,12 +754,20 @@ while True:
     [x.start() for x in th]
     [x.join() for x in th]
     with L:
-        later = sorted(set(LATER), reverse=E("RUN_ORDER") == "desc")
         LATER.clear()
-    later = [x for x in later if not done(x)]
-    if halted() or not later:
+    if halted():
+        later = ["not checked"]
         break
-    say("waiting:", len(later), "days are held by other machines; looking again in a minute")
+    # Not the counters of this run: every day of the list that is not a holiday is read again
+    # in the store. Only a list with nothing left lets the runner end with exit code 0.
+    later = [x for x in ALL_DAYS if x not in HOLIDAYS and not done(x)]
+    bad = [x for x in later if x in DONE_HERE]
+    if bad:  # the converter said "done" and the store does not show the day: never loop on it
+        ST["failed"] += len(bad)
+        say("FAILED: converted here but not done in the store:", " ".join(bad[:10]))
+    if not later or ST["failed"]:
+        break
+    say("waiting:", len(later), "days are not done yet (held by other machines); looking again")
     time.sleep(
         float(E("RUN_WAIT_SEC", "60"))
     )  # their claims end by a finished day or by going stale
