@@ -11,6 +11,9 @@ struct BotControl: ViewModifier {
   /// The action chosen in the sheet, run once the sheet has gone so its alert can show.
   @State private var chosen: (() -> Void)?
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  /// The height of the sheet's content (state, note, actions, Cancel), measured as it lays out:
+  /// the sheet opens exactly that tall, so nothing waits below the fold (owner, 2026-11-20).
+  @State private var contentHeight: CGFloat = 0
 
   func body(content: Content) -> some View {
     content
@@ -27,10 +30,10 @@ struct BotControl: ViewModifier {
         chosen?()
         chosen = nil
       }, content: {
-        // At accessibility text sizes the actions no longer fit half a screen: the sheet opens
-        // full height, so none of them waits below the fold.
+        // The sheet is as tall as its content, no taller than the screen; where the content does
+        // not fit (accessibility text sizes) it opens full height and scrolls.
         sheet
-          .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+          .presentationDetents(detents)
           .presentationDragIndicator(.visible)
           .presentationCornerRadius(Self.sheetRadius)
       })
@@ -90,9 +93,18 @@ struct BotControl: ViewModifier {
         .accessibilityIdentifier(AccessibilityID.botControlCancel)
       }
       .padding(Tokens.Space.l)
+      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
     }
+    .scrollBounceBehavior(.basedOnSize)
     .scrollEdgeHints()
     .background(Palette.background)
+  }
+
+  /// Before the content is measured, and at accessibility text sizes, the full height; then the
+  /// content's own height (a height above the screen's stops at the full height).
+  private var detents: Set<PresentationDetent> {
+    guard contentHeight > 0, !dynamicTypeSize.isAccessibilitySize else { return [.large] }
+    return [.height(contentHeight)]
   }
 
   /// One action across the sheet, in its tier; it runs once the sheet has closed.
