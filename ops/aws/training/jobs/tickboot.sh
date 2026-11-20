@@ -30,7 +30,7 @@ RUN_MD5_WANT=$(aws s3 cp $J/runner.md5 - 2>/dev/null | tr -dc '0-9a-f' | head -c
 [ -x $D/v/bin/python ] || { uv venv $D/v --python 3.12 && uv pip install --python $D/v/bin/python boto3 "duckdb==$DV"; } >/dev/null 2>&1 || { say "REFUSED: python environment failed"; exit 1; }
 PY=$D/v/bin/python
 [ "$($PY -c 'import duckdb; print(duckdb.__version__)')" = "$DV" ] || { say "REFUSED: the engine version is not $DV"; exit 1; }
-aws s3 cp $B/scripts/mac-split/cand-wm2tick11c4d.py $D/wm2tick-v11.py --only-show-errors && aws s3 cp $B/scripts/fleet/tickrun.py $D/tickrun.py --only-show-errors && aws s3 cp $B/scripts/ramp/cmpday.py $D/cmpday.py --only-show-errors || { say "REFUSED: a script could not be fetched"; exit 1; }
+aws s3 cp $B/scripts/mac-split/cand-wm2tick11c4d.py $D/wm2tick-v11.py --only-show-errors && aws s3 cp $B/scripts/fleet/tickrun.py $D/tickrun.py --only-show-errors && aws s3 cp $B/scripts/ramp/cmpday.py $D/cmpday.py --only-show-errors && aws s3 cp $B/scripts/fleet/us-equity-closed-days.txt $D/closed-days.txt --only-show-errors || { say "REFUSED: a script could not be fetched"; exit 1; }
 mkdir -p "$(dirname $TP)"; aws s3 cp $B/reference/types-5y.csv $TP --only-show-errors || { say "REFUSED: type list could not be fetched"; exit 1; }
 m() { md5sum "$1" | cut -c1-32; }
 say "type $(curl -s -m 2 -H "X-aws-ec2-metadata-token: $(curl -s -m 2 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')" http://169.254.169.254/latest/meta-data/instance-type) cores $(nproc) mem $(free -g | awk 'NR==2{print $2}') GB disk free $(df -h $D | awk 'NR==2{print $4}') converter $(m $D/wm2tick-v11.py) runner $(m $D/tickrun.py) cmpday $(m $D/cmpday.py) types $(m $TP) duckdb $($PY -c 'import duckdb; print(duckdb.__version__)') python $($PY -V 2>&1)"
@@ -73,8 +73,12 @@ while :; do
     for f in tk61:tk px:px s10:s10; do aws s3 cp $B/${f%%:*}/2026/$XDAY.parquet $D/cmp/mac/${f##*:}.parquet --only-show-errors && aws s3 cp $B/fleet-test/${f%%:*}/2026/$XDAY.parquet $D/cmp/aws/${f##*:}.parquet --only-show-errors || OK=0; done
     if [ $RC -eq 0 ] && [ $OK -eq 1 ] && $PY $D/cmpday.py $D/cmp/mac $D/cmp/aws > $D/cmp.out 2>&1; then
       cat $D/cmp.out >> $LOG; echo "PASS $IID $(date -u +%FT%TZ)" | aws s3 cp - $J/crosscheck --only-show-errors
-      M=$(want_machines); say "comparison PASS; group goes to $M machines"
-      aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --desired-capacity "$M" || say "the group could NOT be raised to $M: this machine works alone"
+      # the deadline is read again just before the raise: a group is never raised after its deadline (or after a stop wrote 0 there)
+      U=$(aws s3 cp $J/until - 2>/dev/null | tr -dc 0-9); M=$(want_machines)
+      if [ -n "$U" ] && [ "$(date +%s)" -lt "$U" ]; then
+        say "comparison PASS; group goes to $M machines"
+        aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --desired-capacity "$M" || say "the group could NOT be raised to $M: this machine works alone"
+      else say "comparison PASS, but the deadline has passed or cannot be read: the group is NOT raised"; fi
     else
       cat $D/cmp.out >> $LOG 2>/dev/null; echo "FAIL $IID $(date -u +%FT%TZ)" | aws s3 cp - $J/crosscheck --only-show-errors
       stop_fleet "the cloud's files of $XDAY differ from the Mac's (or the day could not be made)"; exit 1
@@ -91,7 +95,7 @@ done
 RAWSET=$(aws s3 cp $J/raw - 2>/dev/null | tr -dc 'a-z' | head -c 3)
 [ "$RAWSET" = on ] && export RUN_RAW=$B/raw
 say "runner starts, raw archive: ${RUN_RAW:-off}"
-TICK_PX=$B/px TICK_THREADS=$(nproc) TICK_MEM=20GB RUN_MD5=$CONV_MD5 RUN_FETCH=2 RUN_CONV=1 RUN_AHEAD=2 RUN_FLOOR_GB=40 RUN_CLAIM_MIN=20 RUN_SKIPTEST=1 STOP_FILE=/work/STOP RUN_LOG=$J/logs/tickrun-$IID.log \
+TICK_PX=$B/px TICK_THREADS=$(nproc) TICK_MEM=20GB RUN_MD5=$CONV_MD5 RUN_FETCH=2 RUN_CONV=1 RUN_AHEAD=2 RUN_FLOOR_GB=40 RUN_CLAIM_MIN=20 RUN_CLOSED=$D/closed-days.txt RUN_SKIPTEST=1 STOP_FILE=/work/STOP RUN_LOG=$J/logs/tickrun-$IID.log \
   $PY -W ignore $D/tickrun.py $D/wm2tick-v11.py 2021-11-16 2026-11-19 0/1 $D/run $B/tk61 > $D/tickrun.out 2>&1
 RC=$?
 # A comparison that failed while this machine worked: its exit must not mark the job as finished.

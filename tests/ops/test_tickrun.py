@@ -31,7 +31,7 @@ print("day", dt)
 WAIT = 30  # seconds a test waits for a runner at most
 
 
-def setup(tmp_path, days=DAYS):
+def setup(tmp_path, days=DAYS, closed=()):
     fake = tmp_path / "fake"
     fake.mkdir()
     for d in days:
@@ -40,6 +40,8 @@ def setup(tmp_path, days=DAYS):
     stub = tmp_path / "stub.py"
     stub.write_text(STUB)
     (tmp_path / "out" / "claims").mkdir(parents=True)
+    # the calendar file: every day of the week that got no files is listed as closed
+    (tmp_path / "closed.txt").write_text("# test\n" + "\n".join(closed))
     return stub
 
 
@@ -54,6 +56,7 @@ def start(tmp_path, stub, name, **env):
         RUN_WAIT_SEC="0.3",
         RUN_CLAIM_MIN="0.02",
         RUN_RAW=str(tmp_path / "raw"),
+        RUN_CLOSED=str(tmp_path / "closed.txt"),
     )
     e.update(env)
     log = open(tmp_path / f"{name}.log", "w")
@@ -89,7 +92,7 @@ def test_two_machines_convert_every_day_once(tmp_path):
 
 
 def test_rerun_skips_everything_and_missing_files_are_a_holiday(tmp_path):
-    stub = setup(tmp_path, DAYS[:3])  # no files for the last two days
+    stub = setup(tmp_path, DAYS[:3], closed=DAYS[3:])  # two closed days, no files
     assert start(tmp_path, stub, "a").wait(WAIT) == 0
     assert start(tmp_path, stub, "a").wait(WAIT) == 0
     assert ledger(tmp_path) == DAYS[:3]
@@ -151,7 +154,7 @@ def test_never_exits_zero_while_another_machine_holds_a_day(tmp_path):
 
 
 def test_lost_claim_kills_the_converter_and_writes_nothing(tmp_path):
-    stub = setup(tmp_path, DAYS[:1])
+    stub = setup(tmp_path, DAYS[:1], closed=DAYS[1:])
     p = start(tmp_path, stub, "a", STUB_SLEEP="60", RUN_CLAIM_MIN="0.05")
     mine = tmp_path / "out" / "claims" / f"{DAYS[0]}.json"
     deadline = time.time() + WAIT
@@ -177,3 +180,68 @@ def test_exit_zero_needs_every_day_done_in_the_store(tmp_path):
     p = start(tmp_path, stub, "a", STUB_NO_TABLE="1", RUN_RAW="")
     assert p.wait(WAIT) == 1
     assert "converted here but not done in the store" in (tmp_path / "a.log").read_text()
+
+
+def test_lost_day_is_done_here_after_the_other_machine_dies(tmp_path):
+    stub = setup(tmp_path, DAYS[:1], closed=DAYS[1:])
+    p = start(tmp_path, stub, "a", STUB_SLEEP="2", RUN_CLAIM_MIN="0.03", RUN_RAW="")
+    mine = tmp_path / "out" / "claims" / f"{DAYS[0]}.json"
+    deadline = time.time() + WAIT
+    while not mine.exists() and time.time() < deadline:
+        time.sleep(0.05)
+    mine.write_text("other")  # taken once by another machine, which then dies (no refresh)
+    assert p.wait(WAIT) == 0
+    log = (tmp_path / "a.log").read_text()
+    assert "CLAIM LOST" in log and "took over the stale claim" in log
+    assert ledger(tmp_path) == DAYS[:1] and claims(tmp_path) == []
+
+
+def test_one_file_of_a_day_missing_is_a_failure_not_a_holiday(tmp_path):
+    stub = setup(tmp_path)
+    (tmp_path / "fake" / f"{DAYS[1]}-quotes.csv.gz").unlink()
+    p = start(tmp_path, stub, "a", RUN_RAW="")
+    assert p.wait(WAIT) == 1
+    assert "a session, and not complete at the source" in (tmp_path / "a.log").read_text()
+    assert DAYS[1] not in ledger(tmp_path)
+
+
+def test_session_without_files_is_a_failure_not_a_holiday(tmp_path):
+    stub = setup(tmp_path, DAYS[:3], closed=DAYS[3:4])  # the last day is a session, no files
+    p = start(tmp_path, stub, "a", RUN_RAW="")
+    assert p.wait(WAIT) == 1
+    assert "a session, and not complete at the source" in (tmp_path / "a.log").read_text()
+    assert ledger(tmp_path) == DAYS[:3]
+
+
+def test_files_on_a_day_listed_as_closed_are_a_failure(tmp_path):
+    stub = setup(tmp_path, closed=DAYS[:1])
+    p = start(tmp_path, stub, "a", RUN_RAW="")
+    assert p.wait(WAIT) == 1
+    assert "listed as closed but the source has files" in (tmp_path / "a.log").read_text()
+    assert DAYS[0] not in ledger(tmp_path)
+
+
+def test_closed_days_file_matches_the_repo_calendar():
+    import json
+
+    root = Path(__file__).resolve().parents[2]
+    listed = [
+        x.strip()
+        for x in (root / "ops/aws/training/jobs/us-equity-closed-days.txt").read_text().split("\n")
+        if x.strip() and not x.startswith("#")
+    ]
+    assert listed == sorted(set(listed))
+    cal = json.loads((root / "config/calendar/us-equity-2026.json").read_text())
+    closed_2026 = [
+        e["day"] for e in cal["exceptions"] if e["day_kind"] == "CLOSED" and e["day"] <= listed[-1]
+    ]
+    assert [x for x in listed if x.startswith("2026")] == closed_2026
+
+
+def test_two_failures_in_a_row_end_the_run_with_exit_one(tmp_path):
+    # day 1 is good and converts slowly; days 2 and 3 are sessions without files
+    stub = setup(tmp_path, [DAYS[0], DAYS[3], DAYS[4]])
+    p = start(tmp_path, stub, "a", RUN_RAW="", RUN_FETCH="1", STUB_SLEEP="2")
+    # the good day finishes AFTER the two failures: it must not un-pause the run
+    assert p.wait(WAIT) == 1
+    assert ledger(tmp_path) == DAYS[:1]

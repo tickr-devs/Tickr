@@ -37,7 +37,9 @@ env: RUN_FETCH (parallel day downloads, default 4), RUN_CONV (parallel converter
   <date>-trades.csv.gz and <date>-quotes.csv.gz: test mode, files are copied from there),
   RUN_MD5 (the converter must have this md5, else nothing starts), RUN_ORDER=desc (newest day
   first), RUN_CLAIM_MIN (default 20), RUN_CLAIMS (claim set name, default ticks), RUN_WAIT_SEC
-  (pause before looking again at days other machines hold, default 60), RUN_RAW (see above).
+  (pause before looking again at days other machines hold, default 60), RUN_RAW (see above),
+  RUN_CLOSED (required: file of weekdays the exchanges were closed, one date per line; a day
+  without source files is a holiday only when it stands there, else it is a failed day).
   Passed on to the converter untouched: TICK_SECRET TICK_TYPES TICK_PX TICK_THREADS TICK_MEM
   and the rest of the environment. Credentials: names only, nothing is printed.
 """
@@ -82,7 +84,7 @@ MD5 = hashlib.md5(open(conv, "rb").read()).hexdigest()
 
 def say(*a):
     with L:
-        s = datetime.datetime.utcnow().strftime("%H:%M:%S ") + " ".join(str(x) for x in a)
+        s = time.strftime("%H:%M:%S ", time.gmtime()) + " ".join(str(x) for x in a)
         print(s, flush=True)
         open(LOG, "a").write(s + "\n")
 
@@ -90,6 +92,10 @@ def say(*a):
 if E("RUN_MD5") and E("RUN_MD5") != MD5:
     say("REFUSED: converter md5", MD5, "is not the expected one")
     sys.exit(1)
+if not E("RUN_CLOSED") or not os.path.exists(E("RUN_CLOSED")):
+    say("REFUSED: RUN_CLOSED must name the file of closed days (us-equity-closed-days.txt)")
+    sys.exit(1)
+CLOSED = {x.strip() for x in open(E("RUN_CLOSED")) if x.strip() and not x.lstrip().startswith("#")}
 if not FAKE and not out.startswith("s3://"):
     say("REFUSED: a local output dir is test mode and needs RUN_FAKE")
     sys.exit(1)
@@ -319,13 +325,23 @@ def claim(dt):
     if e:
         with L:
             MINE[dt] = e
+            LOST.discard(dt)  # claimed again (the other holder died): an ordinary day again
     return bool(e)
 
 
 def release(dt):
+    """Give a day back. The claim object is deleted only while it still carries my mark: a
+    machine that was slow and lost the day must not delete the new holder's claim."""
     with L:
         had = MINE.pop(dt, None)
-    if had:
+    if not had:
+        return
+    try:
+        c = cget(dt)
+    except Exception as e:
+        print("claim read failed", dt, type(e).__name__, flush=True)
+        return
+    if c and c[0] == had:
         cdel(dt)
 
 
@@ -413,12 +429,35 @@ def free():
 
 
 def halted():
+    # Two failures in a row pause the run for good: a later good day must not un-pause it
+    # (the fetchers have ended by then and the converters would wait for ever).
+    if ST["failrow"] >= 2:
+        ST["paused"] = True
     return (
         ST["stop"]
+        or ST.get("paused")
         or (STOPF and os.path.exists(STOPF))
-        or ST["failrow"] >= 2
         or (STOPMIN and time.time() - T0 > STOPMIN * 60)
     )
+
+
+def source_has(c, dt):
+    """Which of the day's two files the source holds (test mode: files in RUN_FAKE)."""
+    out_ = {}
+    for kind in ("trades", "quotes"):
+        if FAKE:
+            out_[kind] = os.path.exists(os.path.join(FAKE, f"{dt}-{kind}.csv.gz"))
+            continue
+        try:
+            c.head_object(
+                Bucket="flatfiles", Key=f"us_stocks_sip/{kind}_v1/{dt[:4]}/{dt[5:7]}/{dt}.csv.gz"
+            )
+            out_[kind] = True
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] not in ("404", "NoSuchKey", "NotFound"):
+                raise
+            out_[kind] = False
+    return out_
 
 
 def fetcher(i):
@@ -455,36 +494,42 @@ def fetcher(i):
                     ST["skipped"] += 1
                     ST["fetching"] -= 1
                 continue
-            ok = True
             tot = 0
             t0 = time.time()
             rec = {"date": dt, "by": ME, "files": {}}
+            there = source_has(c, dt)
+            # A holiday is a day the calendar file lists as closed AND that has no file. Every
+            # other combination is a failed day with its line: a session with a file missing
+            # (not published, a moved key), or files on a day listed as closed.
+            if dt in CLOSED and not any(there.values()):
+                release(dt)
+                with L:
+                    ST["holiday"] += 1
+                    HOLIDAYS.add(dt)
+                    ST["fetching"] -= 1
+                say("no file", dt, "(holiday: listed as closed, no trades and no quotes file)")
+                continue
+            if dt in CLOSED:
+                raise RuntimeError(f"listed as closed but the source has files: {there}")
+            if not all(there.values()):
+                raise RuntimeError(f"a session, and not complete at the source: {there}")
             for kind in ("trades", "quotes"):
                 fn = os.path.join(RAW, f"{dt}-{kind}.csv.gz")
                 tmp = fn + ".part"
                 t1 = time.time()
                 if FAKE:
                     f0 = os.path.join(FAKE, f"{dt}-{kind}.csv.gz")
-                    if not os.path.exists(f0):
-                        ok = False
-                        break
                     shutil.copy(f0, tmp)
                 else:
                     sk = f"us_stocks_sip/{kind}_v1/{dt[:4]}/{dt[5:7]}/{dt}.csv.gz"
-                    try:
-                        h0 = c.head_object(Bucket="flatfiles", Key=sk)
-                        want = h0["ContentLength"]
-                        rec["files"][kind] = {
-                            "source_key": sk,
-                            "source_etag": h0["ETag"].strip('"'),
-                            "source_bytes": want,
-                        }
-                        c.download_file("flatfiles", sk, tmp)
-                    except botocore.exceptions.ClientError as e:
-                        if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
-                            ok = False
-                            break
-                        raise
+                    h0 = c.head_object(Bucket="flatfiles", Key=sk)
+                    want = h0["ContentLength"]
+                    rec["files"][kind] = {
+                        "source_key": sk,
+                        "source_etag": h0["ETag"].strip('"'),
+                        "source_bytes": want,
+                    }
+                    c.download_file("flatfiles", sk, tmp)
                     if os.path.getsize(tmp) != want:
                         raise RuntimeError(
                             f"size of {sk} is {os.path.getsize(tmp)}, the object has {want}"
@@ -495,27 +540,13 @@ def fetcher(i):
                 tot += b
                 with L:
                     DL.append((time.time(), b, time.time() - t1))
-            if not ok:
-                for kind in ("trades", "quotes"):
-                    for x in ("", ".part"):
-                        try:
-                            os.remove(os.path.join(RAW, f"{dt}-{kind}.csv.gz{x}"))
-                        except OSError:
-                            pass
-                release(dt)
-                with L:
-                    ST["holiday"] += 1
-                    HOLIDAYS.add(dt)
-                    ST["fetching"] -= 1
-                say("no file", dt, "(holiday)")
-                continue
             if RAWTO and not rawed(dt):
                 t2 = time.time()
                 for kind in ("trades", "quotes"):
                     rec["files"].setdefault(kind, {})["stored"] = rawput(
                         os.path.join(RAW, f"{dt}-{kind}.csv.gz"), dt, kind
                     )
-                rec["made_utc"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                rec["made_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 rawman(dt, rec)
                 say("raw archived", dt, f"GB {tot / 1e9:.2f} sec {time.time() - t2:.0f}")
             if tabled(
@@ -611,6 +642,7 @@ def converter(w):
             for f in os.listdir(wd):
                 if f.startswith(dt):
                     os.remove(os.path.join(wd, f))
+            release(dt)  # holds nothing after a real loss; never leaves a claim behind
             with L:
                 ST["converting"] -= 1
                 ST["lost"] += 1

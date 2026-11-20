@@ -82,8 +82,11 @@ aws s3 rm s3://tickr-research-<account>/jobs/download/failures   # only when re-
 aws autoscaling put-scheduled-update-group-action --auto-scaling-group-name tickr-download \
   --scheduled-action-name deadline --start-time "$(date -u -d @"$UNTIL" +%Y-%m-%dT%H:%M:%SZ)" \
   --desired-capacity 0
-aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --desired-capacity 4
+aws autoscaling set-desired-capacity --auto-scaling-group-name tickr-download --desired-capacity 1
 ```
+
+`tickr-download` is always started with 1, never 4: the first machine compares one day with the
+Mac's files and raises the group to 4 itself after a PASS (see "The download job").
 
 Always create the scheduled action before setting 1; never start a group without it.
 
@@ -122,7 +125,7 @@ than the 64 approved, so they run one after the other unless the spot quota is r
 
 `jobs/tickboot.sh` is the job script of `tickr-download` and `jobs/tickrun.py` the runner it
 starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
-`scripts/fleet/tickrun.py`) and writes the md5 of the reviewed runner to
+`scripts/fleet/tickrun.py`, with `us-equity-closed-days.txt` beside it) and writes the md5 of the reviewed runner to
 `jobs/download/runner.md5`, so a machine refuses any other file. How 4 machines share the days:
 
 - A day is taken by creating `claims/ticks/<day>.json` with `If-None-Match: *`; S3 lets only
@@ -141,6 +144,8 @@ starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
   `jobs/download/machines` (default 4). FAIL: `until` := 0 and the group := 0, with nothing
   written outside `fleet-test/`. The comparison has a 45-minute lease (a replacement machine
   takes it over) and waiting for it has a 90-minute limit.
+- A day without source files is a holiday only when `jobs/us-equity-closed-days.txt` lists it
+  as closed. A session with a file missing, or files on a listed day, is a failed day.
 - The raw archive is off unless `jobs/download/raw` says `on`. The owner's recorded decision is
   not to keep raw files; the research thread writes `on` only after he chooses the archive
   option on the launch card.
