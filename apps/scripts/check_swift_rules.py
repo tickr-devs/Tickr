@@ -941,7 +941,8 @@ OWN_DETENT = re.compile(r"\.presentationDetents\s*\(")
 
 def sheet_violations(path: Path) -> list[tuple[int, str]]:
     """A sheet height picked by an app's own view instead of `sheetFitsContent()`."""
-    return [(number, code.strip()) for number, code, _ in _code_lines(path) if OWN_DETENT.search(code)]
+    lines = _code_lines(path)
+    return [(number, code.strip()) for number, code, _ in lines if OWN_DETENT.search(code)]
 
 
 RULES = {
