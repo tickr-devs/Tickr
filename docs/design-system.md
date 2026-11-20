@@ -479,6 +479,16 @@ form (checked on the iPhone simulator), and a chevron that does nothing would be
 The same rule rejects a file with fewer `scrollEdgeHints` calls than vertical scroll views, or
 fewer `scrollEdgeFades` calls than forms and lists.
 
+## Sheets
+
+A sheet is as tall as its content (owner, 2026-11-20: the bot actions opened at half height,
+scrolled, and the chevron sat on Cancel): its root applies TickrDesign's `sheetFitsContent()`.
+The sheet's scroll view (with `scrollEdgeHints()` or `scrollEdgeFades()`) reports how far its
+content runs past its visible height, and the sheet takes its own height plus that as its one
+detent. Only content taller than the screen stops at full height and scrolls, with the edge hints.
+On the Mac a sheet already takes its content's size. The `sheets` rule of `check_swift_rules.py`
+rejects a `presentationDetents` of an app's own.
+
 ## Loading (`Tokens.Loading`, mockup v102)
 
 Loading uses a skeleton or a spinner, never a radar: the radar is only the empty "no positions"

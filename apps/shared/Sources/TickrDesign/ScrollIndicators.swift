@@ -60,6 +60,11 @@ struct ScrollEdges: Equatable {
     above = shownTop > tolerance
     below = geometry.contentSize.height - shownTop - geometry.containerSize.height > tolerance
   }
+
+  /// How far the content runs past the visible height (negative when it is shorter).
+  static func overflow(_ geometry: ScrollGeometry) -> CGFloat {
+    geometry.contentSize.height - geometry.containerSize.height
+  }
 }
 
 /// Where the chevron takes the scroll view next: one more page, or the very bottom.
@@ -110,6 +115,8 @@ struct ScrollEdgeHints: ViewModifier {
   @State private var own = ScrollPosition(edge: .top)
   @State private var edges = ScrollEdges()
   @State private var page = ScrollPage()
+  /// The sheet this scroll view fills, when it is as tall as its content (`sheetFitsContent()`).
+  @Environment(SheetOverflow.self) private var sheet: SheetOverflow?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var position: Binding<ScrollPosition> { external ?? $own }
@@ -124,6 +131,9 @@ struct ScrollEdgeHints: ViewModifier {
       }
       .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, new in
         page.follow(new)
+      }
+      .onScrollGeometryChange(for: CGFloat.self) { ScrollEdges.overflow($0) } action: { _, new in
+        sheet?.value = new
       }
       // The scroll view's frame stops at the insets while its content runs on under the bars:
       // the mask reaches under them too, so content there shows as before unless more is beyond.
