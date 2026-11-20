@@ -116,10 +116,10 @@ struct ScrollEdgeHints: ViewModifier {
   @State private var edges = ScrollEdges()
   @State private var page = ScrollPage()
   /// The sheet this scroll view fills, when it is as tall as its content (`sheetFitsContent()`).
-  @Environment(SheetOverflow.self) private var sheet: SheetOverflow?
-  /// This scroll view's last overflow, told to the sheet again when its page shows again (back
-  /// from a page pushed inside the sheet, which told the sheet its own).
-  @State private var overflow: CGFloat?
+  @Environment(SheetFitting.self) private var sheet: SheetFitting?
+  /// The sheet height this scroll view last needed, told to the sheet again when its page shows
+  /// again (back from a page pushed inside the sheet, which told the sheet its own).
+  @State private var needed: CGFloat?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var position: Binding<ScrollPosition> { external ?? $own }
@@ -136,11 +136,13 @@ struct ScrollEdgeHints: ViewModifier {
         page.follow(new)
       }
       .onScrollGeometryChange(for: CGFloat.self) { ScrollEdges.overflow($0) } action: { _, new in
-        overflow = new
-        sheet?.value = new
+        sheet?.early = new
+        guard let sheet, let height = SheetHeight.needed(sheet: sheet.sheet, overflow: new) else { return }
+        needed = height
+        sheet.needed = height
       }
       .onAppear {
-        if let overflow { sheet?.value = overflow }
+        if let needed { sheet?.needed = needed }
       }
       // The scroll view's frame stops at the insets while its content runs on under the bars:
       // the mask reaches under them too, so content there shows as before unless more is beyond.
