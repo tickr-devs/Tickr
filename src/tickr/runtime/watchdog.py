@@ -49,9 +49,11 @@ At every hour, every day (the `Sentinel`, every `watchdog_bot_check_seconds`; th
 continuously: launchd starts it at load, at `watchdog_start_local` and again whenever it ends):
 - the bot stopped without a clean stop: not running (as above) while its last status is not
   `stopped` (a crash, a kill, a reboot or a hang leaves `starting`/`running`, or `stopping` older
-  than `bot_exit_timeout_seconds`) alerts `bot-down` once per such status. A clean stop (a
-  release, the operator, launchd's SIGTERM) writes `stopped` and stays quiet; a data folder
-  where the bot never wrote a status stays quiet; an unreadable status file alerts.
+  than `bot_exit_timeout_seconds`) alerts `bot-down` once per such status, when two checks in a
+  row see it. A clean stop (a release, the operator, launchd's SIGTERM) writes `stopped` and
+  stays quiet; a data folder where the bot never wrote a status stays quiet; an unreadable
+  status file alerts. A live bot process whose status is `starting` or older than the process
+  is starting, quiet for `watchdog_start_grace_seconds` after it took its lock, then hung.
 - free space on the data disk below `[runtime] disk_warn_free_mb` alerts `disk-low` once, and
   once more below `min_free_disk_mb` (where preflight refuses to start the bot); back above the
   warning level re-arms it.
@@ -91,6 +93,7 @@ UID_PLACEHOLDER = "{uid}"
 JOURNAL_FAILED = "watchdog-journal-failed"
 CHANNEL_REFUSED = "watchdog-alert-channel-refused"
 DISK = "watchdog-disk"
+STATE_FAILED = "watchdog-state-failed"
 BYTES_PER_MB = 1024 * 1024  # unit factor
 # Calendar answers that mean "no session today" (exit without an alert, like preflight).
 CLOSED_CAUSES = frozenset({CalendarCause.WEEKEND, CalendarCause.HOLIDAY})
@@ -104,6 +107,10 @@ DiskFree = Callable[[Path], int]
 
 def disk_free(path: Path) -> int:
     return shutil.disk_usage(path).free
+
+
+def ny_day(now: datetime) -> date:
+    return now.astimezone(NEW_YORK).date()
 
 
 def next_ny_midnight(now: datetime) -> datetime:
@@ -271,8 +278,11 @@ def _cause(exc: Exception) -> str:
 
 class Sentinel:
     """The checks that run at every hour, also on days without a session: did the bot stop
-    without a clean stop, is the data disk running low. Each finding alerts once while it
-    lasts (the sentinel lives as long as the watchdog process, across days)."""
+    without a clean stop (or hang), is the data disk running low. Each finding alerts once
+    while it lasts. What was alerted is kept in `<data_dir>/<watchdog_state_file>`, so a
+    relaunched watchdog (launchd `KeepAlive`) never alerts the same finding again; when that
+    file cannot be written the finding is still alerted and the process keeps running, so
+    only a relaunch (at most once per `watchdog_relaunch_seconds`) could repeat it."""
 
     def __init__(self, config: Config, *, alerter: Alerter, journal: Journal,
                  lock_path: Path, status_path: Path, data_dir: Path,
@@ -284,13 +294,46 @@ class Sentinel:
         self._status_path = status_path
         self._data_dir = data_dir
         self._free = free
-        self._down: str | None = None  # the status (written_at) a bot-down alert was for
-        self._disk_level: int | None = None  # the MB level a disk-low alert was for
+        self._state_path = data_dir / config.runtime.watchdog_state_file
+        self._state = self._load_state()
+        self._candidate: str | None = None  # a bot finding seen once, alerted if seen again
         self.alerted = False
+
+    # --- the alert state that survives a relaunch -----------------------------------------
+
+    def _load_state(self) -> dict[str, Any]:
+        try:
+            state = json.loads(self._state_path.read_text("utf-8"))
+            if not isinstance(state, dict):
+                raise ValueError("not an object")
+            return state
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as exc:
+            # Unknown: start empty (a finding may alert once more), and say so.
+            self.journal.write(STATE_FAILED, {"read": type(exc).__name__})
+            return {}
+
+    def _remember(self, key: str, value: Any) -> None:
+        if self._state.get(key) == value:
+            return
+        self._state[key] = value
+        try:
+            contract.write_atomic(self._state_path, json.dumps(self._state, sort_keys=True))
+        except OSError as exc:
+            self.journal.write(STATE_FAILED, {"write": type(exc).__name__})
 
     def alert(self, kind: AlertKind, text: str) -> None:
         self.alerted = True
         self.journal.write(ALERT, self._alerter.alert(kind, text).journal_body())
+
+    def alert_once(self, field: str, key: str, kind: AlertKind, text: str) -> None:
+        """Alert unless this finding (`key`) was already alerted, by this process or by an
+        earlier one."""
+        if self._state.get(field) == key:
+            return
+        self._remember(field, key)
+        self.alert(kind, text)
 
     def completed(self, flush: bool = False) -> list[AlertOutcome]:
         """Finished background sends (iMessage); with `flush`, after waiting for them."""
@@ -300,35 +343,78 @@ class Sentinel:
         self.bot(now)
         self.disk(now)
 
-    def bot(self, now: datetime) -> None:
+    # --- the bot ---------------------------------------------------------------------------
+
+    def _started_at(self) -> datetime | None:
+        """When the live bot process took its lock (it writes its pid then), or None."""
+        if recorded_holder(self._lock_path) is None:
+            return None
+        try:
+            return datetime.fromtimestamp(self._lock_path.stat().st_mtime, UTC)
+        except OSError:
+            return None
+
+    def _finding(self, now: datetime) -> tuple[str, str] | None:
+        """(key, alert text) when the bot is down or hung, None when it runs, starts or
+        stopped cleanly."""
         why = not_running(self.config, self._lock_path, self._status_path, now)
         if why is None:
-            self._down = None
-            return
+            return None
+        runtime = self.config.runtime
         try:
             status = contract.read_status(self._status_path)
         except FileNotFoundError:
-            return  # the bot never ran on this data folder: nothing stopped
+            return None  # the bot never ran on this data folder: nothing stopped
         except (contract.ContractError, OSError) as exc:
-            key, last = f"unreadable {type(exc).__name__}", "an unreadable status file"
+            status, last = None, "an unreadable status file"
+            key = f"unreadable {type(exc).__name__}"
         else:
             if status.bot_state is contract.BotState.STOPPED:
-                self._down = None
-                return  # a clean stop (release, operator, launchd): nothing to say
-            age = contract.seconds_between(status.written_at, now)
+                return None  # a clean stop (release, operator, launchd): nothing to say
             if (status.bot_state is contract.BotState.STOPPING
-                    and age <= self.config.runtime.bot_exit_timeout_seconds):
-                return  # still stopping: the supervisor alerts bot-did-not-stop if it hangs
+                    and contract.seconds_between(status.written_at, now)
+                    <= runtime.bot_exit_timeout_seconds):
+                return None  # still stopping: the supervisor alerts bot-did-not-stop
             key = status.written_at.isoformat()
             last = f"its last status ({status.bot_state.value}) at {_ny(status.written_at)}"
-        if key == self._down:
+        started = self._started_at()
+        if started is not None:
+            # A live bot process: starting while its status is "starting" or older than the
+            # process; quiet for the start grace, then hung. Never "start the bot job": a
+            # kickstart does nothing while it holds the job.
+            starting = status is not None and (
+                status.bot_state is contract.BotState.STARTING or status.written_at < started)
+            age = contract.seconds_between(started, now)
+            if starting and age <= runtime.watchdog_start_grace_seconds:
+                return None
+            what = (f"still starting {age:.0f} s after it started" if starting
+                    else f"not answering ({why})")
+            return (f"hung {started.isoformat()} {key}",
+                    f"the bot process is alive but {what}: {last}. It is hung: nothing trades "
+                    "and nothing watches the stops. Read bot.log, then stop the bot job "
+                    "(launchctl kill TERM) and start it again when it is safe")
+        return (key, f"the bot is not running ({why}) and did not stop cleanly: {last}. "
+                     "Nothing trades and nothing watches the stops until it runs again. Read "
+                     "bot.log for the cause, then start the bot job when it is safe")
+
+    def bot(self, now: datetime) -> None:
+        """A finding alerts when two checks in a row see it (one stale status right after the
+        Mac wakes is not a crash), once per finding."""
+        found = self._finding(now)
+        if found is None:
+            self._candidate = None
+            self._remember("bot_down", None)
             return
-        self._down = key
-        self.journal.write(BOT_DOWN, {"at": now.isoformat(), "why": why, "last_status": key})
-        self.alert(AlertKind.BOT_DOWN,
-                   f"the bot is not running ({why}) and did not stop cleanly: {last}. Nothing "
-                   "trades and nothing watches the stops until it runs again. Read bot.log for "
-                   "the cause, then start the bot job when it is safe")
+        key, text = found
+        if self._candidate != key:
+            self._candidate = key
+            return
+        if self._state.get("bot_down") == key:
+            return
+        self.journal.write(BOT_DOWN, {"at": now.isoformat(), "finding": key})
+        self.alert_once("bot_down", key, AlertKind.BOT_DOWN, text)
+
+    # --- the disk --------------------------------------------------------------------------
 
     def disk(self, now: datetime) -> None:
         runtime = self.config.runtime
@@ -338,14 +424,15 @@ class Sentinel:
             self.journal.write(DISK, {"at": now.isoformat(), "error": type(exc).__name__})
             return
         if free_mb >= runtime.disk_warn_free_mb:
-            self._disk_level = None
+            self._remember("disk_level", None)
             return
         level = (runtime.min_free_disk_mb if free_mb < runtime.min_free_disk_mb
                  else runtime.disk_warn_free_mb)
-        if self._disk_level is not None and self._disk_level <= level:
+        alerted = self._state.get("disk_level")
+        if isinstance(alerted, int) and alerted <= level:
             return  # already alerted at this level or a lower one
-        self._disk_level = level
         self.journal.write(DISK, {"at": now.isoformat(), "free_mb": free_mb, "below_mb": level})
+        self._remember("disk_level", level)
         self.alert(AlertKind.DISK_LOW,
                    f"{free_mb} MB free on the bot's data disk, below {level} MB. Below "
                    f"{runtime.min_free_disk_mb} MB the bot does not start, and a full disk stops "

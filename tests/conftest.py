@@ -23,9 +23,10 @@ def no_real_alert_channels(monkeypatch):
 @pytest.fixture(autouse=True)
 def watchdog_runs_one_day(monkeypatch):
     """`python -m tickr.runtime watchdog` runs until stopped; in tests it returns after one
-    New York day, and the disk it watches always has room (a test that checks the disk
-    alert sets its own)."""
+    New York day (and does not wait after an invalid config), and the disk it watches always
+    has room (a test that checks the disk alert sets its own)."""
     monkeypatch.setattr(runtime_main, "WATCHDOG_DAYS", 1)
+    monkeypatch.setattr(runtime_main, "WATCHDOG_HOLD", lambda: None)
     monkeypatch.setattr(runtime_main, "WATCHDOG_DISK_FREE", lambda path: 1 << 50)
 
 

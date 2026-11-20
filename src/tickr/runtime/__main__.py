@@ -209,6 +209,16 @@ WATCHDOG_NOW: Callable[[], datetime] = _utc_now
 WATCHDOG_SLEEP: Callable[[float], None] = time.sleep
 WATCHDOG_RUNNER: watchdog.Runner = watchdog.run_command
 WATCHDOG_DISK_FREE: watchdog.DiskFree = watchdog.disk_free
+
+
+def _hold_forever() -> None:
+    while True:
+        time.sleep(SECONDS_PER_HOUR)
+
+
+SECONDS_PER_HOUR = 3600  # unit factor
+# What the watchdog does after alerting an invalid config, instead of ending (replaced in tests).
+WATCHDOG_HOLD: Callable[[], None] = _hold_forever
 # New York days the watchdog runs before it returns; None (the job) = until it is stopped.
 WATCHDOG_DAYS: int | None = None
 
@@ -275,9 +285,11 @@ def _watchdog_day(cfg: config_module.Config, sentinel: watchdog.Sentinel, alerte
             journal.write(watchdog.START, {"no_session": exc.cause.value})
             code = int(ExitCode.NO_SESSION)
         else:
-            sentinel.alert(AlertKind.WATCHDOG_CANNOT_CHECK,
-                           f"calendar refused today ({exc.cause.value}): check the "
-                           "Webull app yourself after the flatten time")
+            sentinel.alert_once("calendar_refused",
+                                f"{watchdog.ny_day(now).isoformat()} {exc.cause.value}",
+                                AlertKind.WATCHDOG_CANNOT_CHECK,
+                                f"calendar refused today ({exc.cause.value}): check the "
+                                "Webull app yourself after the flatten time")
             code = int(ExitCode.FAILED)
         watchdog.watch_until(sentinel, until, clock=WATCHDOG_NOW, sleep=WATCHDOG_SLEEP)
         return code
@@ -405,7 +417,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {exc}", file=sys.stderr)
         if args.command == "watchdog":
             _alert(args.config, None, AlertKind.WATCHDOG_CANNOT_CHECK,
-                   f"watchdog not running: config invalid ({exc})")
+                   f"watchdog not running: config invalid ({exc}); fix the config, then "
+                   "restart the watchdog job")
+            # launchd starts a watchdog that ends again (KeepAlive): wait instead, so a
+            # config that stays invalid alerts once, not on every relaunch.
+            WATCHDOG_HOLD()
         return int(ExitCode.CONFIG_INVALID)
     return int(ExitCode.CONFIG_INVALID)  # pragma: no cover
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -602,16 +603,47 @@ def test_crash_at_any_hour_alerts_bot_down_once_per_crash(cfg, tmp_path):
     write_state(cfg, crashed, contract.BotState.RUNNING)  # a crash leaves "running" behind
     guard, recorder = sentinel(cfg, Clock(SATURDAY_NIGHT), tmp_path)
     guard.check(SATURDAY_NIGHT)
+    assert recorder.shown == []  # one check is not enough (a Mac just woke up)
     guard.check(SATURDAY_NIGHT + timedelta(minutes=1))
+    guard.check(SATURDAY_NIGHT + timedelta(minutes=2))
     (shown,) = recorder.shown
     assert "bot-down" in shown and "did not stop cleanly" in shown
     assert "its last status (running) at 21:55:00 ET" in shown
     # Started again, then crashed again: a new status, a new alert.
     write_state(cfg, SATURDAY_NIGHT + timedelta(minutes=10), contract.BotState.RUNNING)
     guard.check(SATURDAY_NIGHT + timedelta(minutes=20))
+    guard.check(SATURDAY_NIGHT + timedelta(minutes=21))
     assert len(recorder.shown) == 2
     down = [r for r in records(tmp_path / "watchdog.jsonl") if r["record"] == watchdog.BOT_DOWN]
-    assert [r["why"] for r in down] == ["no live pid in its lock file"] * 2
+    assert len(down) == 2
+
+
+def test_same_finding_new_process_no_second_alert(cfg, tmp_path):
+    write_state(cfg, SATURDAY_NIGHT - timedelta(minutes=5), contract.BotState.RUNNING)
+    shown = []
+    for relaunch in range(3):  # launchd relaunches a watchdog that ended
+        guard, recorder = sentinel(cfg, Clock(SATURDAY_NIGHT), tmp_path, free_mb=5000)
+        at = SATURDAY_NIGHT + timedelta(minutes=relaunch)
+        guard.check(at)
+        guard.check(at + timedelta(seconds=30))
+        shown += recorder.shown
+    assert sorted(x.split(" | ")[0] for x in shown) == ["Tickr: bot-down", "Tickr: disk-low"]
+    state = json.loads((cfg.root / cfg.run.data_dir
+                        / cfg.runtime.watchdog_state_file).read_text("utf-8"))
+    assert state["disk_level"] == cfg.runtime.disk_warn_free_mb
+
+
+def test_state_that_cannot_be_written_still_alerts_once_per_process(cfg, tmp_path):
+    write_state(cfg, SATURDAY_NIGHT - timedelta(minutes=5), contract.BotState.RUNNING)
+    state = cfg.root / cfg.run.data_dir / cfg.runtime.watchdog_state_file
+    state.mkdir()  # a folder where the file should be: unreadable and unwritable
+    guard, recorder = sentinel(cfg, Clock(SATURDAY_NIGHT), tmp_path, free_mb=5000)
+    for minute in range(3):
+        guard.check(SATURDAY_NIGHT + timedelta(minutes=minute))
+    assert len(recorder.shown) == 2  # bot-down and disk-low, each once
+    failed = [r for r in records(tmp_path / "watchdog.jsonl")
+              if r["record"] == watchdog.STATE_FAILED]
+    assert failed and "read" in failed[0]
 
 
 def test_hung_bot_with_a_live_pid_alerts_bot_down(cfg, tmp_path):
@@ -620,9 +652,12 @@ def test_hung_bot_with_a_live_pid_alerts_bot_down(cfg, tmp_path):
     write_state(cfg, AT - timedelta(seconds=cfg.runtime.watchdog_status_stale_seconds + 1),
                 contract.BotState.RUNNING)
     guard, recorder = sentinel(cfg, Clock(AT), tmp_path)
+    os.utime(lock_path, (0, 0))  # took its lock long ago: not starting
     guard.check(AT)
+    guard.check(AT + timedelta(seconds=1))
     (shown,) = recorder.shown
-    assert "bot-down" in shown and "status file older than" in shown
+    assert "bot-down" in shown and "alive but not answering (status file older than" in shown
+    assert "It is hung" in shown and "start the bot job" not in shown
 
 
 def test_running_bot_clean_stop_and_no_bot_ever_stay_quiet(cfg, tmp_path):
@@ -645,6 +680,7 @@ def test_stopping_is_quiet_until_launchd_would_have_killed_it(cfg, tmp_path):
     guard.check(AT + limit)
     assert recorder.shown == []
     guard.check(AT + limit + timedelta(seconds=1))
+    guard.check(AT + limit + timedelta(seconds=2))
     (shown,) = recorder.shown
     assert "its last status (stopping)" in shown
 
@@ -653,8 +689,8 @@ def test_unreadable_status_of_a_stopped_bot_alerts_once(cfg, tmp_path):
     status_path(cfg).parent.mkdir(parents=True, exist_ok=True)
     status_path(cfg).write_bytes(b"{not json")
     guard, recorder = sentinel(cfg, Clock(AT), tmp_path)
-    guard.check(AT)
-    guard.check(AT + timedelta(minutes=1))
+    for minute in range(3):
+        guard.check(AT + timedelta(minutes=minute))
     (shown,) = recorder.shown
     assert "an unreadable status file" in shown
 
@@ -729,4 +765,39 @@ def test_cli_watchdog_alerts_a_weekend_crash_and_low_disk(config_path, monkeypat
     assert runtime_main.main(["--config", str(config_path), "watchdog"]) == 3
     alerts = [json.loads(x) for x in capsys.readouterr().out.splitlines()]
     kinds = [x["kind"] for x in alerts if x["record"] == "alert"]
-    assert kinds == ["bot-down", "disk-low"]
+    assert sorted(kinds) == ["bot-down", "disk-low"]
+
+
+@pytest.mark.parametrize("state", [contract.BotState.STARTING, contract.BotState.RUNNING])
+def test_a_starting_bot_is_quiet_for_the_grace_then_hung(cfg, tmp_path, state):
+    """A live bot whose status is "starting", or older than the process (the last run's
+    "running", before its first write: token wait, startup reconcile)."""
+    _, lock_path = data_paths(cfg)
+    write_pid(lock_path, os.getpid())
+    started = datetime.fromtimestamp(lock_path.stat().st_mtime, UTC)
+    written = started if state is contract.BotState.STARTING else started - timedelta(hours=9)
+    write_state(cfg, written, state)
+    grace = timedelta(seconds=cfg.runtime.watchdog_start_grace_seconds)
+    guard, recorder = sentinel(cfg, Clock(started), tmp_path)
+    for at in (started + timedelta(seconds=61), started + timedelta(seconds=120), started + grace):
+        guard.check(at)
+    assert recorder.shown == []
+    guard.check(started + grace + timedelta(seconds=1))
+    guard.check(started + grace + timedelta(seconds=2))
+    (shown,) = recorder.shown
+    assert "alive but still starting" in shown and "It is hung" in shown
+    assert "start the bot job" not in shown
+
+
+def test_invalid_config_alerts_once_then_waits_instead_of_ending(config_path, monkeypatch,
+                                                                capsys):
+    text = re.sub(r"(?m)^watchdog_bot_check_seconds = .*$", "watchdog_bot_check_seconds = 0",
+                  config_path.read_text("utf-8"))
+    config_path.write_text(text, "utf-8")
+    held = []
+    monkeypatch.setattr(runtime_main, "WATCHDOG_HOLD", lambda: held.append(True))
+    assert runtime_main.main(["--config", str(config_path), "watchdog"]) == 2
+    out = [json.loads(x) for x in capsys.readouterr().out.splitlines()]
+    (alert,) = [x for x in out if x["record"] == "alert"]
+    assert alert["kind"] == "watchdog-cannot-check" and "config invalid" in alert["text"]
+    assert held == [True]  # a relaunch loop under KeepAlive would alert on every start

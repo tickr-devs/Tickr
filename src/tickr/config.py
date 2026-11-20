@@ -383,6 +383,9 @@ class RuntimeConfig:
     watchdog_bot_check_seconds: int
     watchdog_status_stale_seconds: int
     watchdog_journal_file: str
+    watchdog_state_file: str
+    watchdog_start_grace_seconds: int
+    watchdog_relaunch_seconds: int
     watchdog_restart_before_flatten_seconds: int
     watchdog_restart_command: tuple[str, ...]
     watchdog_restart_timeout_seconds: int

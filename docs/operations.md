@@ -510,8 +510,9 @@ straight to the supervisor. Limits:
   keyboard and mouse: clamshell mode). Do not close the lid on a trading day.
 - A low battery, a forced shutdown, or choosing Sleep in the Apple menu still sleep the Mac.
 - `pmset -g assertions` shows `caffeinate` holding `PreventUserIdleSystemSleep` while a job runs.
-- The watchdog job runs at every hour, so on the power adapter the Mac stays awake around the
-  clock, weekends too: it must be awake to notice a crash or a full disk.
+- The watchdog job runs at every hour and starts `caffeinate` beside itself like the bot job, so
+  on the power adapter the Mac stays awake around the clock, weekends too: it must be awake to
+  notice a crash or a full disk (check with `pmset -g assertions` after installing).
 
 ## Alerts
 
@@ -761,9 +762,25 @@ At any hour the bot is not running (no live pid in its lock file, or a status fi
 `stopped`: it crashed, was killed, the Mac rebooted, or it hangs. A clean stop (a release, the
 operator's stop, launchd's SIGTERM) writes `stopped` and stays quiet, and so does `stopping` until
 `[runtime] bot_exit_timeout_seconds` (the supervisor alerts `bot-did-not-stop` meanwhile). One alert
-per crash (per last status); a bot that starts and crashes again alerts again. The supervisor's
-`bot-crashed` usually comes first; this one also covers a kill, a reboot and a hang, which leave no
-supervisor to tell.
+per crash (per last status); a bot that starts and crashes again alerts again. A finding must be
+seen by two checks in a row (a stale status right after the Mac wakes is not a crash), so the
+alert comes 1 to 3 minutes after the crash. The supervisor's `bot-crashed` usually comes first;
+this one also covers a kill, a reboot and a hang, which leave no supervisor to tell. A crash
+before the run's first status write (the status still says `stopped`) is not seen here: only
+`bot-crashed` covers it. During the session a down bot with an open trade also gets
+`bot-down-with-open-trade`: two alerts of different kinds.
+
+A live bot process (a pid in its lock file) whose status is `starting`, or older than the
+process (token wait, startup reconcile), counts as starting for
+`[runtime] watchdog_start_grace_seconds` after it took its lock; after that, or with a stale
+`running` status, the alert says the bot is hung: stop the job
+(`launchctl kill TERM gui/$(id -u)/local.tickr.bot`) before starting it again, since a kickstart
+does nothing while it runs.
+
+What was alerted is kept in `data/watchdog-state.json` (`[runtime] watchdog_state_file`), so a
+relaunched watchdog does not alert the same crash or disk level again; launchd relaunches it at
+most once per `[runtime] watchdog_relaunch_seconds` (`ThrottleInterval`). With an invalid config
+it alerts `watchdog-cannot-check` once and then waits instead of ending.
 
 What to do: read `~/Library/Logs/Tickr/bot.log` for the cause, fix it (a full disk: free space),
 then start the bot when it is safe: `launchctl kickstart gui/$(id -u)/local.tickr.bot`.

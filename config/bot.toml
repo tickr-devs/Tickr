@@ -787,6 +787,16 @@ watchdog_bot_check_seconds = 60
 watchdog_status_stale_seconds = 60
 # Watchdog journal (JSON lines: checks and alerts), relative to data_dir; never the bot's database; read by runtime.watchdog.
 watchdog_journal_file = "watchdog.jsonl"
+# Watchdog alert state (which crash, disk level and calendar refusal it already alerted), relative to data_dir, so a
+# relaunched watchdog never alerts the same finding twice; read by runtime.watchdog.
+watchdog_state_file = "watchdog-state.json"
+# Seconds after the bot process took its lock (the lock file's time) during which a live bot without a fresh status, or
+# still "starting", counts as starting, not hung: covers the token wait (token_check_duration_seconds of every
+# environment, which it must be above) and the startup reconcile; read by runtime.watchdog.
+watchdog_start_grace_seconds = 600
+# Least seconds between two launchd starts of the watchdog job (ThrottleInterval): a watchdog that keeps failing
+# restarts at most this often; read by runtime.launchd when rendering plists.
+watchdog_relaunch_seconds = 300
 # From this many seconds before the flatten time (15:40 ET on a normal day) the watchdog starts the bot job once a day
 # when the bot is not running and its database shows an open trade, so the bot's own flatten closes it; must be positive
 # and below the last-entry-to-flatten time so the restarted bot can never open a trade (the earlier restart for a resting entry starts a run fenced
