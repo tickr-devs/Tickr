@@ -444,8 +444,9 @@ data "aws_iam_policy_document" "research" {
     "arn:${local.partition}:autoscaling:${var.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${name}"]
   }
 
-  # The deadline backstop. A scheduled action could also lift a group's size limits; never above
-  # that job's `machines` (more machines on one job would write the same checkpoints).
+  # The deadline backstop. A scheduled action could also change a group's size limits: max never
+  # above that job's `machines`, min never above 0 (a minimum above 0 would refuse the "desired 0"
+  # of the deadline and of the boot wrapper).
   dynamic "statement" {
     for_each = var.jobs
     content {
@@ -460,7 +461,7 @@ data "aws_iam_policy_document" "research" {
       condition {
         test     = "NumericLessThanEqualsIfExists"
         variable = "autoscaling:MinSize"
-        values   = [tostring(statement.value.machines)]
+        values   = ["0"]
       }
     }
   }

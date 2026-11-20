@@ -89,7 +89,7 @@ Always create the scheduled action before setting 1; never start a group without
 
 Check once after the first apply, as the research user: a scheduled action that tries to lift the
 size must be refused (`put-scheduled-update-group-action ... --max-size 5` on `tickr-download` or
-`--max-size 2` on `tickr-train` returns AccessDenied),
+`--max-size 2` on `tickr-train` returns AccessDenied, and so does `--min-size 1` on either group),
 and a test start with a deadline ten minutes ahead must end with the group back at 0.
 
 Stop it early: `set-desired-capacity ... 0` (the machine gets SIGTERM and saves), or write a past
