@@ -904,17 +904,17 @@ VERTICAL_SCROLL = re.compile(r"\bScrollView\s*(?:\((?!\s*\.horizontal\b)|\{)")
 EDGE_HINTS = ".scrollEdgeHints("
 FORM_SCROLL = re.compile(r"\b(?:Form|List)\s*[({]")
 EDGE_FADES = ".scrollEdgeFades("
-# A scroll that shows no edge hints (a sideways scroll view, a table, a scrolling chart) hides its
-# indicators itself: on the Mac a scene root's `withoutScrollIndicators()` did not reach the
-# screens' scroll views (owner, 2026-11-19).
-PLAIN_SCROLL = re.compile(
-    r"\bScrollView\s*\(\s*\.horizontal\b|\bTable\s*[({<]|\.chartScrollableAxes\s*\(")
+# A scroll that shows no edge hints (a sideways scroll view, a table) hides its indicators itself:
+# on the Mac a scene root's `withoutScrollIndicators()` did not reach the screens' scroll views
+# (owner, 2026-11-19). A scrolling chart is left out: on the Mac chart with every study the
+# modifier kept the chart screen from appearing in the UI tests (#711).
+PLAIN_SCROLL = re.compile(r"\bScrollView\s*\(\s*\.horizontal\b|\bTable\s*[({<]")
 
 
 def scrollbar_violations(path: Path) -> list[tuple[int, str]]:
     """Scroll indicators set by an app's own view; a vertical scroll view, form or list without its
-    edge hints; or a scene, sideways scroll view, table or scrolling chart that does not hide its
-    indicators itself."""
+    edge hints; or a scene, sideways scroll view or table that does not hide its indicators
+    itself."""
     lines = _code_lines(path)
     found = [(number, code.strip()) for number, code, _ in lines if OWN_INDICATORS.search(code)]
     for opener, hint in ((VERTICAL_SCROLL, EDGE_HINTS), (FORM_SCROLL, EDGE_FADES)):
@@ -963,7 +963,7 @@ RULES = {
       "stop symbol written by hand; use StopState's symbols, or mark another meaning `// symbol:`"),
   "scrollbars": (scrollbar_violations,
       "scroll indicators set by hand, a vertical scroll without scrollEdgeHints() (a Form or "
-      "List: scrollEdgeFades()), or a scene, sideways scroll, Table or scrolling chart without "
+      "List: scrollEdgeFades()), or a scene, sideways scroll or Table without "
       "withoutScrollIndicators(); docs/design-system.md, Scrolling"),
   "cause": (cause_violations,
       "a cause shown in the bot's words; use its `…Text` accessor (the person's language)"),

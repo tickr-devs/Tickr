@@ -825,7 +825,7 @@ def test_scroll_indicators_are_hidden_once_per_scene(tmp_path):
     assert module.scrollbar_violations(write(tmp_path, fixed)) == []
 
 
-def test_sideways_scrolls_tables_and_charts_hide_their_own_indicators(tmp_path):
+def test_sideways_scrolls_and_tables_hide_their_own_indicators(tmp_path):
     module = load()
     source = (
         "ScrollView(.horizontal) { chips }\n"
@@ -833,8 +833,8 @@ def test_sideways_scrolls_tables_and_charts_hide_their_own_indicators(tmp_path):
         "Chart { marks }.chartScrollableAxes(.horizontal)\n"
         "SymbolsTable(rows: rows)\n"
     )
-    assert [line for line, _ in module.scrollbar_violations(write(tmp_path, source))] == [1, 2, 3]
-    hidden = source + "  .withoutScrollIndicators()\n" * 3
+    assert [line for line, _ in module.scrollbar_violations(write(tmp_path, source))] == [1, 2]
+    hidden = source + "  .withoutScrollIndicators()\n" * 2
     assert module.scrollbar_violations(write(tmp_path, hidden)) == []
 
 

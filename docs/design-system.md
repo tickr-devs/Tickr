@@ -461,8 +461,9 @@ No scroll indicators anywhere, on the Mac or the phone (owner, 2026-11-18, repea
 Every scroll hides its own indicators with TickrDesign's `withoutScrollIndicators()`
 (`scrollIndicators(.never)`, which also beats the Mac's "Always show scroll bars" and the bars a
 connected mouse brings): `scrollEdgeHints()` and `scrollEdgeFades()` apply it to the vertical
-scroll views, forms and lists, and each sideways scroll view, `Table` and scrolling chart applies it
-itself. Each scene's root applies it too, but that alone did not reach the Mac screens' scroll
+scroll views, forms and lists, and each sideways scroll view and `Table` applies it itself. A
+scrolling chart does not: on the Mac chart with every study it kept the chart screen from
+appearing in the UI tests (#711). Each scene's root applies it too, but that alone did not reach the Mac screens' scroll
 views (bars on Overview and Trades, 2026-11-19). The `scrollbars` rule of `check_swift_rules.py`
 rejects indicators set by hand and any of these scrolls without its modifier.
 
