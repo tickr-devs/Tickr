@@ -21,11 +21,18 @@ public extension View {
 /// again (back from a page pushed inside the sheet) can tell it again as it was.
 @MainActor @Observable final class SheetFitting {
   /// The sheet's height now, in points.
-  @ObservationIgnored var sheet: CGFloat = 0
-  /// The height the shown page needs, in points; nil until a scroll view measured it.
+  @ObservationIgnored var sheet: CGFloat = 0 { didSet { recount() } }
+  /// How far the shown page's scroll view runs past its visible height now, in points.
+  @ObservationIgnored var overflow: CGFloat? { didSet { recount() } }
+  /// The height the shown page needs, in points; nil until both are measured.
   var needed: CGFloat?
-  /// The scroll view's first overflow when it came before the sheet's height (the first layout).
-  @ObservationIgnored var early: CGFloat?
+
+  /// Counted again from the latest pair whichever of the two changes: SwiftUI does not order the
+  /// sheet's and the scroll view's callbacks, and a sum of a new value and a stale one would come
+  /// out short by the change.
+  private func recount() {
+    if let height = SheetHeight.needed(sheet: sheet, overflow: overflow), height != needed { needed = height }
+  }
 }
 
 /// The height a sheet needs: its own height now plus what its scroll view still hides (or minus
@@ -45,10 +52,7 @@ struct SheetFit: ViewModifier {
   func body(content: Content) -> some View {
     #if os(iOS)
     content
-      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-        fitting.sheet = height
-        if fitting.needed == nil { fitting.needed = SheetHeight.needed(sheet: height, overflow: fitting.early) }
-      }
+      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fitting.sheet = $0 }
       .environment(fitting)
       // Until the content is measured (the first layout, before the sheet is in view) the
       // system's half height; then the content's own. Taller than the screen, the system stops
