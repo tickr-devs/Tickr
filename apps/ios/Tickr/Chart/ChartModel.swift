@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TickrDesign
 import TickrKit
 
 /// What the Chart tab shows: the recorded days, the chosen day's trades and symbols, and the
