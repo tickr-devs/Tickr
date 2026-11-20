@@ -268,6 +268,7 @@ resource "aws_launch_template" "training" {
     job                 = ""
     job_script          = ""
     group               = ""
+    max_failures        = 0
   }))
 
   tag_specifications {
@@ -437,8 +438,12 @@ data "aws_iam_policy_document" "research" {
   }
 
   statement {
-    sid     = "StartStopJobGroups"
-    actions = ["autoscaling:SetDesiredCapacity"]
+    sid = "StartStopJobGroups"
+    actions = [
+      "autoscaling:SetDesiredCapacity",
+      "autoscaling:PutScheduledUpdateGroupAction",
+      "autoscaling:DeleteScheduledAction",
+    ]
     resources = [for name in values(local.job_groups) :
     "arn:${local.partition}:autoscaling:${var.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${name}"]
   }

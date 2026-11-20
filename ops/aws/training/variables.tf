@@ -79,3 +79,9 @@ variable "jobs" {
     }
   }
 }
+
+variable "job_max_failures" {
+  description = "Failed runs of a job script (non-zero exit) after which its auto-restart group stops itself; read by the boot wrapper."
+  type        = number
+  default     = 3
+}

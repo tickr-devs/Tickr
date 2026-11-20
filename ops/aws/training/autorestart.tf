@@ -4,7 +4,8 @@
 # a group runs only after someone sets it to 1 AND a deadline file exists for the job
 # (jobs/<job>/until in the bucket, written after the owner's yes on a named sum). The boot
 # wrapper in user-data.sh enforces both and sets the group back to 0 when the job is done or the
-# deadline has passed, so a finished job is never relaunched.
+# deadline has passed, so a finished job is never relaunched. The backstop that needs no machine:
+# whoever starts a group also schedules "desired 0" at the deadline on the group itself (README).
 
 locals {
   # Static names: the boot wrapper needs its own group name before the group exists.
@@ -52,6 +53,7 @@ resource "aws_launch_template" "job" {
     job                 = each.key
     job_script          = each.value.script
     group               = local.job_groups[each.key]
+    max_failures        = var.job_max_failures
   }))
 
   tag_specifications {
@@ -113,7 +115,8 @@ resource "aws_autoscaling_group" "job" {
   }
 }
 
-# Lets a job machine set its own group (or the other job's) back to 0 when the job is done.
+# Lets a job machine set its group back to 0 when the job is done. It is the shared machine role,
+# so a training machine could also set a group to 1; same owner, same one-machine limit.
 data "aws_iam_policy_document" "machine_groups" {
   statement {
     sid     = "StopOwnGroups"
