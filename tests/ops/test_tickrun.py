@@ -270,6 +270,13 @@ def _conv_settings(tmp_path, switch, mem_gb, cores=16):
     ).stdout.split()
 
 
+def _conv_settings_one_core():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        return _conv_settings(Path(d) / "x", "2", 30, cores=1)
+
+
 def test_job_script_runs_one_converter_unless_the_switch_says_two(tmp_path):
     assert _conv_settings(tmp_path / "a", None, 30) == ["1", "16", "20GB"]
     assert _conv_settings(tmp_path / "b", "1\n", 61) == ["1", "16", "20GB"]
@@ -279,3 +286,11 @@ def test_job_script_runs_one_converter_unless_the_switch_says_two(tmp_path):
 def test_two_converters_share_cores_and_memory_by_machine_size(tmp_path):
     assert _conv_settings(tmp_path / "a", "2\n", 30) == ["2", "8", "10GB"]
     assert _conv_settings(tmp_path / "b", "2", 61) == ["2", "8", "20GB"]
+
+
+def test_two_converter_result_is_kept_per_setting():
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "ops/aws/training/jobs/tickboot.sh").read_text()
+    code = [x for x in text.split("\n") if "crosscheck2" in x and not x.startswith("#")]
+    assert code and all("$J/crosscheck2-$CTHR-$CMEM" in x for x in code)
+    assert _conv_settings_one_core() == ["2", "1", "10GB"]

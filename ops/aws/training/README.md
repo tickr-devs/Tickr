@@ -151,7 +151,8 @@ starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
   each below). A machine reads the switch once, at its start; writing `1` puts later machines back.
   Before any day is made that way, a machine converts two of the Mac's days at the same time with
   those settings into `fleet-test2/` and compares both with the Mac's files
-  (`jobs/download/crosscheck2`); a FAIL writes the switch back to `1`.
+  (`jobs/download/crosscheck2-<threads>-<mem>`, one result per setting: a machine with other
+  settings compares for itself); a FAIL writes the switch back to `1`.
 - The raw archive is off unless `jobs/download/raw` says `on`. The owner's recorded decision is
   not to keep raw files; the research thread writes `on` only after he chooses the archive
   option on the launch card.

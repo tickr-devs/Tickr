@@ -10,7 +10,7 @@
 #   runner.md5 the md5 of the reviewed tickrun.py (a different file in the bucket: the machine refuses)
 #   machines   how many machines the group gets after a PASS (one digit, default 4; the group's own maximum still holds)
 #   conv       converters per machine: 1 unless this object says 2 (see "Converters per machine" below)
-#   crosscheck2 written HERE: the result of the two-converter comparison (two Mac days converted at the same time with the two-converter settings)
+#   crosscheck2-<threads>-<mem> written HERE: the result of the two-converter comparison for these settings (two Mac days converted at the same time)
 #   crosscheck written HERE: the result of the Mac-against-cloud comparison of one day. The group starts with ONE machine; it compares first.
 #              "PASS ..." raises the group and lets every machine work; "FAIL ..." stops everything (until := 0, desired := 0).
 # Nothing here reads, prints or stores a credential: the Massive keys are read by the converter and the runner from the secret named in TICK_SECRET through the machine's role.
@@ -104,14 +104,15 @@ say "runner starts, raw archive: ${RUN_RAW:-off}"
 # are not in the manifest options, so finished days stay finished.
 NCONV=$(aws s3 cp $J/conv - 2>/dev/null | tr -dc 0-9 | head -c 1); [ "$NCONV" = 2 ] || NCONV=1
 MEMG=$(free -g | awk 'NR==2{print $2}'); CTHR=$(nproc); CMEM=20GB
-if [ "$NCONV" = 2 ]; then CTHR=$(( $(nproc) / 2 )); [ "$MEMG" -ge 56 ] || CMEM=10GB; fi
+if [ "$NCONV" = 2 ]; then CTHR=$(( $(nproc) / 2 )); [ "$CTHR" -ge 1 ] || CTHR=1; [ "$MEMG" -ge 56 ] || CMEM=10GB; fi
 say "converters $NCONV, each threads $CTHR mem $CMEM (machine $MEMG GB)"
 # The first comparison was made with one converter, every core and 20GB. Two converters work with other threads and another limit, so
 # before any day is made with them a machine converts $XDAY and $XDAY2 AT THE SAME TIME with exactly these settings into its own
-# fleet-test2/<machine>/ and compares both with the Mac's files; the result is jobs/download/crosscheck2. PASS: two converters.
+# fleet-test2/<machine>/ and compares both with the Mac's files. The result is one object PER SETTING, jobs/download/crosscheck2-<threads>-<mem>:
+# a PASS made with 20GB says nothing about 10GB, so a machine with other settings compares for itself. PASS: two converters.
 # FAIL (a difference, a converter that could not finish): the switch is written back to 1 and this machine works with one converter.
 if [ "$NCONV" = 2 ]; then
-  R2=$(aws s3 cp $J/crosscheck2 - 2>/dev/null | head -c 4)
+  X2=$J/crosscheck2-$CTHR-$CMEM; R2=$(aws s3 cp $X2 - 2>/dev/null | head -c 4)
   if [ "$R2" != PASS ] && [ "$R2" != FAIL ]; then
     P=$B/fleet-test2/$IID; T0=$(date +%s); OK=1; TM=; [ -x /usr/bin/time ] && TM="/usr/bin/time -v"
     say "two-converter comparison of $XDAY and $XDAY2 with the Mac: started here"
@@ -131,7 +132,7 @@ if [ "$NCONV" = 2 ]; then
       rm -rf $D/wx-$d $D/cmp-$d
     done
     if [ $OK -eq 1 ]; then R2=PASS; else R2=FAIL; echo 1 | aws s3 cp - $J/conv --only-show-errors; fi
-    echo "$R2 $IID $(date -u +%FT%TZ) threads $CTHR mem $CMEM" | aws s3 cp - $J/crosscheck2 --only-show-errors
+    echo "$R2 $IID $(date -u +%FT%TZ) threads $CTHR mem $CMEM" | aws s3 cp - $X2 --only-show-errors
     say "two-converter comparison $R2"
   fi
   if [ "$R2" = FAIL ]; then NCONV=1; CTHR=$(nproc); CMEM=20GB; say "two-converter comparison failed: this machine works with ONE converter, threads $CTHR mem $CMEM"; fi
