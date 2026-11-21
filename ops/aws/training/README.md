@@ -153,8 +153,12 @@ starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
   (`reference/types-2019-11-01_2021-11-15.csv`, made by `jobs/build_types.py` with the rule of
   `types-5y.csv` and the earlier first day, md5 pinned in the job script): with the 5-year list
   the older days would lack every stock that left the market before the open range. A missing
-  or unknown value refuses. Between the passes the research thread removes `done`, writes the
-  pass and starts the group with desired 1 again.
+  or unknown value refuses. Between the passes the research thread removes `done` and `failures`
+  (both are one object for the job, not per pass), checks that `until` and the scheduled stop
+  still hold the owner's stop time, writes the pass and starts the group with desired 1 again.
+  It stays at one machine until the first older day is checked (keys only under `older/`).
+  No older day can be compared with a Mac file: the evidence is the same frozen converter and
+  runner, and a type list from the rule that reproduces the 5-year list byte for byte.
   Change the pass only after the running pass has written `done` and the group is at 0, never
   while machines work: a machine reads the pass once at its start, so a replacement would work
   on the other pass, and the first exit 0 of either pass stops the whole group.
