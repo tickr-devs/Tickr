@@ -91,11 +91,19 @@ while :; do
   fi
 done
 
-# --- the run. One converter with every core; two days are fetched ahead of it. Oldest day first (the Mac goes newest first; whoever meets a finished day skips it).
+# --- the run. Two days are fetched ahead of the converter(s). Oldest day first (the Mac goes newest first; whoever meets a finished day skips it).
 RAWSET=$(aws s3 cp $J/raw - 2>/dev/null | tr -dc 'a-z' | head -c 3)
 [ "$RAWSET" = on ] && export RUN_RAW=$B/raw
 say "runner starts, raw archive: ${RUN_RAW:-off}"
-TICK_PX=$B/px TICK_THREADS=$(nproc) TICK_MEM=20GB RUN_MD5=$CONV_MD5 RUN_FETCH=2 RUN_CONV=1 RUN_AHEAD=2 RUN_FLOOR_GB=40 RUN_CLAIM_MIN=20 RUN_CLOSED=$D/closed-days.txt RUN_SKIPTEST=1 STOP_FILE=/work/STOP RUN_LOG=$J/logs/tickrun-$IID.log \
+# Converters per machine: 1 unless jobs/download/conv says 2 (the switch is read once, at the start of a machine; writing 1 there puts
+# every later machine back). With 2 each converter gets half of the cores, and a memory limit by the machine's size: 20GB each on a
+# machine of 56 GB or more, 10GB each below that (the Mac runs the same converter with 10GB on the largest days). Limits and threads
+# are not in the manifest options, so finished days stay finished.
+NCONV=$(aws s3 cp $J/conv - 2>/dev/null | tr -dc 0-9 | head -c 1); [ "$NCONV" = 2 ] || NCONV=1
+MEMG=$(free -g | awk 'NR==2{print $2}'); CTHR=$(nproc); CMEM=20GB
+if [ "$NCONV" = 2 ]; then CTHR=$(( $(nproc) / 2 )); [ "$MEMG" -ge 56 ] || CMEM=10GB; fi
+say "converters $NCONV, each threads $CTHR mem $CMEM (machine $MEMG GB)"
+TICK_PX=$B/px TICK_THREADS=$CTHR TICK_MEM=$CMEM RUN_MD5=$CONV_MD5 RUN_FETCH=2 RUN_CONV=$NCONV RUN_AHEAD=2 RUN_FLOOR_GB=40 RUN_CLAIM_MIN=20 RUN_CLOSED=$D/closed-days.txt RUN_SKIPTEST=1 STOP_FILE=/work/STOP RUN_LOG=$J/logs/tickrun-$IID.log \
   $PY -W ignore $D/tickrun.py $D/wm2tick-v11.py 2021-11-16 2026-11-19 0/1 $D/run $B/tk61 > $D/tickrun.out 2>&1
 RC=$?
 # A comparison that failed while this machine worked: its exit must not mark the job as finished.
