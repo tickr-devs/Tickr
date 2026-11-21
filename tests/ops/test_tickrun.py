@@ -341,7 +341,7 @@ def test_pass_switch_sets_dates_root_claims_and_type_list(tmp_path):
     )
     assert _pass_settings(tmp_path / "b", "older\n") == (
         0,
-        "2019-11-01 2021-11-15 s3://b/older ticks-older /data/types-2019-11-01_2021-11-15.csv",
+        "2019-11-01 2021-11-15 s3://b/older ticks-older /mac/types-2019-11-01_2021-11-15.csv",
     )
 
 

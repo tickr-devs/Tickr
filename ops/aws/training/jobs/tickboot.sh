@@ -40,7 +40,7 @@ RUN_MD5_WANT=$(aws s3 cp $J/runner.md5 - 2>/dev/null | tr -dc '0-9a-f' | head -c
 PASSV=$(aws s3 cp $J/pass - 2>/dev/null | tr -dc 'a-z' | head -c 8)
 case "$PASSV" in
   open)  FIRST=2021-11-16; LAST=2026-11-19; ROOT=$B; CLAIMS=ticks; RTP=$TP ;;
-  older) FIRST=2019-11-01; LAST=2021-11-15; ROOT=$B/older; CLAIMS=ticks-older; RTP=$D/$(basename $OLDER_TYPES_KEY) ;;
+  older) FIRST=2019-11-01; LAST=2021-11-15; ROOT=$B/older; CLAIMS=ticks-older; RTP=$(dirname $TP)/$(basename $OLDER_TYPES_KEY) ;;   # beside TP: the path string is a manifest option, and the Mac must be able to give the same one
   *)     say "REFUSED: jobs/download/pass must say open or older (read: '$PASSV')"; exit 1 ;;
 esac
 [ -x $D/v/bin/python ] || { uv venv $D/v --python 3.12 && uv pip install --python $D/v/bin/python boto3 "duckdb==$DV"; } >/dev/null 2>&1 || { say "REFUSED: python environment failed"; exit 1; }
