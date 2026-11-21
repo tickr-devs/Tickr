@@ -46,8 +46,8 @@ def setup(tmp_path, days=DAYS, closed=()):
 
 
 def start(tmp_path, stub, name, **env):
-    e = dict(os.environ)
-    e.update(
+    e = dict(  # named variables only (rule 10): the whole environment is never passed on
+        PATH=os.environ["PATH"],
         RUN_FAKE=str(tmp_path / "fake"),
         RUN_FETCH="2",
         RUN_CONV="2",
@@ -264,7 +264,7 @@ def _conv_settings(tmp_path, switch, mem_gb, cores=16):
         f.write_text("#!/bin/sh\n" + body + "\n")
         f.chmod(0o755)
     script = "J=x\n" + "\n".join(text[a:b]) + '\necho "$NCONV $CTHR $CMEM"\n'
-    env = dict(os.environ, PATH=f"{stubs}:{os.environ['PATH']}")
+    env = {"PATH": f"{stubs}:{os.environ['PATH']}"}
     return subprocess.run(
         ["sh", "-c", script], env=env, capture_output=True, text=True, check=True
     ).stdout.split()
