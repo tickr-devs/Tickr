@@ -155,6 +155,9 @@ starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
   the older days would lack every stock that left the market before the open range. A missing
   or unknown value refuses. Between the passes the research thread removes `done`, writes the
   pass and starts the group with desired 1 again.
+  Change the pass only after the running pass has written `done` and the group is at 0, never
+  while machines work: a machine reads the pass once at its start, so a replacement would work
+  on the other pass, and the first exit 0 of either pass stops the whole group.
 - One converter per machine unless `jobs/download/conv` says `2`. Then each converter gets half
   of the cores and a memory limit by the machine's size (20GB each from 56 GB of memory, 10GB
   each below). A machine reads the switch once, at its start; writing `1` puts later machines back.
