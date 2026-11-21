@@ -146,6 +146,15 @@ starts; the research thread copies both to the bucket (`scripts/tickboot.sh`,
   takes it over) and waiting for it has a 90-minute limit.
 - A day without source files is a holiday only when `jobs/us-equity-closed-days.txt` lists it
   as closed. A session with a file missing, or files on a listed day, is a failed day.
+- `jobs/download/pass` is required and says which part of the history the group works on:
+  `open` (2021-11-16 .. 2026-11-19, the bucket's root) or `older` (2019-11-01 .. 2021-11-15, the
+  two closed years, everything under `older/`, claims `ticks-older`, raw files under `raw/` as in
+  the open pass). The older pass filters by its own type list
+  (`reference/types-2019-11-01_2021-11-15.csv`, made by `jobs/build_types.py` with the rule of
+  `types-5y.csv` and the earlier first day, md5 pinned in the job script): with the 5-year list
+  the older days would lack every stock that left the market before the open range. A missing
+  or unknown value refuses. Between the passes the research thread removes `done`, writes the
+  pass and starts the group with desired 1 again.
 - One converter per machine unless `jobs/download/conv` says `2`. Then each converter gets half
   of the cores and a memory limit by the machine's size (20GB each from 56 GB of memory, 10GB
   each below). A machine reads the switch once, at its start; writing `1` puts later machines back.
