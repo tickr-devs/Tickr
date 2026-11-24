@@ -13,9 +13,9 @@ import pytest
 from tickr.broker.fake import FakeBroker
 from tickr.engine.core import Engine, EntryRefused, Fence, Leg, SendState
 from tickr.store import Store
-from tickr.types import OrderState, OrderType, Side
+from tickr.types import OrderDetail, OrderState, OrderType, Side
 
-from .test_engine import CFG, Clock, enter, has, legs, make, run, working_stops
+from .test_engine import CFG, POLL, Clock, enter, has, legs, make, run, working_stops
 
 
 @pytest.fixture
@@ -207,7 +207,62 @@ def test_stop_changed_while_down_is_caught_by_the_reconcile(store):
     b.orders[changed] = replace(b.orders[changed], quantity=D(1), stop_price=D("6.00"))
     e = restarted(store, first, b)
     e.recover()
-    assert f"{Fence.ORDER_CONFLICT}:{changed}" in e.fences()
+    assert f"{Fence.ORDER_CONFLICT}:{changed}/listed" in e.fences()
     assert e.entry_fences("EEE")
     assert_entry_only_when_protected(e, b, 6)
     assert has(e, Fence.UNPROTECTED)
+
+
+class SplitBroker(FakeBroker):
+    """Detail (`orders`) and the open-orders list disagree about one order: while it works,
+    the list shows `listed_as` instead of what Detail shows."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.listed_as: dict[str, OrderDetail] = {}
+
+    def open_orders(self) -> list[OrderDetail]:
+        return [self.listed_as.get(o.client_order_id, o) for o in super().open_orders()]
+
+
+def reconciling(e: Engine, steps: int) -> list[tuple[bool, bool, set[str]]]:
+    """Steps with a reconcile every third, as the loop does (reconcile_interval_seconds 10,
+    detail_poll_seconds 3); per step: (an entry in a new symbol admissible, every open trade's
+    stops protect, the symbols of the open trades)."""
+    seen = []
+    for index in range(steps):
+        if index % 3 == 0:
+            e.clock.now += POLL
+            e.reconcile()
+        else:
+            run(e)
+        protected = all(
+            sum((s.open_quantity for s in legs(e, t.trade_id, Leg.STOP) if e.protects(s)), D(0))
+            >= e.expected_quantity(e.orders(t.trade_id)) for t in e.trades())
+        seen.append((not e.entry_fences("EEE"), protected, {t.symbol for t in e.trades()}))
+    return seen
+
+
+@pytest.mark.parametrize("changed_in", ["detail", "list"])
+def test_one_read_agreeing_never_clears_what_the_other_found(store, changed_in):
+    """Fable on #742: Detail shows the BBB stop changed (1 @ 6.00) while open orders still
+    list it as sent, or the other way round. Whichever read disagrees, the stop stays unproven
+    across reconciles: no step admits an entry while BBB is open, and the trade is closed
+    after max_unprotected_seconds."""
+    b = SplitBroker()
+    first, trades = four_open(store, b)
+    stop = legs(first, trades["BBB"], Leg.STOP)[0].client_order_id
+    as_sent = b.orders[stop]
+    changed = replace(as_sent, quantity=D(1), stop_price=D("6.00"))
+    if changed_in == "detail":
+        b.orders[stop] = changed
+        b.listed_as[stop] = as_sent
+    else:
+        b.listed_as[stop] = changed
+    e = restarted(store, first, b)
+    e.recover()
+    seen = reconciling(e, 45)
+    assert all(not protected for _, protected, symbols in seen if "BBB" in symbols)
+    assert not any(admissible for admissible, _, symbols in seen if "BBB" in symbols)
+    assert e.trade(trades["BBB"]).exit_requested == "unprotected-too-long"
+    assert [q for kind, q in sells(b) if kind is OrderType.MARKET] == [D(2)]

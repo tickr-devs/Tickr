@@ -92,7 +92,8 @@ _FENCE = {
     "order-conflict": _shapes(
         ("broker_fill_contradicts", r"broker shows (?P<filled>" + _NUM + r") filled of "
          r"(?P<quantity>" + _NUM + r") \S+ \S+ \S+, sent (?P<sent>" + _NUM + r") "
-         r"(?P<symbol>\S+) \S+ \S+: not recorded; check it in the Webull app"),
+         r"(?P<symbol>\S+) \S+ \S+: not recorded; shares may be held without a stop: check "
+         r"it in the Webull app"),
         ("stop_changed_at_broker", r"changed at the broker: (?P<quantity>" + _NUM + r") at stop "
          r"(?P<price>" + _NUM + r"), sent (?P<sent>" + _NUM + r") at stop (?P<sent_price>"
          + _NUM + r"); not counted until it agrees"),

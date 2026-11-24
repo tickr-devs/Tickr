@@ -142,9 +142,10 @@ GROUPS = [
             (
                 "broker_fill_contradicts",
                 "The broker shows {filled} filled of {quantity} for an order of {sent} {symbol}: "
-                "nothing recorded; check it in the Webull app",
+                "nothing recorded; shares may be held without a stop: check it in the Webull app",
                 "El bróker muestra {filled} ejecutadas de {quantity} para una orden de {sent} "
-                "{symbol}: no se registra nada; revísala en la app de Webull",
+                "{symbol}: no se registra nada; puede haber acciones sin stop: revísala en la app "
+                "de Webull",
             ),
             (
                 "stop_changed_at_broker",

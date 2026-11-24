@@ -3564,13 +3564,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The broker shows {filled} filled of {quantity} for an order of {sent} {symbol}: nothing recorded; check it in the Webull app"
+            "value" : "The broker shows {filled} filled of {quantity} for an order of {sent} {symbol}: nothing recorded; shares may be held without a stop: check it in the Webull app"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El bróker muestra {filled} ejecutadas de {quantity} para una orden de {sent} {symbol}: no se registra nada; revísala en la app de Webull"
+            "value" : "El bróker muestra {filled} ejecutadas de {quantity} para una orden de {sent} {symbol}: no se registra nada; puede haber acciones sin stop: revísala en la app de Webull"
           }
         }
       }

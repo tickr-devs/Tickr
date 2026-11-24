@@ -104,7 +104,7 @@ extension L10n {
   static var fenceReasonBrokerFillContradicts: LocalizedStringResource {
     LocalizedStringResource("kit.fenceReason.broker_fill_contradicts",
       // swiftlint:disable:next line_length
-      defaultValue: "The broker shows {filled} filled of {quantity} for an order of {sent} {symbol}: nothing recorded; check it in the Webull app", bundle: bundle)
+      defaultValue: "The broker shows {filled} filled of {quantity} for an order of {sent} {symbol}: nothing recorded; shares may be held without a stop: check it in the Webull app", bundle: bundle)
   }
   /// A fence's cause (`Fence.code`). stop_changed_at_broker (values: quantity, price, sent, sent_price)
   static var fenceReasonStopChangedAtBroker: LocalizedStringResource {

@@ -127,8 +127,11 @@ class Fence(StrEnum):
     # a fill above what we sent (nothing from that row is recorded), a quantity or price
     # changed at the broker, or an order last seen working missing from the open-orders list.
     # While set the order proves nothing: a stop is not protection and an entry or close does
-    # not excuse a quantity mismatch. Clears on the next read that agrees, or once the order
-    # has ended.
+    # not excuse a quantity mismatch. One fence per source, so one read agreeing never clears
+    # what the other found: `order-conflict:<order>` from Detail (and the unlisted check, which
+    # only Detail can settle), cleared by an agreeing Detail read; `order-conflict:<order>/
+    # listed` from a listed open-orders row, cleared by an agreeing listed row. A Detail read
+    # showing the order ended clears both.
     ORDER_CONFLICT = "order-conflict"
 
 
@@ -174,6 +177,8 @@ ORDER_FEES_CORRECTED = "order-fees-corrected"
 # order's recorded state and fills are what the last agreeing read showed).
 ORDER_CONFLICT_ROW = "order-conflict"
 # The `order-conflict` cause of an order last seen working that open orders leave out.
+# Key suffix of the `order-conflict` fence a listed open-orders row raised.
+LISTED_KEY = "/listed"
 UNLISTED_CAUSE = ("last seen working but not in the broker's open orders: proves nothing "
                   "until its Detail is read")
 _LIVE_SEND = (SendState.INTENT, SendState.ATTEMPTED, SendState.ACKNOWLEDGED, SendState.UNKNOWN)
@@ -1011,7 +1016,8 @@ class Engine:
             return True, (f"broker shows {detail.filled_quantity} filled of {detail.quantity} "
                           f"{detail.symbol} {detail.side} {detail.order_type}, sent "
                           f"{row.quantity} {row.symbol} {row.side} {row.order_type}: not "
-                          "recorded; check it in the Webull app")
+                          "recorded; shares may be held without a stop: check it in the Webull "
+                          "app")
         word, ours, shown = (("stop", row.stop_price, detail.stop_price)
                              if row.stop_price is not None
                              else ("limit", row.limit_price, detail.limit_price))
@@ -1036,30 +1042,39 @@ class Engine:
         return None if not rows else _dec(rows[-1].body["to"])
 
     def _note_conflict(self, row: OrderRow, detail: OrderDetail,
-                       conflict: tuple[bool, str] | None) -> None:
-        """Inside a transaction: set, change or clear this order's `order-conflict` fence
-        after a read. Each new cause journals the row it came from (the evidence). A row
-        showing the order ended clears it unless the row itself cannot be ours."""
+                       conflict: tuple[bool, str] | None, *, listed: bool = False) -> None:
+        """Inside a transaction: set, change or clear this order's `order-conflict` fence of
+        this read's source (`listed`: an open-orders row; else Detail) after a read. Each new
+        cause journals the row it came from (the evidence). An agreeing read clears only its
+        own source's fence; a Detail row showing the order ended clears both, unless the row
+        itself cannot be ours."""
         cid = row.client_order_id
+        key = cid + LISTED_KEY if listed else cid
         if conflict is None or (not conflict[0] and detail.state.terminal):
-            self._unfence_row(Fence.ORDER_CONFLICT, cid)
+            self._unfence_row(Fence.ORDER_CONFLICT, key)
+            if conflict is not None and not listed:
+                self._unfence_row(Fence.ORDER_CONFLICT, cid + LISTED_KEY)
             return
         cause = conflict[1]
-        name = f"{Fence.ORDER_CONFLICT}:{cid}"
+        name = f"{Fence.ORDER_CONFLICT}:{key}"
         current = self.store.query("SELECT cause FROM fences WHERE name = ?", (name,))
         if current and current[0]["cause"] == cause:
             return
-        self._unfence_row(Fence.ORDER_CONFLICT, cid)
+        self._unfence_row(Fence.ORDER_CONFLICT, key)
         self.store.append(ORDER_CONFLICT_ROW, {
+            "source": "open-orders" if listed else "detail",
             "cause": cause, "state": detail.state, "raw_status": detail.raw_status,
             "symbol": detail.symbol, "side": detail.side, "order_type": detail.order_type,
             "quantity": detail.quantity, "filled_quantity": detail.filled_quantity,
             "average_fill_price": detail.average_fill_price, "stop_price": detail.stop_price,
             "limit_price": detail.limit_price}, key=cid, run_id=self.run_id)
-        self._fence_row(Fence.ORDER_CONFLICT, cid, cause)
+        self._fence_row(Fence.ORDER_CONFLICT, key, cause)
 
     def _conflicted(self, row: OrderRow) -> bool:
-        return self._has_fence(Fence.ORDER_CONFLICT, row.client_order_id)
+        """Either source's `order-conflict` fence is set for this order."""
+        cid = row.client_order_id
+        return (self._has_fence(Fence.ORDER_CONFLICT, cid)
+                or self._has_fence(Fence.ORDER_CONFLICT, cid + LISTED_KEY))
 
     def _unproven(self, row: OrderRow) -> bool:
         """This order's broker state is not known now: its Detail has been unreadable too
@@ -2303,9 +2318,11 @@ class Engine:
                 self._resurrect(row, order, "working at the broker but not live in records")
             elif row.send_state is SendState.ACKNOWLEDGED:
                 # Listed as sent, or changed at the broker (`_read_conflict`); Detail records
-                # its state and fills.
+                # its state and fills. Its own fence: an agreeing row never clears what Detail
+                # found, nor Detail what the list shows.
                 with self.store.transaction():
-                    self._note_conflict(row, order, self._read_conflict(row, order))
+                    self._note_conflict(row, order, self._read_conflict(row, order),
+                                        listed=True)
         for name in self.fences():
             fence, _, cid = name.partition(":")
             if fence == Fence.FOREIGN_ORDER and cid not in broker_ids:

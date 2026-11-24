@@ -46,7 +46,8 @@ def test_every_fixed_fence_text_the_engine_writes_is_recognized():
     ("unknown-order:c1", "crashed during send", "crashed_during_send", {}),
     ("status-unknown:c1", "unmapped status 'WEIRD'", "status_unmapped", {"status": "WEIRD"}),
     ("order-conflict:c1", "broker shows 20 filled of 2 ABC BUY LIMIT, sent 2 ABC BUY LIMIT: "
-     "not recorded; check it in the Webull app", "broker_fill_contradicts",
+     "not recorded; shares may be held without a stop: check it in the Webull app",
+     "broker_fill_contradicts",
      {"filled": "20", "quantity": "2", "sent": "2", "symbol": "ABC"}),
     ("order-conflict:c1", "changed at the broker: 1 at stop 6.00, sent 2 at stop 9.80; not "
      "counted until it agrees", "stop_changed_at_broker",
