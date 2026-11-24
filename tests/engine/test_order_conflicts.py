@@ -266,3 +266,19 @@ def test_one_read_agreeing_never_clears_what_the_other_found(store, changed_in):
     assert not any(admissible for admissible, _, symbols in seen if "BBB" in symbols)
     assert e.trade(trades["BBB"]).exit_requested == "unprotected-too-long"
     assert [q for kind, q in sells(b) if kind is OrderType.MARKET] == [D(2)]
+
+
+def test_an_ended_order_clears_its_listed_conflict(store):
+    """A conflict only the list showed ends with the order: an agreeing Detail read showing the
+    stop cancelled clears it (the list never shows an ended order again)."""
+    b = SplitBroker()
+    e, t = opened(store, b, "ABC")
+    (stop,) = legs(e, t, Leg.STOP)
+    cid = stop.client_order_id
+    b.listed_as[cid] = replace(b.orders[cid], quantity=D(1), stop_price=D("6.00"))
+    e.clock.now += POLL
+    e.reconcile()
+    assert f"{Fence.ORDER_CONFLICT}:{cid}/listed" in e.fences()
+    b.orders[cid] = replace(b.orders[cid], state=OrderState.CANCELLED, raw_status="CANCELLED")
+    run(e, 4)
+    assert not has(e, Fence.ORDER_CONFLICT)

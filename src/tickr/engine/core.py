@@ -1052,7 +1052,8 @@ class Engine:
         key = cid + LISTED_KEY if listed else cid
         if conflict is None or (not conflict[0] and detail.state.terminal):
             self._unfence_row(Fence.ORDER_CONFLICT, key)
-            if conflict is not None and not listed:
+            if not listed and detail.state.terminal:
+                # Ended: no listed row will ever show it again to clear its listed fence.
                 self._unfence_row(Fence.ORDER_CONFLICT, cid + LISTED_KEY)
             return
         cause = conflict[1]
