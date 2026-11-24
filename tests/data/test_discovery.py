@@ -237,14 +237,22 @@ def test_a_pass_waits_out_its_own_budget_and_reads_everything():
     """2026-11-23: back-to-back passes met the previous pass's reads in the 60 s window and
     stopped although a request came free about a second later."""
     R, W = RequestBudget.CAUSE_RESERVED, RequestBudget.CAUSE_WINDOW_FULL
-    md, _ = budgeted({"bars": [(R, 1.3), (W, 2.0)], "snapshot": [(W, 0.5)]})
+    md, _ = budgeted({"bars": [(R, 1.3), (W, 2.0)]})
     waits: list[float] = []
     result = discover(md, settings(bars_symbols_per_request=2, budget_wait=timedelta(seconds=5)),
                       Screen(), OPEN, lambda: NOW, None, wait=waits.append)
     assert result.stopped is None and len(result.candidates) == 5
-    assert waits == [0.5, 1.3, 2.0]
+    assert waits == [1.3, 2.0]
     # A refused read sent nothing: each chunk reached the provider once.
     assert [len(a) for m, a in md.calls if m == "bars"] == [2, 2, 1]
+
+
+def test_a_snapshot_refusal_never_waits_the_entry_guard_shares_that_route():
+    md, _ = budgeted({"snapshot": [(RequestBudget.CAUSE_WINDOW_FULL, 0.5)]})
+    waits: list[float] = []
+    result = discover(md, settings(budget_wait=timedelta(seconds=5)), Screen(), OPEN,
+                      lambda: NOW, None, wait=waits.append)
+    assert waits == [] and result.summary() == "evaluated 0 of 5: snapshot budget"
 
 
 def test_a_wait_beyond_what_is_left_stops_the_pass_visibly():

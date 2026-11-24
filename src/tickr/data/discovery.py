@@ -452,9 +452,10 @@ def discover(
     `clock` returns the aware current time. `refused_symbols` carries the symbols refused as
     unknown from pass to pass within the session (a fresh memory when None). Every bars read
     is also kept in `today_bars` (with the time it was sent) for the strategy's evaluation.
-    `wait(seconds)` sleeps (ending early when the run stops); with it, a snapshot or bars read
-    our budget refused is read again after the window frees it, within `settings.budget_wait`
-    for the whole pass (`BudgetPacer`); without it the pass stops at the first refusal."""
+    `wait(seconds)` sleeps (ending early when the run stops); with it, a bars read our budget
+    refused is read again after the window frees it, within `settings.budget_wait` for the
+    whole pass (`BudgetPacer`); without it, and always for a snapshot read (that route keeps no
+    reserve for the trading path), the pass stops at the first refusal."""
     pacer = BudgetPacer(settings.budget_wait, wait)
     memory = refused_symbols if refused_symbols is not None else RefusedSymbols()
     refused = memory.active(session_open, clock(), settings.refused_symbol_recheck)
@@ -532,7 +533,9 @@ def discover(
     for chunk in _chunks(asked, settings.snapshot_symbols_per_request):
         unknown: list[str] = []
         try:
-            quotes = read_without_refused(pacer.read(source.snapshot), chunk,
+            # Never paced: the snapshot route keeps nothing for the entry guard's reads
+            # (runtime/entries.py), so a full window stops the pass and leaves them the requests.
+            quotes = read_without_refused(source.snapshot, chunk,
                                            refused_by(Stage.SNAPSHOT, unknown))
         except RateLimited as exc:
             return result([], Stopped(Stage.SNAPSHOT, StopCause.BUDGET, str(exc)))
@@ -555,19 +558,26 @@ def discover(
     entries = {i.symbol: (i, q) for i, q in quote_ok}
     for chunk in _chunks([i.symbol for i, _ in quote_ok], settings.bars_symbols_per_request):
         unknown = []
-        sent = clock()  # before the request: a bar not finished by then is never complete
+        sends: list[datetime] = []
+
+        def read_bars(symbols: Sequence[str], sends: list[datetime] = sends) -> list[Bar]:
+            at = clock()  # right before the send, after any wait for the budget
+            got = source.bars(symbols, settings.bars_per_symbol,
+                              budget_reserve=settings.bars_budget_reserve)
+            sends.append(at)
+            return got
+
         try:
-            bars = read_without_refused(pacer.read(
-                lambda symbols: source.bars(symbols, settings.bars_per_symbol,
-                                            budget_reserve=settings.bars_budget_reserve)), chunk,
-                refused_by(Stage.BARS, unknown))
+            bars = read_without_refused(pacer.read(read_bars), chunk,
+                                        refused_by(Stage.BARS, unknown))
         except RateLimited as exc:
             return result(candidates, Stopped(Stage.BARS, StopCause.BUDGET, str(exc)))
         except DelayedData as exc:
             return result(candidates, Stopped(Stage.BARS, StopCause.DELAYED_DATA, str(exc)))
         chunk = [s for s in chunk if s not in unknown]
         if today_bars is not None:
-            today_bars.put(session_open, chunk, bars, sent)
+            # The earliest send of the chunk: a bar not finished by then is never complete.
+            today_bars.put(session_open, chunk, bars, min(sends, default=clock()))
         now = clock()
         completed = [b for b in bars if b.symbol in entries and b.start + BAR_LENGTH <= now]
         if capture is not None:
