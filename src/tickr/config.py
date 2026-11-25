@@ -72,6 +72,7 @@ class RunConfig:
     database_busy_timeout_seconds: Decimal
     code_version_timeout_seconds: Decimal
     backups_dir: str
+    backup_retry_seconds: Decimal
     maintain_keep_sessions: int
     maintain_archive_max_age_days: int
 
