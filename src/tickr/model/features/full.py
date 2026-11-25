@@ -66,13 +66,14 @@ from the bot's session calendar (a `tickr.calendar.MarketDay`, never the wall cl
   (`l1labels.core`, `run`, `build`, `frame`, `publish` ...), the files that compare with labels
   (`l1feat.keys_equal`, `day_`, `prefix`), file writers and command-line modes are replaced by a
   typed refusal (`outside_live_context`), and an import of a research-only module refuses too.
-- Future-dated input refused (`future_input`), never dropped: the inputs are the snapshot as of
-  the mark of the minute (end of minute m). A tick row after the minute, a Benzinga file named
-  past D, an article published, a report timed or a report revision updated after the mark, a
-  reference record dated after D (splits, shares, short interest), a reference news month after
-  D's or an item published after the mark, an fl fact whose period end, filing or known date is
-  after D: each refuses the minute with its source named. The training's own `cut_inputs` then
-  runs as in training and finds nothing to cut.
+- Future-dated input refused (`future_input`), never cut silently: the inputs must be the
+  snapshot as of the mark of the minute (end of minute m). The training's own `cut_inputs` runs
+  on them, and whatever it would remove refuses the minute with its source named: tick rows
+  after the minute, articles published and reports timed after the mark in the Benzinga files
+  that hold the day, items after the mark in the reference news month of the day. Nothing more:
+  what the training keeps at the minute (announced splits, scheduled reports in later files,
+  revisions, records dated later that the builders' own as-of rules skip) passes, and a file
+  named past D meets the training's own `sealed_date` refusal.
 - Nothing is captured here: the cut files live in a temporary folder removed after the minute.
   Inputs the bot records for live days belong to the sealed storage of the capture tools.
 
@@ -85,13 +86,10 @@ from __future__ import annotations
 
 import builtins
 import contextlib
-import csv
 import hashlib
 import inspect
 import io
 import json
-import os
-import re
 import shutil
 import tempfile
 import threading
@@ -153,14 +151,6 @@ DATE_RULE = ("the research archive's last open day becomes the live trading day:
              "after it stays sealed", "HARD_LAST = '2026-11-19'", "HARD_LAST = '{day}'")
 L1LABELS_DATE_TEMPLATE_MD5 = "e9403fc7c71e5a8d6edca3f401f740dc"
 LIVE_MODULE_PREFIX = "tickr_live_"  # private module names, never registered in sys.modules
-# The date field of each dated reference file (as wm2ref16.Ref reads it) and of the fl facts.
-REFERENCE_DATES = (("splits.jsonl", "execution_date"), ("shares-outstanding-asof", "date"),
-                   ("short-interest", "settlement_date"))
-FACT_DATES = ("end", "filed", "known")
-_NEWS_MONTH = re.compile(r"news-([0-9]{4}-[0-9]{2})\.jsonl")
-_BZ_FILE = re.compile(r"(news|earnings)-([0-9]{4}-[0-9]{2}-[0-9]{2})_([0-9]{4}-[0-9]{2}-[0-9]{2})"
-                      r"\.jsonl\.gz")
-_MANIFEST = "manifest.json"
 
 _KEY = object()  # only live_context builds a LiveContext
 _LIVE_LOCK = threading.Lock()
@@ -370,9 +360,9 @@ class LiveContext:
     def minute_rows(self, rows: Any, minute: int, state: base.DayState,
                     types: set[str] | None, inputs: FullInputs) -> Any:
         """The rows of `minute` of the context's day with all 191 features: the table rows of
-        the minute from the day's bars so far (as `minute_rows`), the inputs checked to hold
-        nothing after the minute's mark, then the training's `cut_inputs` at the minute and its
-        `assemble` on those rows. Returns `sym` and the 191 features in the training's order and
+        the minute from the day's bars so far (as `minute_rows`), the training's `cut_inputs` at
+        the minute (anything it would cut refuses, see `_refuse_cut`) and its `assemble` on
+        those rows. Returns `sym` and the 191 features in the training's order and
         stored types (m int16, sess int8, the others float32); an empty frame when no row."""
         import numpy as np
         import pandas as pd
@@ -381,13 +371,8 @@ class LiveContext:
         frame = base.bars_frame(rows, day)
         if (frame.m > minute).any():
             raise ModelRefused("bar_after_minute", f"minute {minute}")
-        _refuse_future(code, day, minute, inputs)
         table = base._day2(frame, day, state, types, want=True)[0]
         cols = ["sym", *code.names]
-        if table is None or not (table.m == minute).any():
-            return pd.DataFrame(columns=cols)
-        t = table.loc[table.m == minute].reset_index(drop=True)
-        prev = np.array([state.prev.get(s, np.nan) for s in t["sym"].values], np.float64)
         with base._LOCK:
             work = tempfile.mkdtemp(prefix="tickr-l1feat-")
             try:
@@ -395,6 +380,13 @@ class LiveContext:
                     cut = code.feat.cut_inputs(day, minute, str(inputs.tick_file),
                                                str(inputs.benzinga), work,
                                                str(inputs.reference))
+                _refuse_cut(code, inputs, cut)
+                if table is None or not (table.m == minute).any():
+                    return pd.DataFrame(columns=cols)
+                t = table.loc[table.m == minute].reset_index(drop=True)
+                prev = np.array([state.prev.get(s, np.nan) for s in t["sym"].values],
+                                np.float64)
+                with _training_refusals(), contextlib.redirect_stdout(io.StringIO()):
                     out, _ = code.feat.assemble(t, prev, day, cut[0], cut[2], cut[1],
                                                 str(inputs.fl_facts), code.settings, work,
                                                 code.w, code.ref, code.tk)
@@ -403,81 +395,35 @@ class LiveContext:
         return out[cols].reset_index(drop=True)
 
 
-def _future(source: str, what: str) -> ModelRefused:
-    return ModelRefused("future_input", f"{source}: {what}")
+def _rows_in(con: Any, path: str) -> int:
+    return con.execute("SELECT count(*) FROM read_parquet(?)", [path]).fetchall()[0][0]
 
 
-def _refuse_future(code: SimpleNamespace, day: str, minute: int, inputs: FullInputs) -> None:
-    """Refuse inputs that hold anything after the mark of `minute` (the end of the minute, New
-    York) or a record dated after `day`: the snapshot handed in must be as of the mark."""
+def _refuse_cut(code: SimpleNamespace, inputs: FullInputs, cut: tuple) -> None:
+    """The training's prefix rule found something to cut: the snapshot handed in was not as of
+    the minute's mark. Refused (`future_input`), never cut silently. Exactly what `cut_inputs`
+    removes is refused: tick rows after the minute, articles published and reports timed after
+    the mark in the Benzinga files that hold the day, items after the mark in the reference news
+    month of the day. Whatever the training keeps at the minute (announced splits, scheduled
+    reports in later files, revisions, records the builders' own as-of rules skip) passes."""
     import duckdb
 
-    bz = code.bz
-    hours, minutes = divmod(base.DAY_START_MINUTE, 60)
-    mark = bz.ny_s(day, hours, minutes) + (minute + 1) * 60
+    tk_cut, bz_cut, _, dropped = cut
+    con = duckdb.connect()  # its own connection: the training's cut runs on the default one
     try:
-        _refuse_future_files(code, day, minute, mark, inputs)
-    except (ValueError, KeyError, OSError, duckdb.Error) as exc:
-        raise ModelRefused("input_unreadable", type(exc).__name__) from None
-
-
-def _refuse_future_files(code: SimpleNamespace, day: str, minute: int, mark: int,
-                         inputs: FullInputs) -> None:
-    import duckdb
-
-    bz = code.bz
-    with _training_refusals():
-        con = duckdb.connect()  # its own connection: the training's cut runs on the default one
-        try:
-            late = con.execute("SELECT count(*) FROM read_parquet(?) WHERE m > ?",
-                               [str(inputs.tick_file), code.tk2.M0 + minute]).fetchall()[0][0]
-        finally:
-            con.close()
-        if late:
-            raise _future("ticks", f"{late} rows after minute {minute}")
-        for name in sorted(os.listdir(inputs.benzinga)):
-            got = _BZ_FILE.fullmatch(name)
-            if got is None:
-                continue  # the training's own file checks refuse a foreign name
-            kind, first, last = got.groups()
-            if first > day or last > day:
-                raise _future("benzinga", f"{name} is named past {day}")
-            for j in bz.rows(str(Path(inputs.benzinga) / name)):
-                if kind == "news":
-                    stamps = [bz.utc_s(j["published"])] if j.get("published") else []
-                else:
-                    stamps = [bz.utc_s(j["last_updated"])] if j.get("last_updated") else []
-                    if j.get("date") and j.get("time"):
-                        hms = (int(x) for x in j["time"].split(":"))
-                        stamps.append(bz.ny_s(j["date"], *hms))
-                if any(s > mark for s in stamps):
-                    raise _future("benzinga", f"{kind} {j.get('benzinga_id')} after the mark")
-        _refuse_future_reference(bz, day, mark, Path(inputs.reference))
-        with open(inputs.fl_facts, newline="") as f:
-            for row in csv.DictReader(f):
-                late_fields = [k for k in FACT_DATES if (row.get(k) or "") > day]
-                if late_fields:
-                    raise _future("fl facts", f"{row.get('ticker')} {late_fields[0]} after {day}")
-
-
-def _refuse_future_reference(bz: ModuleType, day: str, mark: int, folder: Path) -> None:
-    for path in sorted(folder.iterdir()):
-        name = path.name
-        if name == _MANIFEST:
-            continue
-        month = _NEWS_MONTH.fullmatch(name)
-        field = next((k for prefix, k in REFERENCE_DATES if name.startswith(prefix)), None)
-        if month is None and field is None:
-            continue
-        if month is not None and month.group(1) > day[:7]:
-            raise _future("reference", f"{name} is a month after {day}")
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                j = json.loads(line)
-                if month is not None and j.get("published_utc"):
-                    if bz.utc_s(j["published_utc"]) > mark:
-                        raise _future("reference", f"news {j.get('id')} after the mark")
-                elif field is not None and (j.get(field) or "") > day:
-                    raise _future("reference", f"{name}: {j.get('ticker')} {field} after {day}")
+        late = _rows_in(con, str(inputs.tick_file)) - _rows_in(con, tk_cut)
+    finally:
+        con.close()
+    if late:
+        raise ModelRefused("future_input", f"ticks: {late} rows after the minute")
+    for path in sorted(Path(bz_cut).iterdir()):
+        if path.is_symlink():
+            continue  # a file that does not hold the day: the training keeps it whole
+        with _training_refusals():
+            kept = sum(1 for _ in code.bz.rows(str(path)))
+            given = sum(1 for _ in code.bz.rows(str(Path(inputs.benzinga) / path.name)))
+        if given != kept:
+            raise ModelRefused("future_input", f"benzinga {path.name}: {given - kept} rows "
+                                               "after the mark")
+    if dropped:
+        raise ModelRefused("future_input", f"reference news: {dropped} items after the mark")

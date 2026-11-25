@@ -59,11 +59,22 @@ SCHEMA = 1
 KEYS = frozenset({"schema", "name", "version", "lightgbm", "feature_code", "features",
                   "feature_list_md5", "heads", "training"})
 AVAILABILITY_KEY = "live_availability"
-# Features whose availability live may differ from training (Codex 108 point 4): er_next (its
-# report history across the sealed window stays missing, live and in training) and the shares
-# features whose split factor the sealed window can leave missing and whose shares grid the live
-# feed may refresh differently (wm2ref16: so_log, mcap, si_pct, si_chg).
-AVAILABILITY_MAY_DIFFER = ("er_next", "so_log", "mcap", "si_pct", "si_chg")
+# Features whose availability live may differ from training (Codex 108 point 4): every column whose
+# missing value depends on the sealed window or on the date boundary in the pinned builder. l1bz:
+# the ten news columns (missing when their window touches a sealed date) and er_since, er_surp,
+# er_next (missing when a sealed date lies after the report used; er_next stays missing until the
+# reports it uses all lie after the window). wm2ref16: so_log, mcap, si_pct, si_chg (a split
+# factor across the window is missing; the live shares grid may also be refreshed differently).
+# l1feat: the five nw_* columns (missing when the 72-hour window touches a sealed date). l1fl: the
+# four fl_* columns (the facts file refuses a fact filed or ending on a sealed date, and leaves
+# the share missing when its bar day or split factor touches the window).
+AVAILABILITY_MAY_DIFFER = (
+    "bz_n60", "bz_n1d", "bz_n3d", "bz_min", "bz_rk", "bz_solo", "bz_c_earn", "bz_c_anl",
+    "bz_c_deal", "bz_c_mov", "er_since", "er_surp", "er_next",
+    "so_log", "mcap", "si_pct", "si_chg",
+    "nw_n", "nw_3d", "nw_min", "nw_any", "nw_rk",
+    "fl_share", "fl_logd", "fl_has", "fl_age",
+)
 HEAD_KEYS = frozenset({"file", "sha256", "trees"})
 _NAME = re.compile(r"[a-z0-9][a-z0-9._]*")  # no "-": the folder is <name>-<version>
 _VERSION = re.compile(r"[a-z0-9][a-z0-9._-]*")

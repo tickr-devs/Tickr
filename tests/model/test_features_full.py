@@ -66,7 +66,8 @@ def _day(last):
 @pytest.fixture(scope="module")
 def setup(tmp_path_factory):
     today, bars, state = _day(DAY)
-    return today, bars, state, _inputs(tmp_path_factory.mktemp("in") / "x", today, "2023-01-02")
+    given = _inputs(tmp_path_factory.mktemp("in") / "x", today, "2023-01-02")
+    return today, bars, state, _announce(given, today)
 
 
 @pytest.fixture(scope="module")
@@ -268,85 +269,120 @@ def _append_line(path, row):
         f.write(json.dumps(row) + "\n")
 
 
+def _after(day, days):
+    return (datetime.date.fromisoformat(day) + datetime.timedelta(days=days)).isoformat()
+
+
+def _add_gz_row(path, row):
+    rows = [json.loads(x) for x in gzip.open(path, "rt")]
+    path.unlink()
+    _gz_rows(path, [*rows, row])
+
+
+def _announce(given, day):
+    """What the training keeps at every minute although it is dated after it: an announced
+    split, later shares and short-interest records, a later news month, Benzinga files that
+    start after the day (a scheduled report, an article), a revision of an earlier report
+    updated after the mark, an fl fact known after the day."""
+    ref = given.reference
+    _append_line(ref / "splits.jsonl", {"execution_date": _after(day, 10), "ticker": SYMBOLS[2],
+                                        "split_from": 1, "split_to": 3})
+    _append_line(ref / "shares-outstanding-asof-a.jsonl",
+                 {"ticker": SYMBOLS[3], "date": _after(day, 5),
+                  "share_class_shares_outstanding": 7e6, "list_date": "2010-01-04",
+                  "sic_code": "7372"})
+    _append_line(ref / "short-interest-a.jsonl", {"settlement_date": _after(day, 5),
+                                                  "ticker": SYMBOLS[3], "short_interest": 5e4,
+                                                  "days_to_cover": 2.0})
+    later = _after(day, 40)
+    _append_line(ref / f"news-{later[:7]}.jsonl",
+                 {"id": "later", "published_utc": inputs._ny_utc(later, 300),
+                  "publisher": {"name": inputs.PUBLISHER}, "tickers": [SYMBOLS[4]]})
+    manifest = json.loads((ref / "manifest.json").read_text())
+    manifest["files"] = {p.name: inputs._ident(p) for p in ref.iterdir()
+                         if p.name != "manifest.json"}
+    (ref / "manifest.json").write_text(json.dumps(manifest, sort_keys=True))
+    first, last = _after(day, 1), _after(day, 60)
+    _gz_rows(given.benzinga / f"earnings-{first}_{last}.jsonl.gz",
+             [{"benzinga_id": "scheduled", "ticker": SYMBOLS[4], "date": _after(day, 20),
+               "time": "16:05:00", "last_updated": inputs._ny_utc(day, 100),
+               "actual_eps": None, "estimated_eps": 0.2}])
+    _gz_rows(given.benzinga / f"news-{first}_{last}.jsonl.gz",
+             [{"benzinga_id": "later", "published": inputs._ny_utc(_after(day, 2), 300),
+               "tickers": [SYMBOLS[4]], "channels": ["movers"]}])
+    _add_gz_row(next(given.benzinga.glob(f"earnings-*_{day}.jsonl.gz")),
+                {"benzinga_id": "revised", "ticker": SYMBOLS[5], "date": _after(day, -1),
+                 "time": "16:05:00", "last_updated": inputs._ny_utc(day, 900),
+                 "actual_eps": 0.4, "estimated_eps": 0.1})
+    with open(given.fl_facts, "a") as f:
+        f.write(f"{SYMBOLS[1]},2,2023-12-31,{_after(day, 2)},{_after(day, 5)},9e8,0.4,1,10-K\n")
+    return given
+
+
 def _future_cases():
-    """(name, change to a copy of the as-of snapshot that puts something after the mark)."""
+    """(name, change to a copy of the as-of snapshot): each puts back something the training's
+    `cut_inputs` removes at the minute."""
     late = inputs._ny_utc(LIVE_DAY, LIVE_MINUTE + 1, 1)
 
     def ticks(snap, given):
         return full.FullInputs(given.tick_file, snap.reference, snap.benzinga, snap.fl_facts)
 
     def article(snap, _):
-        name = next(snap.benzinga.glob("news-*"))
-        rows = [json.loads(x) for x in gzip.open(name, "rt")]
-        name.unlink()
-        _gz_rows(name, [*rows, {"benzinga_id": "late", "published": late,
-                                "tickers": [SYMBOLS[2]], "channels": []}])
+        _add_gz_row(next(snap.benzinga.glob("news-*")),
+                    {"benzinga_id": "late", "published": late, "tickers": [SYMBOLS[2]],
+                     "channels": []})
 
-    def report(snap, _, field):
-        name = next(snap.benzinga.glob("earnings-*"))
-        rows = [json.loads(x) for x in gzip.open(name, "rt")]
-        row = {"benzinga_id": "late", "ticker": SYMBOLS[3], "date": LIVE_DAY,
-               "time": "09:00:00", "last_updated": inputs._ny_utc(LIVE_DAY, 300),
-               "actual_eps": 0.1, "estimated_eps": 0.1}
-        row[field] = "16:30:00" if field == "time" else late
-        name.unlink()
-        _gz_rows(name, [*rows, row])
-
-    def bz_name(snap, _):
-        _gz_rows(snap.benzinga / "news-2026-12-03_2026-12-04.jsonl.gz", [])
+    def report(snap, _):  # scheduled for later today, in the file that holds the day
+        _add_gz_row(next(snap.benzinga.glob("earnings-*")),
+                    {"benzinga_id": "late", "ticker": SYMBOLS[3], "date": LIVE_DAY,
+                     "time": "16:30:00", "last_updated": inputs._ny_utc(LIVE_DAY, 300),
+                     "actual_eps": None, "estimated_eps": 0.1})
 
     def ref_news(snap, _):
         _append_line(snap.reference / f"news-{LIVE_DAY[:7]}.jsonl",
                      {"id": "late", "published_utc": late,
                       "publisher": {"name": inputs.PUBLISHER}, "tickers": [SYMBOLS[4]]})
 
-    def ref_month(snap, _):
-        (snap.reference / "news-2027-01.jsonl").write_text("")
+    return [("ticks", ticks), ("article", article), ("report_later_today", report),
+            ("reference_news", ref_news)]
 
-    def ref_dated(file, row):
-        def change(snap, _):
-            _append_line(snap.reference / file, row)
-        return change
 
-    def fact(snap, _):
-        with open(snap.fl_facts, "a") as f:
-            f.write(f"{SYMBOLS[5]},9,2026-09-30,2026-12-03,2026-12-04,1e9,0.5,1,10-Q\n")
-
-    after = "2026-12-03"
-    return [
-        ("ticks", ticks), ("article", article),
-        ("report_time", lambda s, g: report(s, g, "time")),
-        ("report_revision", lambda s, g: report(s, g, "last_updated")),
-        ("benzinga_name", bz_name), ("reference_news", ref_news), ("reference_month", ref_month),
-        ("splits", ref_dated("splits.jsonl", {"execution_date": after, "ticker": SYMBOLS[6],
-                                              "split_from": 1, "split_to": 4})),
-        ("shares", ref_dated("shares-outstanding-asof-a.jsonl",
-                             {"ticker": SYMBOLS[7], "date": after,
-                              "share_class_shares_outstanding": 5e6})),
-        ("short_interest", ref_dated("short-interest-a.jsonl",
-                                     {"settlement_date": after, "ticker": SYMBOLS[8],
-                                      "short_interest": 1e4, "days_to_cover": 1.0})),
-        ("fl_facts", fact),
-    ]
+def _copy(snap, root):
+    shutil.copytree(snap.reference, root / "ref")
+    shutil.copytree(snap.benzinga, root / "bz")
+    shutil.copy(snap.fl_facts, root / "fl.csv")
+    return full.FullInputs(snap.tick_file, root / "ref", root / "bz", root / "fl.csv")
 
 
 @pytest.mark.parametrize(("name", "change"), _future_cases(), ids=lambda x: x
                          if isinstance(x, str) else "")
-def test_an_input_from_after_the_minute_is_refused(live, tmp_path, name, change):
+def test_what_the_training_would_cut_is_refused(live, tmp_path, name, change):
     today, bars, state, given, snap = live
-    copy = tmp_path / "snap"
-    shutil.copytree(snap.reference, copy / "ref")
-    shutil.copytree(snap.benzinga, copy / "bz")
-    shutil.copy(snap.fl_facts, copy / "fl.csv")
-    mine = full.FullInputs(snap.tick_file, copy / "ref", copy / "bz", copy / "fl.csv")
-    mine = change(mine, given) or mine
     ctx = full.live_context(inputs.market_day(today))
-    assert len(ctx.minute_rows(bars, LIVE_MINUTE, state, None,
-                               full.FullInputs(snap.tick_file, snap.reference, snap.benzinga,
-                                               snap.fl_facts))) > 0
+    assert len(ctx.minute_rows(bars, LIVE_MINUTE, state, None, snap)) > 0
+    mine = _copy(snap, tmp_path)
+    mine = change(mine, given) or mine
     with pytest.raises(ModelRefused) as exc:
         ctx.minute_rows(bars, LIVE_MINUTE, state, None, mine)
     assert exc.value.cause == "future_input", name
+
+
+def test_what_the_training_keeps_passes_on_a_live_day(live, tmp_path):
+    today, bars, state, _, snap = live
+    mine = _announce(_copy(snap, tmp_path), today)
+    got = full.live_context(inputs.market_day(today)).minute_rows(bars, LIVE_MINUTE, state,
+                                                                  None, mine)
+    assert len(got) > 0
+
+
+def test_the_kept_later_records_are_in_the_parity_day(setup, whole_day):
+    _, _, _, given = setup
+    out, _ = whole_day
+    assert '"scheduled"' in gzip.open(next(given.benzinga.glob("earnings-2024-03-07_*")),
+                                      "rt").read()
+    assert "2024-03-16" in (given.reference / "splits.jsonl").read_text()
+    for minute in CUTS:
+        assert out.loc[out.m == minute, "er_next"].notna().any(), minute
 
 
 def test_the_uncut_day_is_refused_not_cut(live):
