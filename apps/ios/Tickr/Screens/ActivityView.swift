@@ -681,9 +681,7 @@ struct TradeLine: Identifiable {
 }
 
 private struct TradesList: View {
-  /// Symbol of a what-if entry (the not-taken rows).
-  static let entrySymbol = "arrow.right.to.line"
-
+  @Environment(AppModel.self) private var model
   let activity: ActivityModel
   let url: URL?
   let positions: [Position]
@@ -700,8 +698,16 @@ private struct TradesList: View {
     let sorted = trades.sorted { $0.closedAt > $1.closedAt }
     VStack(spacing: Tokens.Space.s) {
       ForEach(positions, id: \.symbol) { position in
-        openRow(position)
-          .rise(step: ActivityView.Order.list.rawValue)
+        // As on the board, the open position leads to its Position screen.
+        Button {
+          model.selectedSymbol = position.symbol
+          model.selectedTab = .positions
+        } label: {
+          openRow(position)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(Text(L10n.Activity.positionOpenHint))
+        .rise(step: ActivityView.Order.list.rawValue)
       }
       ForEach(Array(sorted.enumerated()), id: \.offset) { index, trade in
         // As the design (v134): one line per closed trade; a tap opens its sheet with the rest.
@@ -732,18 +738,22 @@ private struct TradesList: View {
   /// 11.90 · Verified"), plus how many times the entry was sent when it was not once.
   private func openRow(_ position: Position) -> some View {
     let mark = marks[position.symbol]
-    return VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      ChipFlow {
-        headerText(position.symbol)
-        timeText(Format.time((position.entry.filledAt ?? position.openedAt).date))
-        Badge(L10n.Activity.openTag, tone: Tone.openPosition)
-        if let r = mark?.resultR, let unrealized = mark?.unrealized {
-          resultText(Risk.text(r), tone: Tone.result(unrealized))
+    return HStack(spacing: Tokens.Space.s) {
+      VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+        ChipFlow {
+          headerText(position.symbol)
+          timeText(Format.time((position.entry.filledAt ?? position.openedAt).date))
+          Badge(L10n.Activity.openTag, tone: Tone.openPosition)
+          if let r = mark?.resultR, let unrealized = mark?.unrealized {
+            resultText(Risk.text(r), tone: Tone.result(unrealized))
+          }
         }
+        Text(Self.openLine(position, mark: mark))
+          .font(Tokens.Typography.captionMono)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      Text(Self.openLine(position, mark: mark))
-        .font(Tokens.Typography.captionMono)
-        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+      Chevron()
     }
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -817,13 +827,16 @@ private struct TradesList: View {
 }
 
 /// The active strategy's entries the bot did not take that day (GET /skipped): refused at
-/// admission, with the single recorded cause, or made too late to act on; each with the what-if
-/// entry and stop the strategy recorded. Repeats on one symbol for one reason are one row.
+/// admission, with the single recorded cause, or made too late to act on. Above the cards, how
+/// many and what they would have made together (the bot's what-if replays, `WhatIfSummary`).
+/// Repeats on one symbol for one reason are one card, which opens in place for the what-if.
 private struct NotTaken: View {
   let groups: [SkippedGroup]?
   let failure: String?
   /// Rows a new read brought while the list was on screen: each flashes once.
   @State private var arrived: Set<String> = []
+  /// Cards open on their what-if.
+  @State private var opened: Set<String> = []
 
   var body: some View {
     // One view, so the rows remember that a skeleton stood there (`loadsInPlace`).
@@ -846,11 +859,16 @@ private struct NotTaken: View {
         } description: {
           Text(L10n.Activity.notTakenNone)
         }
+      } else {
+        NotTakenHeader(count: groups.count, summary: WhatIfSummary.make(groups))
+          .rise(step: ActivityView.Order.list.rawValue)
       }
       VStack(spacing: Tokens.Space.s) {
         ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
           // A genuinely new refusal tints its row once (the board flashes the newest row).
-          SkippedRow(group: group, arrived: arrived.contains(group.id))
+          SkippedRow(group: group, arrived: arrived.contains(group.id), isOpen: Binding(
+            get: { opened.contains(group.id) },
+            set: { open in if open { opened.insert(group.id) } else { opened.remove(group.id) } }))
             .rise(step: ActivityView.Order.list.rawValue + index)
         }
       }
@@ -864,87 +882,205 @@ private struct NotTaken: View {
   }
 }
 
-private struct SkippedRow: View {
-  /// Symbol of the time.
-  static let whenSymbol = "clock"
+/// "4 not taken" and, when any replay ran, "If taken: +0.7 R +$6.00" (mockup IOSActivity).
+private struct NotTakenHeader: View {
+  let count: Int
+  let summary: WhatIfSummary?
 
+  /// The summary, only when at least one setup was replayed: a sum of nothing is no result.
+  private var replayed: WhatIfSummary? {
+    guard let summary, summary.notReplayed < count else { return nil }
+    return summary
+  }
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+        countText
+        Spacer(minLength: Tokens.Space.s)
+        totalText
+      }
+      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+        countText
+        totalText
+      }
+    }
+    .padding(.horizontal, Tokens.Space.xs)
+    .accessibilityElement(children: .combine)
+  }
+
+  private var countText: some View {
+    Text(L10n.Activity.notTakenCount(count))
+      .font(Tokens.Typography.annotationBold)
+      .foregroundStyle(Palette.textTertiary)
+  }
+
+  @ViewBuilder
+  private var totalText: some View {
+    if let replayed {
+      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.xs) {
+        Text(L10n.Activity.ifTaken)
+          .font(Tokens.Typography.annotation)
+          .foregroundStyle(Palette.textTertiary)
+        Text(verbatim: Risk.text(replayed.resultR))
+          .font(Tokens.Typography.calloutMono.bold())
+          .foregroundStyle(Palette.result(replayed.resultR))
+        Text(verbatim: Money.signedUSD(replayed.resultUsd))
+          .font(Tokens.Typography.calloutMono.bold())
+          .foregroundStyle(Palette.result(replayed.resultUsd))
+      }
+    }
+  }
+}
+
+/// One card of the Not taken pane, three lines as on the board: the symbol, its time (with the
+/// repeats) and the what-if result in R; what rule refused it; the rule's detail. It opens in
+/// place for the what-if levels and result, the prices after and how the replay was made.
+private struct SkippedRow: View {
   let group: SkippedGroup
   /// Whether the row just arrived with a new read: it tints once.
   var arrived = false
+  @Binding var isOpen: Bool
 
-  private var refused: Bool { group.latest.admission == .refused }
-
-  /// "16:27" or, for repeats, "16:27–16:29 · ×3"; repeats within one minute (or on one bar)
-  /// read "16:27 · ×3", never "16:27–16:27".
+  /// "16:27" or, for repeats, "16:27–16:29 ×3"; repeats within one minute (or on one bar)
+  /// read "16:27 ×3", never "16:27–16:27".
   private var when: String {
     let first = Format.time(group.first.at.date)
     guard group.count > 1 else { return first }
     let last = Format.time(group.latest.at.date)
     let span = last == first ? first : first + Format.timeRange + last
-    return span + Format.separator + String(localized: L10n.Activity.repeats(group.count))
-  }
-
-  private func symbolText(_ symbol: String) -> some View {
-    SymbolText(symbol)
-      .font(Tokens.Typography.bodyMono.bold())
-      .foregroundStyle(Palette.textPrimary)
-  }
-
-  private var tagPill: some View {
-    // The reason tag, as every reason tag on both apps: a `Badge` (REFUSED amber, too late grey).
-    Badge(refused ? L10n.Activity.refusedTag : L10n.Activity.tooLateTag,
-      tone: refused ? Tone.refused : Tone.notEvaluated)
-  }
-
-  private var whenLabel: some View {
-    Label { Text(verbatim: when) } icon: { Image(systemName: Self.whenSymbol) }
-      .labelStyle(ControlLabelStyle())
-      .font(Tokens.Typography.captionMono)
-      .foregroundStyle(Palette.textTertiary)
-      // It may wrap (between words) rather than lose the repeat count at its end.
-      .fixedSize(horizontal: false, vertical: true)
-      .hint(L10n.Activity.hintWhen)
+    return span + ChartFormat.space + String(localized: L10n.Activity.repeats(group.count))
   }
 
   var body: some View {
-    let signal = group.latest
-    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      // One line while it fits, else the symbol, tag and time wrap as chips.
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-          symbolText(signal.symbol)
-          tagPill
-          Spacer(minLength: Tokens.Space.s)
-          whenLabel
-        }
-        ChipFlow {
-          symbolText(signal.symbol)
-          tagPill
-          whenLabel
-        }
-      }
-      if let cause = group.cause {
-        CauseText(cause: cause)
-      }
-      ChipFlow {
-        Badge(L10n.Activity.whatIfTag, tone: .highlight)
-        IconMetric(TradesList.entrySymbol, label: L10n.Activity.hintWhatIfEntry,
-          value: signal.entryPrice.map { Money.price($0.value) } ?? Format.missing, compact: true)
-        IconMetric(StopState.levelSymbol, label: L10n.Activity.hintWhatIfStop,
-          value: signal.stopPrice.map { Money.price($0.value) } ?? Format.missing, compact: true)
-      }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(Text(L10n.Activity.whatIf(signal.entryPrice.map { Money.price($0.value) } ?? Format.missing,
-        signal.stopPrice.map { Money.price($0.value) } ?? Format.missing)))
-      ReplayLine(whatIf: signal.whatIf)
-      AfterLine(prices: signal.pricesAfter)
+    DisclosureGroup(isExpanded: $isOpen) {
+      WhatIfDetails(group: group)
+        .padding(.top, Tokens.Space.xs)
+    } label: {
+      summary
     }
+    .tint(Palette.textTertiary)
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
     // Inside the card, inset from its rounded edge.
     .arrivalFlash(arrived, color: Palette.info, outset: EdgeInsets(top: -Tokens.Space.xs,
       leading: -Tokens.Space.xs, bottom: -Tokens.Space.xs, trailing: -Tokens.Space.xs))
     .tickrCard()
+    .sensoryFeedback(.selection, trigger: isOpen)
+  }
+
+  private var summary: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+      // One line while it fits, else the symbol, time and result wrap as chips.
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+          symbolText
+          whenText
+          Spacer(minLength: Tokens.Space.s)
+          resultText
+        }
+        ChipFlow {
+          symbolText
+          whenText
+          resultText
+        }
+      }
+      if let cause = group.cause {
+        CauseText(cause: cause)
+      } else {
+        // Not refused: decided on a minute the bot had put aside to protect a fill.
+        VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
+          Text(L10n.Activity.tooLateTitle)
+            .font(Tokens.Typography.callout)
+            .foregroundStyle(Palette.textSecondary)
+          Text(L10n.Activity.tooLateDetail)
+            .font(Tokens.Typography.annotation)
+            .foregroundStyle(Palette.textQuaternary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+    .multilineTextAlignment(.leading)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+  }
+
+  private var symbolText: some View {
+    SymbolText(group.latest.symbol)
+      .font(Tokens.Typography.bodyMono.bold())
+      .foregroundStyle(Palette.textPrimary)
+  }
+
+  private var whenText: some View {
+    Text(verbatim: when)
+      .font(Tokens.Typography.captionMono)
+      .foregroundStyle(Palette.textTertiary)
+      // It may wrap (between words) rather than lose the repeat count at its end.
+      .fixedSize(horizontal: false, vertical: true)
+  }
+
+  /// The first signal's replay in R (what the header sums); a dash when it could not run.
+  private var resultText: some View {
+    let r = group.first.whatIf.resultR?.value
+    return Text(verbatim: r.map(Risk.text) ?? Format.missing)
+      .font(Tokens.Typography.calloutMono.bold())
+      .foregroundStyle(r.map(Palette.result) ?? Palette.textQuaternary)
+      .accessibilityLabel(Text(L10n.Activity.ifTakenResult(r.map(Risk.text) ?? Format.missing)))
+  }
+}
+
+/// An open Not taken card: "What-if 5.14 · stop 5.03 → +$2.40 · hit the stop" (or why it could
+/// not replay), the prices after the signal and how the replay was made. Figures are the bot's.
+private struct WhatIfDetails: View {
+  let group: SkippedGroup
+
+  private var ending: LocalizedStringResource? {
+    switch group.first.whatIf.exitReason {
+    case .stop: L10n.Activity.replayStop
+    case .strategyExit: L10n.Activity.replayStrategyExit
+    case .flatten: L10n.Activity.replayFlatten
+    case .endOfData: L10n.Activity.replayEndOfData
+    case nil: nil
+    }
+  }
+
+  /// The levels, then the result in its colour (neutral at zero) and how the replay ended.
+  private var line: AttributedString {
+    let signal = group.first
+    var text = AttributedString(localized: L10n.Activity.whatIfLevels(
+      signal.entryPrice.map { Money.price($0.value) } ?? Format.missing,
+      signal.stopPrice.map { Money.price($0.value) } ?? Format.missing))
+    text.swiftUI.foregroundColor = Palette.textSecondary
+    if let result = signal.whatIf.resultGrossUsd?.value {
+      var shown = AttributedString(Format.arrow + Money.signedUSD(result))
+      shown.swiftUI.foregroundColor = Palette.result(result)
+      text += shown
+      if let ending {
+        var tail = AttributedString(Format.separator + String(localized: ending))
+        tail.swiftUI.foregroundColor = Palette.textTertiary
+        text += tail
+      }
+    } else if let cause = ApiText.prose(signal.whatIf.causeCodes, text: signal.whatIf.cause) {
+      var tail = AttributedString(Format.separator + String(localized: L10n.Activity.noReplay(cause)))
+      tail.swiftUI.foregroundColor = Palette.textQuaternary
+      text += tail
+    }
+    return text
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+      // One text, so it wraps as a whole at large Dynamic Type instead of clipping a row of parts.
+      Text(line)
+        .font(Tokens.Typography.captionMono)
+        .fixedSize(horizontal: false, vertical: true)
+      AfterLine(prices: group.first.pricesAfter)
+      Text(group.count > 1 ? L10n.Activity.whatIfNoteRepeats : L10n.Activity.whatIfNote)
+        .font(Tokens.Typography.annotation)
+        .foregroundStyle(Palette.textQuaternary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
   }
 }
@@ -980,46 +1116,6 @@ struct AfterLine: View {
       Text(line)
         .font(Tokens.Typography.annotation)
         .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-}
-
-/// What the bot's replay says a skipped signal would have made, with R and how the replay ended;
-/// or why it could not replay. Figures are shown as the bot sent them.
-private struct ReplayLine: View {
-  let whatIf: WhatIfV1
-
-  private var ending: LocalizedStringResource? {
-    switch whatIf.exitReason {
-    case .stop: L10n.Activity.replayStop
-    case .strategyExit: L10n.Activity.replayStrategyExit
-    case .flatten: L10n.Activity.replayFlatten
-    case .endOfData: L10n.Activity.replayEndOfData
-    case nil: nil
-    }
-  }
-
-  /// "would have made +$12.30" in the result's colour (neutral at zero), then R and the ending.
-  private func line(_ result: Decimal) -> AttributedString {
-    var text = AttributedString(localized: L10n.Activity.wouldHaveMade(Money.signedUSD(result)))
-    text.swiftUI.foregroundColor = Palette.result(result)
-    var rest = whatIf.resultR.map { Format.separator + Risk.text($0.value) } ?? ""
-    if let ending { rest += Format.separator + String(localized: ending) }
-    var tail = AttributedString(rest)
-    tail.swiftUI.foregroundColor = Palette.textTertiary
-    return text + tail
-  }
-
-  var body: some View {
-    if let result = whatIf.resultGrossUsd?.value {
-      // One text, so it wraps as a whole at large Dynamic Type instead of clipping a row of parts.
-      Text(line(result))
-        .font(Tokens.Typography.captionMono)
-        .fixedSize(horizontal: false, vertical: true)
-    } else if let cause = ApiText.prose(whatIf.causeCodes, text: whatIf.cause) {
-      Text(L10n.Activity.noReplay(cause))
-        .font(Tokens.Typography.captionMono)
-        .foregroundStyle(Palette.textQuaternary)
     }
   }
 }
