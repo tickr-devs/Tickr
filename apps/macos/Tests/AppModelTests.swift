@@ -48,8 +48,9 @@ final class RouteProtocol: URLProtocol {
       .queryItems?.first(where: { $0.name == "symbol" })?.value {
       if path == "/chart" { Self.routes.withLock { $0.chartSymbols.append(symbol) } }
     }
-    let (failing, hostBody) = Self.routes.withLock {
-      ($0.failing.contains(path), url.host().flatMap { host in $0.byHost[host]?[path] })
+    let host = url.host()
+    let (failing, hostBody) = Self.routes.withLock { routes in
+      (routes.failing.contains(path), host.flatMap { routes.byHost[$0]?[path] })
     }
     if failing {
       client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
