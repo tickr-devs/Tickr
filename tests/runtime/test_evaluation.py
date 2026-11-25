@@ -745,3 +745,43 @@ def test_a_candidate_bug_never_skips_the_positions_minute(tmp_path):
     rig.evaluator.history = rig.evaluator.history.inner
     rig.evaluator.tick(Market(["CAN"]))
     assert [c.symbol for c in rig.strategy.seen] == ["WAT", "WAT", "CAN"]
+
+
+def _collared(rig: Rig, bar: str = "0", quote: str = "0") -> None:
+    desk = rig.evaluator.desk
+    desk.limits = replace(desk.limits, collar_bar_ratio=D(bar), collar_quote_ratio=D(quote))
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_the_collar_gets_the_decision_bar_and_the_quote_before_the_current_one(tmp_path):
+    """SYNTHETIC bars (every close 10) and quotes: the decision bar is the 09:34 bar and the
+    previous quote is the one the newest replaced in the stream inbox."""
+    rig = Rig(tmp_path)
+    rig.inbox.on_quote(Quote("ABC", D("9.00"), D("9.01"), D(100), D(100),
+                             rig.now - timedelta(seconds=1), rig.now - timedelta(seconds=1)))
+    rig.symbol("ABC")  # the current quote, ask 10.05
+    rig.strategy.verdicts["ABC"] = Verdict.ENTER
+    _collared(rig, bar="0.05", quote="0.05")  # limit 10.10: 0.01 from the bar, 0.1210 from 9.01
+    rig.evaluator.tick(Market(["ABC"]))
+    (record,) = load_records(list(rig.dir.rglob("*.jsonl")))
+    assert record.admission is RecordAdmission.REFUSED
+    assert record.refusal_cause == (
+        f"{AdmissionCause.PRICE_COLLAR_BREACH}: limit 10.10 is 0.0100 from bar close 10 "
+        "(max 0.05) and 0.1210 from previous ask 9.01 (max 0.05)")
+    assert rig.broker.sent == []
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_the_collar_needs_a_previous_quote_and_passes_a_close_one(tmp_path):
+    rig = Rig(tmp_path)
+    rig.symbol("ABC")  # one quote only
+    rig.strategy.verdicts["ABC"] = Verdict.ENTER
+    _collared(rig, bar="0.05")
+    rig.evaluator.tick(Market(["ABC"]))
+    rig.now = NOW + timedelta(minutes=1)
+    rig.inbox.on_quote(Quote("ABC", D("10.04"), D("10.06"), D(100), D(100), rig.now, rig.now))
+    rig.source.add_bars(bars("ABC", OPEN + timedelta(minutes=6), 1))
+    rig.evaluator.tick(Market(["ABC"]))
+    first, second = load_records(list(rig.dir.rglob("*.jsonl")))
+    assert first.refusal_cause == f"{AdmissionCause.PRICE_COLLAR_UNKNOWN}: no previous quote"
+    assert second.admission is RecordAdmission.TAKEN, second.refusal_cause

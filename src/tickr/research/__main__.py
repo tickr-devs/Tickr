@@ -19,6 +19,7 @@ from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import load_settings
 from tickr.research import compare, observer_report, refusals, report, slippage
+from tickr.research.collar import collar_report
 from tickr.research.errors import ResearchError
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
@@ -85,6 +86,14 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
+    p = sub.add_parser("collar", help="entry price distance to the last bar and previous quote")
+    p.add_argument("--quotes", type=Path, nargs="+", required=True, help="captured quotes.jsonl")
+    p.add_argument("--bars", type=Path, nargs="+", required=True, help="captured bars.jsonl")
+    p.add_argument("--decisions", type=Path, nargs="*", default=[],
+                   help="decision JSONL: also measure the recorded ENTER limits")
+    p.add_argument("--settings", type=Path, required=True, help="research TOML (decimals)")
+    p.add_argument("--out", type=Path, required=True, help="output directory")
+
     p = sub.add_parser("refusals", help="per day and setup: first failed checks, refusals, entries")
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
     p.add_argument("--strategy", help="NAME or NAME:VERSION to keep")
@@ -128,6 +137,11 @@ def _run(args: argparse.Namespace) -> dict:
                                 settings.session_timezone)
         return report.write_latency(result, args.source, args.out,
                                     settings.output_decimal_places)
+    if args.command == "collar":
+        settings = load_research_settings(args.settings)
+        records = load_records(args.decisions) if args.decisions else []
+        result = collar_report(args.quotes, args.bars, records)
+        return report.write_collar(result, args.out, settings.output_decimal_places)
     if args.command == "refusals":
         settings = load_research_settings(args.settings)
         rows = refusals.table(_filter(load_records(args.decisions), args.strategy),

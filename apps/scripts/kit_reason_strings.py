@@ -454,6 +454,15 @@ GROUPS = [
                 "Ask {ask} fuera del rango de entrada {entry_low}–{limit}",
             ),
             (
+                "PRICE_COLLAR_BREACH",
+                "Limit {limit} is {bar_distance} from the last bar's close {bar_close} (maximum "
+                "{bar_max}) and {quote_distance} from the previous ask {previous_ask} (maximum "
+                "{quote_max}); a maximum of 0 is off",
+                "El límite {limit} está a {bar_distance} del cierre de la última barra "
+                "{bar_close} (máximo {bar_max}) y a {quote_distance} del ask anterior "
+                "{previous_ask} (máximo {quote_max}); un máximo de 0 está desactivado",
+            ),
+            (
                 "QUANTITY_NOT_WHOLE",
                 "Quantity {quantity} is not a whole number of shares",
                 "La cantidad {quantity} no es un número entero de acciones",
