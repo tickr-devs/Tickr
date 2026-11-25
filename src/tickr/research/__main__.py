@@ -7,6 +7,7 @@ import json
 import sys
 import tomllib
 from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -17,13 +18,20 @@ from tickr.replay.__main__ import session_clock, strategy_factory
 from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import load_settings
-from tickr.research import compare, observer_report, refusals, report
+from tickr.research import compare, observer_report, refusals, report, variants
 from tickr.research.errors import ResearchError
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
 from tickr.research.records import load_records, write_records
 from tickr.research.settings import load_research_settings
 from tickr.research.whatif import what_if
+
+
+def _day(text: str) -> date:
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not a YYYY-MM-DD date: {text!r}") from exc
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -66,6 +74,16 @@ def _parser() -> argparse.ArgumentParser:
     bars_and_out(p)
     clock(p)
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
+
+    p = sub.add_parser("variants",
+                       help="per-variant evidence over days and each day's missed move")
+    bars_and_out(p)
+    clock(p)
+    p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
+    p.add_argument("--from", dest="first_day", type=_day, required=True,
+                   help="first New York session day, YYYY-MM-DD")
+    p.add_argument("--to", dest="last_day", type=_day, required=True,
+                   help="last New York session day, YYYY-MM-DD")
 
     p = sub.add_parser("diff", help="diff two decision record sets bar by bar")
     p.add_argument("--baseline", type=Path, nargs="+", required=True, help="decision JSONL")
@@ -143,6 +161,10 @@ def _run(args: argparse.Namespace) -> dict:
         result = observer_report.report(load_records(args.decisions), load_bars(args.bars),
                                         replay_settings, clock_for)
         return report.write_observer_report(result, args.out, places)
+    if args.command == "variants":
+        result = variants.report(load_records(args.decisions), load_bars(args.bars),
+                                 replay_settings, clock_for, args.first_day, args.last_day)
+        return report.write_variants(result, args.out, places)
     factory = strategy_factory(args.strategy, args.values)
     records = compare.decide(factory, load_bars(args.bars), replay_settings, clock_for)
     args.out.mkdir(parents=True, exist_ok=True)

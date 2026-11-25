@@ -13,11 +13,14 @@ from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from tickr.calendar import TIMEZONE_NAME
 from tickr.research import latency as lat
 from tickr.research import observer_report as orep
 from tickr.research import outcomes as oc
 from tickr.research import refusals as rf
+from tickr.research import variants as va
 from tickr.research import whatif as wi
 from tickr.research.compare import DiffResult
 from tickr.research.records import DecisionRecord
@@ -220,3 +223,52 @@ def write_refusals(rows: Sequence[rf.RefusalRow], out_dir: Path, places: int) ->
     body = {"days": sorted({r.day.isoformat() for r in rows}), "rows": len(rows),
             "by_kind": by_kind}
     return _json(out_dir / "refusals_summary.json", body, places)
+
+
+COUNT_SUMS = ("decisions", "enters", "trades", "wins", "losses", "trades_without_usd")
+MONEY_SUMS = ("earned_usd", "lost_usd", "net_usd", "earned_r", "lost_r", "net_r")
+DAY_SUMS = (*COUNT_SUMS, *MONEY_SUMS)
+VARIANT_COLUMNS = ("label", "strategy", "version", "role", "days", *DAY_SUMS,
+                   "days_with_trades", "days_in_plus", "days_in_minus")
+VARIANT_DAY_COLUMNS = ("label", "day", "strategy", "version", "role", *DAY_SUMS)
+MISSED_COLUMNS = ("day", "symbol", "move_start", "peak", "low", "high", "move_percent",
+                  "strategy", "version", "role", "decisions", "reasons")
+
+
+def write_variants(result: va.VariantsReport, out_dir: Path, places: int) -> dict[str, Any]:
+    """Times of a missed move are written in New York time (with its offset)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zone = ZoneInfo(TIMEZONE_NAME)
+
+    def totals(v: va.VariantEvidence) -> dict[str, Any]:
+        counts = {n: sum(getattr(d, n) for d in v.days) for n in COUNT_SUMS}
+        money = {n: sum((getattr(d, n) for d in v.days), Decimal(0)) for n in MONEY_SUMS}
+        return {"strategy": v.strategy, "version": v.version, "role": v.role,
+                "days": len(v.days), **counts, **money,
+                "days_with_trades": v.days_with_trades, "days_in_plus": v.days_in_plus,
+                "days_in_minus": v.days_in_minus}
+
+    rows = [totals(v) for v in result.variants]
+    _write_csv(out_dir / "variants.csv", VARIANT_COLUMNS,
+               ([va.LABEL, *(r[c] for c in VARIANT_COLUMNS[1:])] for r in rows), places)
+    _write_csv(out_dir / "variants_by_day.csv", VARIANT_DAY_COLUMNS,
+               ([va.LABEL, d.day, v.strategy, v.version, v.role,
+                 *(getattr(d, n) for n in DAY_SUMS)]
+                for v in result.variants for d in v.days), places)
+
+    def reasons(r: va.VariantReason) -> str:
+        return "; ".join(f"{count} x {reason}" for reason, count in r.reasons.items())
+
+    _write_csv(out_dir / "missed_moves.csv", MISSED_COLUMNS,
+               ([m.day, m.symbol, m.start.astimezone(zone), m.peak.astimezone(zone), m.low,
+                 m.high, m.move_percent, r.strategy, r.version, r.role, r.decisions,
+                 reasons(r)] for m in result.missed for r in m.variants), places)
+    missed = [{"day": m.day.isoformat(), "symbol": m.symbol,
+               "move_start": m.start.astimezone(zone).isoformat(),
+               "peak": m.peak.astimezone(zone).isoformat(), "low": m.low, "high": m.high,
+               "move_percent": m.move_percent, "variants": [asdict(r) for r in m.variants]}
+              for m in result.missed]
+    body = {"label": va.LABEL, "from": result.first_day.isoformat(),
+            "to": result.last_day.isoformat(), "variants": rows, "missed_moves": missed,
+            "days_without_missed_move": [d.isoformat() for d in result.days_without_missed_move]}
+    return _json(out_dir / "variants.json", body, places)

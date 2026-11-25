@@ -10,6 +10,7 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `whatif` | What if we had entered on an ENTER that was refused or never evaluated? | `simulated` |
 | `decide` + `diff` | What would another strategy version have decided over the same day? | (decisions) |
 | `observers` | How did the live observer versions do against the active one today? | `simulated` |
+| `variants` | Per variant over days: trades, earned, lost, net, days in plus; each day's biggest move nobody traded, and why | `simulated` |
 | `latency` | How late do captured quotes arrive, by symbol and hour? What do stream notices say? | (measured) |
 | `refusals` | Per day and setup: which check refused first, which platform causes, how many entries? | (counts) |
 
@@ -137,6 +138,42 @@ close, so quote-dependent checks (spread, cost rule) can differ for that reason 
 
 Hold-out rule (`docs/advisor.md`): when the candidate version was tuned on some days, a `diff`
 or `whatif` over those days says nothing about the change; run it on other days.
+
+## variants: per-variant evidence and the missed "trade of the day"
+
+```
+python -m tickr.research variants --bars <bars of the days> \
+  --decisions data/decisions/<env>/<date>/decisions.jsonl ... \
+  --from 2026-11-17 --to 2026-11-21 [--replay-settings config/replay.toml] \
+  [--config config/bot.toml] --out out/variants
+```
+
+Reads recorded decisions (active and observers) and captured bars only. Each New York session
+day in `--from`..`--to` that has records is measured alone by the `observers` report, so every
+ENTER is simulated the same way (whatif fill model, one position per symbol, an observer's
+repeated signal skipped; more than one active strategy on one day is refused).
+
+- `variants.csv`: one row per variant (strategy, version, role) over the range: days with
+  records, decisions, ENTERs, simulated trades, wins, losses, `earned_usd` (winners),
+  `lost_usd` (losers, zero or below), `net_usd`, the same in R, `trades_without_usd` (no
+  recorded whole quantity: in R only), `days_with_trades`, `days_in_plus` and `days_in_minus`
+  (by the day's net USD). USD is gross: slippage in, commissions out.
+- `variants_by_day.csv`: the same numbers per variant and day.
+- `missed_moves.csv`: one row per day and variant for that day's missed move. Among the
+  symbols with a recorded decision that day, minus every symbol any variant traded (a filled
+  simulated trade or an ENTER admission took), the biggest rise in percent from a low to a
+  later high: the low from the regular open until the last entry time (a later start could not
+  be entered), the high after it up to the flatten time. `move_start` and `peak` are the bars
+  of the low and the high, in New York time. `reasons` are the variant's decisions on that
+  symbol from the regular open through the peak, counted: `IGNORE: <first failed check>`,
+  `WATCH: <first failed check>` (or `all checks passed`), `ENTER refused: <refusal cause>`,
+  `ENTER <simulated outcome>: <cause>` (missed, rejected, skipped...), or
+  `no decision on the symbol before the peak`.
+- `variants.json`: all of it, plus the days without a missed move (every symbol was traded,
+  or no bars rose).
+
+The move is measured on bars, not on what the bot could fill; it shows what was left on the
+table, never a result.
 
 ## latency: quote latency from capture files
 
