@@ -21,7 +21,9 @@ from typing import Any
 
 from tickr.config import Config
 from tickr.observers.errors import ObserverError
+from tickr.store import Store, StrategyVersionReused
 from tickr.strategy.base import Strategy
+from tickr.strategy.fingerprint import fingerprint
 
 STRATEGIES_DIR = "strategies"
 STRATEGY_FILE = "strategy.toml"
@@ -31,6 +33,10 @@ STRATEGY_FILE = "strategy.toml"
 class LoadedStrategy:
     folder: str
     strategy: Strategy
+    fingerprint: str | None = None
+    """The settings fingerprint of the values the strategy was built from
+    (`tickr.strategy.fingerprint`); recorded with its decisions and trades. Set by
+    `load_strategy`; None only for a strategy built some other way (tests)."""
 
     @property
     def identity(self) -> str:
@@ -103,7 +109,33 @@ def load_strategy(root: Path, folder: str, modules: Mapping[str, str]) -> Loaded
             f"{folder}: strategy reports {reported[0]} v{reported[1]}, "
             f"file says {name} v{table.get('version')}"
         )
-    return LoadedStrategy(folder, strategy)
+    try:
+        settings = fingerprint(values)
+    except ValueError as exc:
+        raise ObserverError(f"{folder}: no settings fingerprint: {exc}") from exc
+    return LoadedStrategy(folder, strategy, settings)
+
+
+def read_fingerprint(root: Path, folder: str) -> str:
+    """The settings fingerprint of a strategy folder, from its file only (nothing imported or
+    built); ObserverError when unreadable or a value has no canonical form."""
+    try:
+        return fingerprint(read_values(root, folder))
+    except ValueError as exc:
+        raise ObserverError(f"{folder}: no settings fingerprint: {exc}") from exc
+
+
+def register_version(store: Store, loaded: LoadedStrategy) -> None:
+    """Before a strategy runs in the bot: record its version's settings fingerprint, or
+    refuse (ObserverError) when that version name was run before with other values, or when it
+    has no fingerprint. Its decisions and trades would carry a name that means two settings."""
+    if loaded.fingerprint is None:
+        raise ObserverError(f"{loaded.folder}: {loaded.identity} has no settings fingerprint")
+    try:
+        store.register_strategy_version(loaded.strategy.name, loaded.strategy.version,
+                                        loaded.fingerprint)
+    except StrategyVersionReused as exc:
+        raise ObserverError(f"{loaded.folder}: {exc}") from exc
 
 
 def check_history(loaded: LoadedStrategy, history_sessions: int) -> None:

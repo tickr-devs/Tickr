@@ -278,6 +278,7 @@ class _Worker:
                 role=Role.OBSERVER,
                 decision=decision,
                 admission=Admission.NOT_EVALUATED if enter else Admission.NOT_APPLICABLE,
+                fingerprint=observer.fingerprint,
             )
             try:
                 self.log.append(record)

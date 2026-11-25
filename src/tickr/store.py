@@ -179,6 +179,21 @@ def _schema_v11(db: sqlite3.Connection) -> None:
     db.execute("ALTER TABLE orders ADD COLUMN operator_resolved_at TEXT")
 
 
+def _schema_v12(db: sqlite3.Connection) -> None:
+    # Settings versions (backlog S3): the settings fingerprint of the values that opened a
+    # trade (tickr.strategy.fingerprint; NULL: a manual trade or one opened before S3), and
+    # the fingerprint each named strategy version was first run with, so a name reused for
+    # other values is refused at startup (Store.register_strategy_version).
+    db.execute("ALTER TABLE trades ADD COLUMN strategy_fingerprint TEXT")
+    db.execute("""CREATE TABLE strategy_versions (
+        strategy TEXT NOT NULL,
+        version TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        PRIMARY KEY (strategy, version)
+    )""")
+
+
 # Bound parameters one `IN (...)` query takes at most: SQLite's historic default limit
 # (protocol constant). Longer lists are read in parts of this size.
 IN_LIST_LIMIT = 999
@@ -206,7 +221,7 @@ INDEXES = (
 # Forward-only migrations. Never edit a released entry; append a new one.
 MIGRATIONS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     _schema_v1, _schema_v2, _schema_v3, _schema_v4, _schema_v5, _schema_v6, _schema_v7,
-    _schema_v8, _schema_v9, _schema_v10, _schema_v11)
+    _schema_v8, _schema_v9, _schema_v10, _schema_v11, _schema_v12)
 
 
 def _json_default(value: Any) -> Any:
@@ -223,6 +238,10 @@ def _utc_now() -> datetime:
 
 class EnvironmentMismatch(Exception):
     """The database belongs to another environment; nothing was started."""
+
+
+class StrategyVersionReused(Exception):
+    """A strategy version name was run before with other values; nothing was started."""
 
 
 @dataclass(frozen=True)
@@ -365,6 +384,26 @@ class Store:
                 f"the database holds runs of environment {row[0]!r}, the config says "
                 f"{environment!r}: move the database aside (or point [run] data_dir at "
                 "another folder) before running this environment")
+
+    def register_strategy_version(self, strategy: str, version: str, fingerprint: str) -> None:
+        """Record the settings fingerprint of `strategy` `version` the first time it runs;
+        refuse (StrategyVersionReused) when that name was recorded with another fingerprint:
+        its earlier decisions and trades would be taken as made with today's values."""
+        with self.transaction():
+            row = self._db.execute(
+                "SELECT fingerprint FROM strategy_versions WHERE strategy = ? AND version = ?",
+                (strategy, version)).fetchone()
+            if row is None:
+                self._db.execute(
+                    "INSERT INTO strategy_versions(strategy, version, fingerprint, "
+                    "first_seen_at) VALUES (?, ?, ?, ?)",
+                    (strategy, version, fingerprint, self.stamp()))
+                return
+        if row[0] != fingerprint:
+            raise StrategyVersionReused(
+                f"strategy {strategy} version {version} was run with settings fingerprint "
+                f"{row[0]}, its values now give {fingerprint}: give the changed values a new "
+                "[strategy] version")
 
     def start_run(self, *, environment: str, config_digest: str, strategy: str,
                   strategy_version: str, code_version: str) -> str:

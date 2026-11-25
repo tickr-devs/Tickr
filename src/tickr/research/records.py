@@ -17,7 +17,10 @@ the keys in `RECORD_KEYS`:
 
 Two keys are optional, written only when set and only on an ENTER: `rest_bars`, a whole number
 >= 1 (a resting limit entry, `Decision.rest_bars`), and `scale_out`, a decimal string (the
-shares planned to be sold first, `Decision.scale_out`).
+shares planned to be sold first, `Decision.scale_out`). One more is optional on any verdict:
+`fingerprint`, the settings fingerprint of the values the strategy ran with
+(`tickr.strategy.fingerprint`), written by the bot for its active strategy and observers;
+absent in records written before it existed and in research or replay records.
 
 Any deviation is a `RecordFileError` naming the file, line and cause; nothing is defaulted.
 """
@@ -56,7 +59,7 @@ RECORD_KEYS = frozenset(
         "checks",
     }
 )
-OPTIONAL_KEYS = frozenset({"rest_bars", "scale_out"})
+OPTIONAL_KEYS = frozenset({"rest_bars", "scale_out", "fingerprint"})
 CHECK_KEYS = frozenset({"rule", "measured", "operator", "threshold", "passed", "note"})
 
 
@@ -75,6 +78,7 @@ class DecisionRecord:
     decision: Decision
     admission: Admission
     refusal_cause: str | None = None
+    fingerprint: str | None = None  # settings fingerprint; None = not recorded
 
     @property
     def symbol(self) -> str:
@@ -200,6 +204,7 @@ def record_from_mapping(data: Any) -> DecisionRecord:
         decision=decision,
         admission=_enum("admission", data["admission"], Admission),
         refusal_cause=_text("refusal_cause", data["refusal_cause"], optional=True),
+        fingerprint=_text("fingerprint", data.get("fingerprint"), optional=True),
     )
     problem = record.problem()
     if problem is not None:
@@ -253,6 +258,8 @@ def record_to_json(record: DecisionRecord) -> str:
         body["rest_bars"] = d.rest_bars
     if d.scale_out is not None:
         body["scale_out"] = str(d.scale_out)
+    if record.fingerprint is not None:
+        body["fingerprint"] = record.fingerprint
     return json.dumps(body, sort_keys=True)
 
 

@@ -8,7 +8,12 @@ import tomllib
 from pathlib import Path
 
 from tickr import config
-from tickr.observers.loader import STRATEGIES_DIR, STRATEGY_FILE, load_observers
+from tickr.observers.loader import (
+    STRATEGIES_DIR,
+    STRATEGY_FILE,
+    load_observers,
+    read_fingerprint,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
@@ -27,6 +32,9 @@ def test_shipped_observers_load_with_distinct_identities():
     loaded = load_observers(CFG)
     assert [o.folder for o in loaded] == list(CFG.strategy.observers)
     assert loaded
+    # Each carries the settings fingerprint of its own file (backlog S3), all distinct.
+    assert [o.fingerprint for o in loaded] == [read_fingerprint(ROOT, o.folder) for o in loaded]
+    assert len({o.fingerprint for o in loaded}) == len(loaded)
 
 
 VARIANT = "-relvol-"

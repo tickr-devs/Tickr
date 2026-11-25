@@ -743,7 +743,8 @@ class Engine:
                    rest_until: datetime | None = None,
                    scale_out_quantity: Decimal | None = None,
                    window: WindowKind = WindowKind.REGULAR,
-                   reserved_usd: Decimal | None = None) -> str:
+                   reserved_usd: Decimal | None = None,
+                   strategy_fingerprint: str | None = None) -> str:
         """Record and send a LIMIT BUY entry. Refuses (EntryRefused) instead of guessing.
 
         With `stop_percent_below_fill`, the stop is re-derived from the first observed average
@@ -759,7 +760,8 @@ class Engine:
         `request_reduce` of it leaves the rest protected throughout. `window` is the trading
         window admission found; a trade is opened only in a window the engine can protect
         (`PROTECTED_WINDOWS`). `reserved_usd`: what it reserves against the daily ceiling when
-        that is not its planned loss."""
+        that is not its planned loss. `strategy_fingerprint`: the settings fingerprint of the
+        values that strategy ran with (backlog S3), stored on the trade and journaled."""
         if window not in PROTECTED_WINDOWS:
             # Second barrier behind config.load (Fable on #574): admission may admit an
             # extended entry, but nothing here protects one yet (no broker stop exists there).
@@ -796,8 +798,8 @@ class Engine:
                 "INSERT INTO trades(trade_id, run_id, symbol, state, entry_quantity, "
                 "entry_limit_price, stop_price, stop_percent_below_fill, planned_loss_usd, "
                 "opened_at, entry_low_price, entry_rest_until, scale_out_quantity, "
-                "trading_window, reserved_usd) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "trading_window, reserved_usd, strategy_fingerprint) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (trade_id, self.run_id, symbol, TradeState.OPENING, str(quantity),
                  str(limit_price), str(stop_price),
                  None if stop_percent_below_fill is None else str(stop_percent_below_fill),
@@ -805,7 +807,8 @@ class Engine:
                  None if entry_low_price is None else str(entry_low_price),
                  None if rest_until is None else rest_until.astimezone(UTC).isoformat(),
                  None if scale_out_quantity is None else str(scale_out_quantity),
-                 window, None if reserved_usd is None else str(reserved_usd)))
+                 window, None if reserved_usd is None else str(reserved_usd),
+                 strategy_fingerprint))
             self.store.append(TRADE_OPENED, {
                 "symbol": symbol, "quantity": quantity, "limit_price": limit_price,
                 "stop_price": stop_price, "planned_loss_usd": planned_loss_usd,
@@ -815,6 +818,8 @@ class Engine:
                    else {"scale_out_quantity": scale_out_quantity}),
                 **({} if strategy is None else {"strategy": strategy[0],
                                                 "strategy_version": strategy[1]}),
+                **({} if strategy_fingerprint is None
+                   else {"strategy_fingerprint": strategy_fingerprint}),
                 "code_version": self.store.run_code_version(self.run_id)},
                 key=trade_id, run_id=self.run_id)
             cid = self._write_intent(trade_id, Leg.ENTRY, symbol, Side.BUY, OrderType.LIMIT,

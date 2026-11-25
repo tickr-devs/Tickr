@@ -38,6 +38,16 @@
               },
               "version": {
                 "type": "string"
+              },
+              "fingerprint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [

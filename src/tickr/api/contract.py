@@ -190,6 +190,11 @@ class Gate:
 class StrategyId:
     name: str
     version: str
+    # The settings fingerprint of the values this version ran with (backlog S3,
+    # tickr.strategy.fingerprint): the version the bot computed; `version` is the owner's name
+    # for it. Null when not recorded (before S3, a manual trade, research data). Added after
+    # version 1 shipped.
+    fingerprint: str | None = _added_later(None)
 
 
 # EntryBlock cause while the bot's own open trades take every slot of `[risk] max_open_positions`.
@@ -1966,7 +1971,8 @@ def decisions_document(symbol: str, day: date, records: tuple[DecisionRecord, ..
         skipped = d.verdict is Verdict.ENTER and r.admission in _SKIPPED
         out.append(DecisionV1(
             at=r.bar_start, action=d.verdict,
-            strategy=StrategyId(d.strategy, d.version), observer=r.role is Role.OBSERVER,
+            strategy=StrategyId(d.strategy, d.version, r.fingerprint),
+            observer=r.role is Role.OBSERVER,
             checks=checks_of(d, places), entry_price=_what_if(d.entry_high) if skipped else None,
             stop_price=_what_if(d.stop) if skipped else None, admission=r.admission,
             refusal_cause=r.refusal_cause, refusal=refusal_of(r.refusal_cause)))
@@ -2023,7 +2029,7 @@ def skipped_document(day: date, records: tuple[DecisionRecord, ...],
     return SkippedV1(day=day, signals=tuple(
         SkippedSignalV1(
             at=r.bar_start, symbol=r.symbol,
-            strategy=StrategyId(r.decision.strategy, r.decision.version),
+            strategy=StrategyId(r.decision.strategy, r.decision.version, r.fingerprint),
             admission=r.admission, refusal_cause=r.refusal_cause,
             refusal=refusal_of(r.refusal_cause), entry_price=_what_if(r.decision.entry_high),
             stop_price=_what_if(r.decision.stop),
@@ -2319,7 +2325,8 @@ def watching_document(day: date, records: tuple[DecisionRecord, ...], places: in
         decisive = d.decisive
         value, cause = closeness(decisive, places, d.invalidation)
         rows.append(WatchingRowV1(
-            symbol=r.symbol, at=r.bar_start, strategy=StrategyId(d.strategy, d.version),
+            symbol=r.symbol, at=r.bar_start,
+            strategy=StrategyId(d.strategy, d.version, r.fingerprint),
             verdict=d.verdict,
             decisive_check=None if decisive is None else shown_check(decisive, check_places),
             closeness=value, closeness_cause=cause, quote_age_seconds=None,
@@ -2395,7 +2402,8 @@ def latest_size(records: tuple[DecisionRecord, ...]) -> LatestSizeV1 | None:
         else:
             binding = SizeBinding.DAILY_ROOM if _room_binds(checks, quantity.measured) else None
         d = r.decision
-        return LatestSizeV1(r.symbol, r.bar_start, StrategyId(d.strategy, d.version), d.verdict,
+        return LatestSizeV1(r.symbol, r.bar_start,
+                            StrategyId(d.strategy, d.version, r.fingerprint), d.verdict,
                             quantity.measured, binding,
                             None if binding else BINDING_NOT_RECORDED,
                             price=_measured(checks, SIZING_PRICE_RULE), limits=limits)

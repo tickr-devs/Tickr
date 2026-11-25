@@ -629,7 +629,7 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     trading."""
     from tickr.data.history import HistoryReader
     from tickr.observers.errors import ObserverError
-    from tickr.observers.loader import load_active, load_observers
+    from tickr.observers.loader import load_active, load_observers, register_version
     from tickr.observers.log import DecisionLog
     from tickr.observers.runner import Limits, ObserverSet, ProcessSpec
     from tickr.runtime.entries import EntryDesk
@@ -638,9 +638,10 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     if calendar is None:
         return None
     loaded = load_active(cfg)  # ObserverError: caller refuses entries
+    register_version(engine.store, loaded)  # a reused version name: ObserverError too
     log = DecisionLog.from_config(cfg)
     desk = EntryDesk(engine, cfg, calendar=calendar, last_broker_read_at=last_broker_read_at,
-                     log=log)
+                     log=log, fingerprint=loaded.fingerprint)
     evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
                           history=HistoryReader.from_config(cfg, source, calendar),
                           inbox=inbox, calendar=calendar, today_bars=today_bars, now=NOW)
@@ -649,6 +650,15 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     except ObserverError as exc:
         observers_refused(str(exc))
         shadows = ()
+    kept = []
+    for shadow in shadows:  # an observer whose version name is reused is left out alone
+        try:
+            register_version(engine.store, shadow)
+        except ObserverError as exc:
+            observers_refused(str(exc))
+        else:
+            kept.append(shadow)
+    shadows = tuple(kept)
     # The observers run in a child process the bot owns, built again there from their folders
     # (observers.runner), so they never share the trading thread's interpreter lock.
     observers = ObserverSet(shadows, log, cfg.observers.max_evaluation_seconds,

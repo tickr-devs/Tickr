@@ -378,6 +378,21 @@ and `stop_confirmed_after_seconds` (see "Per-trade metrics" below). MAE and MFE 
 decision opened the trade, as journaled in its `trade-opened` row; `null` for a manual trade, a
 trade opened before the bot journaled it, or a row it cannot read (display only, never guessed).
 In status it was added after version 1 shipped: a reader takes an entry without it as `null`.
+
+Settings version (backlog S3). Every `strategy` object (`{name, version, fingerprint}`, here, in
+`/decisions`, `/skipped`, `/watching`, the latest size and the status's active strategy) carries
+`fingerprint`: the settings version the bot computed, a SHA-256 (64 hex characters) of the
+strategy's fully resolved values in canonical form (`src/tickr/strategy/fingerprint.py`): keys
+sorted, numbers by exact value (`1.5` = `1.50`, `2` = `2.0`), `[strategy] version` left out.
+`version` is only the owner's name for those values. For a trade it is what the `trade-opened`
+row journaled (also stored on `trades.strategy_fingerprint`); for a decision, what its decision
+record holds; for the status, the active strategy file's values now. `null` when not recorded (a
+trade or decision from before S3, a manual trade, research or replay records). It was added after
+version 1 shipped: a reader takes a `strategy` without it as `null`. At startup the bot records
+the fingerprint of each version name it runs (table `strategy_versions`); a name already run with
+another fingerprint is refused: for the active strategy no entries (the `ObserverError` path,
+like a strategy that cannot load), an observer is left out; both say which name and fingerprints.
+
 `code_version` (in `trades_today` and in `day-v1` `trades`) is the bot code version the trade was
 opened by: the full git commit SHA of the run that opened it, with `-dirty` when a tracked file
 differed from that commit (in the Docker image, the commit it was built from). It is read from
