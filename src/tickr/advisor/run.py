@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -50,11 +49,12 @@ from tickr.observers.loader import (
     STRATEGY_FILE,
     load_strategy,
     parse_modules,
+    read_values,
 )
 from tickr.replay.clock import ClockFor, calendar_clock
 from tickr.replay.settings import ReplaySettings
 from tickr.research.records import load_records
-from tickr.research.settings import ResearchSettings
+from tickr.research.settings import ResearchSettings, strategy_atr_period
 from tickr.types import Bar
 
 DECISIONS_FILE = "decisions.jsonl"
@@ -120,7 +120,7 @@ class Tuning:
 def read_base(config: Config, folder: str | None) -> Base:
     folder = folder or config.strategy.active
     text = (config.root / STRATEGIES_DIR / folder / STRATEGY_FILE).read_text("utf-8")
-    values = tomllib.loads(text)
+    values = read_values(config.root, folder)  # resolved over the folder it extends
     name = values["strategy"]["name"]
     module = parse_modules(config.observers.strategy_modules).get(name)
     if module is None:
@@ -168,6 +168,7 @@ def run_advisor(
         close_for=lambda d: calendar.day(d).regular_close,
         replay=replay,
         clock_for=session_clock_from_config(config),
+        atr_period=strategy_atr_period(base.values, base.identity),
     )
     listed = ", ".join(d.isoformat() for d in days)
     simulated = evidence["not_taken_enters_simulated"]

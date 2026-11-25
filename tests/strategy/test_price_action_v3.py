@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,12 +15,13 @@ from tickr.observers.loader import load_strategy, parse_modules
 from tickr.strategy import price_action_v1 as v1
 from tickr.strategy import price_action_v3 as v3
 from tickr.strategy.base import SymbolContext, Verdict
+from tickr.strategy.values import load_values
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def values(folder: str) -> dict:
-    return tomllib.loads((ROOT / "strategies" / folder / "strategy.toml").read_text())
+    return load_values(ROOT / "strategies" / folder / "strategy.toml")
 
 
 def make(**overrides):

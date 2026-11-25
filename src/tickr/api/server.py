@@ -78,11 +78,13 @@ from tickr.data.capture import CapturedBarsDays, CaptureError
 from tickr.data.discovery import DiscoverySettings
 from tickr.data.history import SYMBOL_PATTERN as TICKER_PATTERN
 from tickr.observers.errors import ObserverError
-from tickr.observers.loader import STRATEGIES_DIR, read_identity, read_values
+from tickr.observers.loader import STRATEGIES_DIR, STRATEGY_FILE, read_identity, read_values
 from tickr.observers.log import DecisionLog
 from tickr.research.errors import RecordFileError
 from tickr.research.records import DecisionRecord
 from tickr.strategy.base import Role
+from tickr.strategy.values import StrategyValuesError
+from tickr.strategy.values import files as strategy_files
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 # What a failed read of a past day's files raises while warming it (api/warm.py).
@@ -544,8 +546,11 @@ class ApiServer(ThreadingHTTPServer):
         settings = self.settings
         named = day.isoformat()
         try:
-            folders = tuple(settled.folder_stamps(settings.strategies_root / STRATEGIES_DIR / f)
-                            for f in (settings.shown.active_strategy, *settings.shown.observers))
+            # A folder's values may come from the folders it extends: stamp all of them.
+            folders = tuple(settled.folder_stamps(path.parent)
+                            for f in (settings.shown.active_strategy, *settings.shown.observers)
+                            for path in strategy_files(settings.strategies_root / STRATEGIES_DIR
+                                                       / f / STRATEGY_FILE))
             return settled.day_key((
                 self.code_key, settings.config_digest, named,
                 settled.folder_stamps(settings.decisions / named),
@@ -553,7 +558,7 @@ class ApiServer(ThreadingHTTPServer):
                 settled.file_stamp(settings.simulation.replay_settings),
                 settled.folder_stamps(settings.simulation.calendar), folders,
                 self.history.entries(day, today)))
-        except (HistoryUnavailable, OSError):
+        except (HistoryUnavailable, OSError, StrategyValuesError):
             return None
 
     def settled_body(self, path: str, day: date, today: date) -> bytes | None:

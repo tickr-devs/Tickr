@@ -69,11 +69,12 @@ class Outcome:
 
 
 class _SymbolBars:
-    def __init__(self, bars: Sequence[Bar], settings: ResearchSettings) -> None:
+    def __init__(self, bars: Sequence[Bar], settings: ResearchSettings, atr_period: int) -> None:
         self.bars = tuple(bars)
         self.starts = [b.start for b in self.bars]
         self.index = {b.start: i for i, b in enumerate(self.bars)}
-        self.atr = atr_series(self.bars, settings.atr_period)
+        self.atr_period = atr_period
+        self.atr = atr_series(self.bars, atr_period)
         self.zone = settings.session_timezone
 
     def day(self, i: int) -> date:
@@ -99,7 +100,7 @@ def _measure(
     atr = series.atr[i]
     atr_cause = ""
     if atr is None:
-        atr_cause = f"atr unavailable (fewer than {settings.atr_period} bars)"
+        atr_cause = f"atr unavailable (fewer than {series.atr_period} bars)"
     elif atr == 0:
         atr_cause = "atr is zero"
     last_minute: datetime = record.bar_start + horizon * M1
@@ -139,8 +140,10 @@ def outcomes(
     bars_by_symbol: Mapping[str, Sequence[Bar]],
     settings: ResearchSettings,
     close_for: CloseFor,
+    atr_period: int,
 ) -> tuple[Outcome, ...]:
-    """One Outcome per (WATCH/ENTER record, horizon), in record order."""
+    """One Outcome per (WATCH/ENTER record, horizon), in record order; ATR is Wilder ATR over
+    `atr_period` M1 bars (the strategy's own, research.settings.strategy_atr_period)."""
     cache: dict[str, _SymbolBars | None] = {}
     closes: dict[date, datetime | str] = {}
     out: list[Outcome] = []
@@ -150,7 +153,7 @@ def outcomes(
         symbol = record.symbol
         if symbol not in cache:
             bars = bars_by_symbol.get(symbol)
-            cache[symbol] = _SymbolBars(bars, settings) if bars else None
+            cache[symbol] = _SymbolBars(bars, settings, atr_period) if bars else None
         day = record.bar_start.astimezone(settings.session_timezone).date()
         if day not in closes:
             try:

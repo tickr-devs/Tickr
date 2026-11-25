@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import csv
 import importlib
-import tomllib
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
@@ -37,6 +36,7 @@ from tickr.replay.errors import ReplayError
 from tickr.replay.report import write_all
 from tickr.replay.settings import ReplaySettings
 from tickr.strategy.base import Strategy
+from tickr.strategy.values import StrategyValuesError, load_values
 
 SKIPPED_FILE = "skipped.csv"
 
@@ -192,8 +192,10 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
                  last_session_count: int | None = None, end_day: date | None = None) -> None:
     calendar_dir = (cfg.root / cfg.session.calendar_file).parent
     calendar = SessionCalendar.load(calendar_dir)
-    with open(values_path, "rb") as handle:
-        values = tomllib.load(handle)
+    try:
+        values = load_values(values_path)
+    except StrategyValuesError as exc:
+        raise BacktestError(str(exc)) from exc
     factory(strategy_module, values)  # refuse bad values before any work
     pool = read_pool(out / POOL_FILE)
     window: list[date] | None = None

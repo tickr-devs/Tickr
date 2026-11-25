@@ -330,9 +330,10 @@ def test_every_shipped_strategy_screens_like_the_former_platform_limits(name):
     """Moving the limits into the strategies changed no candidate (owner 2026-11-15): with each
     shipped strategy, discovery keeps and refuses exactly what spread 1.5% and 5M USD did."""
     import importlib
-    import tomllib
+
+    from tickr.strategy.values import load_values
     module = importlib.import_module("tickr.strategy." + name.replace("-", "_"))
-    values = tomllib.loads((ROOT / "strategies" / name / "strategy.toml").read_text())
+    values = load_values(ROOT / "strategies" / name / "strategy.toml")
     strategy = module.create(values)
     md = FakeMarketData()
     md.set_screener(G, [row(G, 1, s) for s in ("OK", "WIDE", "EDGE", "LOW", "FLOOR")])

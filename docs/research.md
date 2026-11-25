@@ -73,7 +73,8 @@ For each WATCH and ENTER record and each horizon `h` in `config/research.toml`:
   last price;
 - move, max up (highest high) and max down (lowest low) after the decision bar up to the
   horizon, each minus the reference, in percent of the reference and in ATR;
-- ATR = Wilder ATR(`atr_period`) over the symbol's bars up to and including the decision bar
+- ATR = Wilder ATR over the active strategy's `[indicators] atr_period` (bot.toml `[strategy]
+  active`; refused when it has none) over the symbol's bars up to and including the decision bar
   (history days included, no later bar).
 
 A horizon is measured only when it ends at or before the regular-session close of the
@@ -197,8 +198,10 @@ spreadsheet) and `refusals_summary.json` (days, rows, totals by kind).
 ## Settings
 
 `config/research.toml` `[research]` (one comment per key, tested; missing or unknown keys are
-refused): `horizons_minutes`, `atr_period`, `session_timezone`, `output_decimal_places`
-(`latency` reads only the last two).
+refused): `horizons_minutes`, `session_timezone` (`latency` reads only the second). Numbers
+with another owner are read from it: output decimal places from `config/replay.toml`
+`output_decimal_places` (`--replay-settings`, default `config/replay.toml`, on every command) and
+the ATR length from the active strategy, never repeated here.
 What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay.
 
 Exit code 2 and `research refused: <cause>` on any bad input; nothing is guessed.

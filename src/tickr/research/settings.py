@@ -4,6 +4,10 @@ The file has one table `[research]` with exactly the keys in `KEYS`. Missing or 
 wrong types and out-of-range values are refused with a `ResearchSettingsError`. The what-if
 simulation does not use this file: it shares `config/replay.toml` with the replay tool so both
 make the same fill assumptions.
+
+Two numbers the research uses have their owners elsewhere (one source each, backlog T6): output
+decimal places are `config/replay.toml` `output_decimal_places`, and the ATR period that moves
+are expressed in is the strategy's own `[indicators] atr_period` (`strategy_atr_period`).
 """
 
 from __future__ import annotations
@@ -16,19 +20,16 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from tickr.research.errors import ResearchSettingsError
 
-KEYS = frozenset({"horizons_minutes", "atr_period", "session_timezone", "output_decimal_places"})
+KEYS = frozenset({"horizons_minutes", "session_timezone"})
+ATR_TABLE, ATR_KEY = "indicators", "atr_period"  # where a strategy file keeps its ATR length
 
 
 @dataclass(frozen=True)
 class ResearchSettings:
     horizons_minutes: tuple[int, ...]
     """Minutes after the end of the decision bar at which the price move is measured."""
-    atr_period: int
-    """Wilder ATR length in M1 bars used to express moves in ATR."""
     session_timezone: ZoneInfo
     """Exchange time zone: a horizon never crosses the decision's session date in it."""
-    output_decimal_places: int
-    """Decimal places for prices, ATR and percent in the outputs."""
 
 
 def _int(key: str, raw: Any, minimum: int) -> int:
@@ -64,10 +65,17 @@ def settings_from_mapping(data: dict[str, Any]) -> ResearchSettings:
         raise ResearchSettingsError(f"session_timezone is unknown: {zone_name!r}") from exc
     return ResearchSettings(
         horizons_minutes=horizons,
-        atr_period=_int("atr_period", table["atr_period"], 1),
         session_timezone=zone,
-        output_decimal_places=_int("output_decimal_places", table["output_decimal_places"], 0),
     )
+
+
+def strategy_atr_period(values: dict[str, Any], label: str) -> int:
+    """The Wilder ATR length (M1 bars) of a strategy's resolved values: outcomes are expressed
+    in the ATR the strategy itself measures. `label` names the strategy in the refusal."""
+    table = values.get(ATR_TABLE)
+    if not isinstance(table, dict) or ATR_KEY not in table:
+        raise ResearchSettingsError(f"{label} has no [{ATR_TABLE}] {ATR_KEY} to measure ATR with")
+    return _int(f"{label} [{ATR_TABLE}] {ATR_KEY}", table[ATR_KEY], 1)
 
 
 def load_research_settings(path: Path) -> ResearchSettings:

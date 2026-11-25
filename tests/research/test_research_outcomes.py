@@ -11,6 +11,8 @@ from tickr.research.outcomes import outcomes, summarize
 from tickr.research.records import Admission
 from tickr.strategy.base import Verdict
 
+ATR_PERIOD = 2  # Wilder ATR length of the outcomes (a strategy's [indicators] atr_period)
+
 # 10:00 .. 10:06; 10:03 has no trades. ATR(2) at 10:01 = (0.3 + 0.3) / 2 = 0.3.
 ROWS = [
     ("10.0", "10.2", "9.9", "10.1"),
@@ -25,7 +27,7 @@ BARS = series("10:00", ROWS, skip=(3,)) + series("09:30", [flat("11")], day=date
 
 
 def run(records, bars=BARS, close_for=close_at_16):
-    return outcomes(records, {"ABC": bars}, research_settings(), close_for)
+    return outcomes(records, {"ABC": bars}, research_settings(), close_for, ATR_PERIOD)
 
 
 def by_horizon(rows):

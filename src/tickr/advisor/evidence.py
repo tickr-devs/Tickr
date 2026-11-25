@@ -53,6 +53,7 @@ def build_evidence(
     close_for: CloseFor,
     replay: ReplaySettings,
     clock_for: ClockFor,
+    atr_period: int,
 ) -> dict[str, Any]:
     active = [
         r for r in records
@@ -68,8 +69,9 @@ def build_evidence(
         if r.decision.verdict in (Verdict.IGNORE, Verdict.WATCH) and r.decision.decisive
     )
     refusals = Counter(r.refusal_cause for r in active if r.admission is Admission.REFUSED)
-    places = research.output_decimal_places
-    observed = summarize_outcomes(outcomes(active, bars_by_symbol, research, close_for))
+    places = replay.output_decimal_places
+    observed = summarize_outcomes(outcomes(active, bars_by_symbol, research, close_for,
+                                           atr_period))
     simulated = summarize_whatif(what_if(active, bars_by_symbol, replay, clock_for))
     versions = observer_report.report(records, bars_by_symbol, replay, clock_for)
     bundle = {

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import tomllib
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -31,13 +30,14 @@ from tickr.research.compare import DiffKind, decide, diff
 from tickr.strategy import price_action_v1 as v1
 from tickr.strategy import price_action_v2 as v2
 from tickr.strategy.base import PositionView, SymbolContext, Verdict
+from tickr.strategy.values import load_values
 from tickr.types import Bar
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def values(folder: str) -> dict:
-    return tomllib.loads((ROOT / "strategies" / folder / "strategy.toml").read_text())
+    return load_values(ROOT / "strategies" / folder / "strategy.toml")
 
 
 def make_v1():

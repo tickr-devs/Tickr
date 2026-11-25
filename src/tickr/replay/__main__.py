@@ -19,6 +19,7 @@ from tickr.replay.errors import ReplayError, SettingsError
 from tickr.replay.report import render_summary, write_all
 from tickr.replay.settings import load_settings
 from tickr.strategy.base import Strategy
+from tickr.strategy.values import StrategyValuesError, load_values
 
 
 def strategy_factory(module_name: str, values_path: Path) -> Callable[[], Strategy]:
@@ -30,8 +31,10 @@ def strategy_factory(module_name: str, values_path: Path) -> Callable[[], Strate
     create = getattr(module, "create", None)
     if not callable(create):
         raise ReplayError(f"strategy module {module_name} has no create(values)")
-    with open(values_path, "rb") as handle:
-        values = tomllib.load(handle)
+    try:
+        values = load_values(values_path)
+    except StrategyValuesError as exc:
+        raise ReplayError(str(exc)) from exc
     try:
         create(values)
     except ValueError as exc:

@@ -21,26 +21,32 @@ max_evaluation_seconds = 0.5
 decisions_dir = "decisions"
 ```
 
-Each observer folder holds a full `strategy.toml`. Its `[strategy] name` picks the module from
+Each observer folder holds a `strategy.toml`. Its `[strategy] name` picks the module from
 `strategy_modules`; its `version` makes the identity. A value variant of the active strategy is
 a new folder with the same name and a new version (owner rule: changing a value means a new
-version). Every identity (name + version) must be distinct, the active one included. Setup
+version). Such a variant stores only its differences: `[strategy] extends` names the folder it
+builds on and `extends_version` the version that folder must declare; every other value is
+inherited, resolved once when the file is read (`src/tickr/strategy/values.py`). A missing or
+cyclic parent, a parent whose version is not `extends_version` (a changed parent never changes a
+variant silently), or a key that repeats the inherited value is refused. Every identity (name +
+version) must be distinct, the active one included. Setup
 problems are refused with one cause (`ObserverError`): missing folder, unknown module, values
 refused by the strategy, duplicate identity, more than `max_observers`.
 
 ## Shipped observers: relative-volume variants of price-action-v3
 
 `config/bot.toml` ships with two observers, `strategies/price-action-v3-relvol-1.5` and
-`price-action-v3-relvol-1.75`: full copies of the active `price-action-v3` with only
-`[indicators] minimum_relative_volume` lowered from 2.0 (and their own `version`), so the apps
+`price-action-v3-relvol-1.75`: they extend the active `price-action-v3` and change only
+`[indicators] minimum_relative_volume`, lowered from 2.0 (and their own `version`), so the apps
 show live, on the same data, what a looser relative-volume filter would have done (owner
 2026-11-16; most active decisions are refused by that check). `tests/observers` checks that each
 differs from the active strategy in that value and the version only. When the active strategy
-changes, these folders must follow it or be replaced.
+changes version, these folders are refused until their `extends_version` and own `version` follow
+it. The advisor can propose a change only to a value the variant file writes itself.
 
 ## Candidate: price-action-v2
 
-`strategies/price-action-v2/` is price-action-v1 (same values) plus two backlog rules, in
+`strategies/price-action-v2/` extends price-action-v1 (same values, inherited) with two backlog rules, in
 `src/tickr/strategy/price_action_v2.py`. New rules need new code, so it is a new strategy
 name with its own module (already mapped in `strategy_modules`), not a value variant of v1.
 It is not active and not an observer by default.

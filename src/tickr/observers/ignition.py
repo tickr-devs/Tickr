@@ -46,7 +46,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import tomllib
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -58,6 +57,7 @@ from typing import Any
 from tickr.calendar import MarketDay, ny_date_of
 from tickr.config import Config
 from tickr.data.base import ScreenerRow, StreamNotice
+from tickr.strategy.values import STRATEGY_FILE, StrategyValuesError, load_values
 from tickr.types import Bar, Quote
 
 FILE_NAME = "ignition.jsonl"
@@ -529,12 +529,11 @@ def from_config(config: Config) -> Ignition | None:
     folder = config.observers.ignition
     if not folder:
         return None
-    path = config.root / "strategies" / folder / "strategy.toml"
+    path = config.root / "strategies" / folder / STRATEGY_FILE
     try:
-        with path.open("rb") as handle:
-            values = tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise IgnitionError(f"{path}: {exc}") from None
+        values = load_values(path)
+    except StrategyValuesError as exc:
+        raise IgnitionError(str(exc)) from None
     rules = Rules.from_values(values)
     if rules.name != folder:
         raise IgnitionError(f"[strategy] name {rules.name!r} is not the folder {folder!r}")

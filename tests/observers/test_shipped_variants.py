@@ -1,21 +1,21 @@
 """The observers config/bot.toml ships with load, and each relative-volume variant
 (`<base>-relvol-<value>`) differs from its base strategy folder only in that value and the
-version (a variant is a full copy with a new version)."""
+version: it extends the base (tickr.strategy.values) and writes only those two."""
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 from tickr import config
 from tickr.observers.loader import STRATEGIES_DIR, STRATEGY_FILE, load_observers
+from tickr.strategy.values import load_values
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
 
 
 def _values(folder: str) -> dict:
-    return tomllib.loads((ROOT / STRATEGIES_DIR / folder / STRATEGY_FILE).read_text("utf-8"))
+    return load_values(ROOT / STRATEGIES_DIR / folder / STRATEGY_FILE)
 
 
 def _flat(values: dict) -> dict[tuple[str, str], object]:

@@ -12,7 +12,6 @@ decisions can always be told apart. Any problem is an ObserverError with one cau
 from __future__ import annotations
 
 import importlib
-import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -22,6 +21,7 @@ from typing import Any
 from tickr.config import Config
 from tickr.observers.errors import ObserverError
 from tickr.strategy.base import Strategy
+from tickr.strategy.values import StrategyValuesError, load_values
 
 STRATEGIES_DIR = "strategies"
 STRATEGY_FILE = "strategy.toml"
@@ -52,13 +52,13 @@ def parse_modules(entries: Sequence[str]) -> dict[str, str]:
 
 
 def _read_values(root: Path, folder: str) -> tuple[dict[str, Any], dict[str, Any], str]:
-    """The folder's strategy.toml, its [strategy] table and name; ObserverError otherwise."""
+    """The folder's strategy.toml resolved over the folder it extends (tickr.strategy.values),
+    its [strategy] table and name; ObserverError otherwise."""
     path = root / STRATEGIES_DIR / folder / STRATEGY_FILE
     try:
-        with open(path, "rb") as handle:
-            values = tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ObserverError(f"{folder}: cannot read {path}: {exc}") from exc
+        values = load_values(path)
+    except StrategyValuesError as exc:
+        raise ObserverError(f"{folder}: {exc}") from exc
     table = values.get("strategy")
     name = table.get("name") if isinstance(table, dict) else None
     if not isinstance(name, str):
@@ -67,7 +67,7 @@ def _read_values(root: Path, folder: str) -> tuple[dict[str, Any], dict[str, Any
 
 
 def read_values(root: Path, folder: str) -> dict[str, Any]:
-    """The folder's parsed strategy.toml (nothing imported or built); ObserverError otherwise."""
+    """The folder's resolved strategy.toml (nothing imported or built); ObserverError otherwise."""
     return _read_values(root, folder)[0]
 
 

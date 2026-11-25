@@ -8,7 +8,8 @@ slippage_percent = 0.05
 slippage_min_usd = 0.01
 # Bars after an ENTER decision during which the simulated entry may fill; read by replay/engine.py.
 entry_wait_bars = 1
-# Decimal places for prices, R and percent in CSV and summary outputs; read by replay/report.py.
+# Decimal places for prices, R, ATR, percent and USD in CSV and summary outputs; read by replay/report.py and by
+# research/report.py (python -m tickr.research and the advisor evidence).
 output_decimal_places = 4
 # Prior sessions of the same symbol passed to the strategy as history (in bars and prior_sessions); read by replay/engine.py.
 history_sessions = 5

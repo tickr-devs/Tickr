@@ -13,6 +13,8 @@ from pathlib import Path
 from tickr import config as bot_config
 from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import ConfigError
+from tickr.observers.errors import ObserverError
+from tickr.observers.loader import read_values
 from tickr.replay.__main__ import session_clock, strategy_factory
 from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
@@ -22,7 +24,7 @@ from tickr.research.errors import ResearchError
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
 from tickr.research.records import load_records, write_records
-from tickr.research.settings import load_research_settings
+from tickr.research.settings import load_research_settings, strategy_atr_period
 from tickr.research.whatif import what_if
 
 
@@ -37,9 +39,12 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--bars", type=Path, nargs="+", required=True, help="JSONL bar files")
         p.add_argument("--out", type=Path, required=True, help="output directory")
 
-    def clock(p: argparse.ArgumentParser) -> None:
+    def places(p: argparse.ArgumentParser) -> None:
         p.add_argument("--replay-settings", type=Path, default=Path("config/replay.toml"),
-                       help="replay settings TOML (fill model)")
+                       help="replay settings TOML (fill model, output decimal places)")
+
+    def clock(p: argparse.ArgumentParser) -> None:
+        places(p)
         p.add_argument("--config", type=Path, default=Path("config/bot.toml"),
                        help="bot config: [session] offsets and the calendar give each day's clock")
 
@@ -48,7 +53,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
     p.add_argument("--settings", type=Path, required=True, help="research TOML")
     p.add_argument("--config", type=Path, default=Path("config/bot.toml"),
-                   help="bot config: its calendar gives each day's regular close")
+                   help="bot config: its calendar gives each day's regular close, its active "
+                        "strategy the ATR period")
+    places(p)
 
     p = sub.add_parser("whatif", help="simulate ENTER decisions that were not taken")
     bars_and_out(p)
@@ -73,6 +80,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--baseline-strategy", help="NAME or NAME:VERSION to keep from baseline")
     p.add_argument("--candidate-strategy", help="NAME or NAME:VERSION to keep from candidate")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
     p = sub.add_parser("latency", help="quote latency and stream notice counters from capture")
@@ -82,12 +90,14 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--source", choices=("stream", "snapshot"), default="stream",
                    help="which captured quotes to measure")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
     p = sub.add_parser("refusals", help="per day and setup: first failed checks, refusals, entries")
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
     p.add_argument("--strategy", help="NAME or NAME:VERSION to keep")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
     return parser
 
@@ -100,13 +110,16 @@ def _filter(records, spec: str | None):
 
 
 def _run(args: argparse.Namespace) -> dict:
+    replay_settings = load_settings(args.replay_settings)  # every command writes numbers
     if args.command == "outcomes":
         settings = load_research_settings(args.settings)
         cfg = bot_config.load(args.config)
+        active = cfg.strategy.active
+        atr_period = strategy_atr_period(read_values(cfg.root, active), active)
         calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
         rows = outcomes(load_records(args.decisions), load_bars(args.bars), settings,
-                        lambda day: calendar.day(day).regular_close)
-        return report.write_outcomes(rows, args.out, settings.output_decimal_places)
+                        lambda day: calendar.day(day).regular_close, atr_period)
+        return report.write_outcomes(rows, args.out, replay_settings.output_decimal_places)
     if args.command == "diff":
         settings = load_research_settings(args.settings)
         result = compare.diff(
@@ -114,19 +127,18 @@ def _run(args: argparse.Namespace) -> dict:
             _filter(load_records(args.candidate), args.candidate_strategy),
             settings.session_timezone,
         )
-        return report.write_diff(result, args.out, settings.output_decimal_places)
+        return report.write_diff(result, args.out, replay_settings.output_decimal_places)
     if args.command == "latency":
         settings = load_research_settings(args.settings)
         result = latency_report(args.quotes, args.notices, args.source,
                                 settings.session_timezone)
         return report.write_latency(result, args.source, args.out,
-                                    settings.output_decimal_places)
+                                    replay_settings.output_decimal_places)
     if args.command == "refusals":
         settings = load_research_settings(args.settings)
         rows = refusals.table(_filter(load_records(args.decisions), args.strategy),
                               settings.session_timezone)
-        return report.write_refusals(rows, args.out, settings.output_decimal_places)
-    replay_settings = load_settings(args.replay_settings)
+        return report.write_refusals(rows, args.out, replay_settings.output_decimal_places)
     clock_for = session_clock(args.config)
     places = replay_settings.output_decimal_places
     if args.command == "whatif":
@@ -160,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         ResearchError,
         ReplayError,
+        ObserverError,
         ConfigError,
         CalendarRefused,
         OSError,
