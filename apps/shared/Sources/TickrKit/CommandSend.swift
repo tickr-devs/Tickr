@@ -43,7 +43,7 @@ extension APIClient {
 
 /// What became of one send of an operator command: the API queued it, the API refused it (nothing
 /// was queued), or its answer was lost, so whether it was queued is not known yet.
-public enum SendOutcome: Sendable, Equatable {
+public enum CommandSendOutcome: Sendable, Equatable {
   case queued(CommandAcceptedV1)
   /// The API's cause in the person's language, without its status or error code.
   case refused(String)
@@ -99,7 +99,7 @@ public enum CommandSend {
   static let serverErrorFloor = 500
 
   /// Sends `command` once under `key`.
-  public static func send(_ command: OperatorCommand, key: String, client: APIClient) async -> SendOutcome {
+  public static func send(_ command: OperatorCommand, key: String, client: APIClient) async -> CommandSendOutcome {
     do {
       return .queued(try await client.send(command, idempotencyKey: key))
     } catch {
@@ -109,7 +109,7 @@ public enum CommandSend {
 
   /// What a failed send says: a 4xx refusal queued nothing; anything else (no answer, a timeout, a
   /// cancelled request, a 5xx, an answer this app cannot read) leaves the outcome unknown.
-  static func outcome(of error: Error) -> SendOutcome {
+  static func outcome(of error: Error) -> CommandSendOutcome {
     if case .refused(let status, _, let cause) = error as? APIError, status < serverErrorFloor {
       return .refused(cause)
     }
