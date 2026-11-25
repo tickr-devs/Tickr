@@ -74,6 +74,9 @@ emergency command tiers from the palette's values (`Swatch`) and fails below 4.5
 | `seriesFastEMA` | EMA 9 line | = `accent` | = `accent` |
 | `seriesSlowEMA` | EMA 20 line | = `highlight` | = `highlight` |
 | `seriesATR` / `seriesATRText` | ATR pane | `#EC4899` / `#BE185D` | `#F472B6` / `#F9A8D4` |
+| `cyan` / `cyanText` | Live-flow stage Priced (`PipelineStage.fill`, StageColour.swift) | `#0891B2` / `#0E7490` | `#22D3EE` / `#22D3EE` |
+| `orange` / `orangeText` | Live-flow stage Bought | `#EA580C` / `#C2410C` | `#FB923C` / `#FB923C` |
+| `lime` / `limeText` | Live-flow stage Checked (the broker matches our records) | `#65A30D` / `#4D7C0F` | `#A3E635` / `#A3E635` |
 | `seriesUniverse` | Universe stage of the live flow | = `seriesATR` | = `seriesATR` |
 | `glowIndigo`, `glowTeal` | Light background corner glows (at `Opacity.glow`, reach 420 pt; teal centred on the right edge, a fifth down) | `#6366F1`, `#14B8A6` | not drawn |
 | `shadow` | Light card shadow (at `Opacity.shadow`) | `#283C96` | not drawn |
