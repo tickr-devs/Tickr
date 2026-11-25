@@ -12960,23 +12960,6 @@
         }
       }
     },
-    "kit.system.botWillNotStart" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The bot does not start on this result"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Con este resultado el bot no inicia"
-          }
-        }
-      }
-    },
     "kit.system.check.alertChannel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13198,6 +13181,23 @@
         }
       }
     },
+    "kit.system.checkFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed check: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobación fallida: %@"
+          }
+        }
+      }
+    },
     "kit.system.configInvalid" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13221,30 +13221,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Failed: %@"
+            "value" : "Failed %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falló: %@"
-          }
-        }
-      }
-    },
-    "kit.system.holds" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "caffeinate holds: %lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "bloqueos de caffeinate: %lld"
+            "value" : "Falló %@"
           }
         }
       }
@@ -13266,36 +13249,19 @@
         }
       }
     },
-    "kit.system.idle" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Idle"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inactivo"
-          }
-        }
-      }
-    },
     "kit.system.keptAwake" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kept awake"
+            "value" : "Yes"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Despierto"
+            "value" : "Sí"
           }
         }
       }
@@ -13313,23 +13279,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Última revisión %@ ET · falló la lectura del bróker"
-          }
-        }
-      }
-    },
-    "kit.system.lastCheckFlat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last check %@ ET · nothing open"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Última revisión %@ ET · nada abierto"
           }
         }
       }
@@ -13357,13 +13306,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Webull link"
+            "value" : "Broker connection"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conexión con Webull"
+            "value" : "Conexión con el bróker"
+          }
+        }
+      }
+    },
+    "kit.system.linkBlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New entries blocked: needs a broker read under %@ s"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entradas nuevas bloqueadas: hace falta una lectura del bróker de menos de %@ s"
           }
         }
       }
@@ -13374,13 +13340,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Last broker read · new entries need it under %@ s"
+            "value" : "New entries need a broker read under %@ s"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Última lectura del bróker · las entradas nuevas la piden en menos de %@ s"
+            "value" : "Las entradas nuevas necesitan una lectura del bróker de menos de %@ s"
           }
         }
       }
@@ -13453,36 +13419,19 @@
         }
       }
     },
-    "kit.system.noCheckYet" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No broker check recorded yet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no hay revisiones del bróker"
-          }
-        }
-      }
-    },
     "kit.system.noRestarts" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "None yet: the bot was never found down with an open trade"
+            "value" : "None yet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ninguno: nunca se encontró el bot caído con una operación abierta"
+            "value" : "Ninguno aún"
           }
         }
       }
@@ -13504,23 +13453,6 @@
         }
       }
     },
-    "kit.system.notNeededNow" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not needed while the bot is not running"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hace falta mientras el bot no funciona"
-          }
-        }
-      }
-    },
     "kit.system.notStartedToday" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13534,6 +13466,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No iniciado hoy"
+          }
+        }
+      }
+    },
+    "kit.system.notTraining" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not training"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin entrenamiento"
           }
         }
       }
@@ -13731,30 +13680,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sleep prevention"
+            "value" : "Stays awake"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Evitar el reposo"
-          }
-        }
-      }
-    },
-    "kit.system.startedToday" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Started today"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciado hoy"
+            "value" : "Se mantiene despierto"
           }
         }
       }
@@ -13867,13 +13799,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Model training"
+            "value" : "Next model version"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Entrenamiento del modelo"
+            "value" : "Próxima versión del modelo"
           }
         }
       }
@@ -13912,19 +13844,19 @@
         }
       }
     },
-    "kit.system.trainingNote" : {
+    "kit.system.trainingPercent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · %2$lld of %3$lld · updated %4$@"
+            "value" : "Training %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · %2$lld de %3$lld · actualizado %4$@"
+            "value" : "Entrenando %@"
           }
         }
       }
@@ -13959,6 +13891,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watchdog"
+          }
+        }
+      }
+    },
+    "kit.system.watching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watching"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vigilando"
+          }
+        }
+      }
+    },
+    "kit.system.willNotStart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bot will not start: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El bot no arrancará: %@"
           }
         }
       }

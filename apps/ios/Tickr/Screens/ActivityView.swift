@@ -612,7 +612,7 @@ extension DayFigures {
 #endif
 
 /// A closed trade as a row shows it, from today's status or from a recorded day.
-private struct TradeLine: Identifiable {
+struct TradeLine: Identifiable {
   let symbol: String
   let openedAt: Date
   let closedAt: Date
@@ -678,50 +678,11 @@ private struct TradeLine: Identifiable {
   var id: String { symbol + Format.separator + openedAt.formatted(.iso8601) }
   /// The New York day the trade opened, which the what-if replays.
   var day: WireDate { WireDate(newYorkDateOf: openedAt) }
-
-  /// "stop confirmed in 1.4 s · MAE −12.00 · MFE +30.00 (at least)", or nil with neither: what
-  /// VoiceOver reads for the row's metric chips.
-  var metrics: String? {
-    var parts: [String] = []
-    if let stopAfter {
-      parts.append(String(localized: L10n.Activity.stopAfter(Money.plain(stopAfter, fractionDigits: 1))))
-    }
-    if let mae, let mfe {
-      parts.append(String(localized: L10n.Activity.excursion(Money.signedUSD(mae), Money.signedUSD(mfe))))
-    }
-    if let codeVersion {
-      parts.append(String(localized: L10n.Activity.codeVersion(codeVersion)))
-    }
-    return parts.isEmpty ? nil : parts.joined(separator: Format.separator)
-  }
 }
 
 private struct TradesList: View {
-  /// Symbols of a trade's figures.
-  static let quantitySymbol = "number"
+  /// Symbol of a what-if entry (the not-taken rows).
   static let entrySymbol = "arrow.right.to.line"
-  static let entryExitSymbol = "arrow.right"
-  static let resultUpSymbol = "chart.line.uptrend.xyaxis"
-  static let resultDownSymbol = "chart.line.downtrend.xyaxis"
-  static let lastSymbol = "chart.bar"
-  static let sendsSymbol = "paperplane"
-  static let timeSymbol = "clock"
-  /// A stop the broker confirmed (its time to confirmation).
-  static let stopSymbol = StopState.verifiedSymbol
-  static let maeSymbol = "arrow.down"
-  static let mfeSymbol = "arrow.up"
-  static let codeSymbol = "chevron.left.forwardslash.chevron.right"
-  /// Symbol of a closed trade's "Another strategy" button.
-  static let anotherSymbol = "arrow.triangle.branch"
-
-  /// One figure of a row: a symbol, the figure and its hint.
-  struct Figure: Identifiable {
-    let symbol: String
-    let label: LocalizedStringResource
-    let value: String
-    var tone: Tone?
-    var id: String { symbol }
-  }
 
   let activity: ActivityModel
   let url: URL?
@@ -732,35 +693,26 @@ private struct TradesList: View {
   /// Title and text shown when there is nothing to list.
   let empty: (title: LocalizedStringResource, body: LocalizedStringResource)
 
-  /// The closed trade whose "Another strategy" sheet is open.
-  @State private var another: TradeLine?
+  /// The closed trade whose sheet is open.
+  @State private var opened: TradeLine?
 
   var body: some View {
     let sorted = trades.sorted { $0.closedAt > $1.closedAt }
     VStack(spacing: Tokens.Space.s) {
       ForEach(positions, id: \.symbol) { position in
-        let state = position.stop.state
-        // As on the design (IOSActivity v99): no time beside the symbol (the fill time is a chip
-        // below); the OPEN tag, then the stop's own state beside it (VERIFIED green, PENDING amber…).
-        row(symbol: position.symbol, time: nil,
-          tag: String(localized: L10n.Activity.openTag),
-          tone: Tone.openPosition,
-          result: String(localized: L10n.Common.quantityAt(position.quantity.text, Money.price(position.entryPrice.value))),
-          figures: openFigures(position), stopState: state, open: true)
+        openRow(position)
           .rise(step: ActivityView.Order.list.rawValue)
       }
       ForEach(Array(sorted.enumerated()), id: \.offset) { index, trade in
-        row(symbol: trade.symbol,
-          time: Format.time(trade.openedAt) + Format.timeRange + Format.time(trade.closedAt),
-          tag: Board.exitReasonTitle(trade.exitReason).uppercased(),
-          // The reason's own tone (v99: strategy exit teal, stopped out pink, other closes grey),
-          // as the Mac's Trades; the result keeps its sign's.
-          tagTone: Tone.exit(trade.exitReason),
-          tone: Tone.result(trade.result),
-          result: Money.signedUSD(trade.result),
-          figures: figures(trade), metrics: metrics(trade), metricsText: trade.metrics, after: trade.pricesAfter,
-          another: url == nil ? nil : trade)
-          .rise(step: ActivityView.Order.list.rawValue + index)
+        // As the design (v134): one line per closed trade; a tap opens its sheet with the rest.
+        Button {
+          opened = trade
+        } label: {
+          closedRow(trade)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(Text(L10n.Activity.tradeOpenHint))
+        .rise(step: ActivityView.Order.list.rawValue + index)
       }
       if trades.isEmpty && positions.isEmpty {
         ContentUnavailableView {
@@ -770,85 +722,80 @@ private struct TradesList: View {
         }
       }
     }
-    .sheet(item: $another) { trade in
-      if let url {
-        AnotherStrategySheet(activity: activity, url: url, symbol: trade.symbol, day: trade.day,
-          botR: trade.resultR, botUsd: trade.result)
+    .sheet(item: $opened) { trade in
+      TradeSheet(trade: trade, activity: activity, url: url)
+    }
+  }
+
+  /// An open position: symbol, fill time, the OPEN tag and R while current; under it the shares at
+  /// the entry price, the price now, and the stop with its state ("10 @ 12.34 · now 12.53 · stop
+  /// 11.90 · Verified"), plus how many times the entry was sent when it was not once.
+  private func openRow(_ position: Position) -> some View {
+    let mark = marks[position.symbol]
+    return VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+      ChipFlow {
+        headerText(position.symbol)
+        timeText(Format.time((position.entry.filledAt ?? position.openedAt).date))
+        Badge(L10n.Activity.openTag, tone: Tone.openPosition)
+        if let r = mark?.resultR, let unrealized = mark?.unrealized {
+          resultText(Risk.text(r), tone: Tone.result(unrealized))
+        }
       }
+      Text(Self.openLine(position, mark: mark))
+        .font(Tokens.Typography.captionMono)
+        .fixedSize(horizontal: false, vertical: true)
     }
+    .padding(Tokens.Space.m)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    // An open position's card is washed in `info`, as on the design.
+    .background {
+      RoundedRectangle(cornerRadius: Tokens.Radius.card, style: .continuous)
+        .fill(Palette.info.opacity(Tokens.Opacity.wash))
+    }
+    .tickrCard(radius: Tokens.Radius.card, tint: Palette.info)
+    .accessibilityElement(children: .combine)
   }
 
-  /// The button that opens "Another strategy" on a closed trade.
-  private func anotherButton(_ trade: TradeLine) -> some View {
-    Button {
-      another = trade
-    } label: {
-      Image(systemName: Self.anotherSymbol)
-        .foregroundStyle(Tone.highlight.text)
-    }
-    .buttonStyle(.glyph)
-    // The row is one VoiceOver element and offers this as its named action instead.
-    .accessibilityHidden(true)
-  }
-
-  /// An open position as on the design: last price and R while current, entry sends, stop, time
-  /// of the fill and quantity.
-  private func openFigures(_ position: Position) -> [Figure] {
+  /// "10 @ 12.34 · now 12.53 · stop 11.90 · Verified": the stop in its state's colour, a repeated
+  /// entry send in pink.
+  static func openLine(_ position: Position, mark: PositionMarks?) -> AttributedString {
     let state = position.stop.state
-    var list: [Figure] = []
-    if let marks = marks[position.symbol] {
-      list.append(Figure(symbol: Self.lastSymbol, label: marks.isLive ? L10n.Activity.hintBid : L10n.Activity.hintLast,
-        value: Money.price(marks.last)))
-      if let r = marks.resultR {
-        list.append(Figure(symbol: r < 0 ? Self.resultDownSymbol : Self.resultUpSymbol, label: L10n.Activity.hintResultR,
-          value: Risk.text(r), tone: Tone.result(marks.unrealized)))
-      }
+    var text = AttributedString(String(localized: L10n.Common.quantityAt(position.quantity.text,
+      Money.price(position.entryPrice.value))))
+    text.swiftUI.foregroundColor = Palette.textSecondary
+    if let mark {
+      let price = Money.price(mark.last)
+      var now = AttributedString(Format.separator
+        + String(localized: mark.isLive ? L10n.Activity.nowPrice(price) : L10n.Activity.lastPrice(price)))
+      now.swiftUI.foregroundColor = Palette.textSecondary
+      text += now
     }
-    if let sends = position.entry.sends {
-      list.append(Figure(symbol: Self.sendsSymbol, label: L10n.Activity.hintSends,
-        value: String(localized: L10n.Activity.sends(sends)), tone: sends == 1 ? nil : .loss))
+    var stop = AttributedString(Format.separator + String(localized: L10n.Activity.stopDetail(
+      position.stop.price.map { Money.price($0.value) } ?? Format.missing, Board.stopStateTitle(state))))
+    stop.swiftUI.foregroundColor = state.tone.text
+    text += stop
+    if let sends = position.entry.sends, sends != 1 {
+      var sent = AttributedString(Format.separator + String(localized: L10n.Activity.sentTimes(sends)))
+      sent.swiftUI.foregroundColor = Tone.loss.text
+      text += sent
     }
-    list.append(Figure(symbol: StopState.levelSymbol, label: L10n.Activity.hintStop,
-      value: position.stop.price.map { Money.price($0.value) } ?? Format.missing, tone: state.tone))
-    list.append(Figure(symbol: Self.timeSymbol, label: L10n.Activity.hintOpened,
-      value: Format.time((position.entry.filledAt ?? position.openedAt).date)))
-    list.append(Figure(symbol: Self.quantitySymbol, label: L10n.Activity.hintQuantity, value: position.quantity.text))
-    return list
+    return text
   }
 
-  /// Quantity, entry to exit, and the result in R.
-  private func figures(_ trade: TradeLine) -> [Figure] {
-    var list = [
-      Figure(symbol: Self.quantitySymbol, label: L10n.Activity.hintQuantity, value: trade.quantity),
-      Figure(symbol: Self.entryExitSymbol, label: L10n.Activity.hintEntryExit,
-        value: trade.entryPrice + Format.arrow + trade.exitPrice),
-    ]
-    if let r = trade.resultR {
-      list.append(Figure(symbol: r < 0 ? Self.resultDownSymbol : Self.resultUpSymbol, label: L10n.Activity.hintResultR,
-        value: Risk.text(r),
-        tone: Tone.result(trade.result)))
+  /// A closed trade: symbol, open–close time, the exit reason's tag and the result.
+  private func closedRow(_ trade: TradeLine) -> some View {
+    ChipFlow {
+      headerText(trade.symbol)
+      timeText(Format.time(trade.openedAt) + Format.timeRange + Format.time(trade.closedAt))
+      // The reason's own tone (strategy exit teal, stopped out pink, other closes grey).
+      Badge(verbatim: Board.exitReasonTitle(trade.exitReason).uppercased(), tone: Tone.exit(trade.exitReason))
+      resultText(Money.signedUSD(trade.result), tone: Tone.result(trade.result))
     }
-    return list
-  }
-
-  /// Seconds to the confirmed stop, MAE and MFE, and the code version, when recorded.
-  private func metrics(_ trade: TradeLine) -> [Figure] {
-    var list: [Figure] = []
-    if let after = trade.stopAfter {
-      list.append(Figure(symbol: Self.stopSymbol, label: L10n.Activity.hintStopAfter,
-        value: String(localized: L10n.Risk.seconds(Money.plain(after, fractionDigits: 1))), tone: .profit))
-    }
-    if let mae = trade.mae, let mfe = trade.mfe {
-      // Coloured by the value shown, so "↓ $0.00" is not pink.
-      list.append(Figure(symbol: Self.maeSymbol, label: L10n.Activity.hintMae, value: Money.signedUSD(mae),
-        tone: Tone.result(mae)))
-      list.append(Figure(symbol: Self.mfeSymbol, label: L10n.Activity.hintMfe, value: Money.signedUSD(mfe),
-        tone: Tone.result(mfe)))
-    }
-    if let code = trade.codeVersion {
-      list.append(Figure(symbol: Self.codeSymbol, label: L10n.Activity.hintCodeVersion, value: code))
-    }
-    return list
+    .padding(Tokens.Space.m)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+    .tickrCard(radius: Tokens.Radius.card)
+    .accessibilityElement(children: .combine)
   }
 
   private func headerText(_ symbol: String) -> some View {
@@ -866,106 +813,6 @@ private struct TradesList: View {
     Text(verbatim: result)
       .font(Tokens.Typography.calloutMono.bold())
       .foregroundStyle(tone.text)
-  }
-
-  /// A row's tag, and for an open position its stop's state as a tag of its own beside it (the
-  /// board's OPEN, then VERIFIED): two meanings, two tags, never one "OPEN · VERIFIED".
-  @ViewBuilder
-  private func tags(_ tag: String, tone: Tone, stopState: StopState?) -> some View {
-    Badge(verbatim: tag, tone: tone)
-    if let stopState {
-      Badge(verbatim: Board.stopStateTitle(stopState), tone: stopState.tone)
-        .hint(L10n.Activity.hintStop)
-    }
-  }
-
-  private func row(
-    symbol: String, time: String?, tag: String, tagTone: Tone? = nil, tone: Tone, result: String,
-    figures: [Figure], metrics: [Figure] = [], metricsText: String? = nil, stopState: StopState? = nil,
-    open: Bool = false, after: [PriceAfterV1] = [], another: TradeLine? = nil
-  ) -> some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      // One line while it fits; at large text sizes the symbol and result keep a line of their own
-      // and the time and tag wrap below, so no figure breaks in the middle or falls into letters.
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: Tokens.Space.s) {
-          headerText(symbol)
-          if let time { timeText(time) }
-          Spacer(minLength: Tokens.Space.s)
-          tags(tag, tone: tagTone ?? tone, stopState: stopState)
-          resultText(result, tone: tone)
-          if let another { anotherButton(another) }
-        }
-        VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-          HStack(spacing: Tokens.Space.s) {
-            headerText(symbol)
-            Spacer(minLength: Tokens.Space.s)
-            resultText(result, tone: tone)
-            if let another { anotherButton(another) }
-          }
-          ChipFlow {
-            if let time { timeText(time) }
-            tags(tag, tone: tagTone ?? tone, stopState: stopState)
-          }
-        }
-        // The largest sizes: the result ("53 @ 24.69") gets a line of its own too.
-        VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-          HStack(spacing: Tokens.Space.s) {
-            headerText(symbol)
-            Spacer(minLength: Tokens.Space.s)
-            if let another { anotherButton(another) }
-          }
-          resultText(result, tone: tone)
-          ChipFlow {
-            if let time { timeText(time) }
-            tags(tag, tone: tagTone ?? tone, stopState: stopState)
-          }
-        }
-      }
-      ChipFlow {
-        chipViews(figures)
-      }
-      if !metrics.isEmpty {
-        // VoiceOver reads the sentence ("stop confirmed in 1.4 s · MAE … (at least)").
-        chips(metrics)
-          .accessibilityElement(children: .ignore)
-          .accessibilityLabel(Text(verbatim: metricsText ?? ""))
-      }
-      // Where the price went after the exit, per share.
-      AfterLine(prices: after)
-    }
-    .padding(.horizontal, Tokens.Space.m)
-    .padding(.vertical, Tokens.Space.m)
-    // An open position's card is washed in `info`, as on the design.
-    .background {
-      if open {
-        RoundedRectangle(cornerRadius: Tokens.Radius.card, style: .continuous)
-          .fill(Palette.info.opacity(Tokens.Opacity.wash))
-      }
-    }
-    .tickrCard(radius: Tokens.Radius.card, tint: open ? Palette.info : nil)
-    .accessibilityElement(children: .combine)
-    .accessibilityActions {
-      if let another {
-        Button {
-          self.another = another
-        } label: {
-          Text(L10n.Activity.anotherHelp)
-        }
-      }
-    }
-  }
-
-  /// A row of figure chips that wraps on a narrow screen.
-  private func chips(_ figures: [Figure]) -> some View {
-    ChipFlow { chipViews(figures) }
-  }
-
-  private func chipViews(_ figures: [Figure]) -> some View {
-    ForEach(figures) { figure in
-      IconMetric(figure.symbol, label: figure.label, value: figure.value, tone: figure.tone,
-        color: figure.tone?.text, compact: true)
-    }
   }
 }
 
