@@ -400,6 +400,7 @@ class MassiveConfig:
     max_pages: int
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
+    stream_release_pause_seconds: Decimal
     calendar_lookback_days: int
     tick_subscription: str
     tick_page_limit: int
@@ -741,10 +742,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
-            or massive.calendar_lookback_days < 1
+            or massive.stream_release_pause_seconds < 0 or massive.calendar_lookback_days < 1
             or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
-                          "1, stream_reconnect_seconds above 0, stock_types not empty")
+                          "1, stream_reconnect_seconds above 0, stream_release_pause_seconds not "
+                          "below 0, stock_types not empty")
     if massive.tick_subscription not in ("symbols", "market") or massive.tick_page_limit < 1:
         raise ConfigError("[massive] tick_subscription must be \"symbols\" or \"market\", "
                           "tick_page_limit at least 1")

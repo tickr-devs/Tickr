@@ -45,8 +45,9 @@ far larger than a cohort's; the capacity of either path is not measured yet and 
 invented here.
 
 Not decided here: which subscription path runs (`[massive] tick_subscription`, "symbols" or
-"market", a measurement decision), and whether this stream may share Massive's one connection
-per cluster with `MinuteStream` (both use `stream_host` / `stream_path`).
+"market", a measurement decision). On a plan with one connection per cluster, `MinuteStream`
+and `TickStream` would close each other (`max_connections`); `tickr.model.stream.SharedStream`
+carries both channel sets on one connection.
 """
 
 from __future__ import annotations
@@ -290,10 +291,13 @@ class TickStore:
             for key in keys:
                 self.gaps.setdefault(key, []).append([down_ns, None, cause])
 
-    def up(self, up_ns: int) -> None:
-        """The subscription was sent again: every open gap closes at `up_ns`."""
+    def up(self, up_ns: int, keys: list[str] | None = None) -> None:
+        """The subscription was sent again (or, on the shared stream, acknowledged): the open
+        gaps of `keys` (every key when None) close at `up_ns`."""
         with self._lock:
-            for gaps in self.gaps.values():
+            for key, gaps in self.gaps.items():
+                if keys is not None and key not in keys:
+                    continue
                 for gap in gaps:
                     if gap[1] is None:
                         gap[1] = up_ns

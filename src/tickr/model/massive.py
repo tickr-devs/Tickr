@@ -317,6 +317,8 @@ class DayBars:
     # (down, up) monotonic times and the type of what ended the connection
     gaps: list[tuple[float, float, str]] = field(default_factory=list)
     other_day: int = 0
+    # (down, cause) of the drop the shared stream (tickr.model.stream) has not resubscribed yet
+    open_gap: tuple[Any, str] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def add(self, message: Mapping[str, Any], arrived: float) -> None:
@@ -340,6 +342,20 @@ class DayBars:
     def gap(self, down: float, up: float, cause: str) -> None:
         with self._lock:
             self.gaps.append((down, up, cause))
+            self.open_gap = None
+
+    def down(self, down: Any, cause: str) -> None:
+        """The connection dropped at `down`: the gap is open (and visible) until `gap` closes it."""
+        with self._lock:
+            self.open_gap = (down, cause)
+
+    def refusal(self, cutoff: Any) -> str | None:
+        """`bars_gap` when a drop began by `cutoff` (open, or closed: its bars are lost and no
+        backfill of a market minute exists), else None."""
+        with self._lock:
+            if self.open_gap is not None and self.open_gap[0] <= cutoff:
+                return "bars_gap"
+            return "bars_gap" if any(d <= cutoff for d, _, _ in self.gaps) else None
 
     def frame(self) -> Any:
         """Every bar so far as a flat-file frame (the shared feature code checks it)."""
