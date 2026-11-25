@@ -14,6 +14,9 @@ database_busy_timeout_seconds = 5
 code_version_timeout_seconds = 5
 # Daily verified database backup folder, relative to data_dir; one file per NY date, only the latest kept (spec 10); read by runtime.watch.
 backups_dir = "backups"
+# Seconds after a failed daily backup attempt before the bot tries again the same New York day (a transient disk or
+# lock error must not cost the day's backup; review 2026-11-24 section 8); read by runtime.watch.
+backup_retry_seconds = 300
 # Closed sessions whose capture and decision folders `tickr maintain` leaves uncompressed (today is never touched);
 # older finished days are gzipped in place; read by maintain.
 maintain_keep_sessions = 20
@@ -753,6 +756,18 @@ backtest_stop_distance_edges_percent = [1, 2, 4, 8]
 # Backtest mode: bucket edges, in R, of the best price reached while a trade was open and of the best price after a
 # stop exit until the session end, both measured from the entry, increasing; read by advisor.backtest_evidence.
 backtest_excursion_edges_r = [0, 0.5, 1, 2, 3]
+
+[model]
+# Trained model switch (backlog R24..R26): true = the trained model decides entries; false = it is not loaded and the
+# active strategy above decides as before. Must stay false until the live feed and the decision path are merged (config
+# load refuses true until then); read by config.load and tickr.model.bundle.
+enabled = false
+# Folder of model bundles, relative to [run] data_dir; one subfolder <name>-<version> per bundle with manifest.json and
+# one LightGBM file per head (docs: tickr.model.bundle); read by tickr.model.bundle.
+bundles_dir = "models"
+# Bundle folder name <name>-<version> under bundles_dir that the bot loads when enabled; empty = none chosen; read by
+# tickr.model.bundle.
+bundle = ""
 
 [runtime]
 # Minimum free disk space on the data_dir volume, megabytes; below it preflight fails and the running bot takes no new

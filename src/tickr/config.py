@@ -72,6 +72,7 @@ class RunConfig:
     database_busy_timeout_seconds: Decimal
     code_version_timeout_seconds: Decimal
     backups_dir: str
+    backup_retry_seconds: Decimal
     maintain_keep_sessions: int
     maintain_archive_max_age_days: int
 
@@ -369,6 +370,13 @@ class AdvisorConfig:
 
 
 @dataclass(frozen=True)
+class ModelConfig:
+    enabled: bool
+    bundles_dir: str
+    bundle: str
+
+
+@dataclass(frozen=True)
 class RuntimeConfig:
     min_free_disk_mb: int
     disk_clear_free_mb: int
@@ -463,6 +471,7 @@ class Config:
     chart: ChartConfig
     observers: ObserversConfig
     advisor: AdvisorConfig
+    model: ModelConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -492,6 +501,7 @@ _SECTIONS: dict[str, type] = {
     "chart": ChartConfig,
     "observers": ObserversConfig,
     "advisor": AdvisorConfig,
+    "model": ModelConfig,
 }
 
 
@@ -639,6 +649,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "or a number of days")
     if run.code_version_timeout_seconds <= 0:
         raise ConfigError("[run] code_version_timeout_seconds must be above 0")
+    if run.backup_retry_seconds <= 0:
+        # 0 would try (and journal backup-failed) on every loop pass while the disk fails.
+        raise ConfigError("[run] backup_retry_seconds must be above 0")
     md: MarketDataConfig = built["market_data"]
     if (md.profile_refresh_seconds <= 0 or md.profile_refresh_gainer_move_percent <= 0
             or md.profile_max_requests_per_round < 1 or md.profile_reserve_requests < 0):
@@ -677,6 +690,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[observers] max_slow_evaluations_in_row must be at least 1")
     if built["observers"].history_sends_per_pass < 1:
         raise ConfigError("[observers] history_sends_per_pass must be at least 1")
+    model: ModelConfig = built["model"]
+    if model.enabled:
+        raise ConfigError("[model] enabled must stay false: the trained model is not wired into "
+                          "the trading loop yet (the bundle loader and the shared feature code "
+                          "are; the live data feed and the decision path follow)")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
