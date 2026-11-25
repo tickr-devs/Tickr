@@ -288,3 +288,66 @@ def test_edit_keeps_comments_and_refuses_an_ambiguous_key():
         edited(text, "risk.missing", "4")
     with pytest.raises(SettingsUnavailable):
         edited("[risk]\nmax = [\n  5]\n", "risk.max", "4")
+
+
+# A value the schema passes but the bot's loader refuses: each test drops one schema rule that
+# mirrors a loader check, so only the loader can catch it.
+
+ROOM = "risk.min_daily_room_usd"  # 10; raise tightens; must stay below the daily loss ceiling
+LOSS = "risk.max_daily_loss_usd"  # 5000; raise loosens
+
+
+def _without_rule(monkeypatch, name: str) -> None:
+    monkeypatch.setattr(schema, "RULES", tuple(r for r in schema.RULES if r.name != name))
+
+
+def _untouched(server, root):
+    return ((root / "config/bot.toml").read_bytes(), (root / STRATEGY).read_bytes(),
+            _history(server), sorted(p.name for p in (root / "config").iterdir()),
+            sorted(p.name for p in (root / "strategies").iterdir()))
+
+
+def test_apply_refuses_a_value_the_config_loader_rejects(served, monkeypatch):
+    server, root = served
+    _without_rule(monkeypatch, "daily_room_below_ceiling")
+    before = _untouched(server, root)
+    resp, body = _apply(server, ("platform", ROOM, "5000"))
+    assert resp.status == 400 and body["cause"].startswith("config/bot.toml would not load: ")
+    assert "min_daily_room_usd must be >= 0 and below max_daily_loss_usd" in body["cause"]
+    assert _untouched(server, root) == before
+
+
+def test_apply_refuses_a_strategy_value_its_loader_rejects(served, monkeypatch):
+    server, root = served
+    _without_rule(monkeypatch, "fast_below_slow_ema")
+    _flat(server)
+    before = _untouched(server, root)
+    resp, body = _apply(server, (PA3, "indicators.fast_ema_period", "20"))
+    assert resp.status == 400 and "strategy.toml would not load: " in body["cause"]
+    assert "fast_ema_period must be below slow_ema_period" in body["cause"]
+    assert _untouched(server, root) == before
+
+
+def test_rollback_refuses_values_the_config_loader_rejects(served, monkeypatch):
+    server, root = served
+    _without_rule(monkeypatch, "daily_room_below_ceiling")
+    assert _apply(server, ("platform", LOSS, "6000"), biometric=True)[0].status == 200
+    assert promote(_paths(server), T0 + timedelta(days=1)) is not None
+    assert _apply(server, ("platform", ROOM, "5500"))[0].status == 200
+    before = _untouched(server, root)
+    # Back to 0: the ceiling 5000 is written at once, under the room of 5500 still in force.
+    resp, body = _rollback(server, 0, biometric=True)
+    assert resp.status == 400 and "would not load" in body["cause"]
+    assert _untouched(server, root) == before
+
+
+def test_promote_refuses_a_pending_value_the_config_loader_rejects(served, monkeypatch):
+    server, root = served
+    _without_rule(monkeypatch, "slots_fit_stream")
+    assert _apply(server, ("platform", SLOTS, "21"), biometric=True)[0].status == 200
+    before = _untouched(server, root)
+    path = root / "config/bot.toml"
+    note, written = promote_at_start(config.load(path), path, T0 + timedelta(days=1))
+    assert not written and "would not load" in note and "stream_reserved_symbols" in note
+    assert _untouched(server, root) == before
+    assert _history(server)[0]["changes"][0]["state"] == "pending"
