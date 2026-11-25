@@ -9,7 +9,13 @@ edited: a new converter arrives as a new pinned file with a new md5.
 
 What the bot runs is the training's run: the side files (px / s10) are never written, the
 stock filter is off, and the converter's variables that change its table must be unset
-(`OUTPUT_VARIABLES`); `RESOURCE_VARIABLES` only size the engine and may be set by the owner.
+(`OUTPUT_VARIABLES`). Two engine settings are the bot's, never the environment's (Codex,
+codex-108 point 2): one engine thread (`SERIAL_THREADS`: with several, the floating sums are
+added in a varying order and two runs of the same files differ in the last bit), and the group
+count, the converter's default or one group as `[model] tick_groups` says (the table is equal,
+exactly, `tests/model/test_ticks.py`; one group holds the whole day in memory at once,
+`tests/model/tick_memory.py` measures it). An inherited value of either is refused unless it is
+the one the bot sets. `TICK_MEM` only caps the engine's memory and may be set by the owner.
 Every other TICK_* name the converter reads belongs to its download / upload loop (`main()`),
 which the bot never runs; boto3 is imported only there, so the bot path needs duckdb alone.
 Variables are asked one NAME at a time, never the whole environment (hard rule 10).
@@ -69,12 +75,19 @@ CONVERTER_FILE = "wm2tick-v11.py"
 CONVERTER_MD5 = "c1c1ead1751ba765f494af79235bddd7"
 MODULE_NAME = "tickr_pinned_wm2tick_v11"
 # Read by the converter and change its table: the large-trade threshold (tbig), the side-file
-# switch, the stock filter of its `local` mode, and the group count (the training's runs left it
-# unset; the table does not depend on it, tests/model/test_ticks.py, but a set one means a
-# training shell leaked into the bot). Refused when set.
-OUTPUT_VARIABLES = ("TICK_BIG", "TICK_V11", "TICK_TYPES", "TICK_GROUPS")
-# Read by the converter's engine connection only: threads and memory cap. Allowed.
-RESOURCE_VARIABLES = ("TICK_THREADS", "TICK_MEM")
+# switch and the stock filter of its `local` mode. Refused when set.
+OUTPUT_VARIABLES = ("TICK_BIG", "TICK_V11", "TICK_TYPES")
+# The converter's engine threads (read at each engine connection): the bot sets one; an inherited
+# other value is refused.
+THREADS_VARIABLE = "TICK_THREADS"
+SERIAL_THREADS = "1"
+# The converter's stock group count (read once, at import, into its KB): the bot sets it from
+# `[model] tick_groups` on the module; any inherited value is refused.
+GROUPS_VARIABLE = "TICK_GROUPS"
+# The one group count allowed besides the converter's own default (codex-108 point 2).
+ONE_GROUP = 1
+# Read by the converter's engine connection only: the memory cap. Allowed.
+RESOURCE_VARIABLES = ("TICK_MEM",)
 NEW_YORK = ZoneInfo("America/New_York")
 NS_PER_SECOND = 10**9
 NS_PER_MINUTE = 60 * NS_PER_SECOND
@@ -87,13 +100,24 @@ _LOCK = threading.Lock()
 _CODE: dict[str, Any] = {}
 
 
+def _check_variables() -> None:
+    """Refuse a set output variable or group count and an inherited thread count other than the
+    bot's; then set the bot's thread count. Asked one NAME at a time."""
+    set_names = [name for name in (*OUTPUT_VARIABLES, GROUPS_VARIABLE)
+                 if os.environ.get(name) is not None]
+    if set_names:
+        raise ModelRefused("tick_variable_set", ", ".join(set_names))
+    if os.environ.get(THREADS_VARIABLE) not in (None, SERIAL_THREADS):
+        raise ModelRefused("tick_variable_set", THREADS_VARIABLE)
+    os.environ[THREADS_VARIABLE] = SERIAL_THREADS
+
+
 def converter() -> Any:
     """The pinned converter module, imported once after its checks: the file is the pinned
-    bytes, no output variable is set, duckdb is installed."""
+    bytes, no output variable and no group count is set, the thread count is unset or the one
+    the bot sets (it is then set to it), duckdb is installed."""
     with _LOCK:
-        set_names = [name for name in OUTPUT_VARIABLES if os.environ.get(name) is not None]
-        if set_names:
-            raise ModelRefused("tick_variable_set", ", ".join(set_names))
+        _check_variables()
         if "v11" in _CODE:
             return _CODE["v11"]
         path = PINNED_DIR / CONVERTER_FILE
@@ -111,7 +135,22 @@ def converter() -> Any:
         sys.modules[MODULE_NAME] = module
         spec.loader.exec_module(module)
         _CODE["v11"] = module
+        _CODE["groups"] = module.KB  # the converter's default: TICK_GROUPS was unset
         return module
+
+
+def default_groups() -> int:
+    """The converter's own group count (its KB when TICK_GROUPS is unset): what the training's
+    runs used."""
+    converter()
+    return int(_CODE["groups"])
+
+
+def _set_groups(w: Any, groups: int) -> None:
+    """Set the converter's group count: its default or one group, nothing else."""
+    if groups not in (_CODE["groups"], ONE_GROUP):
+        raise ModelRefused("tick_groups_invalid", str(groups))
+    w.KB = groups
 
 
 def trade_columns() -> list[str]:
@@ -137,12 +176,14 @@ def _bounds(day: str, through: int) -> tuple[int, int]:
     return int(start.timestamp()) * NS_PER_SECOND, int(end.timestamp()) * NS_PER_SECOND
 
 
-def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, through: int) -> Any:
+def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, through: int, *,
+              groups: int) -> Any:
     """The converter's table of `day` from the day's trades and quotes so far: files in the
     flat-file layout (header row, at least the converter's columns, csv or csv.gz). Every event
     must lie on New York `day` and before the end of minute `through` (minute of the New York
-    day); an event outside is refused, never dropped. Returns a pandas frame: sym, m and the 61
-    columns, sorted by sym and m, every minute up to `through` that has an event."""
+    day); an event outside is refused, never dropped. `groups` is `[model] tick_groups`.
+    Returns a pandas frame: sym, m and the 61 columns, sorted by sym and m, every minute up to
+    `through` that has an event."""
     w = converter()
     lo, hi = _bounds(day, through)
     import duckdb
@@ -164,6 +205,8 @@ def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, throug
         con.close()
     with _LOCK, tempfile.TemporaryDirectory(prefix="tickr-ticks-") as tmp:
         out = os.path.join(tmp, "tk.parquet")
+        _check_variables()
+        _set_groups(w, groups)
         try:
             w.day(str(trades_file), str(quotes_file), out, tmp)
         except SystemExit as exc:  # the converter's own refusal (a missing column)

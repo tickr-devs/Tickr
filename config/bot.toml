@@ -773,6 +773,11 @@ bundles_dir = "models"
 # Bundle folder name <name>-<version> under bundles_dir that the bot loads when enabled; empty = none chosen; read by
 # tickr.model.bundle.
 bundle = ""
+# Stock groups the frozen tick converter v11 works one after another (its TICK_GROUPS, set by the bot, never inherited):
+# 24 = the converter's default, as in the training's runs; 1 = the whole day in one group (Codex codex-108: allowed
+# only explicitly; the table is equal, exactly, with one engine thread, tests/model/test_ticks.py; peak memory measured
+# by tests/model/tick_memory.py); any other value is refused; read by config.load, passed to tickr.model.features.ticks.tick_rows.
+tick_groups = 24
 
 [massive]
 # Market data vendor of the model's inputs (owner 2026-11-20: the model's features come live from Massive, the same

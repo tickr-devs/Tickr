@@ -375,6 +375,7 @@ class ModelConfig:
     enabled: bool
     bundles_dir: str
     bundle: str
+    tick_groups: int
 
 
 @dataclass(frozen=True)
@@ -720,6 +721,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[model] enabled must stay false: the trained model is not wired into "
                           "the trading loop yet (the bundle loader and the shared feature code "
                           "are; the live data feed and the decision path follow)")
+    if model.tick_groups < 1:
+        raise ConfigError("[model] tick_groups must be at least 1")
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
