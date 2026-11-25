@@ -5,9 +5,9 @@ variable "region" {
 }
 
 variable "instance_type" {
-  description = "Bot server type. It runs the bot, the API, the live Massive feed and the layer-1 models, so it needs memory beyond the plan's first t3.medium. m7a.xlarge = 4 vCPU, 16 GB, about $0.23 an hour on-demand; to be confirmed against the model's measured memory before the first apply."
+  description = "Bot server type, the one setting to grow the server. Owner 2026-11-25: start small (t3.medium = 2 vCPU, 4 GB, about $30 a month on-demand) and grow when needed, e.g. when the live model and the Massive feed are switched on (spec thread estimate: models 1-3 GB in memory, live features unmeasured). A change stops and starts the server on apply: only on a weekend while flat."
   type        = string
-  default     = "m7a.xlarge"
+  default     = "t3.medium"
 }
 
 variable "subnet_id" {
