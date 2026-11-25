@@ -474,12 +474,12 @@ private struct LevelsCard: View {
 
 /// The board's Protection card: the broker stop as the headline in its state's colour (`StopState`),
 /// three figures (the planned loss, the distance to the stop, the worst and best excursion), and
-/// "How it was protected ›" opening the steps the bot proved, with when it last read the broker.
+/// "How it was protected ›" opening the steps the bot proved in a sheet, with when it last read the
+/// broker.
 private struct ProtectionCard: View {
   /// Digits after the point of the distance to the stop, in percent.
   static let percentDigits = 1
 
-  @State private var open = false
   let position: Position
   let marks: PositionMarks?
   /// When the bot last read the broker, and whether that read is current (`ProtectionSteps`).
@@ -520,23 +520,13 @@ private struct ProtectionCard: View {
         } ?? Format.missing)
         figure(L10n.Positions.excursion, excursion)
       }
-      DisclosureGroup(isExpanded: $open) {
+      // When the bot last read the broker; amber while that read is not current.
+      FooterDetail(L10n.Positions.howProtected,
+        summary: String(localized: L10n.Positions.checkedAt(brokerReadAt.map(Format.clock) ?? Format.missing)),
+        summaryColor: reconciled && brokerReadAt != nil ? Palette.textQuaternary : Palette.warningText,
+        endsCard: false) {
         ProtectionSteps(position: position, brokerReadAt: brokerReadAt, reconciled: reconciled)
-          .padding(.top, Tokens.Space.s)
-      } label: {
-        HStack(spacing: Tokens.Space.s) {
-          Text(L10n.Positions.howProtected)
-            .foregroundStyle(Palette.textPrimary)
-          Spacer(minLength: Tokens.Space.s)
-          // When the bot last read the broker; amber while that read is not current.
-          Text(L10n.Positions.checkedAt(brokerReadAt.map(Format.clock) ?? Format.missing))
-            .font(Tokens.Typography.annotation)
-            .foregroundStyle(reconciled && brokerReadAt != nil ? Palette.textQuaternary : Palette.warningText)
-        }
-        .font(.subheadline)
-        .frame(minHeight: Tokens.Size.touchTarget)
       }
-      .tint(Palette.textQuaternary)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, Tokens.Space.l)

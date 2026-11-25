@@ -691,11 +691,10 @@ private struct ConfigCard: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         ForEach(config.sections, id: \.name) { section in
-          DisclosureGroup {
+          RowExpander {
             VStack(alignment: .leading, spacing: Tokens.Space.s) {
               ForEach(section.keys, id: \.key) { key in line(key) }
             }
-            .padding(.top, Tokens.Space.xs)
           } label: {
             Text(verbatim: section.name.isEmpty ? String(localized: L10n.Settings.configTop) : "[\(section.name)]")
               .font(Tokens.Typography.calloutMono)

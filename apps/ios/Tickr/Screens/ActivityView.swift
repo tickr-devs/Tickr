@@ -953,13 +953,19 @@ private struct SkippedRow: View {
   }
 
   var body: some View {
-    DisclosureGroup(isExpanded: $isOpen) {
-      WhatIfDetails(group: group)
-        .padding(.top, Tokens.Space.xs)
-    } label: {
-      summary
+    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
+      Button {
+        withAnimation(Tokens.Motion.quick) { isOpen.toggle() }
+      } label: {
+        summary
+      }
+      .buttonStyle(.plain)
+      .accessibilityAddTraits(isOpen ? .isSelected : [])
+      if isOpen {
+        WhatIfDetails(group: group)
+          .transition(.opacity)
+      }
     }
-    .tint(Palette.textTertiary)
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
     // Inside the card, inset from its rounded edge.
@@ -978,11 +984,13 @@ private struct SkippedRow: View {
           whenText
           Spacer(minLength: Tokens.Space.s)
           resultText
+          ExpandChevron(open: isOpen)
         }
         ChipFlow {
           symbolText
           whenText
           resultText
+          ExpandChevron(open: isOpen)
         }
       }
       if let cause = group.cause {

@@ -2466,47 +2466,6 @@
         }
       }
     },
-    "chart.decisions.all" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld decision"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "All %lld decisions"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld decisión"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Las %lld decisiones"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "chart.decisions.entryStop" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2541,23 +2500,6 @@
         }
       }
     },
-    "chart.decisions.key" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entries and exits only"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo entradas y salidas"
-          }
-        }
-      }
-    },
     "chart.decisions.noEntries" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2588,23 +2530,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No hay decisiones registradas para este símbolo ese día."
-          }
-        }
-      }
-    },
-    "chart.decisions.noStrategy" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The trading strategy recorded nothing on this symbol that day."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La estrategia de trading no registró nada en este símbolo ese día."
           }
         }
       }

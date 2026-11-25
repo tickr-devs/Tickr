@@ -2154,12 +2154,8 @@ enum ChartText {
     defaultValue: "No decisions recorded for this symbol that day.")
   static let noEntries = LocalizedStringResource("chart.decisions.noEntries",
     defaultValue: "No entries or exits; the bot only waited.")
-  static let keyDecisions = LocalizedStringResource("chart.decisions.key",
-    defaultValue: "Entries and exits only")
   static let tradingStrategy = LocalizedStringResource("chart.decisions.strategyLabel",
     defaultValue: "Trading strategy")
-  static let noStrategyDecisions = LocalizedStringResource("chart.decisions.noStrategy",
-    defaultValue: "The trading strategy recorded nothing on this symbol that day.")
   static let openPosition = LocalizedStringResource("chart.symbol.open",
     defaultValue: "open position")
   static let traded = LocalizedStringResource("chart.symbol.traded",
@@ -2174,9 +2170,6 @@ enum ChartText {
     defaultValue: "HOLD")
   static let verdictExit = LocalizedStringResource("chart.verdict.exit",
     defaultValue: "EXIT")
-  static func allDecisions(_ count: Int) -> LocalizedStringResource {
-    LocalizedStringResource("chart.decisions.all", defaultValue: "All \(count) decisions")
-  }
   static var decisionsFailed: LocalizedStringResource {
     LocalizedStringResource("chart.decisions.failed",
       defaultValue: "Couldn't read the decisions")
