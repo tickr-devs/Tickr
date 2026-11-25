@@ -70,6 +70,21 @@ device list as the device `default` (paired at the file's time) and deleted, by 
 next request or by `devices`. If both files exist with different tokens, the API refuses (`503`)
 until one is deleted by hand. The iOS Simulator's token (below) is separate and not a device.
 
+**Rolling back to a build without devices.** The migration leaves `remote_devices_file` holding the
+old token's digest as device `default` and **deletes** `remote_token_hash_file`; a `.tmp` sibling
+may remain only after a crash mid-write. An older build reads only `remote_token_hash_file`, so
+after a downgrade every phone gets `401 nothing is paired here` until one of these is done:
+
+- Recreate the old file from one device's digest, so that device keeps working (only one can:
+  the old build knows a single token). Without printing anything, with the API stopped, from the
+  repository folder (`data` is `[run] data_dir`; pick the device by name):
+  `python3 -c 'import json,os;d=json.load(open("data/remote-devices.json"))["devices"];h=[x["sha256"] for x in d if x["name"]=="iPhone"][0];f=os.open("data/remote-token.sha256",os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600);os.write(f,(h+"\n").encode());os.close(f)'`
+  Leave `remote-devices.json` in place: upgrading again finds the same digest in the list and
+  only deletes the old file.
+- Or re-pair the phone with the old build's `pair` (it writes a new `remote_token_hash_file`).
+  Before upgrading again, delete `remote-devices.json`, so the new token migrates as `default`;
+  with both files holding different tokens the new build answers `503` until one is deleted.
+
 Rules on the remote port: `Host` must be one of the names in `remote_hosts_file` (no port when 443, else
 `name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
 `401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
