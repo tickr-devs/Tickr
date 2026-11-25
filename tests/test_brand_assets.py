@@ -41,7 +41,8 @@ def test_icon_layers_exist_and_the_tile_is_one_look():
                 assert (icon / "Assets" / layer["image-name"]).is_file()
         # The brand tile is the same in every appearance (the site's), the system tints it.
         assert "fill-specializations" not in spec
-        assert spec["fill"]["automatic-gradient"] == module.srgb(module.palette()["brandTileTop"][0])
+        tile = module.palette()["brandTileTop"][0]
+        assert spec["fill"]["automatic-gradient"] == module.srgb(tile)
 
 
 def test_launch_background_is_the_window_background():

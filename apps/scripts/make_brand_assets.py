@@ -70,7 +70,8 @@ def svg(body: str, size: float = CANVAS, defs: str = "") -> str:
 def on_grid(body: str, size: float) -> str:
     """Shapes drawn in grid units, placed on the grid inside a square of `size`."""
     scale = size * GRID_SIDE / GRID
-    return f'<g transform="translate({pt(GRID_INSET, size)} {pt(GRID_INSET, size)}) scale({scale:g})">{body}</g>'
+    inset = pt(GRID_INSET, size)
+    return f'<g transform="translate({inset} {inset}) scale({scale:g})">{body}</g>'
 
 
 def rect(x: float, y: float, w: float, h: float, color: str) -> str:
@@ -81,7 +82,8 @@ def layers(colors: dict[str, tuple[str, str]], size: float = CANVAS) -> dict[str
     """The mark's two icon layers as SVG: the letter (stem, hook and stub) and the level."""
     letter, teal = colors["brandLetter"][0], colors["brandLine"][0]
     return {
-        "letter": svg(on_grid(f'<path d="{STEM}" fill="#{letter}"/>' + rect(*STUB, letter), size), size),
+        "letter": svg(on_grid(f'<path d="{STEM}" fill="#{letter}"/>' + rect(*STUB, letter), size),
+                      size),
         "level": svg(on_grid(rect(*LEVEL, teal), size), size),
     }
 
@@ -93,8 +95,9 @@ def tile(colors: dict[str, tuple[str, str]], size: float) -> str:
     defs = ('<linearGradient id="t" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="#{top}"/><stop offset="1" stop-color="#{bottom}"/>'
             '</linearGradient>')
-    body = (f'<rect x="{pt(half, size)}" y="{pt(half, size)}" width="{pt(1 - TILE_EDGE, size)}" '
-            f'height="{pt(1 - TILE_EDGE, size)}" rx="{pt(TILE_RADIUS - half, size)}" fill="url(#t)" '
+    side = pt(1 - TILE_EDGE, size)
+    body = (f'<rect x="{pt(half, size)}" y="{pt(half, size)}" width="{side}" height="{side}" '
+            f'rx="{pt(TILE_RADIUS - half, size)}" fill="url(#t)" '
             f'stroke="#{edge}" stroke-width="{pt(TILE_EDGE, size)}"/>')
     small = layers(colors, size)
     body += "".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("letter", "level"))
