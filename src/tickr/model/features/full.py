@@ -58,9 +58,9 @@ before 2026-11-19 every value is the training's (only refusals of files named pa
 go). The sealed window SEAL (2026-07-01 .. 2026-08-14) is kept: a Benzinga file may not span it,
 and a split factor or an earnings history that spans it stays missing, as in training (on the
 latest training days er_next was missing on every row for that reason; live it stays missing until
-the four reports it uses all lie after the window). The calendar ends 2026-12-31: a later day
-refuses (`unknown_trading_day`) until a new pinned calendar arrives; no replacement is declared
-for it.
+the four reports it uses all lie after the window). The pinned calendar ends 2026-12-31; the NYSE
+extension (`calendar_ext`, 2027-01-01 .. 2028-12-31, early closes as sessions) follows it, and a
+day after the extension refuses (`unknown_trading_day`).
 """
 
 from __future__ import annotations
@@ -80,6 +80,7 @@ from typing import Any
 
 from tickr.model import features as base
 from tickr.model.errors import ModelRefused
+from tickr.model.features import calendar_ext
 
 # md5 of every pinned file of the feature builder (l1features-set7e/md5-code.txt, the same as the
 # set 6 job folder; wm2tk_l1.py is the text l1feat.modules writes from wm2tk.py e480668b).
@@ -176,6 +177,17 @@ def _load_live_labels() -> Any:
     module._TICKR_LIVEPATCH = tuple(name for name, _, _ in LIVEPATCH)
     # the pinned text with LIVEPATCH, md5-checked above
     exec(compile(text, str(path), "exec"), module.__dict__)
+    # the pinned calendar() still md5-checks the training file; the NYSE extension follows it
+    training_calendar = module.calendar
+
+    def calendar(p=None, pin=module.CAL_MD5):
+        cal = training_calendar(p, pin)
+        try:
+            return calendar_ext.extend(cal) if p is None else cal
+        except ModelRefused as exc:
+            raise SystemExit(f"REFUSED: {exc.cause}: {exc.detail}") from None
+
+    module.calendar = calendar
     sys.modules["l1labels"] = module
     return module
 
