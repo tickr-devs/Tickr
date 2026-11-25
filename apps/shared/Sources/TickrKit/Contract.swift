@@ -160,6 +160,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let feesTodayUsd: DecimalString?
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
+  /// Every live protection setting with the value new entries are admitted under now; empty from an older bot.
+  public let protectionInForce: [ProtectionValue]
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -180,6 +182,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case feesTodayUsd = "fees_today_usd"
     case resultTodayNetUsd = "result_today_net_usd"
     case resultTodayBrokerUsd = "result_today_broker_usd"
+    case protectionInForce = "protection_in_force"
     case schemaVersion = "schema_version"
   }
 
@@ -209,6 +212,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
+    protectionInForce = try c.decodeIfPresent([ProtectionValue].self, forKey: .protectionInForce) ?? []
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -236,6 +240,34 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
+    try c.encode(protectionInForce, forKey: .protectionInForce)
+  }
+}
+
+/// A protection setting new entries are admitted under now (backlog S5). `adoptedAt` is when the running bot
+/// adopted a tightening of it; nil when it holds the value the bot started with.
+public struct ProtectionValue: Codable, Hashable, Sendable {
+  public let key: String
+  public let value: String
+  public let adoptedAt: WireTime?
+
+  enum CodingKeys: String, CodingKey {
+    case key, value
+    case adoptedAt = "adopted_at"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    key = try c.decode(String.self, forKey: .key)
+    value = try c.decode(String.self, forKey: .value)
+    adoptedAt = try c.decodeNullable(WireTime.self, forKey: .adoptedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(key, forKey: .key)
+    try c.encode(value, forKey: .value)
+    try c.encodeNullable(adoptedAt, forKey: .adoptedAt)
   }
 }
 

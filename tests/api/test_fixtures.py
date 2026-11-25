@@ -179,7 +179,8 @@ def documents() -> dict[str, object]:
     minimal = status(entry_block=None, fences=(), position=None, trades_today=(),
                      recent_commands=(), run_id=None, result_today_gross_usd=Decimal("0"),
                      realized_loss_today_usd=None, open_reservations_usd=Decimal("0"),
-                     daily_room_usd=None, positions=(), code_version=None)
+                     daily_room_usd=None, positions=(), code_version=None,
+                     protection_in_force=())
     mismatch = account(
         positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12.34")),
                    AccountPosition("EFGH", Decimal("5"), None)),

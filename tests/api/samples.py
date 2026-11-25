@@ -20,6 +20,7 @@ from tickr.api.contract import (
     Freshness,
     Gate,
     Position,
+    ProtectionValue,
     SendOutcome,
     StatusV1,
     Stop,
@@ -80,6 +81,9 @@ def status(written_at: datetime = T0, **overrides) -> StatusV1:
         fees_today_usd=Decimal("0.07"),
         result_today_net_usd=Decimal("-1.67"),
         result_today_broker_usd=Decimal("-1.64"),
+        protection_in_force=(ProtectionValue("risk.max_daily_loss_usd", "300", None),
+                             ProtectionValue("risk.max_open_positions", "1",
+                                             T0 - timedelta(minutes=5))),
     )
     values.update(overrides)
     return StatusV1(**values)

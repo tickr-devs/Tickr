@@ -54,6 +54,9 @@ from tickr.runtime.account import (
 )
 from tickr.runtime.alerts import AlertKind
 from tickr.runtime.dayend import DayEnd
+from tickr.runtime.liveprotection import ADOPTED as PROTECTION_ADOPTED
+from tickr.runtime.liveprotection import IGNORED as PROTECTION_IGNORED
+from tickr.runtime.liveprotection import Adoption, LiveProtection, toml_text
 from tickr.runtime.protection import LatencyLog, busy
 from tickr.runtime.watchdog import BYTES_PER_MB, DiskFree, disk_free, entry_restart_file
 
@@ -161,7 +164,8 @@ class Service:
                  watch: Watch | None = None,
                  account_reads: AccountReads | None = None,
                  quote_file: QuoteFile | None = None,
-                 disk_free: DiskFree = disk_free) -> None:
+                 disk_free: DiskFree = disk_free,
+                 protection: LiveProtection | None = None) -> None:
         self.engine = engine
         self._disk_free = disk_free
         self.market = market
@@ -170,6 +174,8 @@ class Service:
         self.observers = observers
         self.watch = watch
         self.config = engine.config
+        # Protection tightened while running (backlog S5); None: the started values throughout.
+        self.protection = protection
         self.now = now
         self.calendar = calendar
         self.strategy = strategy
@@ -385,6 +391,40 @@ class Service:
         with self.engine.store.transaction():
             self.engine.store.append(COMMAND_EFFECT, {"entries_cancel_requested": asked},
                                      key=command.command_id, run_id=self.engine.run_id)
+
+    # --- protection tightened while running -------------------------------------------------
+
+    def _entry_config(self) -> Config:
+        """The config new entries are admitted under: the started one with the protection
+        values in force."""
+        return self.config if self.protection is None else self.protection.config
+
+    def check_protection(self) -> None:
+        """Once per loop pass, before any strategy work: adopt protection the owner tightened
+        in the config file, for new entries only (runtime/liveprotection.py). Anything else is
+        ignored for this run, journaled and alerted."""
+        if self.protection is None:
+            return
+        found = self.protection.check(self.now())
+        if found is None:
+            return
+        store = self.engine.store
+        if isinstance(found, Adoption):
+            if self.evaluator is not None:
+                self.evaluator.desk.adopt(self.protection.risk)
+            with store.transaction():
+                store.append(PROTECTION_ADOPTED, found.journal_body(), run_id=self.engine.run_id)
+            return
+        with store.transaction():
+            store.append(PROTECTION_IGNORED, found.journal_body(), run_id=self.engine.run_id)
+        if self.watch is not None:
+            self.watch.alert(AlertKind.PROTECTION_CHANGE_IGNORED, found.alert_text())
+
+    def _protection_in_force(self) -> tuple[api.ProtectionValue, ...]:
+        if self.protection is None:
+            return ()
+        return tuple(api.ProtectionValue(key, toml_text(value), at)
+                     for key, value, at in self.protection.in_force())
 
     # --- session timer ---------------------------------------------------------------------
 
@@ -609,7 +649,7 @@ class Service:
         refused = session_refusal(day, now, AdmissionLimits.from_config(self.config))
         if refused is not None:
             return self._session_block(day, refused)
-        if entries.slots_in_use(self.engine) >= self.config.risk.max_open_positions:
+        if entries.slots_in_use(self.engine) >= self._entry_config().risk.max_open_positions:
             return api.EntryBlock(api.OWN_TRADE_OPEN, "The bot already has a trade open.",
                                   attention=False)
         return None
@@ -654,11 +694,11 @@ class Service:
         trade is sized down to the room. Admission still decides each entry."""
         from tickr.runtime.entries import daily_loss_room  # entries imports this module
 
-        room = daily_loss_room(self.engine, self.config, self.now())
+        room = daily_loss_room(self.engine, self._entry_config(), self.now())
         if room is None:
             return api.EntryBlock("daily_money_unknown",
                                   "A trade closed today has fills without a known price.")
-        risk = self.config.risk
+        risk = self._entry_config().risk
         if room < risk.min_daily_room_usd:
             return api.EntryBlock("daily_ceiling",
                                   f"Daily loss ceiling {risk.max_daily_loss_usd} USD: less than "
@@ -721,7 +761,7 @@ class Service:
         now = self.now()
         reserved = sum((t.reservation for t in self.engine.trades()), ZERO)
         return (entries.realized_loss_today(self.engine, now), reserved,
-                entries.daily_loss_room(self.engine, self.config, now))
+                entries.daily_loss_room(self.engine, self._entry_config(), now))
 
     def _closed_today(self) -> list[api.DayTrade]:
         today = self.now().astimezone(NEW_YORK).date()
@@ -835,7 +875,8 @@ class Service:
             daily_room_usd=room, positions=positions,
             code_version=self.engine.store.run_code_version(self.engine.run_id),
             fees_today_usd=fees, result_today_net_usd=total_net(closed),
-            result_today_broker_usd=self._broker_result_today(closed))
+            result_today_broker_usd=self._broker_result_today(closed),
+            protection_in_force=self._protection_in_force())
 
     def check_disk(self) -> None:
         """Each loop pass: below [runtime] min_free_disk_mb free on the data disk (or unknown),
@@ -973,6 +1014,7 @@ class Service:
             if self.stopped_by is not None:
                 break  # an operator stop-bot: nothing more this run, straight to the drain
             self.check_disk()
+            self.check_protection()
             self.flatten_due()
             self.write_status()
             if self.watch is not None:

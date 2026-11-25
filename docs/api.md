@@ -771,7 +771,9 @@ a `settings-history-v1` document.
   /settings/values: every owner the draft changes must be listed) and `biometric_confirmed`.
   The draft is checked as POST /settings/validate checks it (`400` with the refusals); then, per
   changed key:
-  - a change that tightens protection (`applies` `at_once`) is written to its file now;
+  - a change that tightens protection (`applies` `at_once`) is written to its file now; a
+    running bot adopts it for new entries at its next loop pass (below, "Protection tightened
+    while running");
   - a change that loosens protection (`next_session`) needs `biometric_confirmed: true`
     (else `403 biometric_required`) and is journaled `pending` with `effective_after` (today's
     New York date): the bot writes it at its first start on a later date, before it loads its
@@ -796,9 +798,24 @@ a `settings-history-v1` document.
   then the version is `done`. A writer that stopped in between is settled by the next one from
   the file digests: `done`, `not_written` (pending changes it settled become pending again) or
   `unknown` (a file holds neither digest).
-- `settings-applied-v1`: `version` (as below) and `restart_needed`: a change was written to a
-  file while the bot may be running (its last status is not `stopped`, or a process holds its
-  lock). The bot reads its settings at its start.
+- `settings-applied-v1`: `version` (as below) and `restart_needed`: a change other than a
+  tightening of protection was written to a file while the bot may be running (its last status
+  is not `stopped`, or a process holds its lock). The bot reads those settings at its start.
+- Protection tightened while running (`src/tickr/runtime/liveprotection.py`): once per loop
+  pass, before any strategy work, the bot reads `config/bot.toml` and compares its SHA-256 with
+  the last one it examined. A new version is validated exactly as at startup, from the same
+  bytes it digested (a file caught half-written is invalid, never a torn mix). It is adopted
+  only when it differs from the config the bot started with in live protection settings alone
+  (the platform settings whose `applies` is `at_once` and that have a loosening direction) and
+  every one of them that moved is stricter than the value in force; then all of them take
+  effect together for new entries (journal `protection-adopted` with each key's `before` and
+  `after`). Anything else (a looser value, an invalid or unreadable file, a change of any other
+  key) is ignored for the rest of the run: journal `protection-change-ignored` with its `cause`
+  (`loosens`, `invalid`, `unreadable`, `other_keys`) and alert `protection-change-ignored`;
+  nothing of it is applied. A tightening never touches what is already placed: an open trade
+  keeps its broker stop and a working entry its order. Status `protection_in_force` lists every
+  live protection setting with the value new entries are admitted under now and `adopted_at`
+  (null: the value the bot started with).
 - POST /settings/rollback `{"version": n, "base", "biometric_confirmed"}`: every key changed by
   a version after `n` is set back to its value at `n` (the last change at or before `n`, else the
   value before the first later change; `0` = before version 1), as a draft through the same

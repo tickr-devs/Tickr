@@ -115,7 +115,8 @@ def test_tightening_is_written_at_once_and_journaled_with_time_and_device(served
     assert version["changes"] == [{
         "owner": "platform", "key": SLOTS, "before": "6", "after": "5", "applies": "at_once",
         "state": "written", "effective_after": None, "settled_by": None}]
-    assert body["restart_needed"] is True  # the bot reads its settings at its start
+    # A tightening needs no restart: the running bot adopts it at its next loop pass.
+    assert body["restart_needed"] is False
     assert _value(root, "platform", SLOTS) == 5
     after = (root / "config/bot.toml").read_text("utf-8")
     changed = [(a, b) for a, b in zip(before.splitlines(), after.splitlines(), strict=True)

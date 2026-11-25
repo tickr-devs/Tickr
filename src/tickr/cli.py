@@ -684,6 +684,7 @@ def _run(path: Path) -> int:
     from tickr.runtime import service
     from tickr.runtime.account import AccountReads
     from tickr.runtime.alerts import Alerter, AlertKind, token_pending_text
+    from tickr.runtime.liveprotection import LiveProtection
     from tickr.runtime.market import (
         IGNITION_NOT_LOADED,
         MarketRuntime,
@@ -795,7 +796,8 @@ def _run(path: Path) -> int:
                                   evaluator=evaluator, entries_off=entries_off,
                                   observers=observers, watch=watch,
                                   account_reads=account_reads, quote_file=quote_file,
-                                  disk_free=DISK_FREE)
+                                  disk_free=DISK_FREE,
+                                  protection=LiveProtection(cfg, Path(path)))
             market.bind()
             adapters.start_stream()
             quote_file.start()

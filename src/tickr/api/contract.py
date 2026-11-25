@@ -308,6 +308,17 @@ class CommandRecord:
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 @dataclass(frozen=True)
+class ProtectionValue:
+    """A protection setting new entries are admitted under now, as TOML text. `adopted_at` is
+    when the running bot adopted a tightening of it from config/bot.toml; null when it holds
+    the value the bot started with (backlog S5)."""
+
+    key: str  # dotted key of config/bot.toml, e.g. risk.max_open_positions
+    value: str
+    adopted_at: datetime | None
+
+
+@dataclass(frozen=True)
 class StatusV1:
     """Everything the status screen and the app show. Written by the bot, never by the API."""
 
@@ -343,6 +354,9 @@ class StatusV1:
     # the order rows round sub-dollar fill prices; null until a balance read made after the
     # last of today's trades closed. For the whole account, so it includes manual trades.
     result_today_broker_usd: Decimal | None = _added_later(None)
+    # Added after v1 shipped (backlog S5): every live protection setting with the value in
+    # force for new entries; empty from a bot that does not report them.
+    protection_in_force: tuple[ProtectionValue, ...] = _added_later(())
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
 
 
@@ -1100,8 +1114,9 @@ class SettingsHistoryV1:
 @dataclass(frozen=True)
 class SettingsAppliedV1:
     """POST /settings/apply and /settings/rollback: the version just journaled.
-    `restart_needed` is true when a change was written to a file while the bot may be running:
-    the bot reads its settings at its start."""
+    `restart_needed` is true when a change other than a tightening of protection was written to
+    a file while the bot may be running: the bot reads those settings at its start, and adopts
+    a tightening at its next loop pass."""
 
     version: SettingsVersionV1
     restart_needed: bool

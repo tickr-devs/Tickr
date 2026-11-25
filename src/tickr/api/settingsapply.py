@@ -8,7 +8,8 @@
 
 Apply rules (owner 2026-11-15 and 2026-11-19, backlog S5), per changed key, from
 `settings_schema.change_effect`:
-- a change that tightens protection (`at_once`) is written to its file now;
+- a change that tightens protection (`at_once`) is written to its file now, and a running bot
+  adopts it for new entries at its next loop pass (runtime/liveprotection.py);
 - a change that loosens protection (`next_session`) needs `biometric_confirmed` and waits: it is
   journaled `pending`, and the bot writes it at its first start on a later New York date
   (`promote_at_start`), so a restart on the same day never picks it up;
@@ -497,5 +498,8 @@ def history_document(paths: SettingsPaths) -> SettingsHistoryV1:
 
 
 def applied_document(version: SettingsVersionV1, bot_running: bool) -> SettingsAppliedV1:
-    written = any(c.state is SettingChangeState.WRITTEN for c in version.changes)
-    return SettingsAppliedV1(version, restart_needed=written and bot_running)
+    """A tightening of protection (`at_once`) needs no restart: the running bot adopts it at
+    its next loop pass (runtime/liveprotection.py). Any other written change does."""
+    waits = any(c.state is SettingChangeState.WRITTEN and c.applies is not Applies.AT_ONCE
+                for c in version.changes)
+    return SettingsAppliedV1(version, restart_needed=waits and bot_running)
