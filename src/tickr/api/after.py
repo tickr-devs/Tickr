@@ -46,7 +46,6 @@ from tickr.replay.settings import ReplaySettings
 from tickr.research.errors import ResearchError
 from tickr.research.records import DecisionRecord
 from tickr.research.whatif import simulate_one
-from tickr.risk.simulated import SimulationRules
 from tickr.types import Bar
 
 M1 = timedelta(minutes=1)
@@ -174,11 +173,10 @@ def trade_after(trade: api.DayTrade, bars: Sequence[_Priced], close: Close,
 
 
 def what_if(record: DecisionRecord, bars: Sequence[Bar], settings: ReplaySettings,
-            clock_for: ClockFor, rules: SimulationRules | None = None) -> api.WhatIfV1:
-    """`record` entered alone in the replay simulation, under `rules` against an otherwise
-    empty day, rounded like GET /observers."""
+            clock_for: ClockFor) -> api.WhatIfV1:
+    """`record` entered alone in the replay simulation, rounded like GET /observers."""
     try:
-        found = simulate_one(record, bars, settings, clock_for, None, rules)
+        found = simulate_one(record, bars, settings, clock_for)
     except (ReplayError, ResearchError) as exc:
         return api.WhatIfV1(None, None, None, f"simulation refused: {exc}")
     if found.trade is None or found.result_usd is None:
@@ -191,8 +189,7 @@ def what_if(record: DecisionRecord, bars: Sequence[Bar], settings: ReplaySetting
 def _signal_after(signal: api.SkippedSignalV1, record: DecisionRecord,
                   bars: Mapping[str, tuple[Bar, ...]] | str, close: Close,
                   replay: tuple[ReplaySettings, ClockFor] | str,
-                  minutes: Sequence[int],
-                  rules: SimulationRules | None = None) -> api.SkippedSignalV1:
+                  minutes: Sequence[int]) -> api.SkippedSignalV1:
     """`signal` with its prices after and what-if; `bars` / `replay` are a cause when they
     could not be read. Display only, as `trade_after`."""
     try:
@@ -209,7 +206,7 @@ def _signal_after(signal: api.SkippedSignalV1, record: DecisionRecord,
         if isinstance(replay, str) or isinstance(bars, str):
             result = api.WhatIfV1(None, None, None, replay if isinstance(replay, str) else bars)
         else:
-            result = what_if(record, bars.get(record.symbol, ()), *replay, rules)
+            result = what_if(record, bars.get(record.symbol, ()), *replay)
     except Exception as exc:  # noqa: BLE001 - display only, see docstring
         failed = f"{type(exc).__name__}: {exc}"
         return replace(signal, prices_after=(), prices_after_cause=failed,
@@ -259,9 +256,8 @@ class SkippedAfter:
             close = self.closes.close(day)
             transient = transient or isinstance(close, str)
         value = replace(base, signals=tuple(
-            _signal_after(s, r, bars, close, replay, self.minutes, self.paths.rules)
-            for s, r in zip(base.signals, api.skipped_records(records), strict=True)),
-            simulation_rules=api.simulation_rules(self.paths.rules))
+            _signal_after(s, r, bars, close, replay, self.minutes)
+            for s, r in zip(base.signals, api.skipped_records(records), strict=True)))
         if not transient:
             with self._lock:
                 self._key, self._value = key, value

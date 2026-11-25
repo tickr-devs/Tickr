@@ -18,7 +18,6 @@ from tickr.replay.engine import replay
 from tickr.replay.errors import ReplayError, SettingsError
 from tickr.replay.report import render_summary, write_all
 from tickr.replay.settings import load_settings
-from tickr.risk.simulated import SimulationRules
 from tickr.strategy.base import Strategy
 
 
@@ -42,11 +41,7 @@ def strategy_factory(module_name: str, values_path: Path) -> Callable[[], Strate
 
 def session_clock(config_path: Path) -> ClockFor:
     """Each day's clock from bot.toml `[session]` and the calendar it names."""
-    return clock_of(config.load(config_path))
-
-
-def clock_of(cfg: config.Config) -> ClockFor:
-    """Each day's clock from `[session]` and the calendar it names."""
+    cfg = config.load(config_path)
     if cfg.session.timezone != TIMEZONE_NAME:
         raise ReplayError(
             f"[session] timezone {cfg.session.timezone!r} is not the calendar's {TIMEZONE_NAME!r}"
@@ -70,8 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         type=Path,
         default=Path("config/bot.toml"),
-        help="bot config: [session] offsets and the calendar give each day's clock; "
-        "[risk] and [session] give the platform rules every ENTER must pass",
+        help="bot config: [session] offsets and the calendar give each day's clock",
     )
     parser.add_argument("--out", type=Path, required=True, help="output directory")
     return parser
@@ -81,11 +75,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         settings = load_settings(args.settings)
-        cfg = config.load(args.config)
-        clock_for = clock_of(cfg)
+        clock_for = session_clock(args.config)
         factory = strategy_factory(args.strategy, args.values)
         bars = load_bars(args.bars)
-        result = replay(factory, bars, settings, clock_for, SimulationRules.from_config(cfg))
+        result = replay(factory, bars, settings, clock_for)
         summary = write_all(result, args.out, settings.output_decimal_places)
     except (
         ReplayError,

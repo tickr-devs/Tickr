@@ -13,7 +13,7 @@ from pathlib import Path
 from tickr import config as bot_config
 from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import ConfigError
-from tickr.replay.__main__ import clock_of, strategy_factory
+from tickr.replay.__main__ import session_clock, strategy_factory
 from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import load_settings
@@ -24,7 +24,6 @@ from tickr.research.outcomes import outcomes
 from tickr.research.records import load_records, write_records
 from tickr.research.settings import load_research_settings
 from tickr.research.whatif import what_if
-from tickr.risk.simulated import SimulationRules
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -128,9 +127,7 @@ def _run(args: argparse.Namespace) -> dict:
                               settings.session_timezone)
         return report.write_refusals(rows, args.out, settings.output_decimal_places)
     replay_settings = load_settings(args.replay_settings)
-    cfg = bot_config.load(args.config)
-    clock_for = clock_of(cfg)
-    rules = SimulationRules.from_config(cfg)
+    clock_for = session_clock(args.config)
     places = replay_settings.output_decimal_places
     if args.command == "whatif":
         quantity = None
@@ -140,11 +137,11 @@ def _run(args: argparse.Namespace) -> dict:
             except InvalidOperation as exc:
                 raise ResearchError(f"--quantity is not a number: {args.quantity!r}") from exc
         rows = what_if(load_records(args.decisions), load_bars(args.bars), replay_settings,
-                       clock_for, quantity, rules)
-        return report.write_whatif(rows, args.out, places, rules.label())
+                       clock_for, quantity)
+        return report.write_whatif(rows, args.out, places)
     if args.command == "observers":
         result = observer_report.report(load_records(args.decisions), load_bars(args.bars),
-                                        replay_settings, clock_for, rules)
+                                        replay_settings, clock_for)
         return report.write_observer_report(result, args.out, places)
     factory = strategy_factory(args.strategy, args.values)
     records = compare.decide(factory, load_bars(args.bars), replay_settings, clock_for)

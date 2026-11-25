@@ -71,8 +71,6 @@ class Summary:
     average_return_percent: Decimal | None
     exits_by_reason: dict[str, int]
     verdict_counts: dict[str, int]
-    rules: str | None = None
-    """The platform rules and config values of the replay; None = none applied."""
 
 
 def summarize(result: ReplayResult) -> Summary:
@@ -111,7 +109,6 @@ def summarize(result: ReplayResult) -> Summary:
         average_return_percent=sum(pct_values, Decimal(0)) / count if count else None,
         exits_by_reason=dict(sorted(reasons.items())),
         verdict_counts=dict(result.verdict_counts),
-        rules=result.rules,
     )
 
 
@@ -208,7 +205,6 @@ def render_summary(summary: Summary, places: int) -> str:
         f"max drawdown R={show('max_drawdown_r')}",
         f"  total %={show('total_return_percent')} average %={show('average_return_percent')}",
         f"  exits={summary.exits_by_reason}",
-        f"  rules={summary.rules or 'none (no platform limit)'}",
     ]
     return "\n".join(lines)
 

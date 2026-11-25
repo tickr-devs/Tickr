@@ -14,21 +14,12 @@ Timeline per symbol and NY session. Bar `i` is processed in three steps:
    ENTER becomes a pending entry for the following bars; an EXIT is executed on bar `i + 1`.
 
 The strategy never sees bar `i + 1` before its decision on bar `i`, so it cannot look ahead.
-Every exit pays adverse slippage. R and percent are per simulated share and do not depend on
-quantity.
-
-The symbols of one New York date are replayed together, bar by bar in time order (symbols in
-name order within a minute). With `rules` (backlog T12), an ENTER the replay's own timing would
-take is then admitted by the live bot's platform rules (`tickr.risk.simulated`): the trading
-window, one trade per symbol, the position and working-entry limits, the pause after a loss,
-the decision's prices, size and the daily loss ceiling, over that day's simulated entries and
-trades of every symbol (USD from the strategy's quantity). A refusal is a `rejected` signal
-with the admission cause. Without `rules` no platform limit applies.
+Every exit pays adverse slippage. Each symbol is replayed independently (no portfolio limit),
+with one simulated share: R and percent do not depend on quantity.
 """
 
 from __future__ import annotations
 
-import heapq
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -39,7 +30,6 @@ from tickr.calendar import ny_date_of
 from tickr.replay.clock import ClockFor, SessionClock
 from tickr.replay.errors import ReplayError, StrategyContractError
 from tickr.replay.settings import ReplaySettings
-from tickr.risk.simulated import SimulatedBook, SimulationRules
 from tickr.strategy.base import Decision, PositionView, Strategy, SymbolContext, Verdict
 from tickr.types import Bar, Quote
 
@@ -128,9 +118,6 @@ class ReplayResult:
     verdict_counts: Mapping[str, int]
     sessions: int
     bars: int
-    rules: str | None = None
-    """The platform rules and config values the result was computed under
-    (`SimulationRules.label`); None = none applied."""
 
 
 @dataclass
@@ -138,7 +125,6 @@ class _Pending:
     decision: Decision
     bar_start: datetime
     bars_left: int
-    book_key: int | None = None
 
 
 @dataclass
@@ -149,7 +135,6 @@ class _Open:
     entry_price: Decimal
     entry_index: int
     exit_requested: bool = False
-    book_key: int | None = None
 
 
 def _check_decision(strategy: Strategy, symbol: str, decision: Decision) -> None:
@@ -199,7 +184,6 @@ class _SessionReplay:
         prior: tuple[tuple[Bar, ...], ...],
         settings: ReplaySettings,
         clock: SessionClock,
-        book: SimulatedBook | None = None,
     ) -> None:
         self.strategy = strategy
         self.symbol = symbol
@@ -214,8 +198,6 @@ class _SessionReplay:
         self.trades: list[SimulatedTrade] = []
         self.signals: list[Signal] = []
         self.verdicts: dict[str, int] = {}
-        self.book = book
-        self.index = 0
 
     def _signal(
         self, decision: Decision, bar_start: datetime, outcome: SignalOutcome, cause: str
@@ -264,16 +246,6 @@ class _SessionReplay:
             )
         )
         self.open = None
-        if self.book is not None and position.book_key is not None:
-            assert position.decision.quantity is not None  # admission refuses an ENTER without
-            self.book.ended(position.book_key, at,
-                            (price - position.entry_price) * position.decision.quantity)
-
-    def _missed(self, pending: _Pending, at: datetime, cause: str) -> None:
-        self.pending = None
-        if self.book is not None and pending.book_key is not None:
-            self.book.ended(pending.book_key, at, Decimal(0))
-        self._signal(pending.decision, pending.bar_start, SignalOutcome.MISSED, cause)
 
     def _manage_position(self, index: int, bar: Bar) -> None:
         position = self.open
@@ -297,7 +269,8 @@ class _SessionReplay:
         stop = decision.stop
         assert top is not None and stop is not None
         if bar.start >= self.session_clock.last_entry:
-            self._missed(pending, bar.start, "last entry time")
+            self.pending = None
+            self._signal(decision, pending.bar_start, SignalOutcome.MISSED, "last entry time")
             return
         bottom = decision.entry_low if decision.entry_low is not None else bar.low
         if bar.low <= top and bar.high >= bottom:
@@ -308,17 +281,15 @@ class _SessionReplay:
                 entry_time=bar.start,
                 entry_price=top + self.settings.slippage(top),
                 entry_index=index,
-                book_key=pending.book_key,
             )
-            if self.book is not None and pending.book_key is not None:
-                self.book.filled(pending.book_key, bar.start)
             self._signal(decision, pending.bar_start, SignalOutcome.FILLED, "")
             if bar.low <= stop:
                 self._close(index, stop, bar.start, ExitReason.STOP)
             return
         pending.bars_left -= 1
         if pending.bars_left == 0:
-            self._missed(pending, bar.start + M1, "price outside window")
+            self.pending = None
+            self._signal(decision, pending.bar_start, SignalOutcome.MISSED, "price outside window")
 
     def _quote(self, bar: Bar) -> Quote | None:
         """Synthetic quote at the end of the completed bar, or None when disabled."""
@@ -382,53 +353,22 @@ class _SessionReplay:
         if problem is not None:
             self._signal(decision, bar.start, SignalOutcome.REJECTED, problem)
             return
-        key = None
-        if self.book is not None:
-            now = bar.start + M1
-            admission = self.book.admit(decision, now, self.session_clock.market_day)
-            if not admission.ok:
-                assert admission.cause is not None
-                self._signal(decision, bar.start, SignalOutcome.REJECTED,
-                             f"{admission.cause.value}: {admission.detail}")
-                return
-            key = self.book.entered(self.symbol, now, admission)
-        self.pending = _Pending(decision, bar.start, self.settings.entry_wait_bars, key)
+        self.pending = _Pending(decision, bar.start, self.settings.entry_wait_bars)
 
-    def step(self) -> None:
-        """Process the next bar."""
-        index, bar = self.index, self.bars[self.index]
-        self._manage_position(index, bar)
-        self._try_fill(index, bar)
-        self._evaluate(index, bar)
-        self.index += 1
-
-    def finish(self) -> None:
+    def run(self) -> None:
+        for index, bar in enumerate(self.bars):
+            self._manage_position(index, bar)
+            self._try_fill(index, bar)
+            self._evaluate(index, bar)
         last = len(self.bars) - 1
         if self.open is not None:
             self._close(last, self.bars[last].close, self.bars[last].start, ExitReason.END_OF_DATA)
         if self.pending is not None:
-            self._missed(self.pending, self.bars[last].start + M1, "no further bars")
-
-    def run(self) -> None:
-        while self.index < len(self.bars):
-            self.step()
-        self.finish()
-
-
-def _run_together(runs: Sequence[_SessionReplay]) -> None:
-    """Every bar of `runs` (one date, one per symbol) in time order; within a minute, in the
-    order of `runs`. Each run's own bars keep their order."""
-    queue = [(run.bars[0].start, k) for k, run in enumerate(runs) if run.bars]
-    heapq.heapify(queue)
-    while queue:
-        _, k = heapq.heappop(queue)
-        run = runs[k]
-        run.step()
-        if run.index < len(run.bars):
-            heapq.heappush(queue, (run.bars[run.index].start, k))
-    for run in runs:
-        if run.bars:
-            run.finish()
+            pending = self.pending
+            self.pending = None
+            self._signal(
+                pending.decision, pending.bar_start, SignalOutcome.MISSED, "no further bars"
+            )
 
 
 def split_sessions(bars: Sequence[Bar]) -> list[tuple[date, tuple[Bar, ...]]]:
@@ -447,15 +387,13 @@ def replay(
     bars_by_symbol: Mapping[str, Sequence[Bar]],
     settings: ReplaySettings,
     clock_for: ClockFor,
-    rules: SimulationRules | None = None,
-    book: SimulatedBook | None = None,
 ) -> ReplayResult:
-    """Replay every symbol through a fresh strategy instance; `clock_for` gives each day's clock.
-    `rules`: the platform rules every ENTER must pass (None: no platform limit). `book`: the
-    caller's simulated day to admit against and record in, instead of a fresh one (one date
-    only)."""
-    strategies: dict[str, Strategy] = {}
-    sessions: dict[str, dict[date, tuple[Bar, ...]]] = {}
+    """Replay every symbol through a fresh strategy instance; `clock_for` gives each day's clock."""
+    trades: list[SimulatedTrade] = []
+    signals: list[Signal] = []
+    verdicts: dict[str, int] = {}
+    session_count = 0
+    bar_count = 0
     name = version = None
     for symbol in sorted(bars_by_symbol):
         strategy = create_strategy()
@@ -463,44 +401,29 @@ def replay(
             name, version = strategy.name, strategy.version
         elif (strategy.name, strategy.version) != (name, version):
             raise StrategyContractError("strategy factory returned different name/version")
-        strategies[symbol] = strategy
-        sessions[symbol] = dict(split_sessions(bars_by_symbol[symbol]))
+        prior: list[tuple[Bar, ...]] = []
+        for day, day_bars in split_sessions(bars_by_symbol[symbol]):
+            session = _SessionReplay(
+                strategy, symbol, day, day_bars, tuple(prior), settings, clock_for(day)
+            )
+            session.run()
+            trades.extend(session.trades)
+            signals.extend(session.signals)
+            for verdict, count in session.verdicts.items():
+                verdicts[verdict] = verdicts.get(verdict, 0) + count
+            prior.append(day_bars)
+            if len(prior) > settings.history_sessions:
+                prior.pop(0)
+            session_count += 1
+            bar_count += len(day_bars)
     if name is None or version is None:
         raise ReplayError("no bars to replay")
-    trades: dict[str, list[SimulatedTrade]] = {symbol: [] for symbol in strategies}
-    signals: dict[str, list[Signal]] = {symbol: [] for symbol in strategies}
-    verdicts: dict[str, int] = {}
-    prior: dict[str, list[tuple[Bar, ...]]] = {symbol: [] for symbol in strategies}
-    session_count = 0
-    bar_count = 0
-    dates = sorted({day for days in sessions.values() for day in days})
-    if book is not None and (rules is None or len(dates) != 1):
-        raise ReplayError("a caller's simulated day needs rules and bars of exactly one date")
-    for day in dates:
-        clock = clock_for(day)
-        day_book = book if book is not None else None if rules is None else SimulatedBook(rules)
-        runs = [_SessionReplay(strategies[symbol], symbol, day, days[day],
-                               tuple(prior[symbol]), settings, clock, day_book)
-                for symbol, days in sessions.items() if day in days]
-        _run_together(runs)
-        for run in runs:
-            trades[run.symbol].extend(run.trades)
-            signals[run.symbol].extend(run.signals)
-            for verdict, count in run.verdicts.items():
-                verdicts[verdict] = verdicts.get(verdict, 0) + count
-            history = prior[run.symbol]
-            history.append(run.bars)
-            if len(history) > settings.history_sessions:
-                history.pop(0)
-            session_count += 1
-            bar_count += len(run.bars)
     return ReplayResult(
         strategy=name,
         version=version,
-        trades=tuple(t for symbol in strategies for t in trades[symbol]),
-        signals=tuple(s for symbol in strategies for s in signals[symbol]),
+        trades=tuple(trades),
+        signals=tuple(signals),
         verdict_counts=dict(sorted(verdicts.items())),
         sessions=session_count,
         bars=bar_count,
-        rules=None if rules is None else rules.label(),
     )

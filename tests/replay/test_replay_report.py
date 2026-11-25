@@ -127,10 +127,6 @@ def test_cli_end_to_end_with_stub_strategy(tmp_path, monkeypatch, capsys):
     assert trade["setup"] == "stub-breakout"
     assert trade["exit_reason"] == "stop"
     assert Decimal(trade["r_multiple"]) < -1
-    # The replay ran under the live platform rules of bot.toml and says so.
-    summary = json.loads((out / "summary.json").read_text())
-    assert summary["rules"].startswith("platform rules (session, own_state, decision, money)")
-    assert "risk.max_open_positions=" in summary["rules"]
 
 
 def test_cli_refuses_bad_settings(tmp_path, capsys):

@@ -138,32 +138,5 @@
       ]
     }
   ],
-  "api_version": 1,
-  "simulation_rules": {
-    "applied": [
-      "session",
-      "own_state",
-      "decision",
-      "money"
-    ],
-    "not_simulated": [
-      "gate",
-      "reconciliation",
-      "quote",
-      "request_budget",
-      "buying_power"
-    ],
-    "values": {
-      "risk.planned_loss_usd": "50",
-      "risk.position_notional_cap_usd": "1000",
-      "risk.max_daily_loss_usd": "5000",
-      "risk.min_daily_room_usd": "10",
-      "risk.max_open_positions": "6",
-      "risk.max_working_entries": "6",
-      "risk.symbol_cooldown_minutes_after_loss": "30",
-      "risk.max_entry_rest_bars": "10",
-      "session.last_entry_minutes_before_close": "25",
-      "session.half_days_enabled": "false"
-    }
-  }
+  "api_version": 1
 }

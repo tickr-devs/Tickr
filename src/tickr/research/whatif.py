@@ -13,11 +13,7 @@ IGNORE everywhere else. The fill and exit rules are therefore the replay's rules
   at or after the flatten time, or at the last bar's close; every exit pays slippage;
 - conservative: if the fill bar also reaches the stop, the stop is taken in that bar;
 - an ENTER that live admission would refuse on time alone (before the open, completing at or
-  after the last entry time, a disabled half day) is `rejected` with the replay's cause;
-- with `rules` (backlog T12), an ENTER the live platform rules refuse (`tickr.risk.simulated`)
-  is `rejected` with the admission cause, for the quantity simulated. Each decision is admitted
-  against `book` when given (the caller's simulated day, as GET /observers does), otherwise
-  against an empty day.
+  after the last entry time, a disabled half day) is `rejected` with the replay's cause.
 
 The result is in R (per share) and in USD for a quantity, gross (slippage included,
 commissions and fees not): the `quantity` argument when given,
@@ -27,7 +23,7 @@ otherwise the quantity the strategy recorded. Without either the record is `not_
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
@@ -36,7 +32,6 @@ from tickr.replay.engine import SignalOutcome, SimulatedTrade, replay, split_ses
 from tickr.replay.settings import ReplaySettings
 from tickr.research.errors import ResearchError
 from tickr.research.records import Admission, DecisionRecord
-from tickr.risk.simulated import SimulatedBook, SimulationRules
 from tickr.strategy.base import Decision, SymbolContext, Verdict
 from tickr.types import Bar
 
@@ -79,15 +74,14 @@ class WhatIf:
 class _OneDecision:
     """Scripted strategy: the recorded decision on its bar, IGNORE on every other bar."""
 
-    def __init__(self, record: DecisionRecord, decision: Decision) -> None:
+    def __init__(self, record: DecisionRecord) -> None:
         self.record = record
-        self.decision = decision
         self.name = record.decision.strategy
         self.version = record.decision.version
 
     def evaluate(self, context: SymbolContext) -> Decision:
         if context.bars[-1].start == self.record.bar_start:
-            return self.decision
+            return self.record.decision
         return Decision(self.name, self.version, context.symbol, Verdict.IGNORE, ())
 
 
@@ -115,12 +109,7 @@ def simulate_one(
     settings: ReplaySettings,
     clock_for: ClockFor,
     quantity: Decimal | None = None,
-    rules: SimulationRules | None = None,
-    book: SimulatedBook | None = None,
 ) -> WhatIf:
-    """`book`: the simulated day to admit the decision against under `rules` (default: an
-    empty day); the simulated trade is recorded in it."""
-
     def skip(cause: str, qty: Decimal | None = None) -> WhatIf:
         return WhatIf(record, qty, WhatIfOutcome.NOT_SIMULATED, cause, None)
 
@@ -134,12 +123,8 @@ def simulate_one(
     )
     if session is None:
         return skip("decision bar not in bars", qty)
-    # Under the platform rules the decision is admitted with the quantity simulated (the
-    # caller's, or one share for a result in R only), the size the simulated trade has.
-    decision = record.decision if rules is None else replace(record.decision, quantity=qty)
     result = replay(
-        lambda: _OneDecision(record, decision), {record.symbol: session}, settings, clock_for,
-        rules, book
+        lambda: _OneDecision(record), {record.symbol: session}, settings, clock_for
     )
     if len(result.signals) != 1 or len(result.trades) > 1:
         raise ResearchError(
@@ -166,10 +151,8 @@ def what_if(
     settings: ReplaySettings,
     clock_for: ClockFor,
     quantity: Decimal | None = None,
-    rules: SimulationRules | None = None,
 ) -> tuple[WhatIf, ...]:
-    """Simulate every ENTER that was not taken, independently of the others (under `rules`,
-    each against an empty day)."""
+    """Simulate every ENTER that was not taken, independently of the others."""
     if quantity is not None and (quantity < 1 or quantity != quantity.to_integral_value()):
         raise ResearchError(f"quantity {quantity} is not a whole number of shares >= 1")
     out = []
@@ -179,7 +162,7 @@ def what_if(
             out.append(WhatIf(record, None, WhatIfOutcome.NOT_SIMULATED, "no bars for the symbol",
                               None))
             continue
-        out.append(simulate_one(record, bars, settings, clock_for, quantity, rules))
+        out.append(simulate_one(record, bars, settings, clock_for, quantity))
     return tuple(out)
 
 

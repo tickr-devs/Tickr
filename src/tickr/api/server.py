@@ -520,9 +520,8 @@ class ApiServer(ThreadingHTTPServer):
             results, kept = self.observer_results.results(
                 day, today, [r for r in observed if r.decision.strategy in configured],
                 decision_file)
-            return contract.observers_document(
-                day, identities, observed, results, self._observer_differences(),
-                contract.simulation_rules(settings.simulation.rules)), kept
+            return contract.observers_document(day, identities, observed, results,
+                                               self._observer_differences()), kept
         if path == "/skipped":
             return self.skipped.document(day, today, records(Role.ACTIVE), decision_file)
         active = records(Role.ACTIVE)

@@ -98,9 +98,7 @@ WHATIF_COLUMNS = (
 )
 
 
-def write_whatif(rows: Sequence[wi.WhatIf], out_dir: Path, places: int,
-                 rules: str | None = None) -> dict[str, Any]:
-    """`rules`: the label of the platform rules the rows were simulated under (None: none)."""
+def write_whatif(rows: Sequence[wi.WhatIf], out_dir: Path, places: int) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def line(w: wi.WhatIf) -> list[Any]:
@@ -115,7 +113,7 @@ def write_whatif(rows: Sequence[wi.WhatIf], out_dir: Path, places: int,
                 w.cause, quantity, *trade, w.r_multiple, w.result_usd, w.risk_usd]
 
     _write_csv(out_dir / "whatif.csv", WHATIF_COLUMNS, (line(w) for w in rows), places)
-    body = {"label": wi.LABEL, "rules": rules, **asdict(wi.summarize(rows))}
+    body = {"label": wi.LABEL, **asdict(wi.summarize(rows))}
     return _json(out_dir / "whatif_summary.json", body, places)
 
 
@@ -178,7 +176,7 @@ def write_observer_report(
 
     _write_csv(out_dir / "observers.csv", OBSERVER_COLUMNS,
                (line(r) for r in result.identities), places)
-    body = {"label": orep.LABEL, "rules": result.rules, "active": result.active,
+    body = {"label": orep.LABEL, "active": result.active,
             "identities": [asdict(r) for r in result.identities]}
     return _json(out_dir / "observers.json", body, places)
 

@@ -13,5 +13,3 @@ lookback = 3
 window_usd = 0.10
 # Close below entry price minus this amount (USD) makes the strategy EXIT.
 exit_drop_usd = 0.30
-# Shares every ENTER asks for.
-quantity = 1

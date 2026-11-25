@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
-from tickr.calendar import CalendarRefused, MarketDay, SessionCalendar
+from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import SessionConfig
 from tickr.replay.errors import ReplayError
 
@@ -25,9 +25,6 @@ class SessionClock:
     last_entry: datetime
     flatten: datetime
     entries_refused: str | None = None
-    market_day: MarketDay | None = None
-    """The calendar's day, for the platform rules' trading-window check (None: no calendar,
-    so a simulation under platform rules refuses every entry of the day)."""
 
     def __post_init__(self) -> None:
         if not self.regular_open < self.last_entry <= self.flatten:
@@ -55,7 +52,7 @@ def calendar_clock(calendar: SessionCalendar, session: SessionConfig) -> ClockFo
         refused = None
         if day.half_day and not session.half_days_enabled:
             refused = "half day: trading disabled"
-        return SessionClock(day.regular_open, times.last_entry, times.flatten, refused, day)
+        return SessionClock(day.regular_open, times.last_entry, times.flatten, refused)
 
     return clock_for
 

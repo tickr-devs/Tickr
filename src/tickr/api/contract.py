@@ -45,7 +45,6 @@ from tickr.data.base import ScreenerKind
 from tickr.replay.engine import ExitReason
 from tickr.research.records import Admission, DecisionRecord
 from tickr.risk.causes import ENGINE_REFUSED, AdmissionCause
-from tickr.risk.simulated import APPLIED, NOT_SIMULATED, SimulationRules
 from tickr.risk.ticks import round_to_tick
 from tickr.strategy.base import Check, Decision, Role, Verdict
 
@@ -1531,26 +1530,6 @@ class LabReplayV1:
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
 
-# ---------------------------------------------------------------- simulation rules
-
-
-@dataclass(frozen=True)
-class SimulationRulesV1:
-    """The live bot's platform rules a SIMULATED answer was computed under (docs/api.md,
-    "Simulation rules"). `applied`: the admission checks every simulated ENTER passed
-    (`session`, `own_state`, `decision`, `money`); `not_simulated`: the checks a simulation has
-    no counterpart for; `values`: every bot.toml value the applied checks read, by dotted key,
-    as text."""
-
-    applied: tuple[str, ...]
-    not_simulated: tuple[str, ...]
-    values: Params
-
-
-def simulation_rules(rules: SimulationRules) -> SimulationRulesV1:
-    return SimulationRulesV1(APPLIED, NOT_SIMULATED, rules.values())
-
-
 # ---------------------------------------------------------------- trade what-if (simulated)
 
 
@@ -1578,7 +1557,7 @@ class TradeWhatIfSignalsV1:
 
     filled: int
     missed: int  # the price never came into the entry window
-    rejected: int  # replay timing or the live platform rules refuse it
+    rejected: int  # live admission would refuse it on time alone
     ignored: int  # a simulated position of the symbol was already open
 
 
@@ -1586,8 +1565,7 @@ class TradeWhatIfSignalsV1:
 class TradeWhatIfV1:
     """GET /trades/whatif: strategy folder `folder` replayed on `symbol`'s captured bars of
     `day`, SIMULATED. Null numbers and no trades with `cause` when it could not be computed.
-    `result_gross_usd` is null when a trade has no quantity. `simulation_rules`: the platform
-    rules the replay obeyed (null on a document without a simulation)."""
+    `result_gross_usd` is null when a trade has no quantity."""
 
     day: date
     symbol: str
@@ -1600,7 +1578,6 @@ class TradeWhatIfV1:
     result_gross_usd: Decimal | None
     cause: str | None
     api_version: int = _const(API_VERSION)
-    simulation_rules: SimulationRulesV1 | None = _added_later(None)
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
 
@@ -1762,13 +1739,11 @@ class ObserverV1:
 @dataclass(frozen=True)
 class ObserversV1:
     """GET /observers?date=: the observers configured in [strategy] observers, one entry per
-    (name, version) recorded on one New York date, with its decisions oldest first.
-    `simulation_rules`: the platform rules every observer's simulated ENTERs obeyed."""
+    (name, version) recorded on one New York date, with its decisions oldest first."""
 
     day: date
     observers: tuple[ObserverV1, ...]
     api_version: int = _const(API_VERSION)
-    simulation_rules: SimulationRulesV1 | None = _added_later(None)
 
 
 # The recorded cause code of a refused ENTER: every admission cause, the engine's refusal after
@@ -1870,8 +1845,7 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
                        records: tuple[DecisionRecord, ...],
                        results: Mapping[tuple[str, str], ObserverResult],
                        differences: Mapping[tuple[str, str], tuple[SettingDifferenceV1, ...]]
-                       | None = None,
-                       rules: SimulationRulesV1 | None = None) -> ObserversV1:
+                       | None = None) -> ObserversV1:
     """`identities`: (name, current version) of each configured observer, in configuration
     order; `records`: observer records only. Observers are matched by name: one entry per
     version recorded that day (config order, then version), or, when a name has no records,
@@ -1879,7 +1853,7 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
     `results`: the simulated result of every (name, version) recorded that day; an entry
     without records gets null result and trades with the cause NO_DECISIONS. `differences`:
     each (name, version) whose settings can be compared with the active strategy's; any other
-    entry gets null `settings_differences`. `rules`: the platform rules of the simulation."""
+    entry gets null `settings_differences`."""
     differences = differences or {}
     ordered = _oldest_first(records)
     names = list(dict.fromkeys(name for name, _ in identities))
@@ -1907,7 +1881,7 @@ def observers_document(day: date, identities: tuple[tuple[str, str], ...],
                                    tuple(c.rule for c in r.decision.checks if not c.passed))
                 for r in ordered
                 if (r.decision.strategy, r.decision.version) == (name, version))))
-    return ObserversV1(day=day, observers=tuple(entries), simulation_rules=rules)
+    return ObserversV1(day=day, observers=tuple(entries))
 
 
 def _version_order(version: str) -> tuple[bool, int, str]:
@@ -2025,13 +1999,11 @@ class SkippedSignalV1:
 @dataclass(frozen=True)
 class SkippedV1:
     """GET /skipped?date=: every skipped ENTER of the active strategy on one New York date,
-    oldest first. `simulation_rules`: the platform rules each what-if obeyed (entered alone, on
-    an otherwise empty simulated day)."""
+    oldest first."""
 
     day: date
     signals: tuple[SkippedSignalV1, ...]
     api_version: int = _const(API_VERSION)
-    simulation_rules: SimulationRulesV1 | None = _added_later(None)
 
 
 NOT_COMPUTED = "not computed on this path"

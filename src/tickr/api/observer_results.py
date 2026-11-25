@@ -45,7 +45,6 @@ from tickr.research import observer_report
 from tickr.research.errors import ResearchError
 from tickr.research.records import DecisionRecord
 from tickr.research.whatif import WhatIfOutcome
-from tickr.risk.simulated import SimulationRules
 from tickr.strategy.base import Verdict
 from tickr.types import Bar
 
@@ -70,15 +69,13 @@ class SimulationPaths:
     replay_settings: Path  # config/replay.toml
     calendar: Path  # folder of the session calendar files
     session: SessionConfig
-    rules: SimulationRules  # the live platform rules every simulated ENTER obeys (T12)
 
     @classmethod
     def from_config(cls, config: Config) -> SimulationPaths:
         data = config.root / config.run.data_dir
         return cls(data / config.market_data.capture_dir / config.environment_name,
                    config.root / config.api.replay_settings_file,
-                   (config.root / config.session.calendar_file).parent, config.session,
-                   SimulationRules.from_config(config))
+                   (config.root / config.session.calendar_file).parent, config.session)
 
 
 def stamp(path: Path) -> _Stamp:
@@ -183,8 +180,7 @@ class ObserverResults:
             bars = day_bars(self.captured_bars, self.paths, day, today)
             settings, clock_for = replay_inputs(self.paths)
             report = observer_report.report(
-                [r for i in trading for r in groups[i]], bars, settings, clock_for,
-                self.paths.rules)
+                [r for i in trading for r in groups[i]], bars, settings, clock_for)
         except NoInputs as exc:
             return out | {i: _failed(str(exc)) for i in trading}, exc.transient
         except (ReplayError, ResearchError) as exc:

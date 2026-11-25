@@ -12,11 +12,7 @@ Per strategy identity (name + version + role):
   York day, symbol, setup and trigger) that already made a simulated trade is
   `skipped_same_signal`: an observer holds no position, so it answers ENTER on every bar its
   signal stays valid, where live the symbol pause or the open position would stop a second
-  entry. The active strategy's ENTERs are not deduplicated. With `rules` (backlog T12), every
-  other ENTER is then admitted by the live platform rules (`tickr.risk.simulated`) against that
-  identity's simulated trades of the day in all symbols, in time order (position and
-  working-entry limits, pause after a loss, size, daily loss ceiling); a refusal is `rejected`
-  with the admission cause. R per trade; USD only for ENTERs with a
+  entry. The active strategy's ENTERs are not deduplicated. R per trade; USD only for ENTERs with a
   recorded whole quantity (gross: slippage in, commissions out);
 - every ENTER as simulated (`ObserverReport.enters`, read by GET /observers for its trades;
   not written to the report files);
@@ -47,7 +43,6 @@ from tickr.research.compare import diff
 from tickr.research.errors import ResearchError
 from tickr.research.records import Admission, DecisionRecord
 from tickr.research.whatif import WhatIfOutcome, simulate_one
-from tickr.risk.simulated import SimulatedBook, SimulationRules
 from tickr.strategy.base import Role, Verdict
 from tickr.types import Bar
 
@@ -135,9 +130,6 @@ class ObserverReport:
     identities: tuple[IdentityReport, ...]
     # Every ENTER of each identity, in simulation order (symbol, then bar start).
     enters: dict[Identity, tuple[SimulatedEnter, ...]] = field(default_factory=dict)
-    rules: str | None = None
-    """The platform rules and config values the ENTERs were simulated under
-    (`SimulationRules.label`); None = none applied."""
 
 
 def _whole(quantity: Decimal | None) -> bool:
@@ -151,7 +143,6 @@ def _simulate(
     settings: ReplaySettings,
     clock_for: ClockFor,
     dedupe_signals: bool,
-    rules: SimulationRules | None = None,
 ) -> tuple[SimulatedEnter, ...]:
     out: list[SimulatedEnter] = []
     outcomes = {o.value: 0 for o in WhatIfOutcome} | {SKIPPED_OVERLAP: 0, SKIPPED_SAME_SIGNAL: 0}
@@ -160,9 +151,7 @@ def _simulate(
     zone = ZoneInfo(TIMEZONE_NAME)
     r_values: list[Decimal] = []
     shares: list[Decimal] = []
-    books: dict[date, SimulatedBook] = {}
-    # Time order, so the platform rules see every earlier trade of the day in any symbol.
-    for record in sorted(enters, key=lambda r: (r.bar_start, r.symbol)):
+    for record in sorted(enters, key=lambda r: (r.symbol, r.bar_start)):
         if record.bar_start < busy_until.get(record.symbol, record.bar_start):
             outcomes[SKIPPED_OVERLAP] += 1
             out.append(SimulatedEnter(record, SKIPPED_OVERLAP, "an earlier simulated trade of "
@@ -188,12 +177,7 @@ def _simulate(
             continue
         quantity = record.decision.quantity
         has_usd = _whole(quantity)
-        book = None
-        if rules is not None:
-            book = books.setdefault(record.bar_start.astimezone(zone).date(),
-                                    SimulatedBook(rules))
-        result = simulate_one(record, bars, settings, clock_for, quantity if has_usd else ONE,
-                              rules, book)
+        result = simulate_one(record, bars, settings, clock_for, quantity if has_usd else ONE)
         outcomes[result.outcome.value] += 1
         trade = result.trade
         usd = result.result_usd if has_usd and trade is not None else None
@@ -218,7 +202,7 @@ def _simulate(
     row.average_r = row.total_r / len(r_values) if r_values else None
     row.captured_trades = len(shares)
     row.average_captured_share = sum(shares, Decimal(0)) / len(shares) if shares else None
-    return tuple(sorted(out, key=lambda e: (e.record.symbol, e.record.bar_start)))
+    return tuple(out)
 
 
 def report(
@@ -226,9 +210,7 @@ def report(
     bars_by_symbol: Mapping[str, Sequence[Bar]],
     settings: ReplaySettings,
     clock_for: ClockFor,
-    rules: SimulationRules | None = None,
 ) -> ObserverReport:
-    """`rules`: the platform rules every simulated ENTER must pass (None: no platform limit)."""
     groups: dict[tuple[str, str, str], list[DecisionRecord]] = {}
     for record in records:
         key = (record.decision.strategy, record.decision.version, record.role.value)
@@ -254,7 +236,7 @@ def report(
         row.enters_taken = sum(1 for r in enters if r.admission is Admission.TAKEN)
         row.enters_refused = sum(1 for r in enters if r.admission is Admission.REFUSED)
         simulated[key] = _simulate(row, enters, bars_by_symbol, settings, clock_for,
-                                   dedupe_signals=key[2] == Role.OBSERVER.value, rules=rules)
+                                   dedupe_signals=key[2] == Role.OBSERVER.value)
         if active_key is not None and key != active_key:
             active = groups[active_key]
             row.vs_active = dict(diff(active, group, zone).counts)
@@ -264,5 +246,4 @@ def report(
             row.shared_enter_bars = len({(r.symbol, r.bar_start) for r in enters} & active_enters)
         rows.append(row)
     active_name = f"{active_key[0]} v{active_key[1]}" if active_key else None
-    return ObserverReport(active_name, tuple(rows), simulated,
-                          None if rules is None else rules.label())
+    return ObserverReport(active_name, tuple(rows), simulated)

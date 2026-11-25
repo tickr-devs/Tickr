@@ -1,8 +1,8 @@
 """Platform rules for simulations (backlog T12). SIMULATED, never on the order path.
 
-Replay, observers and "what if" admit each simulated ENTER through `admit_simulated` of
-`tickr.risk.admission`: the same check functions the live bot runs, fed from a simulated book
-of the day instead of broker reads. `SimulationRules` carries the limits (bot.toml `[risk]`,
+A simulation (the model's dollar exam, a backtest on stored model answers) admits each
+simulated ENTER through `admit_simulated` of `tickr.risk.admission`: the same check functions
+the live bot runs, fed from a simulated book of the day instead of broker reads. `SimulationRules` carries the limits (bot.toml `[risk]`,
 `[session]`, as live) and names them, so every simulated result says which rules and values it
 was computed under.
 
@@ -35,7 +35,7 @@ from tickr.risk.ticks import round_to_tick
 from tickr.strategy.base import Decision
 
 APPLIED = ("session", "own_state", "decision", "money")
-"""What `SIMULATED_CHECKS` covers, by name (docs/api.md, "Simulation rules")."""
+"""What `SIMULATED_CHECKS` covers, by name."""
 
 COOLDOWN_OFF = "off"
 

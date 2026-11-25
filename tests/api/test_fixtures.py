@@ -130,15 +130,6 @@ from .schema_check import errors
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 LIMIT_CAUSE = "POSITION_LIMIT_REACHED: 1 open position(s), limit 1"
-# The platform rules a simulated answer obeyed (backlog T12), as SimulationRules.values writes them.
-SIM_RULES = contract.SimulationRulesV1(
-    ("session", "own_state", "decision", "money"),
-    ("gate", "reconciliation", "quote", "request_budget", "buying_power"),
-    {"risk.planned_loss_usd": "50", "risk.position_notional_cap_usd": "1000",
-     "risk.max_daily_loss_usd": "5000", "risk.min_daily_room_usd": "10",
-     "risk.max_open_positions": "6", "risk.max_working_entries": "6",
-     "risk.symbol_cooldown_minutes_after_loss": "30", "risk.max_entry_rest_bars": "10",
-     "session.last_entry_minutes_before_close": "25", "session.half_days_enabled": "false"})
 # As admission records it: New York offsets, microseconds (risk/admission.py _check_cooldown).
 COOLDOWN_CAUSE = ("SYMBOL_COOLDOWN: ZNTH closed at a loss at 2026-11-16T10:14:07.250000-05:00; "
                   "no entry before 2026-11-16T10:44:07.250000-05:00")
@@ -470,7 +461,7 @@ def documents() -> dict[str, object]:
                                    Decimal("12.7000"), T0 - timedelta(days=3, minutes=-80),
                                    Decimal("12.6900"), ExitReason.STOP, Decimal("-1.0313"),
                                    None, None)),
-            Decimal("0.2642"), None, None, simulation_rules=SIM_RULES),
+            Decimal("0.2642"), None, None),
         "trade-whatif-v1.failed": TradeWhatIfV1(
             DAY - timedelta(days=3), "ABCD", "volume-shock-v1", "volume-shock-v1", "1", None,
             (), None, None, "no cached prior sessions for ABCD on 2026-11-13"),
@@ -563,7 +554,7 @@ def documents() -> dict[str, object]:
                                    Verdict.ENTER, ()),), None,
                 "no captured bars for 2026-11-16", None, "no captured bars for 2026-11-16",
                 False, watching_since=T0.replace(microsecond=0) + timedelta(minutes=2, seconds=1),
-                settings_differences=())), simulation_rules=SIM_RULES),
+                settings_differences=()))),
         "observers-v1.empty": ObserversV1(DAY - timedelta(days=3), ()),
         "decisions-v1": DecisionsV1("ABCD", DAY, (
             DecisionV1(T0.replace(microsecond=0), Verdict.WATCH,
@@ -611,8 +602,7 @@ def documents() -> dict[str, object]:
                                 CheckV1("ask_above_trigger", Decimal("5.31"), ">",
                                         Decimal("5.25"), True, "", True),),
                             (), "no captured bars for 2026-11-16",
-                            WhatIfV1(None, None, None, "no captured bars for 2026-11-16"))),
-                              simulation_rules=SIM_RULES),
+                            WhatIfV1(None, None, None, "no captured bars for 2026-11-16")))),
         "skipped-v1.empty": SkippedV1(DAY - timedelta(days=3), ()),
         "flow-v1": FlowV1("sandbox", DAY, (
             FlowChipV1("ABCD", (ScreenerKind.GAINERS, ScreenerKind.TOP_ACTIVES),
