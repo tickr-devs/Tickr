@@ -78,8 +78,19 @@ For bar `i` of a session, in this order:
    receives a `PositionView` with quantity 1.
 
 Every exit pays slippage. A position still open on the last bar closes at that bar's close
-(`end_of_data`); positions never cross sessions. Each symbol is replayed independently with a
-fresh strategy instance, so the one-open-position platform limit is not applied across symbols.
+(`end_of_data`); positions never cross sessions. Each symbol has its own strategy instance; the
+symbols of one date are replayed together, bar by bar in time order (symbols by name within a
+minute).
+
+Platform rules (backlog T12): an ENTER the replay's timing takes is then admitted by the live
+bot's own admission checks (`admit_simulated` in `src/tickr/risk/admission.py`, fed from the
+simulated day by `src/tickr/risk/simulated.py`, values from `--config`): the trading window,
+one trade per symbol, `max_open_positions` and `max_working_entries` across symbols, the pause
+after a loss, a complete ENTER with valid prices and a quantity, planned loss and notional cap,
+and the daily loss ceiling over that day's simulated results (USD from the strategy's quantity).
+A refusal is `rejected` with the admission cause (`CODE: detail`). Not simulated: the gate,
+broker reads, the live quote, the request budget and buying power. `summary.json` records the
+rules and values under `rules`.
 ENTER decisions while a position or an entry is pending are recorded as `ignored`; ENTER
 on a bar starting before the regular open, or completing at or after the last-entry time (live
 admission would refuse it), or without `entry_high`/`stop`, or with the stop not below `entry_high`,
@@ -98,9 +109,8 @@ Percent per trade = (exit - entry) / entry x 100.
   `ignored`) and cause: the input for "what if we had entered".
 - `summary.json` (also printed): sessions, bars, signals by outcome, trades, wins, losses,
   win rate, total and average R, max drawdown in R, total and average percent, exits by
-  reason, verdict counts.
+  reason, verdict counts, and `rules`: the platform rules and config values applied.
 
 ## Not yet
 
 - Replaying captured L1 quotes (`data/capture/...`) instead of the synthetic quote.
-- A shared portfolio across symbols (one open position at a time, daily loss ceiling).

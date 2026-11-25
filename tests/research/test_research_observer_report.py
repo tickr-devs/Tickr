@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -14,17 +15,22 @@ from research_helpers import (
     write_jsonl,
 )
 
+from tickr import config
+from tickr.replay.__main__ import clock_of
 from tickr.research.__main__ import main
 from tickr.research.errors import ResearchError
 from tickr.research.observer_report import report
 from tickr.research.records import Admission, write_records
+from tickr.risk.admission import AdmissionLimits
+from tickr.risk.simulated import SimulationRules
 from tickr.strategy.base import Role, Verdict
 
 ROOT = HERE.parent.parent
 DECISION = ("10.00", "10.05", "9.95", "10.05")
 # 10:00 signal bar, 10:01 fills [10.00, 10.10], 10:02 rises, 10:03 hits the 9.80 stop.
-BARS = series("10:00", [DECISION, ("10.05", "10.08", "10.00", "10.06"), flat("10.40"),
-                        ("10.00", "10.00", "9.70", "9.75"), flat("9.75")])
+BARS_ROWS = [DECISION, ("10.05", "10.08", "10.00", "10.06"), flat("10.40"),
+             ("10.00", "10.00", "9.70", "9.75"), flat("9.75")]
+BARS = series("10:00", BARS_ROWS)
 
 
 def enter(clock, **kw):
@@ -151,3 +157,20 @@ def test_no_share_is_guessed_without_a_move():
     late = [b for b in BARS if b.start > taken.trade.signal_bar_start]
     missing = move_of(taken.trade, late, CLOCK)  # no bar from the open through the signal
     assert missing.captured_share is None and "no bars" in missing.cause
+
+
+def test_platform_rules_hold_across_the_identity_s_symbols():
+    """Backlog T12: under the live rules an observer's second symbol waits for a free slot."""
+    cfg = config.load(ROOT / "config" / "bot.toml")
+    rules = SimulationRules(replace(AdmissionLimits.from_config(cfg), max_open_positions=1))
+    bars = {"ABC": BARS, "XYZ": series("10:00", BARS_ROWS, "XYZ")}
+    records = [observer("10:00"), observer("10:00", symbol="XYZ")]
+    free = report(records, bars, replay_settings(), clock_of(cfg))
+    limited = report(records, bars, replay_settings(), clock_of(cfg), rules)
+    (row,) = free.identities
+    assert row.trades == 2 and free.rules is None
+    (row,) = limited.identities
+    assert row.trades == 1 and limited.rules == rules.label()
+    abc, xyz = limited.enters[("s", "2", "observer")]
+    assert (abc.outcome, xyz.outcome) == ("filled", "rejected")
+    assert xyz.cause.startswith("POSITION_LIMIT_REACHED")

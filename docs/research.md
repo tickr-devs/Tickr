@@ -101,7 +101,11 @@ and the calendar, as live): entry at the top of the window plus
 slippage if a following bar trades in the window within `entry_wait_bars` (else `missed`, never
 chased); exit at the stop, at the flatten bar's open, or at the last bar's close, always with
 slippage; when the fill bar also reaches the stop, the stop is taken in that bar. An ENTER
-completing at or after the last entry time (or on a disabled half day) is `rejected`.
+completing at or after the last entry time (or on a disabled half day) is `rejected`, and so is
+one the live platform rules refuse for the quantity simulated (backlog T12, `docs/replay.md`;
+each row against an otherwise empty day). `observers` applies the same rules to each identity's
+ENTERs in time order over all its simulated trades of the day. Both JSON outputs record the
+rules and values under `rules`.
 
 Result: R per share, and USD = (exit - entry) x quantity, **gross**: slippage is included,
 commissions and fees are not (the config has no commission model), where quantity is `--quantity` or the

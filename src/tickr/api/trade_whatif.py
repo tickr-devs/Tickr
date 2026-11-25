@@ -6,7 +6,9 @@ Inputs, all already on disk, nothing fetched and nothing written:
 - the prior sessions the bot cached for the symbol that day
   (`<history_dir>/<environment>/<day>/<symbol>-<[market_data] history_sessions>.jsonl`);
 - the strategy folder under `strategies/` (its module from `[observers] strategy_modules`),
-  `[api] replay_settings_file` and the session calendar with bot.toml `[session]`.
+  `[api] replay_settings_file` and the session calendar with bot.toml `[session]`;
+- the live platform rules (bot.toml `[risk]`, `[session]`): every ENTER passes them as the bot's
+  would (backlog T12, `tickr.risk.simulated`), or is a rejected signal.
 
 The version is replayed over those bars by the replay engine (`tickr.replay`, its fill and
 exit rules, docs/replay.md), the prior sessions only as the strategy's history: only signals and
@@ -134,7 +136,8 @@ def what_if(settings: TradeWhatIfSettings, folder: str, symbol: str, day: date,
         return failed("cached prior sessions overlap the day's bars", name, version)
     try:
         result = replay(lambda: load_strategy(settings.root, folder, modules).strategy,
-                        {symbol: prior + today_bars}, replay_settings, clock_for)
+                        {symbol: prior + today_bars}, replay_settings, clock_for,
+                        settings.paths.rules)
     except (ReplayError, ObserverError) as exc:
         return failed(f"simulation refused: {exc}", name, version)
     except Exception as exc:  # noqa: BLE001 - a version's own bug is a cause, never a 500
@@ -160,4 +163,5 @@ def what_if(settings: TradeWhatIfSettings, folder: str, symbol: str, day: date,
                              api.TradeWhatIfSignalsV1(
                                  counts[SignalOutcome.FILLED], counts[SignalOutcome.MISSED],
                                  counts[SignalOutcome.REJECTED], counts[SignalOutcome.IGNORED]),
-                             rows, total_r, total_usd, None)
+                             rows, total_r, total_usd, None,
+                             simulation_rules=api.simulation_rules(settings.paths.rules))

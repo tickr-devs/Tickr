@@ -368,6 +368,42 @@
     "api_version": {
       "type": "integer",
       "const": 1
+    },
+    "simulation_rules": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "applied": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "not_simulated": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "applied",
+            "not_simulated",
+            "values"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

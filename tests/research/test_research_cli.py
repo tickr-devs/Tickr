@@ -8,7 +8,9 @@ from research_helpers import HERE, bar_json, flat, series, write_jsonl
 from tickr.research.__main__ import main
 
 ROOT = HERE.parent.parent
-BARS = series("10:00", [flat("10.00"), ("10.00", "10.20", "10.00", "10.03"),
+# The first bar's low sits under its high, so the breakout's stop (that low) is below its entry
+# window, as the platform rules require of every simulated ENTER.
+BARS = series("10:00", [("10.00", "10.00", "9.90", "10.00"), ("10.00", "10.20", "10.00", "10.03"),
                         ("10.03", "10.30", "10.03", "10.30"), flat("10.30"), flat("10.40"),
                         flat("10.40")])
 CLOCK = ["--replay-settings", str(HERE / "replay_settings.toml"),
@@ -52,6 +54,7 @@ def test_decide_outcomes_whatif_diff_end_to_end(tmp_path, capsys):
         "simulated", "filled", "10")
     summary = json.loads((tmp_path / "w" / "whatif_summary.json").read_text())
     assert summary["label"] == "simulated" and summary["trades"] == 1
+    assert summary["rules"].startswith("platform rules")
 
     assert main(["diff", "--baseline", v1, "--candidate", v2,
                  "--settings", str(HERE / "research_settings.toml"),

@@ -10,6 +10,7 @@
   "result_gross_usd": null,
   "cause": "no cached prior sessions for ABCD on 2026-11-13",
   "api_version": 1,
+  "simulation_rules": null,
   "cause_codes": [
     {
       "code": "no_cached_history",

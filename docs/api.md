@@ -646,7 +646,7 @@ Code: `src/tickr/api/after.py`.
   so the result is provisional). Unlike `/observers`, an earlier simulated trade of the same
   symbol does not skip a row: each row answers "what if this one had been entered". All three
   `null` with `cause`: `missed: ...` (price never traded inside the window in time),
-  `rejected: ...` (live admission would refuse it on time alone), `not_simulated: ...` (no
+  `rejected: ...` (replay timing or the live platform rules refuse it, "Simulation rules"), `not_simulated: ...` (no
   whole quantity, decision bar not captured), `simulation refused: ...`, or an unreadable
   input as above (`replay settings unreadable: ...`).
 - Any unexpected error in these values shows `null` with `<Error>: <detail>` as the cause,
@@ -925,6 +925,36 @@ Code: `src/tickr/api/trade_whatif.py`.
   `[market_data] history_sessions`, no captured bars for the symbol that day, no or empty cached
   prior sessions, a refused simulation, a version that raises) `cause` says why, `signals` and the sums are null and `trades`
   is empty. Paths in a cause are relative to the repo.
+- Every ENTER passes the live platform rules first (see "Simulation rules" below; a refusal is
+  `rejected`), and `simulation_rules` says which rules and values the answer was computed under
+  (`null` on a document that did not simulate).
+
+### Simulation rules
+
+Backlog T12: every simulated answer (`/observers`, `/skipped` what-ifs, `/trades/whatif`, and
+the offline `python -m tickr.replay` and `tickr.research whatif|observers`) admits each ENTER
+with the live bot's own admission checks (`src/tickr/risk/admission.py`, `admit_simulated`,
+the same functions as live, never a copy) fed from a simulated day (`src/tickr/risk/simulated.py`):
+the symbol's and the strategy's simulated entries and trades of that New York date. A refusal
+is a `rejected` simulated ENTER whose cause is the admission cause (`CODE: detail`, the same codes
+as `refusal`). The document's `simulation_rules` names them:
+
+- `applied`: `session` (the trading window from the calendar and `[session]`), `own_state` (one
+  trade per symbol, `max_open_positions`, `max_working_entries`, the pause after a loss),
+  `decision` (a complete ENTER with valid tick-rounded prices; the simulated strategy counts as
+  the active one), `money` (planned loss and notional cap, the daily loss ceiling with wins
+  offsetting losses).
+- `not_simulated`: `gate`, `reconciliation`, `quote`, `request_budget`, `buying_power`: checks
+  a simulation has no counterpart for (no broker, fills on bars).
+- `values`: every bot.toml value the applied checks read, by dotted key, as text
+  (`risk.symbol_cooldown_minutes_after_loss` is `off` when the pause is turned off).
+
+A simulated ENTER counts from its decision bar's end as a working entry (its planned loss
+reserved), from its fill as an open position, and is freed at its exit or when its entry is
+missed; a closed trade's gross result counts from its exit. `/observers` admits an identity's
+ENTERs in time order against all its simulated trades of the day; each `/skipped` what-if is
+entered alone on an otherwise empty day; an ENTER without a whole quantity is admitted as one
+share (its result stays R only). The apps do not show `simulation_rules` yet.
 
 ### GET /chart (read-only, market data)
 
@@ -1114,8 +1144,9 @@ version (numeric versions numerically). `reasons` are the rules of the checks th
 in the order evaluated (empty when every check passed); the full checks are in `/decisions`.
 `result_gross_usd` is the observer's simulated gross day result in USD: exactly the simulation
 of the offline report `python -m tickr.research observers` (every ENTER replayed alone like
-`whatif`, an ENTER inside an earlier simulated trade of the same symbol skipped, slippage in,
-commissions out, for the recorded quantity), run on that day's captured bars
+`whatif`, an ENTER inside an earlier simulated trade of the same symbol skipped, then the live
+platform rules over the observer's simulated day, "Simulation rules"; slippage in, commissions
+out, for the recorded quantity), run on that day's captured bars
 (`bars.jsonl`, or its archived `.gz`) with `[api] replay_settings_file` and the session
 calendar, rounded to its `output_decimal_places`. An observer that recorded no ENTER that day
 simulates no trade: `"0"`. When it cannot be computed it is `null` and `result_cause` says why

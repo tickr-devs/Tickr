@@ -2,6 +2,7 @@
 
 ENTER when the last completed close breaks the highest high of the previous `lookback` bars:
 window = [that high, that high + window_usd], stop = lowest low of those bars.
+Every ENTER asks for `quantity` shares (the platform rules refuse an ENTER without one).
 With a position, EXIT when the close falls below the entry price minus `exit_drop_usd`.
 """
 
@@ -13,16 +14,19 @@ from typing import Any
 
 from tickr.strategy.base import Check, Decision, SymbolContext, Verdict
 
-KEYS = {"strategy": {"name", "version"}, "rules": {"lookback", "window_usd", "exit_drop_usd"}}
+KEYS = {"strategy": {"name", "version"}, "rules": {"lookback", "window_usd", "exit_drop_usd",
+                                                      "quantity"}}
 
 
 class StubBreakout:
-    def __init__(self, name: str, version: str, lookback: int, window: Decimal, drop: Decimal):
+    def __init__(self, name: str, version: str, lookback: int, window: Decimal, drop: Decimal,
+                 quantity: Decimal):
         self.name = name
         self.version = version
         self.lookback = lookback
         self.window = window
         self.drop = drop
+        self.quantity = quantity
 
     def _decision(self, context: SymbolContext, verdict: Verdict, **kw: Any) -> Decision:
         return Decision(self.name, self.version, context.symbol, verdict, (), **kw)
@@ -52,6 +56,7 @@ class StubBreakout:
             entry_high=high + self.window,
             stop=min(b.low for b in prior),
             setup="stub-breakout",
+            quantity=self.quantity,
         )
 
 
@@ -65,4 +70,5 @@ def create(values: Mapping[str, Any]) -> StubBreakout:
         rules["lookback"],
         Decimal(str(rules["window_usd"])),
         Decimal(str(rules["exit_drop_usd"])),
+        Decimal(rules["quantity"]),
     )
