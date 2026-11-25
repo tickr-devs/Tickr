@@ -136,6 +136,7 @@ def test_a_pinned_name_imported_from_elsewhere_is_refused(monkeypatch, tmp_path)
     import sys
     import types
 
+    features.table_code()  # the pinned modules are imported, whatever ran before in this worker
     stray = types.ModuleType("wide")
     stray.__file__ = str(tmp_path / "wide.py")
     monkeypatch.setitem(sys.modules, "wide", stray)
