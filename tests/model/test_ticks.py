@@ -3,29 +3,40 @@ prefix rule (where it holds and where it does not), the refusals."""
 
 from __future__ import annotations
 
+import ast
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import model_ticks as synthetic
 import numpy as np
 import pandas as pd
 import pytest
 
+from tickr import config
 from tickr.model.errors import ModelRefused
 from tickr.model.features import ticks
 
+ROOT = Path(__file__).resolve().parents[2]
 DAY = "2026-11-18"
 SYMBOLS, TRADES, QUOTES = 8, 1500, 2500  # a small synthetic day: events per symbol
+GROUPS = config.load(ROOT / "config" / "bot.toml", root=ROOT).model.tick_groups
 QUIET = "S0001"  # a stock with no quote update 11:55..12:01 New York (minutes 715..720)
 TIME_WEIGHTED = ["qspr", "qbs", "qas", "qimb", "qbad", "qbd", "qad"]
 LAST_MINUTE = 24 * 60 - 1
 
 
 @pytest.fixture(autouse=True)
-def one_thread(monkeypatch):
-    """One engine thread: with several the converter's floating sums are added in a varying
-    order, so two runs of the same files differ in the last bit (see the test below)."""
-    monkeypatch.setenv("TICK_THREADS", "1")
+def bot_thread_count(monkeypatch):
+    """The bot sets the converter's thread count into the process environment; each test starts
+    with it unset, as a fresh process does, and ends with it restored."""
+    monkeypatch.delenv(ticks.THREADS_VARIABLE, raising=False)
+
+
+def rows(t, q, through, groups=None):
+    """`tick_rows` with the shipped `[model] tick_groups` unless `groups` is given."""
+    return ticks.tick_rows(t, q, DAY, through, groups=GROUPS if groups is None else groups)
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +55,9 @@ def files(folder, trades, quotes, suffix=".csv.gz"):
 
 
 def local_mode(folder, t, q):
-    """The training's run: the pinned converter's own `local` mode, as a separate process."""
+    """The training's run: the pinned converter's own `local` mode, as a separate process (it
+    inherits the one engine thread the bot sets)."""
+    ticks.converter()
     out = folder / "local.parquet"
     script = ticks.PINNED_DIR / ticks.CONVERTER_FILE
     subprocess.run([sys.executable, str(script), "local", str(t), str(q), str(out)], check=True,
@@ -84,9 +97,54 @@ def test_the_bot_path_does_not_import_boto3():
     assert done.stdout.strip() == "False"
 
 
+# The pinned converter's `main()` and `creds()` read S3 credential values (environment or Secrets
+# Manager) for the training's download modes. They are the one place in the repository where
+# credential values are read, byte-pinned and unreachable from the bot path: the bot calls only
+# `day()`, reads the constants TCOLS, QCOLS and RTH and sets the group count KB. These two tests
+# are that exception (rule 4).
+BOT_USES_OF_THE_CONVERTER = {"day", "TCOLS", "QCOLS", "RTH", "KB"}
+
+
+def test_the_bot_only_uses_day_and_constants_of_the_converter():
+    seen = set()
+    for path in ticks.PINNED_DIR.parents[3].rglob("*.py"):
+        if ticks.PINNED_DIR in path.parents:
+            continue
+        tree = ast.parse(path.read_text("utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = [a.name for a in node.names] + [getattr(node, "module", None) or ""]
+                assert not [n for n in names if n.split(".")[0] in ("boto3", "botocore")], path
+            if isinstance(node, ast.Attribute):
+                base = node.value
+                is_converter = (isinstance(base, ast.Call) and getattr(
+                    base.func, "id", getattr(base.func, "attr", None)) == "converter") or (
+                    path.name == "ticks.py" and isinstance(base, ast.Name) and base.id == "w")
+                if is_converter:
+                    seen.add(node.attr)
+            if isinstance(node, ast.Constant) and node.value in ("main", "creds"):
+                assert path.name != "ticks.py", f"{path}: a name string of a converter entry"
+    assert seen == BOT_USES_OF_THE_CONVERTER, seen
+
+
+def test_tick_rows_runs_with_main_and_creds_raising_and_boto3_blocked(tmp_path, events,
+                                                                       monkeypatch):
+    t, q = files(tmp_path, *events)
+    module = ticks.converter()
+
+    def boom(*_a, **_k):
+        raise AssertionError("a credential-reading converter entry point was reached")
+
+    monkeypatch.setattr(module, "main", boom)
+    monkeypatch.setattr(module, "creds", boom)
+    for name in ("boto3", "botocore"):
+        monkeypatch.setitem(sys.modules, name, None)  # `import boto3` now raises ImportError
+    assert len(rows(t, q, LAST_MINUTE)) > 0
+
+
 def test_the_table_equals_the_converters_local_mode(tmp_path, events):
     t, q = files(tmp_path, *events)
-    got = ticks.tick_rows(t, q, DAY, LAST_MINUTE)
+    got = rows(t, q, LAST_MINUTE)
     want = local_mode(tmp_path, t, q)
     assert got.shape[1] == 2 + 61 and len(got) > 0
     assert list(got.columns) == list(want.columns)
@@ -95,33 +153,55 @@ def test_the_table_equals_the_converters_local_mode(tmp_path, events):
 
 def test_plain_csv_and_a_day_prefix_equal_local_mode(tmp_path, events):
     t, q = files(tmp_path, *cut(events, "09:45:20"), suffix=".csv")
-    got = ticks.tick_rows(t, q, DAY, minute_of("09:45"))
+    got = rows(t, q, minute_of("09:45"))
     pd.testing.assert_frame_equal(got, local_mode(tmp_path, t, q), check_exact=True)
 
 
-def test_several_threads_differ_only_in_the_last_bits(tmp_path, events, monkeypatch):
-    t, q = files(tmp_path, *events)
-    one = ticks.tick_rows(t, q, DAY, LAST_MINUTE)
-    monkeypatch.setenv("TICK_THREADS", "4")
-    many = ticks.tick_rows(t, q, DAY, LAST_MINUTE)
-    pd.testing.assert_frame_equal(one, many, check_exact=False, rtol=1e-12, atol=0)
+def test_the_bot_sets_one_engine_thread():
+    ticks.converter()
+    assert os.environ.get(ticks.THREADS_VARIABLE) == ticks.SERIAL_THREADS == "1"
 
 
-def test_the_group_count_does_not_change_the_table(tmp_path, events, monkeypatch):
+def test_an_inherited_other_thread_count_is_refused(tmp_path, events, monkeypatch):
+    t, q = files(tmp_path, *cut(events, "10:00:00"), suffix=".csv")
+    monkeypatch.setenv(ticks.THREADS_VARIABLE, "4")
+    with pytest.raises(ModelRefused) as exc:
+        rows(t, q, minute_of("10:00"))
+    assert exc.value.cause == "tick_variable_set" and exc.value.detail == "TICK_THREADS"
+
+
+def test_one_group_equals_the_converters_default_exactly(tmp_path, events):
+    """Serial (one engine thread): one group and the converter's 24 give the same table, bit
+    for bit, on this day (codex-108 point 2). Not a property of every day: at 1,000 synthetic
+    stocks one stock-minute differs in the last bit (tests/model/tick_memory.py, module text of
+    ticks.py). The peak memory of both: tests/model/test_tick_memory.py."""
     t, q = files(tmp_path, *events)
-    w = ticks.converter()
-    default = ticks.tick_rows(t, q, DAY, LAST_MINUTE)
-    monkeypatch.setattr(w, "KB", 1)
-    pd.testing.assert_frame_equal(ticks.tick_rows(t, q, DAY, LAST_MINUTE), default,
-                                  check_exact=True)
+    assert ticks.default_groups() == 24 and ticks.ONE_GROUP == 1
+    default = rows(t, q, LAST_MINUTE, groups=ticks.default_groups())
+    one = rows(t, q, LAST_MINUTE, groups=ticks.ONE_GROUP)
+    assert len(default) > 0 and default.sym.nunique() == SYMBOLS
+    pd.testing.assert_frame_equal(one, default, check_exact=True)
+
+
+@pytest.mark.parametrize("groups", [0, 2, 23, 25])
+def test_another_group_count_is_refused(tmp_path, events, groups):
+    t, q = files(tmp_path, *cut(events, "10:00:00"), suffix=".csv")
+    with pytest.raises(ModelRefused) as exc:
+        rows(t, q, minute_of("10:00"), groups=groups)
+    assert exc.value.cause == "tick_groups_invalid" and exc.value.detail == str(groups)
+
+
+def test_an_inherited_group_count_is_refused(monkeypatch):
+    monkeypatch.setenv(ticks.GROUPS_VARIABLE, "1")
+    with pytest.raises(ModelRefused) as exc:
+        ticks.converter()
+    assert exc.value.cause == "tick_variable_set" and exc.value.detail == "TICK_GROUPS"
 
 
 @pytest.fixture(scope="module")
 def whole_day(tmp_path_factory, events):
     folder = tmp_path_factory.mktemp("whole")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("TICK_THREADS", "1")
-        return ticks.tick_rows(*files(folder, *events), DAY, LAST_MINUTE)
+    return rows(*files(folder, *events), LAST_MINUTE)
 
 
 def rows_at(table, sym, minute):
@@ -134,7 +214,7 @@ def test_closed_minutes_equal_the_whole_day_except_a_stocks_last_quote(tmp_path,
     time weights of the minute that holds a stock's latest quote update so far (QUIET: its
     last update before the cut is in 11:54, the next one comes after 12:01)."""
     through = minute_of("12:00")
-    got = ticks.tick_rows(*files(tmp_path, *cut(events, "12:00:30")), DAY, through)
+    got = rows(*files(tmp_path, *cut(events, "12:00:30")), through)
     quotes = synthetic.before(events[1], synthetic.stamp(DAY, "12:00:30"))
     last = quotes.groupby("ticker").sip_timestamp.max()
     local = pd.to_datetime(last, unit="ns", utc=True).dt.tz_convert(synthetic.NY)
@@ -159,7 +239,7 @@ def test_closed_minutes_equal_the_whole_day_except_a_stocks_last_quote(tmp_path,
 
 
 def test_a_later_quote_makes_the_stale_minute_final(tmp_path, events, whole_day):
-    got = ticks.tick_rows(*files(tmp_path, *cut(events, "12:05:00")), DAY, minute_of("12:04"))
+    got = rows(*files(tmp_path, *cut(events, "12:05:00")), minute_of("12:04"))
     minute = minute_of("11:54")
     pd.testing.assert_series_equal(rows_at(got, QUIET, minute), rows_at(whole_day, QUIET, minute),
                                    check_exact=True, check_names=False)
@@ -167,7 +247,7 @@ def test_a_later_quote_makes_the_stale_minute_final(tmp_path, events, whole_day)
 
 def test_an_empty_prefix_gives_an_empty_table(tmp_path, events):
     t, q = files(tmp_path, events[0].iloc[:0], events[1].iloc[:0], suffix=".csv")
-    got = ticks.tick_rows(t, q, DAY, minute_of("04:00"))
+    got = rows(t, q, minute_of("04:00"))
     assert len(got) == 0 and got.shape[1] == 2 + 61
 
 
@@ -182,7 +262,7 @@ def test_a_set_output_variable_is_refused(monkeypatch, name):
 def test_an_event_after_the_minute_is_refused(tmp_path, events):
     t, q = files(tmp_path, *cut(events, "10:00:05"), suffix=".csv")
     with pytest.raises(ModelRefused) as exc:
-        ticks.tick_rows(t, q, DAY, minute_of("09:59"))
+        rows(t, q, minute_of("09:59"))
     assert exc.value.cause == "tick_after_minute"
 
 
@@ -192,7 +272,7 @@ def test_an_event_of_another_day_is_refused(tmp_path, events):
     trades.loc[0, "sip_timestamp"] = synthetic.stamp("2026-11-17", "15:00:00")
     t, q = files(tmp_path, trades, quotes, suffix=".csv")
     with pytest.raises(ModelRefused) as exc:
-        ticks.tick_rows(t, q, DAY, minute_of("10:00"))
+        rows(t, q, minute_of("10:00"))
     assert exc.value.cause == "tick_wrong_day"
 
 
@@ -211,5 +291,5 @@ def test_a_missing_column_is_refused(tmp_path, events):
     t, q = files(tmp_path, *cut(events, "10:00:00"), suffix=".csv")
     pd.read_csv(t).drop(columns="trf_id").to_csv(t, index=False)
     with pytest.raises(ModelRefused) as exc:
-        ticks.tick_rows(t, q, DAY, minute_of("10:00"))
+        rows(t, q, minute_of("10:00"))
     assert exc.value.cause == "tick_converter_refused"
