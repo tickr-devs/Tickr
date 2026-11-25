@@ -675,6 +675,7 @@ def _run(path: Path) -> int:
     """The launchd bot job (via `tickr.runtime run-bot`): run until SIGTERM, then drain.
     Exit 0 after a clean drain (SIGTERM or a stop-bot command), 3 refused while the operator's
     stop marker exists, 5 when the drain hit its deadline."""
+    from tickr.api.settingsapply import promote_at_start
     from tickr.data.capture import BOT_START, BOT_STOP, CaptureError, CaptureWriter
     from tickr.data.health import StreamHealth
     from tickr.data.todaybars import TodayBars
@@ -698,10 +699,17 @@ def _run(path: Path) -> int:
     if stopped is not None:
         print(f"refused: {stopped}", file=sys.stderr)
         return 3
-    strategy = service.strategy_id(cfg)
-    version = _code_version(cfg)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
+        # Loosening settings changes wait for the next session (backlog S5): the first start
+        # on a later New York date writes them, then the config is loaded again.
+        note, written = promote_at_start(cfg, path, NOW())
+        if note is not None:
+            print(note, file=sys.stderr, flush=True)
+        if written:
+            cfg = config_module.load(path)
+        strategy = service.strategy_id(cfg)
+        version = _code_version(cfg)
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds,
                            now=NOW)
         _require_environment(store, cfg)

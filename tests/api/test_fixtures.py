@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -96,8 +97,12 @@ from tickr.api.contract import (
     SessionKind,
     SessionSettings,
     SessionTimesV1,
+    SettingChangeState,
     SettingDifferenceV1,
+    SettingsDevice,
     SettingsV1,
+    SettingsVersionKind,
+    SettingsVersionState,
     SizeBinding,
     SizeLimitV1,
     SkippedSignalV1,
@@ -154,6 +159,20 @@ def _response(st, age, stale, cause=None) -> StatusResponseV1:
                             stale=stale, unavailable_cause=cause,
                             summary=contract.summarize(st, age, stale, cause), poll_seconds=POLL,
                             api_started_at=T0 - timedelta(hours=1))
+
+
+def _settings_file(before: str, after: str) -> contract.SettingsVersionFileV1:
+    return contract.SettingsVersionFileV1("platform", "config/bot.toml", before, after)
+
+
+_settings_version_1 = contract.SettingsVersionV1(
+    1, SettingsVersionKind.APPLY, T0, SettingsDevice.PHONE, True, None, SettingsVersionState.DONE,
+    (_settings_file("a" * 64, "b" * 64),), (
+        contract.SettingsVersionChangeV1("platform", "risk.max_open_positions", "2", "1",
+                                         Applies.AT_ONCE, SettingChangeState.WRITTEN, None, None),
+        contract.SettingsVersionChangeV1("platform", "risk.max_daily_loss_usd", "50", "60",
+                                         Applies.NEXT_SESSION, SettingChangeState.PROMOTED,
+                                         T0.date(), 2)))
 
 
 def documents() -> dict[str, object]:
@@ -318,6 +337,31 @@ def documents() -> dict[str, object]:
                                       "expected int as TOML text, got '1.5'")), (
             contract.SettingChangeV1("platform", "risk.min_daily_room_usd", "10", "60", True,
                                      Applies.AT_ONCE, False, False),)),
+        # A tightening written at once with a loosening left pending (phone, Face ID), the bot's
+        # start writing it the next day, and a rollback to before both.
+        "settings-history-v1": contract.SettingsHistoryV1((
+            _settings_version_1,
+            contract.SettingsVersionV1(
+                2, SettingsVersionKind.PROMOTE, T0 + timedelta(days=1), SettingsDevice.BOT, False,
+                None, SettingsVersionState.DONE, (_settings_file("b" * 64, "c" * 64),), (
+                    contract.SettingsVersionChangeV1(
+                        "platform", "risk.max_daily_loss_usd", "50", "60", Applies.NEXT_SESSION,
+                        SettingChangeState.WRITTEN, None, None),)),
+            contract.SettingsVersionV1(
+                3, SettingsVersionKind.ROLLBACK, T0 + timedelta(days=1, hours=1),
+                SettingsDevice.LOCAL, False, 0, SettingsVersionState.DONE,
+                (_settings_file("c" * 64, "d" * 64),), (
+                    contract.SettingsVersionChangeV1(
+                        "platform", "risk.max_open_positions", "1", "2", Applies.AT_ONCE,
+                        SettingChangeState.WRITTEN, None, None),
+                    contract.SettingsVersionChangeV1(
+                        "platform", "risk.max_daily_loss_usd", "60", "50", Applies.AT_ONCE,
+                        SettingChangeState.WRITTEN, None, None))))),
+        "settings-applied-v1": contract.SettingsAppliedV1(
+            replace(_settings_version_1, changes=(_settings_version_1.changes[0],
+                                                  replace(_settings_version_1.changes[1],
+                                                          state=SettingChangeState.PENDING,
+                                                          settled_by=None))), True),
         "settings-v1": SettingsV1(
             "sandbox", "price-action-v1", ("price-action-v1-lookback8",),
             RiskSettings(Decimal("50"), Decimal("2500"), Decimal("300"), 1, Decimal("5"),

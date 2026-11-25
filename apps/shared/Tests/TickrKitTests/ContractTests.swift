@@ -47,6 +47,8 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "settings-schema-v1": { try roundTrip(SettingsSchemaV1.self, $0) },
       "settings-values-v1": { try roundTrip(SettingsValuesV1.self, $0) },
       "settings-draft-v1": { try roundTrip(SettingsDraftV1.self, $0) },
+      "settings-history-v1": { try roundTrip(SettingsHistoryV1.self, $0) },
+      "settings-applied-v1": { try roundTrip(SettingsAppliedV1.self, $0) },
       "explain-v1": { try roundTrip(ExplainV1.self, $0) },
       "observers-v1": { try roundTrip(ObserversV1.self, $0) },
       "decisions-v1": { try roundTrip(DecisionsV1.self, $0) },
@@ -89,7 +91,8 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
       "flow-v1", "watching-v1", "symbols-v1", "movers-v1", "account-v1", "account-response-v1",
       "chart-v1", "jobs-v1", "journal-v1", "lab-replay-v1", "bot-start-v1", "config-v1", "trade-whatif-v1",
       "advisor-runs-v1", "quotes-v1", "quotes-response-v1", "day-events-v1", "system-v1",
-      "settings-schema-v1", "settings-values-v1", "settings-draft-v1"])
+      "settings-schema-v1", "settings-values-v1", "settings-draft-v1", "settings-history-v1",
+      "settings-applied-v1"])
   }
 
   @Test func flowStagesChipsAndCauses() throws {

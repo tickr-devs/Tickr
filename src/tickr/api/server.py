@@ -61,6 +61,8 @@ from tickr.api.contract import (
     QuotesResponseV1,
     RiskSettings,
     SessionSettings,
+    SettingsDevice,
+    SettingsHistoryV1,
     SettingsV1,
     StatusResponseV1,
 )
@@ -70,6 +72,17 @@ from tickr.api.jobs import JobsSettings, jobs_document
 from tickr.api.journal import day_events, journal_document
 from tickr.api.lab_replay import LabReplay, LabReplayRefused, LabReplaySettings
 from tickr.api.observer_results import ObserverResults, SimulationPaths
+from tickr.api.settingsapply import (
+    ApplyRefused,
+    SettingsPaths,
+    applied_document,
+    bot_may_run,
+    not_flat,
+    parse_apply,
+    parse_rollback,
+    read_history,
+)
+from tickr.api.settingsapply import apply as apply_settings
 from tickr.api.settingsview import (
     BadDraft,
     SettingsUnavailable,
@@ -179,6 +192,7 @@ class ApiSettings:
     config_root: Path  # GET /config shows the file's path relative to this
     config_digest: str  # sha256 of the file when this API loaded it
     settings_schema_file: Path  # [api] settings_schema_file: GET /settings/schema and siblings
+    settings_history: Path  # <data_dir>/<[api] settings_history_file>: the settings journal
     settled_dir: Path  # <data_dir>/<[api] settled_cache_dir>/<environment>: past days' answers
     settled_memory_days: int  # [api] settled_memory_days
     settled_disk_days: int  # [api] settled_disk_days
@@ -319,6 +333,7 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         config_root=cfg.root,
         config_digest=cfg.digest,
         settings_schema_file=cfg.root / api.settings_schema_file,
+        settings_history=data / api.settings_history_file,
         settled_dir=data / api.settled_cache_dir / cfg.environment_name,
         settled_memory_days=api.settled_memory_days,
         settled_disk_days=api.settled_disk_days,
@@ -764,14 +779,14 @@ _ERROR_CODES = {
     "method_not_allowed": 405, "length_required": 411, "payload_too_large": 413,
     "unsupported_media_type": 415, "bad_request": 400, "too_many_pending": 429,
     "internal": 500, "unavailable": 503, "unauthorized": 401, "conflict": 409,
-    "rate_limited": 429,
+    "rate_limited": 429, "biometric_required": 403,
 }
 GET_ROUTES = ("/", "/status", "/commands/pending", RECEIPT_ROUTE, "/schema", "/days", "/bars",
               "/settings",
               "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
               "/watching", "/performance", "/chart", "/jobs", "/system", "/journal", "/config",
               "/trades/whatif", "/advisor", "/symbols", "/movers", "/quotes", "/events",
-              "/settings/schema", "/settings/values")
+              "/settings/schema", "/settings/values", "/settings/history")
 MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
 MAX_PORT = 65535  # TCP ports are 16-bit (protocol constant)
 HTML_TYPE = "text/html; charset=utf-8"
@@ -791,6 +806,9 @@ TRADE_WHATIF = "/trades/whatif"  # GET: another version on one trade's day, simu
 FOLDER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 ADVISOR_DECISION = "/advisor/decision"  # POST only: the owner's note on a run, never a command
 SETTINGS_VALIDATE = "/settings/validate"  # POST only: checks a draft, writes nothing
+SETTINGS_APPLY = "/settings/apply"  # POST only: applies a draft (api/settingsapply.py)
+SETTINGS_ROLLBACK = "/settings/rollback"  # POST only: applies an earlier version's values
+SETTINGS_HISTORY = "/settings/history"  # GET: every journaled settings version
 DAY_PREFIX = "/days/"
 # Headers a proxy adds to a request it forwards (Go's ReverseProxy, which `tailscale serve` is,
 # adds X-Forwarded-For; Tailscale adds its identity headers). The remote port's loopback Host is
@@ -977,9 +995,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, self.server.settings.shown)
             elif path == "/config":
                 self._config()
-            elif path in ("/settings/schema", "/settings/values"):
+            elif path in ("/settings/schema", "/settings/values", SETTINGS_HISTORY):
                 self._owner_settings(path)
-            elif path == SETTINGS_VALIDATE:
+            elif path in (SETTINGS_VALIDATE, SETTINGS_APPLY, SETTINGS_ROLLBACK):
                 self._error("method_not_allowed", "use POST", {"Allow": "POST"})
             elif path == "/jobs":
                 self._json(200, jobs_document(self.server.settings.jobs,
@@ -1037,6 +1055,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == SETTINGS_VALIDATE:
                 self._validate_settings()
+                return
+            if path in (SETTINGS_APPLY, SETTINGS_ROLLBACK):
+                self._apply_settings(path)
                 return
             if path == PAIR_ROUTE and self.server.remote:
                 self._redeem()
@@ -1253,6 +1274,9 @@ class Handler(BaseHTTPRequestHandler):
             self._error("bad_request", str(exc))
             return
         try:
+            if path == SETTINGS_HISTORY:
+                self._json(200, SettingsHistoryV1(read_history(settings.settings_history)))
+                return
             specs = load_schema(settings.settings_schema_file)
             if path == "/settings/schema":
                 self._json(200, schema_document(specs))
@@ -1285,6 +1309,45 @@ class Handler(BaseHTTPRequestHandler):
                                            load_classes(settings.settings_schema_file)))
         except SettingsUnavailable as exc:
             self._error("unavailable", str(exc))
+
+    def _device(self) -> SettingsDevice:
+        """The device a settings change came from, by the listener and the token's Host."""
+        if not self.server.remote:
+            return SettingsDevice.LOCAL
+        host = self.headers.get("Host")
+        return (SettingsDevice.PHONE if host in self.server.settings.remote_hosts
+                else SettingsDevice.SIMULATOR)
+
+    def _apply_settings(self, path: str) -> None:
+        """POST /settings/apply or /settings/rollback (api/settingsapply.py): 200
+        settings-applied-v1 with the journaled version, or the error with one cause and
+        nothing changed."""
+        body = self._read_json_body()
+        if body is None:
+            return
+        settings = self.server.settings
+        try:
+            request = (parse_apply(body) if path == SETTINGS_APPLY else parse_rollback(body))
+        except BadDraft as exc:
+            self._error("bad_request", str(exc))
+            return
+        if settings.config_file is None:
+            self._error("unavailable", "this API was started without a config file path")
+            return
+        paths = SettingsPaths(settings.settings_schema_file, settings.config_file,
+                              settings.config_root, settings.settings_history)
+        lock = settings.start.lock_file
+        try:
+            version = apply_settings(paths, request, self._device(), self.server.clock(),
+                                     lambda: not_flat(self.server.status_response(), lock))
+        except ApplyRefused as exc:
+            self._error(exc.error, exc.cause)
+            return
+        except SettingsUnavailable as exc:
+            self._error("unavailable", str(exc))
+            return
+        self._json(200, applied_document(version,
+                                         bot_may_run(self.server.status_response(), lock)))
 
     def _account(self) -> None:
         """GET /account: the bot's latest broker read of positions and open orders."""

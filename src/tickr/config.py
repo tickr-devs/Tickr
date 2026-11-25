@@ -251,6 +251,7 @@ class ApiConfig:
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
     settings_schema_file: str
+    settings_history_file: str
     observer_trades_max_rows: int
     journal_rows: int
     start_bot_command: tuple[str, ...]

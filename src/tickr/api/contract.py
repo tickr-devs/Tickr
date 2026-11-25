@@ -1014,6 +1014,100 @@ class SettingsDraftV1:
     api_version: int = _const(API_VERSION)
 
 
+class SettingsDevice(StrEnum):
+    """Where a settings change came from, decided by the server from the listener and the
+    paired token the request used, never by the request's words."""
+
+    LOCAL = "local"  # the local port (the Mac app, the status page)
+    PHONE = "phone"  # the remote port with the phone's paired token
+    SIMULATOR = "simulator"  # the remote port with the iOS Simulator's token
+    BOT = "bot"  # the bot at its start, writing a pending change whose session has come
+
+
+class SettingsVersionKind(StrEnum):
+    APPLY = "apply"  # POST /settings/apply
+    ROLLBACK = "rollback"  # POST /settings/rollback
+    PROMOTE = "promote"  # the bot's start wrote pending changes from an earlier session
+
+
+class SettingsVersionState(StrEnum):
+    """Whether a version's file writes landed. A version without file writes is `done` at once."""
+
+    WRITING = "writing"  # recorded, files being written (seen only if the writer stopped)
+    DONE = "done"  # every file holds its new digest
+    NOT_WRITTEN = "not_written"  # no file changed: the version never applied
+    UNKNOWN = "unknown"  # a file holds neither digest (changed by someone else meanwhile)
+
+
+class SettingChangeState(StrEnum):
+    WRITTEN = "written"  # in its owner's file since this version
+    PENDING = "pending"  # loosens protection: the bot writes it at its first later start
+    PROMOTED = "promoted"  # a pending change the bot wrote (`settled_by` names that version)
+    SUPERSEDED = "superseded"  # a pending change a later version replaced or rolled back
+
+
+@dataclass(frozen=True)
+class SettingsVersionChangeV1:
+    """One key a version changed: `before` (the file's value then) and `after`, as TOML text.
+    `effective_after` (a New York date) is set on a change that waits for the next session: the
+    bot writes it at its first start on a later date. `settled_by` names the version that
+    promoted or superseded a pending change."""
+
+    owner: str
+    key: str
+    before: str
+    after: str
+    applies: SettingApplies
+    state: SettingChangeState
+    effective_after: date | None
+    settled_by: int | None
+
+
+@dataclass(frozen=True)
+class SettingsVersionFileV1:
+    """An owner file a version wrote: its SHA-256 before and after."""
+
+    owner: str
+    file: str
+    digest_before: str
+    digest_after: str
+
+
+@dataclass(frozen=True)
+class SettingsVersionV1:
+    """One journaled settings change: when, from which device, whether the app said the owner
+    confirmed it with Face ID (the server cannot check that itself), and what changed."""
+
+    version: int
+    kind: SettingsVersionKind
+    at: datetime
+    device: SettingsDevice
+    biometric_confirmed: bool
+    rollback_to: int | None
+    state: SettingsVersionState
+    files: tuple[SettingsVersionFileV1, ...]
+    changes: tuple[SettingsVersionChangeV1, ...]
+
+
+@dataclass(frozen=True)
+class SettingsHistoryV1:
+    """GET /settings/history, oldest first; also the settings history file on disk."""
+
+    versions: tuple[SettingsVersionV1, ...]
+    api_version: int = _const(API_VERSION)
+
+
+@dataclass(frozen=True)
+class SettingsAppliedV1:
+    """POST /settings/apply and /settings/rollback: the version just journaled.
+    `restart_needed` is true when a change was written to a file while the bot may be running:
+    the bot reads its settings at its start."""
+
+    version: SettingsVersionV1
+    restart_needed: bool
+    api_version: int = _const(API_VERSION)
+
+
 @dataclass(frozen=True)
 class SettingsV1:
     """GET /settings: the numbers from config/bot.toml that clients show (limits, session
@@ -2765,6 +2859,8 @@ SCHEMA_TYPES: dict[str, type] = {
     "settings-schema-v1": SettingsSchemaV1,
     "settings-values-v1": SettingsValuesV1,
     "settings-draft-v1": SettingsDraftV1,
+    "settings-history-v1": SettingsHistoryV1,
+    "settings-applied-v1": SettingsAppliedV1,
     "jobs-v1": JobsV1,
     "journal-v1": JournalV1,
     "system-v1": SystemV1,

@@ -475,6 +475,10 @@ replay_settings_file = "config/replay.toml"
 # Settings schema file (owner settings: steps and maxima) GET /settings/schema, GET /settings/values and POST
 # /settings/validate read on every request, relative to the repo root; read by the api server (api/settingsview.py).
 settings_schema_file = "config/settings_schema.toml"
+# Settings history file, the journal of every owner settings change (time, device, values before and after, pending
+# changes), relative to data_dir; its lock is the same name plus ".lock". Written by the api server
+# (POST /settings/apply, /settings/rollback) and by the bot at its start (pending changes); api/settingsapply.py.
+settings_history_file = "settings-history.json"
 # Most simulated trades (ENTERs, oldest first) GET /observers lists per observer; more = cut, with `trades_truncated` true; read by the api server (api/observer_results.py).
 observer_trades_max_rows = 100
 # Latest journal rows GET /journal returns (oldest first; `last_seq` is the newest row's number); read by the api server.
