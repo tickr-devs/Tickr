@@ -350,6 +350,12 @@ enum L10n {
         defaultValue: "not queued: the bot's API never received it. Send it again if you still want it.",
         bundle: L10n.bundle)
     }
+    /// A send whose answer was lost and whose outcome can no longer be read (too old, or no receipts).
+    static var outcomeNotKnown: LocalizedStringResource {
+      LocalizedStringResource("bot.outcomeNotKnown",
+        defaultValue: "whether it was queued is not known. Check the bot's status before sending it again.",
+        bundle: L10n.bundle)
+    }
   }
 
   enum Menu {

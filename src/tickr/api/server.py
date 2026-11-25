@@ -338,6 +338,7 @@ def shown_settings(cfg: Config) -> SettingsV1:
         broker_read_warn_seconds=cfg.api.broker_read_warn_seconds,
         live_quote_max_age_seconds=cfg.api.live_quote_max_age_seconds,
         quotes_poll_seconds=cfg.api.quotes_poll_seconds,
+        command_max_age_seconds=cfg.api.command_max_age_seconds,
     )
 
 

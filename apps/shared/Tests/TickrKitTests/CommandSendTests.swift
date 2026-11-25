@@ -88,30 +88,49 @@ private final class OneAnswer: APITransport {
     #expect(await CommandSend.receipt(key: Self.key, client: try client(notQueued)) == .notQueued)
   }
 
-  @Test func anOlderApiOrNoAnswerKeepsTheReceiptUnknown() async throws {
+  @Test func anOlderApiIsUnservedAndNoAnswerKeepsTheReceiptUnknown() async throws {
+    // An API older than receipts can never say: the app drops the key instead of waiting on it.
     let older = OneAnswer(404, try refusal("not_found"))
-    guard case .unknown = await CommandSend.receipt(key: Self.key, client: try client(older)) else {
-      Issue.record("an older API's 404 read as an answer"); return
-    }
+    #expect(await CommandSend.receipt(key: Self.key, client: try client(older)) == .unserved)
     guard case .unknown = await CommandSend.receipt(key: Self.key, client: try client(OneAnswer(failing: ()))) else {
       Issue.record("no answer read as an answer"); return
     }
   }
 
+  /// How long the bot accepts a command, in seconds, as settings-v1.json serves it.
+  private static let keep = Decimal(60)
+
   @Test func aKeyStaysUntilTheOutcomeIsKnown() {
     var keys = CommandKeys()
     var made = 0
     let fresh = { () -> String in made += 1; return "key-\(made)" }
-    let first = keys.key(for: .emergency, fresh: fresh)
-    keys.lost(.emergency, key: first)
+    let start = Date.now
+    let first = keys.key(for: .emergency, now: start, keepSeconds: Self.keep, fresh: fresh)
+    keys.lost(.emergency, key: first, at: start)
     // Pressed again while unknown: the same key, so the API answers the first send.
-    #expect(keys.key(for: .emergency, fresh: fresh) == first)
+    #expect(keys.key(for: .emergency, now: start, keepSeconds: Self.keep, fresh: fresh) == first)
     // Another command is another decision.
-    #expect(keys.key(for: .flattenSymbol("ABCD"), fresh: fresh) != first)
+    #expect(keys.key(for: .flattenSymbol("ABCD"), now: start, keepSeconds: Self.keep, fresh: fresh) != first)
     keys.settled(.emergency)
-    #expect(keys.key(for: .emergency, fresh: fresh) != first)
-    keys.lost(.stopBot, key: "kept")
+    #expect(keys.key(for: .emergency, now: start, keepSeconds: Self.keep, fresh: fresh) != first)
+    keys.lost(.stopBot, key: "kept", at: start)
     keys.clear()
+    #expect(keys.unknown.isEmpty)
+  }
+
+  @Test func aKeyIsNeverKeptPastTheBotsCommandAge() {
+    var keys = CommandKeys()
+    let start = Date.now
+    keys.lost(.emergency, key: "first", at: start)
+    let past = start.addingTimeInterval(NSDecimalNumber(decimal: Self.keep).doubleValue)
+    // At the age the bot refuses the first send anyway: a press is a new decision with a new key.
+    #expect(keys.key(for: .emergency, now: past, keepSeconds: Self.keep) != "first")
+    // An API that does not say how long keeps no key at all.
+    #expect(keys.key(for: .emergency, now: start, keepSeconds: nil) != "first")
+    keys.lost(.stopBot, key: "young", at: past)
+    #expect(keys.expire(now: past, keepSeconds: Self.keep) == [.emergency])
+    #expect(keys.unknown.keys.map { $0 } == [.stopBot])
+    #expect(keys.expire(now: past, keepSeconds: nil) == [.stopBot])
     #expect(keys.unknown.isEmpty)
   }
 }

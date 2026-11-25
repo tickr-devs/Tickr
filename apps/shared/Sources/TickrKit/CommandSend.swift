@@ -56,38 +56,67 @@ public enum ReceiptOutcome: Sendable, Equatable {
   case queued(CommandAcceptedV1)
   /// No command was queued with the key: the send never reached the API's queue.
   case notQueued
-  /// Still not known: the receipt could not be read (or the API is older than receipts).
+  /// The API serves no receipts (older than them): the outcome can never be read, so the key goes.
+  case unserved
+  /// Still not known: the receipt could not be read this time.
   case unknown(String)
 }
 
 /// The idempotency keys of operator commands (backlog A3): one key per operator decision, kept
 /// while that send's outcome is unknown, so pressing the same command again re-sends under the
 /// same key and the API answers the first send instead of queuing a second command. A key goes
-/// once the outcome is known: queued, refused, or not queued by the receipt.
+/// once the outcome is known (queued, refused, or not queued by the receipt), once the receipt
+/// can never be read, and once it is older than the age past which the bot refuses a command
+/// (`SettingsV1.commandMaxAgeSeconds`): past that age the first send can no longer act, so a
+/// press is a new decision and must not be answered with the first send's old result.
 public struct CommandKeys: Sendable, Equatable {
+  /// The key of a send whose outcome is unknown, and when that send was made.
+  public struct Kept: Sendable, Equatable {
+    public let key: String
+    public let since: Date
+  }
+
   /// Commands whose send has an unknown outcome, with the key that send used.
-  public private(set) var unknown: [OperatorCommand: String] = [:]
+  public private(set) var unknown: [OperatorCommand: Kept] = [:]
 
   public init() {}
 
-  /// The key for a send of `command`: the key of its send still unknown, else `fresh()`.
-  public func key(for command: OperatorCommand, fresh: () -> String = { UUID().uuidString }) -> String {
-    unknown[command] ?? fresh()
+  /// The key for a send of `command` at `now`: the key of its send still unknown while younger
+  /// than `keepSeconds`, else `fresh()`. No `keepSeconds` (an API that does not say) keeps none.
+  public func key(
+    for command: OperatorCommand, now: Date, keepSeconds: Decimal?, fresh: () -> String = { UUID().uuidString }
+  ) -> String {
+    guard let kept = unknown[command], Self.young(kept, now: now, keepSeconds: keepSeconds) else { return fresh() }
+    return kept.key
   }
 
-  /// `command`'s send under `key` lost its answer: the key stays until the outcome is known.
-  public mutating func lost(_ command: OperatorCommand, key: String) {
-    unknown[command] = key
+  /// `command`'s send under `key`, made at `at`, lost its answer: the key stays until the outcome
+  /// is known or it grows too old.
+  public mutating func lost(_ command: OperatorCommand, key: String, at: Date) {
+    unknown[command] = Kept(key: key, since: at)
   }
 
-  /// `command`'s outcome is known: its next send is a new decision with a new key.
+  /// `command`'s outcome is known, or can no longer be: its next send is a new decision with a new key.
   public mutating func settled(_ command: OperatorCommand) {
     unknown[command] = nil
+  }
+
+  /// Drops every key older than `keepSeconds` at `now` (all of them without `keepSeconds`) and
+  /// returns their commands, whose outcome the app can then only learn from the status.
+  public mutating func expire(now: Date, keepSeconds: Decimal?) -> [OperatorCommand] {
+    let old = unknown.filter { !Self.young($0.value, now: now, keepSeconds: keepSeconds) }.map { $0.key }
+    for command in old { unknown[command] = nil }
+    return old
   }
 
   /// Another server: keys of the one before mean nothing there.
   public mutating func clear() {
     unknown = [:]
+  }
+
+  private static func young(_ kept: Kept, now: Date, keepSeconds: Decimal?) -> Bool {
+    guard let keepSeconds else { return false }
+    return now.timeIntervalSince(kept.since) < NSDecimalNumber(decimal: keepSeconds).doubleValue
   }
 }
 
@@ -116,12 +145,15 @@ public enum CommandSend {
     return .unknown(ErrorText.text(error))
   }
 
-  /// Reads whether the send under `key` was queued; any failure keeps it unknown.
+  /// Reads whether the send under `key` was queued; an API without receipts says `unserved`, and
+  /// any other failure keeps it unknown.
   public static func receipt(key: String, client: APIClient) async -> ReceiptOutcome {
     do {
       let receipt = try await client.commandReceipt(idempotencyKey: key)
       if receipt.queued, let accepted = receipt.accepted { return .queued(accepted) }
       return receipt.queued ? .unknown(String(localized: L10n.apiUnreadable)) : .notQueued
+    } catch APIError.notServed {
+      return .unserved
     } catch {
       return .unknown(ErrorText.text(error))
     }

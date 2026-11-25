@@ -1206,7 +1206,10 @@ public final class AppModel {
         cause: String(localized: L10n.Bot.notSentUntrusted), warning: nil))
       return
     }
-    let key = keys.key(for: command)
+    let key = keys.key(for: command, now: now(), keepSeconds: keepSeconds)
+    // A kept key too old to reuse is left behind: this press is a new decision.
+    if let old = keys.unknown[command]?.key, old != key { lostTitles[old] = nil }
+    let sentAt = now()
     let outcome = await CommandSend.send(command, key: key, client: client)
     guard asked == link else { return }
     switch outcome {
@@ -1220,7 +1223,7 @@ public final class AppModel {
       show(SentCommand(id: UUID().uuidString, kind: command.kind, title: title, outcome: .refused,
         cause: String(localized: L10n.Bot.notSent(cause)), warning: nil))
     case .unknown(let cause):
-      keys.lost(command, key: key)
+      keys.lost(command, key: key, at: sentAt)
       lostTitles[key] = title
       show(SentCommand(id: key, kind: command.kind, title: title, outcome: nil, cause: cause, warning: nil,
         unknown: true))
@@ -1236,16 +1239,25 @@ public final class AppModel {
     show(record)
   }
 
+  /// How long a lost send's key is kept: the bot's command age limit, nil while it is not known.
+  private var keepSeconds: Decimal? { settings?.commandMaxAgeSeconds?.value }
+
   /// Reads the receipt of every send whose answer was lost, after a good status read: queued goes
   /// on as any queued command, not queued is shown and its key dropped; a receipt that cannot be
-  /// read leaves it unknown until the next read. Not while a send is under way, which settles its
-  /// own command.
+  /// read leaves it unknown until the next read. A key past the bot's command age, or one whose
+  /// receipt the API cannot serve, is dropped and shown as not known, to check the status before
+  /// sending again. Not while a send is under way, which settles its own command.
   private func settleLost() async {
     guard !sending else { return }
+    let before = keys.unknown
+    for command in keys.expire(now: now(), keepSeconds: keepSeconds) {
+      if let key = before[command]?.key { notKnown(command, key: key) }
+    }
     let asked = link
-    for (command, key) in keys.unknown {
+    for (command, kept) in keys.unknown {
+      let key = kept.key
       let outcome = await CommandSend.receipt(key: key, client: client)
-      guard asked == link, keys.unknown[command] == key else { return }
+      guard asked == link, keys.unknown[command] == kept else { return }
       let title = lostTitles[key] ?? Board.commandTitle(command.kind)
       switch outcome {
       case .queued(let accepted):
@@ -1257,10 +1269,20 @@ public final class AppModel {
         lostTitles[key] = nil
         show(SentCommand(id: key, kind: command.kind, title: title, outcome: .refused,
           cause: String(localized: L10n.Bot.notQueued), warning: nil))
+      case .unserved:
+        keys.settled(command)
+        notKnown(command, key: key)
       case .unknown:
         continue
       }
     }
+  }
+
+  /// A lost send whose outcome can no longer be read: shown so, its key already dropped.
+  private func notKnown(_ command: OperatorCommand, key: String) {
+    let title = lostTitles.removeValue(forKey: key) ?? Board.commandTitle(command.kind)
+    show(SentCommand(id: key, kind: command.kind, title: title, outcome: .refused,
+      cause: String(localized: L10n.Bot.outcomeNotKnown), warning: nil))
   }
 
   private func resolveSentCommands() {

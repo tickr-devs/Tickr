@@ -198,6 +198,12 @@ enum L10n {
         defaultValue: "\(command) was not queued: the Mac never received it. Send it again if you still want it.",
         bundle: L10n.bundle)
     }
+    /// A lost send whose outcome can no longer be read: too old to check, or the Mac keeps no receipts.
+    static func outcomeNotKnown(_ command: String) -> LocalizedStringResource {
+      LocalizedStringResource("notice.outcomeNotKnown",
+        defaultValue: "\(command): whether it was queued is not known. Check the bot's status before sending it again.",
+        bundle: L10n.bundle)
+    }
   }
 
   enum Control {

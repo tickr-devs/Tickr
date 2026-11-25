@@ -583,7 +583,8 @@ final class AppModel {
       notice = Notice(L10n.Notice.wentStale(title), tone: .failure)
       return
     }
-    let key = keys.key(for: command)
+    let key = keys.key(for: command, now: now(), keepSeconds: keepSeconds)
+    let sentAt = now()
     let outcome = await CommandSend.send(command, key: key,
       client: Container.shared.apiClient(connection.endpoint(for: url)))
     guard asked == link else { return }
@@ -595,7 +596,7 @@ final class AppModel {
       keys.settled(command)
       notice = Notice(L10n.Notice.failed(title, cause), tone: .failure)
     case .unknown(let cause):
-      keys.lost(command, key: key)
+      keys.lost(command, key: key, at: sentAt)
       notice = Notice(L10n.Notice.outcomeUnknown(title, cause), tone: .failure)
     }
     await refresh()
@@ -611,17 +612,24 @@ final class AppModel {
     }
   }
 
+  /// How long a lost send's key is kept: the bot's command age limit, nil while it is not known.
+  private var keepSeconds: Decimal? { settings?.commandMaxAgeSeconds?.value }
+
   /// Reads the receipt of every send whose answer was lost, after a good status read at `url`:
   /// queued goes on as any queued command, not queued is said so and its key dropped; a receipt
-  /// that cannot be read leaves it unknown until the next read. Not while a send is under way,
-  /// which settles its own command.
+  /// that cannot be read leaves it unknown until the next read. A key past the bot's command age,
+  /// or one whose receipt the API cannot serve, is dropped with a notice to check the status
+  /// before sending again. Not while a send is under way, which settles its own command.
   private func settleLost(_ url: URL) async {
     guard !sending else { return }
+    for command in keys.expire(now: now(), keepSeconds: keepSeconds) {
+      notice = Notice(L10n.Notice.outcomeNotKnown(Board.commandTitle(command.kind)), tone: .failure)
+    }
     let asked = link
-    for (command, key) in keys.unknown {
-      let outcome = await CommandSend.receipt(key: key,
+    for (command, kept) in keys.unknown {
+      let outcome = await CommandSend.receipt(key: kept.key,
         client: Container.shared.apiClient(connection.endpoint(for: url)))
-      guard asked == link, keys.unknown[command] == key else { return }
+      guard asked == link, keys.unknown[command] == kept else { return }
       let title = Board.commandTitle(command.kind)
       switch outcome {
       case .queued(let accepted):
@@ -630,6 +638,9 @@ final class AppModel {
       case .notQueued:
         keys.settled(command)
         notice = Notice(L10n.Notice.notQueued(title), tone: .failure)
+      case .unserved:
+        keys.settled(command)
+        notice = Notice(L10n.Notice.outcomeNotKnown(title), tone: .failure)
       case .unknown:
         continue
       }

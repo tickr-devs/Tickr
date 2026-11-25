@@ -20,6 +20,8 @@ final class RouteProtocol: URLProtocol {
     var failing: Set<String> = []
     /// Bodies of one host only, by host then path; checked before `bodies`.
     var byHost: [String: [String: Data]] = [:]
+    /// Paths answered with this HTTP status instead of the usual one (an error body in `bodies`).
+    var statuses: [String: Int] = [:]
   }
 
   static let routes = Mutex(Routes())
@@ -56,10 +58,10 @@ final class RouteProtocol: URLProtocol {
       client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
       return
     }
-    let body = hostBody ?? Self.routes.withLock { $0.bodies[path] }
+    let (body, status) = Self.routes.withLock { (hostBody ?? $0.bodies[path], $0.statuses[path]) }
     // A queued command answers 202 Accepted, a read 200 OK (docs/api.md).
     let success = request.httpMethod == "POST" ? 202 : 200
-    let response = HTTPURLResponse(url: url, statusCode: body == nil ? 404 : success, httpVersion: "HTTP/1.1",
+    let response = HTTPURLResponse(url: url, statusCode: status ?? (body == nil ? 404 : success), httpVersion: "HTTP/1.1",
       headerFields: ["Content-Type": "application/json"])
     if let response {
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -345,6 +347,53 @@ struct AppModelTests {
     await model.refreshStatus()
     #expect(model.toast?.outcome == .refused && model.toast?.unknown == false)
     #expect(model.toast?.cause == String(localized: L10n.Bot.notQueued))
+  }
+
+  @Test("An API that serves no receipts drops a lost send's key and says the outcome is not known")
+  func lostAnswerUnservedReceipt() async throws {
+    var notFound = try #require(try JSONSerialization.jsonObject(with:
+      Data(contentsOf: fixturesDir.appendingPathComponent("error-v1.json"))) as? [String: Any])
+    notFound["error"] = "not_found"
+    notFound["cause_codes"] = [Any]()
+    let body = try JSONSerialization.data(withJSONObject: notFound)
+    RouteProtocol.routes.withLock {
+      $0.failing = ["/commands/stop-bot"]
+      $0.bodies["/commands/receipt"] = body
+      $0.statuses["/commands/receipt"] = 404
+    }
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    await model.send(.stopBot, title: "Stop bot")
+    await model.refreshStatus()
+    #expect(model.toast?.cause == String(localized: L10n.Bot.outcomeNotKnown))
+    // The key went with it: the next press is a new decision with a new key.
+    await model.send(.stopBot, title: "Stop bot")
+    let keys = RouteProtocol.routes.withLock { $0.idempotencyKeys }.compactMap { $0 }
+    #expect(keys.count == 2 && Set(keys).count == 2)
+  }
+
+  /// This Mac's clock in the age test, moved by hand.
+  nonisolated static let clock = Mutex(Date.now)
+
+  @Test("A lost send's key is never kept past the bot's command age (settings), so a later press is sent anew")
+  func lostAnswerKeyAgesOut() async throws {
+    Self.clock.withLock { $0 = .now }
+    Container.shared.now.register { { Self.clock.withLock { $0 } } }
+    RouteProtocol.routes.withLock { $0.failing = ["/commands/emergency"] }
+    let model = AppModel(baseURL: APIClient.defaultBaseURL)
+    await model.refreshStatus()
+    let keep = try #require(model.settings?.commandMaxAgeSeconds?.value)
+    await model.send(.emergency, title: "Emergency")
+    #expect(model.toast?.unknown == true)
+    // Past the age the bot refuses the first send anyway: its old answer must not stand for a new press.
+    Self.clock.withLock { $0 += NSDecimalNumber(decimal: keep).doubleValue + 1 }
+    await model.send(.emergency, title: "Emergency")
+    let keys = RouteProtocol.routes.withLock { $0.idempotencyKeys }.compactMap { $0 }
+    #expect(keys.count == 2 && Set(keys).count == 2)
+    // And a key that ages out between presses is shown as not known.
+    Self.clock.withLock { $0 += NSDecimalNumber(decimal: keep).doubleValue + 1 }
+    await model.refreshStatus()
+    #expect(model.toast?.cause == String(localized: L10n.Bot.outcomeNotKnown))
   }
 
   @Test("Nothing is sent when the status read right before the send fails, even once")

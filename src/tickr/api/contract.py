@@ -916,6 +916,11 @@ class SettingsV1:
     # Seconds between two client reads of GET /quotes ([api] quotes_poll_seconds). Added after
     # v1 shipped (2026-11-17); null from an older API, which has no /quotes.
     quotes_poll_seconds: Decimal | None = _added_later(None)
+    # Seconds after which the bot refuses a command as expired ([api] command_max_age_seconds):
+    # how long the apps keep the Idempotency-Key of a send whose answer was lost, since a command
+    # queued under it can no longer run after that. Added after v1 shipped (2026-11-25); null
+    # from an older API, and then the apps keep no key.
+    command_max_age_seconds: Decimal | None = _added_later(None)
 
 
 # ---------------------------------------------------------------- jobs (read-only)

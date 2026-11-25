@@ -579,6 +579,23 @@
         }
       }
     },
+    "bot.outcomeNotKnown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "whether it was queued is not known. Check the bot's status before sending it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no se sabe si se puso en cola. Revisa el estado del bot antes de enviarlo de nuevo."
+          }
+        }
+      }
+    },
     "bot.pauseEntries" : {
       "extractionState" : "manual",
       "localizations" : {
