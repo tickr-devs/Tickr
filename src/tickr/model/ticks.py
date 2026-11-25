@@ -13,8 +13,9 @@ doc links):
   ordinary print too). Whether the stream relays later cancel / error / correction records as
   plain trades is not documented; `source` keeps such rows apart for that check.
 - A field the stream leaves out (`trfi`, `pt`, `bp`/`bs`, `ap`/`as`, `c`, `i`) is kept as None,
-  never filled: the flat file writes 0 for an empty quote side and blank for no TRF, and the
-  converter coalesces both; the raw quote marks of its side files (not model inputs) do not.
+  never filled here: the flat file writes 0 for an empty quote side and blank for no TRF. The
+  converter coalesces a blank TRF but NOT an empty quote side everywhere (qbid, qbsl, qofi and
+  qbad read the raw NULL), so `tickr.model.live` hands it the file's 0 for an absent side.
 
 Every row also carries `recv_ns`, the local wall-clock time (ns) its message or page arrived,
 so the lag of the feed can be measured before any wait is chosen (owner rule).
@@ -161,6 +162,10 @@ class TickStore:
     other_day: int = 0
     repeats: int = 0  # rows already held (stream / backfill overlap)
     conflicts: int = 0  # repeats whose price, size or SIP millisecond differ
+    # per kind, the key of every row stored or replaced by another copy (REST over stream), in
+    # that order: a reader's cursor (`since`) sees each change once without scanning the day
+    log: dict[str, list[tuple[str, int]]] = field(
+        default_factory=lambda: {kind: [] for kind in KINDS})
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def add(self, kind: str, rows: list[dict[str, Any]], recv_ns: int, source: str) -> int:
@@ -179,6 +184,7 @@ class TickStore:
                 old = held.get(key)
                 if old is None:
                     held[key] = row
+                    self.log[kind].append(key)
                     new += 1
                     continue
                 self.repeats += 1
@@ -186,7 +192,16 @@ class TickStore:
                     self.conflicts += 1
                 keep = row if source == REST and old["source"] == STREAM else old
                 held[key] = {**keep, "recv_ns": min(old["recv_ns"], recv_ns)}
+                if keep is row:
+                    self.log[kind].append(key)
         return new
+
+    def since(self, kind: str, cursor: int) -> tuple[list[dict[str, Any]], int]:
+        """The rows (as held now) stored or replaced after position `cursor` of the log, and
+        the new cursor. A key can appear more than once; the later copy is the held one."""
+        with self._lock:
+            keys = self.log[kind][cursor:]
+            return [self.rows[kind][k] for k in keys], cursor + len(keys)
 
     @staticmethod
     def _differs(kind: str, a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
@@ -237,6 +252,13 @@ class TickStream:
         self.symbols: set[str] = set()
         self._ws: Any = None  # the connection while logged in
         self._lock = threading.Lock()
+
+    @property
+    def connected(self) -> bool:
+        """Logged in now: while False, every subscribed symbol's events are being lost (the
+        gap is recorded only once the stream is back)."""
+        with self._lock:
+            return self._ws is not None
 
     @staticmethod
     def _params(symbols: list[str]) -> str:

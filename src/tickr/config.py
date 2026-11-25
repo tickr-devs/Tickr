@@ -375,6 +375,8 @@ class ModelConfig:
     enabled: bool
     bundles_dir: str
     bundle: str
+    live_marker_quote: bool
+    live_wait_after_minute_seconds: str
 
 
 @dataclass(frozen=True)
@@ -585,6 +587,16 @@ def _coerce(where: str, value: Any, target: Any) -> Any:
     raise ConfigError(f"{where}: unsupported type {target!r}")  # pragma: no cover
 
 
+def live_wait_seconds(model: ModelConfig) -> Decimal | None:
+    """The measured wait after a minute's end before the live features close it, or None when
+    the key is empty (not measured) or not a number of at least 0."""
+    try:
+        value = Decimal(model.live_wait_after_minute_seconds)
+    except ArithmeticError:
+        return None
+    return value if value.is_finite() and value >= 0 else None
+
+
 def build_section(name: str, table: Any, cls: type) -> Any:
     """Build a frozen dataclass from a TOML table, refusing unknown and missing keys."""
     if not isinstance(table, dict):
@@ -722,6 +734,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[model] enabled must stay false: the trained model is not wired into "
                           "the trading loop yet (the bundle loader and the shared feature code "
                           "are; the live data feed and the decision path follow)")
+    if model.live_wait_after_minute_seconds != "" and live_wait_seconds(model) is None:
+        raise ConfigError("[model] live_wait_after_minute_seconds must be empty (not measured "
+                          "yet) or a number of seconds of at least 0 written as text")
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0

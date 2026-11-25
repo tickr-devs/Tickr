@@ -773,6 +773,17 @@ bundles_dir = "models"
 # Bundle folder name <name>-<version> under bundles_dir that the bot loads when enabled; empty = none chosen; read by
 # tickr.model.bundle.
 bundle = ""
+# Live features (tickr.model.live, not wired into the bot loop): true = before a closed minute's ticks go through the
+# frozen converter, one synthetic marker quote per stock at the first nanosecond of the next minute lets the minute's
+# last quote weigh to the minute end, as in the training's whole-day tick file whenever the stock quotes again that
+# day; false = the plain prefix (that quote weighs 0). Off until Codex decides (model-live-features findings 3,
+# question 1); read by tickr.model.live.
+live_marker_quote = false
+# Seconds after a minute's end before tickr.model.live may close that minute (late bars, trades, quotes and REST pages
+# still arriving), written as text, e.g. "2.5". Not measured yet: it awaits the arrival measurement of PR #796, so it
+# is empty and a clock-driven close refuses (feature_wait_unmeasured) instead of guessing; read by config.load and
+# tickr.model.live.
+live_wait_after_minute_seconds = ""
 
 [massive]
 # Market data vendor of the model's inputs (owner 2026-11-20: the model's features come live from Massive, the same
