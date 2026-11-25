@@ -104,6 +104,20 @@ def _get(opener: Opener, url: str, headers: Mapping[str, str], timeout: int) -> 
         raise ModelRefused("http_failed", type(exc).__name__) from exc
 
 
+def head(opener: Opener, url: str, headers: Mapping[str, str],
+         timeout: int) -> tuple[int, Mapping[str, str]]:
+    """(status, response headers) of a HEAD of `url` (the prev-day probe); an HTTP error
+    status is returned as the answer, a failed request refuses (`http_failed`)."""
+    request = urllib.request.Request(url, headers=dict(headers), method="HEAD")
+    try:
+        with opener(request, timeout) as response:
+            return response.status, response.headers
+    except urllib.error.HTTPError as exc:
+        return exc.code, {}
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise ModelRefused("http_failed", type(exc).__name__) from exc
+
+
 def sigv4_headers(*, host: str, path: str, region: str, key_id: str, secret: str,
                   moment: datetime.datetime, extra: Mapping[str, str] | None = None,
                   payload_sha256: str = EMPTY_SHA256, method: str = "GET") -> dict[str, str]:

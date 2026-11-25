@@ -36,9 +36,7 @@ import hashlib
 import json
 import os
 import statistics
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,19 +119,14 @@ def head_file(cfg: Config, key: str, opener: massive.Opener,
         host=m.files_host, path=path, region=m.files_region,
         key_id=massive.credential(m.files_key_id_variable),
         secret=massive.credential(m.files_secret_variable), moment=now(), method="HEAD")
-    request = urllib.request.Request(f"https://{m.files_host}{path}", headers=headers,
-                                     method="HEAD")
     try:
-        with opener(request, m.http_timeout_seconds) as response:
-            status, answer = response.status, response.headers
-    except urllib.error.HTTPError as exc:
-        return {"status": exc.code,
-                "present": False if exc.code == massive.HTTP_NOT_FOUND else None}
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return {"status": None, "present": None, "cause": "http_failed",
-                "detail": type(exc).__name__}
+        status, answer = massive.head(opener, f"https://{m.files_host}{path}", headers,
+                                      m.http_timeout_seconds)
+    except ModelRefused as exc:
+        return {"status": None, "present": None, "cause": exc.cause, "detail": exc.detail}
     if status != HTTP_OK:
-        return {"status": status, "present": None}
+        return {"status": status,
+                "present": False if status == massive.HTTP_NOT_FOUND else None}
     row: dict[str, Any] = {"status": status, "present": True}
     for name, header in FILE_HEADERS.items():
         row[name] = answer.get(header)  # recorded as sent, null when absent
