@@ -68,7 +68,7 @@ texture_move_cap = "0.012"
 # Largest change of a minute's volume either way, of that volume (below 1).
 texture_volume = "0.45"
 # Chart-only daily history, so the apps' D charts (1M, 3M, 1Y) and indicators such as RSI 14 have
-# data: this many weekdays before the minute history ([market_data] history_sessions sessions)
+# data: this many weekdays before the minute history (the bot's history need, in sessions)
 # each get one D bar, a seeded random walk ending at the symbol's `base`. Holidays are not
 # skipped. The feed serves them on D charts only; the bot never reads them. Count of days.
 chart_days = 250

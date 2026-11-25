@@ -8,7 +8,8 @@ Timeline per symbol and NY session. Bar `i` is processed in three steps:
 2. A pending entry may fill on bar `i` if the bar trades inside the decision's price window.
    The fill price is always the TOP of the window plus slippage, never better. If the same
    bar also reaches the stop, the stop is assumed hit after the fill (worst case).
-3. The strategy is evaluated with the last `history_sessions` sessions plus bars `0..i` of
+3. The strategy is evaluated with the last `history_sessions` sessions (the largest need the
+   bot's strategies declare, see `ReplaySettings`) plus bars `0..i` of
    this session in `bars` (bar `i` is now complete), the same sessions in `prior_sessions`,
    and, if enabled, a synthetic quote around bar `i`'s close stamped at the bar's end. An
    ENTER becomes a pending entry for the following bars; an EXIT is executed on bar `i + 1`.

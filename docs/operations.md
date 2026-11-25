@@ -108,7 +108,9 @@ Every run prints JSON lines (`"record": "preflight" | "alert" | "bot-exit"`) to 
    `database-other-environment`; `database-unreadable` when it cannot be opened). After
    changing `[run] environment`, move `data/tickr.sqlite3` aside and keep it: the apps then
    no longer show the other environment's days.
-8. The active strategy builds and `[market_data] history_sessions` covers its history need. A
+8. The active strategy builds and needs no more prior sessions than the history source gives
+   (`[market_data] history_max_sessions`); the bot loads the largest need of the active strategy
+   and the observers. A
    failure is reported, but the bot still starts with entries off so it can protect positions.
 9. Broker token usable (only when no earlier check blocks the start and today has a session):
    the Webull SDK creates or checks the token. If Webull says it is PENDING, preflight alerts `token-needs-confirmation`

@@ -59,6 +59,7 @@ from tickr.demo.world import (
     textured,
     weekdays_before,
 )
+from tickr.observers.loader import configured_history_need
 from tickr.store import DATABASE_FILE, MIGRATIONS, Store
 
 MARKER = ".tickr-demo"  # marks a folder this command built and may delete
@@ -337,7 +338,7 @@ def replay(repo: Path, scenario: Scenario, today: date,
     config_path = build_folder(repo, scenario)
     cfg = config_module.load(config_path)
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
-    history_count = cfg.market_data.history_sessions
+    history_count = configured_history_need(cfg)
     days = sessions(calendar, today, len(scenario.past) + 1 + history_count)
     for n, plans in enumerate((*scenario.past, scenario.today)):
         index = history_count + n
@@ -600,7 +601,7 @@ def _start_live(repo: Path, scenario: Scenario, today: date, log: Callable[[str]
     cfg = config_module.load(config_path)
     day = date.fromisoformat(str(fixture.manifest["demo_day"]))
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
-    days = sessions(calendar, day, 1 + cfg.market_data.history_sessions)
+    days = sessions(calendar, day, 1 + configured_history_need(cfg))
     session = Session(config_path, scenario, calendar, day, days[:-1], True)
     world = session.world(scenario.today, scenario.listed, start=scenario.clock)
     try:  # bound first: requests queue on the port and are answered in a second or two

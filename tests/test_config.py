@@ -336,10 +336,10 @@ def test_cli_check_config(capsys):
 def test_cli_check_config_reports_too_little_history(tmp_path, capsys):
     shutil.copytree(ROOT / "strategies", tmp_path / "strategies")
     # price-action-v3 needs 5 prior sessions (the baseline's active strategy, tests/baseline.py)
-    path = _copy(tmp_path, pinned_text(BOT.read_text("utf-8")).replace("history_sessions = 5",
-                                                                        "history_sessions = 4", 1))
+    text = pinned_text(BOT.read_text("utf-8"))
+    path = _copy(tmp_path, text.replace("history_max_sessions = 8", "history_max_sessions = 4", 1))
     assert main(["--config", str(path), "check-config"]) == 1
-    assert "needs 5 prior sessions, [market_data] history_sessions = 4" in capsys.readouterr().out
+    assert "needs 5 prior sessions, the history source gives at most 4" in capsys.readouterr().out
 
 
 def test_cli_reports_config_error(tmp_path, capsys):

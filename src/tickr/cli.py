@@ -629,7 +629,7 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     trading."""
     from tickr.data.history import HistoryReader
     from tickr.observers.errors import ObserverError
-    from tickr.observers.loader import load_active, load_observers
+    from tickr.observers.loader import history_need, load_active, load_observers
     from tickr.observers.log import DecisionLog
     from tickr.observers.runner import Limits, ObserverSet, ProcessSpec
     from tickr.runtime.entries import EntryDesk
@@ -641,14 +641,17 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     log = DecisionLog.from_config(cfg)
     desk = EntryDesk(engine, cfg, calendar=calendar, last_broker_read_at=last_broker_read_at,
                      log=log)
-    evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
-                          history=HistoryReader.from_config(cfg, source, calendar),
-                          inbox=inbox, calendar=calendar, today_bars=today_bars, now=NOW)
     try:
         shadows = load_observers(cfg)
     except ObserverError as exc:
         observers_refused(str(exc))
         shadows = ()
+    # The observers decide on the active strategy's contexts: load the largest need of all.
+    need = history_need((loaded, *shadows), cfg.market_data.history_max_sessions)
+    evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
+                          history=HistoryReader.from_config(cfg, source, calendar),
+                          history_sessions=need, inbox=inbox, calendar=calendar,
+                          today_bars=today_bars, now=NOW)
     # The observers run in a child process the bot owns, built again there from their folders
     # (observers.runner), so they never share the trading thread's interpreter lock.
     observers = ObserverSet(shadows, log, cfg.observers.max_evaluation_seconds,
@@ -846,14 +849,16 @@ def _check_config(path: Path) -> int:
         return 1
     print(f"trading gate: {'open' if gate.open else 'closed'} ({gate.cause})")
     from tickr.observers.errors import ObserverError
-    from tickr.observers.loader import load_active
+    from tickr.observers.loader import configured_history_need, load_active
     try:
         loaded = load_active(cfg)
+        need = configured_history_need(cfg)
     except ObserverError as exc:
         print(f"strategy refused: {exc}")
         return 1
     print(f"strategy: {loaded.identity} needs {loaded.strategy.prior_sessions_needed} prior "
-          f"sessions, history_sessions = {cfg.market_data.history_sessions}")
+          f"sessions, the bot loads {need} (at most "
+          f"{cfg.market_data.history_max_sessions})")
     return 1 if problems else 0
 
 

@@ -57,7 +57,7 @@ def research_settings() -> ResearchSettings:
 
 
 def replay_settings() -> ReplaySettings:
-    return load_settings(HERE / "replay_settings.toml")
+    return load_settings(HERE / "replay_settings.toml", 2)
 
 
 def d(value: str | None) -> Decimal | None:
@@ -112,6 +112,8 @@ def bar_json(bar: Bar) -> dict[str, str]:
 class Breakout:
     """Tiny test strategy: ENTER when the close breaks the previous bar's high by more than
     `edge`; window [high, high + 0.10], stop = previous low. Not a trading strategy."""
+
+    prior_sessions_needed = 0  # reads today's bars only
 
     def __init__(self, version: str = "1", edge: str = "0") -> None:
         self.name = "breakout-test"

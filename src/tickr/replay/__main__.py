@@ -12,6 +12,8 @@ from pathlib import Path
 from tickr import config
 from tickr.calendar import TIMEZONE_NAME, CalendarRefused, SessionCalendar
 from tickr.config import ConfigError
+from tickr.observers.errors import ObserverError
+from tickr.observers.loader import replayed_history_need
 from tickr.replay.bars import load_bars
 from tickr.replay.clock import ClockFor, calendar_clock
 from tickr.replay.engine import replay
@@ -74,15 +76,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        settings = load_settings(args.settings)
         clock_for = session_clock(args.config)
         factory = strategy_factory(args.strategy, args.values)
+        need = replayed_history_need(config.load(args.config), factory(), str(args.values))
+        settings = load_settings(args.settings, need)
         bars = load_bars(args.bars)
         result = replay(factory, bars, settings, clock_for)
         summary = write_all(result, args.out, settings.output_decimal_places)
     except (
         ReplayError,
         SettingsError,
+        ObserverError,
         ConfigError,
         CalendarRefused,
         OSError,

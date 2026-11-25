@@ -444,7 +444,8 @@ _PROSE = _shapes(
     ("identity_differs", r"(?P<folder>\S+): strategy reports .+, file says .+"),
     ("no_history_need", r"(?P<folder>\S+): .+ declares no valid prior_sessions_needed \(got .*\)"),
     ("history_too_short", r"(?P<folder>\S+): .+ needs (?P<need>[0-9]+) prior sessions, "
-                          r"\[market_data\] history_sessions = (?P<bot>[0-9]+)"),
+                          r"the history source gives at most (?P<bot>[0-9]+) "
+                          r"\(\[market_data\] history_max_sessions\)"),
     # the API's guard and pairing refusals (api/server.py)
     ("host_not_allowed", r"Host (?P<host>.+) is not allowed"),
     ("origin_not_allowed", r"Origin (?P<origin>.+) is not allowed"),

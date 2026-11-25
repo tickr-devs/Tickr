@@ -15,9 +15,13 @@ from tickr import config
 from tickr.observers.errors import ObserverError
 from tickr.observers.loader import (
     LoadedStrategy,
+    configured_history_need,
+    history_need,
     load_active,
     load_observers,
+    load_strategy,
     parse_modules,
+    read_identity,
 )
 from tickr.observers.log import DecisionLog
 from tickr.observers.runner import Limits, ObserverSet, ProcessSpec, _Encoder
@@ -264,17 +268,46 @@ def test_observer_needing_more_history_than_configured_is_refused(tmp_path):
     cfg = _config(tmp_path, ["rvol-20"])
     _variant(tmp_path, "rvol-20", "2",
              change=("relative_volume_sessions = 5", "relative_volume_sessions = 20"))
-    with pytest.raises(ObserverError, match="rvol-20: .* needs 20 prior sessions, "
-                                            r"\[market_data\] history_sessions = 5"):
+    with pytest.raises(ObserverError, match="rvol-20: .* needs 20 prior sessions, the history "
+                                            r"source gives at most 8 \(\[market_data\] "
+                                            r"history_max_sessions\)"):
         load_observers(cfg)
 
 
 def test_active_strategy_needing_more_history_than_configured_is_refused(tmp_path):
     cfg = _config(tmp_path)
     assert load_active(cfg).strategy.prior_sessions_needed == 5
-    short = replace(cfg, market_data=replace(cfg.market_data, history_sessions=4))
+    short = replace(cfg, market_data=replace(cfg.market_data, history_max_sessions=4))
     with pytest.raises(ObserverError, match="needs 5 prior sessions"):
         load_active(short)
+
+
+def test_todays_history_need_is_the_five_sessions_bot_and_replay_toml_used_to_set():
+    """T4: the bot and the replay load the largest need their strategies declare; for the
+    configured active strategy and observers that is 5, the value `[market_data]
+    history_sessions` and replay.toml `history_sessions` held before they were removed."""
+    cfg = config.load(ROOT / "config" / "bot.toml")
+    assert configured_history_need(cfg) == 5
+    # Every strategy folder the bot can load fits the history source, none needs more than 5.
+    modules = parse_modules(cfg.observers.strategy_modules)
+    folders = sorted(p.name for p in (ROOT / "strategies").iterdir()
+                     if (p / "strategy.toml").exists()
+                     and read_identity(ROOT, p.name)[0] in modules)
+    needs = {f: load_strategy(ROOT, f, modules).strategy.prior_sessions_needed for f in folders}
+    assert max(needs.values()) == 5 <= cfg.market_data.history_max_sessions
+    assert history_need((load_strategy(ROOT, f, modules) for f in folders),
+                        cfg.market_data.history_max_sessions) == 5
+
+
+def test_history_need_is_the_largest_declared_and_0_without_strategies(tmp_path):
+    cfg = _config(tmp_path, ["rvol-7"])
+    _variant(tmp_path, "rvol-7", "2",
+             change=("relative_volume_sessions = 5", "relative_volume_sessions = 7"))
+    assert configured_history_need(cfg) == 7  # the observer's need, above the active one's
+    assert history_need((), cfg.market_data.history_max_sessions) == 0
+    # An observer that is refused is left out, as the bot leaves it out.
+    short = replace(cfg, market_data=replace(cfg.market_data, history_max_sessions=6))
+    assert configured_history_need(short) == 5
 
 
 @pytest.mark.parametrize(("key", "platform"), [

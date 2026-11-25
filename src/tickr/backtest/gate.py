@@ -28,6 +28,7 @@ from tickr.types import Bar, Quote
 
 PERCENT = Decimal(100)
 ONE = Decimal(1)
+ONE_SESSION = 1
 RULE_POOL = "backtest_pool_day"
 RULE_PREVIOUS = "backtest_previous_close"
 RULE_GAINER = "backtest_gainer_eligible"
@@ -44,6 +45,11 @@ class GainerGate:
         # Keyed by day only: the backtest builds one gate per symbol (backtest/run.py).
         self._since: dict[date, datetime] = {}
         self._scanned: dict[date, int] = {}  # session bars already found not eligible
+
+    @property
+    def prior_sessions_needed(self) -> int:
+        """The inner strategy's need, and at least the previous session (its close)."""
+        return max(ONE_SESSION, self.inner.prior_sessions_needed)
 
     def _ignore(self, context: SymbolContext, check: Check) -> Decision:
         return Decision(self.name, self.version, context.symbol, Verdict.IGNORE, (check,))

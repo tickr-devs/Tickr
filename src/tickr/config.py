@@ -300,7 +300,7 @@ class MarketDataConfig:
     history_bars_per_request: int
     history_max_pages_per_symbol: int
     history_max_lookback_days: int
-    history_sessions: int
+    history_max_sessions: int
     history_memory_symbols: int
     candidate_subscriptions: int
     observer_subscriptions: int
@@ -690,6 +690,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[market_data] refused_symbol_recheck_seconds must be above 0")
     if md.failure_detail_max_chars < 1:
         raise ConfigError("[market_data] failure_detail_max_chars must be at least 1")
+    if md.history_max_sessions < 1 or (md.history_max_sessions * md.bars_per_symbol
+                                       > md.history_max_pages_per_symbol
+                                       * md.history_bars_per_request):
+        raise ConfigError("[market_data] history_max_sessions must be at least 1 and its sessions "
+                          "of bars_per_symbol minutes must fit history_max_pages_per_symbol pages "
+                          "of history_bars_per_request bars")
     if md.history_memory_symbols < 1:
         raise ConfigError("[market_data] history_memory_symbols must be at least 1")
     if md.history_cache_max_age_days < 1:

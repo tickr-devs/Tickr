@@ -17,6 +17,7 @@ KEYS = {"strategy": {"name", "version"}, "rules": {"lookback", "window_usd", "ex
 
 
 class StubBreakout:
+    prior_sessions_needed = 0  # reads today's bars only
     def __init__(self, name: str, version: str, lookback: int, window: Decimal, drop: Decimal):
         self.name = name
         self.version = version

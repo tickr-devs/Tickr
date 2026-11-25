@@ -51,7 +51,8 @@ names. The first response of each kind and every failed one are kept in `<out>/r
    gainer pool only holds symbols whose day ended up as a gainer). Symbols delisted since are
    still missing: the universe is Webull's current instrument list.
 4. **Minute bars** (`minutes/<SYMBOL>.jsonl`, replay bar format; `minutes_status.jsonl`): each
-   pool day plus replay.toml `history_sessions` sessions before it, merged into contiguous runs
+   pool day plus the history need's sessions before it (the largest `prior_sessions_needed` of
+   the active strategy and the observers in bot.toml, as live), merged into contiguous runs
    and paged back with `end_time` (probe M4). Symbols that page from the same end share a request.
    A run that cannot be completed (no older bars, page limit, conflict) is recorded with its cause.
 5. **Run** (`trades.csv`, `signals.csv`, `summary.json`, `skipped.csv`, `report.json`,
@@ -78,8 +79,8 @@ completed sessions bring:
    `pool_cap.csv` (one row per session, also without candidates). The last completed session
    is kept in `last_session.txt`, apart from the last pool day, so a session without
    candidates is fetched once.
-3. Minute bars only for the sessions the new pool days need (each day and `history_sessions`
-   before it) that the symbol's minute file holds no bar for, merged into that file.
+3. Minute bars only for the sessions the new pool days need (each day and the history need's
+   sessions before it) that the symbol's minute file holds no bar for, merged into that file.
 4. Pool days older than the window are dropped, with minute files no pool day uses any more.
 
 The night is built in `staging/` (minute and daily files hard-linked from `current/`, every file
@@ -94,8 +95,8 @@ the pool only after the next `fetch-all`.
 
 ## How a pool day is replayed
 
-- Skipped (with cause) when the symbol lacks bars on the day or on any of the `history_sessions`
-  sessions before it, or a fetch run holding the day or one of those sessions is incomplete
+- Skipped (with cause) when the symbol lacks bars on the day or on any of the history need's
+  sessions before it (raised to the replayed strategy's own `prior_sessions_needed` when larger), or a fetch run holding the day or one of those sessions is incomplete
   (`FETCH_INCOMPLETE` names each such session and its cause, e.g. PAGE_LIMIT): live, the bot refuses a symbol with incomplete
   history. Also skipped when the daily (forward-adjusted) to M1 (unadjusted) price scale differs
   between the previous session and the day by more than `split_tolerance_percent`: a split

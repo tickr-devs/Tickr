@@ -121,16 +121,19 @@ def _chunks(items: Sequence[str], size: int) -> list[Sequence[str]]:
 class Evaluator:
     def __init__(self, engine: Engine, config: Config, source: MarketData, *,
                  strategy: Strategy, desk: EntryDesk, history: HistoryReader,
-                 inbox: StreamInbox, calendar: SessionCalendar, today_bars: TodayBars,
-                 now: Callable[[], datetime]) -> None:
+                 history_sessions: int, inbox: StreamInbox, calendar: SessionCalendar,
+                 today_bars: TodayBars, now: Callable[[], datetime]) -> None:
         self.engine = engine
         self.config = config
         self.source = source
         self.strategy = strategy
         self.desk = desk
         self.history = history
+        # Prior sessions loaded per symbol: the largest need of the active strategy and the
+        # observers (observers.loader.history_need); 0 = none is read.
+        self.history_sessions = history_sessions
         self.today_bars = today_bars  # shared with discovery
-        self.preload = HistoryPreload(engine, config, source, history)
+        self.preload = HistoryPreload(engine, config, source, history, history_sessions)
         self.inbox = inbox
         self.calendar = calendar
         self.now = now
@@ -303,7 +306,7 @@ class Evaluator:
                                          "stage": "remainder-no-bars"}, [symbol])
             if not owns:
                 continue
-            histories = self.history.prior_sessions(list(owns), today, md.history_sessions)
+            histories = self._histories(list(owns), today)
             self._reloaded(bar_start, histories.reloads)
             for symbol in owns:
                 error, history = self._history(histories, symbol, today)
@@ -383,6 +386,13 @@ class Evaluator:
                 key=bar_start.isoformat(), run_id=self.engine.run_id)
         if remaining:
             self._remainder = (bar_start, quotes, self._budget)
+
+    def _histories(self, symbols: list[str], today: date) -> HistoryRead:
+        """This minute's history read of `symbols`; with no history needed, an empty history
+        of each, read from nowhere."""
+        if not self.history_sessions:
+            return HistoryRead({s: SessionHistory(s, (), (), 0) for s in symbols}, {}, None, 0)
+        return self.history.prior_sessions(symbols, today, self.history_sessions)
 
     def _history(self, read: HistoryRead, symbol: str,
                  today: date) -> tuple[str | None, SessionHistory | None]:

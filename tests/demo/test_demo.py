@@ -51,6 +51,7 @@ from tickr.demo.world import (
     textured,
     weekdays_before,
 )
+from tickr.observers.loader import configured_history_need
 from tickr.store import MIGRATIONS
 from tickr.types import (
     OrderRequest,
@@ -193,7 +194,7 @@ def test_every_date_of_the_calendar_gives_sessions_the_scenario_fits():
     demo builds on any date, half days and holidays included."""
     calendar = SessionCalendar.load(ROOT / "config" / "calendar")
     scenario = load(ROOT / "config" / "demo.toml")
-    history = config.load(ROOT / "config" / "bot.toml").market_data.history_sessions
+    history = configured_history_need(config.load(ROOT / "config" / "bot.toml"))
     days_per_build = len(scenario.past) + 1 + history
     first = date(2026, 2, 1)  # enough 2026 sessions before it; the calendar starts in 2026
     last = date(2027, 12, 31)  # the last date the calendar files cover

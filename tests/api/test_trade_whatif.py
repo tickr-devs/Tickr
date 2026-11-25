@@ -18,6 +18,7 @@ from tickr.api import contract
 from tickr.api.server import make_server, settings_from_config
 from tickr.api.trade_whatif import TradeWhatIfRefused, TradeWhatIfSettings, what_if
 from tickr.data.capture import CapturedBarsDays, bar_record
+from tickr.observers.loader import configured_history_need
 from tickr.strategy.base import Decision, Verdict
 from tickr.types import Bar
 
@@ -82,7 +83,8 @@ def _settings(cfg):
 
 def _history(cfg, symbol="ABCD"):
     settings = _settings(cfg)
-    path = settings.history / PAST.isoformat() / f"{symbol}-{settings.history_sessions}.jsonl"
+    sessions = configured_history_need(cfg)  # what the bot cached: 5 today
+    path = settings.history / PAST.isoformat() / f"{symbol}-{sessions}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     bars = [b for d in PRIOR for b in flat_bars(symbol, d, "12")]
     path.write_text("".join(json.dumps(bar_record(b)) + "\n" for b in bars))
@@ -185,15 +187,18 @@ def test_a_version_that_raises_is_a_cause_not_a_crash(cfg, monkeypatch):
     assert found.cause.startswith("simulation failed: KeyError") and found.trades == ()
 
 
-def test_an_empty_cache_or_other_replay_history_is_refused(cfg):
+def test_an_empty_cache_or_a_version_needing_more_history_is_refused(cfg, monkeypatch):
     _capture(cfg, day_offset=-3)
     _history(cfg).write_text("")
     found = what_if(_settings(cfg), "scripted-v1", "ABCD", PAST, SATURDAY, CapturedBarsDays())
     assert found.cause == "cached prior sessions hold no bar of ABCD"
     _history(cfg)
-    replay_file = cfg.root / cfg.api.replay_settings_file
-    text = replay_file.read_text("utf-8")
-    assert text.count("history_sessions = 5") == 1
-    replay_file.write_text(text.replace("history_sessions = 5", "history_sessions = 3"))
+    # More than the bot cached (5 sessions): there is no cache file of its count.
+    monkeypatch.setattr(Scripted, "prior_sessions_needed", 6)
     found = what_if(_settings(cfg), "scripted-v1", "ABCD", PAST, SATURDAY, CapturedBarsDays())
-    assert "differ from [market_data] history_sessions 5" in found.cause
+    assert found.cause == f"no cached prior sessions for ABCD on {PAST.isoformat()}"
+    # More than the history source gives: refused by its declaration.
+    monkeypatch.setattr(Scripted, "prior_sessions_needed", 9)
+    found = what_if(_settings(cfg), "scripted-v1", "ABCD", PAST, SATURDAY, CapturedBarsDays())
+    assert found.cause == ("scripted-v1: scripted v1 needs 9 prior sessions, the history source "
+                           "gives at most 8 ([market_data] history_max_sessions)")

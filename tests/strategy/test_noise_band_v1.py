@@ -199,7 +199,7 @@ def test_loads_as_an_observer_from_the_repo_config():
     modules = parse_modules(cfg.observers.strategy_modules)
     loaded = load_strategy(ROOT, "noise-band-v1", modules)
     assert (loaded.strategy.name, loaded.strategy.version) == ("noise-band-v1", "1")
-    check_history(loaded, cfg.market_data.history_sessions)
+    check_history(loaded, cfg.market_data.history_max_sessions)
 
 
 def test_a_signal_whose_band_level_was_broken_is_not_entered():

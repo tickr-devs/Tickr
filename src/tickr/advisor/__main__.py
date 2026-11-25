@@ -17,6 +17,7 @@ from tickr.advisor.errors import AdvisorError
 from tickr.advisor.run import Status, run_advisor, run_backtest_advisor
 from tickr.calendar import CalendarRefused
 from tickr.observers.errors import ObserverError
+from tickr.observers.loader import configured_history_need
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import load_settings
 from tickr.research.errors import ResearchError
@@ -55,7 +56,7 @@ def main(argv: Sequence[str] | None = None, client_factory=AnthropicClient) -> i
         cfg = config_module.load(args.config)
         notes = args.notes.read_text("utf-8") if args.notes else ""
         if args.backtest is not None:
-            replay = load_settings(args.replay_settings)
+            replay = load_settings(args.replay_settings, configured_history_need(cfg))
             result = run_backtest_advisor(cfg, args.backtest, args.backtest_data,
                                           client_factory(cfg.advisor), replay, datetime.now(UTC),
                                           folder=args.strategy_folder, out_dir=args.out,
@@ -67,7 +68,7 @@ def main(argv: Sequence[str] | None = None, client_factory=AnthropicClient) -> i
                 days,
                 client_factory(cfg.advisor),
                 load_research_settings(args.research_settings),
-                load_settings(args.replay_settings),
+                load_settings(args.replay_settings, configured_history_need(cfg)),
                 datetime.now(UTC),
                 folder=args.strategy_folder,
                 out_dir=args.out,

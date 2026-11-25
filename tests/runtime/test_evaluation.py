@@ -19,6 +19,7 @@ from tickr.data.base import FakeMarketData, MarketDataError, ScreenerKind, Scree
 from tickr.data.history import HistoryRead, HistoryReader, HistorySettings, HistoryUnavailable
 from tickr.data.todaybars import TodayBars
 from tickr.engine.core import Engine
+from tickr.observers.loader import configured_history_need
 from tickr.observers.log import DecisionLog
 from tickr.research.records import Admission as RecordAdmission
 from tickr.research.records import load_records
@@ -42,6 +43,8 @@ from tickr.types import Bar, Quote
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = load_baseline()
+# What the bot loads: the largest need of the active strategy and the observers.
+HISTORY = configured_history_need(CFG)
 CALENDAR = SessionCalendar.load((ROOT / CFG.session.calendar_file).parent)
 MONDAY = date(2026, 11, 16)
 OPEN = datetime(2026, 11, 16, 9, 30, tzinfo=NEW_YORK)
@@ -115,7 +118,8 @@ class Scripted:
 
 
 class Rig:
-    def __init__(self, tmp_path: Path, history: object | None = None) -> None:
+    def __init__(self, tmp_path: Path, history: object | None = None,
+                 sessions: int = HISTORY) -> None:
         self.broker = FakeBroker(funds=FUNDS)
         self.store = Store.open(tmp_path / "db.sqlite3", busy_timeout_seconds=0)
         self.engine = Engine(self.store, self.broker, CFG, "eval0001",
@@ -132,7 +136,8 @@ class Rig:
                                           None)
         self.today_bars = TodayBars()
         self.evaluator = Evaluator(self.engine, CFG, self.source, strategy=self.strategy,
-                                   desk=desk, history=reader, inbox=self.inbox,
+                                   desk=desk, history=reader, history_sessions=sessions,
+                                   inbox=self.inbox,
                                    calendar=CALENDAR, today_bars=self.today_bars,
                                    now=lambda: self.now)
 
@@ -151,12 +156,23 @@ def test_strategy_sees_prior_sessions_and_completed_regular_bars_only(tmp_path):
     rig.evaluator.tick(Market(["ABC"]))
     (context,) = rig.strategy.seen
     assert rig.store.journal(HISTORY_REFUSED) == []
-    assert len(context.prior_sessions) == CFG.market_data.history_sessions
+    assert len(context.prior_sessions) == HISTORY == 5
     assert all(len(session) == 3 for session in context.prior_sessions)
     today = [b for b in context.bars if b.start.date() == MONDAY]
     assert [b.start.minute for b in today] == [30, 31, 32, 33, 34]
     assert context.quote is not None and context.quote.ask == D("10.05")
     assert rig.evaluator.contexts == [context]
+
+
+def test_no_history_need_reads_no_history(tmp_path):
+    """Strategies that all declare 0 prior sessions: no history request, empty history."""
+    rig = Rig(tmp_path, sessions=0)
+    rig.symbol("ABC")
+    rig.evaluator.tick(Market(["ABC"]))
+    (context,) = rig.strategy.seen
+    assert context.prior_sessions == ()
+    assert bars_calls(rig, "bars_before") == []
+    assert rig.store.journal(HISTORY_REFUSED) == []
 
 
 def test_the_strategy_gets_the_open_its_bars_are_proven_to_reach(tmp_path):
@@ -272,7 +288,8 @@ def restarted(rig: Rig) -> Evaluator:
     desk = EntryDesk(rig.engine, CFG, calendar=CALENDAR, last_broker_read_at=lambda: rig.now,
                      log=DecisionLog(rig.dir))
     return Evaluator(rig.engine, CFG, rig.source, strategy=rig.strategy, desk=desk,
-                     history=rig.evaluator.history, inbox=rig.inbox, calendar=CALENDAR,
+                     history=rig.evaluator.history, history_sessions=HISTORY,
+                     inbox=rig.inbox, calendar=CALENDAR,
                      today_bars=rig.today_bars, now=lambda: rig.now)
 
 

@@ -51,7 +51,7 @@ def today() -> list[Bar]:
 
 def test_real_strategy_enters_and_trades():
     values = tomllib.loads((ROOT / "strategies" / "price-action-v1" / "strategy.toml").read_text())
-    settings = load_settings(ROOT / "config" / "replay.toml")
+    settings = load_settings(ROOT / "config" / "replay.toml", 5)
     bars = [b for day in PRIOR_DAYS for b in flat_day(day)] + today()
     result = replay(
         lambda: pa.create(values),

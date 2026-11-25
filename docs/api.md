@@ -906,7 +906,8 @@ The Trades screen's "Another strategy…": strategy folder `version` (under `str
 module from `[observers] strategy_modules`) replayed by the replay engine (`docs/replay.md`, the
 same fill and exit rules and `[api] replay_settings_file`) on `symbol`'s captured M1 bars of
 `date`, with the prior sessions the bot cached for that symbol that day
-(`<history_dir>/<environment>/<date>/<symbol>-<[market_data] history_sessions>.jsonl`) as its
+(`<history_dir>/<environment>/<date>/<symbol>-<sessions>.jsonl`, sessions = the largest
+`prior_sessions_needed` of the active strategy and the observers, the version's own when larger) as its
 history. Offline and read-only: nothing is fetched or written, the bot reads nothing of it.
 Code: `src/tickr/api/trade_whatif.py`.
 
@@ -921,8 +922,8 @@ Code: `src/tickr/api/trade_whatif.py`.
   `result_gross_usd`: their sums; USD is null when a trade has no quantity. Gross: slippage in,
   commissions and fees out.
 - When it cannot be computed (unreadable or unknown folder, no module, a version that needs more
-  history than the bot caches, replay.toml `history_sessions` differing from
-  `[market_data] history_sessions`, no captured bars for the symbol that day, no or empty cached
+  history than the history source gives (`[market_data] history_max_sessions`) or than the
+  bot cached (no cache file of its count), no captured bars for the symbol that day, no or empty cached
   prior sessions, a refused simulation, a version that raises) `cause` says why, `signals` and the sums are null and `trades`
   is empty. Paths in a cause are relative to the repo.
 

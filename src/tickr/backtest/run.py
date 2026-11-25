@@ -2,7 +2,8 @@
 the replay engine with the strategy behind the gainer gate (gate.py), one process per symbol.
 
 A pool day is skipped, with its cause in `skipped.csv`, when the symbol's M1 file lacks the day
-or one of the `history_sessions` sessions before it, or the fetch recorded a run holding the day
+or one of the `history_sessions` sessions before it (the largest need of the bot's
+strategies and the one replayed), or the fetch recorded a run holding the day
 or one of those sessions incomplete (`FETCH_INCOMPLETE`, for example a PAGE_LIMIT run that kept
 one bar of a session: a later night only fetches sessions without bars, so its truncated
 history would otherwise be replayed as complete). Live, the bot refuses a symbol whose
@@ -40,6 +41,7 @@ from tickr.backtest.universe import (
 )
 from tickr.calendar import SessionCalendar, ny_date_of
 from tickr.config import Config
+from tickr.observers.loader import LoadedStrategy, check_history
 from tickr.replay.bars import load_bars
 from tickr.replay.clock import calendar_clock
 from tickr.replay.engine import ReplayResult, replay
@@ -217,7 +219,13 @@ def run_backtest(cfg: Config, settings: BacktestSettings, replay_settings: Repla
     calendar = SessionCalendar.load(calendar_dir)
     with open(values_path, "rb") as handle:
         values = tomllib.load(handle)
-    factory(strategy_module, values)  # refuse bad values before any work
+    create = factory(strategy_module, values)  # refuse bad values before any work
+    # The bot's history (the replay settings'), raised to what this strategy behind the gate
+    # declares; more than the history source gives is refused.
+    need = check_history(LoadedStrategy(str(values_path), GainerGate(create(), (), Decimal(0))),
+                         cfg.market_data.history_max_sessions)
+    replay_settings = replace(replay_settings,
+                              history_sessions=max(replay_settings.history_sessions, need))
     pool = read_pool(out / POOL_FILE)
     caps = read_caps(out / CAP_FILE)
     window: list[date] | None = None

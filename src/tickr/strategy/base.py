@@ -151,8 +151,10 @@ class FastMovers(Protocol):
 class Strategy(Liquidity, Protocol):
     prior_sessions_needed: int
     """How many completed prior sessions of M1 bars `evaluate` needs in
-    `SymbolContext.prior_sessions`. The platform refuses to run a strategy that needs more
-    than `[market_data] history_sessions` provides; 0 = no history needed."""
+    `SymbolContext.prior_sessions`. The platform loads the largest need of the active strategy
+    and the observers (`observers.loader.history_need`), so a strategy may be given more; it
+    refuses to run one that needs more than `[market_data] history_max_sessions`; 0 = no
+    history needed."""
 
     def evaluate(self, context: SymbolContext) -> Decision: ...
 

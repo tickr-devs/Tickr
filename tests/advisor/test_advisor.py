@@ -110,7 +110,7 @@ def make_root(tmp_path, min_days=2, extra=""):
 def run(cfg, client, tmp_path, **kw):
     return run_advisor(cfg, DAYS, client,
                        load_research_settings(ROOT / "config" / "research.toml"),
-                       load_settings(ROOT / "config" / "replay.toml"), NOW,
+                       load_settings(ROOT / "config" / "replay.toml", 5), NOW,
                        out_dir=tmp_path / "out", **kw)
 
 

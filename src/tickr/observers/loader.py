@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import importlib
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -106,20 +106,50 @@ def load_strategy(root: Path, folder: str, modules: Mapping[str, str]) -> Loaded
     return LoadedStrategy(folder, strategy)
 
 
-def check_history(loaded: LoadedStrategy, history_sessions: int) -> None:
-    """Refuse a strategy that needs more prior sessions than the platform fetches: it would
-    refuse every evaluation for missing history all day."""
+def check_history(loaded: LoadedStrategy, max_sessions: int) -> int:
+    """The prior sessions `loaded` declares it needs (`prior_sessions_needed`), refused when
+    that is not a count or more than the history source can give (`[market_data]
+    history_max_sessions`): it would refuse every evaluation for missing history all day."""
     need = getattr(loaded.strategy, "prior_sessions_needed", None)
     if isinstance(need, bool) or not isinstance(need, int) or need < 0:
         raise ObserverError(
             f"{loaded.folder}: {loaded.identity} declares no valid prior_sessions_needed "
             f"(got {need!r})"
         )
-    if need > history_sessions:
+    if need > max_sessions:
         raise ObserverError(
-            f"{loaded.folder}: {loaded.identity} needs {need} prior sessions, "
-            f"[market_data] history_sessions = {history_sessions}"
+            f"{loaded.folder}: {loaded.identity} needs {need} prior sessions, the history "
+            f"source gives at most {max_sessions} ([market_data] history_max_sessions)"
         )
+    return need
+
+
+def history_need(strategies: Iterable[LoadedStrategy], max_sessions: int) -> int:
+    """Prior sessions the platform loads per symbol: the largest need `strategies` declare
+    (each checked by `check_history`), 0 when none needs history. Every strategy is given
+    the same history, as live, where the observers see the active strategy's contexts."""
+    return max((check_history(s, max_sessions) for s in strategies), default=0)
+
+
+def configured_history_need(config: Config) -> int:
+    """`history_need` of the active strategy (ObserverError when it is refused) and the
+    configured observers: what the bot loads, and what the backtest and the replay tools give
+    a strategy. Observers that are refused are left out, as the bot leaves them out
+    (cli._evaluator)."""
+    active = load_active(config)
+    try:
+        observers = load_observers(config)
+    except ObserverError:
+        observers = ()
+    return history_need((active, *observers), config.market_data.history_max_sessions)
+
+
+def replayed_history_need(config: Config, strategy: Strategy, label: str) -> int:
+    """`configured_history_need` raised to the need of `strategy`, a strategy replayed from
+    outside the configuration (`label` names it in a refusal)."""
+    return max(configured_history_need(config),
+               check_history(LoadedStrategy(label, strategy),
+                             config.market_data.history_max_sessions))
 
 
 # A strategy's [sizing] keys and the platform `[risk]` limit each must not exceed.
@@ -160,7 +190,7 @@ def load_active(config: Config) -> LoadedStrategy:
     check_limits(config.root, config.strategy.active, config.risk)
     loaded = load_strategy(config.root, config.strategy.active,
                            parse_modules(config.observers.strategy_modules))
-    check_history(loaded, config.market_data.history_sessions)
+    check_history(loaded, config.market_data.history_max_sessions)
     return loaded
 
 
@@ -182,7 +212,7 @@ def load_observers(config: Config) -> tuple[LoadedStrategy, ...]:
     loaded = []
     for folder in folders:
         observer = load_strategy(config.root, folder, modules)
-        check_history(observer, config.market_data.history_sessions)
+        check_history(observer, config.market_data.history_max_sessions)
         if observer.identity in seen:
             raise ObserverError(
                 f"{folder}: {observer.identity} is the same identity as {seen[observer.identity]}"

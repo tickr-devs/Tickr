@@ -37,11 +37,12 @@ PRELOAD = "history-preload"
 
 class HistoryPreload:
     def __init__(self, engine: Engine, config: Config, source: MarketData,
-                 history: HistoryReader) -> None:
+                 history: HistoryReader, history_sessions: int) -> None:
         self.engine = engine
         self.config = config
         self.source = source
         self.history = history
+        self.history_sessions = history_sessions  # the evaluation's; 0 = nothing to preload
         self.settings = DiscoverySettings.from_config(config)
         self._day: date | None = None
         self._queue: list[str] = []
@@ -59,7 +60,7 @@ class HistoryPreload:
     def tick(self, day: MarketDay, now: datetime, screened: list[ScreenerRow] | None) -> None:
         """Queue the symbols of a screener round (`screened`, None when the recorder read none
         this pass), else at most one history batch; nothing outside the window."""
-        if not self.in_window(day, now):
+        if not self.history_sessions or not self.in_window(day, now):
             return
         if self._day != day.ny_date:
             self._day, self._queue, self._seen = day.ny_date, [], set()
@@ -73,7 +74,7 @@ class HistoryPreload:
         if not self._queue:
             return
         batch = self._queue[:md.bars_symbols_per_request]
-        read = self.history.prior_sessions(batch, day.ny_date, md.history_sessions,
+        read = self.history.prior_sessions(batch, day.ny_date, self.history_sessions,
                                            budget_reserve=md.discovery_bars_reserve_requests)
         settled = set(read.found) | set(read.refused)
         self._queue = [s for s in self._queue if s not in settled]

@@ -4,7 +4,9 @@ day. SIMULATED, read-only, offline (docs/api.md, "What another version would hav
 Inputs, all already on disk, nothing fetched and nothing written:
 - the day's captured M1 bars of the symbol (`<capture_dir>/<environment>/<day>/bars.jsonl`);
 - the prior sessions the bot cached for the symbol that day
-  (`<history_dir>/<environment>/<day>/<symbol>-<[market_data] history_sessions>.jsonl`);
+  (`<history_dir>/<environment>/<day>/<symbol>-<sessions>.jsonl`, sessions = the largest need
+  of the bot's strategies, `observers.loader.configured_history_need`, or the version's own
+  when larger: then the bot cached none);
 - the strategy folder under `strategies/` (its module from `[observers] strategy_modules`),
   `[api] replay_settings_file` and the session calendar with bot.toml `[session]`.
 
@@ -19,7 +21,7 @@ Every missing input is a `cause` with no numbers, never a partial answer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -49,7 +51,7 @@ class TradeWhatIfSettings:
     root: Path  # repo root: strategies/ lives here
     paths: SimulationPaths
     history: Path  # <data_dir>/<history_dir>/<environment>
-    history_sessions: int  # [market_data] history_sessions: the cache file's session count
+    max_sessions: int  # [market_data] history_max_sessions
     modules: tuple[str, ...]  # [observers] strategy_modules
     outside_session_only: bool  # [api] trade_whatif_outside_session_only
 
@@ -58,7 +60,7 @@ class TradeWhatIfSettings:
         data = cfg.root / cfg.run.data_dir
         return cls(cfg.root, SimulationPaths.from_config(cfg),
                    data / cfg.market_data.history_dir / cfg.environment_name,
-                   cfg.market_data.history_sessions, tuple(cfg.observers.strategy_modules),
+                   cfg.market_data.history_max_sessions, tuple(cfg.observers.strategy_modules),
                    cfg.api.trade_whatif_outside_session_only)
 
 
@@ -104,7 +106,7 @@ def what_if(settings: TradeWhatIfSettings, folder: str, symbol: str, day: date,
     try:
         modules = parse_modules(settings.modules)
         loaded = load_strategy(settings.root, folder, modules)
-        check_history(loaded, settings.history_sessions)
+        need = check_history(loaded, settings.max_sessions)
     except ObserverError as exc:
         return failed(str(exc))
     name, version = loaded.strategy.name, loaded.strategy.version
@@ -113,14 +115,14 @@ def what_if(settings: TradeWhatIfSettings, folder: str, symbol: str, day: date,
         replay_settings, clock_for = replay_inputs(settings.paths)
     except NoInputs as exc:
         return failed(str(exc), name, version)
-    if replay_settings.history_sessions != settings.history_sessions:
-        return failed(f"replay settings history_sessions {replay_settings.history_sessions} "
-                      f"differ from [market_data] history_sessions {settings.history_sessions}: "
-                      "the version would not see the history the bot cached", name, version)
+    # The bot cached the largest need of its strategies; a version that needs more finds
+    # no cache file of its count.
+    sessions = max(replay_settings.history_sessions, need)
+    replay_settings = replace(replay_settings, history_sessions=sessions)
     today_bars = tuple(b for b in today_bars if ny_date_of(b.start) == day)
     if not today_bars:
         return failed(f"no captured bars for {symbol} on {day.isoformat()}", name, version)
-    cache = settings.history / day.isoformat() / f"{symbol}-{settings.history_sessions}.jsonl"
+    cache = settings.history / day.isoformat() / f"{symbol}-{sessions}.jsonl"
     if not cache.exists():
         return failed(f"no cached prior sessions for {symbol} on {day.isoformat()}",
                       name, version)

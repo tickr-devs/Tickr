@@ -198,8 +198,8 @@ def test_missing_strategy_file_is_invalid_config(config_path, repo):
 
 
 def _set_history(config_path: Path, sessions: int) -> None:
-    text = config_path.read_text("utf-8").replace("history_sessions = 5",
-                                                  f"history_sessions = {sessions}", 1)
+    text = config_path.read_text("utf-8").replace("history_max_sessions = 8",
+                                                  f"history_max_sessions = {sessions}", 1)
     config_path.write_text(text, "utf-8")
 
 
@@ -208,7 +208,7 @@ def test_history_shorter_than_the_strategy_needs_fails_but_does_not_block_start(
     result = _run(config_path, _ready(config_path))
     assert result.cause is PreflightCause.STRATEGY_REFUSED
     assert result.exit_code is ExitCode.FAILED
-    assert "needs 5 prior sessions, [market_data] history_sessions = 4" in result.summary()
+    assert "needs 5 prior sessions, the history source gives at most 4" in result.summary()
     assert not result.blocks_start  # the bot starts with entries off to protect positions
 
 

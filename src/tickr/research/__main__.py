@@ -13,6 +13,8 @@ from pathlib import Path
 from tickr import config as bot_config
 from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import ConfigError
+from tickr.observers.errors import ObserverError
+from tickr.observers.loader import configured_history_need, replayed_history_need
 from tickr.replay.__main__ import session_clock, strategy_factory
 from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
@@ -126,8 +128,14 @@ def _run(args: argparse.Namespace) -> dict:
         rows = refusals.table(_filter(load_records(args.decisions), args.strategy),
                               settings.session_timezone)
         return report.write_refusals(rows, args.out, settings.output_decimal_places)
-    replay_settings = load_settings(args.replay_settings)
     clock_for = session_clock(args.config)
+    cfg = bot_config.load(args.config)
+    if args.command in ("whatif", "observers"):
+        need = configured_history_need(cfg)
+    else:
+        need = replayed_history_need(cfg, strategy_factory(args.strategy, args.values)(),
+                                     str(args.values))
+    replay_settings = load_settings(args.replay_settings, need)
     places = replay_settings.output_decimal_places
     if args.command == "whatif":
         quantity = None
@@ -160,6 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         ResearchError,
         ReplayError,
+        ObserverError,
         ConfigError,
         CalendarRefused,
         OSError,

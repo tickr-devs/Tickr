@@ -281,7 +281,7 @@ def _flat_day(day: date) -> list[Bar]:
 
 def test_replay_and_diff_against_v1():
     bars = {SYMBOL: [b for day in PRIOR_DAYS for b in _flat_day(day)] + _day()}
-    settings = load_settings(ROOT / "config" / "replay.toml")
+    settings = load_settings(ROOT / "config" / "replay.toml", 5)
     clock = session_clock(ROOT / "config" / "bot.toml")
     old_values, new_values = values("price-action-v1"), values("price-action-v2")
 

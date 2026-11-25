@@ -184,7 +184,7 @@ def test_loads_as_an_observer_from_the_repo_config():
     modules = parse_modules(cfg.observers.strategy_modules)
     loaded = load_strategy(ROOT, "volume-shock-v1", modules)
     assert (loaded.strategy.name, loaded.strategy.version) == ("volume-shock-v1", "1")
-    check_history(loaded, cfg.market_data.history_sessions)
+    check_history(loaded, cfg.market_data.history_max_sessions)
 
 
 def test_the_stop_keeps_the_minimum_distance_below_the_bid():

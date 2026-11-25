@@ -70,6 +70,7 @@ from tickr.demo.run import (
 )
 from tickr.demo.scenario import Scenario
 from tickr.demo.world import World, ny
+from tickr.observers.loader import configured_history_need
 
 # Where the apps find the recording, relative to the repo (TickrKit's resources).
 RECORDING = Path("apps/shared/Sources/TickrKit/Resources/DemoDay.jsonl.xz")
@@ -297,7 +298,7 @@ def _from_clock(scenario: Scenario, cfg: config_module.Config, day: date,
     (the API still answering)."""
     config_path = cfg.root / "config" / "bot.toml"
     calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
-    days = sessions(calendar, day, 1 + cfg.market_data.history_sessions)
+    days = sessions(calendar, day, 1 + configured_history_need(cfg))
     session = Session(config_path, scenario, calendar, day, days[:-1], True)
     world = session.world(scenario.today, scenario.listed, start=scenario.clock)
     server = make_server(replace(settings_from_config(cfg), port=0, config_file=config_path),

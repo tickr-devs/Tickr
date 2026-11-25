@@ -21,9 +21,10 @@ Checks, all reported, the first failure is the single cause:
    stopped, and this check fails every morning, until the owner runs `tickr clear-stop`;
 5c. the database, when it exists, holds runs of this environment only (spec 10: one database
    per environment); otherwise the bot would refuse at its start, hours later;
-6. active strategy builds from its file and `[market_data] history_sessions` covers the prior
-   sessions it needs. A failure here is reported but does not stop the bot from starting: the
-   bot then protects positions with entries off (`blocks_start`);
+6. active strategy builds from its file and needs no more prior sessions than the history
+   source gives (`[market_data] history_max_sessions`). A failure here is reported but does
+   not stop the bot from starting: the bot then protects positions with entries off
+   (`blocks_start`);
 7. broker token usable: only when no earlier check blocks the start and today has a session,
    the caller's `token_probe` creates or checks the Webull token, which may wait for the
    owner's confirmation in the app (the probe alerts token-needs-confirmation before it waits).
@@ -47,7 +48,7 @@ from pathlib import Path
 from tickr import config as config_module
 from tickr.calendar import CalendarCause, CalendarRefused, SessionCalendar, ny_date_of
 from tickr.observers.errors import ObserverError
-from tickr.observers.loader import load_active
+from tickr.observers.loader import configured_history_need, load_active
 from tickr.runtime import stopmarker
 from tickr.runtime.alerts import default_notifier, recipient_missing
 from tickr.runtime.launchd import PRIVATE_MODE_MASK, check_timings
@@ -375,11 +376,12 @@ def _check_database(cfg: config_module.Config) -> Check:
 def _check_strategy(cfg: config_module.Config) -> Check:
     try:
         loaded = load_active(cfg)
+        need = configured_history_need(cfg)
     except ObserverError as exc:
         return Check(CheckName.STRATEGY, False, str(exc), PreflightCause.STRATEGY_REFUSED)
     return Check(CheckName.STRATEGY, True,
                  f"{loaded.identity} needs {loaded.strategy.prior_sessions_needed} prior "
-                 f"sessions, history_sessions = {cfg.market_data.history_sessions}")
+                 f"sessions, the bot loads {need}")
 
 
 def run_preflight(

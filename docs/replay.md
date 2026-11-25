@@ -51,8 +51,10 @@ Slippage per fill = max(price x `slippage_percent` / 100, `slippage_min_usd`), a
 us.
 
 **History.** The strategy gets the same shape of input as live: `bars` = the last
-`history_sessions` sessions of the symbol plus today's completed bars (oldest first), and the
-same sessions in `prior_sessions`. Indicators therefore warm up as they do live.
+N sessions of the symbol plus today's completed bars (oldest first), and the
+same sessions in `prior_sessions`. N is what live loads: the largest `prior_sessions_needed` of
+the active strategy and the observers in bot.toml (`observers.loader.history_need`), raised to the
+replayed strategy's own; replay.toml has no such key. Indicators therefore warm up as they do live.
 
 **Synthetic quote.** Recorded bars carry no bid/ask. With `synthesize_quote = true` the
 strategy receives, after each completed bar, a quote around its close:

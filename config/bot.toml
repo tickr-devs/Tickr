@@ -608,10 +608,13 @@ history_max_pages_per_symbol = 4
 # Most calendar days walked back to find the requested prior sessions (weekends and holidays are skipped); read by
 # data.history.
 history_max_lookback_days = 14
-# Prior regular sessions the bot loop loads per symbol for the active strategy (once per symbol per New York day, then
-# cached), count; must be at least the active strategy's relative_volume_sessions or it refuses for missing history;
-# read by runtime.evaluation.
-history_sessions = 5
+# Most prior regular sessions the history source can give a strategy, count. The bot and the backtest load, once per
+# symbol per New York day, the largest prior_sessions_needed the active strategy and the observers declare
+# (observers.loader.history_need); a strategy that declares more is refused. 8: history_max_lookback_days (14) holds 10
+# weekdays, two of which can be holidays (Christmas and New Year's Day); history_max_pages_per_symbol pages of
+# history_bars_per_request bars must hold this many sessions of bars_per_symbol minutes (checked when config loads);
+# read by observers.loader.
+history_max_sessions = 8
 # Most symbols' prior-session histories the bot keeps in memory, the most recently asked; the others are read again
 # from their cache file under history_dir, with no request (one 5-session history is about 2 MB; 2026-11-16 the bot
 # evaluated at most 251 symbols in any 10 minutes, while the pre-open preload reads several hundred); a minute that

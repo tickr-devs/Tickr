@@ -35,6 +35,8 @@ from tickr.broker.base import BrokerError
 from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import Config, ConfigError
 from tickr.data.base import MarketDataError
+from tickr.observers.errors import ObserverError
+from tickr.observers.loader import configured_history_need
 from tickr.replay.errors import ReplayError, SettingsError
 from tickr.replay.settings import load_settings as load_replay_settings
 
@@ -154,7 +156,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         cfg = config.load(args.config)
         settings = load_settings(args.settings)
-        replay_settings = load_replay_settings(args.replay_settings)
+        # As live: the largest need of the active strategy and the observers (T4).
+        replay_settings = load_replay_settings(args.replay_settings, configured_history_need(cfg))
         out: Path = args.out
         if args.step == "run":
             from tickr.backtest.run import run_backtest
@@ -190,7 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             fetch.fetch_minutes(source, cfg, settings, runs, out)
         print(f"{args.step}: done, {source.requests} requests")
     except (BacktestError, BrokerError, MarketDataError, ConfigError, CalendarRefused,
-            ReplayError, SettingsError, OSError, tomllib.TOMLDecodeError) as exc:
+            ReplayError, SettingsError, ObserverError, OSError, tomllib.TOMLDecodeError) as exc:
         print(f"backtest refused: {exc}", file=sys.stderr)
         return 2
     return 0

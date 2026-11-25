@@ -412,8 +412,8 @@ def test_cli_run_without_a_loadable_strategy_protects_but_never_enters(tmp_path,
 
 def test_cli_run_with_too_little_history_protects_but_never_enters(tmp_path, monkeypatch):
     bot_toml = copy_config(tmp_path)
-    bot_toml.write_text(bot_toml.read_text().replace("history_sessions = 5",
-                                                     "history_sessions = 4", 1))
+    bot_toml.write_text(bot_toml.read_text().replace("history_max_sessions = 8",
+                                                     "history_max_sessions = 4", 1))
     monkeypatch.setattr(cli, "RUN_ADAPTERS", lambda cfg, on_error, on_token: cli.RunAdapters(
         FakeBroker(), FakeMarketData(), lambda: None, lambda: None))
     monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
@@ -422,7 +422,7 @@ def test_cli_run_with_too_little_history_protects_but_never_enters(tmp_path, mon
     database, _ = cli.data_paths(config.load(bot_toml))
     store = Store.open(database, busy_timeout_seconds=0)
     (row,) = store.journal(service.STRATEGY_NOT_LOADED)
-    assert "needs 5 prior sessions, [market_data] history_sessions = 4" in row.body["cause"]
+    assert "needs 5 prior sessions, the history source gives at most 4" in row.body["cause"]
     store.close()
 
 
@@ -1092,7 +1092,7 @@ def test_positions_and_watch_are_evaluated_before_discovery_starts(tmp_path):
     evaluator = Evaluator(bot.engine, CFG, source, strategy=strategy, desk=desk,
                           history=HistoryReader(source, CALENDAR,
                                                 HistorySettings.from_config(CFG), None),
-                          inbox=inbox, calendar=CALENDAR, today_bars=today_bars,
+                          history_sessions=5, inbox=inbox, calendar=CALENDAR, today_bars=today_bars,
                           now=lambda: bot.now)
     evaluator.watch = {"WAT"}
     bot.service.market, bot.service.evaluator = market, evaluator

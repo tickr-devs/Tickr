@@ -38,6 +38,8 @@ from tickr.archive import existing
 from tickr.calendar import CalendarRefused, SessionCalendar
 from tickr.config import Config, SessionConfig
 from tickr.data.capture import BARS_FILE, CapturedBarsDays, CaptureError
+from tickr.observers.errors import ObserverError
+from tickr.observers.loader import configured_history_need
 from tickr.replay.clock import ClockFor, calendar_clock
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import ReplaySettings, load_settings
@@ -69,13 +71,14 @@ class SimulationPaths:
     replay_settings: Path  # config/replay.toml
     calendar: Path  # folder of the session calendar files
     session: SessionConfig
+    config: Config  # the bot's: the replayed history is its strategies' largest need
 
     @classmethod
     def from_config(cls, config: Config) -> SimulationPaths:
         data = config.root / config.run.data_dir
         return cls(data / config.market_data.capture_dir / config.environment_name,
                    config.root / config.api.replay_settings_file,
-                   (config.root / config.session.calendar_file).parent, config.session)
+                   (config.root / config.session.calendar_file).parent, config.session, config)
 
 
 def stamp(path: Path) -> _Stamp:
@@ -217,7 +220,11 @@ def load_calendar(paths: SimulationPaths) -> SessionCalendar:
 
 def replay_inputs(paths: SimulationPaths) -> tuple[ReplaySettings, ClockFor]:
     try:
-        settings = load_settings(paths.replay_settings)
+        need = configured_history_need(paths.config)
+    except ObserverError as exc:
+        raise NoInputs(str(exc)) from exc
+    try:
+        settings = load_settings(paths.replay_settings, need)
     except ReplayError as exc:
         raise NoInputs(f"replay settings unreadable: {exc}") from exc
     except OSError as exc:

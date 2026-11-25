@@ -106,7 +106,7 @@ def run(tmp_path, client, cfg=None, results=None):
     results = results or write_results(tmp_path / "results")
     data = write_minutes(tmp_path / "data")
     return run_backtest_advisor(cfg, results, data, client,
-                                load_settings(ROOT / "config" / "replay.toml"), NOW,
+                                load_settings(ROOT / "config" / "replay.toml", 5), NOW,
                                 out_dir=tmp_path / "out")
 
 
@@ -233,7 +233,7 @@ def test_reads_what_the_real_backtest_writes(tmp_path):
     pool = [PoolEntry(d, 1, "ABC", Decimal(9), Decimal(10), Decimal(20), Decimal(10**8))
             for d in days]
     cfg = make_root(tmp_path)
-    replay = load_settings(ROOT / "config" / "replay.toml")
+    replay = load_settings(ROOT / "config" / "replay.toml", 5)
     results = tmp_path / "results"
     write_all(result, results, replay.output_decimal_places)
     write_report(result, pool, [], len(days), [], cfg,

@@ -21,7 +21,6 @@ KEYS = frozenset(
         "slippage_min_usd",
         "entry_wait_bars",
         "output_decimal_places",
-        "history_sessions",
         "synthesize_quote",
         "synthetic_spread_percent",
         "synthetic_spread_min_usd",
@@ -41,7 +40,8 @@ class ReplaySettings:
     output_decimal_places: int
     """Decimal places for prices, R and percent in the outputs."""
     history_sessions: int
-    """Prior sessions of the same symbol passed to the strategy as history."""
+    """Prior sessions of the same symbol passed to the strategy as history: not a file key,
+    the caller's `observers.loader.history_need` (as live, the largest need declared)."""
     synthesize_quote: bool
     """True: give the strategy a synthetic quote around each completed bar's close."""
     synthetic_spread_percent: Decimal
@@ -77,7 +77,7 @@ def _count(key: str, raw: Any, minimum: int) -> int:
     return raw
 
 
-def settings_from_mapping(data: dict[str, Any]) -> ReplaySettings:
+def settings_from_mapping(data: dict[str, Any], history_sessions: int) -> ReplaySettings:
     if set(data) != {"replay"} or not isinstance(data["replay"], dict):
         raise SettingsError("settings must contain exactly one table: [replay]")
     table = data["replay"]
@@ -93,7 +93,7 @@ def settings_from_mapping(data: dict[str, Any]) -> ReplaySettings:
         slippage_min_usd=_number("slippage_min_usd", table["slippage_min_usd"]),
         entry_wait_bars=_count("entry_wait_bars", table["entry_wait_bars"], 1),
         output_decimal_places=_count("output_decimal_places", table["output_decimal_places"], 0),
-        history_sessions=_count("history_sessions", table["history_sessions"], 0),
+        history_sessions=_count("history_sessions", history_sessions, 0),
         synthesize_quote=flag,
         synthetic_spread_percent=_number(
             "synthetic_spread_percent", table["synthetic_spread_percent"]
@@ -107,10 +107,11 @@ def settings_from_mapping(data: dict[str, Any]) -> ReplaySettings:
     )
 
 
-def load_settings(path: Path) -> ReplaySettings:
+def load_settings(path: Path, history_sessions: int) -> ReplaySettings:
+    """`path`'s settings, with `history_sessions` prior sessions given to the strategy."""
     try:
         with open(path, "rb") as handle:
             data = tomllib.load(handle)
     except tomllib.TOMLDecodeError as exc:
         raise SettingsError(f"{path}: invalid TOML: {exc}") from exc
-    return settings_from_mapping(data)
+    return settings_from_mapping(data, history_sessions)
