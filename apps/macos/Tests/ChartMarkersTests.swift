@@ -105,7 +105,8 @@ struct ChartMarkersTests {
   @Test("A decision with no price and no candle around it has no mark; a WATCH without a candle neither")
   func decisionWithoutCandle() throws {
     let marks = ChartMarkers.decisionMarks(decisions: try decisions(), real: [], place: { $0 })
-    #expect(marks.map(\.action) == [.enter, .enter])
+    // Only the strategy's skipped ENTER has its own price; the shadow strategy's ENTER is left out.
+    #expect(marks.map(\.action) == [.enter])
     let watch = try fixture(DecisionsV1.self, "decisions-v1.json").decisions.filter { $0.action == .watch }
     #expect(ChartMarkers.decisionMarks(decisions: watch, real: [], place: { $0 }).isEmpty)
   }
