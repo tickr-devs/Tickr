@@ -12,6 +12,8 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `observers` | How did the live observer versions do against the active one today? | `simulated` |
 | `latency` | How late do captured quotes arrive, by symbol and hour? What do stream notices say? | (measured) |
 | `refusals` | Per day and setup: which check refused first, which platform causes, how many entries? | (counts) |
+| `calibration` | Does a model answer of 0.7 come true 70% of the time? | `measured` |
+| `slippage` | How far below the planned stop did stops fill? Planned against realized loss per day? | `measured` |
 
 Live observers see only the symbols discovery kept, and discovery applies the active strategy's
 liquidity rules, so observer results are comparable only while the active strategy (and its
@@ -194,11 +196,63 @@ sorted by day, strategy, version, role, setup, kind, then count (largest first).
 are not counted. Outputs: `refusals.csv` (one row per count, long format, easy to pivot in a
 spreadsheet) and `refusals_summary.json` (days, rows, totals by kind).
 
+## slippage: stop slippage from the bot's records (R5)
+
+```
+python -m tickr.research slippage --database data/tickr.sqlite3 [--environment sandbox] \
+  --settings config/research.toml --out out/slippage
+```
+
+Reads the bot's database read-only (never migrates or writes it). A stopped trade is a closed
+trade with at least one filled stop order; `--environment` keeps only trades opened by runs of
+that environment. Per trade: the planned stop price and the stop fill price (both
+share-weighted over its filled stop orders; the fill is the exact price from cash activity when
+recorded, else the broker's order row), slippage = stop - fill per share and in percent of the
+stop (positive = filled worse than planned), the recorded planned loss and the realized loss =
+(entry fill - average sell fill) x shares sold over every sell, gross of fees. A trade with a
+missing price has a `cause` and is left out of every sum. Days are New York dates of the close
+(`session_timezone`).
+
+Outputs: `slippage_trades.csv`, `slippage_days.csv` (per day: stopped and measured trades,
+planned and realized loss, stop slippage in USD and percent) and `slippage_summary.json`, whose
+`stop_slippage_percent` = sum((stop - fill) x shares) / sum(stop x shares) x 100 over every
+measured stop fill.
+
+**Replay and backtests.** `measured_slippage_file` in `config/replay.toml` (relative to that
+file's folder; `""` = none) selects a `slippage_summary.json`: its `stop_slippage_percent`
+then replaces `slippage_percent` for every simulated fill (replay, backtest, what-if,
+observers). The fixed value stays the default. A missing or malformed file, a negative measured
+value, or fewer than `measured_slippage_min_trades` measured trades is refused, never replaced
+by the fixed value. Not measured yet: how far the price traded through the stop (trade prints,
+`ticks/list`), and entry slippage.
+
+## calibration: "70 means 70" (R29)
+
+```
+python -m tickr.research calibration --answers answers.csv --settings config/research.toml \
+  --out out/calibration
+```
+
+Input: one CSV of stored model answers on months the model never saw (the caller picks the
+months; the tool cannot tell). Header row; `outcome` = 1 if the event the probabilities predict
+happened, else 0; every column named `p_<name>` is a probability in 0..1 (for example `p_layer1`,
+`p_layer2`); other columns are ignored. A blank probability cell means that layer gave no
+answer for the row and is skipped (counted). Nothing writes this file yet: the training job or
+the bot must export it. A bad value is refused with file and line, never clipped.
+
+Per probability column, a table of `calibration_buckets` equal buckets (10 = tenths; p = 1 goes
+in the last): count, mean predicted, observed rate and gap (observed - predicted). Outputs:
+`calibration.csv` and `calibration_summary.json` (per column: answers, skipped, base rate,
+Brier score, expected calibration error = count-weighted mean absolute gap). Report only: no
+pass/fail threshold exists until the owner chooses one.
+
 ## Settings
 
 `config/research.toml` `[research]` (one comment per key, tested; missing or unknown keys are
-refused): `horizons_minutes`, `atr_period`, `session_timezone`, `output_decimal_places`
-(`latency` reads only the last two).
-What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay.
+refused): `horizons_minutes`, `atr_period`, `session_timezone`
+(`latency` reads only the last), `calibration_buckets` (`calibration` reads it).
+What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay. Every
+report also rounds to its `output_decimal_places` (`--replay-settings` with `--config`, default
+`config/replay.toml`): that number has one home.
 
 Exit code 2 and `research refused: <cause>` on any bad input; nothing is guessed.
