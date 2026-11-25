@@ -185,9 +185,10 @@ def test_each_refusal_has_its_cause(lim, cause, make):
 
 # Causes that need other limits: SESSION_TIMES_INVALID (test_invalid_session_offsets_refuse) and
 # the extended windows' own (test_extended_window_*), WORKING_ENTRY_LIMIT_REACHED (several slots:
-# test_an_entry_beyond_the_working_entries_limit_is_refused).
+# test_an_entry_beyond_the_working_entries_limit_is_refused), EQUITY_UNKNOWN (a percent limit on:
+# tests/risk/test_equity_limits.py).
 OTHER_LIMITS = {C.SESSION_TIMES_INVALID, C.BEFORE_FIRST_ENTRY, C.STRATEGY_NOT_EXTENDED,
-                C.SPREAD_TOO_WIDE, C.WORKING_ENTRY_LIMIT_REACHED}
+                C.SPREAD_TOO_WIDE, C.WORKING_ENTRY_LIMIT_REACHED, C.EQUITY_UNKNOWN}
 
 
 def test_every_cause_is_exercised():
