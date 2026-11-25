@@ -8,13 +8,15 @@ from pathlib import Path
 import pytest
 
 from tickr import settings_schema as schema
-from tickr.settings_schema import Applies, Cause, Kind, Loosens
+from tickr.settings_schema import Applies, Cause, Kind
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = {
     schema.PLATFORM: ROOT / "config" / "bot.toml",
     schema.PA3: ROOT / "strategies" / schema.PA3 / "strategy.toml",
 }
+SCHEMA_FILE = ROOT / "config" / "settings_schema.toml"
+SETTINGS = schema.load(SCHEMA_FILE)
 _TABLE = re.compile(r"^\[([A-Za-z0-9_.\-]+)\]\s*$")
 _KEY = re.compile(r"^([A-Za-z0-9_]+)\s*=(.*)$")
 
@@ -41,10 +43,10 @@ def _comments(text: str) -> dict[str, str]:
     return found
 
 
-IDS = [f"{s.owner}:{s.key}" for s in schema.SETTINGS]
+IDS = [f"{s.owner}:{s.key}" for s in SETTINGS]
 
 
-@pytest.mark.parametrize("spec", schema.SETTINGS, ids=IDS)
+@pytest.mark.parametrize("spec", SETTINGS, ids=IDS)
 def test_every_setting_exists_in_its_file_with_its_kind(spec):
     value = _current(spec.owner)[spec.key]
     expected = {Kind.BOOL: (bool,), Kind.INT: (int,), Kind.DECIMAL: (int, float)}[spec.kind]
@@ -59,7 +61,7 @@ UNIT_LATER = {
 }
 
 
-@pytest.mark.parametrize("spec", schema.SETTINGS, ids=IDS)
+@pytest.mark.parametrize("spec", SETTINGS, ids=IDS)
 def test_every_setting_comment_names_its_unit(spec):
     comment = _comments(FILES[spec.owner].read_text("utf-8"))[spec.key].lower()
     if spec.key not in UNIT_LATER:
@@ -67,7 +69,7 @@ def test_every_setting_comment_names_its_unit(spec):
     assert any(word in comment for word in schema.UNIT_WORDS[spec.unit]), (spec.unit, comment)
 
 
-@pytest.mark.parametrize("spec", schema.SETTINGS, ids=IDS)
+@pytest.mark.parametrize("spec", SETTINGS, ids=IDS)
 def test_every_record_is_complete(spec):
     assert spec.en.strip() and spec.es.strip() and spec.group.strip()
     assert (spec.minimum is None) == (spec.kind is Kind.BOOL) == (spec.step is None)
@@ -75,7 +77,7 @@ def test_every_record_is_complete(spec):
 
 
 def test_keys_are_unique_and_the_moving_sizing_keys_stay_out():
-    keys = [(s.owner, s.key) for s in schema.SETTINGS]
+    keys = [(s.owner, s.key) for s in SETTINGS]
     assert len(keys) == len(set(keys))
     assert not {"risk.planned_loss_usd", "risk.position_notional_cap_usd"} & {k for _, k in keys}
     assert not [k for _, k in keys if k.startswith("sizing.")]
@@ -83,7 +85,7 @@ def test_keys_are_unique_and_the_moving_sizing_keys_stay_out():
 
 def test_rules_name_schema_keys_on_the_left_and_existing_keys_on_the_right():
     for rule in schema.RULES:
-        assert rule.left in schema.settings_of(rule.owner)
+        assert rule.left in schema.settings_of(SETTINGS, rule.owner)
         assert rule.right in _current(rule.owner)
         assert rule.en.strip() and rule.es.strip()
 
@@ -91,12 +93,12 @@ def test_rules_name_schema_keys_on_the_left_and_existing_keys_on_the_right():
 @pytest.mark.parametrize("owner", sorted(FILES))
 def test_the_shipped_values_pass(owner):
     current = _current(owner)
-    draft = {key: current[key] for key in schema.settings_of(owner)}
-    assert schema.validate(owner, draft, current) == []
+    draft = {key: current[key] for key in schema.settings_of(SETTINGS, owner)}
+    assert schema.validate(SETTINGS, owner, draft, current) == []
 
 
 def _causes(owner: str, draft: dict) -> list[tuple[str, Cause]]:
-    return [(r.key, r.cause) for r in schema.validate(owner, draft, _current(owner))]
+    return [(r.key, r.cause) for r in schema.validate(SETTINGS, owner, draft, _current(owner))]
 
 
 P = schema.PLATFORM
@@ -128,21 +130,13 @@ def test_platform_draft_refusals(draft, expected):
 def test_strategy_rule_and_a_missing_rule_value():
     assert _causes(schema.PA3, {"indicators.fast_ema_period": 20}) == [
         ("indicators.fast_ema_period", Cause.RULE_BROKEN)]
-    refusals = schema.validate(P, {"risk.max_open_positions": 2}, {})
+    refusals = schema.validate(SETTINGS, P, {"risk.max_open_positions": 2}, {})
     assert [(r.key, r.cause) for r in refusals] == [
         ("market_data.stream_reserved_symbols", Cause.VALUE_MISSING)]
 
 
-def test_a_maximum_is_enforced_when_a_record_has_one():
-    spec = schema.Setting(P, "risk.x", Kind.INT, schema.Unit.COUNT, "g", "e", "s",
-                          Applies.AT_ONCE, Loosens.RAISE, minimum=Decimal(1),
-                          maximum=Decimal(3), step=Decimal(1))
-    assert schema._check_value(spec, 4).cause is Cause.ABOVE_MAXIMUM
-    assert schema._check_value(spec, 3) is None
-
-
 def test_loosening_protection_waits_for_the_next_session_and_needs_face_id():
-    specs = schema.settings_of(P)
+    specs = schema.settings_of(SETTINGS, P)
     ceiling = specs["risk.max_daily_loss_usd"]
     assert schema.change_effect(ceiling, 5000, 6000) == schema.ChangeEffect(
         Applies.NEXT_SESSION, needs_face_id=True)
@@ -151,7 +145,39 @@ def test_loosening_protection_waits_for_the_next_session_and_needs_face_id():
     cooldown = specs["risk.symbol_cooldown_after_loss_enabled"]
     assert schema.change_effect(cooldown, True, False).needs_face_id
     assert not schema.change_effect(cooldown, False, True).needs_face_id
-    ema = schema.settings_of(schema.PA3)["indicators.fast_ema_period"]
+    ema = schema.settings_of(SETTINGS, schema.PA3)["indicators.fast_ema_period"]
     assert not ema.needs_face_id
     assert schema.change_effect(ema, 9, 12) == schema.ChangeEffect(
         Applies.WHEN_FLAT, needs_face_id=False)
+
+
+def _schema_file(tmp_path: Path, text: str) -> Path:
+    target = tmp_path / "settings_schema.toml"
+    target.write_text(text, "utf-8")
+    return target
+
+
+@pytest.mark.parametrize(("change", "match"), [
+    (lambda t: t.replace('[platform."risk.max_daily_loss_usd"]', '[platform."risk.gone"]'),
+     "risk.max_daily_loss_usd"),
+    (lambda t: t + '\n[platform."risk.symbol_cooldown_after_loss_enabled"]\nstep = 1\n', "on/off"),
+    (lambda t: t + '\n[platform."risk.unknown"]\nstep = 1\n', "no record"),
+    (lambda t: t.replace("step = 1000", "step = 1000\nfloor = 1", 1), "unknown fields"),
+    (lambda t: t.replace("step = 0.5", "step = 0", 1), "above 0"),
+    (lambda t: t.replace("step = 0.5", 'step = "0.5"', 1), "finite number"),
+])
+def test_the_schema_file_is_refused_when_it_does_not_match_the_records(tmp_path, change, match):
+    path = _schema_file(tmp_path, change(SCHEMA_FILE.read_text("utf-8")))
+    with pytest.raises(schema.SchemaError, match=match):
+        schema.load(path)
+
+
+def test_a_maximum_comes_from_the_schema_file(tmp_path):
+    text = SCHEMA_FILE.read_text("utf-8").replace(
+        '[platform."risk.max_open_positions"]\n',
+        '[platform."risk.max_open_positions"]\nmaximum = 8\n')
+    settings = schema.load(_schema_file(tmp_path, text))
+    assert schema.settings_of(settings, P)["risk.max_open_positions"].maximum == Decimal(8)
+    refusals = schema.validate(settings, P, {"risk.max_open_positions": 9}, _current(P))
+    assert [(r.key, r.cause) for r in refusals] == [
+        ("risk.max_open_positions", Cause.ABOVE_MAXIMUM)]

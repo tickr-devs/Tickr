@@ -5,10 +5,10 @@ Read-only groundwork. Nothing at runtime reads this module yet: `config.load` an
 `parse_settings` stay the checks that refuse a bad file. Later the settings API (S4), the app
 forms (S6), the TOML comments and the advisor's limits take their facts from here.
 
-A record's `minimum`, `maximum` and `step` are the setting's documented bounds (schema data, like
-a config comment, not tuning values): each minimum is the bound `config.load` or the strategy's
-`parse_settings` already enforces; `maximum` is None where no owner decision sets one; `step` is
-the granularity an app form offers, and every shipped value sits on it.
+Words, kinds, units, apply timing and rules live here. A record's `minimum` is structural (0 or
+1, the bound `config.load` or the strategy's `parse_settings` already enforces). The numbers that
+are product choices, each setting's `step` and any `maximum`, live in config/settings_schema.toml
+and `load` joins them to the records (rule 6).
 
 First slice: the [risk] owner settings in config/bot.toml except planned_loss_usd and
 position_notional_cap_usd (moving in another change), and the price-action-v3 parameters except
@@ -18,10 +18,12 @@ its [sizing] table.
 from __future__ import annotations
 
 import math
+import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 PLATFORM = "platform"
@@ -142,6 +144,10 @@ class Refusal:
     detail: str
 
 
+class SchemaError(ValueError):
+    """config/settings_schema.toml does not match the records."""
+
+
 @dataclass(frozen=True)
 class ChangeEffect:
     applies: Applies
@@ -157,40 +163,40 @@ _UP = Loosens.RAISE
 _DOWN = Loosens.LOWER
 _NO = Loosens.NEVER
 
-SETTINGS: tuple[Setting, ...] = (
+RECORDS: tuple[Setting, ...] = (
     # Platform [risk], config/bot.toml.
     Setting(_P, "risk.max_daily_loss_usd", Kind.DECIMAL, Unit.USD, "risk.daily_loss",
             "Daily loss ceiling: today's net realized loss plus open reservations plus the new "
             "trade's planned loss.",
             "Límite de pérdida diaria: pérdida neta realizada hoy más reservas abiertas más la "
             "pérdida prevista de la nueva operación.",
-            _PROTECT, _UP, minimum=D(0), minimum_inclusive=False, step=D(1)),
+            _PROTECT, _UP, minimum=D(0), minimum_inclusive=False),
     Setting(_P, "risk.min_daily_room_usd", Kind.DECIMAL, Unit.USD, "risk.daily_loss",
             "Smallest daily-loss room a new trade is sized into; below it entries stop.",
             "Margen mínimo de pérdida diaria en el que se dimensiona una nueva operación; por "
             "debajo se detienen las entradas.",
-            _PROTECT, _DOWN, minimum=D(0), step=D(1)),
+            _PROTECT, _DOWN, minimum=D(0)),
     Setting(_P, "risk.buying_power_max_age_seconds", Kind.DECIMAL, Unit.SECONDS, "risk.account",
             "Oldest broker read of the day buying power an entry may rely on.",
             "Lectura más antigua del poder de compra del día en la que puede basarse una entrada.",
-            _PROTECT, _UP, minimum=D(0), minimum_inclusive=False, step=D("0.1")),
+            _PROTECT, _UP, minimum=D(0), minimum_inclusive=False),
     Setting(_P, "risk.max_open_positions", Kind.INT, Unit.COUNT, "risk.positions",
             "Position slots: most open trades at once.",
             "Plazas de posición: máximo de operaciones abiertas a la vez.",
-            _PROTECT, _UP, minimum=D(1), step=D(1)),
+            _PROTECT, _UP, minimum=D(1)),
     Setting(_P, "risk.max_working_entries", Kind.INT, Unit.COUNT, "risk.positions",
             "Most entry orders working at once.",
             "Máximo de órdenes de entrada activas a la vez.",
-            _PROTECT, _UP, minimum=D(1), step=D(1)),
+            _PROTECT, _UP, minimum=D(1)),
     Setting(_P, "risk.max_quote_age_seconds", Kind.DECIMAL, Unit.SECONDS, "risk.data",
             "Oldest quote any decision may use, from the provider's time.",
             "Cotización más antigua que puede usar una decisión, según la hora del proveedor.",
-            _PROTECT, _UP, minimum=D(0), minimum_inclusive=False, step=D("0.1")),
+            _PROTECT, _UP, minimum=D(0), minimum_inclusive=False),
     Setting(_P, "risk.max_clock_skew_seconds", Kind.DECIMAL, Unit.SECONDS, "risk.data",
             "How far the provider's clock may run ahead of ours before a quote is refused.",
             "Cuánto puede adelantarse el reloj del proveedor al nuestro antes de rechazar una "
             "cotización.",
-            _PROTECT, _UP, minimum=D(0), step=D("0.1")),
+            _PROTECT, _UP, minimum=D(0)),
     Setting(_P, "risk.symbol_cooldown_after_loss_enabled", Kind.BOOL, Unit.SWITCH, "risk.cooldown",
             "Pause new entries in a symbol after a losing trade in it today.",
             "Pausar nuevas entradas en un símbolo tras una operación perdedora en él hoy.",
@@ -198,41 +204,41 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(_P, "risk.symbol_cooldown_minutes_after_loss", Kind.INT, Unit.MINUTES, "risk.cooldown",
             "Length of that pause, from the losing trade's close.",
             "Duración de esa pausa, desde el cierre de la operación perdedora.",
-            _PROTECT, _DOWN, minimum=D(1), step=D(1)),
+            _PROTECT, _DOWN, minimum=D(1)),
     Setting(_P, "risk.max_entry_rest_bars", Kind.INT, Unit.BARS, "risk.entries",
             "Longest a resting limit entry may work, in completed one-minute bars.",
             "Tiempo máximo que puede estar activa una entrada límite en espera, en barras de un "
             "minuto completas.",
-            _PROTECT, _UP, minimum=D(1), step=D(1)),
+            _PROTECT, _UP, minimum=D(1)),
     Setting(_P, "risk.entry_snapshot_interval_seconds", Kind.DECIMAL, Unit.SECONDS, "risk.entries",
             "Time between snapshot reads of a working entry's symbol while its stream quote is "
             "too old.",
             "Tiempo entre lecturas de instantánea del símbolo de una entrada activa mientras su "
             "cotización en streaming es demasiado antigua.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.1")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     # Strategy price-action-v3, strategies/price-action-v3/strategy.toml.
     Setting(PA3, "indicators.fast_ema_period", Kind.INT, Unit.BARS, "strategy.indicators",
             "Fast exponential moving average length.",
             "Longitud de la media móvil exponencial rápida.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "indicators.slow_ema_period", Kind.INT, Unit.BARS, "strategy.indicators",
             "Slow exponential moving average length.",
             "Longitud de la media móvil exponencial lenta.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "indicators.atr_period", Kind.INT, Unit.BARS, "strategy.indicators",
             "Average true range length.",
             "Longitud del rango verdadero medio (ATR).",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "indicators.relative_volume_sessions", Kind.INT, Unit.SESSIONS,
             "strategy.indicators",
             "Prior sessions averaged for relative volume.",
             "Sesiones anteriores promediadas para el volumen relativo.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "indicators.minimum_relative_volume", Kind.DECIMAL, Unit.RATIO,
             "strategy.indicators",
             "Least relative cumulative volume for an entry.",
             "Volumen acumulado relativo mínimo para una entrada.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.05")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "indicators.refuse_when_relative_volume_unavailable", Kind.BOOL, Unit.SWITCH,
             "strategy.indicators",
             "Refuse a symbol whose prior-session volume history is missing.",
@@ -242,94 +248,94 @@ SETTINGS: tuple[Setting, ...] = (
             "strategy.indicators",
             "Indicator warm-up, as a multiple of each indicator's length.",
             "Calentamiento de los indicadores, como múltiplo de la longitud de cada uno.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "breakout.lookback_bars", Kind.INT, Unit.BARS, "strategy.breakout",
             "Prior bars whose highest high must be broken.",
             "Barras anteriores cuyo máximo más alto debe romperse.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "continuation.impulse_bars", Kind.INT, Unit.BARS, "strategy.continuation",
             "Impulse bars before the base.",
             "Barras de impulso antes de la base.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "continuation.base_bars", Kind.INT, Unit.BARS, "strategy.continuation",
             "Base bars after the impulse.",
             "Barras de base después del impulso.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "continuation.minimum_impulse_atr", Kind.DECIMAL, Unit.ATR,
             "strategy.continuation",
             "Least impulse size.",
             "Tamaño mínimo del impulso.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.05")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "continuation.maximum_base_range_atr", Kind.DECIMAL, Unit.ATR,
             "strategy.continuation",
             "Widest base range.",
             "Rango máximo de la base.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.05")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "continuation.maximum_pre_breakout_distance_atr", Kind.DECIMAL, Unit.ATR,
             "strategy.continuation",
             "Furthest the last close may sit below the trigger to arm a setup.",
             "Distancia máxima del último cierre por debajo del disparador para armar una "
             "configuración.",
-            _FLAT, _NO, minimum=D(0), step=D("0.05")),
+            _FLAT, _NO, minimum=D(0)),
     Setting(PA3, "entry.entry_extension_max_atr", Kind.DECIMAL, Unit.ATR, "strategy.entry",
             "Price window above the trigger; beyond it the entry is missed, never chased.",
             "Ventana de precio sobre el disparador; más allá la entrada se pierde, nunca se "
             "persigue.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.05")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "entry.max_round_trip_atr_ratio", Kind.DECIMAL, Unit.RATIO, "strategy.entry",
             "Highest round-trip spread cost relative to the average true range.",
             "Coste máximo de ida y vuelta del diferencial respecto al rango verdadero medio.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.01")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "entry.max_round_trip_risk_ratio", Kind.DECIMAL, Unit.RATIO, "strategy.entry",
             "Highest round-trip spread cost relative to the risk per share.",
             "Coste máximo de ida y vuelta del diferencial respecto al riesgo por acción.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.01")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "entry.minimum_stop_spreads", Kind.DECIMAL, Unit.SPREADS, "strategy.entry",
             "Least stop distance in spreads.",
             "Distancia mínima del stop en diferenciales.",
-            _FLAT, _NO, minimum=D(0), step=D("0.5")),
+            _FLAT, _NO, minimum=D(0)),
     Setting(PA3, "entry.minimum_stop_percent", Kind.DECIMAL, Unit.PERCENT, "strategy.entry",
             "Least stop distance in percent of price.",
             "Distancia mínima del stop en porcentaje del precio.",
-            _FLAT, _NO, minimum=D(0), step=D("0.1")),
+            _FLAT, _NO, minimum=D(0)),
     Setting(PA3, "entry.slippage_reserve_atr", Kind.DECIMAL, Unit.ATR, "strategy.entry",
             "Slippage reserve per side added to the risk per share for sizing.",
             "Reserva de deslizamiento por lado añadida al riesgo por acción al dimensionar.",
-            _FLAT, _NO, minimum=D(0), step=D("0.01")),
+            _FLAT, _NO, minimum=D(0)),
     Setting(PA3, "liquidity.max_spread_ratio", Kind.DECIMAL, Unit.RATIO, "strategy.liquidity",
             "Widest spread relative to the mid price.",
             "Diferencial máximo respecto al precio medio.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.001")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "liquidity.min_dollar_volume_usd", Kind.DECIMAL, Unit.USD, "strategy.liquidity",
             "Least dollar volume traded in the session so far.",
             "Volumen mínimo en dólares negociado en la sesión hasta ahora.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D(1000)),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "spike.lookback_bars", Kind.INT, Unit.BARS, "strategy.spike",
             "Bars the latest bar is compared with to detect a spike.",
             "Barras con las que se compara la última barra para detectar un pico.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
     Setting(PA3, "spike.min_volume_ratio", Kind.DECIMAL, Unit.RATIO, "strategy.spike",
             "Least volume of the latest bar relative to the lookback bars.",
             "Volumen mínimo de la última barra respecto a las barras de referencia.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.1")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "spike.min_move_atr", Kind.DECIMAL, Unit.ATR, "strategy.spike",
             "Least close-to-close move relative to the lookback bars' true range.",
             "Movimiento mínimo de cierre a cierre respecto al rango verdadero de las barras de "
             "referencia.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.1")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "spike.min_dollar_volume_ratio", Kind.DECIMAL, Unit.RATIO, "strategy.spike",
             "Least dollar volume of the latest bar relative to the lookback bars.",
             "Volumen mínimo en dólares de la última barra respecto a las barras de referencia.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D("0.1")),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "spike.min_bar_dollar_volume_usd", Kind.DECIMAL, Unit.USD, "strategy.spike",
             "Least dollar volume of the latest bar for it to count as a fast mover.",
             "Volumen mínimo en dólares de la última barra para contar como valor de movimiento "
             "rápido.",
-            _FLAT, _NO, minimum=D(0), minimum_inclusive=False, step=D(1000)),
+            _FLAT, _NO, minimum=D(0), minimum_inclusive=False),
     Setting(PA3, "spike.signal_valid_bars", Kind.INT, Unit.BARS, "strategy.spike",
             "Bars a spike stays tradable, counting the spike bar.",
             "Barras durante las que un pico sigue siendo operable, contando la barra del pico.",
-            _FLAT, _NO, minimum=D(1), step=D(1)),
+            _FLAT, _NO, minimum=D(1)),
 )
 
 RULES: tuple[Rule, ...] = (
@@ -349,8 +355,50 @@ RULES: tuple[Rule, ...] = (
 )
 
 
-def settings_of(owner: str) -> dict[str, Setting]:
-    return {s.key: s for s in SETTINGS if s.owner == owner}
+_NUMBERS = frozenset({"step", "maximum"})
+
+
+def _decimal(where: str, value: Any) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        raise SchemaError(f"{where}: expected a finite number, got {value!r}")
+    number = D(str(value))
+    if number <= 0:
+        raise SchemaError(f"{where}: must be above 0")
+    return number
+
+
+def load(path: Path | str) -> tuple[Setting, ...]:
+    """The records with their `step` and `maximum` from config/settings_schema.toml.
+
+    Refuses a numeric setting without an entry or without a step, an entry for an on/off setting
+    or for no record, and an unknown field."""
+    tables = tomllib.loads(Path(path).read_text("utf-8"))
+    entries: dict[tuple[str, str], Any] = {
+        (owner, key): entry for owner, table in tables.items() for key, entry in table.items()}
+    settings: list[Setting] = []
+    for record in RECORDS:
+        where = f'[{record.owner}."{record.key}"]'
+        entry = entries.pop((record.owner, record.key), None)
+        if record.kind is Kind.BOOL:
+            if entry is not None:
+                raise SchemaError(f"{where}: an on/off setting has no step or maximum")
+            settings.append(record)
+            continue
+        if not isinstance(entry, Mapping) or "step" not in entry:
+            raise SchemaError(f"{where}: missing, or without a step")
+        if unknown := sorted(set(entry) - _NUMBERS):
+            raise SchemaError(f"{where}: unknown fields {unknown}")
+        maximum = entry.get("maximum")
+        settings.append(replace(
+            record, step=_decimal(f"{where} step", entry["step"]),
+            maximum=None if maximum is None else _decimal(f"{where} maximum", maximum)))
+    if entries:
+        raise SchemaError(f"entries for no record: {sorted(entries)}")
+    return tuple(settings)
+
+
+def settings_of(settings: tuple[Setting, ...], owner: str) -> dict[str, Setting]:
+    return {s.key: s for s in settings if s.owner == owner}
 
 
 def flatten(table: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
@@ -397,13 +445,14 @@ def _check_value(spec: Setting, value: Any) -> Refusal | None:
     return None
 
 
-def validate(owner: str, draft: Mapping[str, Any], current: Mapping[str, Any]) -> list[Refusal]:
-    """Check a draft of one owner's settings (dotted key -> value) against the schema.
+def validate(settings: tuple[Setting, ...], owner: str, draft: Mapping[str, Any],
+             current: Mapping[str, Any]) -> list[Refusal]:
+    """Check a draft of one owner's settings (dotted key -> value) against `settings` (see `load`).
 
     `current` holds the owner's present values as dotted keys (see `flatten`); cross-field rules
     read the draft over it. Returns every refusal; an empty list means the draft passes.
     """
-    specs = settings_of(owner)
+    specs = settings_of(settings, owner)
     refusals: list[Refusal] = []
     for key, value in draft.items():
         spec = specs.get(key)
