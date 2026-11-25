@@ -352,9 +352,4 @@ enum L10n {
   static var ruleOther: LocalizedStringResource {
     LocalizedStringResource("kit.ruleOther", defaultValue: "Other check", bundle: bundle)
   }
-  /// Why a symbol stopped, for a cause code this app does not know (a bot of another release).
-  static var reasonOther: LocalizedStringResource {
-    LocalizedStringResource("kit.reasonOther", defaultValue: "Other reason (update the app to see it)",
-      bundle: bundle)
-  }
 }
