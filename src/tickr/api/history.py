@@ -37,14 +37,11 @@ from tickr.engine.core import (
     SendState,
     order_from_row,
 )
-from tickr.store import DATABASE_FILE, MIGRATIONS, Store
+from tickr.store import DATABASE_FILE, IN_LIST_LIMIT, MIGRATIONS, Store, marks
 from tickr.types import Bar, OrderState
 from tickr.version import recorded
 
 ZERO = Decimal(0)
-# Trades whose orders one `orders_of` query reads: within SQLite's historic bound-parameter limit
-# (protocol constant).
-ORDERS_OF_PER_QUERY = 999
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9./-]*$")
 _DAY_DIR = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
@@ -331,12 +328,11 @@ def close_window(day: date) -> tuple[str, str]:
 
 def orders_of(store: Store, trade_ids: Sequence[str]) -> dict[str, list[OrderRow]]:
     """The orders of these trades in send order, a bounded number of queries however many
-    trades (one per `ORDERS_OF_PER_QUERY` trades, not one per trade; backlog T17)."""
+    trades (one per `IN_LIST_LIMIT` trades, not one per trade; backlog T17)."""
     found: dict[str, list[OrderRow]] = {}
-    for start in range(0, len(trade_ids), ORDERS_OF_PER_QUERY):
-        part = trade_ids[start:start + ORDERS_OF_PER_QUERY]
-        marks = ", ".join("?" * len(part))
-        for row in store.query(f"SELECT * FROM orders WHERE trade_id IN ({marks}) "
+    for start in range(0, len(trade_ids), IN_LIST_LIMIT):
+        part = trade_ids[start:start + IN_LIST_LIMIT]
+        for row in store.query(f"SELECT * FROM orders WHERE trade_id IN ({marks(part)}) "
                                "ORDER BY rowid", tuple(part)):
             order = order_from_row(row)
             found.setdefault(order.trade_id, []).append(order)

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Iterable, Sized
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_DOWN, Decimal
@@ -26,7 +26,7 @@ from tickr.broker.base import Broker, BrokerError, OrderNotFound, RateLimited, R
 from tickr.config import Config, GateResult
 from tickr.risk.ticks import CENT, tick
 from tickr.risk.timers import WindowKind
-from tickr.store import Store
+from tickr.store import IN_LIST_LIMIT, Store, marks
 from tickr.types import (
     OrderDetail,
     OrderRequest,
@@ -184,13 +184,6 @@ UNLISTED_CAUSE = ("last seen working but not in the broker's open orders: proves
 _LIVE_SEND = (SendState.INTENT, SendState.ATTEMPTED, SendState.ACKNOWLEDGED, SendState.UNKNOWN)
 _NOT_TERMINAL = tuple(state for state in OrderState if not state.terminal)
 OPEN_TRADE_STATES = tuple(state for state in TradeState if state is not TradeState.CLOSED)
-# Bound parameters per `IN (...)` query: SQLite's historic default limit (protocol constant).
-_IDS_PER_QUERY = 999
-
-
-def marks(values: Sized) -> str:
-    """`?, ?, ...`, one placeholder per value, for an `IN (...)` clause."""
-    return ", ".join("?" * len(values))
 _WORKING = (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED)
 # Cancel states after which a later Detail read decides whether the cancel took.
 _CANCEL_AWAITING = ("sent", "unknown", "refused")
@@ -625,8 +618,8 @@ class Engine:
         order we gave up on long ago must still be recognised as ours)."""
         found: dict[str, OrderRow] = {}
         ids = sorted(set(client_order_ids))
-        for start in range(0, len(ids), _IDS_PER_QUERY):
-            part = ids[start:start + _IDS_PER_QUERY]
+        for start in range(0, len(ids), IN_LIST_LIMIT):
+            part = ids[start:start + IN_LIST_LIMIT]
             for row in self.store.query(
                     f"SELECT * FROM orders WHERE client_order_id IN ({marks(part)})",
                     tuple(part)):

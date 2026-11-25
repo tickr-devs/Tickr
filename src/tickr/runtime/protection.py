@@ -24,10 +24,9 @@ from tickr.engine.core import (
     Leg,
     TradeRow,
     TradeState,
-    marks,
     trade_from_row,
 )
-from tickr.store import JournalRow
+from tickr.store import JournalRow, marks
 from tickr.types import OrderState
 
 PROTECTION_LATENCY = "protection-latency"
@@ -81,9 +80,14 @@ class LatencyLog:
         without_row = ("NOT EXISTS (SELECT 1 FROM journal j WHERE j.kind = ? "
                        "AND j.key = trades.trade_id)")
         if self._since is None:
+            # Open trades, and closed ones with an entry fill (a trade closed unfilled never
+            # gets a row, so it is not read again at every start).
             rows = self.engine.store.query(
-                f"SELECT * FROM trades WHERE {without_row} ORDER BY opened_at, trade_id",
-                (PROTECTION_LATENCY,))
+                f"SELECT * FROM trades WHERE (state IN ({marks(OPEN_TRADE_STATES)}) OR EXISTS "
+                "(SELECT 1 FROM orders o WHERE o.trade_id = trades.trade_id AND o.leg = ? "
+                f"AND CAST(o.filled_quantity AS REAL) > 0)) AND {without_row} "
+                "ORDER BY opened_at, trade_id",
+                (*OPEN_TRADE_STATES, Leg.ENTRY, PROTECTION_LATENCY))
         else:
             rows = self.engine.store.query(
                 f"SELECT * FROM trades WHERE (state IN ({marks(OPEN_TRADE_STATES)}) "

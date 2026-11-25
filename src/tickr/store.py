@@ -10,7 +10,7 @@ import json
 import sqlite3
 import sys
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sized
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -170,6 +170,16 @@ def _schema_v10(db: sqlite3.Connection) -> None:
     # whole position value, owner decision B2 2026-11-17).
     db.execute("ALTER TABLE trades ADD COLUMN trading_window TEXT NOT NULL DEFAULT 'regular'")
     db.execute("ALTER TABLE trades ADD COLUMN reserved_usd TEXT")
+
+
+# Bound parameters one `IN (...)` query takes at most: SQLite's historic default limit
+# (protocol constant). Longer lists are read in parts of this size.
+IN_LIST_LIMIT = 999
+
+
+def marks(values: Sized) -> str:
+    """`?, ?, ...`, one placeholder per value, for an `IN (...)` clause."""
+    return ", ".join("?" * len(values))
 
 
 # Indexes the loop's reads need so they scale with today's work, not with history (backlog
