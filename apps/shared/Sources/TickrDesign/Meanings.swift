@@ -228,8 +228,4 @@ extension Tone {
 
   /// The tag of an open position (OPEN), in the accent like the strategy's exit.
   public static let openPosition = Tone.accent
-  /// The tag of a signal the risk layer refused (REFUSED).
-  public static let refused = Tone.warning
-  /// The tag of a signal never evaluated, made too late to act on (NOT EVALUATED).
-  public static let notEvaluated = Tone.neutral
 }

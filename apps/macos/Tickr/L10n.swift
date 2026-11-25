@@ -1910,10 +1910,6 @@ enum L10n {
         defaultValue: "The bot's API did not return the skipped signals",
         bundle: L10n.bundle)
     }
-    /// Badge: the platform refused the entry (risk, gate or limit).
-    static var refused: LocalizedStringResource {
-      LocalizedStringResource("trades.refused", defaultValue: "Refused", bundle: L10n.bundle)
-    }
     /// Badge of a position still open, listed above the day's closed trades.
     static var open: LocalizedStringResource {
       LocalizedStringResource("trades.open", defaultValue: "Open", bundle: L10n.bundle)
@@ -1923,7 +1919,7 @@ enum L10n {
       LocalizedStringResource("trades.openPosition", defaultValue: "Open position \(symbol): show on Chart",
         bundle: L10n.bundle)
     }
-    /// Badge: the entry was never put to the platform's checks.
+    /// A signal not taken that was never put to the platform's checks (its row's title).
     static var notEvaluated: LocalizedStringResource {
       LocalizedStringResource("trades.notEvaluated", defaultValue: "Not evaluated", bundle: L10n.bundle)
     }

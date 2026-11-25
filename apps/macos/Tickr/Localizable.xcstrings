@@ -14146,23 +14146,6 @@
         }
       }
     },
-    "trades.refused" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refused"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechazada"
-          }
-        }
-      }
-    },
     "trades.refusedUntil" : {
       "extractionState" : "manual",
       "localizations" : {

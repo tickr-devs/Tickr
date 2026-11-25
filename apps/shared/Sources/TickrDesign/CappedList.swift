@@ -19,6 +19,7 @@ public struct CappedList<Item, ID: Hashable, Row: View>: View {
   let limit: Int
   let spacing: CGFloat
   let endsCard: Bool
+  let fills: Bool
   let row: (Int, Item) -> Row
   @State private var showsAll = false
   /// Each shown row's height as last laid out, by id.
@@ -29,9 +30,11 @@ public struct CappedList<Item, ID: Hashable, Row: View>: View {
   /// `title`: the sheet's heading (the card's or the section's title). `spacing`: between rows.
   /// `endsCard`: false for a list with another section under it (the broker's positions above
   /// its orders): the link then stops at the section's end instead of the card's bottom edge.
+  /// `fills`: false keeps the card at `limit` rows however tall it is (a board that caps the list).
   public init(
     _ items: [Item], id: KeyPath<Item, ID>, title: LocalizedStringResource, limit: Int = Tokens.Lists.cappedRows,
-    spacing: CGFloat = Tokens.Space.s, endsCard: Bool = true, @ViewBuilder row: @escaping (Int, Item) -> Row
+    spacing: CGFloat = Tokens.Space.s, endsCard: Bool = true, fills: Bool = true,
+    @ViewBuilder row: @escaping (Int, Item) -> Row
   ) {
     self.items = items
     self.id = id
@@ -39,18 +42,21 @@ public struct CappedList<Item, ID: Hashable, Row: View>: View {
     self.limit = limit
     self.spacing = spacing
     self.endsCard = endsCard
+    self.fills = fills
     self.row = row
   }
 
   public var body: some View {
     let ids = items.map { $0[keyPath: id] }
     let measured = ids.map { heights[$0].map(Double.init) }
-    let cap = ListCap(heights: measured, available: Double(available), spacing: Double(spacing), limit: limit)
+    let cap = ListCap(heights: measured, available: fills ? Double(available) : 0, spacing: Double(spacing),
+      limit: limit)
     let shown = Array(zip(ids.prefix(cap.shown), items.prefix(cap.shown)).enumerated())
     VStack(alignment: .leading, spacing: 0) {
       Color.clear
         // Never taller than every row: a window with room to spare leaves no gap under a short list.
-        .frame(maxWidth: .infinity, minHeight: CGFloat(cap.leastHeight), maxHeight: CGFloat(cap.fullHeight))
+        .frame(maxWidth: .infinity, minHeight: CGFloat(cap.leastHeight),
+          maxHeight: CGFloat(fills ? cap.fullHeight : cap.leastHeight))
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { available = $0 }
         .overlay(alignment: .top) {
           VStack(alignment: .leading, spacing: spacing) {

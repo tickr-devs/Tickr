@@ -98,8 +98,6 @@ import TickrKit
     #expect(Tone.exit("strategy_exit") == .accent)
     #expect(Tone.exit("flatten") == .neutral)
     #expect(Tone.openPosition == .accent)
-    #expect(Tone.refused == .warning)
-    #expect(Tone.notEvaluated == .neutral)
   }
 
   @Test("Every bot tone maps to one design tone")
