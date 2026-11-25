@@ -9,7 +9,8 @@ bucket's layout, copied to a local folder:
     python -m tickr.model.parity --day 2026-11-17 --folder <local copy> --types <types.csv> \
         --reference <prepared reference folder> --benzinga <Benzinga folder> --fl <facts csv> \
         --out <report folder> [--minutes HH:MM ... | --all-minutes] [--mode plain|marker|both|all]
-        [--ticks-only] [--rtol R] [--atol A]
+        [--ticks-only] [--rtol R] [--atol A] [--work-dir W] [--config bot.toml]
+        [--disk-reserve-gb G] [--memory-reserve-gb G] [--duckdb-memory-gb G]
 
 INPUTS. `--folder` gives the defaults of the research layout (each may be named instead):
 `--bars` = <folder>/minute_aggs (minute_aggs day files `YYYY-MM-DD.csv.gz`: the day and the 20
@@ -79,6 +80,18 @@ VARIANTS (`--mode`; both = plain and marker, all = the three):
   applied to the prefix: the marker only for symbols with a real quote in minute m; a symbol
   whose latest quote lies in an earlier minute keeps the plain 0 weight there.
 
+DISK AND MEMORY (`tickr.model.headroom`, `[parity]` of --config; the harness runs beside the
+live bot): every temporary file lies under `--work-dir` (default --out) in a run folder removed
+at the end; each minute's conversion writes the prefix as zstd csv (v11's read_csv reads it as
+it reads csv.gz; a third of the plain csv on the synthetic test day, not yet measured on a
+real day) into its own folder, removed when the conversion is done, and the minute's tick file
+is removed once its features are built. Before each conversion the guard refuses
+`memory_insufficient` or `disk_space_insufficient` (estimate = input rows x the bytes per row
+measured on this run); the run then stops: the report holds the minutes done and `stopped`
+(variant, minute, cause, detail), and the command exits 3. Every duckdb engine runs with
+`duckdb_memory_gb` and spills inside the work folder. `resources` gives, per variant and
+minute, the process's peak resident bytes so far, free disk and available memory.
+
 REPORT (`<out>/parity-<day>.json`, `.txt` and `-exceptions.csv`; an existing one refuses). The
 threshold is EXACT (codex-108 point 2: pending the per-column bound table); every discrepancy
 cell is an exception, listed in the csv (variant, minute, table, symbol, column, group, class,
@@ -125,7 +138,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tickr.model import features
+from tickr import config
+from tickr.model import features, headroom
 from tickr.model.errors import ModelRefused
 from tickr.model.features import full, ticks
 
@@ -150,6 +164,10 @@ BIGINT_COLUMNS = ("sip_timestamp", "sequence_number")
 DOUBLE_COLUMNS = ("price", "size", "bid_price", "ask_price", "bid_size", "ask_size")
 CODE_COLUMNS = ("conditions", "indicators")
 CODE_PATTERN = "^[0-9]+(,[0-9]+)*$"
+# Refusals of the run's disk and memory guard (tickr.model.headroom): the run stops there and
+# the report holds the minutes done and the refusal.
+STOP_CAUSES = ("disk_space_insufficient", "memory_insufficient")
+DEFAULT_CONFIG = Path("config/bot.toml")  # the bot's config, relative to the repo root
 REGULAR = ("09:30", "15:59")  # the regular session, for the peak minute
 EXCEPTION_FIELDS = ("variant", "minute", "table", "sym", "column", "group", "class",
                     "reference", "replay", "abs", "rel", "ulp")
@@ -419,13 +437,17 @@ def covered_tickers(inputs: ReplayInputs) -> set[str] | None:
         con.close()
 
 
-def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: Path) -> None:
+def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: Path,
+                   room: headroom.Headroom | None = None) -> None:
     """One pass over each day file: the converter's columns of the events of `symbols` stamped
-    before `before` (ns), kept as the file's text in work/trades.parquet, work/quotes.parquet."""
+    before `before` (ns), kept as the file's text in work/trades.parquet, work/quotes.parquet.
+    With `room`, the engine runs within its limits and refuses to start below its reserves."""
     import duckdb
     import pandas as pd
 
-    con = duckdb.connect()
+    if room is not None:
+        room.check("extract", 0)
+    con = room.connect() if room is not None else duckdb.connect()
     try:
         con.register("syms", pd.DataFrame({"sym": sorted(symbols)}, dtype=object))
         for kind in ("trades", "quotes"):
@@ -440,40 +462,61 @@ def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: P
         con.close()
 
 
-def minute_ticks(work: Path, day: str, minute: int, marker: bool | str) -> Any:
+def minute_ticks(room: headroom.Headroom, day: str, minute: int, marker: bool | str) -> Any:
     """The tick table of `day` as the bot holds it at the end of table minute `minute`: the
-    events of work/*.parquet before that end (with the marker quotes of the variant: True or
+    events of <work>/*.parquet before that end (with the marker quotes of the variant: True or
     "marker" for every symbol with a quote, "marker-minute" for the symbols with a quote in the
-    minute) through the frozen converter; rows after the minute are dropped."""
-    import duckdb
-
+    minute) through the frozen converter; rows after the minute are dropped. The prefix goes to
+    the converter as zstd csv in a conversion folder of `room` (checked before it is written,
+    removed after; `headroom`)."""
     w = ticks.converter()
     end, begin = _ns_end(day, minute), _ns_end(day, minute - 1)
     through = minute + features.DAY_START_MINUTE
-    t, q = work / "t.csv", work / "q.csv"
+    trades, quotes_file = room.work / "trades.parquet", room.work / "quotes.parquet"
     pick = f"CAST(sip_timestamp AS BIGINT) < {end}"
-    quotes = f"SELECT {', '.join(w.QCOLS)} FROM read_parquet('{work / 'quotes.parquet'}') " \
-             f"WHERE {pick}"
     if marker:
-        made = {"ticker": "ticker", "sip_timestamp": f"'{end}'",
-                "sequence_number": "CAST(CAST(sequence_number AS BIGINT) + 1 AS VARCHAR)",
-                **MARKER_VALUES}
-        latest = (f"SELECT * FROM ({quotes}) QUALIFY row_number() OVER (PARTITION BY ticker "
-                  "ORDER BY CAST(sip_timestamp AS BIGINT) DESC, "
-                  "CAST(sequence_number AS BIGINT) DESC) = 1")
-        if marker == "marker-minute":
-            latest = f"SELECT * FROM ({latest}) WHERE CAST(sip_timestamp AS BIGINT) >= {begin}"
-        quotes = (f"{quotes} UNION ALL SELECT "
-                  f"{', '.join(f'{made[c]} AS {c}' for c in w.QCOLS)} FROM ({latest})")
         through += 1  # the marker stands at the start of the next minute
-    con = duckdb.connect()
+
+    def selects(limit: int | None) -> tuple[str, str]:
+        cut = "" if limit is None else (" ORDER BY CAST(sip_timestamp AS BIGINT), "
+                                        f"CAST(sequence_number AS BIGINT) LIMIT {int(limit)}")
+        t = f"SELECT {', '.join(w.TCOLS)} FROM read_parquet('{trades}') WHERE {pick}{cut}"
+        q = (f"SELECT * FROM (SELECT {', '.join(w.QCOLS)} FROM read_parquet('{quotes_file}') "
+             f"WHERE {pick}{cut})")
+        if marker:
+            made = {"ticker": "ticker", "sip_timestamp": f"'{end}'",
+                    "sequence_number": "CAST(CAST(sequence_number AS BIGINT) + 1 AS VARCHAR)",
+                    **MARKER_VALUES}
+            latest = (f"SELECT * FROM ({q}) QUALIFY row_number() OVER (PARTITION BY ticker "
+                      "ORDER BY CAST(sip_timestamp AS BIGINT) DESC, "
+                      "CAST(sequence_number AS BIGINT) DESC) = 1")
+            if marker == "marker-minute":
+                latest = f"SELECT * FROM ({latest}) WHERE CAST(sip_timestamp AS BIGINT) >= {begin}"
+            q = (f"{q} UNION ALL SELECT "
+                 f"{', '.join(f'{made[c]} AS {c}' for c in w.QCOLS)} FROM ({latest})")
+        return t, q
+
+    def convert(folder: Path, limit: int | None) -> tuple[Any, int]:
+        t, q = folder / "t.csv.zst", folder / "q.csv.zst"
+        con = room.connect(folder)
+        try:
+            ts, qs = selects(limit)
+            wrote = con.execute(f"COPY ({ts}) TO '{t}' (HEADER, DELIMITER ',')").fetchone()[0]
+            wrote += con.execute(f"COPY ({qs}) TO '{q}' (HEADER, DELIMITER ',')").fetchone()[0]
+        finally:
+            con.close()
+        return ticks.tick_rows(t, q, day, through, tmp_dir=folder,
+                               memory=room.duckdb_memory()), int(wrote)
+
+    con = room.connect()
     try:
-        con.execute(f"COPY (SELECT {', '.join(w.TCOLS)} FROM read_parquet("
-                    f"'{work / 'trades.parquet'}') WHERE {pick}) TO '{t}' (HEADER, DELIMITER ',')")
-        con.execute(f"COPY ({quotes}) TO '{q}' (HEADER, DELIMITER ',')")
+        rows = con.execute(f"SELECT (SELECT count(*) FROM read_parquet('{trades}') WHERE {pick})"
+                           f" + (SELECT count(*) + count(DISTINCT ticker) FROM read_parquet("
+                           f"'{quotes_file}') WHERE {pick})").fetchone()[0]
     finally:
         con.close()
-    table = ticks.tick_rows(t, q, day, through)
+    with room.conversion("prefix", int(rows), lambda f, n: convert(f, n)[1]) as folder:
+        table = convert(folder, None)[0]
     return table[table.m <= minute + features.DAY_START_MINUTE].reset_index(drop=True)
 
 
@@ -695,9 +738,12 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
            variants: Sequence[str] = ("plain",), work: Path,
            tolerance: tuple[float, float] | None = None, all_minutes: bool = False,
            ticks_only: bool = False,
-           exceptions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+           exceptions: list[dict[str, Any]] | None = None,
+           room: headroom.Headroom | None = None) -> dict[str, Any]:
     """The parity report of `day` at `minutes` (HH:MM; None = the default choice): see the
-    module docstring. Exception cells are appended to `exceptions` when given."""
+    module docstring. Exception cells are appended to `exceptions` when given. `room` guards
+    disk and memory (default: `[parity]` of config/bot.toml on `work`); a minute it refuses
+    stops the run, recorded in the report's `stopped`."""
     from tickr.model import massive
 
     need = day_files(day, inputs.bars)  # before any file is opened
@@ -749,7 +795,10 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
     ticked = cohort if covered is None else cohort & covered
     if "scan" not in scans:
         scan_for(ticked)
-    extract_events(inputs, ticked, _ns_end(day, chosen[-1]), work)
+    if room is None:
+        limits = headroom.Limits.from_config(config.load(DEFAULT_CONFIG).parity)
+        room = headroom.Headroom(work, limits)
+    extract_events(inputs, ticked, _ns_end(day, chosen[-1]), work, room)
     last = chosen[-1] + features.DAY_START_MINUTE
     fill = (tick_table(inputs.tk61, cohort - ticked, last)
             if covered is not None and cohort - ticked else None)
@@ -765,15 +814,24 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
         else len(covered), "converted_symbols": len(ticked),
         "tick_rows_from_tk61_symbols": len(cohort - ticked) if fill is not None else 0,
         "bar_groups": list(BAR_GROUPS), "column_classes": kinds, "variants": {},
-        "ticks": {}, "final_quote": {}, "versus_plain": {}}
+        "ticks": {}, "final_quote": {}, "versus_plain": {}, "resources": {}, "stopped": None,
+        "limits": room.limits.__dict__}
     delivered: dict[str, dict[int, Any]] = {}
     for variant in variants:
         per: dict[str, Any] = {}
         tick_per: dict[str, Any] = {}
         cases: list[dict[str, Any]] = []
         delivered[variant] = {}
+        report["resources"][variant] = used = {}
         for m in chosen:
-            mine = minute_ticks(work, day, m, False if variant == "plain" else variant)
+            try:
+                mine = minute_ticks(room, day, m, False if variant == "plain" else variant)
+            except ModelRefused as exc:
+                if exc.cause not in STOP_CAUSES:
+                    raise
+                report["stopped"] = {"variant": variant, "minute": hhmm(m), "cause": exc.cause,
+                                     "detail": exc.detail, **room.usage()}
+                break
             through = m + features.DAY_START_MINUTE
             if tk61 is not None:
                 cells: list[dict[str, Any]] = []
@@ -784,6 +842,7 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
                 tick_per[hhmm(m)] = {"minute": m, **r}
                 _collect(exceptions, cells, variant, m, "ticks")
             if ticks_only:
+                used[hhmm(m)] = room.usage()
                 continue
             table = mine
             if fill is not None:
@@ -793,6 +852,8 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
             given = full.FullInputs(tick_file, inputs.reference, inputs.benzinga,
                                     inputs.fl_facts)
             got = full.minute_rows_full(bars_through(m), day, m, state, types, given)
+            tick_file.unlink()
+            used[hhmm(m)] = room.usage()
             delivered[variant][m] = got
             cells = []
             per[hhmm(m)] = {"minute": m, **compare(got, want[want.m == m], groups, tolerance,
@@ -804,13 +865,16 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
             report["final_quote"][variant] = {"summary": _summary(cases), "cases": cases}
         if tk61 is not None:
             report["ticks"][variant] = tick_per
+        if report["stopped"] is not None:
+            break
     if not ticks_only and "plain" in delivered:
         for variant in variants:
-            if variant == "plain":
+            if variant == "plain" or variant not in delivered:
                 continue
             report["versus_plain"][variant] = {
                 hhmm(m): compare(delivered[variant][m], delivered["plain"][m], groups, None,
-                                 kinds, covered)["classes"] for m in chosen}
+                                 kinds, covered)["classes"] for m in chosen
+                if m in delivered[variant] and m in delivered["plain"]}
     return report
 
 
@@ -869,6 +933,18 @@ def text(report: dict[str, Any]) -> str:
     for variant, per in report["versus_plain"].items():
         lines.append(f"{variant} versus plain, cells by class: "
                      + "; ".join(f"{hm} {c}" for hm, c in per.items()))
+    for variant, per in report["resources"].items():
+        if per:
+            hm, last = max(per.items(), key=lambda x: x[1]["peak_rss_bytes"])
+            lines.append(f"{variant} resources: peak resident {last['peak_rss_bytes']} bytes "
+                         f"(reached by {hm}), least free disk "
+                         f"{min(x['free_disk_bytes'] for x in per.values())} bytes, least "
+                         f"available memory "
+                         f"{min(x['available_memory_bytes'] for x in per.values())} bytes")
+    if report["stopped"] is not None:
+        st = report["stopped"]
+        lines.append(f"STOPPED at {st['variant']} {st['minute']}: {st['cause']}: "
+                     f"{st['detail']}")
     return "\n".join(lines) + "\n"
 
 
@@ -891,8 +967,31 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--ticks-only", action="store_true", help="only our v11 rows against tk61")
     p.add_argument("--rtol", type=float, help="relative tolerance to count cells beyond")
     p.add_argument("--atol", type=float, help="absolute tolerance to count cells beyond")
-    p.add_argument("--work", type=Path, help="scratch folder (default: a new one in --out)")
+    p.add_argument("--work-dir", "--work", dest="work", type=Path,
+                   help="folder for every temporary file (a new run folder is made in it and "
+                        "removed at the end; conversion folders are removed per minute; "
+                        "default: --out)")
+    p.add_argument("--config", type=Path, default=DEFAULT_CONFIG,
+                   help="bot.toml whose [parity] guards disk and memory")
+    for name, key in (("disk-reserve-gb", "disk_reserve_gb"),
+                      ("memory-reserve-gb", "memory_reserve_gb"),
+                      ("duckdb-memory-gb", "duckdb_memory_gb")):
+        p.add_argument(f"--{name}", type=int, dest=key,
+                       help=f"overrides [parity] {key} (see config/bot.toml; the reserves "
+                            "protect the live bot's disk and memory)")
     return p
+
+
+def _limits(args: argparse.Namespace) -> headroom.Limits:
+    """[parity] of --config with the command line's overrides."""
+    import dataclasses
+
+    p = config.load(args.config).parity
+    given = {k: getattr(args, k) for k in ("disk_reserve_gb", "memory_reserve_gb",
+                                            "duckdb_memory_gb") if getattr(args, k) is not None}
+    if any(v < 1 for v in given.values()):
+        raise ModelRefused("replay_limit_invalid", ", ".join(sorted(given)))
+    return headroom.Limits.from_config(dataclasses.replace(p, **given))
 
 
 def _inputs(args: argparse.Namespace) -> ReplayInputs:
@@ -927,14 +1026,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             if f.exists():
                 raise ModelRefused("output_exists", str(f))
         inputs = _inputs(args)
+        limits = _limits(args)
         args.out.mkdir(parents=True, exist_ok=True)
+        if args.work is not None:
+            args.work.mkdir(parents=True, exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="parity-work-", dir=args.work or args.out))
         cells: list[dict[str, Any]] = []
+        saved = tempfile.tempdir
         try:
+            room = headroom.Headroom(work, limits)
+            # the pinned training code's own temporary folders land in the work folder too
+            (work / "tmp").mkdir()
+            tempfile.tempdir = str(work / "tmp")
             report = replay(args.day, args.minutes, inputs, variants=MODES[args.mode],
                             work=work, tolerance=tolerance, all_minutes=args.all_minutes,
-                            ticks_only=args.ticks_only, exceptions=cells)
+                            ticks_only=args.ticks_only, exceptions=cells, room=room)
         finally:
+            tempfile.tempdir = saved
             shutil.rmtree(work, ignore_errors=True)
     except ModelRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
@@ -947,6 +1055,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     js.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n", "utf-8")
     tx.write_text(text(report), "utf-8")
     print(tx.read_text("utf-8"), end="")
+    if report["stopped"] is not None:
+        print(f"STOPPED: {report['stopped']['cause']}: {report['stopped']['detail']}",
+              file=sys.stderr)
+        return 3
     return 0
 
 

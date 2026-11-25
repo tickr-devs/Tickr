@@ -28,6 +28,7 @@ update; until then that update weighs 0. `tests/model/test_ticks.py` shows both.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import importlib.util
@@ -35,6 +36,7 @@ import os
 import sys
 import tempfile
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -53,6 +55,7 @@ MODULE_NAME = "tickr_pinned_wm2tick_v11"
 OUTPUT_VARIABLES = ("TICK_BIG", "TICK_V11", "TICK_TYPES", "TICK_GROUPS")
 # Read by the converter's engine connection only: threads and memory cap. Allowed.
 RESOURCE_VARIABLES = ("TICK_THREADS", "TICK_MEM")
+MEMORY_VARIABLE = "TICK_MEM"  # the converter's engine memory limit (duckdb words, e.g. 4GB)
 NEW_YORK = ZoneInfo("America/New_York")
 NS_PER_SECOND = 10**9
 NS_PER_MINUTE = 60 * NS_PER_SECOND
@@ -115,12 +118,16 @@ def _bounds(day: str, through: int) -> tuple[int, int]:
     return int(start.timestamp()) * NS_PER_SECOND, int(end.timestamp()) * NS_PER_SECOND
 
 
-def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, through: int) -> Any:
+def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, through: int, *,
+              tmp_dir: str | Path | None = None, memory: str | None = None) -> Any:
     """The converter's table of `day` from the day's trades and quotes so far: files in the
-    flat-file layout (header row, at least the converter's columns, csv or csv.gz). Every event
-    must lie on New York `day` and before the end of minute `through` (minute of the New York
-    day); an event outside is refused, never dropped. Returns a pandas frame: sym, m and the 61
-    columns, sorted by sym and m, every minute up to `through` that has an event."""
+    flat-file layout (header row, at least the converter's columns, csv, csv.gz or csv.zst).
+    Every event must lie on New York `day` and before the end of minute `through` (minute of
+    the New York day); an event outside is refused, never dropped. Returns a pandas frame: sym,
+    m and the 61 columns, sorted by sym and m, every minute up to `through` that has an event.
+    `tmp_dir`: the folder for the converter's own files and spill (default the system's);
+    `memory`: its engine's memory limit (duckdb words), handed over as its own TICK_MEM, which
+    must then be unset (`tick_variable_set`)."""
     w = converter()
     lo, hi = _bounds(day, through)
     import duckdb
@@ -140,10 +147,11 @@ def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, throug
         raise ModelRefused("tick_file_unreadable", f"{type(exc).__name__}") from exc
     finally:
         con.close()
-    with _LOCK, tempfile.TemporaryDirectory(prefix="tickr-ticks-") as tmp:
+    with _LOCK, tempfile.TemporaryDirectory(prefix="tickr-ticks-", dir=tmp_dir) as tmp:
         out = os.path.join(tmp, "tk.parquet")
         try:
-            w.day(str(trades_file), str(quotes_file), out, tmp)
+            with _memory_limit(memory):
+                w.day(str(trades_file), str(quotes_file), out, tmp)
         except SystemExit as exc:  # the converter's own refusal (a missing column)
             raise ModelRefused("tick_converter_refused", str(exc.code)) from exc
         con = duckdb.connect()
@@ -151,6 +159,21 @@ def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, throug
             return con.execute("SELECT * FROM read_parquet(?) ORDER BY sym, m", [out]).df()
         finally:
             con.close()
+
+
+@contextlib.contextmanager
+def _memory_limit(memory: str | None) -> Iterator[None]:
+    """The converter's TICK_MEM set to `memory` for one call (None: left as it is)."""
+    if memory is None:
+        yield
+        return
+    if os.environ.get(MEMORY_VARIABLE) is not None:
+        raise ModelRefused("tick_variable_set", f"{MEMORY_VARIABLE} (the caller sets it)")
+    os.environ[MEMORY_VARIABLE] = memory
+    try:
+        yield
+    finally:
+        del os.environ[MEMORY_VARIABLE]
 
 
 def write_flat_file(rows: Any, path: str | Path, columns: list[str]) -> None:
