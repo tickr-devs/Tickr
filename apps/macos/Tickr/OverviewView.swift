@@ -483,9 +483,18 @@ private struct LiveFlowCard: View {
     // The one stage rule of both apps (`StopState.stageTone`): green with no position, else the
     // worst of the open and the day's stops.
     let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (model.flow?.stops ?? []).map(\.state))
-    // Checked lime while the broker agrees (or has not been compared); red on a mismatch or a fence.
-    let reconcileFill = reconcile.agrees == false ? Palette.loss : PipelineStage.reconcile.fill
-    let reconcileText = reconcile.agrees == false ? Palette.lossText : PipelineStage.reconcile.text
+    // Checked lime only while the broker agrees; red on a mismatch or a fence; quiet while nothing
+    // has been compared yet (never a healthy colour for an unknown state), as on iOS.
+    let reconcileFill: Color = switch reconcile.agrees {
+    case true?: PipelineStage.reconcile.fill
+    case false?: Palette.loss
+    case nil: Palette.textQuaternary
+    }
+    let reconcileText: Color = switch reconcile.agrees {
+    case true?: PipelineStage.reconcile.text
+    case false?: Palette.lossText
+    case nil: Palette.textQuaternary
+    }
     return [
       .init(id: .screeners, name: L10n.Flow.screeners, value: count(.screeners),
         glyph: .screeners, color: PipelineStage.screeners.fill, text: PipelineStage.screeners.text),
