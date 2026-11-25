@@ -228,9 +228,11 @@ by the fixed value. Not measured yet: how far the price traded through the stop 
 ## Settings
 
 `config/research.toml` `[research]` (one comment per key, tested; missing or unknown keys are
-refused): `horizons_minutes`, `atr_period`, `session_timezone`, `output_decimal_places`
-(`latency` reads only the last two).
-What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay.
+refused): `horizons_minutes`, `atr_period`, `session_timezone`
+(`latency` reads only the last).
+What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay. Every
+report also rounds to its `output_decimal_places` (`--replay-settings` with `--config`, default
+`config/replay.toml`): that number has one home.
 
 Exit code 2 and `research refused: <cause>` on any bad input; nothing is guessed.
 
@@ -238,7 +240,7 @@ Exit code 2 and `research refused: <cause>` on any bad input; nothing is guessed
 
 ```
 python -m tickr.research sizing --answers answers.csv --all-sessions-usd 4000 \
-  --settings config/research.toml --out out/sizing
+  --out out/sizing
 ```
 
 SIMULATED. Input: the stored-answers CSV of `calibration` (a 0/1 `outcome` column, `p_<name>`
