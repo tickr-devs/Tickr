@@ -135,6 +135,16 @@ class Cause(StrEnum):
     OFF_STEP = "OFF_STEP"
     RULE_BROKEN = "RULE_BROKEN"
     VALUE_MISSING = "VALUE_MISSING"
+    ENGINEERING_KEY = "ENGINEERING_KEY"
+    CLOSED_KEY = "CLOSED_KEY"
+
+
+class SettingClass(StrEnum):
+    """Who may change a key of config/bot.toml (backlog S2)."""
+
+    OWNER = "owner"  # from the apps; has a record in RECORDS
+    ENGINEERING = "engineering"  # file only
+    CLOSED = "closed"  # the run environment, trading authorization, secrets: never from an app
 
 
 @dataclass(frozen=True)
@@ -356,6 +366,16 @@ RULES: tuple[Rule, ...] = (
 
 
 _NUMBERS = frozenset({"step", "maximum"})
+CLASSES = "classes"
+"""Top-level table of config/settings_schema.toml that holds the class lists, not an owner."""
+
+
+@dataclass(frozen=True)
+class Classes:
+    tables: Mapping[str, SettingClass]
+    """Class of each table of config/bot.toml (a dotted table name is one table)."""
+    keys: Mapping[str, SettingClass]
+    """Explicit class of single keys; wins over the table's class."""
 
 
 def _decimal(where: str, value: Any) -> Decimal:
@@ -374,7 +394,8 @@ def load(path: Path | str) -> tuple[Setting, ...]:
     or for no record, and an unknown field."""
     tables = tomllib.loads(Path(path).read_text("utf-8"))
     entries: dict[tuple[str, str], Any] = {
-        (owner, key): entry for owner, table in tables.items() for key, entry in table.items()}
+        (owner, key): entry for owner, table in tables.items() if owner != CLASSES
+        for key, entry in table.items()}
     settings: list[Setting] = []
     for record in RECORDS:
         where = f'[{record.owner}."{record.key}"]'
@@ -395,6 +416,51 @@ def load(path: Path | str) -> tuple[Setting, ...]:
     if entries:
         raise SchemaError(f"entries for no record: {sorted(entries)}")
     return tuple(settings)
+
+
+def _names(table: Mapping[str, Any], field: str) -> tuple[str, ...]:
+    names = table.get(field)
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        raise SchemaError(f"[classes] {field}: expected a list of names")
+    return tuple(names)
+
+
+def load_classes(path: Path | str) -> Classes:
+    """The class lists of config/settings_schema.toml. Refuses a missing or unknown list, a table
+    in both lists, and a record's key in a closed table or in closed_keys."""
+    table = tomllib.loads(Path(path).read_text("utf-8")).get(CLASSES)
+    fields = {"engineering_tables", "closed_tables", "closed_keys"}
+    if not isinstance(table, Mapping) or set(table) != fields:
+        raise SchemaError(f"[classes] must hold exactly {sorted(fields)}")
+    engineering = _names(table, "engineering_tables")
+    closed = _names(table, "closed_tables")
+    if both := sorted(set(engineering) & set(closed)):
+        raise SchemaError(f"[classes] tables in both lists: {both}")
+    classes = Classes(
+        tables={**dict.fromkeys(engineering, SettingClass.ENGINEERING),
+                **dict.fromkeys(closed, SettingClass.CLOSED)},
+        keys=dict.fromkeys(_names(table, "closed_keys"), SettingClass.CLOSED))
+    for record in RECORDS:
+        if record.owner == PLATFORM and (
+                record.key in classes.keys
+                or classify(classes, PLATFORM, record.key) is SettingClass.CLOSED):
+            raise SchemaError(f"record {record.key} sits in a closed list")
+    return classes
+
+
+def classify(classes: Classes, owner: str, key: str) -> SettingClass | None:
+    """The class of a dotted key of `owner`'s file; None when it is a platform key in a table
+    that no list names. A record is OWNER unless an explicit or table class closes it (the
+    loader refuses that); a strategy file's other keys are ENGINEERING."""
+    if owner != PLATFORM:
+        has_record = any(r.owner == owner and r.key == key for r in RECORDS)
+        return SettingClass.OWNER if has_record else SettingClass.ENGINEERING
+    if key in classes.keys:
+        return classes.keys[key]
+    if any(r.owner == PLATFORM and r.key == key for r in RECORDS):
+        return SettingClass.OWNER
+    owning = [t for t in classes.tables if key.startswith(f"{t}.")]
+    return classes.tables[max(owning, key=len)] if owning else None
 
 
 def settings_of(settings: tuple[Setting, ...], owner: str) -> dict[str, Setting]:

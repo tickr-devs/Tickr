@@ -181,3 +181,56 @@ def test_a_maximum_comes_from_the_schema_file(tmp_path):
     refusals = schema.validate(settings, P, {"risk.max_open_positions": 9}, _current(P))
     assert [(r.key, r.cause) for r in refusals] == [
         ("risk.max_open_positions", Cause.ABOVE_MAXIMUM)]
+
+
+CLASSES = schema.load_classes(SCHEMA_FILE)
+BOT_KEYS = _current(schema.PLATFORM)
+
+
+def test_every_key_of_bot_toml_has_a_class():
+    unclassed = [k for k in BOT_KEYS if schema.classify(CLASSES, schema.PLATFORM, k) is None]
+    assert unclassed == [], "name the table in [classes.tables] of config/settings_schema.toml"
+
+
+def test_class_lists_name_only_tables_and_keys_that_exist():
+    document = tomllib.loads(FILES[schema.PLATFORM].read_text("utf-8"))
+    tables = {t for t, v in document.items() if t != "environments"} | {
+        f"environments.{e}" for e in document["environments"]}
+    assert set(CLASSES.tables) == tables
+    assert set(CLASSES.keys) <= set(BOT_KEYS)
+
+
+def test_owner_keys_are_exactly_the_platform_records():
+    owner = {k for k in BOT_KEYS
+             if schema.classify(CLASSES, schema.PLATFORM, k) is schema.SettingClass.OWNER}
+    assert owner == {s.key for s in SETTINGS if s.owner == schema.PLATFORM}
+
+
+def test_environments_secrets_and_authorization_are_closed():
+    for key in BOT_KEYS:
+        closed = schema.classify(CLASSES, schema.PLATFORM, key) is schema.SettingClass.CLOSED
+        secretive = key.startswith(("environments.", "run.environment")) or key.endswith(
+            "_variable")
+        assert closed or not secretive, key
+
+
+def test_a_new_model_setting_is_owner_once_it_has_a_record():
+    # [model] is engineering until a record exists; the mechanism needs no list change.
+    assert schema.classify(CLASSES, schema.PLATFORM, "model.enabled") is (
+        schema.SettingClass.ENGINEERING)
+
+
+def test_a_record_inside_a_closed_list_is_refused(tmp_path):
+    bad = tmp_path / "s.toml"
+    bad.write_text(SCHEMA_FILE.read_text("utf-8").replace(
+        "closed_keys = [", 'closed_keys = [\n  "risk.max_open_positions",'), "utf-8")
+    with pytest.raises(schema.SchemaError):
+        schema.load_classes(bad)
+
+
+def test_a_table_in_both_lists_is_refused(tmp_path):
+    bad = tmp_path / "s.toml"
+    bad.write_text(SCHEMA_FILE.read_text("utf-8").replace(
+        "closed_tables = [", 'closed_tables = [\n  "risk",'), "utf-8")
+    with pytest.raises(schema.SchemaError):
+        schema.load_classes(bad)

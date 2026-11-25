@@ -73,6 +73,13 @@ def load_schema(path: Path) -> tuple[Setting, ...]:
         raise SettingsUnavailable(f"settings schema unreadable: {_cause(exc, path)}") from exc
 
 
+def load_classes(path: Path) -> schema.Classes:
+    try:
+        return schema.load_classes(path)
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, schema.SchemaError) as exc:
+        raise SettingsUnavailable(f"settings schema unreadable: {_cause(exc, path)}") from exc
+
+
 def _cause(exc: Exception, path: Path) -> str:
     if isinstance(exc, OSError):
         return type(exc).__name__
@@ -165,9 +172,18 @@ def _value_of(spec: Setting, text: str) -> int | Decimal | bool | None:
     return value
 
 
+_NOT_FROM_APP = {
+    schema.SettingClass.ENGINEERING: (Cause.ENGINEERING_KEY,
+                                      "is an engineering setting: file only"),
+    schema.SettingClass.CLOSED: (Cause.CLOSED_KEY,
+                                 "is a closed setting: never changed from an app"),
+}
+
+
 def draft_document(settings: tuple[Setting, ...], changes: tuple[tuple[str, str, str], ...],
-                   config_file: Path, root: Path) -> SettingsDraftV1:
+                   config_file: Path, root: Path, classes: schema.Classes) -> SettingsDraftV1:
     """Check `changes` (owner, dotted key, value text) against the schema and the files now.
+    A key of the engineering or closed class is refused whatever its value (`classes`).
     Raises SettingsUnavailable when an owner's file cannot be read."""
     owners = owners_of(settings)
     refusals: list[SettingRefusalV1] = []
@@ -186,6 +202,10 @@ def draft_document(settings: tuple[Setting, ...], changes: tuple[tuple[str, str,
         for _, key, text in mine:
             spec = specs.get(key)
             if spec is None:
+                refused = _NOT_FROM_APP.get(schema.classify(classes, owner, key))  # type: ignore[arg-type]
+                if refused is not None and key in current:
+                    found.append(Refusal(key, refused[0], f"{key} {refused[1]}"))
+                    continue
                 draft[key] = text  # validate refuses it as UNKNOWN_KEY
                 continue
             value = _value_of(spec, text)
