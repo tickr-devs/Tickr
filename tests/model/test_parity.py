@@ -30,6 +30,9 @@ QUIET = "T001"  # no quote update 11:55..12:01 New York: its 11:54 update is the
 NO_BARS = "ZZZZ"  # ticks but no bars: never a table row, absent from the replay's events
 MINUTES = ["04:30", "09:45", "12:00", "15:30"]  # minutes with table rows on this day
 TICK_GROUPS = {"tk", "tk2"}
+EARLY = "T002"  # has a trade and a quote before 04:00
+HALTED = "T004"  # stops quoting in the late regular session (its final quote has a row)
+COVERED = {"T001", EARLY, HALTED}  # the tickers of the synthetic audit copy
 
 
 @pytest.fixture(autouse=True)
@@ -90,6 +93,25 @@ def day(tmp_path_factory):
            & (quotes.sip_timestamp >= tick_maker.stamp(DAY, "11:55:00"))
            & (quotes.sip_timestamp < tick_maker.stamp(DAY, "12:01:00")))
     quotes = quotes[~gap].reset_index(drop=True)
+    # a symbol with events before 04:00 (the day file spans midnight: pre-04:00 carry)
+    early = stamp_of("03:59:30")
+    top = int(max(trades.sequence_number.max(), quotes.sequence_number.max()))
+    pre_t = trades[trades.ticker == EARLY].head(1).assign(sip_timestamp=early,
+                                                          sequence_number=top + 1)
+    pre_q = quotes[quotes.ticker == EARLY].head(1).assign(sip_timestamp=early - 10**9,
+                                                          sequence_number=top + 2)
+    trades = pd.concat([pre_t, trades], ignore_index=True)
+    quotes = pd.concat([pre_q, quotes], ignore_index=True)
+    # a symbol that stops quoting and trading after a minute with a bar in 15:31 .. 15:45
+    # (halted): its final quote of the day lies in a minute with a row
+    q4 = quotes[quotes.ticker == HALTED].sip_timestamp
+    halt = next(m for m in range(table_minute("15:31"), table_minute("15:46"))
+                if (frame[frame.ticker == HALTED].window_start == start_of(m)).any()
+                and ((q4 >= start_of(m)) & (q4 < start_of(m + 1))).any())
+    stop = start_of(halt + 1)
+    quotes = quotes[(quotes.ticker != HALTED) | (quotes.sip_timestamp < stop)]
+    trades = trades[(trades.ticker != HALTED) | (trades.sip_timestamp < stop)]
+    quotes, trades = quotes.reset_index(drop=True), trades.reset_index(drop=True)
     tf, qf = root / "trades.csv.gz", root / "quotes.csv.gz"
     ticks.write_flat_file(trades, tf, tick_maker.TRADE_FILE_COLUMNS)
     ticks.write_flat_file(quotes, qf, tick_maker.QUOTE_FILE_COLUMNS)
@@ -105,7 +127,19 @@ def day(tmp_path_factory):
         fl_facts=inputs.fl_facts(root / "fl.csv", DAY, SYMBOLS), table=root / "none")
     table = _training_table(root, given, whole)
     given = parity.ReplayInputs(**{**given.__dict__, "table": table})
-    return given, trades, quotes, whole
+    return given, trades, quotes, whole, halt
+
+
+def stamp_of(hms):
+    return tick_maker.stamp(DAY, hms)
+
+
+def table_minute(hm):
+    return parity.table_minutes([hm])[0]
+
+
+def start_of(minute):
+    return parity._ns_end(DAY, minute - 1)
 
 
 def _args(given, out, *extra):
@@ -117,14 +151,19 @@ def _args(given, out, *extra):
 
 def test_same_inputs_give_zero_difference_with_the_marker(day, tmp_path, capsys):
     given = day[0]
-    assert parity.main(_args(given, tmp_path, "--marker", "--rtol", "1e-6")) == 0
+    assert parity.main(_args(given, tmp_path, "--mode", "both", "--rtol", "1e-6")) == 0
     report = json.loads((tmp_path / f"parity-{DAY}.json").read_text())
     assert (tmp_path / f"parity-{DAY}.txt").read_text() == capsys.readouterr().out
     assert report["minutes"] == MINUTES and set(report["variants"]) == {"plain", "marker"}
     for hm, r in report["variants"]["marker"].items():
         assert r["rows_compared"] == r["rows_reference"] == r["rows_replay"] > 0, hm
         assert r["columns"] == {} and r["symbols"] == {}, hm
-        assert r["bar_groups_exact"], hm
+        assert r["bar_groups_exact"] and r["exact"] and r["keys_exact"], hm
+    assert report["exceptions"] > 0  # all in the plain variant
+    cells = pd.read_csv(tmp_path / f"parity-{DAY}-exceptions.csv")
+    assert len(cells) == report["exceptions"] and set(cells.variant) == {"plain"}
+    assert set(cells["class"]) <= set(parity.CLASSES)
+    assert report["versus_plain"]["marker"]["12:00"]["value"] > 0
     # without the marker: the bars are still exact; only the tick groups differ (the latest
     # quote of each stock weighs 0 until its next update)
     differ = set()
@@ -138,7 +177,7 @@ def test_same_inputs_give_zero_difference_with_the_marker(day, tmp_path, capsys)
 
 
 def test_a_perturbed_trade_gives_a_located_difference(day, tmp_path):
-    given, trades, _, _ = day
+    given, trades = day[0], day[1]
     sym = "T003"
     lo, hi = tick_maker.stamp(DAY, "09:59:00"), tick_maker.stamp(DAY, "10:00:00")
     hit = ((trades.ticker == sym) & (trades.sip_timestamp >= lo) & (trades.sip_timestamp < hi)
@@ -152,7 +191,7 @@ def test_a_perturbed_trade_gives_a_located_difference(day, tmp_path):
     work.mkdir()
     report = parity.replay(DAY, ["10:00"], parity.ReplayInputs(**{**given.__dict__,
                                                                  "trades": tf}),
-                           marker=True, work=work)
+                           variants=("marker",), work=work)
     r = report["variants"]["marker"]["10:00"]
     assert r["bar_groups_exact"] and r["columns"]
     assert {c["group"] for c in r["columns"].values()} <= TICK_GROUPS
@@ -198,7 +237,7 @@ def test_sealed_and_unbuildable_days_are_refused_before_any_read(tmp_path, when,
     given = parity.ReplayInputs(*(tmp_path / "missing" for _ in range(8)))
     given = parity.ReplayInputs(**{**given.__dict__, "bars": tmp_path})
     with pytest.raises(ModelRefused) as exc:
-        parity.replay(when, MINUTES, given, marker=False, work=tmp_path)
+        parity.replay(when, MINUTES, given, work=tmp_path)
     assert exc.value.cause == "replay_day_refused" and f"REFUSED: {cause}" in exc.value.detail
 
 
@@ -216,3 +255,128 @@ def test_a_table_of_another_day_and_bad_minutes_are_refused(day, tmp_path):
         with pytest.raises(ModelRefused) as exc:
             parity.table_minutes(bad)
         assert exc.value.cause == "replay_minute_invalid"
+
+
+def _audit(frame, path, columns):
+    """The research bucket's audit copy: the covered tickers, every column as text, a missing
+    value as the empty text."""
+    part = frame[frame.ticker.isin(COVERED)][columns]
+    text = pd.DataFrame({c: [("" if pd.isna(v) else str(v)) for v in part[c]] for c in columns})
+    _write(text, path)
+    return path
+
+
+def _write(frame, path):
+    import duckdb
+
+    con = duckdb.connect()
+    con.register("f", frame)
+    con.execute(f"COPY (SELECT * FROM f) TO '{path}' (FORMAT parquet)")
+    con.close()
+
+
+def _layout(day, root):
+    """A local copy of the research layout (module docstring of parity) from the fixture."""
+    given, trades, quotes, whole, _ = day
+    year = DAY[:4]
+    for sub in (f"tickraw-audit/{year}", f"tk61/{year}", f"l1/feat/7d0ba403/tables/{year}"):
+        (root / sub).mkdir(parents=True)
+    (root / "minute_aggs").symlink_to(given.bars)
+    (root / f"l1/feat/7d0ba403/tables/{year}/{DAY}.parquet").symlink_to(given.table)
+    (root / f"tk61/{year}/{DAY}.parquet").symlink_to(whole)
+    _audit(trades, root / f"tickraw-audit/{year}/{DAY}-trades.parquet",
+           tick_maker.TRADE_FILE_COLUMNS)
+    _audit(quotes, root / f"tickraw-audit/{year}/{DAY}-quotes.parquet",
+           tick_maker.QUOTE_FILE_COLUMNS)
+    return root
+
+
+def test_the_open_day_layout_with_the_audit_copy_default_minutes_and_final_quotes(day,
+                                                                                  tmp_path):
+    """codex-108 points 1, 2 and 9 on a synthetic open day: the research layout, the audit
+    copy of three tickers (tick groups compared only for them, tk61 rows for the others), the
+    default minutes, the exact threshold with its classes, and the final-quote cases."""
+    given, halt = day[0], day[4]
+    root = _layout(day, tmp_path / "copy")
+    out = tmp_path / "out"
+    args = ["--day", DAY, "--folder", str(root), "--types", "-", "--reference",
+            str(given.reference), "--benzinga", str(given.benzinga), "--fl",
+            str(given.fl_facts), "--out", str(out), "--mode", "both"]
+    assert parity.main(args) == 0
+    report = json.loads((out / f"parity-{DAY}.json").read_text())
+    assert report["tick_form"] == "audit" and report["covered_tickers"] == len(COVERED)
+    assert report["tick_rows_from_tk61_symbols"] > 0
+    why = report["chosen_because"]
+    assert set(MINUTES) <= set(report["minutes"])
+    assert f"final quote {HALTED}" in why[parity.hhmm(halt)]
+    assert any(f"pre-04:00 carry {EARLY}" in r for r in why.values())
+    assert any("regular-session peak" in r for r in why.values())
+    marker, plain = report["variants"]["marker"], report["variants"]["plain"]
+    for hm, r in marker.items():
+        assert r["bar_groups_exact"] and r["keys_exact"], hm
+        # uncovered rows: tick groups not compared (a minute may have no row at all)
+        assert r["tick_rows_not_compared"] > 0 or r["rows_compared"] == 0, hm
+        if parity.table_minutes([hm])[0] < halt:  # before any final quote: exact
+            assert r["exact"], hm
+            assert report["ticks"]["marker"][hm]["exact"], hm
+    # the halted symbol's final quote: weight 0 in the archive, its minute-end weight with the
+    # marker; the plain prefix gives it weight 0 as the archive does
+    case = {c["sym"]: c for c in report["final_quote"]["marker"]["cases"]
+            if c["minute"] == parity.hhmm(halt)}[HALTED]
+    assert case["value_changed"] and case["stopped_before_close"]
+    flat = {c["sym"]: c for c in report["final_quote"]["plain"]["cases"]
+            if c["minute"] == parity.hhmm(halt)}[HALTED]
+    assert not flat["value_changed"] and not flat["missing_changed"]
+    assert report["final_quote"]["marker"]["summary"]["value_changed"] >= 1
+    assert any(not r["exact"] for r in plain.values())
+    assert any(c["value"] for c in report["versus_plain"]["marker"].values())
+
+
+def test_the_tick_table_alone_against_tk61(day, tmp_path):
+    root = _layout(day, tmp_path / "copy")
+    work = tmp_path / "work"
+    work.mkdir()
+    found = parity.layout(root, DAY)
+    given = parity.ReplayInputs(found["bars"], None, found["trades"], found["quotes"],
+                                *(tmp_path / "none" for _ in range(4)), tk61=found["tk61"],
+                                tick_form="audit")
+    report = parity.replay(DAY, ["09:45", "12:00"], given, variants=("plain", "marker"),
+                           work=work, ticks_only=True)
+    assert report["variants"] == {}
+    for hm in ("09:45", "12:00"):
+        assert report["ticks"]["marker"][hm]["exact"], hm
+        assert report["ticks"]["marker"][hm]["rows_compared"] > 0
+    plain = report["ticks"]["plain"]["12:00"]
+    assert set(plain["columns"]) <= {"qspr", "qbs", "qas", "qimb", "qbad", "qbd", "qad"}
+    assert plain["columns"] and plain["classes"]["value"] + plain["classes"]["missing"] > 0
+
+
+def test_audit_values_v11_cannot_cast_are_refused(day, tmp_path):
+    root = _layout(day, tmp_path / "copy")
+    found = parity.layout(root, DAY)
+    import duckdb
+
+    bad = duckdb.sql(f"SELECT * FROM read_parquet('{found['quotes']}')").df()
+    bad.loc[bad.index[0], "conditions"] = "[12]"
+    path = tmp_path / "bad-quotes.parquet"
+    _write(bad, path)
+    given = parity.ReplayInputs(found["bars"], None, found["trades"], path,
+                                *(tmp_path / "none" for _ in range(4)), tk61=found["tk61"],
+                                tick_form="audit")
+    with pytest.raises(ModelRefused) as exc:
+        parity.check_audit(given)
+    assert exc.value.cause == "tick_value_invalid" and "quotes.conditions" in exc.value.detail
+    with pytest.raises(ModelRefused) as exc:  # the audit form never runs without tk61
+        parity.replay(DAY, ["09:45"], parity.ReplayInputs(**{**given.__dict__, "tk61": None}),
+                      work=tmp_path)
+    assert exc.value.cause == "replay_tk61_missing"
+
+
+def test_the_open_day_2026_11_17_passes_the_date_rule(tmp_path):
+    labels = full.full_code().labels
+    cal = labels.calendar()
+    i = cal.index("2026-11-17")
+    for d in cal[i - labels.HIST:i + 1]:
+        (tmp_path / f"{d}.csv.gz").write_bytes(b"")
+    got = parity.day_files("2026-11-17", tmp_path)
+    assert got[-1] == "2026-11-17" and len(got) == labels.HIST + 1
