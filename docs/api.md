@@ -792,8 +792,12 @@ a `settings-history-v1` document.
   the remote port plus this flag; the local port has no token, as for every other route.
 - Writes are atomic and journaled first: under an exclusive lock (`<history file>.lock`; held by
   another writer: `409 conflict`, nothing changed) every listed owner file must still have its
-  `base` digest (else `409`: read GET /settings/values again), the version is recorded
-  `writing`, each file is replaced in one rename with only the value of its key's line changed
+  `base` digest (else `409`: read GET /settings/values again); each candidate file must load
+  with the bot's own loaders (`config.load` on a temp copy beside `bot.toml`; a strategy file
+  through its strategy's `create` and history check from a temp folder beside its folder),
+  else `400` `<file> would not load: <the loader's cause>` with nothing written or journaled
+  (also for the bot's start writing pending changes, which then stay pending); the version is
+  recorded `writing`, each file is replaced in one rename with only the value of its key's line changed
   (comments and every other line stay; an edit that would change anything else is refused),
   then the version is `done`. A writer that stopped in between is settled by the next one from
   the file digests: `done`, `not_written` (pending changes it settled become pending again) or

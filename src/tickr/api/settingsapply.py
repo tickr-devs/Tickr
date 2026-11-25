@@ -24,7 +24,8 @@ it, and the protection is the paired device token (remote port) plus that flag.
 
 Writes are atomic and journaled first. Under an exclusive lock (`<history>.lock`, refused at
 once when held: a concurrent edit), each file's digest must still be the one the draft was made
-against; the history file records the version as `writing`, each file is replaced in one rename
+against and each candidate file must load with the bot's own loaders (`_check_loads`); the
+history file records the version as `writing`, each file is replaced in one rename
 (its other lines and comments untouched), then the version is `done`. A writer that stopped in
 between is settled by the next one from the files' digests (`done`, `not_written`, `unknown`).
 """
@@ -34,7 +35,10 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import re
+import shutil
+import tempfile
 import tomllib
+import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -43,6 +47,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from tickr import config
 from tickr import settings_schema as schema
 from tickr.api import contract
 from tickr.api.contract import (
@@ -72,6 +77,14 @@ from tickr.api.settingsview import (
 from tickr.calendar import ny_date_of
 from tickr.config import Config
 from tickr.lock import recorded_holder
+from tickr.observers.errors import ObserverError
+from tickr.observers.loader import (
+    STRATEGIES_DIR,
+    STRATEGY_FILE,
+    check_history,
+    load_strategy,
+    parse_modules,
+)
 from tickr.settings_schema import Applies
 
 DIGEST = re.compile(r"^[0-9a-f]{64}$")  # SHA-256 in lowercase hex (protocol constant)
@@ -361,7 +374,52 @@ def _writes(paths: SettingsPaths, entries: list[SettingsVersionChangeV1]) -> lis
             if e.owner == owner and e.state is SettingChangeState.WRITTEN:
                 new = edited(new, e.key, e.after)
         writes.append(_Write(owner, found.path, found.shown, found.digest, new))
+    if writes:
+        _check_loads(paths, writes)
     return writes
+
+
+def _refused_load(shown: str, exc: Exception, *names: str) -> ApplyRefused:
+    cause = str(exc) or type(exc).__name__
+    for name in names:
+        cause = cause.replace(name, shown)
+    return ApplyRefused("bad_request", f"{shown} would not load: {cause}")
+
+
+def _check_loads(paths: SettingsPaths, writes: list[_Write]) -> None:
+    """Load every candidate file with the bot's own loaders before anything is written: the
+    config file with `config.load` from a temp file beside it, a strategy file with
+    `load_strategy` and `check_history` from a temp folder beside its folder. A value the schema
+    passes but a loader refuses is refused here, with the loader's cause, and nothing is
+    written or journaled."""
+    platform = next((w for w in writes if w.owner == schema.PLATFORM), None)
+    path = paths.config_file
+    candidate = path.with_name(f".{path.name}.candidate-{uuid.uuid4().hex}.toml")
+    try:
+        if platform is None:
+            cfg = config.load(path)
+        else:
+            candidate.write_text(platform.text, "utf-8")
+            cfg = config.load(candidate)
+    except (ValueError, OSError) as exc:
+        shown = platform.shown if platform is not None else path.name
+        raise _refused_load(shown, exc, str(candidate), candidate.name) from exc
+    finally:
+        candidate.unlink(missing_ok=True)
+    for w in writes:
+        if w.owner == schema.PLATFORM:
+            continue
+        folder = Path(tempfile.mkdtemp(prefix=f".{w.owner}.candidate-", dir=w.path.parent.parent))
+        try:
+            target = folder / STRATEGIES_DIR / w.owner / STRATEGY_FILE
+            target.parent.mkdir(parents=True)
+            target.write_text(w.text, "utf-8")
+            loaded = load_strategy(folder, w.owner, parse_modules(cfg.observers.strategy_modules))
+            check_history(loaded, cfg.market_data.history_sessions)
+        except (ObserverError, OSError) as exc:
+            raise _refused_load(w.shown, exc, str(target)) from exc
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 def _rollback_changes(versions: tuple[SettingsVersionV1, ...], target: int) -> tuple[Change, ...]:
