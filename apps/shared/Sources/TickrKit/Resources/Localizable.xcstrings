@@ -10016,6 +10016,78 @@
         }
       }
     },
+    "kit.prose.stop_already_running" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). stop_already_running",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A close-and-stop is already running"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay un cierre y detención en curso"
+          }
+        }
+      }
+    },
+    "kit.prose.stop_close_failed" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). stop_close_failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A close failed: the bot keeps running and the stops stay; look in the Webull app"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un cierre falló: el bot sigue funcionando y los stops se quedan; revisa la app de Webull"
+          }
+        }
+      }
+    },
+    "kit.prose.stop_close_timed_out" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). stop_close_timed_out",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} trade(s) still open {seconds} s after close and stop: the bot keeps running; look in the Webull app, then stop the bot again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} operación(es) siguen abiertas {seconds} s después de cerrar y detener: el bot sigue funcionando; revisa la app de Webull y luego detén el bot otra vez"
+          }
+        }
+      }
+    },
+    "kit.prose.stop_interrupted" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). stop_interrupted",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close and stop was interrupted by a restart: the bot keeps running; stop it again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar y detener se interrumpió por un reinicio: el bot sigue funcionando; detenlo otra vez"
+          }
+        }
+      }
+    },
     "kit.prose.stop_not_cleared" : {
       "comment" : "A cause the API writes itself (`<field>_codes`). stop_not_cleared",
       "extractionState" : "manual",
@@ -10174,6 +10246,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se propusieron {count} cambios, se permiten como máximo {max}"
+          }
+        }
+      }
+    },
+    "kit.prose.trades_left_open" : {
+      "comment" : "A cause the API writes itself (`<field>_codes`). trades_left_open",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} trade(s) left open: nothing closes them; their broker stops are day orders"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{count} operación(es) quedan abiertas: nada las cierra; sus stops en el bróker son órdenes del día"
           }
         }
       }

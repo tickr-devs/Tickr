@@ -20,6 +20,54 @@ public enum CommandKind: String, Codable, Sendable, CaseIterable {
 
 public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 
+/// What a stop-bot does with open positions (backlog V4); nil keeps the old rule (refused while any is open).
+public enum StopMode: String, Codable, Sendable, CaseIterable {
+  case closeAndStop = "close_and_stop"
+  case leaveOpen = "leave_open"
+}
+
+/// Where an obeyed or running stop-bot is (`StatusV1.stopProgress`).
+public enum StopStep: String, Codable, Sendable {
+  case closingPositions = "closing_positions"
+  case positionsClosed = "positions_closed"
+  case stopping
+  case stopped
+}
+
+/// A stop-bot the bot obeyed or is carrying out (added after version 1 shipped).
+public struct StopProgress: Codable, Hashable, Sendable {
+  public let commandId: String
+  public let mode: StopMode?
+  public let step: StopStep
+  public let since: WireTime
+  /// The bot's own trades not closed when the status was written.
+  public let openTrades: Int
+
+  enum CodingKeys: String, CodingKey {
+    case mode, step, since
+    case commandId = "command_id"
+    case openTrades = "open_trades"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    commandId = try c.decode(String.self, forKey: .commandId)
+    mode = try c.decodeNullable(StopMode.self, forKey: .mode)
+    step = try c.decode(StopStep.self, forKey: .step)
+    since = try c.decode(WireTime.self, forKey: .since)
+    openTrades = try c.decode(Int.self, forKey: .openTrades)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(commandId, forKey: .commandId)
+    try c.encodeNullable(mode, forKey: .mode)
+    try c.encode(step, forKey: .step)
+    try c.encode(since, forKey: .since)
+    try c.encode(openTrades, forKey: .openTrades)
+  }
+}
+
 public struct StrategyId: Codable, Hashable, Sendable {
   public let name: String
   public let version: String
@@ -160,6 +208,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let feesTodayUsd: DecimalString?
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
+  /// The stop-bot this run obeyed or is carrying out; nil while none (and from an older bot).
+  public let stopProgress: StopProgress?
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -180,6 +230,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case feesTodayUsd = "fees_today_usd"
     case resultTodayNetUsd = "result_today_net_usd"
     case resultTodayBrokerUsd = "result_today_broker_usd"
+    case stopProgress = "stop_progress"
     case schemaVersion = "schema_version"
   }
 
@@ -209,6 +260,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
+    stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -236,6 +288,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
+    try c.encodeNullable(stopProgress, forKey: .stopProgress)
   }
 }
 
@@ -246,10 +299,12 @@ public struct CommandV1: Codable, Hashable, Sendable {
   public let source: String
   /// The one symbol a flatten closes; nil for every other command and for a flatten of everything.
   public let symbol: String?
+  /// A stop-bot's mode (added after version 1 shipped); nil for every other command and a stop-bot without one.
+  public let mode: StopMode?
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
-    case kind, source, symbol
+    case kind, source, symbol, mode
     case commandId = "command_id"
     case requestedAt = "requested_at"
     case schemaVersion = "schema_version"
@@ -263,6 +318,7 @@ public struct CommandV1: Codable, Hashable, Sendable {
     requestedAt = try c.decode(WireTime.self, forKey: .requestedAt)
     source = try c.decode(String.self, forKey: .source)
     symbol = try c.decodeNullable(String.self, forKey: .symbol)
+    mode = try c.decodeIfPresent(StopMode.self, forKey: .mode)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -272,6 +328,7 @@ public struct CommandV1: Codable, Hashable, Sendable {
     try c.encode(requestedAt, forKey: .requestedAt)
     try c.encode(source, forKey: .source)
     try c.encodeNullable(symbol, forKey: .symbol)
+    try c.encodeNullable(mode, forKey: .mode)
     try c.encode(schemaVersion, forKey: .schemaVersion)
   }
 }

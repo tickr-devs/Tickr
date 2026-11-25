@@ -637,6 +637,17 @@ _PROSE = _shapes(
     ("close_in_progress", r"a close is in progress; send stop-bot again after it completes"),
     ("trades_still_open", r"(?P<count>[0-9]+) trade\(s\) open or entering; flatten first \(or "
                           r"send emergency\), then stop-bot"),
+    # a stop-bot with a mode (backlog V4)
+    ("stop_already_running", r"a close-and-stop is already running \((?P<command>\S+)\)"),
+    ("trades_left_open", r"(?P<count>[0-9]+) trade\(s\) left open: nothing closes them; their "
+                         r"broker stops are DAY orders"),
+    ("stop_close_failed", r"close failed for (?P<trades>.+) \((?P<fences>[a-z, -]+)\): the bot "
+                          r"keeps running and the stops stay; look in the Webull app"),
+    ("stop_close_timed_out", r"(?P<count>[0-9]+) trade\(s\) still open (?P<seconds>" + _NUM
+                             + r") s after close-and-stop: the bot keeps running; look in the "
+                             r"Webull app, then send stop-bot again"),
+    ("stop_interrupted", r"close-and-stop interrupted by a restart: the bot keeps running; send "
+                         r"stop-bot again"),
     ("no_open_position", r"no open position in (?P<symbol>\S+)"),
     ("close_refused_before", r"closing order refused before for (?P<trades>.+): look in the "
                              r"Webull app, then clear the fence"),

@@ -146,8 +146,8 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
 | POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
-| POST | `/commands/stop-bot` | Body `{}`. Graceful stop that sticks. `202` `command-accepted-v1`. |
-| POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. `202` `command-accepted-v1`. |
+| POST | `/commands/stop-bot` | Body `{}`, `{"mode": "close_and_stop"}` or `{"mode": "leave_open"}` (what to do with open positions, see stop-bot below). Graceful stop that sticks. `202` `command-accepted-v1`. |
+| POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. The apps' "Close all" button. `202` `command-accepted-v1`. |
 | POST | `/commands/start-bot` | Body `{}`. Starts the bot job through launchd (not a bot command, see "Start-bot"). `202` `bot-start-v1`; `409 conflict` while a fresh status says the bot is starting, running or stopping, or a live process holds the bot's lock; `503 unavailable` when no start command is configured, the stop marker cannot be removed, or the command fails. |
 
 Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1, "cause_codes": [...]}`
@@ -331,7 +331,9 @@ performance `<name>_cause`. Codes (params in braces; wire times become `HH:MM` N
   loader's codes above, and any other as `advisor_refused` {detail} (the whole text; also the
   code of a run that was not refused, whose `cause` repeats the advisor's no-change reason);
 - operator commands: `command_after_stop` {command}, `close_in_progress`, `trades_still_open`
-  {count}, `no_open_position` {symbol}, `close_refused_before` {trades},
+  {count}, a stop-bot's mode `stop_already_running` {command}, `trades_left_open` {count},
+  `stop_close_failed` {trades, fences}, `stop_close_timed_out` {count, seconds},
+  `stop_interrupted`, `no_open_position` {symbol}, `close_refused_before` {trades},
   `close_held_outside_session` {trades}, `close_not_sent_now` (with the close refusal's values),
   `nothing_open`, `entry_cancels_requested` {count}, `step_done`, `steps_done` {steps},
   `steps_not_run` {steps}, `every_step_ran`, a refused command file's
@@ -1480,7 +1482,9 @@ The server never relies on anything the client checked (Face ID on the phone is 
 only): the remote port needs the paired token for every request, and the bot applies its own
 preconditions to every command.
 
-`command.symbol` is the ticker of a flatten of one position, otherwise `null`.
+`command.symbol` is the ticker of a flatten of one position, otherwise `null`. `command.mode`
+(added after version 1 shipped) is a stop-bot's mode, `close_and_stop` or `leave_open`, otherwise
+`null`; a reader takes a command without the key as `null`.
 
 - **flatten**: every open trade, or only the trades of `symbol`, gets an exit request through
   the normal exit path. Refused when `symbol` has no open position ("no open position in
@@ -1510,6 +1514,54 @@ preconditions to every command.
   request that a later start would carry out without anyone asking. Commands the bot reads
   after an obeyed stop-bot, in the same pass, are refused ("read after stop-bot <id>: the bot
   is stopping"), never recorded done.
+  **Modes** (backlog V4, owner 2026-11-18). With trades open, the body says what to do with
+  them; without a mode the rules above stand unchanged. With nothing open a mode changes
+  nothing: the stop is obeyed at once.
+  - `{"mode": "close_and_stop"}`: in one journal write the bot asks every open trade to exit
+    through the flatten path (exit cause `operator-flatten`; the engine records each closing
+    order before its one send and never resends it), turns entry-stop on (cause `operator
+    command <id>`, so no new trade opens while closing; it stays on after the stop, like the
+    emergency's) and journals the step `closing_positions`; then it cancels working entries.
+    Refused with nothing changed when that flatten is refused (cause `flatten: <the flatten's
+    cause>`). It runs in the bot, pass after pass, whatever the app does (closing the app or
+    losing the connection changes nothing). Once no own trade is open: `positions_closed`,
+    then the stop exactly as without a mode (marker, command `done` with cause `null`,
+    `stopping`, drain, `stopped`). It ends `refused`, the bot running on and every stop kept,
+    when a trade's close failed: fence `exit-refused`, `exit-not-filled` or `market-closed` on
+    that trade ("close failed for <trades> (<fences>): the bot keeps running and the stops
+    stay; look in the Webull app"; the failed close is never resent), or when trades are
+    still open `[runtime] stop_close_max_seconds` after it began ("N trade(s) still open S s
+    after close-and-stop: ..."). Exit requests already made stay and finish on their own. A
+    restart in the middle never resumes it: the restarted bot records it `refused` ("close-and-
+    stop interrupted by a restart: the bot keeps running; send stop-bot again") and runs on.
+    While it runs, every other stop-bot is refused ("a close-and-stop is already running
+    (<id>)").
+  - `{"mode": "leave_open"}`: stops at once without closing anything: the marker, the command
+    `done` with cause "N trade(s) left open: nothing closes them; their broker stops are DAY
+    orders", then the drain as on SIGTERM (it still cancels a working entry and keeps any fill
+    under a broker stop). Refused while a close is in progress (cause as above). Nothing closes
+    those positions afterwards: the stopped bot does not flatten, and the watchdog never sends
+    an order (it holds read-only broker access) and never starts a bot while the stop marker
+    exists (`watchdog-restart-refused`); it still alerts `bot-down-with-open-trade` and, after
+    the flatten time, `watchdog-not-flat`. The broker stops are DAY orders and expire at the
+    close.
+
+  Progress: `status.stop_progress` (added after version 1 shipped; `null` while none) is the
+  stop-bot this run obeyed or is carrying out: `{command_id, mode, step, since, open_trades}`,
+  `step` one of `closing_positions`, `positions_closed`, `stopping`, `stopped` (in that
+  order; a stop without closes starts at `stopping`), `since` when the step began and
+  `open_trades` the bot's own trades not closed at the status time. Each step is also a
+  journal row `stop-progress` keyed by the command id. A refused close_and_stop clears it;
+  its record in `recent_commands` says why. The command's record appears in
+  `recent_commands` when it is done or refused, not before.
+
+  **"Bot stopped, N positions open"**: the last status a stopped bot wrote stays served (`stale`
+  grows with its age): `bot_state` `stopped`, `stop_progress` with `step` `stopped`, and
+  `positions`, the bot's own positions as its records last agreed with the broker
+  (`freshness.last_broker_read_at`). The broker's own list, which also shows manual
+  positions, is `GET /account` `positions` as of its `read_at`, with `matches_records`.
+  Neither is refreshed while the bot is stopped: show their time, never a guess.
+
   The launchd bot job has `KeepAlive` false, so launchd does not restart it today, but its
   calendar start (`[runtime] bot_start_local` on `launch_weekdays`) would start it the next
   trading day. The marker stops that: while it exists preflight fails with cause
@@ -1518,7 +1570,8 @@ preconditions to every command.
   again: `tickr clear-stop`, then wait for the next scheduled start or
   `launchctl kickstart gui/$(id -u)/local.tickr.bot`. `tickr resume` and `tickr exit`
   still work while the marker exists.
-- **emergency**: three steps in this order, each the existing handler and each journaled as a
+- **emergency**: the apps' "Close all" (the positions header, backlog V4). Three steps in this
+  order, each the existing handler and each journaled as a
   `command-step` row: entry-stop on (the same fence as `/commands/entry-stop`, survives
   restarts), cancel own orders (working entry orders only), flatten all (exit cause
   `operator-emergency`). A step that refuses does not stop the others; the command is `done`
@@ -1614,3 +1667,6 @@ again).
 - Emergency steps are journaled one by one (`command-step`, keyed by `command_id`) and the
   command record comes last, so a command read again after a crash finishes only its missing
   steps.
+- A stop-bot's steps are journaled as `stop-progress` rows (keyed by `command_id`); a
+  close_and_stop is carried out by `Service.carry_out_stop` on every loop pass, and one whose
+  latest step is before `stopping` with no command record is recorded refused at startup.

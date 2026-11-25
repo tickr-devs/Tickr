@@ -1642,6 +1642,37 @@ GROUPS = [
                 "de emergencia) y luego detén el bot",
             ),
             (
+                "stop_already_running",
+                "A close-and-stop is already running",
+                "Ya hay un cierre y detención en curso",
+            ),
+            (
+                "trades_left_open",
+                "{count} trade(s) left open: nothing closes them; their broker stops are day "
+                "orders",
+                "{count} operación(es) quedan abiertas: nada las cierra; sus stops en el bróker "
+                "son órdenes del día",
+            ),
+            (
+                "stop_close_failed",
+                "A close failed: the bot keeps running and the stops stay; look in the Webull app",
+                "Un cierre falló: el bot sigue funcionando y los stops se quedan; revisa la app de "
+                "Webull",
+            ),
+            (
+                "stop_close_timed_out",
+                "{count} trade(s) still open {seconds} s after close and stop: the bot keeps "
+                "running; look in the Webull app, then stop the bot again",
+                "{count} operación(es) siguen abiertas {seconds} s después de cerrar y detener: "
+                "el bot sigue funcionando; revisa la app de Webull y luego detén el bot otra vez",
+            ),
+            (
+                "stop_interrupted",
+                "Close and stop was interrupted by a restart: the bot keeps running; stop it again",
+                "Cerrar y detener se interrumpió por un reinicio: el bot sigue funcionando; "
+                "detenlo otra vez",
+            ),
+            (
                 "no_open_position",
                 "No open position in {symbol}",
                 "Sin posición abierta en {symbol}",

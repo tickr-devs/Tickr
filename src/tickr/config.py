@@ -430,6 +430,7 @@ class RuntimeConfig:
     evaluation_budget_seconds: Decimal
     discovery_stop_seconds: Decimal
     stop_marker_file: str
+    stop_close_max_seconds: int
     preflight_result_file: str
     release_step_timeout_seconds: int
     release_stop_wait_seconds: int
@@ -667,6 +668,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError(
             f"[run] environment {run.environment!r} is not one of: {', '.join(environments)}"
         )
+    if built["runtime"].stop_close_max_seconds <= built["orders"].max_exit_seconds:
+        # A close that does not fill must end a close_and_stop through its exit-not-filled
+        # fence (a typed cause) before the overall wait gives up.
+        raise ConfigError("[runtime] stop_close_max_seconds must be above "
+                          "[orders] max_exit_seconds")
     if run.maintain_keep_sessions < 1:
         raise ConfigError("[run] maintain_keep_sessions must be at least 1 (today is always kept)")
     if run.maintain_archive_max_age_days < 0:

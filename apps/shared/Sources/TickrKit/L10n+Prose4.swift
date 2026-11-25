@@ -9,6 +9,32 @@ extension L10n {
       // swiftlint:disable:next line_length
       defaultValue: "{count} trade(s) open or entering: close them first (or send the emergency command), then stop the bot", bundle: bundle)
   }
+  /// A cause the API writes itself (`<field>_codes`). stop_already_running
+  static var proseReasonStopAlreadyRunning: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.stop_already_running",
+      defaultValue: "A close-and-stop is already running", bundle: bundle)
+  }
+  /// A cause the API writes itself (`<field>_codes`). trades_left_open (values: count)
+  static var proseReasonTradesLeftOpen: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.trades_left_open",
+      defaultValue: "{count} trade(s) left open: nothing closes them; their broker stops are day orders", bundle: bundle)
+  }
+  /// A cause the API writes itself (`<field>_codes`). stop_close_failed
+  static var proseReasonStopCloseFailed: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.stop_close_failed",
+      defaultValue: "A close failed: the bot keeps running and the stops stay; look in the Webull app", bundle: bundle)
+  }
+  /// A cause the API writes itself (`<field>_codes`). stop_close_timed_out (values: count, seconds)
+  static var proseReasonStopCloseTimedOut: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.stop_close_timed_out",
+      // swiftlint:disable:next line_length
+      defaultValue: "{count} trade(s) still open {seconds} s after close and stop: the bot keeps running; look in the Webull app, then stop the bot again", bundle: bundle)
+  }
+  /// A cause the API writes itself (`<field>_codes`). stop_interrupted
+  static var proseReasonStopInterrupted: LocalizedStringResource {
+    LocalizedStringResource("kit.prose.stop_interrupted",
+      defaultValue: "Close and stop was interrupted by a restart: the bot keeps running; stop it again", bundle: bundle)
+  }
   /// A cause the API writes itself (`<field>_codes`). no_open_position (values: symbol)
   static var proseReasonNoOpenPosition: LocalizedStringResource {
     LocalizedStringResource("kit.prose.no_open_position",
