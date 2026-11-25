@@ -13,6 +13,8 @@ from tickr.research.__main__ import main
 from tickr.research.calibration import calibration
 
 SETTINGS = str(HERE / "research_settings.toml")
+CLOCK = ["--replay-settings", str(HERE / "replay_settings.toml"),
+         "--config", str(HERE.parent.parent / "config" / "bot.toml")]
 
 
 def _answers(path, header, rows):
@@ -61,7 +63,7 @@ def test_blank_cells_skipped_and_columns_separate(tmp_path):
 def test_bad_input_refused(tmp_path, capsys, header, row, cause):
     path = _answers(tmp_path / "a.csv", header, [row])
     code = main(["calibration", "--answers", str(path), "--settings", SETTINGS,
-                 "--out", str(tmp_path / "o")])
+                 "--out", str(tmp_path / "o"), *CLOCK])
     assert code == 2
     err = capsys.readouterr().err
     assert "research refused" in err
@@ -73,7 +75,7 @@ def test_cli_writes_csv_and_json(tmp_path):
                     [("0.2", "0"), ("0.2", "1"), ("0.8", "1")])
     out = tmp_path / "o"
     assert main(["calibration", "--answers", str(path), "--settings", SETTINGS,
-                 "--out", str(out)]) == 0
+                 "--out", str(out), *CLOCK]) == 0
     with open(out / "calibration.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 10

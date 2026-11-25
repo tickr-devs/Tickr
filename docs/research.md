@@ -249,9 +249,10 @@ pass/fail threshold exists until the owner chooses one.
 ## Settings
 
 `config/research.toml` `[research]` (one comment per key, tested; missing or unknown keys are
-refused): `horizons_minutes`, `atr_period`, `session_timezone`, `output_decimal_places`
-(`latency` reads only the last two), `calibration_buckets` (`calibration` reads it and the
-decimals).
-What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay.
+refused): `horizons_minutes`, `atr_period`, `session_timezone`
+(`latency` reads only the last), `calibration_buckets` (`calibration` reads it).
+What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay. Every
+report also rounds to its `output_decimal_places` (`--replay-settings` with `--config`, default
+`config/replay.toml`): that number has one home.
 
 Exit code 2 and `research refused: <cause>` on any bad input; nothing is guessed.
