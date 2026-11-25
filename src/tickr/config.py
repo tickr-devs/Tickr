@@ -225,6 +225,7 @@ class ApiConfig:
     remote_hosts_file: str
     remote_port: int
     remote_token_hash_file: str
+    remote_devices_file: str
     remote_simulator_token_hash_file: str
     remote_simulator_token_file: str
     remote_token_bytes: int
