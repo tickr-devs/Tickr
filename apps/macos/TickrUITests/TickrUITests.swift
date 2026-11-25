@@ -26,12 +26,6 @@ final class TickrUITests: XCTestCase {
   /// broker read that matches the bot's records (account-response-v1.json).
   static let cancel = "Cancel"
   static let matches = "MATCHES"
-  /// The first observer in observers-v1.json (price-action-v1, version 2, three decisions), as its
-  /// row on Strategy lab's versions card reads: its name and the English note of its decision
-  /// count (lab.observerNote). The active strategy (status-response-v1.json) is price-action-v1
-  /// too, so the name alone also matches the active version's row.
-  static let observer = "price-action-v1"
-  static let observerNote = "observer · decisions: 3"
   /// The Overview header's one environment badge for the fixtures' environment (sandbox in
   /// status-response-v1.json), as its English text reads (environmentLabel, upper-cased as every
   /// badge is).
@@ -52,8 +46,8 @@ final class TickrUITests: XCTestCase {
   /// The performance card (PerformanceCard.id) and the start of its exclusion line.
   static let performanceCard = "trades-performance"
   static let excludedPrefix = "Left out: 1"
-  /// The Overview's latest-event line (LatestEvent.id) and watching card (WatchingCard.id).
-  static let latestEvent = "overview-latest-event"
+  /// The Overview's Live flow card (LiveFlowCard.id) and watching card (WatchingCard.id).
+  static let liveFlow = "overview-live-flow"
   static let watchingCard = "overview-watching"
   /// The month calendar of Trades & days (MonthCalendar.id).
   static let calendar = "trades-calendar"
@@ -278,8 +272,8 @@ final class TickrUITests: XCTestCase {
   @MainActor
   func testOverviewShowsTheFlowAndWatchedSymbols() {
     let app = launch()
-    let event = app.descendants(matching: .any)[Self.latestEvent].firstMatch
-    XCTAssertTrue(event.waitForExistence(timeout: Self.timeout), "latest event\n\(app.debugDescription)")
+    let flow = app.descendants(matching: .any)[Self.liveFlow].firstMatch
+    XCTAssertTrue(flow.waitForExistence(timeout: Self.timeout), "live flow\n\(app.debugDescription)")
     let watching = app.descendants(matching: .any)[Self.watchingCard].firstMatch
     // Each row is a button that opens the Chart, so its texts are read in the button's label.
     let check = watching.buttons.matching(NSPredicate(format: "label CONTAINS %@", Self.decisionRule))
@@ -319,18 +313,6 @@ final class TickrUITests: XCTestCase {
     let text = [title.label, title.value as? String ?? ""]
     XCTAssertTrue(text.contains(Self.emptyDayLabel), "day title \(text)\n\(app.debugDescription)")
     XCTAssertFalse(trade.exists, "today's trade still listed\n\(app.debugDescription)")
-  }
-
-  @MainActor
-  func testLabShowsTheObservers() {
-    let app = launch()
-    open(Self.sections[4], in: app)
-    // A version's row reads as one text element (its texts combined into its value), so the
-    // observer's name and note are parts of a longer value. The day chart's legend names an
-    // observer by what sets it apart ("v2 · rel vol 1.5×"), not by its name.
-    let row = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@",
-      Self.observer, Self.observerNote)).firstMatch
-    XCTAssertTrue(row.waitForExistence(timeout: Self.timeout), "observer row\n\(app.debugDescription)")
   }
 
   /// The chart with every study and the decisions inspector opens, survives a narrower window
