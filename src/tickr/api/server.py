@@ -70,6 +70,7 @@ from tickr.api.jobs import JobsSettings, jobs_document
 from tickr.api.journal import day_events, journal_document
 from tickr.api.lab_replay import LabReplay, LabReplayRefused, LabReplaySettings
 from tickr.api.observer_results import ObserverResults, SimulationPaths
+from tickr.api.readiness import ReadinessSettings, readiness_document
 from tickr.api.system import SystemSettings, system_document
 from tickr.api.warm import PastDayWarmer
 from tickr.calendar import ny_date_of
@@ -162,6 +163,7 @@ class ApiSettings:
     after: AfterSettings  # prices after, overshoot (day-v1) and what-if (skipped-v1)
     jobs: JobsSettings  # GET /jobs: schedule, database and calendar
     system: SystemSettings  # GET /system: link, preflight record, training, machine services
+    readiness: ReadinessSettings  # GET /readiness: the readiness view
     lab: LabReplaySettings  # GET and POST /lab/replay: the Lab's simulated replay
     start: StartSettings  # POST /commands/start-bot: launchd's start of the bot job
     trade_whatif: trade_whatif.TradeWhatIfSettings  # GET /trades/whatif
@@ -301,6 +303,7 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
                             (cfg.root / cfg.session.calendar_file).parent),
         jobs=JobsSettings.from_config(cfg),
         system=SystemSettings.from_config(cfg),
+        readiness=ReadinessSettings.from_config(cfg),
         lab=LabReplaySettings.from_config(cfg, config_path),
         start=StartSettings.from_config(cfg),
         trade_whatif=trade_whatif.TradeWhatIfSettings.from_config(cfg),
@@ -466,6 +469,15 @@ class ApiServer(ThreadingHTTPServer):
             poll_seconds=self.settings.poll_seconds,
             api_started_at=self.started_at,
         )
+
+    def readiness(self) -> contract.ReadinessV1:
+        """GET /readiness: the readiness view now (api/readiness.py)."""
+
+        def clean_days(today: date) -> int:
+            return sum(1 for day in self.history.days(today).days
+                       if day.clean.verdict is contract.CleanVerdict.CLEAN)
+
+        return readiness_document(self.settings.readiness, self.clock(), clean_days)
 
     def account_response(self) -> AccountResponseV1 | ErrorV1:
         """The bot's account-v1 document with its age; an `unavailable` error when the file
@@ -758,6 +770,7 @@ GET_ROUTES = ("/", "/status", "/commands/pending", RECEIPT_ROUTE, "/schema", "/d
               "/settings",
               "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
               "/watching", "/performance", "/chart", "/jobs", "/system", "/journal", "/config",
+              "/readiness",
               "/trades/whatif", "/advisor", "/symbols", "/movers", "/quotes", "/events")
 MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
 MAX_PORT = 65535  # TCP ports are 16-bit (protocol constant)
@@ -969,6 +982,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/system":
                 self._json(200, system_document(self.server.settings.system,
                                                 self.server.status_response()))
+            elif path == "/readiness":
+                self._json(200, self.server.readiness())
             elif path == "/journal":
                 self._json(200, journal_document(self.server.settings.jobs.database,
                                                  self.server.settings.journal_rows))

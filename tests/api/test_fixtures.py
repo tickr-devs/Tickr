@@ -155,6 +155,38 @@ def _response(st, age, stale, cause=None) -> StatusResponseV1:
                             api_started_at=T0 - timedelta(hours=1))
 
 
+def _readiness() -> contract.ReadinessV1:
+    state, code = contract.ReadinessState, contract.ReadinessCode
+    on = contract.Gate(True, "trading enabled by configuration", "trading_enabled", {})
+    off = contract.Gate(False, "trading is disabled for environment 'production'",
+                        "trading_disabled", {"environment": "production"})
+    mismatch = "owner authorization does not match the current config digest"
+    return contract.ReadinessV1(
+        served_at=T0, environment="sandbox", config_digest="9a28" + "0" * 60, gate=on,
+        environments=(
+            contract.EnvironmentReadinessV1("sandbox", True, True, False, None, on, None),
+            contract.EnvironmentReadinessV1(
+                "production", False, False, True, None, off,
+                contract.AuthorizationRecordV1(
+                    "authorization/production.toml", True, "production", "2026-11-20", False,
+                    False, mismatch, "authorization_digest_mismatch", {}))),
+        checklist=(
+            contract.ReadinessCheckV1(code.CLEAN_DAYS, "sandbox", state.FAIL, "3 / 5",
+                                      "3 clean days of 5"),
+            contract.ReadinessCheckV1(code.PREFLIGHT, "sandbox", state.PASS, "2026-11-16", None),
+            contract.ReadinessCheckV1(code.UNATTENDED_SAFEGUARD, "sandbox", state.UNKNOWN,
+                                      "2026-11-13", "the watchdog last started on 2026-11-13, "
+                                      "not today"),
+            contract.ReadinessCheckV1(code.KEYS, "production", state.UNKNOWN, None,
+                                      "this process holds none of them"),
+            contract.ReadinessCheckV1(code.DATA_PROBE, "production", state.FAIL, None,
+                                      "chart probe C1 is not recorded for production"),
+            contract.ReadinessCheckV1(code.TRADING_ENABLED, "production", state.FAIL, None,
+                                      "[environments.production] trading_enabled is false"),
+            contract.ReadinessCheckV1(code.AUTHORIZATION, "production", state.FAIL, None,
+                                      mismatch)))
+
+
 def documents() -> dict[str, object]:
     minimal = status(entry_block=None, fences=(), position=None, trades_today=(),
                      recent_commands=(), run_id=None, result_today_gross_usd=Decimal("0"),
@@ -387,6 +419,8 @@ def documents() -> dict[str, object]:
                                   None, "the bot has not written a status file"),
             None, "no preflight recorded yet", None, "no training job is reporting",
             None, "no machine services on this host ([api] system_services = none)"),
+        # Settings > Environment: Sandbox loaded; Production off with a record for an old digest.
+        "readiness-v1": _readiness(),
         # The Overview's journal card: the latest rows, oldest first; "line #731".
         "journal-v1": JournalV1(731, (
             JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),
