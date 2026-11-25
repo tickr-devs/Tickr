@@ -378,6 +378,13 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class SizingConfig:
+    by_confidence: bool
+    min_usd: Decimal
+    max_usd: Decimal
+
+
+@dataclass(frozen=True)
 class MassiveConfig:
     api_host: str
     stream_host: str
@@ -495,6 +502,7 @@ class Config:
     observers: ObserversConfig
     advisor: AdvisorConfig
     model: ModelConfig
+    confidence_sizing: SizingConfig
     massive: MassiveConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
@@ -526,6 +534,7 @@ _SECTIONS: dict[str, type] = {
     "observers": ObserversConfig,
     "advisor": AdvisorConfig,
     "model": ModelConfig,
+    "confidence_sizing": SizingConfig,
     "massive": MassiveConfig,
 }
 
@@ -720,6 +729,7 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[model] enabled must stay false: the trained model is not wired into "
                           "the trading loop yet (the bundle loader and the shared feature code "
                           "are; the live data feed and the decision path follow)")
+    check_sizing(built["confidence_sizing"], built["risk"], model)
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
@@ -870,6 +880,19 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         digest=hashlib.sha256(raw_bytes).hexdigest(),
         renamed_keys=tuple(renamed),
     )
+
+
+def check_sizing(sizing: SizingConfig, risk: RiskConfig, model: ModelConfig) -> None:
+    """Size by confidence (backlog R30): refuse ON unless its inputs and bounds are sound. While
+    it is off the bounds are not read. The cap is `[risk] position_notional_cap_usd`, not a copy."""
+    if not sizing.by_confidence:
+        return
+    if not model.enabled:
+        raise ConfigError("[confidence_sizing] by_confidence cannot be on: the model probability "
+                          "is not available ([model] enabled is false)")
+    if not 0 < sizing.min_usd <= sizing.max_usd <= risk.position_notional_cap_usd:
+        raise ConfigError("[confidence_sizing] min_usd and max_usd must satisfy "
+                          "0 < min_usd <= max_usd <= [risk] position_notional_cap_usd")
 
 
 def check_history_share(orders: OrdersConfig, name: str, env: EnvironmentConfig) -> None:
