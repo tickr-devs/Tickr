@@ -693,7 +693,7 @@ private struct PositionSlots: View {
       }
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(Text(L10n.Risk.slots))
+    .accessibilityLabel(Text(L10n.Risk.slots(positions.count, String(limit))))
   }
 
   /// Colours of a stop state: its tone (`StopState.tone`): green verified, amber pending, red missing.
