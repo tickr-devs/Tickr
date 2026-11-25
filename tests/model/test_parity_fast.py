@@ -65,7 +65,7 @@ def test_the_incremental_engine_equals_full_prefix_on_all_191_columns(day, tmp_p
     given = day[0]
     ref = _run(given, tmp_path / "ref")
     got = _run(given, tmp_path / "inc", "--engine", "incremental", "--verify-full-prefix",
-               str(len(MINUTES)))
+               str(len(MINUTES)), "--workers", "2")
     check = got["engine_check"]
     assert check["minutes"] == MINUTES and check["differing_minutes"] == []
     for hm in MINUTES:
@@ -102,8 +102,8 @@ def test_resume_skips_finished_minutes_and_rebuilds_the_same_report(day, tmp_pat
                                                  index=False)
     assert parity.main(_args(given, out, "--mode", "all", "--engine", "incremental")) == 2
     run = []
-    real = parity._minute
-    monkeypatch.setattr(parity, "_minute", lambda *a: run.append(a[1]) or real(*a))
+    real = parity._prepare
+    monkeypatch.setattr(parity, "_prepare", lambda *a: run.append(a[1]) or real(*a))
     again = _run(given, out, "--engine", "incremental", "--resume")
     assert [parity.hhmm(m) for m in run] == MINUTES[2:]
     assert _results(again) == _results(whole)

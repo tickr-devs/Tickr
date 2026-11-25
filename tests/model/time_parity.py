@@ -89,9 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--trades", type=int, default=2000, help="trades per symbol-day (mean)")
     p.add_argument("--quotes", type=int, default=4000, help="quotes per symbol-day (mean)")
     p.add_argument("--minutes", nargs="+", default=list(parity.BASE_MINUTES))
+    p.add_argument("--json", type=Path, help="also write the numbers here")
+    p.add_argument("--all-minutes", action="store_true", help="every minute of the day")
     p.add_argument("--mode", default="both", choices=sorted(parity.MODES))
     p.add_argument("--engines", nargs="+", default=list(parity.ENGINES),
                    choices=parity.ENGINES)
+    p.add_argument("--workers", default="1", help="--workers of the parity runs")
     p.add_argument("--keep", type=Path, help="build or reuse the synthetic day here")
     args = p.parse_args(argv)
     ticks.converter()
@@ -120,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
             dest = Path(tmp) / f"out-{engine}"
             t0 = time.perf_counter()
             with contextlib.redirect_stdout(io.StringIO()):
-                code = parity.main([*base, "--minutes", *args.minutes, "--mode", args.mode,
-                                    "--out", str(dest), "--engine", engine])
+                when = ["--all-minutes"] if args.all_minutes else ["--minutes", *args.minutes]
+                code = parity.main([*base, *when, "--mode", args.mode,
+                                    "--out", str(dest), "--engine", engine,
+                                    "--workers", args.workers])
             total = time.perf_counter() - t0
             if code:
                 raise SystemExit(f"{engine}: exit {code}")
@@ -136,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
                 out["engines"][engine]["converter_calls"] = walked[-1]
         out["peak_rss_mib"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
     print(json.dumps(out, indent=1))
+    if args.json:
+        args.json.write_text(json.dumps(out, indent=1) + "\n", "utf-8")
     return 0
 
 

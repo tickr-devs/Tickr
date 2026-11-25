@@ -10,7 +10,7 @@ bucket's layout, copied to a local folder:
         --reference <prepared reference folder> --benzinga <Benzinga folder> --fl <facts csv> \
         --out <report folder> [--minutes HH:MM ... | --all-minutes] [--mode plain|marker|both|all]
         [--ticks-only] [--rtol R] [--atol A] [--engine full-prefix|incremental]
-        [--verify-full-prefix N] [--table-workers K] [--resume] [--rebuild-report]
+        [--verify-full-prefix N] [--table-workers K] [--workers W] [--resume] [--rebuild-report]
 
 INPUTS. `--folder` gives the defaults of the research layout (each may be named instead):
 `--bars` = <folder>/minute_aggs (minute_aggs day files `YYYY-MM-DD.csv.gz`: the day and the 20
@@ -92,6 +92,9 @@ ENGINES (`--engine`; codex-108 points 1, 2 and 9 over all minutes of a day):
   day2 on the cohort only; `--table-workers` processes), computed once per minute for every
   variant; the cohort union for the tick extraction from the carried row rule
   (`incremental.Market`).
+- `--workers W` (either engine): the features of up to 2 W minutes are assembled in W worker
+  processes while the main process walks on (the walk and the table rows are sequential by
+  nature); each minute's results are journaled when its features are done.
 - `--verify-full-prefix N` (incremental only): at N chosen minutes spread from the first to the
   last, the full-prefix engine runs too and the two must be EXACTLY equal: the table rows
   (keys, order, types, every value) and each variant's tick table. A difference is the
@@ -142,6 +145,7 @@ bit-deterministic (last-bit differences); the training's tick files carry that n
 from __future__ import annotations
 
 import argparse
+import collections
 import contextlib
 import csv
 import hashlib
@@ -952,7 +956,7 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
            tolerance: tuple[float, float] | None = None, all_minutes: bool = False,
            ticks_only: bool = False, exceptions: list[dict[str, Any]] | None = None,
            engine: str = "full-prefix", verify: int = 0, journal: Journal | None = None,
-           table_workers: int = 1) -> dict[str, Any]:
+           table_workers: int = 1, workers: int = 1) -> dict[str, Any]:
     """The parity report of `day` at `minutes` (HH:MM; None = the default choice): see the
     module docstring. Exception cells are appended to `exceptions` when given; each finished
     minute goes to `journal` when given (its finished minutes are skipped)."""
@@ -1046,21 +1050,49 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
                                     groups=ticks.default_groups())
         if not ticks_only:
             table = incremental.DayTable(day, state, types, table_workers)
+    run = _Run(day, tuple(variants), work, walk, table, state, types, inputs, want, groups,
+               kinds, tolerance, covered, tk61, fill, ticked, scans["scan"], ticks_only,
+               bars_through)
+    pool: Any = None
+    pending: list[tuple[Any, dict[str, Any], list[dict[str, Any]]]] = []
+
+    def finish(job: Any, record: dict[str, Any], cells: list[dict[str, Any]]) -> None:
+        got = job.result() if pool is not None else job
+        _finish(run, record, got, cells)
+        if exceptions is not None:
+            exceptions.extend(cells)
+        journal.add(record, cells)
+
     try:
+        if workers > 1 and not ticks_only:
+            import multiprocessing
+            from concurrent.futures import ProcessPoolExecutor
+
+            pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
         for m in chosen:
             through = m + features.DAY_START_MINUTE
+            walked = walk.seconds if walk is not None else 0.0
             if walk is not None:
                 walk.advance(through)
             if hhmm(m) in journal.done:
                 continue
             cells: list[dict[str, Any]] = []
-            record = _minute(day, m, variants, work, walk, table, state, types, inputs,
-                             bars_through(m), want, groups, kinds, tolerance, covered, tk61,
-                             fill, ticked, scans["scan"], ticks_only, m in checks, cells)
-            if exceptions is not None:
-                exceptions.extend(cells)
-            journal.add(record, cells)
+            record, job = _prepare(run, m, m in checks, cells)
+            if walk is not None:  # the walk's conversion since the previous chosen minute
+                record["seconds"]["walk"] = round(walk.seconds - walked, 3)
+            if job is not None and pool is not None:
+                pending.append((pool.submit(_assemble, *job), record, cells))
+                while len(pending) > 2 * workers or (pending and pending[0][0].done()):
+                    finish(*pending.pop(0))
+            else:
+                finish(None if job is None else _assemble(*job), record, cells)
+        while pending:
+            finish(*pending.pop(0))
     finally:
+        for future, _, _ in pending:
+            future.cancel()
+        if pool is not None:
+            pool.shutdown(cancel_futures=True)
         if walk is not None:
             walk.close()
         if table is not None:
@@ -1068,14 +1100,36 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
     return build_report(*read_journal(journal.lines))
 
 
-def _minute(day: str, m: int, variants: Sequence[str], work: Path, walk: Any, table: Any,
-            state: features.DayState, types: set[str] | None, inputs: ReplayInputs,
-            bars_now: Any, want: Any, groups: dict[str, list[str]], kinds: Any,
-            tolerance: tuple[float, float] | None, covered: set[str] | None, tk61: Any,
-            fill: Any, ticked: set[str], scan: dict[str, Any], ticks_only: bool,
-            check: bool, cells: list[dict[str, Any]]) -> dict[str, Any]:
-    """One minute of the replay: every variant against the archive (and tk61), against plain,
-    and with `check` the incremental engine against the full-prefix engine; its record."""
+@dataclass
+class _Run:
+    """What every minute of one replay reads."""
+
+    day: str
+    variants: tuple[str, ...]
+    work: Path
+    walk: Any
+    table: Any
+    state: features.DayState
+    types: set[str] | None
+    inputs: ReplayInputs
+    want: Any
+    groups: dict[str, list[str]]
+    kinds: Any
+    tolerance: tuple[float, float] | None
+    covered: set[str] | None
+    tk61: Any
+    fill: Any
+    ticked: set[str]
+    scan: dict[str, Any]
+    ticks_only: bool
+    bars_through: Any
+
+
+def _prepare(run: _Run, m: int, check: bool, cells: list[dict[str, Any]]) -> tuple[
+        dict[str, Any], tuple[Any, ...] | None]:
+    """One minute up to the features: the table rows, each variant's tick table (with `check`
+    the engine check of both), the tick comparison with tk61, and the arguments of
+    `_assemble` (None with --ticks-only); its record so far."""
     import time
 
     hm = hhmm(m)
@@ -1083,93 +1137,138 @@ def _minute(day: str, m: int, variants: Sequence[str], work: Path, walk: Any, ta
     record: dict[str, Any] = {"minute": hm, "m": m, "variants": {}, "ticks": {},
                               "final_quote": {}, "versus_plain": {}, "engine": {},
                               "seconds": {}}
-    spent = record["seconds"]
-
-    def clock(name: str, t0: float) -> None:
-        spent[name] = round(spent.get(name, 0.0) + time.perf_counter() - t0, 3)
-
+    bars_now = run.bars_through(m)
     rows = None
-    if table is not None:
+    if run.table is not None:
         t0 = time.perf_counter()
-        rows = table.rows(bars_now, m) if len(bars_now) else None
-        clock("bars", t0)
+        rows = run.table.rows(bars_now, m) if len(bars_now) else None
+        _clock(record, "bars", t0)
         if check:
             t0 = time.perf_counter()
-            ref = full.table_rows(bars_now, day, m, state, types) if len(bars_now) else None
+            ref = (full.table_rows(bars_now, run.day, m, run.state, run.types)
+                   if len(bars_now) else None)
             differ: list[dict[str, Any]] = []
             record["engine"]["bars"] = exact_diff(rows, ref, ["sym"], "engine-bars", differ)
             _collect(cells, differ, "all", m, "engine")
-            clock("verify", t0)
-    delivered: dict[str, Any] = {}
-    for variant in variants:
+            _clock(record, "verify", t0)
+    files = {}
+    for variant in run.variants:
         arg = False if variant == "plain" else variant
         t0 = time.perf_counter()
-        mine = walk.table(variant, through) if walk is not None else None
+        mine = run.walk.table(variant, through) if run.walk is not None else None
         if mine is None:
-            mine = minute_ticks(work, day, m, arg)
-        clock("ticks", t0)
-        if walk is not None and check:
+            mine = minute_ticks(run.work, run.day, m, arg)
+        _clock(record, "ticks", t0)
+        if run.walk is not None and check:
             t0 = time.perf_counter()
-            ref = minute_ticks(work, day, m, arg)
+            ref = minute_ticks(run.work, run.day, m, arg)
             differ = []
             record["engine"].setdefault("variants", {})[variant] = {
                 "ticks": exact_diff(mine, ref, ["sym", "m"], "engine-ticks", differ)}
             _collect(cells, differ, variant, m, "engine")
-            clock("verify", t0)
-        if tk61 is not None:
+            _clock(record, "verify", t0)
+        if run.tk61 is not None:
             one: list[dict[str, Any]] = []
             r = compare(mine[mine.m == through].drop(columns="m"),
-                        tk61[tk61.m == through].drop(columns="m"),
-                        {"ticks": _tick_value_columns()}, tolerance,
+                        run.tk61[run.tk61.m == through].drop(columns="m"),
+                        {"ticks": _tick_value_columns()}, run.tolerance,
                         dict.fromkeys(_tick_value_columns(), "value"), None, one)
             record["ticks"][variant] = {"minute": m, **r}
             _collect(cells, one, variant, m, "ticks")
-        if ticks_only:
-            continue
-        t0 = time.perf_counter()
-        tick_file = _tick_file(mine, fill, through, work / f"tk-{variant}-{m}.parquet")
+        if not run.ticks_only:
+            t0 = time.perf_counter()
+            files[variant] = _tick_file(mine, run.fill, through,
+                                        run.work / f"tk-{variant}-{m}.parquet")
+            _clock(record, "ticks", t0)
+    if run.ticks_only:
+        return record, None
+    if run.table is None:  # full-prefix: the table code on the whole market's day
+        return record, (run.day, m, files, None, run.state, run.types, run.inputs, bars_now)
+    prev = features.DayState(prev={s: run.state.prev[s] for s in
+                                   ([] if rows is None else rows.sym) if s in run.state.prev},
+                             mprev={}, hist=collections.deque())
+    return record, (run.day, m, files, rows, prev, run.types, run.inputs, None)
+
+
+def _assemble(day: str, m: int, files: dict[str, Path], rows: Any, state: features.DayState,
+              types: set[str] | None, inputs: ReplayInputs,
+              bars_now: Any) -> tuple[dict[str, Any], float]:
+    """Each variant's 191 columns of minute m from its tick file (deleted afterwards): from
+    the table rows `rows` (incremental) or from the bars so far (full-prefix). Runs in a
+    worker process with --workers."""
+    import time
+
+    t0 = time.perf_counter()
+    got = {}
+    for variant, tick_file in files.items():
         given = full.FullInputs(tick_file, inputs.reference, inputs.benzinga, inputs.fl_facts)
-        if table is None:
-            got = full.minute_rows_full(bars_now, day, m, state, types, given)
+        if bars_now is not None:
+            got[variant] = full.minute_rows_full(bars_now, day, m, state, types, given)
         else:
-            got = full.assemble_rows(rows, day, m, state, given)
+            got[variant] = full.assemble_rows(rows, day, m, state, given)
         tick_file.unlink()
-        clock("features", t0)
-        delivered[variant] = got
+    return got, time.perf_counter() - t0
+
+
+def _finish(run: _Run, record: dict[str, Any], assembled: Any,
+            cells: list[dict[str, Any]]) -> None:
+    """The minute's comparisons from its features (`_assemble`'s result, None with
+    --ticks-only): each variant against the archive, its final-quote cases, the engine
+    difference's feature cells, and each variant against plain."""
+    import time
+
+    m = record["m"]
+    record["cells"] = len(cells)
+    if assembled is None:
+        return
+    delivered, spent = assembled
+    record["seconds"]["features"] = round(spent, 3)
+    for variant in run.variants:
+        got = delivered[variant]
         t0 = time.perf_counter()
-        one = []
-        record["variants"][variant] = {"minute": m, **compare(got, want[want.m == m], groups,
-                                                               tolerance, kinds, covered, one)}
+        one: list[dict[str, Any]] = []
+        record["variants"][variant] = {"minute": m, **compare(
+            got, run.want[run.want.m == m], run.groups, run.tolerance, run.kinds,
+            run.covered, one)}
         _collect(cells, one, variant, m, "features")
-        record["final_quote"][variant] = final_quote_cases(m, set(got.sym), scan, ticked, one,
-                                                           day)
-        clock("compare", t0)
+        record["final_quote"][variant] = final_quote_cases(m, set(got.sym), run.scan,
+                                                           run.ticked, one, run.day)
+        _clock(record, "compare", t0)
         parts = record["engine"].get("variants", {}).get(variant)
         if parts is not None and not (parts["ticks"]["exact"]
                                       and record["engine"]["bars"]["exact"]):
             # the engines differ in an input: the feature cells that difference moves
             t0 = time.perf_counter()
-            ref_ticks = _tick_file(minute_ticks(work, day, m, arg), fill, through,
-                                   work / f"tk-ref-{variant}-{m}.parquet")
-            ref = full.minute_rows_full(bars_now, day, m, state, types,
-                                        full.FullInputs(ref_ticks, inputs.reference,
-                                                        inputs.benzinga, inputs.fl_facts))
+            arg = False if variant == "plain" else variant
+            through = m + features.DAY_START_MINUTE
+            ref_ticks = _tick_file(minute_ticks(run.work, run.day, m, arg), run.fill, through,
+                                   run.work / f"tk-ref-{variant}-{m}.parquet")
+            ref = full.minute_rows_full(run.bars_through(m), run.day, m, run.state, run.types,
+                                        full.FullInputs(ref_ticks, run.inputs.reference,
+                                                        run.inputs.benzinga,
+                                                        run.inputs.fl_facts))
             ref_ticks.unlink()
             moved: list[dict[str, Any]] = []
-            r = compare(got, ref, groups, None, kinds, None, moved)
+            r = compare(got, ref, run.groups, None, run.kinds, None, moved)
             parts["features"] = {"exact": r["exact"], "classes": r["classes"],
                                  "columns": sorted(r["columns"])}
             _collect(cells, [{**c, "class": "engine", "group": "engine-features"}
                              for c in moved], variant, m, "engine")
-            clock("verify", t0)
+            _clock(record, "verify", t0)
     if "plain" in delivered:
-        for variant in variants:
+        for variant in run.variants:
             if variant != "plain":
                 record["versus_plain"][variant] = compare(
-                    delivered[variant], delivered["plain"], groups, None, kinds,
-                    covered)["classes"]
+                    delivered[variant], delivered["plain"], run.groups, None, run.kinds,
+                    run.covered)["classes"]
     record["cells"] = len(cells)
-    return record
+
+
+def _clock(record: dict[str, Any], name: str, t0: float) -> None:
+    import time
+
+    spent = record["seconds"]
+    spent[name] = round(spent.get(name, 0.0) + time.perf_counter() - t0, 3)
 
 
 def _tick_file(mine: Any, fill: Any, through: int, path: Path) -> Path:
@@ -1288,6 +1387,8 @@ def _parser() -> argparse.ArgumentParser:
                         "and require exact equality")
     p.add_argument("--table-workers", type=int, default=1,
                    help="with --engine incremental: processes for the table rows (#832)")
+    p.add_argument("--workers", type=int, default=1,
+                   help="processes that assemble the features of minutes side by side")
     p.add_argument("--resume", action="store_true",
                    help="continue the journal in --out, skipping its finished minutes")
     p.add_argument("--rebuild-report", action="store_true",
@@ -1342,8 +1443,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.minutes and args.all_minutes:
             raise ModelRefused("replay_minute_invalid", "--minutes or --all-minutes, not both")
-        if args.table_workers < 1 or args.verify_full_prefix < 0:
-            raise ModelRefused("replay_engine", "--table-workers >= 1, --verify-full-prefix >= 0")
+        if min(args.table_workers, args.workers) < 1 or args.verify_full_prefix < 0:
+            raise ModelRefused("replay_engine", "--table-workers and --workers at least 1, "
+                               "--verify-full-prefix at least 0")
         for f in (args.out / f"parity-{args.day}.json", args.out / f"parity-{args.day}.txt"):
             if f.exists():
                 raise ModelRefused("output_exists", str(f))
@@ -1355,7 +1457,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             work=work, tolerance=tolerance, all_minutes=args.all_minutes,
                             ticks_only=args.ticks_only, engine=args.engine,
                             verify=args.verify_full_prefix, journal=journal,
-                            table_workers=args.table_workers)
+                            table_workers=args.table_workers, workers=args.workers)
         finally:
             shutil.rmtree(work, ignore_errors=True)
         print(write_report(report, args.out, args.day), end="")
