@@ -14,12 +14,13 @@ from baseline import load_baseline, write_baseline
 
 from tickr import cli, config
 from tickr.api import contract as api
+from tickr.api import reasons
 from tickr.broker.base import RateLimited
 from tickr.broker.fake import FakeBroker
 from tickr.calendar import NEW_YORK, SessionCalendar
 from tickr.config import GateResult
 from tickr.data.base import FakeMarketData
-from tickr.engine.core import Engine, Fence, TradeState
+from tickr.engine.core import Engine, Fence, Leg, TradeState
 from tickr.runtime import service, stopmarker
 from tickr.runtime.watchdog import BYTES_PER_MB
 from tickr.store import Store
@@ -1369,9 +1370,11 @@ def test_close_and_stop_with_a_failed_close_sends_once_and_never_stops(tmp_path)
     assert f"{Fence.EXIT_REFUSED}:{t}" in bot.engine.fences()
     rec = record(bot, cmd)
     assert rec.outcome is api.CommandOutcome.REFUSED
-    assert rec.cause == service.STOP_CLOSE_FAILED.format(trades=t, fences="exit-refused")
+    assert rec.cause == (f"closing order refused for {t}: the bot places their stop again; "
+                         "look in the Webull app; the bot keeps running and entry-stop stays on")
     codes = api.to_jsonable(rec)["cause_codes"]
-    assert [c["code"] for c in codes] == ["stop_close_failed"]
+    assert [c["code"] for c in codes] == ["stop_close_refused", "stop_close_kept"]
+    assert str(Fence.ENTRY_STOP) in bot.engine.fences()  # as the cause says
     assert bot.service.stopped_by is None and stopmarker.describe(bot.service.config) is None
     assert bot.service.status().stop_progress is None
     assert bot.engine.trade(t).state is TradeState.OPEN
@@ -1404,24 +1407,110 @@ def test_close_and_stop_refused_by_the_flatten_changes_nothing(tmp_path):
     assert steps(bot, cmd) == [] and bot.service.stopped_by is None
 
 
-def test_close_and_stop_gives_up_after_its_time_and_keeps_the_bot_running(tmp_path):
+def test_close_and_stop_waits_for_a_close_that_does_not_fill_until_its_fence(tmp_path):
+    """No time-out of its own: a sent close that does not fill ends the flow through the
+    engine's exit-not-filled fence ([orders] max_exit_seconds), never sooner, never resent."""
     bot = Bot(tmp_path, broker=FakeBroker())  # nothing fills: the close stays working
     tmp_config(bot, tmp_path)
     t = opened(bot)
     cmd = bot.command(api.CommandKind.STOP_BOT, mode=api.StopMode.CLOSE_AND_STOP)
     bot.service.process_commands()
-    limit = bot.service.config.runtime.stop_close_max_seconds
-    bot.now += timedelta(seconds=limit)
+    for _ in range(6):  # the stop's cancel, then the close goes out
+        bot.engine.step()
+        bot.service.carry_out_stop()
+    assert len(markets(bot.broker)) == 1
+    assert bot.service._closing is not None  # still waiting: no fence yet
+    bot.now += timedelta(seconds=float(CFG.orders.max_exit_seconds))
+    bot.engine.step()
+    assert f"{Fence.EXIT_NOT_FILLED}:{t}" in bot.engine.fences()
     bot.service.carry_out_stop()
-    assert bot.service._closing is not None  # not yet: at the limit, not past it
-    bot.now += timedelta(seconds=1)
+    rec = record(bot, cmd)
+    assert rec.outcome is api.CommandOutcome.REFUSED
+    # The truth at the broker: the close still works and its shares have no stop.
+    assert rec.cause == (f"closing order not filled for {t}: it is still working at the broker "
+                         "and its shares are not under a stop; look in the Webull app; the bot "
+                         "keeps running and entry-stop stays on")
+    assert [o.order_type for o in bot.broker.open_orders()] == ["MARKET"]
+    codes = api.to_jsonable(rec)["cause_codes"]
+    assert [c["code"] for c in codes] == ["stop_close_not_filled", "stop_close_kept"]
+    assert bot.service.stopped_by is None and stopmarker.describe(bot.service.config) is None
+    assert bot.engine.trade(t).exit_requested == "operator-flatten"  # the close goes on
+    assert len(markets(bot.broker)) == 1
+
+
+def test_close_and_stop_ends_on_an_operator_fence_on_one_of_its_orders(tmp_path):
+    """A stop still working after every cancel (cancel-failed, keyed by the order) holds its
+    shares: the engine closes them no further without the operator, so the flow ends."""
+    bot = Bot(tmp_path, broker=FakeBroker())
+    tmp_config(bot, tmp_path)
+    t = opened(bot)
+    stop = next(o for o in bot.engine.orders(t) if o.leg is Leg.STOP)
+    cmd = bot.command(api.CommandKind.STOP_BOT, mode=api.StopMode.CLOSE_AND_STOP)
+    bot.service.process_commands()
+    bot.service.carry_out_stop()
+    assert bot.service._closing is not None
+    with bot.store.transaction():
+        bot.engine._fence_row(Fence.CANCEL_FAILED, stop.client_order_id, "test")
+    bot.service.carry_out_stop()
+    rec = record(bot, cmd)
+    assert (rec.outcome, rec.cause) == (api.CommandOutcome.REFUSED, (
+        f"close held for {t} (cancel-failed): look in the Webull app; the bot keeps running "
+        "and entry-stop stays on"))
+    codes = api.to_jsonable(rec)["cause_codes"]
+    assert [(c["code"], c["params"]) for c in codes] == [
+        ("stop_close_failed", {"trades": t, "fences": "cancel-failed"}), ("stop_close_kept", {})]
+    assert bot.service.stopped_by is None and bot.service.status().stop_progress is None
+
+
+def test_a_close_and_stop_cause_says_per_fence_what_is_true_at_the_broker():
+    cause = service.stop_close_failed([("t2", Fence.MARKET_CLOSED), ("t1", Fence.EXIT_NOT_FILLED),
+                                       ("t3", Fence.REPLACE_UNRESOLVED),
+                                       ("t1", Fence.UNPROTECTED_TIMEOUT)])
+    assert cause == (
+        "closing order not filled for t1: it is still working at the broker and its shares are "
+        "not under a stop; look in the Webull app; close not sent for t2 outside the regular "
+        "session: nothing was sent and the stop stays; close held for t1, t3 "
+        "(replace-unresolved, unprotected-timeout): look in the Webull app; the bot keeps "
+        "running and entry-stop stays on")
+    assert [r.code for r in reasons.prose_reasons(cause)] == [
+        "stop_close_not_filled", "stop_close_not_sent", "stop_close_failed", "stop_close_kept"]
+
+
+def test_close_and_stop_ends_when_a_trade_it_did_not_begin_with_opens(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())
+    tmp_config(bot, tmp_path)
+    opened(bot)
+    cmd = bot.command(api.CommandKind.STOP_BOT, mode=api.StopMode.CLOSE_AND_STOP)
+    bot.service.process_commands()
+    bot.service.carry_out_stop()
+    assert bot.service._closing is not None
+    with bot.store.transaction():  # the entry-stop lifted some other way than the API
+        bot.engine.entry_stop_row(False, "test")
+    late = bot.engine.open_trade("XYZ", D(1), D(10), D("9.80"), D(1))
     bot.service.carry_out_stop()
     rec = record(bot, cmd)
     assert (rec.outcome, rec.cause) == (api.CommandOutcome.REFUSED,
-                                        service.STOP_CLOSE_TIMED_OUT.format(count=1,
-                                                                            seconds=limit))
+                                        service.STOP_NEW_TRADE.format(trades=late))
+    codes = api.to_jsonable(rec)["cause_codes"]
+    assert [c["code"] for c in codes] == ["stop_new_trade"]
     assert bot.service.stopped_by is None and stopmarker.describe(bot.service.config) is None
-    assert bot.engine.trade(t).exit_requested == "operator-flatten"  # the close goes on
+
+
+def test_entry_stop_off_while_close_and_stop_runs_is_refused(tmp_path):
+    bot = Bot(tmp_path, broker=FakeBroker())
+    tmp_config(bot, tmp_path)
+    opened(bot)
+    cmd = bot.command(api.CommandKind.STOP_BOT, offset_seconds=-1,
+                      mode=api.StopMode.CLOSE_AND_STOP)
+    off = bot.command(api.CommandKind.ENTRY_STOP_OFF)
+    bot.service.process_commands()  # both in one pass
+    rec = record(bot, off)
+    assert (rec.outcome, rec.cause) == (api.CommandOutcome.REFUSED,
+                                        service.STOP_RUNNING.format(command=cmd.command_id))
+    codes = api.to_jsonable(rec)["cause_codes"]
+    assert [c["code"] for c in codes] == ["stop_already_running"]
+    assert str(Fence.ENTRY_STOP) in bot.engine.fences()  # no new trade while closing
+    assert bot.service._closing is not None
 
 
 def test_close_and_stop_goes_on_in_the_bot_when_the_app_disconnects(tmp_path):

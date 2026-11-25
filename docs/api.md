@@ -332,7 +332,8 @@ performance `<name>_cause`. Codes (params in braces; wire times become `HH:MM` N
   code of a run that was not refused, whose `cause` repeats the advisor's no-change reason);
 - operator commands: `command_after_stop` {command}, `close_in_progress`, `trades_still_open`
   {count}, a stop-bot's mode `stop_already_running` {command}, `trades_left_open` {count},
-  `stop_close_failed` {trades, fences}, `stop_close_timed_out` {count, seconds},
+  `stop_close_refused` {trades}, `stop_close_not_filled` {trades}, `stop_close_not_sent`
+  {trades}, `stop_close_failed` {trades, fences}, `stop_close_kept`, `stop_new_trade` {trades},
   `stop_interrupted`, `no_open_position` {symbol}, `close_refused_before` {trades},
   `close_held_outside_session` {trades}, `close_not_sent_now` (with the close refusal's values),
   `nothing_open`, `entry_cancels_requested` {count}, `step_done`, `steps_done` {steps},
@@ -1526,16 +1527,29 @@ preconditions to every command.
     cause>`). It runs in the bot, pass after pass, whatever the app does (closing the app or
     losing the connection changes nothing). Once no own trade is open: `positions_closed`,
     then the stop exactly as without a mode (marker, command `done` with cause `null`,
-    `stopping`, drain, `stopped`). It ends `refused`, the bot running on and every stop kept,
-    when a trade's close failed: fence `exit-refused`, `exit-not-filled` or `market-closed` on
-    that trade ("close failed for <trades> (<fences>): the bot keeps running and the stops
-    stay; look in the Webull app"; the failed close is never resent), or when trades are
-    still open `[runtime] stop_close_max_seconds` after it began ("N trade(s) still open S s
-    after close-and-stop: ..."). Exit requests already made stay and finish on their own. A
+    `stopping`, drain, `stopped`). It ends `refused`, the bot running on with entry-stop on,
+    as soon as a trade it began with holds an operator fence on itself or one of its orders,
+    the engine's point of no further close without the operator. The cause says, one
+    `; `-joined part per kind of fence, what is then true at the broker: `exit-refused`
+    ("closing order refused for <trades>: the bot places their stop again; look in the Webull
+    app"), `exit-not-filled` after `[orders] max_exit_seconds` ("closing order not filled for
+    <trades>: it is still working at the broker and its shares are not under a stop; look in
+    the Webull app"), `market-closed` at the session's close-order cutoff ("close not sent for
+    <trades> outside the regular session: nothing was sent and the stop stays"), any other
+    operator fence (`cancel-failed`, `replace-unresolved`, ...: "close held for <trades>
+    (<fences>): look in the Webull app"), then "the bot keeps running and entry-stop stays on".
+    A failed close is never resent. It also ends `refused` as soon as a trade it did not begin
+    with is open ("trade(s) <trades> opened during close-and-stop: the bot keeps running and
+    the closes already asked go on; send stop-bot again"). It has no time-out of its own: every
+    close ends in a fill or one of those fences, and a close held by a condition that clears
+    itself (a broker read, a Detail read, a quantity mismatch) is waited on as the session
+    flatten waits on it, under that condition's own alert. Exit requests already made stay and
+    finish on their own. A
     restart in the middle never resumes it: the restarted bot records it `refused` ("close-and-
-    stop interrupted by a restart: the bot keeps running; send stop-bot again") and runs on.
+    stop interrupted by a restart: the bot keeps running and entry-stop stays on; send stop-bot
+    again") and runs on.
     While it runs, every other stop-bot is refused ("a close-and-stop is already running
-    (<id>)").
+    (<id>)"), and so is entry-stop off (the same cause), so no new trade opens while closing.
   - `{"mode": "leave_open"}`: stops at once without closing anything: the marker, the command
     `done` with cause "N trade(s) left open: nothing closes them; their broker stops are DAY
     orders", then the drain as on SIGTERM (it still cancels a working entry and keeps any fill

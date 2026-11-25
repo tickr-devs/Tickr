@@ -1654,23 +1654,47 @@ GROUPS = [
                 "son órdenes del día",
             ),
             (
-                "stop_close_failed",
-                "A close failed: the bot keeps running and the stops stay; look in the Webull app",
-                "Un cierre falló: el bot sigue funcionando y los stops se quedan; revisa la app de "
+                "stop_close_refused",
+                "A closing order was refused: the bot places the stop again; look in the Webull "
+                "app",
+                "Se rechazó una orden de cierre: el bot vuelve a poner el stop; revisa la app de "
                 "Webull",
             ),
             (
-                "stop_close_timed_out",
-                "{count} trade(s) still open {seconds} s after close and stop: the bot keeps "
-                "running; look in the Webull app, then stop the bot again",
-                "{count} operación(es) siguen abiertas {seconds} s después de cerrar y detener: "
-                "el bot sigue funcionando; revisa la app de Webull y luego detén el bot otra vez",
+                "stop_close_not_filled",
+                "A closing order did not fill: it is still working at the broker and its shares "
+                "are not under a stop; look in the Webull app",
+                "Una orden de cierre no se ejecutó: sigue activa en el bróker y sus acciones no "
+                "tienen stop; revisa la app de Webull",
+            ),
+            (
+                "stop_close_not_sent",
+                "A close was due outside the regular session: nothing was sent and the stop stays",
+                "Un cierre tocaba fuera de la sesión regular: no se envió nada y el stop se queda",
+            ),
+            (
+                "stop_close_failed",
+                "A close is held until you look: look in the Webull app",
+                "Un cierre queda detenido hasta que lo revises: revisa la app de Webull",
+            ),
+            (
+                "stop_close_kept",
+                "The bot keeps running and new entries stay stopped",
+                "El bot sigue funcionando y las nuevas entradas siguen detenidas",
+            ),
+            (
+                "stop_new_trade",
+                "A trade opened during close and stop: the bot keeps running and the closes "
+                "already asked go on; stop the bot again",
+                "Se abrió una operación durante cerrar y detener: el bot sigue funcionando y los "
+                "cierres ya pedidos continúan; detén el bot otra vez",
             ),
             (
                 "stop_interrupted",
-                "Close and stop was interrupted by a restart: the bot keeps running; stop it again",
-                "Cerrar y detener se interrumpió por un reinicio: el bot sigue funcionando; "
-                "detenlo otra vez",
+                "Close and stop was interrupted by a restart: the bot keeps running and new "
+                "entries stay stopped; stop it again",
+                "Cerrar y detener se interrumpió por un reinicio: el bot sigue funcionando y las "
+                "nuevas entradas siguen detenidas; detenlo otra vez",
             ),
             (
                 "no_open_position",

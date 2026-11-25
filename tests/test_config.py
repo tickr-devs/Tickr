@@ -607,11 +607,3 @@ def test_extended_sessions_refused_at_load(tmp_path, key, value, match):
     text = re.sub(rf"(?m)^{key} = \S+", f"{key} = {value}", BOT.read_text("utf-8"))
     with pytest.raises(config.ConfigError, match=match):
         config.load(_copy(tmp_path, text))
-
-
-@pytest.mark.parametrize("value", ["30", "1"])  # [orders] max_exit_seconds is 30
-def test_stop_close_wait_must_outlast_a_close_that_does_not_fill(tmp_path, value):
-    text = re.sub(r"(?m)^stop_close_max_seconds = \S+", f"stop_close_max_seconds = {value}",
-                  BOT.read_text("utf-8"))
-    with pytest.raises(config.ConfigError, match="stop_close_max_seconds"):
-        config.load(_copy(tmp_path, text))
