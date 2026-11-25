@@ -35,6 +35,9 @@ final class ActivityModel {
   private(set) var skippedDay: WireDate?
   /// Why the skipped entries could not be read, if they could not.
   private(set) var skippedFailure: String?
+  /// The platform rules the shown day's what-ifs were computed under (backlog T12); nil until
+  /// read, or from a bot that does not send them.
+  private(set) var skippedRules: SimulationRulesV1?
   /// The shown day's journal (GET /events) as lines, newest first, once read; `journalDay` is
   /// the day they are of. Nil until read, and when the bot cannot serve it (an older bot: today
   /// then shows what the status says).
@@ -146,6 +149,7 @@ final class ActivityModel {
   func loadSkipped(_ url: URL, day: WireDate) async {
     if skippedDay != day {
       skipped = pastDays.parts(of: day)?.skipped
+      skippedRules = nil
       skippedFailure = nil
       skippedDay = day
     }
@@ -154,6 +158,7 @@ final class ActivityModel {
       guard read.day == day, day == skippedDay else { return }
       let groups = SkippedGroup.make(read.signals)
       skipped = groups
+      skippedRules = read.simulationRules
       skippedFailure = nil
       pastDays.keep(day, today: today, empty: ActivityDayParts()) { $0.skipped = groups }
     } catch is CancellationError {

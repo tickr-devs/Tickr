@@ -120,6 +120,9 @@ struct AnotherStrategySheet: View {
               .foregroundStyle(Palette.textTertiary)
               .fixedSize(horizontal: false, vertical: true)
           }
+          if let rules = found.simulationRules {
+            SimulationRulesNote(rules)
+          }
         }
       }
     }

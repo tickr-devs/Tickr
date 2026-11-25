@@ -997,6 +997,11 @@ private struct AnotherStrategyView: View {
               .gridCellColumns(Self.columns)
           }
         }
+        if let rules = found.simulationRules {
+          GridRow {
+            SimulationRulesNote(rules).gridCellColumns(Self.columns)
+          }
+        }
       }
     }
   }
@@ -1203,6 +1208,9 @@ private struct WhatIfCard: View {
           .font(Tokens.Typography.caption)
           .foregroundStyle(Palette.textTertiary)
           .fixedSize(horizontal: false, vertical: true)
+        if let rules = model.skipped?.simulationRules {
+          SimulationRulesNote(rules)
+        }
       }
       .offlineOutline(lines: Tokens.Loading.fewLines)
       .frame(maxWidth: .infinity, alignment: .leading)

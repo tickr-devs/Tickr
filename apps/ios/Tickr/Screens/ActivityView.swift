@@ -211,7 +211,7 @@ struct ActivityView: View {
               L10n.Activity.noTradesThatDayBody))
         }
       case .skipped:
-        NotTaken(groups: activity.skipped, failure: activity.skippedFailure)
+        NotTaken(groups: activity.skipped, failure: activity.skippedFailure, rules: activity.skippedRules)
       case .journal:
         if let lines = activity.journalDay == skippedKey.day ? activity.journal : nil {
           Journal(events: lines)
@@ -975,6 +975,8 @@ private struct TradesList: View {
 private struct NotTaken: View {
   let groups: [SkippedGroup]?
   let failure: String?
+  /// The rules the rows' what-ifs were computed under, shown under the list.
+  let rules: SimulationRulesV1?
   /// Rows a new read brought while the list was on screen: each flashes once.
   @State private var arrived: Set<String> = []
 
@@ -1008,6 +1010,9 @@ private struct NotTaken: View {
         }
       }
       .onArrival(of: groups.map(\.id)) { arrived = $0 }
+      if let rules, !groups.isEmpty {
+        SimulationRulesNote(rules)
+      }
     } else if let failure {
       ReadFailureNote(L10n.Activity.notTakenFailed, detail: failure)
         .frame(maxWidth: .infinity, alignment: .leading)
