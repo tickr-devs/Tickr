@@ -18,7 +18,7 @@ from tickr.replay.__main__ import platform_sizing, session_clock, strategy_facto
 from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import load_settings
-from tickr.research import compare, observer_report, refusals, report, slippage
+from tickr.research import calibration, compare, observer_report, refusals, report, slippage
 from tickr.research.errors import ResearchError
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
@@ -96,6 +96,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--environment", help="keep only trades of runs in this environment")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
     p.add_argument("--out", type=Path, required=True, help="output directory")
+
+    p = sub.add_parser("calibration", help="reliability table by tenths per probability column")
+    p.add_argument("--answers", type=Path, required=True,
+                   help="CSV of stored model answers: outcome (0/1) and p_<name> columns")
+    p.add_argument("--settings", type=Path, required=True, help="research TOML (bucket count)")
+    p.add_argument("--out", type=Path, required=True, help="output directory")
     return parser
 
 
@@ -133,6 +139,10 @@ def _run(args: argparse.Namespace) -> dict:
         rows = refusals.table(_filter(load_records(args.decisions), args.strategy),
                               settings.session_timezone)
         return report.write_refusals(rows, args.out, settings.output_decimal_places)
+    if args.command == "calibration":
+        settings = load_research_settings(args.settings)
+        reports = calibration.calibration(args.answers, settings.calibration_buckets)
+        return report.write_calibration(reports, args.out, settings.output_decimal_places)
     if args.command == "slippage":
         settings = load_research_settings(args.settings)
         trades = slippage.stopped_trades(args.database, settings.session_timezone,

@@ -12,3 +12,5 @@ atr_period = 14
 session_timezone = "America/New_York"
 # Decimal places for prices, ATR, percent and USD in CSV and summary outputs; read by research/report.py.
 output_decimal_places = 4
+# Equal-width probability buckets of the calibration table (10 = tenths, the owner's wording, R29); read by research/calibration.py.
+calibration_buckets = 10
