@@ -293,12 +293,7 @@ def minute_rows(carry: tuple[Any, Any], trades: Any, quotes: Any, day: str, minu
             raise ModelRefused("tick_outside_minute", f"{name} of minute {minute}")
     tail_quotes = [carry[1], quotes]
     if marker and len(quotes):
-        mark = quotes.sort_values(["sip_timestamp", "sequence_number"], kind="stable")
-        mark = mark.groupby("ticker", sort=False).tail(1).copy()
-        mark["sip_timestamp"] = hi
-        mark["conditions"] = ""
-        mark["indicators"] = ""
-        tail_quotes.append(mark)
+        tail_quotes.append(marker_quotes(quotes, hi))
     with tempfile.TemporaryDirectory(prefix="tickr-tail-") as tmp:
         t, q = os.path.join(tmp, "trades.csv"), os.path.join(tmp, "quotes.csv")
         write_flat_file(pd.concat([carry[0], trades], ignore_index=True), t, trade_columns())
@@ -395,6 +390,18 @@ def restated(delivered: Any, recomputed: Any) -> None:
                if not (pd.isna(x) and pd.isna(y)) and (pd.isna(x) or pd.isna(y) or x != y)]
     if changed:
         raise ModelRefused("tick_minute_restated", ", ".join(changed))
+
+
+def marker_quotes(quotes: Any, at_ns: int) -> Any:
+    """The marker quote of every stock in `quotes` (module text, "Marker quote"): its latest
+    update by (sip_timestamp, sequence_number), stamped `at_ns` (the first nanosecond of the next
+    minute), without conditions or indicators."""
+    mark = quotes.sort_values(["sip_timestamp", "sequence_number"], kind="stable")
+    mark = mark.groupby("ticker", sort=False).tail(1).copy()
+    mark["sip_timestamp"] = at_ns
+    mark["conditions"] = ""
+    mark["indicators"] = ""
+    return mark
 
 
 def write_flat_file(rows: Any, path: Any, columns: list[str]) -> None:

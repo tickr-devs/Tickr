@@ -304,7 +304,8 @@ def _tick_value_columns() -> list[str]:
             t, q = Path(tmp) / "t.csv", Path(tmp) / "q.csv"
             t.write_text(",".join(ticks.trade_columns()) + "\n", "utf-8")
             q.write_text(",".join(ticks.quote_columns()) + "\n", "utf-8")
-            _CACHE["_tk"] = [c for c in ticks.tick_rows(t, q, "2024-03-06", 0).columns
+            _CACHE["_tk"] = [c for c in ticks.tick_rows(t, q, "2024-03-06", 0,
+                                                         groups=ticks.default_groups()).columns
                              if c not in ("sym", "m")]
     return list(_CACHE["_tk"])
 
@@ -473,7 +474,7 @@ def minute_ticks(work: Path, day: str, minute: int, marker: bool | str) -> Any:
         con.execute(f"COPY ({quotes}) TO '{q}' (HEADER, DELIMITER ',')")
     finally:
         con.close()
-    table = ticks.tick_rows(t, q, day, through)
+    table = ticks.tick_rows(t, q, day, through, groups=ticks.default_groups())
     return table[table.m <= minute + features.DAY_START_MINUTE].reset_index(drop=True)
 
 

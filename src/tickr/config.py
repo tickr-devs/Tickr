@@ -376,6 +376,9 @@ class ModelConfig:
     bundles_dir: str
     bundle: str
     tick_groups: int
+    live_marker_quote: bool
+    live_wait_after_minute_seconds: str
+    live_table_workers: int
 
 
 @dataclass(frozen=True)
@@ -398,6 +401,8 @@ class MassiveConfig:
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
     calendar_lookback_days: int
+    tick_subscription: str
+    tick_page_limit: int
 
 
 @dataclass(frozen=True)
@@ -584,6 +589,16 @@ def _coerce(where: str, value: Any, target: Any) -> Any:
     raise ConfigError(f"{where}: unsupported type {target!r}")  # pragma: no cover
 
 
+def live_wait_seconds(model: ModelConfig) -> Decimal | None:
+    """The measured wait after a minute's end before the live features close it, or None when
+    the key is empty (not measured) or not a number of at least 0."""
+    try:
+        value = Decimal(model.live_wait_after_minute_seconds)
+    except ArithmeticError:
+        return None
+    return value if value.is_finite() and value >= 0 else None
+
+
 def build_section(name: str, table: Any, cls: type) -> Any:
     """Build a frozen dataclass from a TOML table, refusing unknown and missing keys."""
     if not isinstance(table, dict):
@@ -723,6 +738,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "are; the live data feed and the decision path follow)")
     if model.tick_groups < 1:
         raise ConfigError("[model] tick_groups must be at least 1")
+    if model.live_wait_after_minute_seconds != "" and live_wait_seconds(model) is None:
+        raise ConfigError("[model] live_wait_after_minute_seconds must be empty (not measured "
+                          "yet) or a number of seconds of at least 0 written as text")
+    if model.live_table_workers < 1:
+        raise ConfigError("[model] live_table_workers must be at least 1")
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
@@ -730,6 +750,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
                           "1, stream_reconnect_seconds above 0, stock_types not empty")
+    if massive.tick_subscription not in ("symbols", "market") or massive.tick_page_limit < 1:
+        raise ConfigError("[massive] tick_subscription must be \"symbols\" or \"market\", "
+                          "tick_page_limit at least 1")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "

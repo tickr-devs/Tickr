@@ -254,18 +254,34 @@ def minute_rows_full(rows: Any, day: str, minute: int, state: base.DayState,
     the day's bars so far (as `minute_rows`), then the training's `cut_inputs` at the minute
     and its `assemble` on those rows. Returns `sym` and the 191 features in the training's order
     and stored types (m int16, sess int8, the others float32); an empty frame when no row."""
-    import numpy as np
-    import pandas as pd
+    return assemble_rows(table_rows(rows, day, minute, state, types), day, minute, state,
+                         inputs)
 
-    code = full_code()
+
+def table_rows(rows: Any, day: str, minute: int, state: base.DayState,
+               types: set[str] | None) -> Any:
+    """The table code's rows of `minute` (every column of `day2`'s table, one row per symbol the
+    training's row rule keeps), from the day's bars so far; bars after `minute` refuse."""
+    full_code()
     frame = base.bars_frame(rows, day)
     if (frame.m > minute).any():
         raise ModelRefused("bar_after_minute", f"minute {minute}")
     table = base._day2(frame, day, state, types, want=True)[0]
+    if table is None:
+        return None
+    return table.loc[table.m == minute].reset_index(drop=True)
+
+
+def assemble_rows(t: Any, day: str, minute: int, state: base.DayState,
+                  inputs: FullInputs) -> Any:
+    """`minute_rows_full` from the table rows `t` of `minute` (`table_rows`)."""
+    import numpy as np
+    import pandas as pd
+
+    code = full_code()
     cols = ["sym", *code.names]
-    if table is None or not (table.m == minute).any():
+    if t is None or not len(t):
         return pd.DataFrame(columns=cols)
-    t = table.loc[table.m == minute].reset_index(drop=True)
     prev = np.array([state.prev.get(s, np.nan) for s in t["sym"].values], np.float64)
     with base._LOCK:
         work = tempfile.mkdtemp(prefix="tickr-l1feat-")
