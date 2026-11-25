@@ -324,7 +324,8 @@ def documents() -> dict[str, object]:
                          Decimal("10")),
             SessionSettings("America/New_York", 15, 5, False), Decimal("15"), POLL,
             Decimal("30"), Decimal("15"), live_quote_max_age_seconds=Decimal("60"),
-            quotes_poll_seconds=Decimal("1"), command_max_age_seconds=Decimal("60")),
+            quotes_poll_seconds=Decimal("1"), command_max_age_seconds=Decimal("60"),
+            decider=contract.strategy_decider("price-action", "1")),
         # 10:00 New York on a Monday: the bot runs, its last broker read was 4 s ago.
         "jobs-v1": JobsV1(
             T0, BotState.RUNNING, False, T0.replace(hour=13, minute=12, second=4),
@@ -401,7 +402,8 @@ def documents() -> dict[str, object]:
                                                "stop marker stopped-by-operator.json exists; "
                                                "the watchdog never starts a bot the operator "
                                                "stopped")), 2, None),
-                contract.SleepV1(contract.SleepState.HELD, 2, None)), None),
+                contract.SleepV1(contract.SleepState.HELD, 2, None)), None,
+            model=contract.ModelV1(False, None, contract.ModelState.OFF, None)),
         # Before the open with problems: no broker read in 2 minutes, the token needed
         # confirmation, no training job, the watchdog's restart command failed once.
         "system-v1.attention": contract.SystemV1(
@@ -420,14 +422,18 @@ def documents() -> dict[str, object]:
                     contract.WatchdogRestartV1(T0 - timedelta(days=3, minutes=15),
                                                contract.RestartOutcome.FAILED, True, 1,
                                                "restart command exited 113"),), 1, None),
-                contract.SleepV1(contract.SleepState.NOT_HELD, 0, None)), None),
+                contract.SleepV1(contract.SleepState.NOT_HELD, 0, None)), None,
+            model=contract.ModelV1(False, "l1-2026-12-01a", contract.ModelState.OFF, None)),
         # A server without the Mac's services, before any preflight record or status file.
         "system-v1.server": contract.SystemV1(
             T0, None, False,
             contract.BrokerLinkV1(None, Decimal("30"), Decimal("90"), contract.LinkState.UNKNOWN,
                                   None, "the bot has not written a status file"),
             None, "no preflight recorded yet", None, "no training job is reporting",
-            None, "no machine services on this host ([api] system_services = none)"),
+            None, "no machine services on this host ([api] system_services = none)",
+            # [model] enabled is refused by config load today; were it on, the API would not
+            # know the bot's load: null with its cause.
+            model=contract.ModelV1(True, None, None, contract.MODEL_LOAD_NOT_RECORDED)),
         # The Overview's journal card: the latest rows, oldest first; "line #731".
         "journal-v1": JournalV1(731, (
             JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),

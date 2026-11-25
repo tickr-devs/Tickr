@@ -236,3 +236,31 @@ def test_a_field_default_does_not_make_its_key_optional():
     del raw["schema_version"]
     with pytest.raises(contract.ContractError, match="missing keys: symbol, schema_version"):
         contract.from_jsonable(contract.CommandV1, raw)
+
+
+# ---------------------------------------------------------------- decider
+
+
+STRATEGY_DECIDER = {"kind": "strategy", "name": "price-action-v1", "version": "1"}
+
+
+def test_decider_is_the_recorded_strategy_never_a_model():
+    """Every decision today is a strategy's: `decider` is built from the strategy identity next
+    to it when the document is encoded, and is null with it (a manual trade)."""
+    manual = replace(status().trades_today[0], strategy=None)
+    raw = json.loads(contract.dumps(status(trades_today=(status().trades_today[0], manual))))
+    assert raw["decider"] == STRATEGY_DECIDER
+    assert [t["decider"] for t in raw["trades_today"]] == [STRATEGY_DECIDER, None]
+    assert errors(contract.json_schema(StatusV1), raw) == []
+
+
+def test_decider_is_rebuilt_on_read_and_optional_in_older_documents():
+    raw = json.loads(contract.dumps(status()))
+    raw["decider"] = {"kind": "model", "name": "l1", "version": "x"}  # never trusted on read
+    assert json.loads(contract.dumps(contract.from_jsonable(StatusV1, raw)))["decider"] == (
+        STRATEGY_DECIDER)
+    del raw["decider"]
+    for trade in raw["trades_today"]:
+        del trade["decider"]
+    assert errors(contract.json_schema(StatusV1), raw) == []
+    assert contract.from_jsonable(StatusV1, raw) == status()

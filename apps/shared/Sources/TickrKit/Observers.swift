@@ -198,9 +198,11 @@ public struct DecisionV1: Codable, Hashable, Sendable {
   public let refusalCause: String?
   /// The structured refusal; nil unless the platform refused the entry.
   public let refusal: RefusalV1?
+  /// Who decided (docs/api.md, "Decider"); nil from an older API.
+  public let decider: DeciderV1?
 
   enum CodingKeys: String, CodingKey {
-    case at, action, strategy, observer, checks, admission
+    case at, action, strategy, observer, checks, admission, decider
     case entryPrice = "entry_price"
     case stopPrice = "stop_price"
     case refusalCause = "refusal_cause"
@@ -219,6 +221,7 @@ public struct DecisionV1: Codable, Hashable, Sendable {
     admission = try c.decode(Admission.self, forKey: .admission)
     refusalCause = try c.decodeNullable(String.self, forKey: .refusalCause)
     refusal = try c.decodeNullable(RefusalV1.self, forKey: .refusal)
+    decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -233,6 +236,7 @@ public struct DecisionV1: Codable, Hashable, Sendable {
     try c.encode(admission, forKey: .admission)
     try c.encodeNullable(refusalCause, forKey: .refusalCause)
     try c.encodeNullable(refusal, forKey: .refusal)
+    try c.encodeNullable(decider, forKey: .decider)
   }
 }
 
@@ -287,9 +291,11 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
   public let whatIf: WhatIfV1
   /// `prices_after_cause` as codes (docs/api.md, "Reason codes"); empty when there is none.
   public let pricesAfterCauseCodes: [ReasonV1]
+  /// Who decided (docs/api.md, "Decider"); nil from an older API.
+  public let decider: DeciderV1?
 
   enum CodingKeys: String, CodingKey {
-    case at, symbol, strategy, admission, checks
+    case at, symbol, strategy, admission, checks, decider
     case refusalCause = "refusal_cause"
     case refusal
     case entryPrice = "entry_price"
@@ -315,6 +321,7 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
     pricesAfterCause = try c.decodeNullable(String.self, forKey: .pricesAfterCause)
     whatIf = try c.decode(WhatIfV1.self, forKey: .whatIf)
     pricesAfterCauseCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .pricesAfterCauseCodes) ?? []
+    decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -332,6 +339,7 @@ public struct SkippedSignalV1: Codable, Hashable, Sendable {
     try c.encodeNullable(pricesAfterCause, forKey: .pricesAfterCause)
     try c.encode(whatIf, forKey: .whatIf)
     try c.encode(pricesAfterCauseCodes, forKey: .pricesAfterCauseCodes)
+    try c.encodeNullable(decider, forKey: .decider)
   }
 }
 

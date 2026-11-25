@@ -20,11 +20,6 @@ public enum CommandKind: String, Codable, Sendable, CaseIterable {
 
 public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 
-public struct StrategyId: Codable, Hashable, Sendable {
-  public let name: String
-  public let version: String
-}
-
 public struct EntryBlock: Codable, Hashable, Sendable {
   public let cause: String
   public let text: String
@@ -161,9 +156,11 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
   public let schemaVersion: Int
+  /// Who decides this run's entries (docs/api.md, "Decider"); nil from an older API.
+  public let decider: DeciderV1?
 
   enum CodingKeys: String, CodingKey {
-    case environment, strategy, fences, position, freshness, positions
+    case environment, strategy, fences, position, freshness, positions, decider
     case codeVersion = "code_version"
     case writtenAt = "written_at"
     case botState = "bot_state"
@@ -209,6 +206,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
+    decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -236,6 +234,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
+    try c.encodeNullable(decider, forKey: .decider)
   }
 }
 

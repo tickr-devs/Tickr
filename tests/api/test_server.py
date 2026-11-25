@@ -17,7 +17,8 @@ import pytest
 from tickr import config
 from tickr.api import contract
 from tickr.api.contract import CommandKind
-from tickr.api.server import ApiSettings, make_server, settings_from_config
+from tickr.api.server import ApiSettings, make_server, settings_from_config, shown_settings
+from tickr.runtime.service import strategy_id
 
 from .samples import T0, status
 from .schema_check import errors
@@ -342,7 +343,18 @@ def test_settings_endpoint_shows_the_loaded_config(api, settings):
     assert body["session"]["flatten_minutes_before_close"] == (
         cfg.session.flatten_minutes_before_close)
     assert body["active_strategy"] == cfg.strategy.active
+    # This test's root holds no strategies/: the identity is unknown, never guessed.
+    assert (body["decider"], body["decider_cause"]) == (None, contract.DECIDER_UNREADABLE)
     assert request(server, "POST", "/settings", {})[0].status == 405
+
+
+def test_settings_decider_is_the_active_strategy_the_bot_reports():
+    cfg = config.load(ROOT / "config" / "bot.toml")
+    shown = shown_settings(cfg)
+    bot = strategy_id(cfg)  # what the bot writes as status `strategy`
+    assert shown.decider == contract.DeciderV1(contract.DeciderKind.STRATEGY, bot.name,
+                                               bot.version)
+    assert shown.decider_cause is None
 
 
 def test_schema_endpoint(api):
