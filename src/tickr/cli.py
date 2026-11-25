@@ -212,8 +212,10 @@ class _Interrupt:
 @contextmanager
 def _engine(path: Path, broker: Broker | None = None,
             precheck: Callable[[Engine], None] | None = None, *,
-            opens_trades: bool) -> Iterator[Engine]:
-    """Lock, open the store, recover. `precheck` runs on the records before recovery (which
+            opens_trades: bool, recover: bool = True) -> Iterator[Engine]:
+    """Lock, open the store, recover (not with `recover=False`: a command that must send
+    nothing, such as resolve-order, gets the engine before any reconcile or step; the next
+    bot start recovers as always). `precheck` runs on the records before recovery (which
     may already send cancels or orders). A command that can open a trade (`opens_trades`)
     refuses without a code version; one that only manages, exits or unfences existing trades
     (resume, exit-all, clear-fence) is never blocked by it: it records "-" (shown as null) and
@@ -245,7 +247,8 @@ def _engine(path: Path, broker: Broker | None = None,
                             close_refusal=lambda: close_refusal(cfg, calendar, NOW()))
             if precheck is not None:
                 precheck(engine)
-            engine.recover()
+            if recover:
+                engine.recover()
             yield engine
             cause = "finished"
         except KeyboardInterrupt:
@@ -599,7 +602,9 @@ def _clear_fence(args: argparse.Namespace) -> int:
 
 
 def _resolve_order(args: argparse.Namespace) -> int:
-    with _engine(args.config, opens_trades=False) as engine:
+    # No recovery first: its step would protect the shares the records still expect, sending
+    # a stop on a symbol the operator has just made flat.
+    with _engine(args.config, opens_trades=False, recover=False) as engine:
         refused = engine.resolve_order(args.order_id)
         if refused is not None:
             print(f"refused: {refused}", file=sys.stderr)

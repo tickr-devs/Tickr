@@ -176,3 +176,44 @@ def test_a_resolved_unknown_order_listed_working_is_revived(store):
     assert e.order(cid).live and e.order(cid).operator_resolved_at is None
     assert e.trade(t).state is not TradeState.CLOSED
     assert has(e, Fence.RESURRECTED)
+
+
+def test_cli_resolves_a_trade_with_a_recorded_fill_and_sends_nothing(tmp_path, monkeypatch,
+                                                                     capsys):
+    """1 of 3 filled and protected by a stop of 1, then Detail says 30 filled (a hard conflict
+    forever). The operator sells the share and cancels the stop in the Webull app. The command
+    closes the trade with no reconcile or step first, so no stop is placed again for the one
+    share the records still expect (Fable review of #751)."""
+    bot = copy_config(tmp_path)
+    cfg = config.load(bot)
+    database, _ = cli.data_paths(cfg)
+    s = Store.open(database, busy_timeout_seconds=0)
+    b = FakeBroker()
+    run_id = s.start_run(environment=cfg.environment_name, config_digest="d", strategy="s",
+                         strategy_version="1", code_version="x")
+    e = Engine(s, b, CFG, run_id, lambda: OPEN, clock=Clock())
+    t = enter(e, "3")
+    cid = legs(e, t, Leg.ENTRY)[0].client_order_id
+    b.fill(cid, D(1), D(10))
+    run(e, 4)
+    (stop,) = legs(e, t, Leg.STOP)
+    b.orders[cid] = replace(b.orders[cid], filled_quantity=D(30), state=OrderState.FILLED)
+    run(e, 8)
+    assert f"{Fence.ORDER_CONFLICT}:{cid}" in e.fences()
+    s.close()
+    b.cancel(stop.client_order_id)  # the operator, in the Webull app
+    del b.holdings["ABC"]
+    sent = len(b.sent)
+    monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: b)
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    assert cli.main(["--config", str(bot), "resolve-order", cid]) == 0, capsys.readouterr().err
+    assert len(b.sent) == sent and b.open_orders() == []
+    s = Store.open(database, busy_timeout_seconds=0)
+    (row,) = s.query("SELECT state, close_cause FROM trades WHERE trade_id = ?", (t,))
+    assert (row["state"], row["close_cause"]) == (TradeState.CLOSED, ORDER_RESOLVED)
+    (stop_row,) = s.query("SELECT broker_state, operator_resolved_at FROM orders "
+                          "WHERE client_order_id = ?", (stop.client_order_id,))
+    assert stop_row["broker_state"] == OrderState.CANCELLED  # recorded as Detail shows it
+    assert stop_row["operator_resolved_at"] is None
+    assert s.query("SELECT name FROM fences") == []
+    s.close()

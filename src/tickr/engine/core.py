@@ -542,13 +542,15 @@ class Engine:
         that no broker read will ever settle, and close its trade. None when done, else why
         it was refused (nothing changed).
 
-        Settles only what reads cannot: a fresh Detail read must still be useless (a row that
-        cannot be our order, `_read_conflict` hard; an unmapped status; or "not found" for an
-        order the broker acknowledged), for every live order of the trade, and the broker must
-        show the symbol flat with no open order in it, ours or not: the operator closes it in
-        the Webull app first. Then each such order is marked resolved (not live; the evidence
-        journaled), the fences only a read could clear are cleared, and the trade closes as
-        `order-resolved-by-operator`. Its money is unknown (api.history.trade_net,
+        Settles only what reads cannot: a fresh Detail read of this order must still be useless
+        (a row that cannot be our order, `_read_conflict` hard; an unmapped status; or "not
+        found"); each other live order of the trade must be useless the same way or shown
+        ended (recorded as Detail shows it); and the broker must show the symbol flat with no
+        open order in it, ours or not: the operator closes it in the Webull app first. It runs
+        before any loop step (the CLI does not recover first), so it sends nothing, whatever
+        fills the trade has recorded. Then each useless order is marked resolved (not live; the
+        evidence journaled), the fences only a read could clear are cleared, and the trade
+        closes as `order-resolved-by-operator`. Its money is unknown (api.history.trade_net,
         runtime.entries), so the daily loss refuses entries for the rest of that New York day.
         A broker row showing the order working again revives it (`_resurrect`)."""
         row = self.orders_by_id([client_order_id]).get(client_order_id)
@@ -557,16 +559,20 @@ class Engine:
         if not row.live:
             return f"{client_order_id}: not live in our records, nothing to resolve"
         trade = self.trade(row.trade_id)
-        evidence: dict[str, str] = {}
+        evidence: dict[str, str] = {}  # orders to resolve: why Detail cannot settle them
+        ended: list[tuple[OrderRow, OrderDetail]] = []  # orders Detail shows ended: recorded
         for order in (o for o in self.orders(trade.trade_id) if o.live):
+            cid = order.client_order_id
             try:
-                useless = self._unsettled_by_detail(order)
+                detail, useless = self._unsettled_by_detail(order)
             except BrokerError as exc:
-                return f"{order.client_order_id}: Detail read failed ({type(exc).__name__})"
-            if useless is None:
-                return (f"{order.client_order_id}: Detail describes it; the bot settles it "
-                        "itself (`tickr resume`)")
-            evidence[order.client_order_id] = useless
+                return f"{cid}: Detail read failed ({type(exc).__name__})"
+            if useless is not None:
+                evidence[cid] = useless
+            elif cid != client_order_id and detail is not None and detail.state.terminal:
+                ended.append((order, detail))
+            else:
+                return f"{cid}: Detail describes it; the bot settles it itself (`tickr resume`)"
         try:
             held = sum((p.quantity for p in self.broker.positions() if p.symbol == trade.symbol),
                        ZERO)
@@ -581,6 +587,8 @@ class Engine:
             return (f"open orders in {trade.symbol} at the broker ({', '.join(listed)}): "
                     "cancel them in the Webull app first")
         with self.store.transaction():
+            for order, detail in ended:
+                self._apply_detail(order, detail, resurrected=False)
             for cid, why in evidence.items():
                 self.store.execute("UPDATE orders SET operator_resolved_at = ? "
                                    "WHERE client_order_id = ?", (self.store.stamp(), cid))
@@ -595,22 +603,22 @@ class Engine:
             self._close_row(trade, ORDER_RESOLVED)
         return None
 
-    def _unsettled_by_detail(self, row: OrderRow) -> str | None:
-        """Why a fresh Detail read of this order still cannot settle it, or None when it
-        describes the order (the loop then settles it). BrokerError other than "not found"
-        propagates."""
+    def _unsettled_by_detail(self, row: OrderRow) -> tuple[OrderDetail | None, str | None]:
+        """A fresh Detail read of this order (None: not found) and why it still cannot settle
+        the order (None when it describes it: working, or ended as sent). BrokerError other
+        than "not found" propagates."""
         try:
             detail = self.broker.order_detail(row.client_order_id)
         except OrderNotFound:
-            if row.send_state is SendState.ACKNOWLEDGED:
-                return "acknowledged order not found by Detail"
-            return None  # never acknowledged: the loop proves it absent (`_not_found`)
+            return None, ("acknowledged order not found by Detail"
+                          if row.send_state is SendState.ACKNOWLEDGED
+                          else f"{row.send_state} order not found by Detail")
         conflict = self._read_conflict(row, detail)
         if conflict is not None and conflict[0]:
-            return conflict[1]
+            return detail, conflict[1]
         if detail.state is OrderState.UNKNOWN:
-            return f"unmapped status {detail.raw_status!r}"
-        return None
+            return detail, f"unmapped status {detail.raw_status!r}"
+        return detail, None
 
     def disk_room(self, cause: str | None) -> None:
         """The runtime's disk check each loop pass: `cause` sets the disk-low fence (once),

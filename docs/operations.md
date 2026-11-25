@@ -586,14 +586,15 @@ know (`status-unknown:<order>`). The bot records nothing from such a row, its tr
 close, and entries stay blocked across restarts. To end it:
 
 1. Look at the symbol in the Webull app. Close any shares in it and cancel every open order in
-   it, so the account is flat in that symbol.
+   it, so the account is flat in that symbol and the order is gone from the app's open orders.
 2. Stop the bot (`launchctl kill TERM gui/$(id -u)/local.tickr.bot`).
 3. `tickr resolve-order <order>`, with the order id the fence names (without `/listed`).
 4. Start the bot again (`launchctl kickstart gui/$(id -u)/local.tickr.bot`).
 
-The command reads the broker again and refuses (exit 1, the cause printed, nothing changed)
-unless Detail still cannot settle every live order of that trade and the account holds no
-shares and no open order in the symbol. Then it marks those orders resolved (the evidence is in
+The command does not reconcile or step first, so it sends no order. It reads the broker again
+and refuses (exit 1, the cause printed, nothing changed) unless Detail still cannot settle the
+order, every other live order of the trade is unsettled the same way or shown ended (recorded as
+shown), and the account holds no shares and no open order in the symbol. Then it marks those orders resolved (the evidence is in
 the journal as `order-resolved-by-operator`), clears the fences only a read could clear, and
 closes the trade as "resolved by the operator". What the trade made or lost is unknown, so the
 daily loss rule refuses new entries for the rest of that New York day; run it after the day's
