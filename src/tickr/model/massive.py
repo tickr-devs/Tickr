@@ -161,7 +161,7 @@ class History:
                  now: Callable[[], datetime.datetime] | None = None) -> None:
         self.m: MassiveConfig = cfg.massive
         rel = Path(self.m.history_dir)
-        if not self.m.history_dir or rel.is_absolute() or ".." in rel.parts:
+        if not rel.parts or rel.is_absolute() or ".." in rel.parts:  # "" and "." have no parts
             # window() deletes the day files outside the window in this folder
             raise ModelRefused("history_dir_outside", "[massive] history_dir must be relative")
         self.folder = cfg.root / cfg.run.data_dir / rel

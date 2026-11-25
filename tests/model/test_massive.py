@@ -337,7 +337,7 @@ def test_a_redirect_is_refused_and_the_key_never_follows_it():
             server.shutdown()
 
 
-@pytest.mark.parametrize("value", ["", "/tmp/x", "../x", "a/../../x"])
+@pytest.mark.parametrize("value", ["", ".", "./", "/tmp/x", "../x", "a/../../x"])
 def test_a_history_folder_outside_the_data_folder_is_refused(tmp_path, value):
     import dataclasses
 
