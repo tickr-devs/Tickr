@@ -281,6 +281,7 @@ def test_a_dropped_connection_is_a_recorded_gap(creds, monkeypatch):
     stream, stop, bars, made = run_stream([], sockets=[first, second])
     stream.run(stop)
     assert len(made) == 2 and len(bars.gaps) == 1
+    assert bars.gaps[0][2] == "ConnectionError"  # what ended it is kept
 
 
 def test_a_bar_of_another_day_is_counted_not_kept():
@@ -296,3 +297,52 @@ def test_a_single_event_sent_bare_is_read_like_a_batch(creds):
     stream, stop, bars, _ = run_stream([{"ev": "status", "status": "auth_success"}, msg])
     stream.session(stop)
     assert len(bars.frame()) == 1
+
+
+def test_a_redirect_is_refused_and_the_key_never_follows_it():
+    """A 3xx would make urllib resend the Authorization header to the Location's host."""
+    import http.server
+
+    seen = []
+
+    class Other(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            seen.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    other = http.server.HTTPServer(("127.0.0.1", 0), Other)
+
+    class Redirect(Other):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", f"http://localhost:{other.server_port}/x")
+            self.end_headers()
+
+    first = http.server.HTTPServer(("127.0.0.1", 0), Redirect)
+    for server in (first, other):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(ModelRefused) as exc:
+            massive._get(massive._open, f"http://127.0.0.1:{first.server_port}/v3/x",
+                         {"Authorization": "Bearer DUMMY-NOT-A-KEY"}, 5)
+        assert exc.value.cause == "http_status" and exc.value.detail.startswith("302")
+        assert seen == []
+    finally:
+        for server in (first, other):
+            server.shutdown()
+
+
+@pytest.mark.parametrize("value", ["", "/tmp/x", "../x", "a/../../x"])
+def test_a_history_folder_outside_the_data_folder_is_refused(tmp_path, value):
+    import dataclasses
+
+    cfg = cfg_at(tmp_path)
+    cfg = dataclasses.replace(cfg, massive=dataclasses.replace(cfg.massive, history_dir=value))
+    with pytest.raises(ModelRefused) as exc:
+        massive.History(cfg)
+    assert exc.value.cause == "history_dir_outside"

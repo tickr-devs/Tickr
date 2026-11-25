@@ -76,8 +76,19 @@ def credential(name: str) -> str:
 Opener = Callable[[urllib.request.Request, int], Any]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A 3xx answer is refused, never followed: urllib would resend the request's headers, the
+    key among them, to whatever host the Location names (hard rule 4)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None  # urllib then raises HTTPError with the 3xx status
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect())
+
+
 def _open(request: urllib.request.Request, timeout: int) -> Any:
-    return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310 - https, config host
+    return _OPENER.open(request, timeout=timeout)
 
 
 def _get(opener: Opener, url: str, headers: Mapping[str, str], timeout: int) -> bytes:
@@ -149,7 +160,11 @@ class History:
     def __init__(self, cfg: Config, opener: Opener = _open,
                  now: Callable[[], datetime.datetime] | None = None) -> None:
         self.m: MassiveConfig = cfg.massive
-        self.folder = cfg.root / cfg.run.data_dir / self.m.history_dir
+        rel = Path(self.m.history_dir)
+        if not self.m.history_dir or rel.is_absolute() or ".." in rel.parts:
+            # window() deletes the day files outside the window in this folder
+            raise ModelRefused("history_dir_outside", "[massive] history_dir must be relative")
+        self.folder = cfg.root / cfg.run.data_dir / rel
         self.opener = opener
         self.now = now or (lambda: datetime.datetime.now(datetime.UTC))
 
@@ -280,7 +295,8 @@ class DayBars:
     day: str
     rows: dict[tuple[str, int], tuple[Any, ...]] = field(default_factory=dict)
     arrivals: dict[int, float] = field(default_factory=dict)  # bar start (ms) -> latest arrival
-    gaps: list[tuple[float, float]] = field(default_factory=list)  # (down, up) monotonic times
+    # (down, up) monotonic times and the type of what ended the connection
+    gaps: list[tuple[float, float, str]] = field(default_factory=list)
     other_day: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -302,9 +318,9 @@ class DayBars:
                                              start_ms * NS_PER_MS)
             self.arrivals[start_ms] = max(self.arrivals.get(start_ms, 0.0), arrived)
 
-    def gap(self, down: float, up: float) -> None:
+    def gap(self, down: float, up: float, cause: str) -> None:
         with self._lock:
-            self.gaps.append((down, up))
+            self.gaps.append((down, up, cause))
 
     def frame(self) -> Any:
         """Every bar so far as a flat-file frame (the shared feature code checks it)."""
@@ -362,15 +378,15 @@ class MinuteStream:
     def run(self, stop: threading.Event) -> None:
         """Connect, and connect again after a drop until `stop`; every drop is a gap."""
         while not stop.is_set():
-            down = None
+            down, cause = None, "closed"
             try:
                 self.session(stop)
             except ModelRefused:
                 raise
-            except Exception:  # noqa: BLE001 - any transport end is a gap, never a crash
-                down = self.clock()
+            except Exception as exc:  # noqa: BLE001 - any transport end is a gap, never a crash
+                down, cause = self.clock(), type(exc).__name__
             if stop.is_set():
                 return
             down = down if down is not None else self.clock()
             stop.wait(float(self.m.stream_reconnect_seconds))
-            self.bars.gap(down, self.clock())
+            self.bars.gap(down, self.clock(), cause)
