@@ -95,7 +95,8 @@ def _rows(path):
 
 def _run(tmp_path, *extra: str) -> dict:
     out = tmp_path / "out"
-    assert main(["fill-quality", "--settings", SETTINGS, "--replay-settings", REPLAY, "--config", CONFIG,
+    assert main(["fill-quality", "--settings", SETTINGS, "--replay-settings", REPLAY,
+                 "--config", CONFIG,
                  "--out", str(out), *extra]) == 0
     return json.loads((out / "fill_quality_summary.json").read_text())
 
