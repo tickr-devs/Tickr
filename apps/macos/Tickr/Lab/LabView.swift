@@ -632,13 +632,9 @@ private struct ExplainCard: View {
   @Environment(AppModel.self) private var model
   @State private var symbol = ""
   @State private var explain = ExplainModel()
-  /// Whether the list of all the decision's checks is open (the card shows as many as fit).
-  @State private var allChecksOpen = false
 
   /// Checks shown before the card's height is measured (the first layout pass).
   static let fallbackLines = 4
-  /// Width of the list of all checks, in points.
-  static let allChecksWidth: CGFloat = 340
   /// Width of the symbol field, in points.
   static let fieldWidth: CGFloat = 110
   /// Size of a check's mark, in points.
@@ -752,17 +748,9 @@ private struct ExplainCard: View {
   private func footer(_ decision: DecisionV1, total: Int, shown: Int) -> some View {
     PlannedLine(text: L10n.Lab.explainBacklog)
     if shown < total {
-      CardFooterLink(L10n.Lab.explainShowAll, count: total) { allChecksOpen = true }
-        .popover(isPresented: $allChecksOpen, arrowEdge: .bottom) {
-          ScrollView {
-            VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-              ForEach(Self.lines(decision), id: \.self) { line in lineRow(line, of: decision) }
-            }
-            .padding(Tokens.Space.l)
-          }
-          .scrollEdgeHints()
-          .frame(width: Self.allChecksWidth)
-        }
+      FooterDetail(L10n.Lab.explainShowAll, count: total) {
+        ForEach(Self.lines(decision), id: \.self) { line in lineRow(line, of: decision) }
+      }
     }
   }
 

@@ -75,11 +75,12 @@ public struct CappedList<Item, ID: Hashable, Row: View>: View {
           .sheet(isPresented: $showsAll) {
             let open = $showsAll
             let all = Array(zip(ids, items).enumerated())
-            AllRowsSheet(title: title, count: items.count, close: { open.wrappedValue = false }, rows: {
-              VStack(alignment: .leading, spacing: spacing) {
-                ForEach(all, id: \.element.0) { index, pair in row(index, pair.1) }
-              }
-            })
+            CardSheet(title: title, subtitle: ListWords.allLatestFirst(items.count),
+              close: { open.wrappedValue = false }, rows: {
+                VStack(alignment: .leading, spacing: spacing) {
+                  ForEach(all, id: \.element.0) { index, pair in row(index, pair.1) }
+                }
+              })
           }
       }
     }
@@ -116,79 +117,5 @@ public struct ListCap: Equatable, Sendable {
       fallback: least)
     shown = max(least, fit)
     hidden = heights.count - shown
-  }
-}
-
-/// Every row of a capped list: the card's title, how many rows, the close button, then the rows,
-/// scrolling when they are many. On the iPhone a sheet as tall as the rows (full height when they
-/// are more than a screen), with its own navigation for rows that open a page; a sheet of
-/// `Size.allRowsWidth` on the Mac; Esc closes it.
-struct AllRowsSheet<Rows: View>: View {
-  let title: LocalizedStringResource
-  let count: Int
-  let close: @MainActor @Sendable () -> Void
-  let rows: Rows
-
-  init(
-    title: LocalizedStringResource, count: Int, close: @escaping @MainActor @Sendable () -> Void,
-    @ViewBuilder rows: () -> Rows
-  ) {
-    self.title = title
-    self.count = count
-    self.close = close
-    self.rows = rows()
-  }
-
-  var body: some View {
-    #if os(iOS)
-    NavigationStack { content.toolbar(.hidden, for: .navigationBar) }
-      .sheetFitsContent()
-      .presentationBackground(Palette.surface)
-    #else
-    content
-      .frame(minWidth: Tokens.Size.allRowsWidth, minHeight: Tokens.Size.allRowsHeight)
-      .presentationBackground(Palette.surface)
-    #endif
-  }
-
-  private var content: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.m) {
-      header
-      ScrollView {
-        VStack(alignment: .leading, spacing: Tokens.Space.s) { rows }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.bottom, Tokens.Space.xl)
-      }
-      .scrollBounceBehavior(.basedOnSize)
-      // No scroll bar (#676): the edge fades and the down chevron say there is more.
-      .scrollEdgeHints()
-    }
-    .padding([.horizontal, .top], Tokens.Space.l)
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier(ListCap.sheetID)
-  }
-
-  /// The card's title and how many rows, then a round X.
-  private var header: some View {
-    HStack(alignment: .top, spacing: Tokens.Space.s) {
-      VStack(alignment: .leading, spacing: Tokens.Space.xxs) {
-        Text(title)
-          .font(Tokens.Typography.heading)
-          .foregroundStyle(Palette.textPrimary)
-          .accessibilityAddTraits(.isHeader)
-        Text(ListWords.allLatestFirst(count))
-          .font(Tokens.Typography.annotation)
-          .foregroundStyle(Palette.textQuaternary)
-      }
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      Button(action: close) {
-        Image(systemName: ListCap.closeSymbol)
-      }
-      .buttonStyle(.icon(compact: true))
-      .keyboardShortcut(.cancelAction)
-      .help(Text(ListWords.closeHelp))
-      .accessibilityLabel(Text(ListWords.close))
-    }
   }
 }

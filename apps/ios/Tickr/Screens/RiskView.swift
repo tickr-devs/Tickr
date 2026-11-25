@@ -175,7 +175,7 @@ private struct AccountCard: View {
           color: Palette.result(b.dayPlUsd.value))
         RiskLine(label: L10n.Risk.unrealized, value: Money.signedUSD(b.unrealizedPlUsd.value),
           color: Palette.result(b.unrealizedPlUsd.value))
-        DisclosureLine(L10n.Risk.moreBalances) {
+        FooterDetail(L10n.Risk.moreBalances, endsCard: false) {
           RiskLine(label: L10n.Risk.overnightBuyingPower, value: RiskFormat.amount(b.overnightBuyingPowerUsd.value))
           RiskLine(label: L10n.Risk.positionsValue, value: RiskFormat.amount(b.positionsValueUsd.value))
           RiskLine(label: L10n.Risk.dayTradesLeft,
@@ -200,22 +200,18 @@ private struct AccountCard: View {
           .fixedSize(horizontal: false, vertical: true)
       }
       if let account {
-        DisclosureLine(L10n.Risk.brokerPositions, summary: String(account.positions.count)) {
+        FooterDetail(L10n.Risk.brokerPositions, summary: String(account.positions.count), endsCard: false) {
           if account.positions.isEmpty {
             none
           }
-          // As many as the bot's entry slots, then "Show all N ›".
-          CappedList(account.positions, id: \.self, title: L10n.Risk.brokerPositions, limit: Tokens.Lists.brokerRows,
-            endsCard: false) { _, position in positionRow(position) }
+          ForEach(account.positions, id: \.self) { positionRow($0) }
         }
-        DisclosureLine(L10n.Risk.fillsToday, summary: String(account.fills.count)) {
+        // The day's fills, latest first, in their sheet: the list grows all day.
+        FooterDetail(L10n.Risk.fillsToday, summary: String(account.fills.count), endsCard: false) {
           if account.fills.isEmpty {
             none
           }
-          // The latest fills, then "Show all N ›": the list grows all day.
-          CappedList(account.fillsLatestFirst, id: \.self, title: L10n.Risk.fillsToday, endsCard: false) { _, fill in
-            fillRow(fill)
-          }
+          ForEach(account.fillsLatestFirst, id: \.self) { fillRow($0) }
         }
       }
     }

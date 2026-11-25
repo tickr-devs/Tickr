@@ -631,13 +631,14 @@ private struct OpenLine: View {
 
 /// The selected trade (MacTrades v134): its symbol and time, the result big with its R, one line
 /// with its size, prices, stop and 1 R, and how it exited; its risk, stop timing, price excursion
-/// and what came after are one click away under "Details". "Other versions" replays it.
+/// and what came after are one click away behind "Details ›", in a popover. "Other versions" replays it.
 private struct TradeDetailCard: View {
   let trade: DayTrade?
   @State private var anotherShown = false
 
-  /// Accessibility id of the card, for the UI tests.
+  /// Accessibility ids of the card and of its "Details" footer link, for the UI tests.
   static let id = "trades-detail"
+  static let detailsID = "trades-detail-more"
   /// Symbol of the "Other versions" button.
   static let anotherSymbol = "arrow.triangle.branch"
 
@@ -675,10 +676,10 @@ private struct TradeDetailCard: View {
               Badge(verbatim: Board.exitReasonTitle(trade.exitReason), tone: Tone.exit(trade.exitReason))
             }
             .font(Tokens.Typography.callout)
-            DisclosureLine(L10n.Trades.details) {
+            Spacer(minLength: 0)
+            FooterDetail(L10n.Trades.details, id: Self.detailsID) {
               details(trade)
             }
-            Spacer(minLength: 0)
           }
           .frame(maxHeight: .infinity, alignment: .top)
         })
