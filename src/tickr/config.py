@@ -210,6 +210,8 @@ class ProbeConfig:
     paging_send_interval_seconds: int
     open_orders_paging_orders: int
     open_orders_end_margin_minutes: int
+    trade_events_minutes: int
+    trade_events_reconnect_seconds: int
 
 
 # [api] system_services values: the machine services GET /system can report (docs/api.md).
@@ -457,6 +459,7 @@ class EnvironmentConfig:
     mqtt_host: str
     mqtt_port: int
     events_host: str
+    events_port: int
     app_key_variable: str
     app_secret_variable: str
     account_variable: str
