@@ -54,12 +54,13 @@ from tickr.model.errors import ModelRefused
 NEW_YORK = zoneinfo.ZoneInfo("America/New_York")
 NS_PER_MS = 10**6
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
-# Flat-file columns in the order of a Massive minute_aggs day file.
-FILE_COLUMNS = ("ticker", "volume", "open", "close", "high", "low", "window_start", "transactions")
-# AM message key -> flat-file column (Massive stream: sym, v, o, c, h, l, s = start in ms, n).
+# The flat-file columns the feature code reads (features.BAR_COLUMNS). The day file also holds
+# `transactions`, which the AM stream does not send and no feature reads, so the live frame
+# leaves it out instead of inventing a value.
+FILE_COLUMNS = features.BAR_COLUMNS
+# AM message key -> flat-file column (Massive stream: sym, v, o, c, h, l, s = start in ms).
 AM_KEYS = {"sym": "ticker", "v": "volume", "o": "open", "c": "close", "h": "high", "l": "low"}
 HTTP_NOT_FOUND = 404
-CALENDAR_LOOKBACK_DAYS = 60  # calendar days searched for 20 sessions (holidays included)
 
 
 def credential(name: str) -> str:
@@ -122,12 +123,13 @@ def sigv4_headers(*, host: str, path: str, region: str, key_id: str, secret: str
 # --- history: the previous sessions' minute-bar day files ----------------------------------------
 
 
-def previous_sessions(calendar: SessionCalendar, today: datetime.date, count: int) -> list[str]:
+def previous_sessions(calendar: SessionCalendar, today: datetime.date, count: int,
+                      lookback_days: int) -> list[str]:
     """The `count` trading sessions before `today`, oldest first, from the bot's calendar (a
     date the calendar does not cover refuses through CalendarRefused)."""
     days: list[str] = []
     day = today
-    for _ in range(CALENDAR_LOOKBACK_DAYS):
+    for _ in range(lookback_days):
         day -= datetime.timedelta(days=1)
         try:
             calendar.day(day)
@@ -231,8 +233,10 @@ class Reference:
             nxt = page.get("next_url")
             if not nxt:
                 return rows
-            if urllib.parse.urlsplit(nxt).hostname != self.m.api_host:
-                raise ModelRefused("reference_unreadable", "next page on another host")
+            parts = urllib.parse.urlsplit(nxt)
+            if parts.scheme != "https" or parts.hostname != self.m.api_host:
+                # the next request carries the key: only to the configured host over https
+                raise ModelRefused("reference_unreadable", "next page not on the https api host")
             url = nxt
         raise ModelRefused("reference_incomplete", f"{path}: more than {self.m.max_pages} pages")
 
@@ -295,7 +299,7 @@ class DayBars:
                 return
             ticker, volume, o, c, h, low = row
             self.rows[(ticker, start_ms)] = (ticker, volume, o, c, h, low,
-                                             start_ms * NS_PER_MS, message.get("n", 0))
+                                             start_ms * NS_PER_MS)
             self.arrivals[start_ms] = max(self.arrivals.get(start_ms, 0.0), arrived)
 
     def gap(self, down: float, up: float) -> None:

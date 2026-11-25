@@ -815,6 +815,9 @@ stream_max_message_bytes = 16777216
 # wait of one read before the stop flag is checked again; a convenience pause, not a measured value, no decision
 # depends on it; read by tickr.model.massive.
 stream_reconnect_seconds = 5
+# Calendar days searched back from today for the history sessions (20 sessions span about 28 calendar days with weekends
+# and holidays; a search that finds fewer refuses); read by tickr.model.massive.
+calendar_lookback_days = 60
 
 [runtime]
 # Minimum free disk space on the data_dir volume, megabytes; below it preflight fails and the running bot takes no new

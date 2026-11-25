@@ -80,11 +80,13 @@ def test_sigv4_matches_the_aws_documented_get_object_example():
 
 def test_previous_sessions_come_from_the_bot_calendar():
     cal = SessionCalendar.load(ROOT / "config" / "calendar")
-    days = massive.previous_sessions(cal, datetime.date(2026, 11, 25), 20)
+    days = massive.previous_sessions(cal, datetime.date(2026, 11, 25), 20,
+                                     CFG.massive.calendar_lookback_days)
     assert len(days) == 20 and days[-1] == "2026-11-24" and days == sorted(days)
     assert all(datetime.date.fromisoformat(d).isoweekday() < 6 for d in days)
     with pytest.raises(ModelRefused) as exc:
-        massive.previous_sessions(cal, datetime.date(2026, 1, 10), 20)
+        massive.previous_sessions(cal, datetime.date(2026, 1, 10), 20,
+                                 CFG.massive.calendar_lookback_days)
     assert exc.value.cause == "calendar"
 
 
@@ -161,10 +163,12 @@ def test_splits_are_paged_and_give_the_training_factor(creds):
 def test_a_next_page_on_another_host_or_too_many_pages_is_refused(creds, monkeypatch):
     host = f"https://{CFG.massive.api_host}"
     url = f"{host}/v3/reference/tickers?market=stocks&type=CS&active=true&limit=1000"
-    wire = Wire({url: json.dumps({"results": [], "next_url": "https://elsewhere.test/x"}).encode()})
-    with pytest.raises(ModelRefused) as exc:
-        massive.Reference(CFG, wire).stock_tickers()
-    assert exc.value.cause == "reference_unreadable"
+    for nxt in ("https://elsewhere.test/x", f"http://{CFG.massive.api_host}/x"):
+        wire = Wire({url: json.dumps({"results": [], "next_url": nxt}).encode()})
+        with pytest.raises(ModelRefused) as exc:
+            massive.Reference(CFG, wire).stock_tickers()
+        assert exc.value.cause == "reference_unreadable"
+        assert len(wire.requests) == 1  # the key never went to the next page
     loop = Wire({url: json.dumps({"results": [{"ticker": "A"}], "next_url": url}).encode()})
     with pytest.raises(ModelRefused) as exc:
         massive.Reference(CFG, loop).stock_tickers()
@@ -183,7 +187,7 @@ def test_stock_tickers_take_every_training_type(creds):
 def am_messages(frame) -> list[dict]:
     return [{"ev": "AM", "sym": r.ticker, "v": int(r.volume), "o": r.open, "c": r.close,
              "h": r.high, "l": r.low, "s": int(r.window_start) // 10**6,
-             "e": int(r.window_start) // 10**6 + 60000, "n": int(r.transactions)}
+             "e": int(r.window_start) // 10**6 + 60000}
             for r in frame.itertuples()]
 
 
@@ -243,6 +247,7 @@ def test_the_stream_authenticates_subscribes_and_keeps_flat_file_rows(creds):
                             {"action": "subscribe", "params": "AM.*"}]
     live = bars.frame()
     assert len(live) == len(frame) and bars.gaps == []
+    assert list(live.columns) == list(features.BAR_COLUMNS)  # no invented transactions
     # the shared feature code gets the same minute from the stream as from the day file
     minute = 450
     state = features.history(days[:-1], {}, today, None)
