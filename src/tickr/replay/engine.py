@@ -39,6 +39,7 @@ from tickr.calendar import ny_date_of
 from tickr.replay.clock import ClockFor, SessionClock
 from tickr.replay.errors import ReplayError, StrategyContractError
 from tickr.replay.settings import ReplaySettings
+from tickr.risk.causes import AdmissionCause
 from tickr.risk.simulated import SimulatedBook, SimulationRules
 from tickr.strategy.base import Decision, PositionView, Strategy, SymbolContext, Verdict
 from tickr.types import Bar, Quote
@@ -117,6 +118,8 @@ class Signal:
     stop: Decimal | None
     outcome: SignalOutcome
     cause: str
+    admission_cause: AdmissionCause | None = None
+    """The live admission cause when the platform rules refused the ENTER (`rules`)."""
 
 
 @dataclass(frozen=True)
@@ -218,7 +221,8 @@ class _SessionReplay:
         self.index = 0
 
     def _signal(
-        self, decision: Decision, bar_start: datetime, outcome: SignalOutcome, cause: str
+        self, decision: Decision, bar_start: datetime, outcome: SignalOutcome, cause: str,
+        admission_cause: AdmissionCause | None = None,
     ) -> None:
         self.signals.append(
             Signal(
@@ -233,6 +237,7 @@ class _SessionReplay:
                 stop=decision.stop,
                 outcome=outcome,
                 cause=cause,
+                admission_cause=admission_cause,
             )
         )
 
@@ -389,7 +394,7 @@ class _SessionReplay:
             if not admission.ok:
                 assert admission.cause is not None
                 self._signal(decision, bar.start, SignalOutcome.REJECTED,
-                             f"{admission.cause.value}: {admission.detail}")
+                             f"{admission.cause.value}: {admission.detail}", admission.cause)
                 return
             key = self.book.entered(self.symbol, now, admission)
         self.pending = _Pending(decision, bar.start, self.settings.entry_wait_bars, key)
@@ -429,6 +434,16 @@ def _run_together(runs: Sequence[_SessionReplay]) -> None:
     for run in runs:
         if run.bars:
             run.finish()
+
+
+def refused_by_rules(signals: Sequence[Signal]) -> dict[str, int]:
+    """How many ENTERs the platform rules refused, by admission cause (name order)."""
+    counts: dict[str, int] = {}
+    for signal in signals:
+        if signal.admission_cause is not None:
+            cause = signal.admission_cause.value
+            counts[cause] = counts.get(cause, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def split_sessions(bars: Sequence[Bar]) -> list[tuple[date, tuple[Bar, ...]]]:

@@ -1,7 +1,10 @@
 """Backtest report: does the strategy show an edge, and how would the bot's limits have played?
 
 Two views of the same simulated trades (all `simulated`):
-1. Every signal: each pool symbol replayed on its own (the replay engine's view). Mean R per
+1. Every signal: each pool symbol replayed on its own (the replay engine's view), every ENTER
+   admitted by the live platform rules for that symbol's day (backlog T12, run.py); the report
+   records the rules and values (`simulation_rules`) and counts the ENTERs they refused by
+   cause (`refused_by_rules`). Mean R per
    trade with a bootstrap confidence interval that resamples whole days (trades of one day are
    correlated): an interval above 0 is evidence of an edge under these fill assumptions, one
    that contains 0 is not. The same for the window before the hold-out (the last
@@ -31,11 +34,12 @@ from tickr.backtest.settings import BacktestSettings
 from tickr.backtest.universe import CapRecord, PoolEntry
 from tickr.calendar import NEW_YORK
 from tickr.config import Config
-from tickr.replay.engine import LABEL, ReplayResult, SimulatedTrade
+from tickr.replay.engine import LABEL, ReplayResult, SimulatedTrade, refused_by_rules
 from tickr.replay.report import summarize
 from tickr.replay.settings import ReplaySettings
 from tickr.risk.causes import AdmissionCause
 from tickr.risk.daily import check_daily
+from tickr.risk.simulated import SimulationRules
 from tickr.risk.sizing import check_size
 
 REPORT_JSON = "report.json"
@@ -243,6 +247,8 @@ def build(result: ReplayResult, pool: Sequence[PoolEntry], caps: Sequence[CapRec
                  "cap_dropped_symbol_days": sum(c.dropped for c in caps),
                  "most_candidates_in_a_session": max((c.candidates for c in caps), default=0)},
         "signals_by_outcome": summary.signals_by_outcome,
+        "simulation_rules": SimulationRules.from_config(cfg).record(),
+        "refused_by_rules": refused_by_rules(result.signals),
         "all_signals": {
             **period(trades, settings),
             "confidence_percent": settings.confidence_percent,
@@ -298,6 +304,9 @@ def markdown(data: dict[str, Any]) -> str:
         f"symbol-days ({data['pool']['symbols']} symbols), replayed "
         f"{data['pool']['replayed_symbol_days']}, skipped {data['pool']['skipped']}.",
         f"Signals: {data['signals_by_outcome']}.",
+        f"ENTERs refused by the platform rules: {sum(data['refused_by_rules'].values())} "
+        f"{data['refused_by_rules']} (rules: {data['simulation_rules']['values']}; not "
+        f"simulated: {', '.join(data['simulation_rules']['not_simulated'])}).",
         f"Pool cap {data['pool']['cap']} (ranks by the day's high, look-ahead if it binds): bound "
         f"on {data['pool']['cap_bound_sessions']} sessions, "
         f"{data['pool']['cap_dropped_symbol_days']} symbol-days dropped; most candidates in a "

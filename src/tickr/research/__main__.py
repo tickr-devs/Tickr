@@ -147,13 +147,10 @@ def _run(args: argparse.Namespace) -> dict:
                                         replay_settings, clock_for, rules)
         return report.write_observer_report(result, args.out, places)
     factory = strategy_factory(args.strategy, args.values)
-    records = compare.decide(factory, load_bars(args.bars), replay_settings, clock_for)
+    records = compare.decide(factory, load_bars(args.bars), replay_settings, clock_for, rules)
     args.out.mkdir(parents=True, exist_ok=True)
     write_records(args.out / "decisions.jsonl", records)
-    verdicts: dict[str, int] = {}
-    for r in records:
-        verdicts[r.decision.verdict.value] = verdicts.get(r.decision.verdict.value, 0) + 1
-    return {"decisions": len(records), "by_verdict": dict(sorted(verdicts.items()))}
+    return report.write_decide(records, rules, args.out, places)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

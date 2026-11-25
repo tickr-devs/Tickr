@@ -69,6 +69,12 @@ class SimulationRules:
             "session.half_days_enabled": str(lim.session.half_days_enabled).lower(),
         }
 
+    def record(self) -> dict[str, object]:
+        """The rules as a result file records them: the shape of `simulation_rules` in the API
+        documents (applied checks, checks not simulated, config values)."""
+        return {"applied": list(APPLIED), "not_simulated": list(NOT_SIMULATED),
+                "values": self.values()}
+
     def label(self) -> str:
         """One line for reports and logs."""
         values = ", ".join(f"{k}={v}" for k, v in self.values().items())

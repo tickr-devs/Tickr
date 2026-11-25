@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from research_helpers import (
     CLOCK,
+    HERE,
     NY,
     Breakout,
     flat,
@@ -13,9 +16,13 @@ from research_helpers import (
     series,
 )
 
+from tickr import config
+from tickr.replay.__main__ import clock_of
 from tickr.research.compare import DiffKind, decide, diff, select
 from tickr.research.errors import ResearchError
 from tickr.research.records import Admission
+from tickr.risk.admission import AdmissionLimits
+from tickr.risk.simulated import SimulationRules
 from tickr.strategy.base import Role, Verdict
 
 BARS = series("10:00", [
@@ -39,6 +46,30 @@ def test_decide_records_every_decision_as_observer():
     assert all(r.role is Role.OBSERVER and r.problem() is None for r in records)
     assert records[1].admission is Admission.NOT_EVALUATED
     assert records[0].admission is Admission.NOT_APPLICABLE
+
+
+def test_decide_under_the_platform_rules_records_their_refusals():
+    """Backlog T12: an ENTER the live rules refuse is recorded `refused` with its cause, and the
+    strategy is never given that position."""
+    cfg = config.load(HERE.parent.parent / "config" / "bot.toml")
+    # The breakout asks for 10 shares with a 0.20 USD stop distance: 2 USD planned loss.
+    tight = SimulationRules(replace(AdmissionLimits.from_config(cfg),
+                                    planned_loss_usd=Decimal(1)))
+    # The first bar's low sits under its high, so the stop is below the entry window.
+    bars = series("10:00", [("10.00", "10.00", "9.90", "10.00"),
+                            ("10.00", "10.20", "10.00", "10.03"),
+                            ("10.03", "10.30", "10.03", "10.30"), flat("10.30")])
+    free = decide(Breakout, {"ABC": bars}, replay_settings(), clock_of(cfg),
+                  SimulationRules.from_config(cfg))
+    assert [r.decision.verdict for r in free] == [
+        Verdict.IGNORE, Verdict.ENTER, Verdict.HOLD, Verdict.HOLD]
+    assert free[1].admission is Admission.NOT_EVALUATED
+    refused = decide(Breakout, {"ABC": bars}, replay_settings(), clock_of(cfg), tight)
+    assert [r.decision.verdict for r in refused] == [
+        Verdict.IGNORE, Verdict.ENTER, Verdict.ENTER, Verdict.IGNORE]
+    assert [(r.admission, r.refusal_cause) for r in refused[1:3]] == [
+        (Admission.REFUSED, "PLANNED_LOSS_OVER_LIMIT")] * 2
+    assert all(r.problem() is None for r in refused)
 
 
 def test_diff_of_two_versions_over_the_same_day():

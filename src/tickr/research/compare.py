@@ -5,7 +5,10 @@ them against recorded decisions.
 synthetic quote and no-look-ahead rules as a replay; docs/replay.md) and records EVERY decision
 it returns as a `DecisionRecord` with role `observer` and admission `not_evaluated` for ENTER.
 While the replay holds a simulated position the strategy is asked with that position, as a
-replay would, so its HOLD/EXIT decisions are recorded too.
+replay would, so its HOLD/EXIT decisions are recorded too. With `rules` (backlog T12) every ENTER
+the replay would take is admitted by the live platform rules (`tickr.risk.simulated`, over the
+day's simulated trades of every symbol, as a replay); one they refuse is recorded `refused` with
+the admission cause, and the strategy is never given that position.
 
 `diff` compares two record sets bar by bar. The key is (symbol, decision bar). When a side has
 several records for one key (a live bot may decide more than once per bar), the LAST one in
@@ -21,7 +24,7 @@ A pair where both sides are IGNORE or absent is not a row; everything else is cl
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
 
@@ -30,6 +33,7 @@ from tickr.replay.engine import M1, replay
 from tickr.replay.settings import ReplaySettings
 from tickr.research.errors import ResearchError
 from tickr.research.records import Admission, DecisionRecord
+from tickr.risk.simulated import SimulationRules
 from tickr.strategy.base import Decision, Role, Strategy, SymbolContext, Verdict
 from tickr.types import Bar
 
@@ -66,11 +70,20 @@ def decide(
     bars_by_symbol: Mapping[str, Sequence[Bar]],
     settings: ReplaySettings,
     clock_for: ClockFor,
+    rules: SimulationRules | None = None,
 ) -> tuple[DecisionRecord, ...]:
-    """Every decision of the strategy over the bars, in replay order (symbol, then time)."""
+    """Every decision of the strategy over the bars, in replay order. `rules`: the platform
+    rules every ENTER must pass (None: no platform limit)."""
     sink: list[DecisionRecord] = []
-    replay(lambda: _Recorder(create_strategy(), sink), bars_by_symbol, settings, clock_for)
-    return tuple(sink)
+    result = replay(lambda: _Recorder(create_strategy(), sink), bars_by_symbol, settings,
+                    clock_for, rules)
+    refused = {(s.symbol, s.bar_start): s.admission_cause for s in result.signals
+               if s.admission_cause is not None}
+    return tuple(
+        replace(r, admission=Admission.REFUSED, refusal_cause=cause.value)
+        if (cause := refused.get((r.decision.symbol, r.bar_start))) is not None
+        and r.decision.verdict is Verdict.ENTER else r
+        for r in sink)
 
 
 class DiffKind(StrEnum):

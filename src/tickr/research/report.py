@@ -21,6 +21,7 @@ from tickr.research import refusals as rf
 from tickr.research import whatif as wi
 from tickr.research.compare import DiffResult
 from tickr.research.records import DecisionRecord
+from tickr.risk.simulated import SimulationRules
 
 
 def fmt(value: Any, places: int) -> str:
@@ -96,6 +97,22 @@ WHATIF_COLUMNS = (
     "entry_time", "entry_price", "exit_time", "exit_price", "exit_reason", "bars_held",
     "r_multiple", "result_usd", "risk_usd",
 )
+
+
+def write_decide(records: Sequence[DecisionRecord], rules: SimulationRules, out_dir: Path,
+                 places: int) -> dict[str, Any]:
+    """`decide_summary.json`: decisions by verdict, the ENTERs the platform rules refused by
+    cause, and the rules and values they were recorded under."""
+    verdicts: dict[str, int] = {}
+    refused: dict[str, int] = {}
+    for r in records:
+        verdicts[r.decision.verdict.value] = verdicts.get(r.decision.verdict.value, 0) + 1
+        if r.refusal_cause is not None:
+            refused[r.refusal_cause] = refused.get(r.refusal_cause, 0) + 1
+    body = {"decisions": len(records), "by_verdict": dict(sorted(verdicts.items())),
+            "refused_by_rules": dict(sorted(refused.items())),
+            "simulation_rules": rules.record()}
+    return _json(out_dir / "decide_summary.json", body, places)
 
 
 def write_whatif(rows: Sequence[wi.WhatIf], out_dir: Path, places: int,

@@ -108,9 +108,18 @@ the pool only after the next `fetch-all`.
   position is always passed through.
 - Fills, slippage, the synthetic quote, last entry and flatten are the replay's
   (`config/replay.toml`, bot.toml `[session]`, calendar).
+- Platform rules (backlog T12, `docs/replay.md`, "Simulation rules"): every ENTER the replay
+  would take is admitted by the live admission checks for that symbol's simulated day (trading
+  window, one trade per symbol, the pause after a loss, the decision's prices, size and the
+  daily loss ceiling, from bot.toml `[risk]` and `[session]`). A refused ENTER is a `rejected`
+  signal with its cause, and the strategy is not given the position, so it may ask again on a
+  later bar. One symbol runs per process, so the limits across symbols stay in the bot view.
 
 ## Report
 
+- **Platform rules**: `simulation_rules` (the checks applied, the checks not simulated and every
+  bot.toml value they read) and `refused_by_rules` (ENTERs the rules refused, by admission cause);
+  report.md shows both under the signal counts.
 - **Every signal**: trades, win rate, mean and median R, profit factor, max drawdown in R, and a
   percentile bootstrap interval of the mean R that resamples whole days, since trades of one day
   are correlated (`bootstrap_samples`, `bootstrap_seed`,
@@ -136,5 +145,6 @@ the pool only after the next `fetch-all`.
   quotes; real spreads of fast gainers are often wider, so results are likely optimistic there.
 - Survivorship: the instrument list is today's, so symbols delisted since the window are missing
   (this applies to the gainer pool and to the liquid pool alike).
-- Each symbol is replayed independently; the bot view applies the one-position and daily-loss
-  limits afterwards, first come first served.
+- Each symbol is replayed on its own: the platform rules in the replay see that symbol's day
+  only, and the bot view applies the position and daily-loss limits across symbols afterwards,
+  first come first served.

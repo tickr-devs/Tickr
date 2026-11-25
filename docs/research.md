@@ -127,6 +127,11 @@ python -m tickr.research diff --baseline decisions.jsonl --candidate out/v2/deci
 no-look-ahead rules as a replay) and records every decision with role `observer`. While the
 replay holds a simulated position the strategy is asked with that position, so HOLD/EXIT
 appear as in a replay. Pass the prior sessions' bars too: strategies need warm-up history.
+Every ENTER the replay would take is admitted by the live platform rules (backlog T12, as a
+replay, `docs/replay.md`); one they refuse is recorded with admission `refused` and the
+admission cause, and the strategy is never given that position. `decide_summary.json` holds the
+decisions by verdict, `refused_by_rules` by cause, and `simulation_rules` (checks applied, checks
+not simulated, bot.toml values).
 
 `diff` compares per (symbol, decision bar), only inside the (symbol, session date) pairs of the
 baseline. Each side must hold one strategy version (filter with `--*-strategy NAME[:VERSION]`).

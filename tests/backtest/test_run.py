@@ -106,8 +106,8 @@ def write_symbol(out, symbol, bars):
     path.write_text("".join(json.dumps(bar_record(b)) + "\n" for b in bars))
 
 
-def test_run_end_to_end(tmp_path):
-    out, results = tmp_path / "data", tmp_path / "results"
+def write_fixture(out):
+    """The end-to-end data: ABCD gains and collapses; GAP, NONE and SPLIT are skipped."""
     prior = [b for d in PRIOR for b in flat_bars("ABCD", d, "20", "3000")]
     collapse = [Bar("ABCD", minute(TODAY, 30 + i), Decimal(29), Decimal(29), Decimal(15),
                     Decimal(15), Decimal(30000)) for i in range(5)]
@@ -121,6 +121,11 @@ def test_run_end_to_end(tmp_path):
             PoolEntry(TODAY, 4, "SPLIT", Decimal(20), Decimal(20), Decimal(50), Decimal(10**8))]
     write_pool(pool, out / "pool.csv")
     write_caps([CapRecord(TODAY, 4, 4)], out / "pool_cap.csv")
+
+
+def test_run_end_to_end(tmp_path):
+    out, results = tmp_path / "data", tmp_path / "results"
+    write_fixture(out)
     run_backtest(cfg(), SETTINGS, load_replay(ROOT / "config" / "replay.toml"), out, results,
                  "tickr.strategy.price_action_v1",
                  ROOT / "strategies" / "price-action-v1" / "strategy.toml")
@@ -135,6 +140,29 @@ def test_run_end_to_end(tmp_path):
     report = json.loads((results / "report.json").read_text())
     assert report["label"] == "simulated" and report["bot"]["trades"] == len(trades)
     assert (results / "report.md").read_text().startswith("# SIMULATED backtest")
+    assert report["refused_by_rules"] == {}
+    assert report["simulation_rules"]["values"]["risk.planned_loss_usd"] == str(
+        cfg().risk.planned_loss_usd)
+    assert "quote" in report["simulation_rules"]["not_simulated"]
+
+
+def test_run_applies_the_platform_rules_and_reports_their_refusals(tmp_path):
+    # The end-to-end day under a planned-loss limit below the trade's own (about 49 USD): the
+    # platform rules refuse that ENTER in the replay, as the live bot would.
+    tight = cfg()
+    tight = replace(tight, risk=replace(tight.risk, planned_loss_usd=Decimal(40)))
+    out, results = tmp_path / "data", tmp_path / "results"
+    write_fixture(out)
+    run_backtest(tight, SETTINGS, load_replay(ROOT / "config" / "replay.toml"), out, results,
+                 "tickr.strategy.price_action_v1",
+                 ROOT / "strategies" / "price-action-v1" / "strategy.toml")
+    report = json.loads((results / "report.json").read_text())
+    refused = report["refused_by_rules"]
+    assert set(refused) == {"PLANNED_LOSS_OVER_LIMIT"}
+    # Refused, the strategy is never given the position, so it asks again on later bars.
+    assert refused["PLANNED_LOSS_OVER_LIMIT"] == report["signals_by_outcome"]["rejected"] > 1
+    assert report["all_signals"]["trades"] == 0
+    assert "ENTERs refused by the platform rules: " in (results / "report.md").read_text()
 
 
 def test_bot_view_applies_live_sizing_positions_and_the_daily_ceiling():
@@ -260,3 +288,4 @@ def test_run_last_sessions_reports_its_window(tmp_path):
         date(2026, 11, 11), TODAY, 3)
     assert summary.sessions_without_replayed_days == 2 and summary.replayed_symbol_days == 1
     assert summary.bot_trades == report["bot"]["trades"] <= summary.trades
+

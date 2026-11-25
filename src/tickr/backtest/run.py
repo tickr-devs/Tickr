@@ -7,6 +7,13 @@ live, the bot refuses a symbol whose prior-session history is incomplete, so it 
 A symbol whose replay the engine refuses (a bad bar, such as a 0.01 USD print that makes the
 synthetic bid non-positive) is replayed again one pool day at a time on only that day's bars,
 and only the days that are still refused are skipped (`REPLAY_REFUSED`), never the whole run.
+
+Every ENTER the replay would take is admitted by the live platform rules (backlog T12,
+`tickr.risk.simulated`, from bot.toml `[risk]` and `[session]`): the trading window, one trade
+per symbol, the pause after a loss, the decision's prices, size and the daily loss ceiling. A
+symbol is replayed in its own process, so these rules see that symbol's simulated day only; the
+limits across symbols (open positions, working entries, the day's loss over every symbol) are
+applied afterwards by the report's bot view. A refusal is a `rejected` signal with its cause.
 """
 
 from __future__ import annotations
@@ -36,6 +43,7 @@ from tickr.replay.engine import ReplayResult, replay
 from tickr.replay.errors import ReplayError
 from tickr.replay.report import write_all
 from tickr.replay.settings import ReplaySettings
+from tickr.risk.simulated import SimulationRules
 from tickr.strategy.base import Strategy
 
 SKIPPED_FILE = "skipped.csv"
@@ -77,11 +85,12 @@ def run_symbol(task: Task) -> tuple[ReplayResult | None, list[dict[str, str]]]:
         raise BacktestError(f"{task.bars_file}: holds {sorted(bars)}, not {task.symbol}")
     calendar = SessionCalendar.load(task.calendar_dir)
     clock = calendar_clock(calendar, task.cfg.session)
+    rules = SimulationRules.from_config(task.cfg)
 
     def one(days: tuple[date, ...], series: tuple) -> ReplayResult:
         pool = [(task.symbol, d) for d in days]
         return replay(lambda: GainerGate(create(), pool, task.change_percent),
-                      {task.symbol: series}, task.settings, clock)
+                      {task.symbol: series}, task.settings, clock, rules)
 
     try:
         return one(task.pool_days, bars[task.symbol]), []
@@ -253,4 +262,5 @@ def merge(parts: list[ReplayResult]) -> ReplayResult:
         signals=tuple(sorted((s for p in parts for s in p.signals),
                              key=lambda s: (s.bar_start, s.symbol))),
         verdict_counts=dict(sorted(verdicts.items())),
-        sessions=sum(p.sessions for p in parts), bars=sum(p.bars for p in parts))
+        sessions=sum(p.sessions for p in parts), bars=sum(p.bars for p in parts),
+        rules=first.rules)

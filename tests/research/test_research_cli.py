@@ -35,6 +35,10 @@ def test_decide_outcomes_whatif_diff_end_to_end(tmp_path, capsys):
                      "--values", _values(tmp_path, version, edge),
                      "--out", str(tmp_path / f"v{version}")])
         assert code == 0
+    decided = json.loads((tmp_path / "v1" / "decide_summary.json").read_text())
+    assert decided["by_verdict"]["ENTER"] == 1 and decided["refused_by_rules"] == {}
+    assert decided["simulation_rules"]["applied"] == ["session", "own_state", "decision",
+                                                      "money"]
     v1 = str(tmp_path / "v1" / "decisions.jsonl")
     v2 = str(tmp_path / "v2" / "decisions.jsonl")
 
