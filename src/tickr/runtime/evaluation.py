@@ -61,7 +61,14 @@ from tickr.runtime.entries import EntryDesk, daily_loss_room
 from tickr.runtime.market import StreamInbox
 from tickr.runtime.preload import HistoryPreload
 from tickr.runtime.protection import busy
-from tickr.strategy.base import PositionView, Strategy, SymbolContext, Verdict, usable_quote
+from tickr.strategy.base import (
+    PositionView,
+    SizingLimits,
+    Strategy,
+    SymbolContext,
+    Verdict,
+    usable_quote,
+)
 from tickr.types import Bar, Quote
 
 M1 = timedelta(minutes=1)
@@ -469,8 +476,9 @@ class Evaluator:
                  session_open: datetime | None) -> SymbolContext:
         prior = () if history is None else tuple(history.bars_of(d) for d in history.sessions)
         bars = ([] if history is None else list(history.bars)) + today_bars
+        # The platform's sizing limits go with every context, the observers' included.
         return SymbolContext(symbol, tuple(bars), prior, quote, position, self._budget,
-                             session_open)
+                             session_open, SizingLimits.of(self.config.risk))
 
     def _evaluate(self, symbol: str, today_bars: list[Bar], history: SessionHistory | None,
                   position: PositionView | None, now: datetime,

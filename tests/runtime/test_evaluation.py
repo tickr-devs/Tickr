@@ -37,7 +37,7 @@ from tickr.runtime.market import StreamInbox
 from tickr.runtime.preload import PRELOAD
 from tickr.runtime.screeners import ScreenerRecorder
 from tickr.store import Store
-from tickr.strategy.base import Check, Decision, SymbolContext, Verdict
+from tickr.strategy.base import Check, Decision, SizingLimits, SymbolContext, Verdict
 from tickr.types import Bar, Quote
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -763,7 +763,7 @@ def test_an_observer_only_symbol_goes_to_the_observers_and_never_to_the_strategy
     assert [c.symbol for c in rig.strategy.seen] == ["CAN"]
     assert [c.symbol for c in rig.evaluator.contexts] == ["CAN", "OBS"]
     observed = rig.evaluator.contexts[-1]
-    assert observed.position is None
+    assert observed.position is None and observed.sizing == SizingLimits.of(CFG.risk)
     assert len(observed.prior_sessions) == CFG.market_data.history_sessions
     today = [b.start.minute for b in observed.bars if b.start.date() == MONDAY]
     assert today == [30, 31, 32, 33, 34]
