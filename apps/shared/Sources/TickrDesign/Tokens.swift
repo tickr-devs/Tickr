@@ -320,7 +320,7 @@ public enum Tokens {
     public static let breatheSeconds = 2.4
     /// How much a breathing glow grows.
     public static let breatheScale: CGFloat = 1.08
-    /// iOS opening: seconds the launch screen's mark holds while its spark flashes once, then the
+    /// iOS opening: seconds the launch screen's mark holds while its level flashes once, then the
     /// mark flies into the Home title as the launch background fades.
     public static let launchHoldSeconds = 0.45
     public static let launchFlySeconds = 0.75
@@ -345,11 +345,11 @@ public enum Tokens {
     /// The radar's blips (and the session now dot's ring): how far a ring grows, a multiple of the dot; the second blip's lag, s.
     public static let blipScale: CGFloat = 1.9
     public static let blipLagSeconds = 0.8
-    /// macOS opening: when the mark's spark pops in, in seconds from the start (after the line
+    /// macOS opening: when the mark's level slides in, in seconds from the start (after the letter
     /// has nearly drawn), and how long it takes.
     public static let openingSparkDelaySeconds = 0.45
     public static let openingSparkSeconds = 0.25
-    /// The opening's spark pop: a timing curve that ends at its seconds, like the line's draw.
+    /// The opening's level slide: a timing curve that ends at its seconds, like the letter's fade.
     public static let openingSpark = Animation.easeOut(duration: openingSparkSeconds)
     /// Delay between the tiles of a grid (the Trades calendar) as it fills in, in seconds.
     public static let cellStagger = 0.025

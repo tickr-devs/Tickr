@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Write the apps' brand assets: the app icon (Icon Composer `.icon`) and the iOS launch screen.
 
-The mark is the tickr.bot site's: a teal price line that dips, bounces and breaks out to a dot,
-on a dark rounded tile. One description here produces every file, so the macOS and iOS icons and
+The mark is "the letter-level": a lowercase t whose crossbar has broken off into a teal price
+level, on a dark tile. One description here produces every file, so the macOS and iOS icons and
 the launch screen never drift apart:
 
 - `apps/macos/Tickr/AppIcon.icon` and `apps/ios/Tickr/AppIcon.icon`: the layered icon
@@ -11,7 +11,7 @@ the launch screen never drift apart:
   screen hands over to the first screen without a flash) and `LaunchMark` (the mark on its tile).
 
 Colours come from `apps/shared/Sources/TickrDesign/Palette.swift`. The in-app mark
-(`BrandMark` in TickrDesign) draws the same tile and line from the same shares. Files are committed;
+(`BrandMark` in TickrDesign) draws the same tile, letter and level. Files are committed;
 `tests/test_brand_assets.py` fails when they differ from this script's output.
 Usage: make_brand_assets.py
 """
@@ -31,26 +31,20 @@ IOS_ASSETS = REPO / "apps/ios/Tickr/Assets.xcassets"
 
 # Icon canvas in points (Icon Composer draws on 1024 x 1024).
 CANVAS = 1024
-# The mark as the tickr.bot site draws it: a price line on a 24-unit grid that dips, bounces and
-# breaks out to a dot, inside a 40-unit tile. GRID is the line's grid, TILE the tile's side.
+# The mark, "the letter-level" (owner's choice, 2026-11-25): a lowercase t on a 24-unit grid whose
+# crossbar has broken off into a teal price level. Every edge sits on a 1.5-unit step; the hook's
+# arcs are concentric (radii 3 and 6); both ends are cut at 45 degrees. BrandMark.swift and
+# BrandLetter in apps/shared/Sources/TickrDesign/BrandMark.swift draw the same shapes.
 GRID = 24
-TILE = 40
-LINE = ((3, 15), (8, 11), (11, 14), (20, 5))
-# Line width and dot radius on the grid.
-LINE_WIDTH_UNITS = 2.4
-DOT_RADIUS_UNITS = 1.6
-# The same as shares of the tile's side: the grid sits centred in the tile. BrandMark.points,
-# lineWidth and dotDiameter in apps/shared/Sources/TickrDesign/BrandMark.swift match these.
-INSET = (TILE - GRID) / 2 / TILE
-POINTS = tuple((INSET + x / TILE, INSET + y / TILE) for x, y in LINE)
-LINE_WIDTH = LINE_WIDTH_UNITS / TILE
-DOT_RADIUS = DOT_RADIUS_UNITS / TILE
-# The tile's corner radius (12 of 40) and edge width (1 of 40), as shares of its side.
-TILE_RADIUS = 12 / TILE
-TILE_EDGE = 1 / TILE
-# The icon's soft glow behind the line: its radius and its opacity at the centre (the site's halo).
-GLOW_RADIUS = 0.42
-GLOW_OPACITY = 0.35
+STEM = "M7.5 7.5 L10.5 4.5 L10.5 15 A3 3 0 0 0 13.5 18 L18 18 L15 21 L13.5 21 A6 6 0 0 1 7.5 15 Z"
+STUB = (4.5, 9, 3, 3)
+LEVEL = (12, 9, 7.5, 3)
+# The grid inside the tile or icon: inset and side as shares of the side (768 of 1024).
+GRID_INSET = 0.125
+GRID_SIDE = 0.75
+# The tile's corner radius and edge width (launch screen), as shares of its side.
+TILE_RADIUS = 0.3
+TILE_EDGE = 0.025
 # Launch-screen mark size in points (the image is drawn at this size, centred).
 LAUNCH_MARK = 160
 
@@ -68,37 +62,27 @@ def pt(share: float, size: float = CANVAS) -> str:
     return f"{share * size:.1f}".rstrip("0").rstrip(".")
 
 
-def line_path(size: float) -> str:
-    return "M" + " L".join(f"{pt(x, size)},{pt(y, size)}" for x, y in POINTS)
-
-
 def svg(body: str, size: float = CANVAS, defs: str = "") -> str:
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{pt(1, size)}" height="{pt(1, size)}" '
             f'viewBox="0 0 {pt(1, size)} {pt(1, size)}">{defs}{body}</svg>\n')
 
 
-def mark_centre() -> tuple[float, float]:
-    """The middle of the line's bounding box, where the glow sits."""
-    xs, ys = [x for x, _ in POINTS], [y for _, y in POINTS]
-    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+def on_grid(body: str, size: float) -> str:
+    """Shapes drawn in grid units, placed on the grid inside a square of `size`."""
+    scale = size * GRID_SIDE / GRID
+    return f'<g transform="translate({pt(GRID_INSET, size)} {pt(GRID_INSET, size)}) scale({scale:g})">{body}</g>'
+
+
+def rect(x: float, y: float, w: float, h: float, color: str) -> str:
+    return f'<rect x="{x:g}" y="{y:g}" width="{w:g}" height="{h:g}" fill="#{color}"/>'
 
 
 def layers(colors: dict[str, tuple[str, str]], size: float = CANVAS) -> dict[str, str]:
-    """The mark's three icon layers as SVG: the glow, the line and the dot, all in the brand teal."""
-    teal = colors["brandLine"][0]
-    last_x, last_y = POINTS[-1]
-    cx, cy = mark_centre()
-    glow = (f'<radialGradient id="g" cx="{pt(cx, size)}" cy="{pt(cy, size)}" r="{pt(GLOW_RADIUS, size)}" '
-            'gradientUnits="userSpaceOnUse">'
-            f'<stop offset="0" stop-color="#{teal}" stop-opacity="{GLOW_OPACITY}"/>'
-            f'<stop offset="1" stop-color="#{teal}" stop-opacity="0"/></radialGradient>')
-    stroke = (f'stroke-width="{pt(LINE_WIDTH, size)}" stroke-linecap="round" '
-              f'stroke-linejoin="round" fill="none"')
+    """The mark's two icon layers as SVG: the letter (stem, hook and stub) and the level."""
+    letter, teal = colors["brandLetter"][0], colors["brandLine"][0]
     return {
-        "glow": svg(f'<rect width="{pt(1, size)}" height="{pt(1, size)}" fill="url(#g)"/>', size, glow),
-        "line": svg(f'<path d="{line_path(size)}" stroke="#{teal}" {stroke}/>', size),
-        "dot": svg(f'<circle cx="{pt(last_x, size)}" cy="{pt(last_y, size)}" '
-                   f'r="{pt(DOT_RADIUS, size)}" fill="#{teal}"/>', size),
+        "letter": svg(on_grid(f'<path d="{STEM}" fill="#{letter}"/>' + rect(*STUB, letter), size), size),
+        "level": svg(on_grid(rect(*LEVEL, teal), size), size),
     }
 
 
@@ -106,14 +90,14 @@ def tile(colors: dict[str, tuple[str, str]], size: float) -> str:
     """The whole mark on its tile (the launch screen's image): as BrandMark draws it in the apps."""
     top, bottom, edge = (colors[k][0] for k in ("brandTileTop", "brandTileBottom", "brandTileEdge"))
     half = TILE_EDGE / 2
-    defs = ('<linearGradient id="t" x1="0.33" y1="0" x2="0.67" y2="1">'
+    defs = ('<linearGradient id="t" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="#{top}"/><stop offset="1" stop-color="#{bottom}"/>'
             '</linearGradient>')
     body = (f'<rect x="{pt(half, size)}" y="{pt(half, size)}" width="{pt(1 - TILE_EDGE, size)}" '
             f'height="{pt(1 - TILE_EDGE, size)}" rx="{pt(TILE_RADIUS - half, size)}" fill="url(#t)" '
             f'stroke="#{edge}" stroke-width="{pt(TILE_EDGE, size)}"/>')
     small = layers(colors, size)
-    body += "".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("line", "dot"))
+    body += "".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("letter", "level"))
     return svg(body, size, defs)
 
 
@@ -144,9 +128,8 @@ def icon_json(colors: dict[str, tuple[str, str]]) -> str:
         "fill": {"automatic-gradient": srgb(colors["brandTileTop"][0])},
         # Front to back.
         "groups": [
-            group("Dot", "dot", True, "layer-color", False),
-            group("Line", "line", True, "layer-color", False),
-            group("Glow", "glow", False, "none", True),
+            group("Level", "level", True, "layer-color", False),
+            group("Letter", "letter", True, "neutral", False),
         ],
         "supported-platforms": {"squares": "shared"},
     })

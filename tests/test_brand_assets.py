@@ -61,12 +61,17 @@ def test_opening_animation_starts_from_the_launch_mark_size():
 
 
 def test_in_app_mark_uses_the_scripts_geometry():
-    """BrandMark draws the same line, width and dot as the icon and the launch screen."""
+    """BrandMark draws the same letter, level and grid as the icon and the launch screen."""
     module = load()
     swift = (ROOT / "apps/shared/Sources/TickrDesign/BrandMark.swift").read_text()
-    for name, (x, y) in zip(("start", "bounce", "retest", "breakout"), module.POINTS):
-        assert f"let {name} = CGPoint(x: {x:g}, y: {y:g})" in swift, name
-    assert f"static let lineWidth = {module.LINE_WIDTH:g}\n" in swift
-    assert f"public static let sparkDiameter = {2 * module.DOT_RADIUS:g}\n" in swift
+    x, y, w, h = module.LEVEL
+    assert f"level = CGRect(x: {x:g}, y: {y:g}, width: {w:g}, height: {h:g})" in swift
+    x, y, w, h = module.STUB
+    assert f"stub = CGRect(x: {x:g}, y: {y:g}, width: {w:g}, height: {h:g})" in swift
+    assert f"static let gridInset = {module.GRID_INSET:g}\n" in swift
+    assert f"static let gridSide = {module.GRID_SIDE:g}\n" in swift
     assert f"static let tileRadius = {module.TILE_RADIUS:g}\n" in swift
-    assert f"static let tileEdge = {module.TILE_EDGE:g}\n" in swift
+    # Every corner of the stem's outline is a point of BrandLetter.
+    numbers = [float(n) for n in __import__("re").findall(r"[-\d.]+", module.STEM)]
+    for value in numbers:
+        assert f"{value:g}" in swift

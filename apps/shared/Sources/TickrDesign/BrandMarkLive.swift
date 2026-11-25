@@ -6,35 +6,30 @@ import UIKit
 import AppKit
 #endif
 
-/// The live part of the brand mark: its halo breathing slowly, as on the tickr.bot site (from
-/// `Opacity.muted` to full and from its size to `BrandMark.haloScale` times it, and back, every
-/// `BrandMark.haloSeconds`). Core Animation runs it in the render server. As a SwiftUI
-/// `repeatForever` animation it moved every display frame inside the Overview's header, and each
-/// frame laid out the whole Overview again, texts included: about a full CPU core at idle
+/// The live part of the brand mark: its level breathing slowly (from `Opacity.muted` to full and
+/// back, every `BrandMark.breathSeconds`). Core Animation runs it in the render server. As a
+/// SwiftUI `repeatForever` animation it moved every display frame inside the Overview's header, and
+/// each frame laid out the whole Overview again, texts included: about a full CPU core at idle
 /// (Instruments, 2026-11-15).
 struct BrandMarkLive {
-  /// Side of the halo, in points.
-  let size: CGFloat
+  /// Size of the level, in points.
+  let size: CGSize
   let color: Color
   /// Whether the scene is in front. Core Animation drops a layer's loops when the app goes to the
   /// background; a change here updates the view, which starts them again.
   let active: Bool
 }
 
-/// Holds the halo layer and its loop.
+/// Holds the level layer and its loop.
 final class BrandMarkLiveView: PlatformView {
-  /// Key of the loop on the halo layer.
-  static let haloKey = "halo"
-  /// Key paths the loop drives.
-  static let scalePath = "transform.scale"
+  /// Key of the loop on the level layer.
+  static let breathKey = "breath"
+  /// Key path the loop drives.
   static let opacityPath = "opacity"
-  /// A radial gradient's end point at the layer's corner: the glow fades out at its edge.
-  static let centre = CGPoint(x: 0.5, y: 0.5)
-  static let edge = CGPoint(x: 1, y: 1)
 
   private let root = CALayer()
-  private let halo = CAGradientLayer()
-  private var laidOutSize: CGFloat?
+  private let level = CALayer()
+  private var laidOutSize: CGSize?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -48,10 +43,7 @@ final class BrandMarkLiveView: PlatformView {
     wantsLayer = true
     host.addSublayer(root)
     #endif
-    halo.type = .radial
-    halo.startPoint = Self.centre
-    halo.endPoint = Self.edge
-    root.addSublayer(halo)
+    root.addSublayer(level)
   }
 
   @available(*, unavailable)
@@ -83,43 +75,33 @@ final class BrandMarkLiveView: PlatformView {
   func show(_ mark: BrandMarkLive, environment: EnvironmentValues) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    var inner = mark.color.resolve(in: environment)
-    inner.opacity = Float(Tokens.Opacity.faint)
-    var outer = inner
-    outer.opacity = 0
-    halo.colors = [inner.cgColor, outer.cgColor]
+    level.backgroundColor = mark.color.resolve(in: environment).cgColor
     if laidOutSize != mark.size { layOut(size: mark.size) }
     CATransaction.commit()
-    if halo.animation(forKey: Self.haloKey) == nil { startLoop() }
+    if level.animation(forKey: Self.breathKey) == nil { startLoop() }
   }
 
-  private func layOut(size: CGFloat) {
+  private func layOut(size: CGSize) {
     laidOutSize = size
-    let bounds = CGRect(x: 0, y: 0, width: size, height: size)
+    let bounds = CGRect(origin: .zero, size: size)
     root.frame = bounds
-    halo.frame = bounds
+    level.frame = bounds
     startLoop()
   }
 
-  /// The halo brightens and grows, then settles, easing in and out, once every breath.
+  /// The level dims and brightens, easing in and out, once every breath.
   private func startLoop() {
-    let grow = CABasicAnimation(keyPath: Self.scalePath)
-    grow.fromValue = 1
-    grow.toValue = BrandMark.haloScale
-    let brighten = CABasicAnimation(keyPath: Self.opacityPath)
-    brighten.fromValue = Tokens.Opacity.muted
-    brighten.toValue = 1
-    let breath = CAAnimationGroup()
-    breath.animations = [grow, brighten]
+    let breath = CABasicAnimation(keyPath: Self.opacityPath)
+    breath.fromValue = 1
+    breath.toValue = Tokens.Opacity.muted
     // Half a breath out, the same back.
-    breath.duration = BrandMark.haloSeconds / 2
+    breath.duration = BrandMark.breathSeconds / 2
     breath.autoreverses = true
     breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    // decorative: the brand mark's halo is an ornament (owner, 2026-11-15).
+    // decorative: the brand mark's level is an ornament (owner, 2026-11-15).
     breath.repeatCount = .infinity
     breath.isRemovedOnCompletion = false
-    halo.opacity = Float(Tokens.Opacity.muted)
-    halo.add(breath, forKey: Self.haloKey)
+    level.add(breath, forKey: Self.breathKey)
   }
 }
 

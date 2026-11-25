@@ -1,17 +1,17 @@
 {
   "fill" : {
-    "automatic-gradient" : "srgb:0.07451,0.12549,0.22745,1.00000"
+    "automatic-gradient" : "srgb:0.07843,0.10196,0.20000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
           "glass" : true,
-          "image-name" : "dot.svg",
-          "name" : "Dot"
+          "image-name" : "level.svg",
+          "name" : "Level"
         }
       ],
-      "name" : "Dot",
+      "name" : "Level",
       "shadow" : {
         "kind" : "layer-color",
         "opacity" : 0.5
@@ -26,37 +26,18 @@
       "layers" : [
         {
           "glass" : true,
-          "image-name" : "line.svg",
-          "name" : "Line"
+          "image-name" : "letter.svg",
+          "name" : "Letter"
         }
       ],
-      "name" : "Line",
+      "name" : "Letter",
       "shadow" : {
-        "kind" : "layer-color",
+        "kind" : "neutral",
         "opacity" : 0.5
       },
       "specular" : true,
       "translucency" : {
         "enabled" : false,
-        "value" : 0.5
-      }
-    },
-    {
-      "layers" : [
-        {
-          "glass" : false,
-          "image-name" : "glow.svg",
-          "name" : "Glow"
-        }
-      ],
-      "name" : "Glow",
-      "shadow" : {
-        "kind" : "none",
-        "opacity" : 0.5
-      },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : true,
         "value" : 0.5
       }
     }
