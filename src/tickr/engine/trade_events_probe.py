@@ -21,7 +21,7 @@ for a source:
   `[orders] detail_poll_seconds` and Detail for up to `[orders] detail_reads_per_step` of the
   orders it has seen (listed, dropped from the list, or named by an event's
   `client_order_id`) until Detail shows them finished: the bot's own cadence. The owner places
-  a manual Sandbox order meanwhile.
+  a manual order meanwhile.
 - bot running (`bot-journal` mode): the probe sends no HTTP read at all (the route limits are
   per App Key, C2, and the bot's reads must keep their budget) and, at the end, copies the
   bot's own `order-observed` journal rows of the run (the time its polling saw each change).
