@@ -32,14 +32,16 @@ def test_icon_has_no_files_the_script_does_not_write():
         assert not extra
 
 
-def test_icon_layers_exist_and_dark_appearance_is_set():
+def test_icon_layers_exist_and_the_tile_is_one_look():
     module = load()
     for icon in module.ICON_DIRS:
         spec = json.loads((icon / "icon.json").read_text())
         for group in spec["groups"]:
             for layer in group["layers"]:
                 assert (icon / "Assets" / layer["image-name"]).is_file()
-        assert [s["appearance"] for s in spec["fill-specializations"]] == ["dark"]
+        # The brand tile is the same in every appearance (the site's), the system tints it.
+        assert "fill-specializations" not in spec
+        assert spec["fill"]["automatic-gradient"] == module.srgb(module.palette()["brandTileTop"][0])
 
 
 def test_launch_background_is_the_window_background():
@@ -56,3 +58,15 @@ def test_opening_animation_starts_from_the_launch_mark_size():
     module = load()
     tokens = (ROOT / "apps/shared/Sources/TickrDesign/Tokens.swift").read_text()
     assert f"public static let launchMark: CGFloat = {module.LAUNCH_MARK}\n" in tokens
+
+
+def test_in_app_mark_uses_the_scripts_geometry():
+    """BrandMark draws the same line, width and dot as the icon and the launch screen."""
+    module = load()
+    swift = (ROOT / "apps/shared/Sources/TickrDesign/BrandMark.swift").read_text()
+    for name, (x, y) in zip(("start", "bounce", "retest", "breakout"), module.POINTS):
+        assert f"let {name} = CGPoint(x: {x:g}, y: {y:g})" in swift, name
+    assert f"static let lineWidth = {module.LINE_WIDTH:g}\n" in swift
+    assert f"public static let sparkDiameter = {2 * module.DOT_RADIUS:g}\n" in swift
+    assert f"static let tileRadius = {module.TILE_RADIUS:g}\n" in swift
+    assert f"static let tileEdge = {module.TILE_EDGE:g}\n" in swift

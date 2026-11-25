@@ -1,25 +1,24 @@
 import SwiftUI
 
-/// The Tickr mark: a price line drawn as a tick that breaks upward, with a spark at its end. The
-/// app icon and the iOS launch screen draw the same line (apps/scripts/make_brand_assets.py).
+/// The Tickr mark, as the tickr.bot site draws it: a teal price line that dips, bounces and breaks
+/// out to a dot, on a dark rounded tile with a soft teal halo. The app icon and the iOS launch
+/// screen draw the same tile and line (apps/scripts/make_brand_assets.py).
 ///
-/// On appear the line draws itself, the area under it fades in and the spark pops in. While `live`
-/// (the bot's data is current) the spark then keeps sending out a halo ring; otherwise, and with
-/// Reduce Motion, the mark stands still.
+/// On appear the line draws itself and the dot pops in. While `live` (the bot's data is current)
+/// the halo then breathes slowly, as on the site; otherwise, and with Reduce Motion, it stands still.
 ///
 /// Empty screens show it as their illustration (`BrandMark.empty`): in brand colours when there is
 /// simply nothing yet, muted when the bot cannot be reached.
 public struct BrandMark: View {
   /// How the mark is coloured.
   public enum Tone: Sendable {
-    /// Brand colours: profit line, accent area.
+    /// Brand colours: teal line and halo.
     case brand
-    /// One quiet colour: nothing can be known right now (bot unreachable).
+    /// A quiet line and no halo: nothing can be known right now (bot unreachable).
     case muted
   }
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
   @State private var drawn: CGFloat = 0
   @State private var popped: CGFloat = 0
@@ -29,28 +28,33 @@ public struct BrandMark: View {
   let tone: Tone
   /// How the line draws itself on appear; nil shows it drawn at once.
   let drawing: Animation?
-  /// How the spark pops in; nil pops it with the line's draw.
+  /// How the dot pops in; nil pops it with the line's draw.
   let sparkPop: Animation?
 
-  /// Points of the line as shares of the mark's side, left to right (POINTS in make_brand_assets.py).
-  static let start = CGPoint(x: 0.205, y: 0.51)
-  static let dip = CGPoint(x: 0.39, y: 0.7)
-  static let bounce = CGPoint(x: 0.5, y: 0.575)
-  static let retest = CGPoint(x: 0.565, y: 0.625)
-  public static let breakout = CGPoint(x: 0.81, y: 0.285)
-  static let points = [start, dip, bounce, retest, breakout]
-  /// Line width, spark diameter and the bottom of the fading area, as shares of the side.
-  static let lineWidth = 0.084
-  public static let sparkDiameter = 0.09
-  static let areaBottom = 0.86
-  /// Radius of the soft glow behind the line, as a share of the side (the canvas header's glow).
-  static let glowRadius = 0.18
+  /// Points of the line as shares of the tile's side, left to right: the site's 24-unit path
+  /// M3 15 L8 11 L11 14 L20 5, centred in its 40-unit tile (POINTS in make_brand_assets.py).
+  static let start = CGPoint(x: 0.275, y: 0.575)
+  static let bounce = CGPoint(x: 0.4, y: 0.475)
+  static let retest = CGPoint(x: 0.475, y: 0.55)
+  public static let breakout = CGPoint(x: 0.7, y: 0.325)
+  static let points = [start, bounce, retest, breakout]
+  /// Line width and dot diameter, as shares of the side (2.4 and 2 x 1.6 of 40).
+  static let lineWidth = 0.06
+  public static let sparkDiameter = 0.08
+  /// The tile's corner radius and hairline edge, as shares of its side (12 and 1 of 40).
+  static let tileRadius = 0.3
+  static let tileEdge = 0.025
+  /// The tile's gradient runs a little off vertical (the site's 160 degrees).
+  static let tileTop = UnitPoint(x: 0.33, y: 0)
+  static let tileBottom = UnitPoint(x: 0.67, y: 1)
+  /// The line's 24-unit grid inside the tile: its inset from the tile's edge and its side, as
+  /// shares of the tile (8 and 24 of 40). `BrandGlyph` draws the line on the grid alone.
+  static let gridInset = 0.2
+  static let gridSide = 0.6
+  /// The halo's side as a multiple of the tile's: it reaches 8 of 40 past each edge, as on the site.
+  static let haloSide = 1.4
   /// Seconds before the line starts drawing, so a window is on screen before it moves.
   static let drawDelay = 0.35
-  /// The area's side fade, from the line's start to its end: fully in at `areaIn`, fading out
-  /// again from `areaOut` (shares of that run), so neither side has an edge.
-  static let areaIn = 0.45
-  static let areaOut = 0.6
 
   /// `drawsIn` false shows the mark already drawn: where an opening animation has just put it.
   public init(size: CGFloat = Tokens.Size.logo, live: Bool, tone: Tone = .brand, drawsIn: Bool = true) {
@@ -70,41 +74,21 @@ public struct BrandMark: View {
     BrandMark(size: Tokens.Size.emptyMark, live: false, tone: tone)
   }
 
-  private var lineColor: Color { tone == .brand ? Palette.profit : Palette.textQuaternary }
-  private var areaColor: Color { tone == .brand ? Palette.accent : Palette.textQuaternary }
-  /// A green halo on dark; on light a halo turns muddy, so only a trace of it.
-  private var glowColor: Color {
-    guard tone == .brand else { return .clear }
-    return lineColor.opacity(colorScheme == .dark ? Tokens.Opacity.border : Tokens.Opacity.wash)
-  }
-  private var lineEnd: Color { tone == .brand ? Palette.accent : Palette.textQuaternary }
+  private var lineColor: Color { tone == .brand ? Palette.brandLine : Palette.brandMuted }
+  private var breathes: Bool { tone == .brand && live && settled && !reduceMotion }
 
   public var body: some View {
     let spark = Self.breakout
     let diameter = size * Self.sparkDiameter
+    let halo = size * Self.haloSide
     ZStack(alignment: .topLeading) {
-      TickArea(points: Self.points, bottom: Self.areaBottom)
-        // Fades out downwards and in from the left, so it reads as a glow under the line, not a box.
-        .fill(LinearGradient(colors: [areaColor.opacity(Tokens.Opacity.border), .clear],
-          startPoint: UnitPoint(x: Self.breakout.x, y: Self.breakout.y),
-          endPoint: UnitPoint(x: Self.breakout.x, y: Self.areaBottom)))
-        .mask(LinearGradient(
-          stops: [.init(color: .clear, location: 0), .init(color: .black, location: Self.areaIn),
-            .init(color: .black, location: Self.areaOut), .init(color: .clear, location: 1)],
-          startPoint: UnitPoint(x: Self.start.x, y: Self.start.y),
-          endPoint: UnitPoint(x: Self.breakout.x, y: Self.start.y)))
-        .opacity(drawn)
+      RoundedRectangle(cornerRadius: size * Self.tileRadius, style: .continuous)
+        .fill(LinearGradient(colors: [Palette.brandTileTop, Palette.brandTileBottom],
+          startPoint: Self.tileTop, endPoint: Self.tileBottom))
+        .strokeBorder(Palette.brandTileEdge, lineWidth: size * Self.tileEdge)
       TickLine(points: Self.points)
         .trim(from: 0, to: drawn)
-        .stroke(
-          LinearGradient(colors: [lineColor, lineEnd], startPoint: .topTrailing, endPoint: .bottomLeading),
-          style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
-      if live && settled && !reduceMotion {
-        // While live the spark sends out a halo ring (Core Animation runs it; see BrandMarkLive).
-        BrandMarkLive(size: size, lineColor: lineColor, active: scenePhase == .active)
-          .frame(width: size, height: size)
-          .allowsHitTesting(false)
-      }
+        .stroke(lineColor, style: StrokeStyle(lineWidth: size * Self.lineWidth, lineCap: .round, lineJoin: .round))
       Circle()
         .fill(lineColor)
         .frame(width: diameter, height: diameter)
@@ -112,7 +96,20 @@ public struct BrandMark: View {
         .position(x: spark.x * size, y: spark.y * size)
     }
     .frame(width: size, height: size)
-    .shadow(color: glowColor, radius: size * Self.glowRadius)
+    .background {
+      if tone == .brand {
+        if breathes {
+          // While live the halo breathes (Core Animation runs it; see BrandMarkLive).
+          BrandMarkLive(size: halo, color: Palette.brandLine, active: scenePhase == .active)
+            .frame(width: halo, height: halo)
+            .allowsHitTesting(false)
+        } else {
+          BrandHalo(color: Palette.brandLine)
+            .frame(width: halo, height: halo)
+            .opacity(Tokens.Opacity.muted * drawn)
+        }
+      }
+    }
     .onAppear(perform: appear)
     .accessibilityHidden(true)
   }
@@ -134,6 +131,66 @@ public struct BrandMark: View {
 
 }
 
+/// The mark's line and dot alone, without tile or halo, filling its frame with the 24-unit grid:
+/// in the current foreground style, for one-colour places such as the Mac menu bar.
+public struct BrandGlyph: View {
+  let size: CGFloat
+
+  public init(size: CGFloat) {
+    self.size = size
+  }
+
+  /// A point of the tile's line in the grid's own shares.
+  private static func onGrid(_ point: CGPoint) -> CGPoint {
+    CGPoint(x: (point.x - BrandMark.gridInset) / BrandMark.gridSide,
+      y: (point.y - BrandMark.gridInset) / BrandMark.gridSide)
+  }
+
+  /// Draws the glyph in black into `rect` of a top-left-origin context (an image's drawing).
+  public static func draw(in context: CGContext, rect: CGRect) {
+    let side = min(rect.width, rect.height)
+    let line = TickLine(points: BrandMark.points.map(onGrid)).path(in: rect)
+    context.setStrokeColor(CGColor(gray: 0, alpha: 1))
+    context.setFillColor(CGColor(gray: 0, alpha: 1))
+    context.setLineWidth(side * BrandMark.lineWidth / BrandMark.gridSide)
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    context.addPath(line.cgPath)
+    context.strokePath()
+    let end = onGrid(BrandMark.breakout)
+    let dot = side * BrandMark.sparkDiameter / BrandMark.gridSide
+    context.fillEllipse(in: CGRect(x: rect.minX + end.x * rect.width - dot / 2,
+      y: rect.minY + end.y * rect.height - dot / 2, width: dot, height: dot))
+  }
+
+  public var body: some View {
+    let dot = size * BrandMark.sparkDiameter / BrandMark.gridSide
+    let end = Self.onGrid(BrandMark.breakout)
+    ZStack(alignment: .topLeading) {
+      TickLine(points: BrandMark.points.map(Self.onGrid))
+        .stroke(style: StrokeStyle(lineWidth: size * BrandMark.lineWidth / BrandMark.gridSide,
+          lineCap: .round, lineJoin: .round))
+      Circle()
+        .frame(width: dot, height: dot)
+        .position(x: end.x * size, y: end.y * size)
+    }
+    .frame(width: size, height: size)
+    .accessibilityHidden(true)
+  }
+}
+
+/// The mark's still halo: the site's soft teal glow, strongest in the middle and gone at the edge.
+struct BrandHalo: View {
+  let color: Color
+
+  var body: some View {
+    GeometryReader { proxy in
+      RadialGradient(colors: [color.opacity(Tokens.Opacity.faint), color.opacity(0)],
+        center: .center, startRadius: 0, endRadius: min(proxy.size.width, proxy.size.height) / 2)
+    }
+  }
+}
+
 /// The tick's price line through `points` (shares of the rect).
 struct TickLine: Shape {
   let points: [CGPoint]
@@ -145,26 +202,12 @@ struct TickLine: Shape {
   }
 }
 
-/// The area under the tick's line, down to `bottom` (a share of the rect's height).
-struct TickArea: Shape {
-  let points: [CGPoint]
-  let bottom: CGFloat
-
-  func path(in rect: CGRect) -> Path {
-    guard let first = points.first, let last = points.last else { return Path() }
-    var path = TickLine(points: points).path(in: rect)
-    path.addLine(to: CGPoint(x: rect.minX + last.x * rect.width, y: rect.minY + bottom * rect.height))
-    path.addLine(to: CGPoint(x: rect.minX + first.x * rect.width, y: rect.minY + bottom * rect.height))
-    path.closeSubpath()
-    return path
-  }
-}
-
 #Preview {
-  HStack {
+  HStack(spacing: Tokens.Space.xl) {
     BrandMark(live: true)
     BrandMark.empty()
     BrandMark.empty(.muted)
+    BrandGlyph(size: Tokens.Size.menuBarGlyph)
   }
     .padding()
     .background(Palette.background)

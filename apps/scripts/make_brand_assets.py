@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Write the apps' brand assets: the app icon (Icon Composer `.icon`) and the iOS launch screen.
 
-The mark is a price line drawn as a tick (the name Tickr) that breaks upward, with a spark at
-its end. One description here produces every file, so the macOS and iOS icons and the launch
-screen never drift apart:
+The mark is the tickr.bot site's: a teal price line that dips, bounces and breaks out to a dot,
+on a dark rounded tile. One description here produces every file, so the macOS and iOS icons and
+the launch screen never drift apart:
 
 - `apps/macos/Tickr/AppIcon.icon` and `apps/ios/Tickr/AppIcon.icon`: the layered icon
-  (light, dark and tinted appearances; the system adds Liquid Glass and the tinted rendering).
+  (one look in every appearance; the system adds Liquid Glass and the tinted rendering).
 - `apps/ios/Tickr/Assets.xcassets`: `LaunchBackground` (the window background, so the launch
-  screen hands over to the first screen without a flash) and `LaunchMark` (the mark).
+  screen hands over to the first screen without a flash) and `LaunchMark` (the mark on its tile).
 
 Colours come from `apps/shared/Sources/TickrDesign/Palette.swift`. The in-app mark
-(`BrandMark` in TickrDesign) draws the same line from the same points. Files are committed;
+(`BrandMark` in TickrDesign) draws the same tile and line from the same shares. Files are committed;
 `tests/test_brand_assets.py` fails when they differ from this script's output.
 Usage: make_brand_assets.py
 """
@@ -31,15 +31,26 @@ IOS_ASSETS = REPO / "apps/ios/Tickr/Assets.xcassets"
 
 # Icon canvas in points (Icon Composer draws on 1024 x 1024).
 CANVAS = 1024
-# The tick: points of the price line as shares of the canvas, left to right. Same as
-# BrandMark.points in apps/shared/Sources/TickrDesign/BrandMark.swift.
-POINTS = ((0.205, 0.51), (0.39, 0.70), (0.50, 0.575), (0.565, 0.625), (0.81, 0.285))
-# Line width, spark radius and the bottom of the fading area under the line, as canvas shares.
-LINE_WIDTH = 0.084
-SPARK_RADIUS = 0.045
-AREA_BOTTOM = 0.86
-# Opacity of the area under the line at its top (it fades to nothing at the bottom).
-AREA_OPACITY = 0.45
+# The mark as the tickr.bot site draws it: a price line on a 24-unit grid that dips, bounces and
+# breaks out to a dot, inside a 40-unit tile. GRID is the line's grid, TILE the tile's side.
+GRID = 24
+TILE = 40
+LINE = ((3, 15), (8, 11), (11, 14), (20, 5))
+# Line width and dot radius on the grid.
+LINE_WIDTH_UNITS = 2.4
+DOT_RADIUS_UNITS = 1.6
+# The same as shares of the tile's side: the grid sits centred in the tile. BrandMark.points,
+# lineWidth and dotDiameter in apps/shared/Sources/TickrDesign/BrandMark.swift match these.
+INSET = (TILE - GRID) / 2 / TILE
+POINTS = tuple((INSET + x / TILE, INSET + y / TILE) for x, y in LINE)
+LINE_WIDTH = LINE_WIDTH_UNITS / TILE
+DOT_RADIUS = DOT_RADIUS_UNITS / TILE
+# The tile's corner radius (12 of 40) and edge width (1 of 40), as shares of its side.
+TILE_RADIUS = 12 / TILE
+TILE_EDGE = 1 / TILE
+# The icon's soft glow behind the line: its radius and its opacity at the centre (the site's halo).
+GLOW_RADIUS = 0.42
+GLOW_OPACITY = 0.35
 # Launch-screen mark size in points (the image is drawn at this size, centred).
 LAUNCH_MARK = 160
 
@@ -66,31 +77,44 @@ def svg(body: str, size: float = CANVAS, defs: str = "") -> str:
             f'viewBox="0 0 {pt(1, size)} {pt(1, size)}">{defs}{body}</svg>\n')
 
 
-def gradient(ident: str, top: str, bottom: str,
-             top_opacity: float = 1, bottom_opacity: float = 1) -> str:
-    return (f'<linearGradient id="{ident}" x1="0" y1="0" x2="0" y2="1">'
-            f'<stop offset="0" stop-color="#{top}" stop-opacity="{top_opacity}"/>'
-            f'<stop offset="1" stop-color="#{bottom}" stop-opacity="{bottom_opacity}"/>'
-            '</linearGradient>')
+def mark_centre() -> tuple[float, float]:
+    """The middle of the line's bounding box, where the glow sits."""
+    xs, ys = [x for x, _ in POINTS], [y for _, y in POINTS]
+    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
 
 
 def layers(colors: dict[str, tuple[str, str]], size: float = CANVAS) -> dict[str, str]:
-    """The mark's three layers as SVG: the fading area, the line and the spark."""
-    profit_light, profit_dark = colors["profit"]
-    accent = colors["accent"][0]
-    (last_x, last_y), first_x = POINTS[-1], POINTS[0][0]
-    area = (line_path(size) + f" L{pt(last_x, size)},{pt(AREA_BOTTOM, size)}"
-            f" L{pt(first_x, size)},{pt(AREA_BOTTOM, size)} Z")
+    """The mark's three icon layers as SVG: the glow, the line and the dot, all in the brand teal."""
+    teal = colors["brandLine"][0]
+    last_x, last_y = POINTS[-1]
+    cx, cy = mark_centre()
+    glow = (f'<radialGradient id="g" cx="{pt(cx, size)}" cy="{pt(cy, size)}" r="{pt(GLOW_RADIUS, size)}" '
+            'gradientUnits="userSpaceOnUse">'
+            f'<stop offset="0" stop-color="#{teal}" stop-opacity="{GLOW_OPACITY}"/>'
+            f'<stop offset="1" stop-color="#{teal}" stop-opacity="0"/></radialGradient>')
     stroke = (f'stroke-width="{pt(LINE_WIDTH, size)}" stroke-linecap="round" '
               f'stroke-linejoin="round" fill="none"')
     return {
-        "area": svg(f'<path d="{area}" fill="url(#a)"/>', size,
-                    gradient("a", accent, accent, AREA_OPACITY, 0)),
-        "line": svg(f'<path d="{line_path(size)}" stroke="url(#l)" {stroke}/>', size,
-                    gradient("l", profit_dark, profit_light)),
-        "spark": svg(f'<circle cx="{pt(last_x, size)}" cy="{pt(last_y, size)}" '
-                     f'r="{pt(SPARK_RADIUS, size)}" fill="#FFFFFF"/>', size),
+        "glow": svg(f'<rect width="{pt(1, size)}" height="{pt(1, size)}" fill="url(#g)"/>', size, glow),
+        "line": svg(f'<path d="{line_path(size)}" stroke="#{teal}" {stroke}/>', size),
+        "dot": svg(f'<circle cx="{pt(last_x, size)}" cy="{pt(last_y, size)}" '
+                   f'r="{pt(DOT_RADIUS, size)}" fill="#{teal}"/>', size),
     }
+
+
+def tile(colors: dict[str, tuple[str, str]], size: float) -> str:
+    """The whole mark on its tile (the launch screen's image): as BrandMark draws it in the apps."""
+    top, bottom, edge = (colors[k][0] for k in ("brandTileTop", "brandTileBottom", "brandTileEdge"))
+    half = TILE_EDGE / 2
+    defs = ('<linearGradient id="t" x1="0.33" y1="0" x2="0.67" y2="1">'
+            f'<stop offset="0" stop-color="#{top}"/><stop offset="1" stop-color="#{bottom}"/>'
+            '</linearGradient>')
+    body = (f'<rect x="{pt(half, size)}" y="{pt(half, size)}" width="{pt(1 - TILE_EDGE, size)}" '
+            f'height="{pt(1 - TILE_EDGE, size)}" rx="{pt(TILE_RADIUS - half, size)}" fill="url(#t)" '
+            f'stroke="#{edge}" stroke-width="{pt(TILE_EDGE, size)}"/>')
+    small = layers(colors, size)
+    body += "".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("line", "dot"))
+    return svg(body, size, defs)
 
 
 def srgb(hex_value: str) -> str:
@@ -114,18 +138,15 @@ def group(name: str, image: str, glass: bool, shadow: str, translucent: bool) ->
 
 
 def icon_json(colors: dict[str, tuple[str, str]]) -> str:
-    background_light = colors["background"][0]
-    surface_dark = colors["surface"][1]
+    # The tile is the brand's and the same in every appearance: the system lightens it towards
+    # the top (the site's tile gradient) and makes the tinted rendering from it.
     return xcode_json({
-        "fill": {"automatic-gradient": srgb(background_light)},
-        "fill-specializations": [
-            {"appearance": "dark", "value": {"automatic-gradient": srgb(surface_dark)}},
-        ],
+        "fill": {"automatic-gradient": srgb(colors["brandTileTop"][0])},
         # Front to back.
         "groups": [
-            group("Spark", "spark", True, "neutral", False),
+            group("Dot", "dot", True, "layer-color", False),
             group("Line", "line", True, "layer-color", False),
-            group("Area", "area", False, "none", True),
+            group("Glow", "glow", False, "none", True),
         ],
         "supported-platforms": {"squares": "shared"},
     })
@@ -152,9 +173,7 @@ def outputs() -> dict[Path, str]:
         files[icon / "icon.json"] = icon_json(colors)
         for name, content in layers(colors).items():
             files[icon / "Assets" / f"{name}.svg"] = content
-    small = layers(colors, LAUNCH_MARK)
-    body = "".join(re.sub(r"</?svg[^>]*>\n?", "", small[k]) for k in ("area", "line", "spark"))
-    mark = svg(body, LAUNCH_MARK)
+    mark = tile(colors, LAUNCH_MARK)
     info = {"info": {"author": "xcode", "version": 1}}
     files[IOS_ASSETS / "Contents.json"] = xcode_json(info)
     files[IOS_ASSETS / "LaunchBackground.colorset/Contents.json"] = colorset(*colors["background"])

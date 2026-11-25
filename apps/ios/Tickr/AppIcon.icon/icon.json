@@ -1,27 +1,19 @@
 {
   "fill" : {
-    "automatic-gradient" : "srgb:0.93333,0.94902,0.98039,1.00000"
+    "automatic-gradient" : "srgb:0.07451,0.12549,0.22745,1.00000"
   },
-  "fill-specializations" : [
-    {
-      "appearance" : "dark",
-      "value" : {
-        "automatic-gradient" : "srgb:0.05490,0.07451,0.14902,1.00000"
-      }
-    }
-  ],
   "groups" : [
     {
       "layers" : [
         {
           "glass" : true,
-          "image-name" : "spark.svg",
-          "name" : "Spark"
+          "image-name" : "dot.svg",
+          "name" : "Dot"
         }
       ],
-      "name" : "Spark",
+      "name" : "Dot",
       "shadow" : {
-        "kind" : "neutral",
+        "kind" : "layer-color",
         "opacity" : 0.5
       },
       "specular" : true,
@@ -53,11 +45,11 @@
       "layers" : [
         {
           "glass" : false,
-          "image-name" : "area.svg",
-          "name" : "Area"
+          "image-name" : "glow.svg",
+          "name" : "Glow"
         }
       ],
-      "name" : "Area",
+      "name" : "Glow",
       "shadow" : {
         "kind" : "none",
         "opacity" : 0.5

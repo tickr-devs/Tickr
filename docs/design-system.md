@@ -23,7 +23,7 @@ the approved design canvas. Code follows it one to one:
    - Protocol values from the bot (`exit_reason`, fence `kind`) are shown through a localized title and never translated in place.
 3. **System appearance only.** Light and dark follow macOS/iOS; there is no theme switch. Light is designed on its own (soft glows and a tinted shadow), not as an inverted dark.
 4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
-5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop, marked `// decorative: <why>` in code: the brand mark's spark halo, the empty-positions radar (sweep and blips), the event ticker's and the screener chips' scroll, the Lab's AI advisor title shine (owner wants the design's motion, 2026-11-16), and the Settings session card's drifting pre/post-market stripes (owner's request, 2026-11-16). Each loops only while `OrnamentGate` holds (macOS and iOS: Reduce Motion off, the live day shown, fresh status, the bot running), still otherwise. The one exception is loading (mockup v102, see "Loading" below): the skeleton's shimmer and the button spinner mark only that a read or a command is in flight and are on screen only while one is, so they move whenever they show, in Core Animation like the brand halo and `ShineBand`; under Reduce Motion nothing sweeps or turns and they pulse gently in opacity instead. The `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
+5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop, marked `// decorative: <why>` in code: the brand mark's breathing halo, the empty-positions radar (sweep and blips), the event ticker's and the screener chips' scroll, the Lab's AI advisor title shine (owner wants the design's motion, 2026-11-16), and the Settings session card's drifting pre/post-market stripes (owner's request, 2026-11-16). Each loops only while `OrnamentGate` holds (macOS and iOS: Reduce Motion off, the live day shown, fresh status, the bot running), still otherwise. The one exception is loading (mockup v102, see "Loading" below): the skeleton's shimmer and the button spinner mark only that a read or a command is in flight and are on screen only while one is, so they move whenever they show, in Core Animation like the brand halo and `ShineBand`; under Reduce Motion nothing sweeps or turns and they pulse gently in opacity instead. The `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
 6. **Formatting: Swift uses 2-space indentation.**
    - `.editorconfig`, SwiftLint's `indentation_width` (every app) and the rules check (rule `indent`, every app) enforce it.
    - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
@@ -51,6 +51,9 @@ emergency command tiers from the palette's values (`Swatch`) and fails below 4.5
 | `titleBar` | Mac title bar above the sidebar and the screen | `#F3F6FC` | `#0B1022` |
 | `sidebar` | Mac sidebar column | `#F1F4FB` | `#0A0E1E` |
 | `selection` | Selected sidebar row (with a `separatorStrong` hairline) | `#E3EBFF` | `#172046` |
+| `brandTileTop` / `brandTileBottom` | The brand mark's tile gradient (`BrandMark`, app icon, launch screen, tickr.bot site), the same in both appearances | `#13203A` / `#0A0F20` | `#13203A` / `#0A0F20` |
+| `brandTileEdge` | The tile's hairline edge | `#2A3459` | `#2A3459` |
+| `brandLine` / `brandMuted` | The mark's line, dot and halo on the tile; muted when the bot is unreachable | `#2DD4BF` / `#5F6A8C` | `#2DD4BF` / `#5F6A8C` |
 | `textPrimary` | Headlines, primary values | `#0E1430` | `#E7EAF6` |
 | `textSecondary` | Body text in rows and lists | `#262F52` | `#C9CFE6` |
 | `textTertiary` | Labels next to values, explanations | `#475174` | `#A9B2D3` |
@@ -317,7 +320,7 @@ size unchanged.
 | `menuGlyph` | 13 | The settings gear (`DesignGlyph.settings`) in the macOS menu-bar panel, at `Stroke.glyphHeavy` (2.2 grid units); elsewhere the gear is stroked at `Stroke.gear` (1.9). Both apps draw this one gear for Settings (iOS Home header, Mac menu bar, Mac Settings General tab), never an SF Symbol |
 | `dayResultWidth` | 300 | Overview's day result beside the header |
 | `gridColumnMin` | 300 | Narrowest column of a card grid before it stacks |
-| `logo` / `logoSmall` / `emptyMark` | 64 / 26 / 88 | Brand mark (`BrandMark`): the tick-shaped price line of the app icon |
+| `logo` / `logoSmall` / `emptyMark` / `menuBarGlyph` | 52 / 26 / 64 / 18 | Brand mark's tile (`BrandMark`) in a header, a panel, an empty screen; `BrandGlyph` in the Mac menu bar |
 | `sparkline` | 34 | Sparkline height |
 | `bar` | 8 | Progress bar height |
 | `barThin` | 4 | Thin progress bar inside a row (Watching closely) |
@@ -584,18 +587,23 @@ still reads it. Every control takes a `Tone`.
 ## Brand: app icon and launch screen
 
 The product name people see is **Tickr** (bundle display name and the String Catalogs); code,
-targets and the repository keep their code name. The mark is a price line drawn as a tick that
-breaks upward, with a spark at its end.
+targets and the repository keep their code name. The mark is the tickr.bot site's (owner,
+2026-11-25): a teal (`brandLine`) price line that dips, bounces and breaks out to a dot, on a
+24-unit grid (`M3 15 L8 11 L11 14 L20 5`, width 2.4, dot radius 1.6), centred in a 40-unit dark
+tile (`brandTileTop` to `brandTileBottom`, corner 12, a 1-unit `brandTileEdge`), with a soft teal
+halo. Tile and line look the same in light and dark.
 
 - `apps/scripts/make_brand_assets.py` writes every brand file from one description, with colours
-  from `Palette.swift`: the Icon Composer icon `AppIcon.icon` of each app (light, dark and tinted;
-  the system adds Liquid Glass) and the iOS launch screen in `apps/ios/Tickr/Assets.xcassets`
+  from `Palette.swift`: the Icon Composer icon `AppIcon.icon` of each app (the tile as its fill,
+  then glow, line and dot layers; the system adds Liquid Glass and the tinted rendering) and the iOS launch screen in `apps/ios/Tickr/Assets.xcassets`
   (`LaunchBackground` = `background`, `LaunchMark`). Change the script and run it; never edit the
   generated files. `tests/test_brand_assets.py` fails when they differ.
-- In the apps the same line is `BrandMark` (TickrDesign): it draws itself on appear and its
-  spark then sends out a halo ring (from the spark's size to `pulseScale`, fading from
-  `Opacity.muted`, every `pulseSeconds`; ornament) while the bot's data is current (macOS
-  Overview header, iOS Home bar); still otherwise and with Reduce Motion.
+- In the apps the same tile and line are `BrandMark` (TickrDesign): the line draws itself on
+  appear and the dot pops in; while the bot's data is current (macOS Overview header, iOS Home
+  bar) the halo then breathes as on the site (from `Opacity.muted` to full and to `haloScale`,
+  and back, every `haloSeconds`; ornament), still at `Opacity.muted` otherwise and with Reduce
+  Motion. `.muted` draws the line in `brandMuted` without a halo. `BrandGlyph` is the line and dot
+  alone in one colour.
 - iOS opening (`LaunchHandoff`): the app starts exactly as the launch screen, flashes the spark
   once, then flies the mark into Home's bar mark while the background fades (`launchHoldSeconds`,
   `launchFly`). Reduce Motion: a cross-fade (`launchFadeSeconds`).
@@ -610,5 +618,6 @@ breaks upward, with a spark at its end.
 - Empty screens (nothing yet, no trades, bot unreachable) use `BrandMark.empty()` as the
   `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors
   keep a warning SF Symbol, so they never look like a calm empty state.
-- macOS has no launch screen (Apple HIG). The menu bar extra keeps an SF Symbol, because it shows
-  the bot's state; notifications and the About panel use the app icon.
+- macOS has no launch screen (Apple HIG). The menu bar extra shows `BrandGlyph` as a template
+  image (`menuBarGlyph`) while all is calm and the severity's SF Symbol on attention or alarm, so
+  the bot's state stays visible; notifications and the About panel use the app icon.

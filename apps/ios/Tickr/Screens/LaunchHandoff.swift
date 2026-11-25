@@ -35,7 +35,7 @@ struct LaunchHandoff: View {
         Image(.launchMark)
           .overlay(alignment: .topLeading) {
             Circle()
-              .fill(Palette.profit)
+              .fill(Palette.brandLine)
               .frame(width: Tokens.Size.launchMark * BrandMark.sparkDiameter)
               .scaleEffect(flashing ? Tokens.Motion.pulseScale : 1)
               .opacity(flashing ? 0 : Tokens.Opacity.faint)

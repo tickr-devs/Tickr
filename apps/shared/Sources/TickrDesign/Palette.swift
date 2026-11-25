@@ -32,6 +32,18 @@ public enum Palette {
   /// A selected sidebar row's fill (with a `separatorStrong` hairline).
   public static let selection = Color(light: 0xE3EBFF, dark: 0x172046)
 
+  // MARK: brand
+
+  /// The brand mark's tile (`BrandMark`, the app icon, the launch screen, the tickr.bot site): a
+  /// dark tile in every appearance, top to bottom of its gradient, and its hairline edge.
+  public static let brandTileTop = Color(light: 0x13203A, dark: 0x13203A)
+  public static let brandTileBottom = Color(light: 0x0A0F20, dark: 0x0A0F20)
+  public static let brandTileEdge = Color(light: 0x2A3459, dark: 0x2A3459)
+  /// The mark's price line, dot and halo on the tile: the site's teal in every appearance.
+  public static let brandLine = Color(light: 0x2DD4BF, dark: 0x2DD4BF)
+  /// The mark's line on the tile when nothing about the bot can be known (bot unreachable).
+  public static let brandMuted = Color(light: 0x5F6A8C, dark: 0x5F6A8C)
+
   // MARK: text, strongest to weakest
 
   /// Headlines and primary values.

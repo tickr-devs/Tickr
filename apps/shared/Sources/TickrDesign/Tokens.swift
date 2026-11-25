@@ -221,11 +221,13 @@ public enum Tokens {
     public static let gridColumnMin: CGFloat = 300
     /// SF Symbols inside an icon well.
     public static let iconWellSymbol: CGFloat = 15
-    /// The brand mark (BrandMark) in a header, and small in a panel.
-    public static let logo: CGFloat = 64
+    /// The brand mark's tile (BrandMark) in a header, and small in a panel.
+    public static let logo: CGFloat = 52
     public static let logoSmall: CGFloat = 26
     /// The brand mark as the illustration of an empty screen.
-    public static let emptyMark: CGFloat = 88
+    public static let emptyMark: CGFloat = 64
+    /// The brand glyph (`BrandGlyph`) in the Mac menu bar: a menu-bar extra's image side.
+    public static let menuBarGlyph: CGFloat = 18
     /// The brand mark in the centre of the macOS opening (BrandOpening).
     public static let openingMark: CGFloat = 120
     /// The brand mark on the iOS launch screen (LAUNCH_MARK in apps/scripts/make_brand_assets.py).
@@ -297,6 +299,10 @@ public enum Tokens {
     public static let pulseSeconds = 2.4
     /// How far a pulse ring grows, as a multiple of the dot.
     public static let pulseScale: CGFloat = 2.2
+    /// Seconds of one breath of the brand mark's halo (out and back), as on the tickr.bot site.
+    public static let haloSeconds = 3.2
+    /// How far the brand mark's halo grows at the top of a breath.
+    public static let haloScale: CGFloat = 1.12
     /// How much a button shrinks while pressed.
     public static let pressScale: CGFloat = 0.97
     /// Seconds the pointer rests on a view before its hint appears.
