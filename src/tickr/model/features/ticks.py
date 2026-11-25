@@ -12,10 +12,12 @@ stock filter is off, and the converter's variables that change its table must be
 (`OUTPUT_VARIABLES`). Two engine settings are the bot's, never the environment's (Codex,
 codex-108 point 2): one engine thread (`SERIAL_THREADS`: with several, the floating sums are
 added in a varying order and two runs of the same files differ in the last bit), and the group
-count, the converter's default or one group as `[model] tick_groups` says (the table is equal,
-exactly, `tests/model/test_ticks.py`; one group holds the whole day in memory at once,
-`tests/model/tick_memory.py` measures it). An inherited value of either is refused unless it is
-the one the bot sets. `TICK_MEM` only caps the engine's memory and may be set by the owner.
+count, the converter's default or one group as `[model] tick_groups` says. With one thread a
+run is repeatable, but the group count changes where the engine's 2048-row chunks fall, so a
+floating sum may come out in another order: equal on the test day and at 500 synthetic stocks,
+one stock-minute of 724,062 differing in the last bit at 1,000 (`tests/model/tick_memory.py`,
+which also records the peak memory). An inherited value of either is refused unless it is the
+one the bot sets. `TICK_MEM` only caps the engine's memory and may be set by the owner.
 Every other TICK_* name the converter reads belongs to its download / upload loop (`main()`),
 which the bot never runs; boto3 is imported only there, so the bot path needs duckdb alone.
 Variables are asked one NAME at a time, never the whole environment (hard rule 10).

@@ -172,7 +172,9 @@ def test_an_inherited_other_thread_count_is_refused(tmp_path, events, monkeypatc
 
 def test_one_group_equals_the_converters_default_exactly(tmp_path, events):
     """Serial (one engine thread): one group and the converter's 24 give the same table, bit
-    for bit (codex-108 point 2). The peak memory of both: tests/model/test_tick_memory.py."""
+    for bit, on this day (codex-108 point 2). Not a property of every day: at 1,000 synthetic
+    stocks one stock-minute differs in the last bit (tests/model/tick_memory.py, module text of
+    ticks.py). The peak memory of both: tests/model/test_tick_memory.py."""
     t, q = files(tmp_path, *events)
     assert ticks.default_groups() == 24 and ticks.ONE_GROUP == 1
     default = rows(t, q, LAST_MINUTE, groups=ticks.default_groups())
