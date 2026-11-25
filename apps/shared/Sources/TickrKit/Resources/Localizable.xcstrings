@@ -12269,13 +12269,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Flagged when a one-minute bar trades at least %1$@ and its volume is %2$@× the last %5$lld bars, or it moves %3$@× its usual range (ATR), or its dollars traded are %4$@×. Open positions and waiting symbols stay on top."
+            "value" : "Flagged when a one-minute bar trades at least %1$@ and its volume is %2$@× the last %3$lld bars, or it moves %4$@× its usual range (ATR), or its dollars traded are %5$@×. Open positions and waiting symbols stay on top."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se marca cuando una barra de un minuto negocia al menos %1$@ y su volumen es %2$@× el de las últimas %5$lld barras, o se mueve %3$@× su rango habitual (ATR), o sus dólares negociados son %4$@×. Las posiciones abiertas y los símbolos en espera quedan arriba."
+            "value" : "Se marca cuando una barra de un minuto negocia al menos %1$@ y su volumen es %2$@× el de las últimas %3$lld barras, o se mueve %4$@× su rango habitual (ATR), o sus dólares negociados son %5$@×. Las posiciones abiertas y los símbolos en espera quedan arriba."
           }
         }
       }
