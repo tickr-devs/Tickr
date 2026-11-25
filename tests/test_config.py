@@ -119,8 +119,6 @@ SAME_NAME_DIFFERENT_MEANING = {
     "history_dir": "different caches: [market_data] live bars, [massive] model minute files",
     "history_max_pages": "different routes: [probe] probe H2, [environments.*] display read",
     "atr_period": "research.toml measures moves in ATR itself, not the strategy indicator",
-    "history_sessions": "KNOWN REPEAT (T7 follow-up): [market_data] live depth and [replay] "
-                        "replay depth are one idea kept equal by hand; replay ignores bot.toml",
     "environment": "config/demo.toml names the demo run, bot.toml [run] the real one",
     "observers": "config/demo.toml is the demo copy of bot.toml [strategy] observers",
     "max_open_positions": "config/demo.toml is the demo copy of bot.toml [risk]",

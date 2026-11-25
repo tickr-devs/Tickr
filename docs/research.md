@@ -231,7 +231,7 @@ by the fixed value. Not measured yet: how far the price traded through the stop 
 refused): `horizons_minutes`, `atr_period`, `session_timezone`
 (`latency` reads only the last).
 What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay. Every
-report also rounds to its `output_decimal_places` (`--replay-settings`, default
+report also rounds to its `output_decimal_places` (`--replay-settings` with `--config`, default
 `config/replay.toml`): that number has one home.
 
 Exit code 2 and `research refused: <cause>` on any bad input; nothing is guessed.

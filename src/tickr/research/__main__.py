@@ -41,6 +41,9 @@ def _parser() -> argparse.ArgumentParser:
     def places_source(p: argparse.ArgumentParser) -> None:
         p.add_argument("--replay-settings", type=Path, default=Path("config/replay.toml"),
                        help="replay settings TOML (output_decimal_places for the reports)")
+        p.add_argument("--config", type=Path, default=Path("config/bot.toml"),
+                       help="bot config: its [market_data] history_sessions goes to the replay "
+                       "settings; the outcomes calendar gives each day's regular close")
 
     def clock(p: argparse.ArgumentParser) -> None:
         p.add_argument("--replay-settings", type=Path, default=Path("config/replay.toml"),
@@ -53,8 +56,6 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
     p.add_argument("--settings", type=Path, required=True, help="research TOML")
     places_source(p)
-    p.add_argument("--config", type=Path, default=Path("config/bot.toml"),
-                   help="bot config: its calendar gives each day's regular close")
 
     p = sub.add_parser("whatif", help="simulate ENTER decisions that were not taken")
     bars_and_out(p)
@@ -119,9 +120,14 @@ def _filter(records, spec: str | None):
     return compare.select(records, name, version or None)
 
 
+def _history_sessions(args: argparse.Namespace) -> int:
+    """The bot's `[market_data] history_sessions`: the replay settings do not repeat it."""
+    return bot_config.load(args.config).market_data.history_sessions
+
+
 def _run(args: argparse.Namespace) -> dict:
     if args.command in REPORT_COMMANDS:
-        places = load_settings(args.replay_settings).output_decimal_places
+        places = load_settings(args.replay_settings, _history_sessions(args)).output_decimal_places
     if args.command == "outcomes":
         settings = load_research_settings(args.settings)
         cfg = bot_config.load(args.config)
@@ -154,7 +160,7 @@ def _run(args: argparse.Namespace) -> dict:
                                          args.environment)
         return report.write_slippage(trades, args.environment, args.out,
                                      places)
-    replay_settings = load_settings(args.replay_settings)
+    replay_settings = load_settings(args.replay_settings, _history_sessions(args))
     clock_for = session_clock(args.config)
     places = replay_settings.output_decimal_places
     if args.command == "whatif":
