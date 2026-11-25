@@ -20,9 +20,11 @@ Public pages must not use `/login`, `/account`, `/app`, `/api` or `/static`.
 
 ## Accounts
 
-Public sign-up is closed. `python manage.py invite you@example.com [--staff]` creates an account
-with a verified address and no password. Its owner signs in at `/login` with an emailed code, then
-adds a passkey and a password under `/account/`.
+Public sign-up is closed. `python manage.py invite you@example.com [--staff | --superuser]` creates an
+account with a verified address and no password. Its owner signs in at `/login` with an emailed
+code, then adds a passkey and a password under `/account/`. The admin (`/app/admin/`) opens only
+for staff in a session signed in with a passkey or an authenticator app; Django's own admin
+login form is never served.
 
 ## Configuration
 

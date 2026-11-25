@@ -35,7 +35,7 @@ ALLOWED_HOSTS = [SITE_HOST]
 CSRF_TRUSTED_ORIGINS = [f"https://{SITE_HOST}"]
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "tickrweb.admin_apps.TickrAdminConfig",  # the admin with tickrweb.admin_site rules
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -170,7 +170,7 @@ ACCOUNT_RATE_LIMITS = {
     "login": "30/h/ip",
     # Sign-in codes emailed to one address: 3 per 5 minutes.
     "request_login_code": "3/5m/ip,3/5m/key",
-    # Password reset emails: 3 per 20 minutes per address.
+    # Password reset: 20 requests a minute from one IP, 3 emails per 20 minutes per address.
     "reset_password": "20/m/ip,3/20m/key",
 }
 # Seconds a sign-in code sent by email stays valid (15 minutes).

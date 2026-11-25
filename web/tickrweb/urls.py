@@ -3,13 +3,9 @@
 
 from allauth.account.views import login
 from django.contrib import admin
-from django.contrib.auth.decorators import login_required
 from django.urls import include, path
 
 from . import views, waitlist
-
-# The admin uses the site's own sign-in (password, passkey or email code), never its own form.
-admin.site.login = login_required(admin.site.login)
 
 urlpatterns = [
     path("account/", include("allauth.urls")),

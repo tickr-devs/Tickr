@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-25 16:02-0500\n"
+"POT-Creation-Date: 2026-11-25 16:09-0500\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -31,6 +31,22 @@ msgstr "Iniciar sesión con una llave de acceso"
 #: tickrweb/templates/account/login.html:21
 msgid "Send me a sign-in code"
 msgstr "Envíame un código de inicio de sesión"
+
+#: tickrweb/templates/admin_refused.html:3
+#: tickrweb/templates/admin_refused.html:6
+msgid "Admin"
+msgstr "Administración"
+
+#: tickrweb/templates/admin_refused.html:7
+msgid ""
+"The admin opens only for staff who signed in with a passkey or an "
+"authenticator app."
+msgstr "La administración solo se abre para el personal que inició sesión con una llave de acceso o una app de autenticación."
+
+#: tickrweb/templates/admin_refused.html:8
+#: tickrweb/templates/cabinet/index.html:57
+msgid "Passkeys and two-step sign-in"
+msgstr "Llaves de acceso y verificación en dos pasos"
 
 #: tickrweb/templates/base.html:19 tickrweb/templates/cabinet/index.html:3
 #: tickrweb/templates/cabinet/index.html:6
@@ -202,10 +218,6 @@ msgstr "Dispositivos con sesión iniciada"
 #: tickrweb/templates/cabinet/index.html:54
 msgid "Passkeys"
 msgstr "Llaves de acceso"
-
-#: tickrweb/templates/cabinet/index.html:57
-msgid "Passkeys and two-step sign-in"
-msgstr "Llaves de acceso y verificación en dos pasos"
 
 #: tickrweb/templates/cabinet/index.html:58
 msgid "Password"

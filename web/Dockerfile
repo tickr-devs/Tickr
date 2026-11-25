@@ -24,4 +24,6 @@ EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]
 # One worker process: the waitlist's rate-limit counters live in its memory (settings.CACHES).
 # Threads serve requests in parallel. Seconds before a stuck request is killed: 30.
-CMD ["/venv/bin/gunicorn", "tickrweb.wsgi", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "30", "--access-logfile", "-"]
+# The access log has no client address and no query string: waitlist links carry the address in
+# their signed token, and the privacy page promises that IPs are never stored with an email.
+CMD ["/venv/bin/gunicorn", "tickrweb.wsgi", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "30", "--access-logfile", "-", "--access-logformat", "%(t)s \"%(m)s %(U)s\" %(s)s %(b)s %(L)ss"]

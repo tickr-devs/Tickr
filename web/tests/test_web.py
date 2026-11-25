@@ -12,10 +12,18 @@ from django.urls import reverse
 pytestmark = pytest.mark.django_db
 
 
-def _invite(email="owner@example.com", staff=False):
-    args = [email] + (["--staff"] if staff else [])
-    call_command("invite", *args)
+def _invite(email="owner@example.com", *flags):
+    call_command("invite", email, *flags)
     return get_user_model().objects.get(email=email)
+
+
+def _sign_in_with(client, user, *records):
+    """Signs `user` in, with allauth's record of how the session was authenticated."""
+    client.force_login(user)
+    session = client.session
+    session["account_authentication_methods_user"] = str(user.pk)
+    session["account_authentication_methods"] = [{"at": 0, **r} for r in records]
+    session.save()
 
 
 def test_health_answers_without_sign_in(client):
@@ -40,6 +48,51 @@ def test_cabinet_needs_sign_in(client):
 def test_admin_uses_the_site_sign_in(client):
     response = client.get("/app/admin/", follow=True)
     assert response.request["PATH_INFO"] == "/login"
+
+
+def test_admin_never_serves_its_own_password_form(client):
+    _sign_in_with(client, _invite("member@example.com"), {"method": "password"})
+    response = client.get("/app/admin/login/")
+    assert response.status_code == 403
+    assert b'name="password"' not in response.content
+    response = client.post(
+        "/app/admin/login/", {"username": "owner@example.com", "password": "guess"}
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"method": "code"},
+        {"method": "password"},
+        {"method": "mfa", "type": "recovery_codes"},
+    ],
+)
+def test_admin_refuses_staff_without_a_passkey_or_authenticator(client, record):
+    _sign_in_with(client, _invite("owner@example.com", "--superuser"), record)
+    assert client.get("/app/admin/").status_code == 302
+    assert client.get("/app/admin/login/").status_code == 403
+
+
+@pytest.mark.parametrize("factor", ["webauthn", "totp"])
+def test_admin_opens_for_staff_signed_in_with_a_strong_factor(client, factor):
+    _sign_in_with(
+        client, _invite("owner@example.com", "--staff"), {"method": "mfa", "type": factor}
+    )
+    assert client.get("/app/admin/").status_code == 200
+
+
+def test_admin_refuses_a_strong_factor_without_staff(client):
+    _sign_in_with(client, _invite("member@example.com"), {"method": "mfa", "type": "webauthn"})
+    assert client.get("/app/admin/login/").status_code == 403
+
+
+def test_staff_and_superuser_are_separate_flags():
+    staff = _invite("staff@example.com", "--staff")
+    assert staff.is_staff and not staff.is_superuser
+    owner = _invite("owner@example.com", "--superuser")
+    assert owner.is_staff and owner.is_superuser
 
 
 def test_public_sign_up_is_closed(client):
