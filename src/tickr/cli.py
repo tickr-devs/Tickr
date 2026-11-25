@@ -510,6 +510,28 @@ def _probe_quote_sources(args: argparse.Namespace) -> int:
     return code
 
 
+def _probe_tradability(args: argparse.Namespace) -> int:
+    """Read-only probe T8 (docs/manual-trade.md): how a halted or non-tradable instrument shows
+    in the snapshot, the profile and the trade instrument. Sends no orders. Exit 0 when every
+    read was answered, 3 otherwise."""
+    from tickr.engine import session_probe, tradability_probe
+
+    bad = [s for s in args.symbols if not session_probe.SYMBOL.match(s)]
+    if bad:
+        print(f"refused: not a symbol: {', '.join(bad)}", file=sys.stderr)
+        return 2
+    cfg = config_module.load(args.config)
+    broker, _ = PROBE_ADAPTERS(cfg)
+    if not isinstance(broker, tradability_probe.TradabilitySources):
+        print("refused: this broker cannot run probe T8", file=sys.stderr)
+        return 2
+    folder = session_probe.evidence_folder(cfg, NOW(), "tradability")
+    print(f"probe-tradability {' '.join(args.symbols)}; evidence in {folder}")
+    code = tradability_probe.run(broker, args.symbols, folder, print)
+    print(f"answers: {folder / tradability_probe.READS_FILE}")
+    return code
+
+
 def _check_quote(args: argparse.Namespace) -> int:
     """Read-only: one snapshot quote through the probes' market-data path, and whether its age
     passes the check `probe-replace-stop` applies. Sends no orders. Exit 0 fresh, 3 not."""
@@ -903,6 +925,10 @@ def main(argv: list[str] | None = None) -> int:
                              "extended snapshot, top of book and newest trades, with the age "
                              "of each; sends no orders")
     sources.add_argument("symbols", nargs="+")
+    tradable = sub.add_parser("probe-tradability", help="read-only probe T8: snapshot, "
+                              "instrument profile and trade instrument (trade_policy, "
+                              "forbid_reason) of each symbol; sends no orders")
+    tradable.add_argument("symbols", nargs="+")
     explain_parser = sub.add_parser("explain", help="read-only: the latest decision recorded "
                                     "today for a symbol, with every check")
     explain_parser.add_argument("symbol")
@@ -953,6 +979,8 @@ def main(argv: list[str] | None = None) -> int:
             return _check_quote(args)
         if args.command == "probe-quote-sources":
             return _probe_quote_sources(args)
+        if args.command == "probe-tradability":
+            return _probe_tradability(args)
         if args.command == "explain":
             return _explain(args)
         if args.command == "maintain":

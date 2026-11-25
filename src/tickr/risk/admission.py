@@ -21,9 +21,25 @@ from tickr.risk.daily import check_daily
 from tickr.risk.sizing import check_size
 from tickr.risk.timers import TradingWindow, WindowKind, trading_windows, window_at
 from tickr.strategy.base import Decision, Verdict
-from tickr.types import Quote
+from tickr.types import (
+    INSTRUMENT_HALTED,
+    TRADE_POLICY_ALL,
+    TRADE_POLICY_CLOSE_ONLY,
+    TRADE_POLICY_DENIED,
+    Quote,
+    Tradability,
+)
 
 C = AdmissionCause
+
+
+@dataclass(frozen=True)
+class TradabilityRules:
+    """The profile statuses `[risk]` lists (backlog T8): those an entry may go in, and those
+    known to mean not tradable. A status in neither refuses as unknown."""
+
+    entry_profile_statuses: frozenset[str]
+    blocked_profile_statuses: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -54,6 +70,8 @@ class AdmissionLimits:
     """Longest a resting limit entry (`Decision.rest_bars`) may work, in bars."""
     extended_hours_strategies: frozenset[str]
     """Strategies whose ENTER may be admitted outside the regular session."""
+    tradability: TradabilityRules | None = None
+    """None = the tradability check is off (`[risk] tradability_check_enabled = false`)."""
 
     @classmethod
     def from_config(cls, config: Config) -> AdmissionLimits:
@@ -76,6 +94,9 @@ class AdmissionLimits:
                 if risk.symbol_cooldown_after_loss_enabled else None),
             max_entry_rest_bars=risk.max_entry_rest_bars,
             extended_hours_strategies=frozenset(config.strategy.extended_hours_strategies),
+            tradability=(TradabilityRules(frozenset(risk.tradability_entry_profile_statuses),
+                                          frozenset(risk.tradability_blocked_profile_statuses))
+                         if risk.tradability_check_enabled else None),
         )
 
 
@@ -146,6 +167,9 @@ class AdmissionInputs:
     buying_power: BuyingPower
     entry_budget_available: bool
     stop_budget_available: bool
+    tradability: Tradability | None = None
+    """The broker's tradability answers for the decision's symbol, read only when the check is
+    on and every earlier check passed; None = not read."""
 
 
 @dataclass(frozen=True)
@@ -476,6 +500,41 @@ def _check_budget(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     return None
 
 
+def _check_tradability(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
+    """Backlog T8, only when `lim.tradability` is set: the broker must say the symbol may be
+    opened now. HALTED, CLOSE_ONLY and DENIED refuse with their own cause, a profile status
+    known to mean not tradable with INSTRUMENT_NOT_TRADABLE; a missing, unknown or unread
+    answer refuses as TRADABILITY_UNKNOWN (refuse, never guess). Entries only: an exit never
+    goes through admission."""
+    rules = lim.tradability
+    if rules is None:
+        return None
+    t, symbol = i.tradability, i.decision.symbol
+    if t is None:
+        return _refuse(C.TRADABILITY_UNKNOWN, f"tradability of {symbol} not read")
+    if t.read_error is not None:
+        return _refuse(C.TRADABILITY_UNKNOWN, f"tradability of {symbol}: {t.read_error}")
+    if t.symbol != symbol:
+        return _refuse(C.TRADABILITY_UNKNOWN, f"tradability read for {t.symbol}, not {symbol}")
+    reason = "" if t.forbid_reason is None else f" ({t.forbid_reason})"
+    if INSTRUMENT_HALTED in (t.trade_policy, t.profile_status):
+        return _refuse(C.INSTRUMENT_HALTED, f"{symbol} is halted{reason}")
+    if t.trade_policy == TRADE_POLICY_CLOSE_ONLY:
+        return _refuse(C.INSTRUMENT_CLOSE_ONLY, f"{symbol} is close only{reason}")
+    if t.trade_policy == TRADE_POLICY_DENIED:
+        return _refuse(C.INSTRUMENT_DENIED, f"{symbol} trading is denied{reason}")
+    if t.trade_policy != TRADE_POLICY_ALL:
+        return _refuse(C.TRADABILITY_UNKNOWN, f"{symbol} trade_policy {t.trade_policy!r}")
+    if t.forbid_reason is not None:
+        return _refuse(C.TRADABILITY_UNKNOWN,
+                       f"{symbol} trade_policy ALL with forbid_reason {t.forbid_reason!r}")
+    if t.profile_status in rules.blocked_profile_statuses:
+        return _refuse(C.INSTRUMENT_NOT_TRADABLE, f"{symbol} profile status {t.profile_status}")
+    if t.profile_status not in rules.entry_profile_statuses:
+        return _refuse(C.TRADABILITY_UNKNOWN, f"{symbol} profile status {t.profile_status!r}")
+    return None
+
+
 CHECKS = (
     _check_gate,
     _check_reconciliation,
@@ -484,9 +543,12 @@ CHECKS = (
     _check_quote_and_setup,
     _check_money,
     _check_budget,
+    _check_tradability,
     _check_buying_power,
 )
-"""Spec section 7 checks 1..7, in order; the buying power part of check 6 runs last."""
+"""Spec section 7 checks 1..7, in order, then the tradability check (backlog T8, off unless
+configured); the buying power part of check 6 runs last. The last two need broker reads, which
+the entry desk makes only for an entry every check before them admits."""
 
 SIMULATED_CHECKS = (
     _check_session,
@@ -500,10 +562,11 @@ working-entry limits, one trade per symbol, the pause after a loss, the decision
 prices, size and the daily loss ceiling. The same functions as `CHECKS`, in the same order,
 never a copy."""
 
-NOT_SIMULATED = ("gate", "reconciliation", "quote", "request_budget", "buying_power")
+NOT_SIMULATED = ("gate", "reconciliation", "quote", "request_budget", "tradability",
+                 "buying_power")
 """The checks a simulation has no counterpart for: the trading gate, broker reads and the
 entry-stop flag, the live quote (a simulation fills on bars), the request budget and the
-account's buying power."""
+tradability read and the account's buying power."""
 
 
 def admit_simulated(inputs: AdmissionInputs, limits: AdmissionLimits) -> Admission:
@@ -514,6 +577,17 @@ def admit_simulated(inputs: AdmissionInputs, limits: AdmissionLimits) -> Admissi
         if refused is not None:
             return refused
     return _admitted(inputs, limits)
+
+
+def refusal_before_broker_reads(inputs: AdmissionInputs,
+                                limits: AdmissionLimits) -> Admission | None:
+    """The first refusal of every check before the tradability and buying power ones, or
+    None: the entry desk reads the broker's tradability answers and balance only then."""
+    for check in CHECKS[:-2]:
+        refused = check(inputs, limits)
+        if refused is not None:
+            return refused
+    return None
 
 
 def refusal_before_buying_power(inputs: AdmissionInputs,

@@ -29,6 +29,7 @@ from tickr.types import (
     OrderType,
     Position,
     Side,
+    Tradability,
 )
 
 # Webull's refusal code for an order identical to a working one (docs/webull-facts.md).
@@ -68,6 +69,9 @@ class FakeBroker:
     history_reads: int = 0
     history_down: bool = False  # order_history() raises
     history_hidden: set[str] = field(default_factory=set)  # ids order_history() leaves out
+    # What tradability(symbol) returns per symbol; a symbol not listed raises BrokerError.
+    tradable: dict[str, Tradability] = field(default_factory=dict)
+    tradability_reads: int = 0
 
     def script(self, *outcomes: str) -> None:
         self.outcomes.extend(outcomes)
@@ -88,6 +92,13 @@ class FakeBroker:
         if self.funds is None:
             raise BrokerError("no balance scripted")
         return self.funds
+
+    def tradability(self, symbol: str) -> Tradability:
+        self.tradability_reads += 1
+        found = self.tradable.get(symbol)
+        if found is None:
+            raise BrokerError(f"no tradability scripted for {symbol}")
+        return found
 
     def positions(self) -> list[Position]:
         return [p for p in self.holdings.values() if p.quantity != 0]

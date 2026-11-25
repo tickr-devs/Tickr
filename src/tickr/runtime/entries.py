@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from tickr.api.history import close_window, closed_trades, orders_of, total_net
-from tickr.broker.base import BrokerError
+from tickr.broker.base import BrokerError, TradabilityReader
 from tickr.calendar import (
     NEW_YORK,
     CalendarCause,
@@ -43,12 +43,13 @@ from tickr.risk.admission import (
     BuyingPower,
     Reconciliation,
     admit,
+    refusal_before_broker_reads,
     refusal_before_buying_power,
 )
 from tickr.risk.causes import ENGINE_REFUSED
 from tickr.risk.ticks import round_to_tick
 from tickr.strategy.base import Decision, Role, Verdict
-from tickr.types import Quote
+from tickr.types import Quote, Tradability
 
 ZERO = Decimal(0)
 # A strategy's partial EXIT the engine did not take (trade not open, entry still working, an
@@ -382,6 +383,20 @@ class EntryDesk:
             return BuyingPower(None, None, committed)
         return BuyingPower(self._balance[0], self._balance[1], committed)
 
+    # --- tradability ------------------------------------------------------------------------
+
+    def _read_tradability(self, symbol: str) -> Tradability:
+        """The broker's tradability answers for `symbol` (backlog T8), read once per entry
+        that reaches the check; a failed read or a broker that cannot say is recorded as the
+        read error, which admission refuses. Never retried."""
+        broker = self.engine.broker
+        if not isinstance(broker, TradabilityReader):
+            return Tradability(symbol, None, None, None, "this broker cannot read tradability")
+        try:
+            return broker.tradability(symbol)
+        except BrokerError as exc:
+            return Tradability(symbol, None, None, None, f"{type(exc).__name__}: {exc}")
+
     # --- admission -------------------------------------------------------------------------
 
     def _inputs(self, decision: Decision, quote: Quote | None, now: datetime) -> AdmissionInputs:
@@ -432,8 +447,12 @@ class EntryDesk:
         cause: str | None = None
         if decision.verdict is Verdict.ENTER:
             inputs = self._inputs(decision, quote, now)
-            # The balance is read only for an entry every other check admits.
-            refused = refusal_before_buying_power(inputs, self.limits)
+            # Tradability (when on) and then the balance are read only for an entry every
+            # check before them admits.
+            refused = refusal_before_broker_reads(inputs, self.limits)
+            if refused is None and self.limits.tradability is not None:
+                inputs = replace(inputs, tradability=self._read_tradability(decision.symbol))
+                refused = refusal_before_buying_power(inputs, self.limits)
             if refused is None:
                 self._read_balance(now)
                 inputs = replace(inputs, buying_power=self._buying_power())
