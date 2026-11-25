@@ -75,12 +75,13 @@ extension StopState {
   }
 
   /// The tone of the live flow's broker-stop stage (Mac Overview, the Mac menu bar, iOS Home):
-  /// neutral with no open position unless a trade of the day ended without a confirmed stop (or
-  /// one the bot cannot account for); else the worst of the open positions' and the day's stops.
+  /// green (the stage's own colour, mockup v152) with no open position unless a trade of the day
+  /// ended without a confirmed stop (or one the bot cannot account for); else the worst of the open
+  /// positions' and the day's stops.
   public static func stageTone(open: [StopState], day: [FlowStopState] = []) -> Tone {
     let dayStates = day.map { StopState($0) }
     let dayFailed = dayStates.contains { $0 == .missing || $0 == .unknown }
-    guard !open.isEmpty || dayFailed else { return .neutral }
+    guard !open.isEmpty || dayFailed else { return .profit }
     return combinedTone(open + dayStates)
   }
 }
