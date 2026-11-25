@@ -378,6 +378,17 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class ExitChaseConfig:
+    """Limit-exit chase before a market exit (backlog X3; tickr.engine.chase)."""
+
+    enabled: bool
+    ticks_through_bid: int
+    reprice_seconds: Decimal
+    max_reprices: int
+    max_worse_atr: Decimal
+
+
+@dataclass(frozen=True)
 class MassiveConfig:
     api_host: str
     stream_host: str
@@ -496,6 +507,7 @@ class Config:
     advisor: AdvisorConfig
     model: ModelConfig
     massive: MassiveConfig
+    exit_chase: ExitChaseConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -527,6 +539,7 @@ _SECTIONS: dict[str, type] = {
     "advisor": AdvisorConfig,
     "model": ModelConfig,
     "massive": MassiveConfig,
+    "exit_chase": ExitChaseConfig,
 }
 
 
@@ -727,6 +740,15 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
                           "1, stream_reconnect_seconds above 0, stock_types not empty")
+    chase: ExitChaseConfig = built["exit_chase"]
+    if (chase.ticks_through_bid < 0 or chase.reprice_seconds <= 0 or chase.max_reprices < 0
+            or chase.max_worse_atr <= 0):
+        raise ConfigError("[exit_chase] ticks_through_bid and max_reprices must be at least 0, "
+                          "reprice_seconds and max_worse_atr above 0")
+    if chase.enabled:
+        raise ConfigError("[exit_chase] enabled must stay false: the chase is not wired to a "
+                          "live bid and ATR yet (backlog X3), and its numbers are old-tracker "
+                          "proposals the owner has not reconfirmed")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
