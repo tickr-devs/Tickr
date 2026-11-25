@@ -179,6 +179,12 @@ ORDER_CONFLICT_ROW = "order-conflict"
 # The `order-conflict` cause of an order last seen working that open orders leave out.
 # Key suffix of the `order-conflict` fence a listed open-orders row raised.
 LISTED_KEY = "/listed"
+# An order no broker read can settle, resolved by the operator (`Engine.resolve_order`): the
+# journal row (key: the order; body: the evidence) and the close cause of its trade.
+ORDER_RESOLVED = "order-resolved-by-operator"
+# The fences of one order that only a broker read could clear, cleared when it is resolved.
+_RESOLVED_FENCES = (Fence.ORDER_MISSING, Fence.STATUS_UNKNOWN, Fence.DETAIL_UNREADABLE,
+                    Fence.CANCEL_UNKNOWN, Fence.UNKNOWN_ORDER)
 UNLISTED_CAUSE = ("last seen working but not in the broker's open orders: proves nothing "
                   "until its Detail is read")
 _LIVE_SEND = (SendState.INTENT, SendState.ATTEMPTED, SendState.ACKNOWLEDGED, SendState.UNKNOWN)
@@ -224,6 +230,8 @@ class OrderRow:
     # The settled cash amount from the fill's cash activity, signed, fees included (None:
     # not proven yet).
     net_cash_usd: Decimal | None = None
+    # When the operator resolved this order (`Engine.resolve_order`), UTC ISO; None: never.
+    operator_resolved_at: str | None = None
 
     @property
     def fill_price(self) -> Decimal | None:
@@ -236,7 +244,7 @@ class OrderRow:
     @property
     def live(self) -> bool:
         """Could still create exposure or fill."""
-        if self.send_state not in _LIVE_SEND:
+        if self.send_state not in _LIVE_SEND or self.operator_resolved_at is not None:
             return False
         return self.broker_state is None or not self.broker_state.terminal
 
@@ -304,6 +312,7 @@ def order_from_row(row: Any) -> OrderRow:
         exact_fill_price=_dec(row["exact_fill_price"]),
         fees_usd=_dec(row["fees_usd"]),
         net_cash_usd=_dec(row["net_cash_usd"]),
+        operator_resolved_at=row["operator_resolved_at"],
     )
 
 
@@ -528,6 +537,80 @@ class Engine:
                                   run_id=self.run_id)
         return bool(removed)
 
+    def resolve_order(self, client_order_id: str) -> str | None:
+        """Operator command, bot stopped (`tickr resolve-order`; backlog T19): end an order
+        that no broker read will ever settle, and close its trade. None when done, else why
+        it was refused (nothing changed).
+
+        Settles only what reads cannot: a fresh Detail read must still be useless (a row that
+        cannot be our order, `_read_conflict` hard; an unmapped status; or "not found" for an
+        order the broker acknowledged), for every live order of the trade, and the broker must
+        show the symbol flat with no open order in it, ours or not: the operator closes it in
+        the Webull app first. Then each such order is marked resolved (not live; the evidence
+        journaled), the fences only a read could clear are cleared, and the trade closes as
+        `order-resolved-by-operator`. Its money is unknown (api.history.trade_net,
+        runtime.entries), so the daily loss refuses entries for the rest of that New York day.
+        A broker row showing the order working again revives it (`_resurrect`)."""
+        row = self.orders_by_id([client_order_id]).get(client_order_id)
+        if row is None:
+            return f"{client_order_id}: not an order of ours"
+        if not row.live:
+            return f"{client_order_id}: not live in our records, nothing to resolve"
+        trade = self.trade(row.trade_id)
+        evidence: dict[str, str] = {}
+        for order in (o for o in self.orders(trade.trade_id) if o.live):
+            try:
+                useless = self._unsettled_by_detail(order)
+            except BrokerError as exc:
+                return f"{order.client_order_id}: Detail read failed ({type(exc).__name__})"
+            if useless is None:
+                return (f"{order.client_order_id}: Detail describes it; the bot settles it "
+                        "itself (`tickr resume`)")
+            evidence[order.client_order_id] = useless
+        try:
+            held = sum((p.quantity for p in self.broker.positions() if p.symbol == trade.symbol),
+                       ZERO)
+            listed = sorted(o.client_order_id for o in self.broker.open_orders()
+                            if o.symbol == trade.symbol)
+        except BrokerError as exc:
+            return f"broker read failed ({type(exc).__name__})"
+        if held != 0:
+            return (f"the broker holds {held} {trade.symbol}: close it in the Webull app "
+                    "first")
+        if listed:
+            return (f"open orders in {trade.symbol} at the broker ({', '.join(listed)}): "
+                    "cancel them in the Webull app first")
+        with self.store.transaction():
+            for cid, why in evidence.items():
+                self.store.execute("UPDATE orders SET operator_resolved_at = ? "
+                                   "WHERE client_order_id = ?", (self.store.stamp(), cid))
+                self.store.append(ORDER_RESOLVED, {"trade_id": trade.trade_id, "evidence": why,
+                                                   "symbol": trade.symbol},
+                                  key=cid, run_id=self.run_id)
+                self._unfence_row(Fence.ORDER_CONFLICT, cid)
+                self._unfence_row(Fence.ORDER_CONFLICT, cid + LISTED_KEY)
+                for fence in _RESOLVED_FENCES:
+                    self._unfence_row(fence, cid)
+        self._close(self.trade(trade.trade_id), ORDER_RESOLVED)
+        return None
+
+    def _unsettled_by_detail(self, row: OrderRow) -> str | None:
+        """Why a fresh Detail read of this order still cannot settle it, or None when it
+        describes the order (the loop then settles it). BrokerError other than "not found"
+        propagates."""
+        try:
+            detail = self.broker.order_detail(row.client_order_id)
+        except OrderNotFound:
+            if row.send_state is SendState.ACKNOWLEDGED:
+                return "acknowledged order not found by Detail"
+            return None  # never acknowledged: the loop proves it absent (`_not_found`)
+        conflict = self._read_conflict(row, detail)
+        if conflict is not None and conflict[0]:
+            return conflict[1]
+        if detail.state is OrderState.UNKNOWN:
+            return f"unmapped status {detail.raw_status!r}"
+        return None
+
     def disk_room(self, cause: str | None) -> None:
         """The runtime's disk check each loop pass: `cause` sets the disk-low fence (once),
         None clears it."""
@@ -610,7 +693,7 @@ class Engine:
         rows = self.store.query(
             f"SELECT * FROM orders WHERE send_state IN ({marks(_LIVE_SEND)}) "
             f"AND (broker_state IS NULL OR broker_state IN ({marks(_NOT_TERMINAL)})) "
-            "ORDER BY rowid", (*_LIVE_SEND, *_NOT_TERMINAL))
+            "AND operator_resolved_at IS NULL ORDER BY rowid", (*_LIVE_SEND, *_NOT_TERMINAL))
         return [order_from_row(r) for r in rows]
 
     def orders_by_id(self, client_order_ids: Iterable[str]) -> dict[str, OrderRow]:
@@ -1333,6 +1416,9 @@ class Engine:
         """An order we had given up on exists at the broker: track it again and fence."""
         cid = row.client_order_id
         with self.store.transaction():
+            # An order the operator resolved (`resolve_order`) is ours again too.
+            self.store.execute("UPDATE orders SET operator_resolved_at = NULL "
+                               "WHERE client_order_id = ?", (cid,))
             if detail is not None:
                 self._apply_detail(row, detail, resurrected=True)
             else:
@@ -2323,8 +2409,8 @@ class Engine:
         (`order-conflict`; `_read_first` puts that read first). At startup and at every
         reconcile, for every such order, so no entry is admitted on a stop that is gone."""
         working = self.store.query(
-            "SELECT * FROM orders WHERE send_state = ? AND broker_state IN (?, ?)",
-            (SendState.ACKNOWLEDGED, *_WORKING))
+            "SELECT * FROM orders WHERE send_state = ? AND broker_state IN (?, ?) "
+            "AND operator_resolved_at IS NULL", (SendState.ACKNOWLEDGED, *_WORKING))
         for row in map(order_from_row, working):
             if (not row.cancelling and row.client_order_id not in listed
                     and not self._conflicted(row)):

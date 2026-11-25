@@ -1,0 +1,156 @@
+"""The operator path for an order no broker read can settle (`Engine.resolve_order`,
+`tickr resolve-order`; backlog T19): a hard `order-conflict`, `order-missing` or
+`status-unknown` would otherwise block entries forever."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import UTC, datetime
+from decimal import Decimal as D
+
+import pytest
+
+from tickr import cli, config
+from tickr.api.history import trade_net
+from tickr.broker.fake import FakeBroker
+from tickr.engine.core import ORDER_RESOLVED, Engine, Fence, Leg, TradeState
+from tickr.runtime.entries import realized_loss_today
+from tickr.store import Store
+from tickr.types import OrderState
+
+from .test_engine import CFG, OPEN, Clock, enter, has, legs, make, run
+from .test_manual import MONDAY_11, copy_config
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = Store.open(tmp_path / "db.sqlite3", busy_timeout_seconds=0)
+    yield s
+    s.close()
+
+
+def contradicted_entry(store, environment: str = "test") -> tuple[FakeBroker, Engine, str, str]:
+    """An entry of 2 that the broker shows as 20 filled, ended: a hard conflict that no read
+    will ever clear (the trade can never close by itself)."""
+    b = FakeBroker()
+    run_id = store.start_run(environment=environment, config_digest="d", strategy="s",
+                             strategy_version="1", code_version="x")
+    e = Engine(store, b, CFG, run_id, lambda: OPEN, clock=Clock())
+    t = enter(e, "2")
+    cid = legs(e, t, Leg.ENTRY)[0].client_order_id
+    b.orders[cid] = replace(b.orders[cid], filled_quantity=D(20), average_fill_price=D(10),
+                            state=OrderState.FILLED, raw_status="FILLED")
+    run(e, 12)
+    assert f"{Fence.ORDER_CONFLICT}:{cid}" in e.fences()
+    assert e.trade(t).state is not TradeState.CLOSED
+    return b, e, t, cid
+
+
+def test_a_never_ending_conflict_is_resolved_once_the_symbol_is_flat(store):
+    b, e, t, cid = contradicted_entry(store)
+    b.add_foreign_position("ABC", D(20), D(10))  # what the broker really bought
+    refused = e.resolve_order(cid)
+    assert refused is not None and "holds 20 ABC" in refused
+    assert e.order(cid).live and f"{Fence.ORDER_CONFLICT}:{cid}" in e.fences()
+
+    del b.holdings["ABC"]  # the operator sold it in the Webull app
+    assert e.resolve_order(cid) is None
+    assert not e.order(cid).live
+    assert e.trade(t).state is TradeState.CLOSED
+    (cause,) = store.query("SELECT close_cause FROM trades WHERE trade_id = ?", (t,))
+    assert cause["close_cause"] == ORDER_RESOLVED
+    assert not has(e, Fence.ORDER_CONFLICT)
+    (row,) = store.journal(ORDER_RESOLVED, cid)
+    assert "20 filled of 2" in row.body["evidence"] and row.body["trade_id"] == t
+    sent = len(b.sent)
+    run(e, 12)  # later reads and reconciles leave it resolved, and send nothing
+    e.reconcile()
+    assert e.fences() == {} and len(b.sent) == sent
+    assert e.live_orders() == []
+
+
+def test_resolved_money_is_unknown_so_the_daily_loss_refuses(store):
+    b, e, t, cid = contradicted_entry(store)
+    assert e.resolve_order(cid) is None
+    assert trade_net(e.orders(t), D(0)) is None
+    assert realized_loss_today(e, datetime.now(UTC)) is None
+
+
+def test_refused_while_the_broker_lists_an_open_order_in_the_symbol(store):
+    b, e, t, cid = contradicted_entry(store)
+    b.orders[cid] = replace(b.orders[cid], state=OrderState.UNKNOWN)
+    refused = e.resolve_order(cid)
+    assert refused is not None and cid in refused and "cancel them" in refused
+    assert e.order(cid).live
+
+
+def test_refused_when_detail_describes_the_order(store):
+    """A working stop the broker agrees with is the bot's to settle, never the operator's."""
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e, "2")
+    b.fill(legs(e, t, Leg.ENTRY)[0].client_order_id, D(2), D(10))
+    run(e, 4)
+    (stop,) = legs(e, t, Leg.STOP)
+    refused = e.resolve_order(stop.client_order_id)
+    assert refused is not None and "Detail describes it" in refused
+    assert e.order(stop.client_order_id).live
+    assert e.trade(t).state is not TradeState.CLOSED
+
+
+def test_refused_for_an_order_not_ours_or_not_live(store):
+    b, e, t, cid = contradicted_entry(store)
+    assert "not an order of ours" in (e.resolve_order("nope") or "")
+    assert e.resolve_order(cid) is None
+    assert "not live" in (e.resolve_order(cid) or "")
+
+
+def test_an_acknowledged_stop_detail_cannot_find_is_resolved(store):
+    """order-missing: the broker acknowledged the stop and Detail now says it does not exist;
+    the operator sold the shares in the app."""
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e, "2")
+    b.fill(legs(e, t, Leg.ENTRY)[0].client_order_id, D(2), D(10))
+    run(e, 4)
+    (stop,) = legs(e, t, Leg.STOP)
+    del b.orders[stop.client_order_id]
+    run(e, 6)
+    assert f"{Fence.ORDER_MISSING}:{stop.client_order_id}" in e.fences()
+    assert "holds 2 ABC" in (e.resolve_order(stop.client_order_id) or "")
+    del b.holdings["ABC"]
+    assert e.resolve_order(stop.client_order_id) is None
+    assert e.trade(t).state is TradeState.CLOSED
+    assert not has(e, Fence.ORDER_MISSING)
+
+
+def test_a_resolved_order_working_again_at_the_broker_is_revived(store):
+    """Broker is the source of truth: if the order shows up working again, it is ours again
+    and the operator is called back (resurrected)."""
+    b, e, t, cid = contradicted_entry(store)
+    assert e.resolve_order(cid) is None
+    b.orders[cid] = replace(b.orders[cid], filled_quantity=D(0), average_fill_price=None,
+                            state=OrderState.ACCEPTED)
+    e.reconcile()
+    assert e.order(cid).live
+    assert e.trade(t).state is not TradeState.CLOSED
+    assert has(e, Fence.RESURRECTED)
+
+
+def test_cli_resolve_order_with_the_bot_stopped(tmp_path, monkeypatch, capsys):
+    """`tickr resolve-order <id>`: refused (exit 1, the cause printed) while the broker holds
+    the shares; done (exit 0) once the operator closed them in the Webull app."""
+    bot = copy_config(tmp_path)
+    cfg = config.load(bot)
+    database, _ = cli.data_paths(cfg)
+    s = Store.open(database, busy_timeout_seconds=0)
+    b, e, t, cid = contradicted_entry(s, cfg.environment_name)
+    s.close()
+    b.add_foreign_position("ABC", D(20), D(10))
+    monkeypatch.setattr(cli, "BROKER_FACTORY", lambda cfg: b)
+    monkeypatch.setattr(cli, "NOW", lambda: MONDAY_11)
+    assert cli.main(["--config", str(bot), "resolve-order", cid]) == 1
+    assert "holds 20 ABC" in capsys.readouterr().err
+    del b.holdings["ABC"]
+    assert cli.main(["--config", str(bot), "resolve-order", cid]) == 0
+    assert f"trade {t} closed as {ORDER_RESOLVED}" in capsys.readouterr().out

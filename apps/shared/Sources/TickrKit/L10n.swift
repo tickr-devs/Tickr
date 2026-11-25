@@ -117,6 +117,10 @@ enum L10n {
   static var exitClosed: LocalizedStringResource {
     LocalizedStringResource("kit.exit.closed", defaultValue: "closed", bundle: bundle)
   }
+  /// The operator ended an order no broker read could settle (`tickr resolve-order`).
+  static var exitOrderResolved: LocalizedStringResource {
+    LocalizedStringResource("kit.exit.orderResolved", defaultValue: "resolved by the operator", bundle: bundle)
+  }
   /// A replay's trade still open when the captured bars ran out.
   static var exitEndOfData: LocalizedStringResource {
     LocalizedStringResource("kit.exit.endOfData", defaultValue: "bars ran out", bundle: bundle)
