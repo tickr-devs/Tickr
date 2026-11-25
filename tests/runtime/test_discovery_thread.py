@@ -302,6 +302,9 @@ class InFlight:
     def observed(self) -> list[str]:
         return []
 
+    def observer_reserve(self) -> int:
+        return 0
+
 
 def test_a_pass_that_outlives_its_minute_never_evaluates_that_minute_late(tmp_path):
     rig = EvalRig(tmp_path)

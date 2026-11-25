@@ -92,6 +92,9 @@ class Market:
     def observed(self) -> list[str]:
         return list(self.observers_only)
 
+    def observer_reserve(self) -> int:
+        return CFG.market_data.discovery_bars_reserve_requests + 2
+
 
 class Scripted:
     """A strategy that returns scripted verdicts and remembers what it was shown."""
@@ -765,7 +768,7 @@ def test_an_observer_only_symbol_goes_to_the_observers_and_never_to_the_strategy
     today = [b.start.minute for b in observed.bars if b.start.date() == MONDAY]
     assert today == [30, 31, 32, 33, 34]
     assert rig.engine.trades() == [] and rig.evaluator.watch == set()
-    reserve = CFG.market_data.discovery_bars_reserve_requests
+    reserve = CFG.market_data.discovery_bars_reserve_requests + 2  # Market.observer_reserve
     reads = [c for c in rig.source.calls if c[0] in ("bars", "bars_before")]
     own = [r for c, r in zip(reads, rig.source.bars_reserves, strict=True) if "OBS" in c[1]]
     assert own and set(own) == {reserve}  # its bars and history leave discovery's reserve
@@ -785,3 +788,19 @@ def test_a_refused_observer_only_read_stops_only_their_part_of_the_minute(tmp_pa
     (row,) = rig.store.journal(EVALUATION_STOPPED)
     assert row.body == {"bar_start": "2026-11-16T09:35:00-05:00", "stage": "observed-bars",
                         "error": "RateLimited"}
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_observer_only_reads_come_after_the_entry_decision_and_never_hold_it(tmp_path):
+    """Review of #764: an exhausted budget for observer-only reads never delays the active
+    strategy's decisions: they are made (and the entry sent) before any such read."""
+    rig = Rig(tmp_path)
+    rig.symbol("CAN")
+    rig.symbol("OBS")
+    rig.strategy.verdicts["CAN"] = Verdict.ENTER
+    rig.evaluator.tick(Market(["CAN"], observed=["OBS"]))
+    (trade,) = rig.engine.trades()
+    assert trade.symbol == "CAN"
+    # The entry needs the loop: the minute stops before any observer-only read.
+    assert not any("OBS" in c[1] for c in rig.source.calls)
+    assert [c.symbol for c in rig.evaluator.contexts] == ["CAN"]

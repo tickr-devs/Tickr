@@ -45,9 +45,18 @@ liquidity rules, so an observer with looser rules is not starved of symbols. A s
 active strategy refuses is still refused (`rejections`, with the active strategy's check) and
 never becomes a candidate; when an observer's own rules (quote and session) accept it, it is
 `observed` instead: the evaluation hands it to the observers only, never to the active strategy
-or the entry desk. Its bars are read after every symbol the active strategy's quote rules
-accepted, so on a pass the budget stops, observer-only reads never take a candidate's place,
-and they use the same request budget and reserve as every discovery read. An observer whose
+or the entry desk. Observer-only bars are read only once every symbol the active strategy's
+quote rules accepted is decided, so they never take a candidate's place or time:
+- they never wait for the budget: the first refusal (or delayed data) ends them for the pass,
+  recorded as `observed_stopped` with the symbols not read (`observed_skipped`), and the pass
+  returns its candidates at once;
+- each leaves free the discovery reserve plus as many requests as this pass sent for the
+  active strategy's symbols (`observer_reserve`), so at the moment it is sent the window still
+  holds room for the next pass to read the same active symbols again; the evaluation's
+  observer-only reads keep the same reserve. So per pass they take at most what the route
+  has above that reserve, and they never shrink the next pass's active reads below this
+  pass's (more requests than that, from a larger active list, may still meet them in the
+  window, as they would meet any other read). An observer whose
 liquidity rule raises counts as refusing the symbol (its own evaluation fails the same way and
 switches it off); it never fails the pass.
 
@@ -187,6 +196,15 @@ class DiscoveryResult:
     observed: tuple[Candidate, ...] = ()
     """Symbols the active strategy refused (in `rejections`) that an observer's liquidity
     rules accept, in screener order: for the observers only, never the trading path."""
+    observed_stopped: Stopped | None = None
+    """Why the observer-only bars reads ended early (they never wait for the budget); the
+    pass itself and its candidates are complete."""
+    observed_skipped: tuple[str, ...] = ()
+    """Observer-only symbols whose bars were not read because of `observed_stopped`."""
+    observer_reserve: int = 0
+    """The bars-route requests every observer-only read of this pass left free: the
+    discovery reserve plus the bars requests this pass sent for the active strategy's
+    symbols, so the next pass can send as many again for them."""
 
     def universe_symbols(self) -> set[str]:
         """The merged instruments that passed the universe rules (exchange, currency, type)."""
@@ -587,6 +605,9 @@ def discover(
 
     movers: list[Mover] = []
     observed: list[Candidate] = []
+    observed_stopped: list[Stopped] = []  # why the observer-only reads ended early, if they did
+    observed_skipped: list[str] = []  # the observer-only symbols they did not read
+    observer_reserve = [settings.bars_budget_reserve]  # what those reads left free
 
     def result(candidates: list[Candidate], stop: Stopped | None) -> DiscoveryResult:
         decided = {r.symbol for r in rejections} | {c.instrument.symbol for c in candidates}
@@ -600,7 +621,9 @@ def discover(
                                tuple(ranked), tuple(rejections), stop, tuple(instruments),
                                not_reached, tuple(movers), isinstance(screen, FastMovers),
                                session_open, memory.remembered(), tuple(rows),
-                               checks.remembered(), tuple(seen))
+                               checks.remembered(), tuple(seen),
+                               observed_stopped[0] if observed_stopped else None,
+                               tuple(observed_skipped), observer_reserve[0])
 
     if stopped is not None:
         return result([], stopped)
@@ -653,31 +676,37 @@ def discover(
                     continue
             quote_ok.append((instrument, quote, refusal is None, looser))
 
-    # The strategy's session rules, from M1 bars: the active strategy's symbols first, so
-    # observer-only reads never take a candidate's place in the budget.
+    # The strategy's session rules, from M1 bars: the active strategy's symbols first (paced),
+    # then the observer-only ones, which never wait and keep the next pass's reads free.
     candidates: list[Candidate] = []
     entries = {i.symbol: (i, q, active, looser) for i, q, active, looser in quote_ok}
-    ordered = sorted(entries, key=lambda s: not entries[s][2])
-    for chunk in _chunks(ordered, settings.bars_symbols_per_request):
-        unknown = []
+    sent = [0]  # bars requests sent for the active strategy's symbols this pass
+
+    def read_chunk(chunk: Sequence[str], observers_only: bool) -> None:
+        """Read one chunk's bars and decide its symbols; raises the read's RateLimited or
+        DelayedData."""
+        unknown: list[str] = []
         # Each symbol's own request: its send time (a split read sends several).
         sent_at: dict[str, datetime] = {}
+        reserve = settings.bars_budget_reserve + (sent[0] if observers_only else 0)
 
-        def read_bars(symbols: Sequence[str],
-                      sent_at: dict[str, datetime] = sent_at) -> list[Bar]:
+        def read_bars(symbols: Sequence[str]) -> list[Bar]:
             at = clock()  # right before the send, after any wait for the budget
-            got = source.bars(symbols, settings.bars_per_symbol,
-                              budget_reserve=settings.bars_budget_reserve)
+            got = source.bars(symbols, settings.bars_per_symbol, budget_reserve=reserve)
             sent_at.update(dict.fromkeys(symbols, at))
+            if not observers_only:
+                sent[0] += 1
             return got
 
-        try:
+        def unknown_only(symbol: str) -> None:  # already refused (at the snapshot)
+            memory.remember(symbol, Stage.BARS, clock())
+            unknown.append(symbol)
+
+        if observers_only:  # never waits for the budget: a refusal ends these reads
+            bars = read_without_refused(read_bars, chunk, unknown_only)
+        else:
             bars = read_without_refused(pacer.read(read_bars), chunk,
                                         refused_by(Stage.BARS, unknown))
-        except RateLimited as exc:
-            return result(candidates, Stopped(Stage.BARS, StopCause.BUDGET, str(exc)))
-        except DelayedData as exc:
-            return result(candidates, Stopped(Stage.BARS, StopCause.DELAYED_DATA, str(exc)))
         chunk = [s for s in chunk if s not in unknown]
         if today_bars is not None:
             for at in sorted(set(sent_at[s] for s in chunk)):
@@ -712,6 +741,25 @@ def discover(
             if any(_accepts(o.session_liquidity, session) for o in looser):
                 observed.append(Candidate(instrument, quote, session))
 
+    size = settings.bars_symbols_per_request
+    for chunk in _chunks([s for s in entries if entries[s][2]], size):
+        try:
+            read_chunk(chunk, observers_only=False)
+        except RateLimited as exc:
+            return result(candidates, Stopped(Stage.BARS, StopCause.BUDGET, str(exc)))
+        except DelayedData as exc:
+            return result(candidates, Stopped(Stage.BARS, StopCause.DELAYED_DATA, str(exc)))
+    # The candidates are complete: observer-only reads can no longer delay or displace them.
+    observer_reserve[0] = settings.bars_budget_reserve + sent[0]
+    later = [s for s in entries if not entries[s][2]]
+    for number, chunk in enumerate(_chunks(later, size)):
+        try:
+            read_chunk(chunk, observers_only=True)
+        except (RateLimited, DelayedData) as exc:
+            cause = StopCause.BUDGET if isinstance(exc, RateLimited) else StopCause.DELAYED_DATA
+            observed_stopped.append(Stopped(Stage.BARS, cause, str(exc)))
+            observed_skipped.extend(later[number * size:])
+            break
     return result(candidates, None)
 
 
@@ -809,6 +857,11 @@ def pass_record(result: DiscoveryResult, finished_at: datetime) -> dict[str, Any
                        for r in result.rejections],
         "candidates": [c.instrument.symbol for c in result.candidates],
         "observed": [c.instrument.symbol for c in result.observed],
+        "observed_stopped": None if result.observed_stopped is None else {
+            "stage": result.observed_stopped.stage.value,
+            "cause": result.observed_stopped.cause.value,
+            "detail": result.observed_stopped.detail},
+        "observed_skipped": list(result.observed_skipped),
         "not_reached": list(result.not_reached),
         "movers_measured": result.movers_measured,
         "session_open": None if result.session_open is None else at(result.session_open),

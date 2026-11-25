@@ -9,7 +9,7 @@ import pytest
 from md_helpers import NOW, OPEN, Screen, bars, quote, row, settings
 
 from tickr import config
-from tickr.broker.budget import BudgetExhausted, RequestBudget
+from tickr.broker.budget import BudgetExhausted, RequestBudget, RouteLimit
 from tickr.data.base import FakeMarketData, ScreenerKind, SymbolsRefused
 from tickr.data.discovery import (
     BAR_LENGTH,
@@ -772,15 +772,89 @@ def test_an_observer_whose_rules_raise_never_fails_the_pass():
     assert result.observed == ()
 
 
-def test_observer_only_bars_are_read_after_the_active_strategys_and_with_its_reserve():
-    md = FakeMarketData()
-    md.set_screener(G, [row(G, 1, "WIDE"), row(G, 2, "AAA")])  # WIDE is listed first
+def wide_then_liquid(md: FakeMarketData) -> None:
+    """WIDE (listed first) only an observer with a 5% spread limit accepts; AAA is liquid."""
+    md.set_screener(G, [row(G, 1, "WIDE"), row(G, 2, "AAA")])
     md.set_quote(quote("WIDE", bid="10.00", ask="10.20"))
     md.add_bars(bars("WIDE", 30))
     liquid(md, "AAA")
+
+
+def test_observer_only_bars_are_read_after_the_active_strategys_and_keep_its_room():
+    md = FakeMarketData()
+    wide_then_liquid(md)
     md.limit("bars", 1)
     result = observing(md, [Screen(max_spread_ratio="0.05")], bars_symbols_per_request=1)
-    assert ("bars", ("AAA",)) in md.calls and ("bars", ("WIDE",)) not in md.calls
+    assert [m for m in md.calls if m[0] == "bars"] == [("bars", ("AAA",))]
     assert [c.instrument.symbol for c in result.candidates] == ["AAA"]
-    assert result.observed == () and result.stopped is not None
-    assert md.bars_reserves == [3, 3]  # the read the budget refused kept the reserve too
+    # The pass is complete; only the observer-only reads ended, visibly.
+    assert result.stopped is None and result.summary() == "evaluated 2 of 2"
+    assert result.observed == () and result.observed_skipped == ("WIDE",)
+    assert result.observed_stopped is not None
+    assert result.observed_stopped.cause is StopCause.BUDGET
+    record = pass_record(result, NOW)
+    assert record["observed_skipped"] == ["WIDE"] and record["observed_stopped"]["cause"] == (
+        "budget")
+    # The refused observer-only read kept the reserve plus the one active read sent.
+    assert md.bars_reserves == [3, 3 + 1] and result.observer_reserve == 4
+
+
+def test_an_observer_only_refusal_never_waits_so_the_candidates_are_not_delayed():
+    """Review of #764: the pass waited up to 20 s for an observer-only read, and the active
+    strategy's candidates of that minute waited with it."""
+    class ObserverReadsRefused(FakeMarketData):
+        def bars(self, symbols, count, *, budget_reserve=0):
+            if "WIDE" in symbols:  # our budget refuses it, with a wait that would fit
+                raise BudgetExhausted("bars", RequestBudget.CAUSE_WINDOW_FULL, 18.0)
+            return super().bars(symbols, count, budget_reserve=budget_reserve)
+
+    waits: list[float] = []
+    paced = settings(bars_symbols_per_request=1, budget_wait=timedelta(seconds=20))
+    alone, md = FakeMarketData(), ObserverReadsRefused()
+    wide_then_liquid(alone)
+    wide_then_liquid(md)
+    without = discover(alone, paced, Screen(), OPEN, lambda: NOW, None, wait=waits.append)
+    result = discover(md, paced, Screen(), OPEN, lambda: NOW, None, wait=waits.append,
+                      observers=[Screen(max_spread_ratio="0.05")])
+    assert waits == []  # never waited, with or without the observer
+    assert result.candidates == without.candidates and result.stopped is None
+    assert result.observed_skipped == ("WIDE",)
+
+
+class Windowed(FakeMarketData):
+    """The bars route behind the real RequestBudget (the limit of one window, a fixed
+    clock: nothing leaves the window between the two passes)."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__()
+        self.budget = RequestBudget(RouteLimit(limit, 60.0, 0.0), clock=lambda: 0.0)
+
+    def bars(self, symbols, count, *, budget_reserve=0):
+        self.budget.take("bars", budget_reserve)
+        return super().bars(symbols, count, budget_reserve=budget_reserve)
+
+
+def test_observer_only_reads_never_shrink_the_next_passes_active_reads():
+    """The carry-over bound: whatever the observer-only reads of one pass take, the next
+    pass can still send as many reads for the active strategy's symbols as this one did."""
+    def market(limit: int) -> Windowed:
+        md = Windowed(limit)
+        active = [f"A{i}" for i in range(4)]
+        wide = [f"W{i}" for i in range(6)]
+        md.set_screener(G, [row(G, n, s) for n, s in enumerate(wide + active, 1)])
+        for symbol in active:
+            liquid(md, symbol)
+        for symbol in wide:
+            md.set_quote(quote(symbol, bid="10.00", ask="10.20"))
+            md.add_bars(bars(symbol, 30))
+        return md
+
+    limit = 3 + 4 + 4 + 2  # reserve, this pass's active reads, the next pass's, two spare
+    md = market(limit)
+    first = discover(md, settings(bars_symbols_per_request=1), Screen(), OPEN, lambda: NOW,
+                     observers=[Screen(max_spread_ratio="0.05")])
+    assert len(first.candidates) == 4 and first.observer_reserve == 3 + 4
+    assert len(first.observed) == 2 and first.observed_skipped == ("W2", "W3", "W4", "W5")
+    # The next pass, in the same window: every active read still fits.
+    second = discover(md, settings(bars_symbols_per_request=1), Screen(), OPEN, lambda: NOW)
+    assert second.stopped is None and len(second.candidates) == 4

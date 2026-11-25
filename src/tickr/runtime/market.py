@@ -153,6 +153,7 @@ class DiscoveryState:
     summary: str
     candidates: tuple[Candidate, ...]
     observed: tuple[Candidate, ...] = ()  # for the observers only (DiscoveryResult.observed)
+    observer_reserve: int = 0  # bars requests their reads leave free (DiscoveryResult)
 
 
 class DiscoveryCancelled(Exception):
@@ -436,6 +437,13 @@ class MarketRuntime:
         accept (the active strategy refused them), best first: never for the trading path."""
         found = self.discovery
         return [] if found is None else [c.instrument.symbol for c in found.observed]
+
+    def observer_reserve(self) -> int:
+        """The bars requests the observer-only reads must leave free: the latest pass's (the
+        discovery reserve plus what it sent for the active strategy's symbols)."""
+        found = self.discovery
+        reserve = self.config.market_data.discovery_bars_reserve_requests
+        return reserve if found is None else max(found.observer_reserve, reserve)
 
     def _journal_stream_events(self) -> None:
         events = self.inbox.take_events()
@@ -724,7 +732,8 @@ class MarketRuntime:
         summary = result.summary()
         if kept:
             summary += f"; kept {len(kept)} earlier candidates not reached"
-        self.discovery = DiscoveryState(outcome.started, summary, candidates, result.observed)
+        self.discovery = DiscoveryState(outcome.started, summary, candidates, result.observed,
+                                        result.observer_reserve)
         if self.capture is not None:
             try:
                 self.capture.discovery(pass_record(result, outcome.finished), outcome.finished)
@@ -736,6 +745,7 @@ class MarketRuntime:
                 "summary": summary, "evaluated": result.evaluated,
                 "candidates": [c.instrument.symbol for c in candidates], "kept": kept,
                 "observed": [c.instrument.symbol for c in result.observed],
+                "observed_skipped": len(result.observed_skipped),
                 "seconds": outcome.seconds},
                 run_id=self.engine.run_id)
 

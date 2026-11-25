@@ -107,6 +107,9 @@ class StubMarket:
     def observed(self) -> list[str]:
         return []
 
+    def observer_reserve(self) -> int:
+        return 0
+
     def freshness(self, last_broker_read_at):
         return api.Freshness(last_broker_read_at, None, api.StreamHealth.OFF)
 

@@ -34,10 +34,12 @@ ever ends the trading loop.
 After the candidates, when nothing stopped the minute, the symbols discovery kept for the
 observers only (`observed`: the active strategy's liquidity rules refused them, an observer's
 accepted them; R11) get a context for the observers, built like any other, and nothing else: the
-active strategy never evaluates them, so they never reach the entry desk or the WATCH set. Their
-bars and history reads leave `[market_data] discovery_bars_reserve_requests` of the route free,
-like discovery's, so they never take the trading path's requests; a refused or failed read stops
-them for the minute (journaled `evaluation-stopped`, stage `observed-bars` or `observed-history`).
+active strategy never evaluates them, so they never reach the entry desk or the WATCH set. They
+come last in the minute, after every decision of the active strategy, and never wait: their bars
+and history reads leave the latest discovery pass's `observer_reserve` free (the discovery
+reserve plus what that pass sent for the active strategy's symbols), and the first refused or
+failed read stops them for the minute (journaled `evaluation-stopped`, stage `observed-bars` or
+`observed-history`).
 """
 
 from __future__ import annotations
@@ -96,6 +98,10 @@ class CandidateSource(Protocol):
     def observed(self) -> list[str]:
         """The latest discovery's symbols for the observers only (the active strategy refused
         them), best first."""
+        ...
+
+    def observer_reserve(self) -> int:
+        """The bars requests the reads for those symbols must leave free."""
         ...
 
     def record_screeners(self, day: MarketDay, now: datetime) -> list[ScreenerRow] | None:
@@ -255,13 +261,13 @@ class Evaluator:
             return
         taken = set(first) | set(later) | set(self._positions())
         self._observe([s for s in market.observed() if s not in taken], bar_start,
-                      day.regular_open)
+                      day.regular_open, market.observer_reserve())
 
-    def _observe(self, symbols: list[str], bar_start: datetime, regular_open: datetime) -> None:
+    def _observe(self, symbols: list[str], bar_start: datetime, regular_open: datetime,
+                 reserve: int) -> None:
         """Contexts for the observers only (see the module docstring): never the active
-        strategy, the entry desk or the WATCH set."""
+        strategy, the entry desk or the WATCH set. Every read leaves `reserve` free."""
         md = self.config.market_data
-        reserve = md.discovery_bars_reserve_requests
         today = bar_start.astimezone(NEW_YORK).date()
         for chunk in _chunks(symbols, md.bars_symbols_per_request):
             now = self.now()
