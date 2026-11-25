@@ -24,6 +24,28 @@ Prefix rule: a closed minute's trade columns depend only on events up to that mi
 time-weighted quote columns (qspr, qbs, qas, qimb, qbad, qbd, qad) weigh the minute's last
 quote update by how long it stood, which the converter counts only once the stock has a later
 update; until then that update weighs 0. `tests/model/test_ticks.py` shows both.
+
+Incremental path (`tail_carry`, `minute_rows`): converting the whole day so far every minute is
+too slow (tens of seconds at 500 stocks), so one closed minute is converted from a bounded tail:
+the minute's own events plus the few earlier events whose values cross a minute boundary in the
+converter's SQL. Read from its statements (the table path, side files off):
+- quotes: `lag(bp, ap, bs, az, ts)` and `lead(ts)` over the stock's updates ordered by (ts, sq),
+  and the trade's as-of join to the update strictly before it (highest sq of its stamp): the
+  stock's last update before the minute is all they read from the past. `lead` reads the future
+  only, which a prefix does not hold either.
+- trades: `lag(ts)` over the stock's kept trades (tgap) and `lag(px)` over the stock's trades of
+  the same last-price class (tvar, tchg). Which trades are kept and their class are functions of
+  conditions, correction, the signs of price and size and whether the trade's minute is in the
+  regular session (Form T): the last trade of each such key is kept, so the last kept trade and
+  the last trade of each class are in the tail without re-stating the converter's rules here.
+Every other column uses only the minute's own events. `tests/model/test_ticks_tail.py` proves
+row equality with `tick_rows` on the whole prefix, minute by minute.
+
+Marker quote (`marker=True`): one extra quote update per stock that quoted in the minute, at the
+first nanosecond of the next minute, lets the minute's last update weigh up to the minute end, as
+in the training's day file whenever the stock quotes again later that day; the next minute's rows
+it creates are discarded. Only a stock that never quotes again that day differs from the
+training's file (its last update weighs 0 there).
 """
 
 from __future__ import annotations
@@ -151,6 +173,77 @@ def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, throug
             return con.execute("SELECT * FROM read_parquet(?) ORDER BY sym, m", [out]).df()
         finally:
             con.close()
+
+
+def _minute_span(day: str, minute: int) -> tuple[int, int, int]:
+    """SIP nanoseconds of the start of New York `day`, and of the start and end of `minute`."""
+    lo, hi = _bounds(day, minute)
+    start = lo if minute == 0 else _bounds(day, minute - 1)[1]
+    return lo, start, hi
+
+
+def _minutes(stamps: Any) -> Any:
+    """Minute of the New York day of SIP nanosecond stamps (the converter's `m`)."""
+    import pandas as pd
+
+    local = pd.to_datetime(stamps, unit="ns", utc=True).dt.tz_convert(NEW_YORK)
+    return local.dt.hour * 60 + local.dt.minute
+
+
+def tail_carry(trades: Any, quotes: Any) -> tuple[Any, Any]:
+    """The earlier events a later minute's rows read (module text, "Incremental path"): the last
+    quote update of each stock by (sip_timestamp, sequence_number), and the last trade of each
+    stock and key (conditions, correction, sign of price, sign of size, regular-session minute).
+    Called on the previous carry plus a closed minute's events, it gives the next carry. Row
+    order is kept."""
+    import pandas as pd
+
+    rth = converter().RTH
+    trades, quotes = trades.reset_index(drop=True), quotes.reset_index(drop=True)
+    q = quotes.sort_values(["sip_timestamp", "sequence_number"], kind="stable")
+    q = quotes.loc[sorted(q.groupby("ticker", sort=False).tail(1).index)]
+    t = trades.sort_values(["sip_timestamp", "sequence_number"], kind="stable")
+    minute = _minutes(t.sip_timestamp)
+    keys = pd.DataFrame({
+        "ticker": t.ticker, "conditions": t.conditions.fillna("").astype(str),
+        "correction": t.correction.astype("string").fillna(""), "price": t.price > 0,
+        "size": t["size"] > 0, "rth": (minute >= rth[0]) & (minute <= rth[1])}, index=t.index)
+    last = keys.groupby(list(keys.columns), sort=False, dropna=False).tail(1).index
+    t = trades.loc[sorted(last)]
+    return t.reset_index(drop=True), q.reset_index(drop=True)
+
+
+def minute_rows(carry: tuple[Any, Any], trades: Any, quotes: Any, day: str, minute: int,
+                marker: bool = False) -> Any:
+    """The converter's rows of one closed `minute` of `day` (minute of the New York day) from a
+    bounded tail: `carry` from `tail_carry` of every earlier event of the day, and the minute's
+    own trades and quotes (frames in the flat-file layout). Equal to the rows of that minute in
+    `tick_rows` of the whole day through `minute`; with `marker`, to the training's day file for
+    every stock that quotes again later (module text). An event outside its part is refused; the
+    marker of the day's last minute (1439) would lie on the next day and is refused too."""
+    import pandas as pd
+
+    lo, start, hi = _minute_span(day, minute)
+    for name, frame, first, end in (("carry trades", carry[0], lo, start),
+                                    ("carry quotes", carry[1], lo, start),
+                                    ("trades", trades, start, hi), ("quotes", quotes, start, hi)):
+        stamps = frame.sip_timestamp
+        if len(frame) and (stamps.min() < first or stamps.max() >= end):
+            raise ModelRefused("tick_outside_minute", f"{name} of minute {minute}")
+    tail_quotes = [carry[1], quotes]
+    if marker and len(quotes):
+        mark = quotes.sort_values(["sip_timestamp", "sequence_number"], kind="stable")
+        mark = mark.groupby("ticker", sort=False).tail(1).copy()
+        mark["sip_timestamp"] = hi
+        mark["conditions"] = ""
+        mark["indicators"] = ""
+        tail_quotes.append(mark)
+    with tempfile.TemporaryDirectory(prefix="tickr-tail-") as tmp:
+        t, q = os.path.join(tmp, "trades.csv"), os.path.join(tmp, "quotes.csv")
+        write_flat_file(pd.concat([carry[0], trades], ignore_index=True), t, trade_columns())
+        write_flat_file(pd.concat(tail_quotes, ignore_index=True), q, quote_columns())
+        rows = tick_rows(t, q, day, minute + 1 if marker else minute)
+    return rows[rows.m == minute].reset_index(drop=True)
 
 
 def write_flat_file(rows: Any, path: str | Path, columns: list[str]) -> None:
