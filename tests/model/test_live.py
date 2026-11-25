@@ -305,13 +305,82 @@ def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
 
 def test_without_the_marker_only_the_tick_groups_differ(world, harness):
     h = harness()
-    assert CFG.model.live_marker_quote is False  # off until Codex decides
+    assert CFG.model.live_marker_quote is False  # off with the model (codex-108 point 1)
     m = parity.table_minutes(["12:00"])[0]
     got = h.close(m)
     r = parity.compare(got.rows, world.table[world.table.m == m], full.full_groups(), None)
     assert r["bar_groups_exact"] and not got.refused
     assert r["columns"] and {c["group"] for c in r["columns"].values()} <= tp.TICK_GROUPS
     assert tp.QUIET in r["symbols"]
+
+
+# the converter's columns whose value weighs a quote by how long it stood (v11's `d`)
+WEIGHTED = ("qspr", "qbs", "qas", "qimb", "qbad", "qbd", "qad")
+
+
+def _parts(h):
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        return con.execute(f"SELECT * FROM read_parquet('{h.live.tick_file}') "
+                           "ORDER BY sym, m").df()
+    finally:
+        con.close()
+
+
+def test_the_marker_stays_inside_the_weighting(world, harness, monkeypatch):
+    """codex-108 point 1: the marker is added only for a symbol with a real quote among the
+    events a close converts (on a one-minute close: in that minute), at the start of the next
+    minute, and stays out of the raw capture, the carry, every count and the next minute."""
+    plain, mark = harness(), harness(cfg=with_model(live_marker_quote=True))
+    made = []
+    real = ticks.marker_quotes
+
+    def spy(quotes, at_ns):
+        made.append((set(quotes.ticker), at_ns))
+        return real(quotes, at_ns)
+
+    monkeypatch.setattr(ticks, "marker_quotes", spy)
+    q = world.quotes
+    served = {}
+    for hm in ("11:58", "11:59", "12:00", "12:01"):
+        m = _minute(hm)
+        before = set(mark.live.symbols)
+        got = {"plain": plain.close(m), "marker": mark.close(m)}
+        assert not got["plain"].refused and not got["marker"].refused, hm
+        served[hm] = got
+        start, end = mark.live._end(m - 1), mark.live._end(m)
+        quoted = set(q[q.ticker.isin(before) & (q.sip_timestamp >= start)
+                       & (q.sip_timestamp < end)].ticker)
+        entering = set(mark.live.symbols) - before
+        symbols, at = made.pop()
+        assert not made and at == end, hm  # once per close, at the start of the next minute
+        # a tracked symbol: a real quote in the minute; an entering one (its day so far is
+        # converted at this close): a real quote today
+        assert symbols == quoted | (entering & set(q[q.sip_timestamp < end].ticker)), hm
+        assert symbols - entering == quoted, hm
+        if hm == "12:00":  # tracked, no quote in the minute: no marker (11:54 keeps weight 0)
+            assert tp.QUIET in before and tp.QUIET not in symbols
+        # raw capture and carry: identical with and without the marker
+        assert plain.store.rows == mark.store.rows and plain.store.log == mark.store.log, hm
+        for a, b in zip(plain.live.carry, mark.live.carry, strict=True):
+            pd.testing.assert_frame_equal(a, b, check_exact=True)
+        assert not (mark.live.carry[1].sip_timestamp >= end).any(), hm
+    # counts and the next minute: the stored parts differ only in the weighted columns, and
+    # nothing after the last closed minute is stored
+    a, b = _parts(plain), _parts(mark)
+    last = _minute("12:01") + features.DAY_START_MINUTE
+    assert a.m.max() == b.m.max() == last
+    pd.testing.assert_frame_equal(a[["sym", "m"]], b[["sym", "m"]])
+    same = [c for c in a.columns if c not in WEIGHTED]
+    pd.testing.assert_frame_equal(a[same], b[same], check_exact=True)
+    assert not a[list(WEIGHTED)].equals(b[list(WEIGHTED)])  # the marker did act
+    for hm, got in served.items():
+        x, y = got["plain"].rows, got["marker"].rows
+        assert list(x.sym) == list(y.sym), hm
+        counts = ["k_tn1", "k_tn5", "k_tn30", "k_qn1", "k_qn5", "k_qn30"]
+        pd.testing.assert_frame_equal(x[counts], y[counts], check_exact=True)
 
 
 # --- refusals -----------------------------------------------------------------------------

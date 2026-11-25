@@ -21,8 +21,18 @@ It composes the pieces that already exist, each the training's own code or its f
 - conversion: the frozen converter v11 once per close, on the incremental input of #820
   (`tail_carry` of every earlier event, plus the new events), together with the whole day so far
   of the symbols entering at this close; v11 partitions every column by symbol, so both give the
-  rows of the whole-day file. `[model] live_marker_quote` adds the marker quote of #820 (off
-  until Codex decides). The rows are appended to the day's tick table as one parquet part per
+  rows of the whole-day file. `[model] live_marker_quote` adds the marker quote of #820 (off,
+  the model is off; Codex codex-108 point 1 uses it in the parity experiment): one copy of the
+  latest real quote of every symbol that has a real quote among the events this close converts,
+  stamped at the end of the closed minute. It exists only inside that one conversion (local to
+  v11's weight `d`): it never enters the store (raw capture), the carry handed to the next
+  close, any count (qn and the k_qn* columns stay those of the real quotes) or a delivered
+  minute (its own rows, of the next minute, are dropped). On a one-minute close the symbols are
+  those with a real quote in that minute. On a catch-up close (several minutes, or an entering
+  symbol's whole day) a symbol whose latest quote lies in an earlier minute k of the span gets
+  the same weight as a marker at the start of k + 1 (v11 caps a weight at its own minute end)
+  without the marker entering minutes k + 1 .. m (the symbol has no quote there; trades join
+  quotes strictly before them). The rows are appended to the day's tick table as one parquet part per
   close (`<tick_dir>/<day>/part-MMMM.parquet`, v11's schema: sym VARCHAR, m INTEGER, tn / qn
   BIGINT, 59 DOUBLE); `tick_file` is the glob of the parts, which the training's
   `l1feat.cut_inputs` reads with duckdb as it reads one day file.
