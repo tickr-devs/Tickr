@@ -62,9 +62,8 @@ final class OverviewCommandsUITests: XCTestCase {
   static let smallDisplay = (value: "1024x768", width: CGFloat(1024), height: CGFloat(768))
   /// The narrowest board (MainNarrow v110, 640 points): one column, the sidebar an icon rail.
   static let narrowest = (value: "640x800", width: CGFloat(640), height: CGFloat(800))
-  /// The live flow's latest event (LatestEvent.id), inside the Live flow card: on the one-column
-  /// board the Safety · bot card comes before it.
-  static let latestEvent = "overview-latest-event"
+  /// The Live flow card (LiveFlowCard.id): on the one-column board the Bot card comes before it.
+  static let liveFlow = "overview-live-flow"
   /// The command toast (CommandToast.id), shown whenever a command is sent; how long it is
   /// watched for after a confirmation is withdrawn, in seconds.
   static let toast = "command-toast"
@@ -137,8 +136,8 @@ final class OverviewCommandsUITests: XCTestCase {
       // One column: the Safety · bot card sits above the Live flow card, first after the header
       // and the day's result.
       let card = app.descendants(matching: .any)[Self.safetyCard].firstMatch
-      let flow = app.descendants(matching: .any)[Self.latestEvent].firstMatch
-      XCTAssertTrue(flow.waitForExistence(timeout: Self.timeout), "latest event\n\(app.debugDescription)")
+      let flow = app.descendants(matching: .any)[Self.liveFlow].firstMatch
+      XCTAssertTrue(flow.waitForExistence(timeout: Self.timeout), "live flow\n\(app.debugDescription)")
       XCTAssertLessThanOrEqual(card.frame.maxY, flow.frame.minY,
         "the Safety card \(card.frame) is not above the flow \(flow.frame)")
     }
