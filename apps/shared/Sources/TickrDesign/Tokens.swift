@@ -365,8 +365,6 @@ public enum Tokens {
     /// Seconds between redraws of a clock, an age ("3 s ago") and the session now line, which `nowGlide` moves evenly over one tick.
     public static let clockTickSeconds: TimeInterval = 1
     public static let nowGlide = Animation.linear(duration: clockTickSeconds)
-    /// Seconds the iOS Home ticker takes to scroll its whole row once (the board's 45 s marquee).
-    public static let tickerLoopSeconds = 45.0
     /// A dot or step popping in (`popIn`): a quick spring that overshoots a little, as the boards'
     /// `pop` (0.5 s, overshooting curve).
     public static let pop = Animation.spring(response: 0.5, dampingFraction: 0.55)

@@ -3,18 +3,6 @@ import TickrDesign
 import TickrKit
 
 extension Board.Event.Tone {
-  var ticker: TickerItem.Tone {
-    switch self {
-    case .teal: return .teal
-    case .green: return .green
-    case .blue: return .blue
-    case .amber: return .amber
-    case .violet: return .violet
-    case .red: return .red
-    case .muted: return .muted
-    }
-  }
-
   /// The tone's fill (dots, bars), from the shared map (`Tone(_:)` in TickrDesign).
   var color: Color { TickrDesign.Tone(self).fill }
 
@@ -589,29 +577,6 @@ struct ConnectionPrompt: View {
     guard let detail = message.details else { return [] }
     let address = model.connection.url.map { String(localized: ConnectionMessage.address($0.absoluteString)) }
     return [address, detail].compactMap(\.self)
-  }
-}
-
-/// A label and a value in a small card, used in rows of three, as on the design: the section label
-/// over a bold mono figure, no rail.
-struct StatTile: View {
-  let label: LocalizedStringResource
-  let value: String
-  var color: Color = Palette.textPrimary
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: Tokens.Space.xs) {
-      CardLabel(label)
-      Text(verbatim: value)
-        .font(.subheadline.monospaced().bold())
-        .foregroundStyle(color)
-        .contentTransition(.numericText())
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .padding(.horizontal, Tokens.Space.m)
-    .padding(.vertical, Tokens.Space.s)
-    .tickrCard(radius: Tokens.Radius.large)
-    .accessibilityElement(children: .combine)
   }
 }
 
