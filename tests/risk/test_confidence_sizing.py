@@ -17,7 +17,6 @@ from tickr.risk.confidence_sizing import SizingRefused, size_usd
 
 ROOT = Path(__file__).resolve().parents[2]
 BOT = ROOT / "config" / "bot.toml"
-SETTINGS = ROOT / "tests" / "research" / "research_settings.toml"
 CAP = config.load(BOT).risk.position_notional_cap_usd
 
 
@@ -107,7 +106,7 @@ def test_whatif_flat_against_sized(tmp_path, capsys):
         "2026-11-03,extended,1,1,3\n")      # all-sessions line only
     out = tmp_path / "out"
     assert main(["sizing", "--answers", str(answers), "--all-sessions-usd", "4000",
-                 "--min-usd", "200", "--max-usd", "800", "--settings", str(SETTINGS),
+                 "--min-usd", "200", "--max-usd", "800",
                  "--config", str(BOT), "--out", str(out)]) == 0
     summary = json.loads((out / "sizing_summary.json").read_text())
     main_line, all_line = summary["main_session"], summary["all_sessions"]
@@ -126,7 +125,7 @@ def test_whatif_refuses_bounds_not_chosen(tmp_path, capsys):
     answers = tmp_path / "answers.csv"
     answers.write_text("day,session,p_layer1,outcome,result_pct\n2026-11-02,regular,0.5,1,1\n")
     assert main(["sizing", "--answers", str(answers), "--all-sessions-usd", "4000",
-                 "--settings", str(SETTINGS), "--config", str(BOT),
+                 "--config", str(BOT),
                  "--out", str(tmp_path / "o")]) == 2
     assert "bounds_outside_cap" in capsys.readouterr().err
 
@@ -135,7 +134,7 @@ def test_blank_probability_and_unnamed_column_are_refused(tmp_path, capsys):
     answers = tmp_path / "answers.csv"
     answers.write_text("day,session,p_a,p_b,outcome,result_pct\n2026-11-02,regular,0.5,,1,1\n")
     args = ["sizing", "--answers", str(answers), "--all-sessions-usd", "4000", "--min-usd", "100",
-            "--max-usd", "500", "--settings", str(SETTINGS), "--config", str(BOT),
+            "--max-usd", "500", "--config", str(BOT),
             "--out", str(tmp_path / "o")]
     assert main(args) == 2
     assert "--probability-column" in capsys.readouterr().err
