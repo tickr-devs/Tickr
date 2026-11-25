@@ -552,6 +552,14 @@ def test_discovery_bars_reserve_must_leave_discovery_some_requests(tmp_path, res
         config.load(_copy(tmp_path, text))
 
 
+@pytest.mark.parametrize("seconds", ["-1", "46"])
+def test_the_last_observer_only_read_ends_before_the_next_pass(tmp_path, seconds):
+    text = re.sub(r"(?m)^observer_reads_seconds = \d+", f"observer_reads_seconds = {seconds}",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="observer_reads_seconds"):
+        config.load(_copy(tmp_path, text))
+
+
 @pytest.mark.parametrize("key, value, match", [
     ("premarket_enabled", "true", "premarket_enabled = true is not supported"),
     ("postmarket_enabled", "true", "postmarket_enabled = true is not supported"),

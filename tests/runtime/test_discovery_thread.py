@@ -16,7 +16,8 @@ from tickr.runtime import service
 from tickr.runtime.evaluation import EVALUATION_STOPPED
 from tickr.runtime.market import DISCOVERY, DISCOVERY_FAILED, daemon_thread
 from tickr.runtime.protection import busy
-from tickr.types import Quote
+from tickr.strategy.base import Check
+from tickr.types import Bar, Quote
 
 from .test_evaluation import OPEN
 from .test_evaluation import Rig as EvalRig
@@ -338,3 +339,62 @@ def test_without_a_pass_started_the_candidates_are_evaluated_at_once(tmp_path):
     rig.evaluator.tick(market)
     assert [c.symbol for c in rig.strategy.seen] == ["CAN"]
     assert rig.store.journal(EVALUATION_STOPPED) == []
+
+
+class Only:
+    """Liquidity rules that accept the given symbols (by their quote) and refuse the rest."""
+
+    version = "1"
+
+    def __init__(self, name: str, symbols: set[str]) -> None:
+        self.name, self.symbols = name, symbols
+
+    def quote_liquidity(self, quote):
+        return (Check("symbol", None, "in", None, quote.symbol in self.symbols),)
+
+    def session_liquidity(self, session_bars):
+        return ()
+
+
+class SlowObserverRead(FakeMarketData):
+    """The bars read of OBS (only an observer wants it) blocks until `release`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def bars(self, symbols, count, *, budget_reserve=0):
+        if "OBS" in symbols:
+            self.entered.set()
+            assert self.release.wait(HANG)
+        return super().bars(symbols, count, budget_reserve=budget_reserve)
+
+
+def test_the_candidates_are_in_use_while_an_observer_only_read_hangs(tmp_path):
+    """Review of #764: the candidates waited for the observers' reads; they are handed over
+    before the first one, so a slow (or failing) read made for the observers adds nothing."""
+    source = SlowObserverRead()
+    rig, _, threads = threaded(tmp_path, source=source)
+    rig.market.screen = Only("active", {"CAN"})
+    rig.market.observer_screens = (Only("observer", {"OBS"}),)
+    rows = [ScreenerRow(ScreenerKind.GAINERS, n, f"id-{s}", s, "NSQ", "USD", "COMMON_STOCK", {})
+            for n, s in enumerate(["OBS", "CAN"], start=1)]
+    source.set_screener(ScreenerKind.GAINERS, rows)
+    for symbol in ("OBS", "CAN"):
+        source.set_quote(Quote(symbol, D("10.00"), D("10.01"), D(1), D(1), rig.now, rig.now))
+        source.add_bars([Bar(symbol, rig.now - timedelta(minutes=2), D(10), D(10), D(10),
+                             D(10), D(100))])
+    rig.market.tick()  # starts the pass
+    assert source.entered.wait(HANG)  # the observer-only read hangs
+    rig.market.collect()
+    assert not rig.market.discovering()  # the evaluation goes on with the candidates
+    assert rig.market.candidates() == ["CAN"] and rig.market.observed() == []
+    assert rig.store.journal(DISCOVERY) == []  # the pass record waits for the whole pass
+    source.release.set()
+    threads.finish()
+    rig.market.collect()
+    assert rig.market.candidates() == ["CAN"] and rig.market.observed() == ["OBS"]
+    (row,) = rig.store.journal(DISCOVERY)
+    assert row.body["candidates"] == ["CAN"] and row.body["observed"] == ["OBS"]
+    assert row.body["handover_seconds"] is not None

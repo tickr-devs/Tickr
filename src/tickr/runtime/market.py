@@ -263,6 +263,9 @@ class DiscoveryWorker:
         self._lock = threading.Lock()
         self._running = False
         self._outcome: DiscoveryOutcome | None = None
+        # The pass's candidates, handed over before its observer-only reads (taken once).
+        self._early: DiscoveryOutcome | None = None
+        self._handed = False  # the pass in flight has handed its candidates over
         self._thread: threading.Thread | None = None  # touched by the loop thread only
         self.stopping = threading.Event()
 
@@ -271,12 +274,31 @@ class DiscoveryWorker:
         with self._lock:
             return self._running or self._outcome is not None
 
+    def deciding(self) -> bool:
+        """The candidates of a pass are not taken yet: it is in flight before its handover, or
+        a handover or outcome waits to be taken. A pass only reading for the observers after
+        its handover is not deciding."""
+        with self._lock:
+            return ((self._running and not self._handed) or self._early is not None
+                    or self._outcome is not None)
+
+    def hand_over(self, outcome: DiscoveryOutcome) -> None:
+        """On the pass's thread: its candidates, before its observer-only reads."""
+        with self._lock:
+            self._early, self._handed = outcome, True
+
+    def take_early(self) -> DiscoveryOutcome | None:
+        """The handed-over candidates of the pass, once; None when there are none."""
+        with self._lock:
+            early, self._early = self._early, None
+        return early
+
     def start(self, job: Callable[[], DiscoveryOutcome]) -> bool:
         """Start `job` unless a pass is busy or the run is stopping; True when started."""
         with self._lock:
             if self._running or self._outcome is not None or self.stopping.is_set():
                 return False
-            self._running = True
+            self._running, self._handed = True, False
 
         def run() -> None:
             outcome: DiscoveryOutcome | None = None
@@ -352,6 +374,9 @@ class MarketRuntime:
         self._observers_retry_at = monotonic()  # observer symbols off until then after one
         self._observers_next_sync = monotonic()  # observer tier changes at most once until then
         self._observers_applied: set[str] = set()  # the observer tier as last chosen
+        # The pass whose candidates were handed over: its start, candidates, the earlier ones
+        # kept, and the seconds until the handover (its outcome journals them).
+        self._handed: tuple[datetime, tuple[Candidate, ...], list[str], float] | None = None
         self._optional: set[str] = set()  # subscribed through subscribe_optional
         self._pass_minute: datetime | None = None  # the minute of the latest loop pass
         self._first_pass = False  # this loop pass is the first of its minute (or the first)
@@ -416,8 +441,9 @@ class MarketRuntime:
             self.collect()  # a pass run in place (tests) is journaled in this same pass
 
     def discovering(self) -> bool:
-        """A discovery pass is in flight (or finished and not yet collected)."""
-        return self._worker.busy()
+        """A discovery pass is deciding its candidates (or they are not yet collected); one
+        that only reads for the observers after handing them over is not."""
+        return self._worker.deciding()
 
     def close(self, timeout_seconds: float) -> bool:
         """At the end of the run: no new pass; a pass in flight ends before its next request
@@ -684,12 +710,19 @@ class MarketRuntime:
             self.monotonic)
         # A wait for the budget ends at once when the run stops; the next read then refuses.
         wait = self._worker.stopping.wait
+        worker = self._worker
 
         def job() -> DiscoveryOutcome:
             begun = monotonic()
+
+            def handover(result: DiscoveryResult) -> None:
+                worker.hand_over(DiscoveryOutcome(now, clock(), monotonic() - begun, result,
+                                                  None))
+
             try:
                 result = discover(source, settings, screen, session_open, clock, capture,
-                                  refused, today_bars, wait, checked, observer_screens)
+                                  refused, today_bars, wait, checked, observer_screens,
+                                  handover)
             except Exception as exc:  # noqa: BLE001 - collected and journaled by the loop
                 return DiscoveryOutcome(now, clock(), monotonic() - begun, None, exc)
             failed: Exception | None = None
@@ -712,6 +745,16 @@ class MarketRuntime:
         for exc in self.profiles.take_errors():
             journal_capture_failed(self.engine.store, self.engine.run_id, PROFILE_RECORDER,
                                    exc, self.config.market_data.failure_detail_max_chars)
+        early = self._worker.take_early()
+        if early is not None and early.result is not None:
+            # The candidates, before the pass's observer-only reads: in use at once.
+            self._handed = (early.result.started_at, *self._with_earlier(early.result),
+                            early.seconds)
+            _, candidates, _, _ = self._handed
+            self.discovery = DiscoveryState(early.started, early.result.summary(), candidates,
+                                            () if self.discovery is None
+                                            else self.discovery.observed,
+                                            early.result.observer_reserve)
         outcome = self._worker.take()
         if outcome is None:
             return
@@ -728,7 +771,11 @@ class MarketRuntime:
             self._journal_failure(outcome.error)
             return
         self.profiles.submit(result.screened)  # read on their own thread, after the pass
-        candidates, kept = self._with_earlier(result)
+        handed, self._handed = self._handed, None
+        if handed is not None and handed[0] == result.started_at:
+            _, candidates, kept, handover_seconds = handed  # already in use: never redone
+        else:
+            (candidates, kept), handover_seconds = self._with_earlier(result), None
         summary = result.summary()
         if kept:
             summary += f"; kept {len(kept)} earlier candidates not reached"
@@ -746,7 +793,7 @@ class MarketRuntime:
                 "candidates": [c.instrument.symbol for c in candidates], "kept": kept,
                 "observed": [c.instrument.symbol for c in result.observed],
                 "observed_skipped": len(result.observed_skipped),
-                "seconds": outcome.seconds},
+                "handover_seconds": handover_seconds, "seconds": outcome.seconds},
                 run_id=self.engine.run_id)
 
     def _journal_failure(self, exc: Exception) -> None:

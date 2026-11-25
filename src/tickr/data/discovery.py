@@ -47,9 +47,13 @@ never becomes a candidate; when an observer's own rules (quote and session) acce
 `observed` instead: the evaluation hands it to the observers only, never to the active strategy
 or the entry desk. Observer-only bars are read only once every symbol the active strategy's
 quote rules accepted is decided, so they never take a candidate's place or time:
-- they never wait for the budget: the first refusal (or delayed data) ends them for the pass,
-  recorded as `observed_stopped` with the symbols not read (`observed_skipped`), and the pass
-  returns its candidates at once;
+- the candidates are handed over (`handover`) before the first of them, so the active
+  strategy's minute never waits for them, and none of their failures reaches the candidates;
+- they never wait for the budget: the first refusal, delayed data or any failure of such a
+  read ends them for the pass, recorded as `observed_stopped` (cause and the error) with the
+  symbols not read (`observed_skipped`);
+- none is sent later than `[market_data] observer_reads_seconds` after the pass started, so
+  the last one ends (HTTP timeouts included) before the next pass is due;
 - each leaves free the discovery reserve plus as many requests as this pass sent for the
   active strategy's symbols (`observer_reserve`), so at the moment it is sent the window still
   holds room for the next pass to read the same active symbols again; the evaluation's
@@ -124,6 +128,8 @@ class Stage(StrEnum):
 class StopCause(StrEnum):
     BUDGET = "budget"
     DELAYED_DATA = "delayed data"
+    FAILED = "failed"  # observer-only reads only: a read failed (its error in the detail)
+    OUT_OF_TIME = "out of time"  # observer-only reads only: `observer_reads` was over
 
 
 @dataclass(frozen=True)
@@ -249,6 +255,9 @@ class DiscoverySettings:
     refused_symbol_recheck: timedelta  # a symbol refused as unknown is asked again after this
     bars_budget_reserve: int
     budget_wait: timedelta = timedelta(0)  # most a pass waits in all for its own request budget
+    # Observer-only reads are sent only this long after the pass started (no limit by default:
+    # replay and tests; the bot sets it from config).
+    observer_reads: timedelta = timedelta.max
 
     @classmethod
     def from_config(cls, config: Config) -> DiscoverySettings:
@@ -265,6 +274,7 @@ class DiscoverySettings:
             refused_symbol_recheck=timedelta(seconds=float(md.refused_symbol_recheck_seconds)),
             bars_budget_reserve=md.discovery_bars_reserve_requests,
             budget_wait=timedelta(seconds=float(md.discovery_budget_wait_seconds)),
+            observer_reads=timedelta(seconds=float(md.observer_reads_seconds)),
         )
 
 
@@ -539,9 +549,13 @@ def discover(
     wait: Callable[[float], object] | None = None,
     checked_symbols: CheckedSymbols | None = None,
     observers: Sequence[Liquidity] = (),
+    handover: Callable[[DiscoveryResult], None] | None = None,
 ) -> DiscoveryResult:
     """Run one discovery pass with `screen` (the active strategy) as the liquidity rules, and
-    `observers`' rules for the symbols it refuses (`DiscoveryResult.observed`).
+    `observers`' rules for the symbols it refuses (`DiscoveryResult.observed`). Once the
+    active strategy's symbols are all decided, and before any observer-only read, the result
+    so far (complete but for `observed`) goes to `handover`, so the caller can use the
+    candidates at once; the returned result adds the observers' symbols.
     `clock` returns the aware current time. `refused_symbols` carries the symbols refused as
     unknown from pass to pass within the session (a fresh memory when None). Every bars read
     is also kept in `today_bars` (with the time it was sent) for the strategy's evaluation.
@@ -749,15 +763,28 @@ def discover(
             return result(candidates, Stopped(Stage.BARS, StopCause.BUDGET, str(exc)))
         except DelayedData as exc:
             return result(candidates, Stopped(Stage.BARS, StopCause.DELAYED_DATA, str(exc)))
-    # The candidates are complete: observer-only reads can no longer delay or displace them.
+    # The candidates are complete: they are handed over before any observer-only read, so
+    # those reads can neither delay nor fail them.
     observer_reserve[0] = settings.bars_budget_reserve + sent[0]
+    if handover is not None:
+        handover(result(candidates, None))
     later = [s for s in entries if not entries[s][2]]
     for number, chunk in enumerate(_chunks(later, size)):
-        try:
-            read_chunk(chunk, observers_only=True)
-        except (RateLimited, DelayedData) as exc:
-            cause = StopCause.BUDGET if isinstance(exc, RateLimited) else StopCause.DELAYED_DATA
-            observed_stopped.append(Stopped(Stage.BARS, cause, str(exc)))
+        stop: Stopped | None = None
+        if clock() - started >= settings.observer_reads:
+            stop = Stopped(Stage.BARS, StopCause.OUT_OF_TIME,
+                           f"{settings.observer_reads.total_seconds()}s after the pass started")
+        else:
+            try:
+                read_chunk(chunk, observers_only=True)
+            except RateLimited as exc:
+                stop = Stopped(Stage.BARS, StopCause.BUDGET, str(exc))
+            except DelayedData as exc:
+                stop = Stopped(Stage.BARS, StopCause.DELAYED_DATA, str(exc))
+            except Exception as exc:  # noqa: BLE001 - made for the observers: ends only them
+                stop = Stopped(Stage.BARS, StopCause.FAILED, f"{type(exc).__name__}: {exc}")
+        if stop is not None:
+            observed_stopped.append(stop)
             observed_skipped.extend(later[number * size:])
             break
     return result(candidates, None)

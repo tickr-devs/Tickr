@@ -598,6 +598,11 @@ discovery_bars_reserve_requests = 12
 # previous pass's reads still in the 60 s window and freed again 1-6 s later (2026-11-23: 200 of 377 passes stopped,
 # median wait 1.3 s); 0 = never wait; below discovery_interval_seconds; read by data.discovery.
 discovery_budget_wait_seconds = 20
+# Seconds after a discovery pass started during which it may still send observer-only bars reads (symbols only an
+# observer's liquidity rules accept, read after the pass handed its candidates over, never waited for); with every
+# environment's http_connect_timeout_seconds and http_read_timeout_seconds at most discovery_interval_seconds (checked
+# when config loads), so the last one ends before the next pass is due; 0 = none; read by data.discovery.
+observer_reads_seconds = 40
 # M1 bars asked per prior-session history request, per symbol (SDK maximum 1200; probe 2026-11-16: count is per symbol,
 # 20 symbols x 1200 served in one response; one regular session = 390); read by data.history.
 history_bars_per_request = 1200

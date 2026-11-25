@@ -10,7 +10,8 @@ from md_helpers import NOW, OPEN, Screen, bars, quote, row, settings
 
 from tickr import config
 from tickr.broker.budget import BudgetExhausted, RequestBudget, RouteLimit
-from tickr.data.base import FakeMarketData, ScreenerKind, SymbolsRefused
+from tickr.broker.webull import BrokerReadFailed
+from tickr.data.base import FakeMarketData, MarketDataError, ScreenerKind, SymbolsRefused
 from tickr.data.discovery import (
     BAR_LENGTH,
     Cause,
@@ -858,3 +859,70 @@ def test_observer_only_reads_never_shrink_the_next_passes_active_reads():
     # The next pass, in the same window: every active read still fits.
     second = discover(md, settings(bars_symbols_per_request=1), Screen(), OPEN, lambda: NOW)
     assert second.stopped is None and len(second.candidates) == 4
+
+
+class ObserverReadFails(FakeMarketData):
+    """The bars read of WIDE (an observer-only symbol) fails with `error`."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self.error = error
+
+    def bars(self, symbols, count, *, budget_reserve=0):
+        if "WIDE" in symbols:
+            raise self.error
+        return super().bars(symbols, count, budget_reserve=budget_reserve)
+
+
+@pytest.mark.parametrize("error", [MarketDataError("http 500"),
+                                   BrokerReadFailed("bars", None, None),
+                                   TimeoutError("read timed out")])
+def test_a_failed_observer_only_read_ends_only_those_reads_and_keeps_the_candidates(error):
+    """Review of #764: a failed observer-only read failed the whole pass and its candidates
+    were lost."""
+    md = ObserverReadFails(error)
+    wide_then_liquid(md)
+    result = observing(md, [Screen(max_spread_ratio="0.05")])
+    assert [c.instrument.symbol for c in result.candidates] == ["AAA"]
+    assert result.stopped is None and result.observed == ()
+    assert result.observed_stopped is not None
+    assert result.observed_stopped.cause is StopCause.FAILED
+    assert result.observed_stopped.detail.startswith(type(error).__name__)
+    assert result.observed_skipped == ("WIDE",)
+
+
+def test_the_candidates_are_handed_over_before_any_observer_only_read():
+    md = FakeMarketData()
+    wide_then_liquid(md)
+    handed: list = []
+
+    def handover(result):
+        handed.append((result, list(md.calls)))
+
+    final = discover(md, settings(), Screen(), OPEN, lambda: NOW,
+                     observers=[Screen(max_spread_ratio="0.05")], handover=handover)
+    ((early, calls),) = handed
+    assert [c.instrument.symbol for c in early.candidates] == ["AAA"] and early.observed == ()
+    assert ("bars", ("WIDE",)) not in calls and ("bars", ("WIDE",)) in md.calls
+    assert final.candidates == early.candidates
+    assert [c.instrument.symbol for c in final.observed] == ["WIDE"]
+
+
+def test_no_observer_only_read_is_sent_after_its_time_in_the_pass():
+    clock = [NOW]
+
+    class Slow(FakeMarketData):
+        def bars(self, symbols, count, *, budget_reserve=0):
+            got = super().bars(symbols, count, budget_reserve=budget_reserve)
+            clock[0] += timedelta(seconds=40)  # the active strategy's read took 40 s
+            return got
+
+    md = Slow()
+    wide_then_liquid(md)
+    result = discover(md, settings(observer_reads=timedelta(seconds=40)), Screen(), OPEN,
+                      lambda: clock[0], observers=[Screen(max_spread_ratio="0.05")])
+    assert ("bars", ("WIDE",)) not in md.calls
+    assert [c.instrument.symbol for c in result.candidates] == ["AAA"]
+    assert result.observed_stopped is not None
+    assert result.observed_stopped.cause is StopCause.OUT_OF_TIME
+    assert result.observed_skipped == ("WIDE",)

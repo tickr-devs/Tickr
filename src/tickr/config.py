@@ -297,6 +297,7 @@ class MarketDataConfig:
     bars_per_symbol: int
     discovery_bars_reserve_requests: int
     discovery_budget_wait_seconds: Decimal
+    observer_reads_seconds: Decimal
     history_bars_per_request: int
     history_max_pages_per_symbol: int
     history_max_lookback_days: int
@@ -825,6 +826,15 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         for name, env in environments.items():
             check_chart_slice(chart, name, env)
     reserve = built["market_data"].discovery_bars_reserve_requests
+    md = built["market_data"]
+    for name, env in environments.items():
+        # The last observer-only read must end before the next pass is due.
+        last = md.observer_reads_seconds + env.http_connect_timeout_seconds \
+            + env.http_read_timeout_seconds
+        if not 0 <= md.observer_reads_seconds or last > md.discovery_interval_seconds:
+            raise ConfigError(f"[market_data] observer_reads_seconds must be at least 0, and with "
+                              f"[environments.{name}] http_connect_timeout_seconds and "
+                              "http_read_timeout_seconds at most discovery_interval_seconds")
     for name, env in environments.items():
         count, _ = env.route_limits.get(BARS_ROUTE,
                                         (env.requests_per_route_per_minute, SECONDS_PER_MINUTE))

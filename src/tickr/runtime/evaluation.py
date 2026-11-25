@@ -39,7 +39,7 @@ come last in the minute, after every decision of the active strategy, and never 
 and history reads leave the latest discovery pass's `observer_reserve` free (the discovery
 reserve plus what that pass sent for the active strategy's symbols), and the first refused or
 failed read stops them for the minute (journaled `evaluation-stopped`, stage `observed-bars` or
-`observed-history`).
+`observed-history`; any other error there, stage `observed`).
 """
 
 from __future__ import annotations
@@ -260,8 +260,12 @@ class Evaluator:
         if self._run(later, bar_start, day.regular_open, self._positions(), late=None):
             return
         taken = set(first) | set(later) | set(self._positions())
-        self._observe([s for s in market.observed() if s not in taken], bar_start,
-                      day.regular_open, market.observer_reserve())
+        try:
+            self._observe([s for s in market.observed() if s not in taken], bar_start,
+                          day.regular_open, market.observer_reserve())
+        except Exception as exc:  # noqa: BLE001 - made for the observers: ends only them
+            self._journal(EVALUATION_STOPPED, {"bar_start": bar_start.isoformat(),
+                                               "stage": "observed", "error": type(exc).__name__})
 
     def _observe(self, symbols: list[str], bar_start: datetime, regular_open: datetime,
                  reserve: int) -> None:
