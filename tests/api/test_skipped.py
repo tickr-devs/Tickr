@@ -138,7 +138,7 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
     assert body["day"] == DAY.isoformat() and body["api_version"] == 1
     assert body["signals"] == [
         {"at": "2026-11-16T15:02:00.000Z", "symbol": "WXYZ",
-         "strategy": {"name": "price-action-v1", "version": "1", "fingerprint": None},
+         "strategy": {"name": "price-action-v1", "version": "1", "settings_version": None},
          "admission": "not_evaluated", "refusal_cause": None, "refusal": None,
          "entry_price": "12.10", "stop_price": "11.80",
          "checks": [{"rule": "relative_volume", "measured": "2.4", "operator": ">=",
@@ -149,7 +149,7 @@ def test_skipped_lists_refused_and_not_evaluated_enters_only(api, cfg):
                      "cause": NO_BARS, "cause_codes": NO_BARS_CODES},
          "prices_after_cause_codes": NO_BARS_CODES},
         {"at": "2026-11-16T15:07:00.000Z", "symbol": "ABCD",
-         "strategy": {"name": "price-action-v1", "version": "1", "fingerprint": None},
+         "strategy": {"name": "price-action-v1", "version": "1", "settings_version": None},
          "admission": "refused",
          "refusal_cause": "POSITION_LIMIT_REACHED: 1 open position(s), limit 1",
          "refusal": {"code": "POSITION_LIMIT_REACHED", "message": "1 open position(s), limit 1",

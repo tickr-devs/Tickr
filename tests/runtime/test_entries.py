@@ -88,31 +88,31 @@ def test_admitted_enter_opens_a_trade_at_the_top_of_the_window(tmp_path):
     assert (opened.body["strategy"], opened.body["strategy_version"]) == (d.strategy, d.version)
 
 
-def test_the_settings_fingerprint_goes_on_every_decision_and_the_trade(tmp_path):
+def test_the_settings_version_goes_on_every_decision_and_the_trade(tmp_path):
     desk = Desk(tmp_path)
-    desk.desk.fingerprint = "f" * 64
+    desk.desk.settings_version = "f" * 64
     desk.decide(decision(Verdict.WATCH))
     desk.decide(decision())
     desk.desk.log.close()
     records = load_records([desk.dir / "2026-11-16" / "decisions.jsonl"])
-    assert [r.fingerprint for r in records] == ["f" * 64] * 2
+    assert [r.settings_version for r in records] == ["f" * 64] * 2
     (trade,) = desk.engine.trades()
-    (row,) = desk.store.query("SELECT strategy_fingerprint FROM trades")
+    (row,) = desk.store.query("SELECT settings_version FROM trades")
     assert row[0] == "f" * 64
     d = decision()
     strategy = trade_strategy(desk.store, trade.trade_id)
-    assert (strategy.name, strategy.version, strategy.fingerprint) == (d.strategy, d.version,
-                                                                       "f" * 64)
+    assert (strategy.name, strategy.version, strategy.settings_version) == (
+        d.strategy, d.version, "f" * 64)
 
 
-def test_a_desk_without_a_fingerprint_records_none(tmp_path):
+def test_a_desk_without_a_settings_version_records_none(tmp_path):
     desk = Desk(tmp_path)
     desk.decide(decision())
     desk.desk.log.close()
     line = (desk.dir / "2026-11-16" / "decisions.jsonl").read_text().splitlines()[0]
-    assert "fingerprint" not in json.loads(line)
+    assert "settings_version" not in json.loads(line)
     (trade,) = desk.engine.trades()
-    assert trade_strategy(desk.store, trade.trade_id).fingerprint is None
+    assert trade_strategy(desk.store, trade.trade_id).settings_version is None
 
 
 def test_every_decision_is_recorded_in_the_research_format(tmp_path):

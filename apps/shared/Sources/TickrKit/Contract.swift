@@ -23,20 +23,21 @@ public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 public struct StrategyId: Codable, Hashable, Sendable {
   public let name: String
   public let version: String
-  /// The settings version the bot computed from the strategy's values (backlog S3, docs/api.md);
-  /// `version` is the owner's name for it. Nil when not recorded.
-  public let fingerprint: String?
+  /// The settings version the decision or trade was made under (backlog S3, docs/api.md): the
+  /// platform settings plus the model's bundle, or this strategy's values while the model is
+  /// off. Nil when not recorded.
+  public let settingsVersion: String?
 
   enum CodingKeys: String, CodingKey {
     case name
     case version
-    case fingerprint
+    case settingsVersion = "settings_version"
   }
 
-  public init(name: String, version: String, fingerprint: String? = nil) {
+  public init(name: String, version: String, settingsVersion: String? = nil) {
     self.name = name
     self.version = version
-    self.fingerprint = fingerprint
+    self.settingsVersion = settingsVersion
   }
 
   public init(from decoder: Decoder) throws {
@@ -44,14 +45,14 @@ public struct StrategyId: Codable, Hashable, Sendable {
     name = try c.decode(String.self, forKey: .name)
     version = try c.decode(String.self, forKey: .version)
     // Added after version 1 shipped: an older bot's strategy has no such key.
-    fingerprint = try c.decodeIfPresent(String.self, forKey: .fingerprint)
+    settingsVersion = try c.decodeIfPresent(String.self, forKey: .settingsVersion)
   }
 
   public func encode(to encoder: Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
     try c.encode(name, forKey: .name)
     try c.encode(version, forKey: .version)
-    try c.encodeNullable(fingerprint, forKey: .fingerprint)
+    try c.encodeNullable(settingsVersion, forKey: .settingsVersion)
   }
 }
 

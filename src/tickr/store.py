@@ -180,17 +180,15 @@ def _schema_v11(db: sqlite3.Connection) -> None:
 
 
 def _schema_v12(db: sqlite3.Connection) -> None:
-    # Settings versions (backlog S3): the settings fingerprint of the values that opened a
-    # trade (tickr.strategy.fingerprint; NULL: a manual trade or one opened before S3), and
-    # the fingerprint each named strategy version was first run with, so a name reused for
-    # other values is refused at startup (Store.register_strategy_version).
-    db.execute("ALTER TABLE trades ADD COLUMN strategy_fingerprint TEXT")
-    db.execute("""CREATE TABLE strategy_versions (
-        strategy TEXT NOT NULL,
-        version TEXT NOT NULL,
-        fingerprint TEXT NOT NULL,
-        first_seen_at TEXT NOT NULL,
-        PRIMARY KEY (strategy, version)
+    # Settings versions (backlog S3, tickr.settings_version): the settings version a trade was
+    # opened under (NULL: a manual trade or one opened before S3), and the canonical text of
+    # every settings version the bot ran, so a version a decision or trade names can be read
+    # back as its values (Store.record_settings_version).
+    db.execute("ALTER TABLE trades ADD COLUMN settings_version TEXT")
+    db.execute("""CREATE TABLE settings_versions (
+        settings_version TEXT PRIMARY KEY,
+        contents TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL
     )""")
 
 
@@ -240,8 +238,8 @@ class EnvironmentMismatch(Exception):
     """The database belongs to another environment; nothing was started."""
 
 
-class StrategyVersionReused(Exception):
-    """A strategy version name was run before with other values; nothing was started."""
+class SettingsVersionConflict(Exception):
+    """A settings version was recorded before with other contents; nothing was recorded."""
 
 
 @dataclass(frozen=True)
@@ -385,25 +383,23 @@ class Store:
                 f"{environment!r}: move the database aside (or point [run] data_dir at "
                 "another folder) before running this environment")
 
-    def register_strategy_version(self, strategy: str, version: str, fingerprint: str) -> None:
-        """Record the settings fingerprint of `strategy` `version` the first time it runs;
-        refuse (StrategyVersionReused) when that name was recorded with another fingerprint:
-        its earlier decisions and trades would be taken as made with today's values."""
+    def record_settings_version(self, version: str, contents: str) -> None:
+        """Record the canonical text of settings version `version` the first time it runs;
+        refuse (SettingsVersionConflict) when that version was recorded with other contents:
+        its earlier decisions and trades would be read back as made with today's values."""
         with self.transaction():
             row = self._db.execute(
-                "SELECT fingerprint FROM strategy_versions WHERE strategy = ? AND version = ?",
-                (strategy, version)).fetchone()
+                "SELECT contents FROM settings_versions WHERE settings_version = ?",
+                (version,)).fetchone()
             if row is None:
                 self._db.execute(
-                    "INSERT INTO strategy_versions(strategy, version, fingerprint, "
-                    "first_seen_at) VALUES (?, ?, ?, ?)",
-                    (strategy, version, fingerprint, self.stamp()))
+                    "INSERT INTO settings_versions(settings_version, contents, first_seen_at) "
+                    "VALUES (?, ?, ?)", (version, contents, self.stamp()))
                 return
-        if row[0] != fingerprint:
-            raise StrategyVersionReused(
-                f"strategy {strategy} version {version} was run with settings fingerprint "
-                f"{row[0]}, its values now give {fingerprint}: give the changed values a new "
-                "[strategy] version")
+        if row[0] != contents:
+            raise SettingsVersionConflict(
+                f"settings version {version} was recorded with other contents: refused, "
+                "nothing recorded")
 
     def start_run(self, *, environment: str, config_digest: str, strategy: str,
                   strategy_version: str, code_version: str) -> str:

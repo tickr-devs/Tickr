@@ -56,7 +56,6 @@ from tickr.runtime.alerts import AlertKind
 from tickr.runtime.dayend import DayEnd
 from tickr.runtime.protection import LatencyLog, busy
 from tickr.runtime.watchdog import BYTES_PER_MB, DiskFree, disk_free, entry_restart_file
-from tickr.strategy.fingerprint import fingerprint
 
 if TYPE_CHECKING:
     from tickr.observers.runner import ObserverSet
@@ -121,17 +120,12 @@ def _no_quote(symbol: str) -> Quote | None:  # noqa: ARG001 - no market: no quot
 
 
 def strategy_id(config: Config) -> api.StrategyId:
-    """Name, version and settings fingerprint of the active strategy, from its strategy.toml
-    (fingerprint None when a value has no canonical form: loading the strategy refuses it)."""
+    """Name and version of the active strategy, from its strategy.toml. Its settings version
+    is set by the bot once the entry desk is wired (the one its records reference)."""
     path = config.root / STRATEGIES_DIR / config.strategy.active / STRATEGY_FILE
     with path.open("rb") as handle:
-        values = tomllib.load(handle)
-    section = values["strategy"]
-    try:
-        settings: str | None = fingerprint(values)
-    except ValueError:
-        settings = None
-    return api.StrategyId(str(section["name"]), str(section["version"]), settings)
+        section = tomllib.load(handle)["strategy"]
+    return api.StrategyId(str(section["name"]), str(section["version"]))
 
 
 def load_calendar(config: Config) -> SessionCalendar | None:

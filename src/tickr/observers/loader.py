@@ -13,16 +13,16 @@ from __future__ import annotations
 
 import importlib
 import tomllib
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from tickr.config import Config
 from tickr.observers.errors import ObserverError
-from tickr.store import Store, StrategyVersionReused
+from tickr.settings_version import SettingsVersion, SettingsVersionRefused
+from tickr.store import SettingsVersionConflict, Store
 from tickr.strategy.base import Strategy
-from tickr.strategy.fingerprint import fingerprint
 
 STRATEGIES_DIR = "strategies"
 STRATEGY_FILE = "strategy.toml"
@@ -32,10 +32,11 @@ STRATEGY_FILE = "strategy.toml"
 class LoadedStrategy:
     folder: str
     strategy: Strategy
-    fingerprint: str | None = None
-    """The settings fingerprint of the values the strategy was built from
-    (`tickr.strategy.fingerprint`); recorded with its decisions and trades. Set by
-    `load_strategy`; None only for a strategy built some other way (tests)."""
+    values: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    """The resolved values the strategy was built from (set by `load_strategy`)."""
+    settings_version: str | None = None
+    """The settings version its decisions and trades reference (`tickr.settings_version`),
+    set by `with_settings_version`; None only for a strategy built some other way (tests)."""
 
     @property
     def identity(self) -> str:
@@ -108,33 +109,31 @@ def load_strategy(root: Path, folder: str, modules: Mapping[str, str]) -> Loaded
             f"{folder}: strategy reports {reported[0]} v{reported[1]}, "
             f"file says {name} v{table.get('version')}"
         )
+    return LoadedStrategy(folder, strategy, values)
+
+
+class SettingsVersionError(ObserverError):
+    """No settings version for a strategy's decisions, or one that conflicts with its record:
+    a typed refusal (`cause`, a stable word) the caller journals and alerts on."""
+
+    def __init__(self, folder: str, cause: str, detail: str) -> None:
+        super().__init__(f"{folder}: settings version refused ({cause}): {detail}")
+        self.cause = cause
+
+
+def with_settings_version(loaded: LoadedStrategy, compute: Callable[[], SettingsVersion],
+                          store: Store | None = None) -> LoadedStrategy:
+    """`loaded` with the settings version `compute` gives, recorded in `store` when given.
+    SettingsVersionError when it cannot be computed or conflicts with its record."""
     try:
-        settings = fingerprint(values)
-    except ValueError as exc:
-        raise ObserverError(f"{folder}: no settings fingerprint: {exc}") from exc
-    return LoadedStrategy(folder, strategy, settings)
-
-
-def read_fingerprint(root: Path, folder: str) -> str:
-    """The settings fingerprint of a strategy folder, from its file only (nothing imported or
-    built); ObserverError when unreadable or a value has no canonical form."""
-    try:
-        return fingerprint(read_values(root, folder))
-    except ValueError as exc:
-        raise ObserverError(f"{folder}: no settings fingerprint: {exc}") from exc
-
-
-def register_version(store: Store, loaded: LoadedStrategy) -> None:
-    """Before a strategy runs in the bot: record its version's settings fingerprint, or
-    refuse (ObserverError) when that version name was run before with other values, or when it
-    has no fingerprint. Its decisions and trades would carry a name that means two settings."""
-    if loaded.fingerprint is None:
-        raise ObserverError(f"{loaded.folder}: {loaded.identity} has no settings fingerprint")
-    try:
-        store.register_strategy_version(loaded.strategy.name, loaded.strategy.version,
-                                        loaded.fingerprint)
-    except StrategyVersionReused as exc:
-        raise ObserverError(f"{loaded.folder}: {exc}") from exc
+        version = compute()
+        if store is not None:
+            store.record_settings_version(version.value, version.contents)
+    except SettingsVersionRefused as exc:
+        raise SettingsVersionError(loaded.folder, exc.cause, exc.detail) from exc
+    except SettingsVersionConflict as exc:
+        raise SettingsVersionError(loaded.folder, "settings_version_conflict", str(exc)) from exc
+    return replace(loaded, settings_version=version.value)
 
 
 def check_history(loaded: LoadedStrategy, history_sessions: int) -> None:

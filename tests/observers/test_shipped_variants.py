@@ -7,12 +7,13 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from tickr import config
+from tickr import config, settings_version
 from tickr.observers.loader import (
     STRATEGIES_DIR,
     STRATEGY_FILE,
     load_observers,
-    read_fingerprint,
+    read_values,
+    with_settings_version,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,9 +33,14 @@ def test_shipped_observers_load_with_distinct_identities():
     loaded = load_observers(CFG)
     assert [o.folder for o in loaded] == list(CFG.strategy.observers)
     assert loaded
-    # Each carries the settings fingerprint of its own file (backlog S3), all distinct.
-    assert [o.fingerprint for o in loaded] == [read_fingerprint(ROOT, o.folder) for o in loaded]
-    assert len({o.fingerprint for o in loaded}) == len(loaded)
+    # Each gets the settings version of the platform plus its own resolved values (backlog
+    # S3), all distinct.
+    platform = settings_version.platform_part(CFG)
+    versions = [with_settings_version(o, lambda o=o: settings_version.for_observer(
+        platform, o.values)).settings_version for o in loaded]
+    assert versions == [settings_version.for_observer(
+        platform, read_values(ROOT, o.folder)).value for o in loaded]
+    assert len(set(versions)) == len(loaded)
 
 
 VARIANT = "-relvol-"

@@ -341,11 +341,12 @@ def session_at(calendar: SessionCalendar | None, now: datetime) -> MarketDay | C
 class EntryDesk:
     def __init__(self, engine: Engine, config: Config, *, calendar: SessionCalendar | None,
                  last_broker_read_at: Callable[[], datetime | None],
-                 log: DecisionLog, fingerprint: str | None = None) -> None:
+                 log: DecisionLog, settings_version: str | None = None) -> None:
         self.engine = engine
-        # The active strategy's settings fingerprint (observers.loader.LoadedStrategy), recorded
-        # with each of its decisions and on each trade it opens; None only in tests.
-        self.fingerprint = fingerprint
+        # The settings version entries are decided under (tickr.settings_version), recorded
+        # with each of the active strategy's decisions and on each trade it opens; None only
+        # in tests.
+        self.settings_version = settings_version
         self.config = config
         self.calendar = calendar
         self.last_broker_read_at = last_broker_read_at
@@ -453,7 +454,7 @@ class EntryDesk:
                                            result.planned_loss_usd,
                                            entry_low_price=decision.entry_low,
                                            strategy=(decision.strategy, decision.version),
-                                           strategy_fingerprint=self.fingerprint,
+                                           settings_version=self.settings_version,
                                            rest_until=rest_until(decision, bar_start),
                                            scale_out_quantity=decision.scale_out,
                                            window=result.window,
@@ -479,7 +480,7 @@ class EntryDesk:
                                                                 decision.quantity)},
                             key=trade.trade_id, run_id=self.engine.run_id)
         return self._write(DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission,
-                                          cause, self.fingerprint))
+                                          cause, self.settings_version))
 
     def record_late(self, decision: Decision, *, bar_start: datetime,
                     now: datetime) -> DecisionRecord:
@@ -488,7 +489,7 @@ class EntryDesk:
         admission = (RecordAdmission.NOT_EVALUATED if decision.verdict is Verdict.ENTER
                      else RecordAdmission.NOT_APPLICABLE)
         return self._write(DecisionRecord(now, bar_start, Role.ACTIVE, decision, admission,
-                                          fingerprint=self.fingerprint))
+                                          settings_version=self.settings_version))
 
     def _write(self, record: DecisionRecord) -> DecisionRecord:
         decision, admission = record.decision, record.admission

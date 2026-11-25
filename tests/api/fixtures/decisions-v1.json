@@ -8,7 +8,7 @@
       "strategy": {
         "name": "price-action-v1",
         "version": "1",
-        "fingerprint": null
+        "settings_version": null
       },
       "observer": false,
       "checks": [
@@ -34,7 +34,7 @@
       "strategy": {
         "name": "price-action-v1",
         "version": "2",
-        "fingerprint": null
+        "settings_version": null
       },
       "observer": true,
       "checks": [
@@ -60,7 +60,7 @@
       "strategy": {
         "name": "price-action-v1",
         "version": "1",
-        "fingerprint": null
+        "settings_version": null
       },
       "observer": false,
       "checks": [

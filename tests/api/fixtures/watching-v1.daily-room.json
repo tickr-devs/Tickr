@@ -8,7 +8,7 @@
     "strategy": {
       "name": "price-action-v1",
       "version": "1",
-      "fingerprint": null
+      "settings_version": null
     },
     "verdict": "WATCH",
     "quantity": "37",

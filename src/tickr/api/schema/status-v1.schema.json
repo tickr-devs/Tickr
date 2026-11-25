@@ -64,7 +64,7 @@
         "version": {
           "type": "string"
         },
-        "fingerprint": {
+        "settings_version": {
           "anyOf": [
             {
               "type": "string"
@@ -538,7 +538,7 @@
                   "version": {
                     "type": "string"
                   },
-                  "fingerprint": {
+                  "settings_version": {
                     "anyOf": [
                       {
                         "type": "string"

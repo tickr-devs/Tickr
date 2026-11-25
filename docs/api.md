@@ -379,19 +379,25 @@ decision opened the trade, as journaled in its `trade-opened` row; `null` for a 
 trade opened before the bot journaled it, or a row it cannot read (display only, never guessed).
 In status it was added after version 1 shipped: a reader takes an entry without it as `null`.
 
-Settings version (backlog S3). Every `strategy` object (`{name, version, fingerprint}`, here, in
-`/decisions`, `/skipped`, `/watching`, the latest size and the status's active strategy) carries
-`fingerprint`: the settings version the bot computed, a SHA-256 (64 hex characters) of the
-strategy's fully resolved values in canonical form (`src/tickr/strategy/fingerprint.py`): keys
-sorted, numbers by exact value (`1.5` = `1.50`, `2` = `2.0`), `[strategy] version` left out.
-`version` is only the owner's name for those values. For a trade it is what the `trade-opened`
-row journaled (also stored on `trades.strategy_fingerprint`); for a decision, what its decision
-record holds; for the status, the active strategy file's values now. `null` when not recorded (a
-trade or decision from before S3, a manual trade, research or replay records). It was added after
-version 1 shipped: a reader takes a `strategy` without it as `null`. At startup the bot records
-the fingerprint of each version name it runs (table `strategy_versions`); a name already run with
-another fingerprint is refused: for the active strategy no entries (the `ObserverError` path,
-like a strategy that cannot load), an observer is left out; both say which name and fingerprints.
+Settings version (backlog S3). Every `strategy` object (`{name, version, settings_version}`,
+here, in `/decisions`, `/skipped`, `/watching`, the latest size and the status's active strategy)
+carries `settings_version`: the version of the settings the decision or trade was made under, a
+SHA-256 (64 hex characters) the bot computes (`src/tickr/settings_version.py`) over a canonical
+text (keys sorted, numbers by exact value: `1.5` = `1.50`, `2` = `2.0`) of two parts:
+the resolved values of every platform setting the settings schema lists
+(`src/tickr/settings_schema.py`, owner `platform`), and what decides entries: with `[model]
+enabled = true` the verified bundle's identity and manifest SHA-256, otherwise the active
+strategy's resolved values without its `[strategy] version` name (an observer: its own values).
+For a trade it is what the `trade-opened` row journaled (also stored on
+`trades.settings_version`); for a decision, what its decision record holds; for the status, the
+one the running bot's entry desk records (`null` while entries are off). `null` when not
+recorded (a trade or decision from before S3, a manual trade, research or replay records). It
+was added after version 1 shipped: a reader takes a `strategy` without it as `null`. The bot
+keeps each version's canonical text in table `settings_versions`. A version it cannot compute
+(a value with no canonical form, a missing or unverified bundle) or one recorded before with
+other contents is refused: for the active strategy no entries this run, journaled as
+`strategy-not-loaded` with `settings_version_refused` (the cause word) and alerted
+(`strategy-not-loaded`); an observer is left out (`observers-stopped` alert).
 
 `code_version` (in `trades_today` and in `day-v1` `trades`) is the bot code version the trade was
 opened by: the full git commit SHA of the run that opened it, with `-dirty` when a tracked file

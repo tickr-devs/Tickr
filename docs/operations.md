@@ -522,7 +522,8 @@ straight to the supervisor. Limits:
 `unprotected-position`, `stop-rejected`, `unknown-order-status`, `foreign-exposure`,
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
-`exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`,
+`exit-refused`, `observers-stopped`, `strategy-not-loaded` (no entries this run: the active
+strategy or its settings version was refused), `not-flat-after-flatten`, `exit-not-filled`,
 `flatten-after-close`, from the API `api-credentials-unexpected` (Mac notification and feed only, see
 "The API job and the Webull keys"), and from
 the watchdog `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`,

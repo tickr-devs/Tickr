@@ -267,7 +267,7 @@ def test_decisions_of_a_symbol(api, cfg):
         {"rule": "relative_volume", "measured": "2.4", "operator": ">=", "threshold": "1.5",
          "passed": True, "note": "", "against_trigger": False}]
     assert body["decisions"][1]["strategy"] == {"name": "price-action-v1", "version": "1",
-                                                 "fingerprint": None}
+                                                 "settings_version": None}
 
 
 def test_decisions_and_explain_round_every_check_keeping_its_verdict(api, cfg):
