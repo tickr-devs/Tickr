@@ -22,7 +22,7 @@ struct PositionsView: View {
             .contentTransition(.numericText())
         }
         if !status.positions.isEmpty {
-          CloseAllButton(symbols: Board.positions(status).map(\.symbol))
+          PositionsCloseAll(symbols: Board.positions(status).map(\.symbol))
         }
       }
     } content: {
@@ -101,7 +101,7 @@ struct PositionsView: View {
 /// "Close all" in the title row (IOSPosition board): POST /commands/emergency, which pauses
 /// entries, cancels the bot's working entry orders and closes every position it holds at market.
 /// It asks first, with the symbols it closes, then Face ID (`BotControl.confirmAndSend`).
-struct CloseAllButton: View {
+struct PositionsCloseAll: View {
   @Environment(AppModel.self) private var model
   @State private var confirm = false
   /// The open positions' symbols, in the screen's order.
