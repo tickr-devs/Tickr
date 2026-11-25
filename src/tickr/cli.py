@@ -918,7 +918,7 @@ def main(argv: list[str] | None = None) -> int:
     resolve.add_argument("order_id", help="the client order id the order-conflict, "
                          "order-missing or status-unknown fence names")
     sub.add_parser("clear-stop", help="allow starts again after an operator stop-bot command")
-    sub.add_parser("probe-news-delay", help="read-only, runs until Ctrl-C: polls Massive's "
+    sub.add_parser("probe-news-delay", help="read-only, runs until Ctrl-C: polls Massive news, "
                    "Benzinga news and earnings and records each record's receipt time "
                    "(docs/operations.md)")
     demo_parser = sub.add_parser("demo", help="a made-up trading day in its own folder "

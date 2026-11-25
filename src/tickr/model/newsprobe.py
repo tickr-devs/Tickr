@@ -13,8 +13,10 @@ Records of the first poll after a start are written as `baseline`: they were the
 probe ran and time nothing. Only the fields the training reads are kept (no title, no body).
 A failed poll is recorded (`poll_failed`) and the next one runs at its time; a refused key (HTTP
 401/403) or a missing credential stops the probe. The key is read by NAME at each request and is
-never written. Massive's general news (`nw_*`, item 9) is not polled: the training's fetch of it
-is not in the training code, so its endpoint is not known here.
+never written. Massive's general news (`nw_*`, item 9) is polled the way the training fetched it
+(the owner's fetch_ref2.py / reftopup.py: `/v2/reference/news`, `published_utc` window,
+`order=asc`, `sort=published_utc`); every publisher is kept, so the delay is known per publisher
+(the training counts only GlobeNewswire and The Motley Fool).
 """
 
 from __future__ import annotations
@@ -44,8 +46,12 @@ class Source:
 
 
 NEWS = Source("benzinga_news", "benzinga_id", ("published", "last_updated", "tickers", "channels"))
+GENERAL = Source("massive_news", "id", ("published_utc", "publisher", "tickers"))
 EARNINGS = Source("benzinga_earnings", "benzinga_id",
                   ("ticker", "date", "time", "last_updated", "actual_eps", "estimated_eps"))
+
+
+SOURCES = (NEWS, EARNINGS, GENERAL)
 
 
 def _stamp(moment: datetime.datetime) -> str:
@@ -67,12 +73,16 @@ class Probe:
         self.folder = cfg.root / cfg.run.data_dir / rel
         self.reference = massive.Reference(cfg, opener)
         self.now = now or (lambda: datetime.datetime.now(datetime.UTC))
-        self.seen: dict[str, dict[str, tuple[str, ...]]] = {NEWS.name: {}, EARNINGS.name: {}}
+        self.seen: dict[str, dict[str, tuple[str, ...]]] = {s.name: {} for s in SOURCES}
         self.previous: dict[str, datetime.datetime] = {}  # source -> sent time of the last success
 
     def _query(self, source: Source, sent: datetime.datetime) -> tuple[str, dict[str, str]]:
+        since = sent - datetime.timedelta(seconds=self.m.news_probe_news_lookback_seconds)
+        if source is GENERAL:  # the training's stamp form: 2021-11-16T00:00:00Z
+            return self.m.massive_news_path, {
+                "published_utc.gte": since.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "order": "asc", "sort": "published_utc"}
         if source is NEWS:
-            since = sent - datetime.timedelta(seconds=self.m.news_probe_news_lookback_seconds)
             return self.m.benzinga_news_path, {
                 "published.gte": since.astimezone(datetime.UTC).isoformat(timespec="seconds"),
                 "sort": "published.asc"}
@@ -114,7 +124,10 @@ class Probe:
                 lines.append({"event": "row_unreadable", "source": source.name,
                               "cause": f"no {source.id_field}", "received_utc": _stamp(received)})
                 continue
-            values = tuple(json.dumps(row.get(f), sort_keys=True) for f in source.fields)
+            kept = {f: row[f] for f in source.fields if f in row}  # absent stays absent
+            if isinstance(kept.get("publisher"), dict):  # the training keeps only its name
+                kept["publisher"] = {"name": kept["publisher"].get("name")}
+            values = tuple(json.dumps(kept.get(f), sort_keys=True) for f in source.fields)
             old = seen.get(str(key))
             if old == values:
                 continue
@@ -125,7 +138,7 @@ class Probe:
                                     "poll_sent_utc": _stamp(sent),
                                     "received_utc": _stamp(received),
                                     "previous_poll_sent_utc": _stamp(before) if before else None}
-            line.update({f: row[f] for f in source.fields if f in row})  # absent stays absent
+            line.update(kept)
             lines.append(line)
         lines.append({"event": "poll", "source": source.name, "rows": len(rows),
                       "poll_sent_utc": _stamp(sent), "received_utc": _stamp(received), **counts})
@@ -146,7 +159,7 @@ def run(cfg: Config, *, opener: massive.Opener = massive._open,
     done = 0
     while polls is None or done < polls:
         start = probe.now()
-        for source in (NEWS, EARNINGS):
+        for source in SOURCES:
             counts = probe.poll(source)
             if any(counts.get(k) for k in ("new", "revised", "failed", "unreadable")):
                 out(f"{_stamp(probe.now())} {source.name} "

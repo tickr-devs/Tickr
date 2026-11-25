@@ -444,7 +444,7 @@ real bot on a simulated exchange (never Webull, its own folder): `tickr demo`, s
 
 News delay probe (Codex items 9-12, backlog R34; read only, needs only the Massive key): in a
 Terminal, `set -a; . ~/.config/tickr/env; set +a; tickr probe-news-delay`, left running all day
-(Ctrl-C stops it). Every `[massive] news_probe_poll_seconds` it lists Massive's Benzinga news and
+(Ctrl-C stops it). Every `[massive] news_probe_poll_seconds` it lists Massive's general news, Benzinga news and
 earnings and appends each new or changed record, with its published / last_updated time and our
 receipt time, to `<data_dir>/massive/news-probe/<New York date>.jsonl`. Delay of a `new` record =
 `received_utc - published` (at most; it arrived after `previous_poll_sent_utc`). Lines of the

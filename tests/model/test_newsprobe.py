@@ -91,6 +91,7 @@ def test_new_and_revised_records_carry_receipt_and_previous_poll(cfg):
                                      art(2, "2026-11-25T15:00:01.5Z")])],
         m.benzinga_earnings_path: [page([rep(9, actual_eps=None)]), page([rep(9)]),
                                    page([rep(9)])],
+        m.massive_news_path: [page([])] * 3,
     })
     assert newsprobe.run(cfg, opener=wire, now=Clock(), polls=3, out=lambda s: None) == 0
     got = records(cfg)
@@ -106,16 +107,17 @@ def test_new_and_revised_records_carry_receipt_and_previous_poll(cfg):
     assert items[0]["previous_poll_sent_utc"] is None
     assert items[3]["actual_eps"] == 0.3
     polls = [r for r in got if r["event"] == "poll"]
-    assert len(polls) == 6 and polls[2]["new"] == 1 and polls[2]["rows"] == 2
+    assert len(polls) == 9 and polls[3]["new"] == 1 and polls[3]["rows"] == 2
     assert KEY not in json.dumps(got)
 
 
 def test_queries_are_the_training_endpoints_with_the_key_in_the_header_only(cfg):
     m = cfg.massive
-    wire = Wire({m.benzinga_news_path: [page([])], m.benzinga_earnings_path: [page([])]})
+    wire = Wire({m.benzinga_news_path: [page([])], m.benzinga_earnings_path: [page([])],
+                 m.massive_news_path: [page([])]})
     newsprobe.run(cfg, opener=wire, now=Clock(), polls=1, out=lambda s: None)
-    news, earn = (urllib.parse.urlsplit(r.full_url) for r in wire.requests)
-    assert news.hostname == m.api_host == earn.hostname
+    news, earn, general = (urllib.parse.urlsplit(r.full_url) for r in wire.requests)
+    assert news.hostname == m.api_host == earn.hostname == general.hostname
     q = dict(urllib.parse.parse_qsl(news.query))
     sent = T0 + datetime.timedelta(seconds=2)
     since = sent - datetime.timedelta(seconds=m.news_probe_news_lookback_seconds)
@@ -126,6 +128,12 @@ def test_queries_are_the_training_endpoints_with_the_key_in_the_header_only(cfg)
         days=m.news_probe_earnings_lookback_days)
     assert q == {"date.gte": first.isoformat(), "date.lte": "2026-11-25", "sort": "date.asc",
                  "limit": str(m.page_limit)}
+    sent = T0 + datetime.timedelta(seconds=6)  # third request of the round
+    since = sent - datetime.timedelta(seconds=m.news_probe_news_lookback_seconds)
+    assert general.path == "/v2/reference/news"
+    assert dict(urllib.parse.parse_qsl(general.query)) == {
+        "published_utc.gte": since.strftime("%Y-%m-%dT%H:%M:%SZ"), "order": "asc",
+        "sort": "published_utc", "limit": str(m.page_limit)}
     for r in wire.requests:
         assert r.get_header("Authorization") == "Bearer " + KEY
         assert KEY not in r.full_url
@@ -135,7 +143,8 @@ def test_a_failed_poll_is_recorded_and_the_next_one_times_from_the_last_success(
     m = cfg.massive
     a1 = art(1, "2026-11-25T14:00:00Z")
     wire = Wire({m.benzinga_news_path: [page([a1]), 500, page([a1, art(2, "2026-11-25T15:00Z")])],
-                 m.benzinga_earnings_path: [page([]), page([]), page([])]})
+                 m.benzinga_earnings_path: [page([]), page([]), page([])],
+                 m.massive_news_path: [page([])] * 3})
     newsprobe.run(cfg, opener=wire, now=Clock(), polls=3, out=lambda s: None)
     got = records(cfg)
     failed = [r for r in got if r["event"] == "poll_failed"]
@@ -149,7 +158,7 @@ def test_a_row_without_id_is_counted_never_guessed(cfg):
     m = cfg.massive
     wire = Wire({m.benzinga_news_path: [page([{"published": "2026-11-25T14:00:00Z"},
                                               art(1, "2026-11-25T14:00:00Z")])],
-                 m.benzinga_earnings_path: [page([])]})
+                 m.benzinga_earnings_path: [page([])], m.massive_news_path: [page([])]})
     newsprobe.run(cfg, opener=wire, now=Clock(), polls=1, out=lambda s: None)
     got = records(cfg)
     assert [r["event"] for r in got if r["source"] == "benzinga_news"] == [
@@ -185,3 +194,30 @@ def test_the_cli_command_runs_the_probe(monkeypatch):
     monkeypatch.setattr(newsprobe, "main", lambda c: seen.append(c.massive.api_host) or 0)
     assert cli_main(["probe-news-delay"]) == 0
     assert seen == ["api.massive.com"]
+
+
+def general(i, published, publisher="GlobeNewswire Inc.", **kw):
+    return {"id": i, "published_utc": published, "tickers": ["AAA"], "title": "never kept",
+            "publisher": {"name": publisher, "homepage_url": "never kept"}, **kw}
+
+
+def test_general_news_keeps_the_training_fields_and_every_publisher(cfg):
+    m = cfg.massive
+    g1 = general("a", "2026-11-25T14:00:00Z")
+    wire = Wire({m.benzinga_news_path: [page([])] * 3, m.benzinga_earnings_path: [page([])] * 3,
+                 m.massive_news_path: [
+                     page([g1]),
+                     page([g1, general("b", "2026-11-25T15:00:00Z", "Zacks")]),
+                     page([general("a", "2026-11-25T14:00:00Z", homepage="x"),
+                           general("b", "2026-11-25T15:00:00Z", "Zacks", tickers=["BBB"])])]})
+    newsprobe.run(cfg, opener=wire, now=Clock(), polls=3, out=lambda s: None)
+    items = [r for r in records(cfg) if r["source"] == "massive_news" and r["event"] != "poll"]
+    assert [(r["event"], r["id"]) for r in items] == [("baseline", "a"), ("new", "b"),
+                                                     ("revised", "b")]
+    assert items[1] == {"event": "new", "source": "massive_news", "id": "b",
+                        "published_utc": "2026-11-25T15:00:00Z", "tickers": ["AAA"],
+                        "publisher": {"name": "Zacks"},
+                        "poll_sent_utc": items[1]["poll_sent_utc"],
+                        "received_utc": items[1]["received_utc"],
+                        "previous_poll_sent_utc": items[1]["previous_poll_sent_utc"]}
+    assert items[1]["previous_poll_sent_utc"] < items[1]["received_utc"]
