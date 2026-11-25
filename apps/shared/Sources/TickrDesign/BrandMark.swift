@@ -7,9 +7,8 @@ import SwiftUI
 ///
 /// On appear the letter fades in and the level slides into place. While `live` (the bot's data is
 /// current) the level then breathes slowly; otherwise, and with Reduce Motion, it stands still.
-///
-/// Empty screens show it as their illustration (`BrandMark.empty`): in brand colours when there is
-/// simply nothing yet, muted when the bot cannot be reached.
+/// It stands for the app only (launch, headers, icons, menu bar), never for missing data or
+/// loading (owner, 2026-11-25): empty screens use `EmptyState`, loading the shared loaders.
 public struct BrandMark: View {
   /// How the mark is coloured.
   public enum Tone: Sendable {
@@ -64,11 +63,6 @@ public struct BrandMark: View {
     self.tone = tone
     self.drawing = drawing
     self.sparkPop = sparkPop
-  }
-
-  /// The illustration of an empty screen: large and still.
-  public static func empty(_ tone: Tone = .brand) -> BrandMark {
-    BrandMark(size: Tokens.Size.emptyMark, live: false, tone: tone)
   }
 
   /// The level's frame in a tile of side `size`.
@@ -214,8 +208,7 @@ public struct BrandGlyph: View {
 #Preview {
   HStack(spacing: Tokens.Space.xl) {
     BrandMark(live: true)
-    BrandMark.empty()
-    BrandMark.empty(.muted)
+    BrandMark(live: false, tone: .muted)
     BrandGlyph(size: BrandGlyph.menuBarSide)
   }
     .padding()

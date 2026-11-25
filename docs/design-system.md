@@ -23,7 +23,7 @@ the approved design canvas. Code follows it one to one:
    - Protocol values from the bot (`exit_reason`, fence `kind`) are shown through a localized title and never translated in place.
 3. **System appearance only.** Light and dark follow macOS/iOS; there is no theme switch. Light is designed on its own (soft glows and a tinted shadow), not as an inverted dark.
 4. **Components carry the spacing.** Cards, rows, section labels, badges and tags come from shared components. A screen arranges components; it does not restyle them.
-5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop, marked `// decorative: <why>` in code: the brand mark's breathing level, the empty-positions radar (sweep and blips), the event ticker's and the screener chips' scroll, and the Settings session card's drifting pre/post-market stripes (owner's request, 2026-11-16). Each loops only while `OrnamentGate` holds (macOS and iOS: Reduce Motion off, the live day shown, fresh status, the bot running), still otherwise. The one exception is loading (mockup v102, see "Loading" below): the skeleton's shimmer and the button spinner mark only that a read or a command is in flight and are on screen only while one is, so they move whenever they show, in Core Animation like the brand halo; under Reduce Motion nothing sweeps or turns and they pulse gently in opacity instead. The `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
+5. **Motion has meaning and respects Reduce Motion.** Every animation uses a `Tokens.Motion` curve. With Reduce Motion on, every piece shows its still final state. Anything that reads as data or activity (status dots, flow stages, alarms, counts) moves only when the bot's data changes: one pulse, flight or fade per real event, still in between, never on a timer. Only pure ornament may loop, marked `// decorative: <why>` in code: the brand mark's breathing level, the empty-positions radar (sweep and blips), the event ticker's and the screener chips' scroll, and the Settings session card's drifting pre/post-market stripes (owner's request, 2026-11-16). Each loops only while `OrnamentGate` holds (macOS and iOS: Reduce Motion off, the live day shown, fresh status, the bot running), still otherwise. The one exception is loading (mockup v102, see "Loading" below): the skeleton's shimmer and the button spinner mark only that a read or a command is in flight and are on screen only while one is, so they move whenever they show, in Core Animation like the brand level; under Reduce Motion nothing sweeps or turns and they pulse gently in opacity instead. The `loop` rule of `check_swift_rules.py` rejects any other `repeatForever`, `TimelineView(.animation)` or Core Animation `repeatCount = .infinity` (owner, 2026-11-15).
 6. **Formatting: Swift uses 2-space indentation.**
    - `.editorconfig`, SwiftLint's `indentation_width` (every app) and the rules check (rule `indent`, every app) enforce it.
    - Planned with each app's move: the Xcode projects' text settings get the same values, so Xcode indents with 2.
@@ -321,7 +321,7 @@ size unchanged.
 | `menuGlyph` | 13 | The settings gear (`DesignGlyph.settings`) in the macOS menu-bar panel, at `Stroke.glyphHeavy` (2.2 grid units); elsewhere the gear is stroked at `Stroke.gear` (1.9). Both apps draw this one gear for Settings (iOS Home header, Mac menu bar, Mac Settings General tab), never an SF Symbol |
 | `dayResultWidth` | 300 | Overview's day result beside the header |
 | `gridColumnMin` | 300 | Narrowest column of a card grid before it stacks |
-| `logo` / `logoSmall` / `emptyMark` | 52 / 26 / 64 | Brand mark's tile (`BrandMark`) in a header, a panel, an empty screen |
+| `logo` / `logoSmall` | 52 / 26 | Brand mark's tile (`BrandMark`) in a header, a panel |
 | `sparkline` | 34 | Sparkline height |
 | `bar` | 8 | Progress bar height |
 | `barThin` | 4 | Thin progress bar inside a row (Watching closely) |
@@ -617,9 +617,11 @@ plus "ickr" in Manrope 700 and ".bot" in a muted grey.
   after another (`risesHeld` holds them until the flight starts). The header's own mark stays hidden until the flying one lands on it, so two marks are
   never seen. About 1 s in all. Once per launch (`AppModel.openingPlayed`), not on reopening the window.
   Reduce Motion: the same cross-fade.
-- Empty screens (nothing yet, no trades, bot unreachable) use `BrandMark.empty()` as the
-  `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors
-  keep a warning SF Symbol, so they never look like a calm empty state.
+- The mark stands for the app only: launch, opening, headers, icons and the menu bar. Empty
+  screens never show it (owner, 2026-11-25): `EmptyState` is the system's `ContentUnavailableView`
+  with a quiet SF Symbol (`nothingSymbol`, or `unavailableSymbol` when the list could not be
+  read), and loading uses the shared loaders (skeleton, spinner, 2 pt bar). Errors keep a warning
+  SF Symbol, so they never look like a calm empty state.
 - macOS has no launch screen (Apple HIG). The menu bar extra shows `BrandGlyph` as a template
   image (`BrandGlyph.menuBarSide`) while all is calm and the severity's SF Symbol on attention or alarm, so
   the bot's state stays visible; notifications and the About panel use the app icon.
