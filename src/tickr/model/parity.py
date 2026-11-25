@@ -9,7 +9,8 @@ bucket's layout, copied to a local folder:
     python -m tickr.model.parity --day 2026-11-17 --folder <local copy> --types <types.csv> \
         --reference <prepared reference folder> --benzinga <Benzinga folder> --fl <facts csv> \
         --out <report folder> [--minutes HH:MM ... | --all-minutes] [--mode plain|marker|both|all]
-        [--ticks-only] [--rtol R] [--atol A]
+        [--ticks-only] [--rtol R] [--atol A] [--engine full-prefix|incremental]
+        [--verify-full-prefix N] [--table-workers K] [--resume] [--rebuild-report]
 
 INPUTS. `--folder` gives the defaults of the research layout (each may be named instead):
 `--bars` = <folder>/minute_aggs (minute_aggs day files `YYYY-MM-DD.csv.gz`: the day and the 20
@@ -79,6 +80,36 @@ VARIANTS (`--mode`; both = plain and marker, all = the three):
   applied to the prefix: the marker only for symbols with a real quote in minute m; a symbol
   whose latest quote lies in an earlier minute keeps the plain 0 weight there.
 
+ENGINES (`--engine`; codex-108 points 1, 2 and 9 over all minutes of a day):
+- `full-prefix` (the default and the reference): each minute rebuilt from scratch as above, v11
+  on the whole prefix and the table code on the whole market's day (minutes cost ever more:
+  seconds at 04:30, minutes at 15:30 on a real day);
+- `incremental`: one walk over the day (`tickr.model.parity_walk`): each closed minute's tick
+  rows from the carry of #820 (`ticks.tail_carry` / `minute_rows`), the marker applied per
+  closed minute as the live path (#826) does, each variant's table composed from those rows
+  (exactly the full-prefix table, see parity_walk); the table rows of a minute from
+  `incremental.DayTable` (#832: the whole-market part carried minute by minute, the pinned
+  day2 on the cohort only; `--table-workers` processes), computed once per minute for every
+  variant; the cohort union for the tick extraction from the carried row rule
+  (`incremental.Market`).
+- `--verify-full-prefix N` (incremental only): at N chosen minutes spread from the first to the
+  last, the full-prefix engine runs too and the two must be EXACTLY equal: the table rows
+  (keys, order, types, every value) and each variant's tick table. A difference is the
+  discrepancy class `engine` (report `engine_check`, the cells in the exceptions csv with
+  table `engine`), never accepted; the features of both engines are then compared as well, to
+  show which cells the difference moves.
+
+RESULTS AS THEY ARE MADE (`Journal`): `<out>/parity-<day>.jsonl` gets a header line (the run's
+settings and inputs) and one line per finished minute (every variant's comparison, the tick
+comparison, final-quote cases, versus plain, the engine check, the seconds of each step),
+written and synced as soon as the minute is done; the minute's exception cells go to the
+exceptions csv just before its line. `--resume` continues a journal in `<out>` whose header
+equals the new run's (else `replay_resume_mismatch`), skipping its finished minutes (the
+incremental walk still converts them, which its carry needs); a line cut by a stop is dropped,
+with the cells of minutes without a line. The report is built from the journal alone
+(`build_report`; `--rebuild-report` writes it from `<out>` without running anything, also for
+a stopped run: `minutes_done`, `complete`).
+
 REPORT (`<out>/parity-<day>.json`, `.txt` and `-exceptions.csv`; an existing one refuses). The
 threshold is EXACT (codex-108 point 2: pending the per-column bound table); every discrepancy
 cell is an exception, listed in the csv (variant, minute, table, symbol, column, group, class,
@@ -114,6 +145,7 @@ import argparse
 import contextlib
 import csv
 import hashlib
+import io
 import json
 import math
 import os
@@ -135,6 +167,7 @@ BAR_GROUPS = features.LIVE_GROUPS
 # The groups computed from the tick table: compared only for symbols whose raw ticks are given.
 TICK_GROUPS = ("tk", "tk2")
 VARIANTS = ("plain", "marker", "marker-minute")
+ENGINES = ("full-prefix", "incremental")
 MODES = {"plain": ("plain",), "marker": ("marker",), "both": ("plain", "marker"),
          "all": VARIANTS}
 BASE_MINUTES = ("04:30", "09:45", "12:00", "15:30")  # codex-108 point 9
@@ -692,13 +725,237 @@ def choose_minutes(day: str, bars: Any, start: int, rows_at: Any, scan_for: Any,
     return chosen, why
 
 
+
+
+def sample_minutes(chosen: Sequence[int], n: int) -> list[int]:
+    """`n` of the chosen minutes, evenly spread from the first to the last (the last always
+    among them: the longest prefix); all of them when n is at least their count."""
+    if n <= 0:
+        return []
+    if n >= len(chosen):
+        return list(chosen)
+    if n == 1:
+        return [chosen[-1]]
+    span = len(chosen) - 1
+    return [chosen[i] for i in sorted({(k * span + (n - 1) // 2) // (n - 1) for k in range(n)})]
+
+
+def cohort_union(bars: Any, day: str, state: features.DayState, types: set[str] | None,
+                 chosen: Sequence[int]) -> set[str]:
+    """The symbols with a row at any chosen minute, from the row rule carried minute by minute
+    over the whole market (`incremental.Market`, #832) instead of the table code's whole day at
+    every minute. The rows themselves are checked against the table code at the minutes
+    `--verify-full-prefix` samples."""
+    from tickr.model.features import incremental
+
+    mk = incremental.Market(state, types)
+    frame = features.bars_frame(bars[bars.window_start <= _ns_end(day, -1) + chosen[-1]
+                                     * features.NS_PER_MINUTE], day)
+    by = dict(tuple(frame.groupby("m", sort=True))) if len(frame) else {}
+    empty = frame.iloc[:0]
+    want, got = set(chosen), set()
+    for m in range(chosen[-1] + 1):
+        mk.step(m, by.get(m, empty), want=False)
+        if m in want:
+            got |= set(mk.tick[mk.cohort()])
+    return got
+
+
+def exact_diff(mine: Any, ref: Any, keys: list[str], table: str,
+               cells: list[dict[str, Any]]) -> dict[str, Any]:
+    """`mine` (incremental engine) against `ref` (full-prefix engine), EXACT: keys, their
+    order, column names and types, and every value (missing equals missing). Each differing
+    cell is appended to `cells` as class `engine`."""
+    import numpy as np
+    import pandas as pd
+
+    empty = pd.DataFrame(columns=keys)
+    mine = empty if mine is None else mine
+    ref = empty if ref is None else ref
+    out: dict[str, Any] = {"rows_incremental": len(mine), "rows_full_prefix": len(ref),
+                           "columns_equal": list(mine.columns) == list(ref.columns),
+                           "dtypes_equal": [str(t) for t in mine.dtypes]
+                           == [str(t) for t in ref.dtypes], "columns": {}}
+    a, b = mine.set_index(keys), ref.set_index(keys)
+    out["only_incremental"] = len(a.index.difference(b.index))
+    out["only_full_prefix"] = len(b.index.difference(a.index))
+    out["order_equal"] = (len(a) == len(b) and bool((a.index == b.index).all()))
+    common = b.index[b.index.isin(a.index)]
+    a, b = a.loc[common], b.loc[common]
+    n = 0
+    for c in (c for c in b.columns if c in a.columns):
+        x, y = a[c].to_numpy(), b[c].to_numpy()
+        if pd.api.types.is_numeric_dtype(a[c]) and pd.api.types.is_numeric_dtype(b[c]):
+            x, y = x.astype(np.float64), y.astype(np.float64)
+            bad = ~((x == y) | (np.isnan(x) & np.isnan(y)))
+        else:
+            bad = np.array([not (u == v or (pd.isna(u) and pd.isna(v)))
+                            for u, v in zip(x, y, strict=True)], dtype=bool)
+        if not bad.any():
+            continue
+        out["columns"][c] = int(bad.sum())
+        n += int(bad.sum())
+        for i in np.nonzero(bad)[0]:
+            key = common[i]
+            num = isinstance(x[i], float)
+            with np.errstate(invalid="ignore", over="ignore"):
+                diff = abs(x[i] - y[i]) if num else math.nan
+            cells.append({"sym": str(key[0] if isinstance(key, tuple) else key),
+                          "column": c if not isinstance(key, tuple) else f"{c}@m={key[1]}",
+                          "group": table, "class": "engine",
+                          "reference": y[i] if num else str(y[i]),
+                          "replay": x[i] if num else str(x[i]), "abs": diff,
+                          "rel": diff / max(abs(x[i]), abs(y[i])) if num and diff else math.nan,
+                          "ulp": int(_ulps(x[i:i + 1], y[i:i + 1])[0]) if num else -1})
+    out["cells"] = n
+    out["exact"] = (n == 0 and out["columns_equal"] and out["dtypes_equal"]
+                    and out["order_equal"] and not out["only_incremental"]
+                    and not out["only_full_prefix"])
+    return out
+
+
+# --- the results journal ---------------------------------------------------------------------
+
+
+class Journal:
+    """The run's results as they are made: `<out>/parity-<day>.jsonl` (a header line, then one
+    line per finished minute) and the exception cells in `<out>/parity-<day>-exceptions.csv`
+    (written, flushed and synced before the minute's line, so a minute with a line has all its
+    cells). `resume`: an existing journal of the same run (equal header) is continued; its
+    minutes are skipped; a last line without its newline (cut by a stop) and the cells of
+    minutes without a line are dropped. Without `resume` an existing journal refuses."""
+
+    def __init__(self, out: Path, day: str, resume: bool = False) -> None:
+        self.lines = out / f"parity-{day}.jsonl"
+        self.cells = out / f"parity-{day}-exceptions.csv"
+        self.resume = resume
+        self.done: dict[str, dict[str, Any]] = {}
+
+    def open(self, header: dict[str, Any]) -> None:
+        header = json.loads(json.dumps({"kind": "header", **header}, default=_plain))
+        if self.lines.exists() and self.resume:
+            old, records = read_journal(self.lines, cut=True)
+            if old != header:
+                diff = sorted(k for k in set(old) | set(header) if old.get(k) != header.get(k))
+                raise ModelRefused("replay_resume_mismatch", ", ".join(diff))
+            self.done = {r["minute"]: r for r in records}
+            self._keep_cells(set(self.done))
+            return
+        for f in (self.lines, self.cells):
+            if f.exists():
+                raise ModelRefused("output_exists", str(f))
+        with self.cells.open("w", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=EXCEPTION_FIELDS).writeheader()
+        self._append(self.lines, json.dumps(header, sort_keys=True) + "\n")
+
+    def _keep_cells(self, minutes: set[str]) -> None:
+        if not self.cells.exists():
+            raise ModelRefused("replay_resume_mismatch", f"{self.cells.name} missing")
+        tmp = self.cells.with_name(self.cells.name + ".tmp")
+        with self.cells.open(newline="", encoding="utf-8") as f, \
+                tmp.open("w", newline="", encoding="utf-8") as g:
+            out = csv.DictWriter(g, fieldnames=EXCEPTION_FIELDS)
+            out.writeheader()
+            out.writerows(r for r in csv.DictReader(f) if r["minute"] in minutes)
+        os.replace(tmp, self.cells)
+
+    @staticmethod
+    def _append(path: Path, body: str) -> None:
+        with path.open("a", encoding="utf-8", newline="") as f:
+            f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
+
+    def add(self, record: dict[str, Any], cells: list[dict[str, Any]]) -> None:
+        if cells:
+            buffer = io.StringIO()
+            csv.DictWriter(buffer, fieldnames=EXCEPTION_FIELDS).writerows(cells)
+            self._append(self.cells, buffer.getvalue())
+        self._append(self.lines, json.dumps({"kind": "minute", **record}, sort_keys=True,
+                                            default=_plain) + "\n")
+        self.done[record["minute"]] = record
+
+
+def _plain(x: Any) -> Any:
+    """numpy scalars in a record as JSON numbers."""
+    if hasattr(x, "item"):
+        return x.item()
+    raise TypeError(type(x).__name__)
+
+
+def read_journal(path: Path, cut: bool = False) -> tuple[dict[str, Any],
+                                                         list[dict[str, Any]]]:
+    """The header and minute records of a journal. A last line without its newline is an
+    unfinished write: dropped (and, with `cut`, removed from the file); any other unreadable
+    line refuses."""
+    body = path.read_bytes()
+    keep = body[:body.rfind(b"\n") + 1]
+    if cut and keep != body:
+        with path.open("r+b") as f:
+            f.truncate(len(keep))
+            f.flush()
+            os.fsync(f.fileno())
+    lines = keep.decode("utf-8").splitlines()
+    try:
+        rows = [json.loads(x) for x in lines]
+    except ValueError as exc:
+        raise ModelRefused("replay_journal_unreadable", path.name) from exc
+    if not rows or rows[0].get("kind") != "header" or any(r.get("kind") != "minute"
+                                                          for r in rows[1:]):
+        raise ModelRefused("replay_journal_unreadable", path.name)
+    return rows[0], rows[1:]
+
+
+def build_report(header: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
+    """The report of a run from its journal: the header and the records of the finished
+    minutes, in minute order. A run stopped early gives the report of its finished minutes
+    (`minutes_done` against `minutes`)."""
+    report = {k: v for k, v in header.items() if k != "kind"}
+    records = sorted(records, key=lambda r: r["m"])
+    report["minutes_done"] = [r["minute"] for r in records]
+    report["complete"] = report["minutes_done"] == report["minutes"]
+    report.update(variants={}, ticks={}, final_quote={}, versus_plain={})
+    run = report["variants_run"]
+    for variant in run:
+        if not report["ticks_only"]:
+            report["variants"][variant] = {r["minute"]: r["variants"][variant] for r in records}
+            cases = [c for r in records for c in r["final_quote"][variant]]
+            report["final_quote"][variant] = {"summary": _summary(cases), "cases": cases}
+        if any(variant in r["ticks"] for r in records):
+            report["ticks"][variant] = {r["minute"]: r["ticks"][variant] for r in records}
+        if variant != "plain" and any(variant in r["versus_plain"] for r in records):
+            report["versus_plain"][variant] = {r["minute"]: r["versus_plain"][variant]
+                                               for r in records}
+    checked = {r["minute"]: r["engine"] for r in records if r["engine"]}
+    report["engine_check"] = {
+        "minutes": sorted(checked, key=lambda hm: table_minutes([hm])[0]),
+        "differing_minutes": [hm for hm, e in checked.items()
+                              if not all(x["exact"] for x in _engine_parts(e))],
+        "per_minute": checked}
+    report["exceptions"] = sum(r["cells"] for r in records)
+    report["seconds"] = {r["minute"]: r["seconds"] for r in records}
+    return report
+
+
+def _engine_parts(check: dict[str, Any]) -> list[dict[str, Any]]:
+    parts = [check["bars"]] if "bars" in check else []
+    for v in check.get("variants", {}).values():
+        parts.append(v["ticks"])
+    return parts
+
+
+# --- the replay -------------------------------------------------------------------------------
+
+
 def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
            variants: Sequence[str] = ("plain",), work: Path,
            tolerance: tuple[float, float] | None = None, all_minutes: bool = False,
-           ticks_only: bool = False,
-           exceptions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+           ticks_only: bool = False, exceptions: list[dict[str, Any]] | None = None,
+           engine: str = "full-prefix", verify: int = 0, journal: Journal | None = None,
+           table_workers: int = 1) -> dict[str, Any]:
     """The parity report of `day` at `minutes` (HH:MM; None = the default choice): see the
-    module docstring. Exception cells are appended to `exceptions` when given."""
+    module docstring. Exception cells are appended to `exceptions` when given; each finished
+    minute goes to `journal` when given (its finished minutes are skipped)."""
     from tickr.model import massive
 
     need = day_files(day, inputs.bars)  # before any file is opened
@@ -706,6 +963,11 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
         raise ModelRefused("replay_tick_form", inputs.tick_form)
     if any(v not in VARIANTS for v in variants) or not variants:
         raise ModelRefused("replay_variant", ", ".join(variants))
+    if engine not in ENGINES:
+        raise ModelRefused("replay_engine", engine)
+    if verify and (engine != "incremental" or ticks_only):
+        raise ModelRefused("replay_engine", "--verify-full-prefix needs --engine incremental "
+                           "and the features")
     covered = covered_tickers(inputs)
     if (covered is not None or ticks_only) and inputs.tk61 is None:
         raise ModelRefused("replay_tk61_missing", "the audit form and --ticks-only need tk61")
@@ -746,7 +1008,10 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
         chosen = list(range(code.w.NM))
     elif minutes is None:
         chosen, why = choose_minutes(day, bars, start, rows_at, scan_for, covered)
-    cohort = set().union(*(set(rows_at(m).sym) for m in chosen))
+    if engine == "incremental":
+        cohort = cohort_union(bars, day, state, types, chosen)
+    else:
+        cohort = set().union(*(set(rows_at(m).sym) for m in chosen))
     ticked = cohort if covered is None else cohort & covered
     if "scan" not in scans:
         scan_for(ticked)
@@ -755,64 +1020,164 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
     fill = (tick_table(inputs.tk61, cohort - ticked, last)
             if covered is not None and cohort - ticked else None)
     tk61 = tick_table(inputs.tk61, ticked, last) if inputs.tk61 is not None else None
-    report: dict[str, Any] = {
+    checks = sample_minutes(chosen, verify)
+    header: dict[str, Any] = {
         "day": day, "minutes": [hhmm(m) for m in chosen], "chosen_because": why,
         "history": need[:-1], "inputs": {k: str(v) for k, v in inputs.__dict__.items()},
         "types_md5": types_md5, "types_is_training_pin": types_md5 == code.labels.TYPES_MD5,
-        "tick_threads": os.environ.get("TICK_THREADS"), "threshold": "exact",
-        "tolerance": None if tolerance is None else {"rtol": tolerance[0],
-                                                     "atol": tolerance[1]},
+        "tick_threads": os.environ.get("TICK_THREADS"), "tick_groups": ticks.default_groups(),
+        "threshold": "exact", "tolerance": None if tolerance is None
+        else {"rtol": tolerance[0], "atol": tolerance[1]},
         "tick_form": inputs.tick_form, "covered_tickers": None if covered is None
         else len(covered), "converted_symbols": len(ticked),
         "tick_rows_from_tk61_symbols": len(cohort - ticked) if fill is not None else 0,
-        "bar_groups": list(BAR_GROUPS), "column_classes": kinds, "variants": {},
-        "ticks": {}, "final_quote": {}, "versus_plain": {}}
-    delivered: dict[str, dict[int, Any]] = {}
-    for variant in variants:
-        per: dict[str, Any] = {}
-        tick_per: dict[str, Any] = {}
-        cases: list[dict[str, Any]] = []
-        delivered[variant] = {}
-        for m in chosen:
-            mine = minute_ticks(work, day, m, False if variant == "plain" else variant)
-            through = m + features.DAY_START_MINUTE
-            if tk61 is not None:
-                cells: list[dict[str, Any]] = []
-                r = compare(mine[mine.m == through].drop(columns="m"),
-                            tk61[tk61.m == through].drop(columns="m"),
-                            {"ticks": _tick_value_columns()}, tolerance,
-                            dict.fromkeys(_tick_value_columns(), "value"), None, cells)
-                tick_per[hhmm(m)] = {"minute": m, **r}
-                _collect(exceptions, cells, variant, m, "ticks")
-            if ticks_only:
-                continue
-            table = mine
-            if fill is not None:
-                table = (_concat(mine, fill[fill.m <= through])
-                         .sort_values(["sym", "m"], kind="stable").reset_index(drop=True))
-            tick_file = write_tick_file(table, work / f"tk-{variant}-{m}.parquet")
-            given = full.FullInputs(tick_file, inputs.reference, inputs.benzinga,
-                                    inputs.fl_facts)
-            got = full.minute_rows_full(bars_through(m), day, m, state, types, given)
-            delivered[variant][m] = got
-            cells = []
-            per[hhmm(m)] = {"minute": m, **compare(got, want[want.m == m], groups, tolerance,
-                                                    kinds, covered, cells)}
-            _collect(exceptions, cells, variant, m, "features")
-            cases += final_quote_cases(m, set(got.sym), scans["scan"], ticked, cells, day)
+        "bar_groups": list(BAR_GROUPS), "column_classes": kinds, "variants_run": list(variants),
+        "ticks_only": ticks_only, "engine": engine,
+        "verify_full_prefix": [hhmm(m) for m in checks]}
+    if journal is None:
+        journal = Journal(work, day)
+    journal.open(header)
+    walk = table = None
+    if engine == "incremental":
+        from tickr.model import parity_walk
+        from tickr.model.features import incremental
+
+        walk = parity_walk.TickWalk(work, day, plain=any(v != "marker" for v in variants),
+                                    groups=ticks.default_groups())
         if not ticks_only:
-            report["variants"][variant] = per
-            report["final_quote"][variant] = {"summary": _summary(cases), "cases": cases}
-        if tk61 is not None:
-            report["ticks"][variant] = tick_per
-    if not ticks_only and "plain" in delivered:
-        for variant in variants:
-            if variant == "plain":
+            table = incremental.DayTable(day, state, types, table_workers)
+    try:
+        for m in chosen:
+            through = m + features.DAY_START_MINUTE
+            if walk is not None:
+                walk.advance(through)
+            if hhmm(m) in journal.done:
                 continue
-            report["versus_plain"][variant] = {
-                hhmm(m): compare(delivered[variant][m], delivered["plain"][m], groups, None,
-                                 kinds, covered)["classes"] for m in chosen}
-    return report
+            cells: list[dict[str, Any]] = []
+            record = _minute(day, m, variants, work, walk, table, state, types, inputs,
+                             bars_through(m), want, groups, kinds, tolerance, covered, tk61,
+                             fill, ticked, scans["scan"], ticks_only, m in checks, cells)
+            if exceptions is not None:
+                exceptions.extend(cells)
+            journal.add(record, cells)
+    finally:
+        if walk is not None:
+            walk.close()
+        if table is not None:
+            table.close()
+    return build_report(*read_journal(journal.lines))
+
+
+def _minute(day: str, m: int, variants: Sequence[str], work: Path, walk: Any, table: Any,
+            state: features.DayState, types: set[str] | None, inputs: ReplayInputs,
+            bars_now: Any, want: Any, groups: dict[str, list[str]], kinds: Any,
+            tolerance: tuple[float, float] | None, covered: set[str] | None, tk61: Any,
+            fill: Any, ticked: set[str], scan: dict[str, Any], ticks_only: bool,
+            check: bool, cells: list[dict[str, Any]]) -> dict[str, Any]:
+    """One minute of the replay: every variant against the archive (and tk61), against plain,
+    and with `check` the incremental engine against the full-prefix engine; its record."""
+    import time
+
+    hm = hhmm(m)
+    through = m + features.DAY_START_MINUTE
+    record: dict[str, Any] = {"minute": hm, "m": m, "variants": {}, "ticks": {},
+                              "final_quote": {}, "versus_plain": {}, "engine": {},
+                              "seconds": {}}
+    spent = record["seconds"]
+
+    def clock(name: str, t0: float) -> None:
+        spent[name] = round(spent.get(name, 0.0) + time.perf_counter() - t0, 3)
+
+    rows = None
+    if table is not None:
+        t0 = time.perf_counter()
+        rows = table.rows(bars_now, m) if len(bars_now) else None
+        clock("bars", t0)
+        if check:
+            t0 = time.perf_counter()
+            ref = full.table_rows(bars_now, day, m, state, types) if len(bars_now) else None
+            differ: list[dict[str, Any]] = []
+            record["engine"]["bars"] = exact_diff(rows, ref, ["sym"], "engine-bars", differ)
+            _collect(cells, differ, "all", m, "engine")
+            clock("verify", t0)
+    delivered: dict[str, Any] = {}
+    for variant in variants:
+        arg = False if variant == "plain" else variant
+        t0 = time.perf_counter()
+        mine = walk.table(variant, through) if walk is not None else None
+        if mine is None:
+            mine = minute_ticks(work, day, m, arg)
+        clock("ticks", t0)
+        if walk is not None and check:
+            t0 = time.perf_counter()
+            ref = minute_ticks(work, day, m, arg)
+            differ = []
+            record["engine"].setdefault("variants", {})[variant] = {
+                "ticks": exact_diff(mine, ref, ["sym", "m"], "engine-ticks", differ)}
+            _collect(cells, differ, variant, m, "engine")
+            clock("verify", t0)
+        if tk61 is not None:
+            one: list[dict[str, Any]] = []
+            r = compare(mine[mine.m == through].drop(columns="m"),
+                        tk61[tk61.m == through].drop(columns="m"),
+                        {"ticks": _tick_value_columns()}, tolerance,
+                        dict.fromkeys(_tick_value_columns(), "value"), None, one)
+            record["ticks"][variant] = {"minute": m, **r}
+            _collect(cells, one, variant, m, "ticks")
+        if ticks_only:
+            continue
+        t0 = time.perf_counter()
+        tick_file = _tick_file(mine, fill, through, work / f"tk-{variant}-{m}.parquet")
+        given = full.FullInputs(tick_file, inputs.reference, inputs.benzinga, inputs.fl_facts)
+        if table is None:
+            got = full.minute_rows_full(bars_now, day, m, state, types, given)
+        else:
+            got = full.assemble_rows(rows, day, m, state, given)
+        tick_file.unlink()
+        clock("features", t0)
+        delivered[variant] = got
+        t0 = time.perf_counter()
+        one = []
+        record["variants"][variant] = {"minute": m, **compare(got, want[want.m == m], groups,
+                                                               tolerance, kinds, covered, one)}
+        _collect(cells, one, variant, m, "features")
+        record["final_quote"][variant] = final_quote_cases(m, set(got.sym), scan, ticked, one,
+                                                           day)
+        clock("compare", t0)
+        parts = record["engine"].get("variants", {}).get(variant)
+        if parts is not None and not (parts["ticks"]["exact"]
+                                      and record["engine"]["bars"]["exact"]):
+            # the engines differ in an input: the feature cells that difference moves
+            t0 = time.perf_counter()
+            ref_ticks = _tick_file(minute_ticks(work, day, m, arg), fill, through,
+                                   work / f"tk-ref-{variant}-{m}.parquet")
+            ref = full.minute_rows_full(bars_now, day, m, state, types,
+                                        full.FullInputs(ref_ticks, inputs.reference,
+                                                        inputs.benzinga, inputs.fl_facts))
+            ref_ticks.unlink()
+            moved: list[dict[str, Any]] = []
+            r = compare(got, ref, groups, None, kinds, None, moved)
+            parts["features"] = {"exact": r["exact"], "classes": r["classes"],
+                                 "columns": sorted(r["columns"])}
+            _collect(cells, [{**c, "class": "engine", "group": "engine-features"}
+                             for c in moved], variant, m, "engine")
+            clock("verify", t0)
+    if "plain" in delivered:
+        for variant in variants:
+            if variant != "plain":
+                record["versus_plain"][variant] = compare(
+                    delivered[variant], delivered["plain"], groups, None, kinds,
+                    covered)["classes"]
+    record["cells"] = len(cells)
+    return record
+
+
+def _tick_file(mine: Any, fill: Any, through: int, path: Path) -> Path:
+    table = mine
+    if fill is not None:
+        table = (_concat(mine, fill[fill.m <= through])
+                 .sort_values(["sym", "m"], kind="stable").reset_index(drop=True))
+    return write_tick_file(table, path)
 
 
 def _concat(a: Any, b: Any) -> Any:
@@ -835,7 +1200,21 @@ def text(report: dict[str, Any]) -> str:
              f"{report['tick_threads'] or 'unset'}; types md5 {report['types_md5'] or 'none'} "
              f"(training pin: {'yes' if report['types_is_training_pin'] else 'no'}); tick form "
              f"{report['tick_form']}, converted symbols {report['converted_symbols']}, tick rows "
-             f"from tk61 for {report['tick_rows_from_tk61_symbols']}; threshold exact"]
+             f"from tk61 for {report['tick_rows_from_tk61_symbols']}; threshold exact; engine "
+             f"{report['engine']}; minutes done {len(report['minutes_done'])} of "
+             f"{len(report['minutes'])}"]
+    check = report["engine_check"]
+    if report["verify_full_prefix"]:
+        lines.append(f"engine check (incremental against full-prefix, exact) at "
+                     f"{len(check['minutes'])} minutes: "
+                     + ("all exact" if not check["differing_minutes"] else
+                        f"ENGINE DIFFERENCE at {' '.join(check['differing_minutes'])}"))
+        for hm in check["differing_minutes"]:
+            e = check["per_minute"][hm]
+            lines.append(f"  {hm}: bars {_engine_text(e['bars'])}; " + "; ".join(
+                f"{v} ticks {_engine_text(x['ticks'])}"
+                + (f", features {x['features']['classes']}" if "features" in x else "")
+                for v, x in e.get("variants", {}).items()))
     for variant, per in report["variants"].items():
         for hm, r in per.items():
             lines.append(
@@ -873,6 +1252,15 @@ def text(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _engine_text(d: dict[str, Any]) -> str:
+    return ("exact" if d["exact"] else
+            f"rows {d['rows_incremental']} / {d['rows_full_prefix']}, only incremental "
+            f"{d['only_incremental']}, only full-prefix {d['only_full_prefix']}, order "
+            f"{'equal' if d['order_equal'] else 'DIFFERS'}, types "
+            f"{'equal' if d['dtypes_equal'] else 'DIFFER'}, cells {d['cells']} in "
+            f"{sorted(d['columns'])}")
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m tickr.model.parity",
                                 description="Replay one open day minute by minute through the "
@@ -883,7 +1271,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--minutes", nargs="+", help="HH:MM inside 04:00 .. 19:59 (default: see doc)")
     p.add_argument("--all-minutes", action="store_true", help="every minute of the table day")
     p.add_argument("--bars", type=Path, help="minute_aggs folder")
-    p.add_argument("--types", required=True, help="the training's types file, or - for none")
+    p.add_argument("--types", help="the training's types file, or - for none")
     for name in ("trades", "quotes", "reference", "benzinga", "fl", "table", "tk61"):
         p.add_argument(f"--{name}", type=Path)
     p.add_argument("--tick-form", choices=FORMS, help="flat files or the audit parquet copy")
@@ -893,6 +1281,17 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--rtol", type=float, help="relative tolerance to count cells beyond")
     p.add_argument("--atol", type=float, help="absolute tolerance to count cells beyond")
     p.add_argument("--work", type=Path, help="scratch folder (default: a new one in --out)")
+    p.add_argument("--engine", choices=ENGINES, default="full-prefix",
+                   help="full-prefix (the reference) or incremental (one walk over the day)")
+    p.add_argument("--verify-full-prefix", type=int, default=0, metavar="N",
+                   help="with --engine incremental: also run full-prefix at N sampled minutes "
+                        "and require exact equality")
+    p.add_argument("--table-workers", type=int, default=1,
+                   help="with --engine incremental: processes for the table rows (#832)")
+    p.add_argument("--resume", action="store_true",
+                   help="continue the journal in --out, skipping its finished minutes")
+    p.add_argument("--rebuild-report", action="store_true",
+                   help="only write the report from the journal in --out")
     return p
 
 
@@ -904,6 +1303,8 @@ def _inputs(args: argparse.Namespace) -> ReplayInputs:
     lost = [k for k in need if pick[k] is None]
     lost += [k for k in ("reference", "benzinga", "fl")
              if getattr(args, k) is None and not args.ticks_only]
+    if args.types is None:
+        lost.append("types")
     if lost:
         raise ModelRefused("replay_input_missing", ", ".join(lost))
     form = args.tick_form or ("audit" if str(pick["trades"]).endswith(".parquet") else "flat")
@@ -914,40 +1315,53 @@ def _inputs(args: argparse.Namespace) -> ReplayInputs:
                         pick["tk61"], form)
 
 
+def write_report(report: dict[str, Any], out: Path, day: str) -> str:
+    """The report's json and text files in `out` (an existing one refuses); the text."""
+    js, tx = out / f"parity-{day}.json", out / f"parity-{day}.txt"
+    for f in (js, tx):
+        if f.exists():
+            raise ModelRefused("output_exists", str(f))
+    body = text(report)
+    js.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n", "utf-8")
+    tx.write_text(body, "utf-8")
+    return body
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     tolerance = None
     if args.rtol is not None or args.atol is not None:
         tolerance = (args.rtol or 0.0, args.atol or 0.0)
-    js, tx = args.out / f"parity-{args.day}.json", args.out / f"parity-{args.day}.txt"
-    ex = args.out / f"parity-{args.day}-exceptions.csv"
     try:
+        journal = Journal(args.out, args.day, resume=args.resume)
+        if args.rebuild_report:
+            if not journal.lines.exists():
+                raise ModelRefused("replay_journal_missing", str(journal.lines))
+            print(write_report(build_report(*read_journal(journal.lines)), args.out,
+                               args.day), end="")
+            return 0
         if args.minutes and args.all_minutes:
             raise ModelRefused("replay_minute_invalid", "--minutes or --all-minutes, not both")
-        for f in (js, tx, ex):
+        if args.table_workers < 1 or args.verify_full_prefix < 0:
+            raise ModelRefused("replay_engine", "--table-workers >= 1, --verify-full-prefix >= 0")
+        for f in (args.out / f"parity-{args.day}.json", args.out / f"parity-{args.day}.txt"):
             if f.exists():
                 raise ModelRefused("output_exists", str(f))
         inputs = _inputs(args)
         args.out.mkdir(parents=True, exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="parity-work-", dir=args.work or args.out))
-        cells: list[dict[str, Any]] = []
         try:
             report = replay(args.day, args.minutes, inputs, variants=MODES[args.mode],
                             work=work, tolerance=tolerance, all_minutes=args.all_minutes,
-                            ticks_only=args.ticks_only, exceptions=cells)
+                            ticks_only=args.ticks_only, engine=args.engine,
+                            verify=args.verify_full_prefix, journal=journal,
+                            table_workers=args.table_workers)
         finally:
             shutil.rmtree(work, ignore_errors=True)
+        print(write_report(report, args.out, args.day), end="")
     except ModelRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
-    report["exceptions"] = len(cells)
-    with ex.open("w", newline="", encoding="utf-8") as f:
-        out = csv.DictWriter(f, fieldnames=EXCEPTION_FIELDS)
-        out.writeheader()
-        out.writerows(cells)
-    js.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n", "utf-8")
-    tx.write_text(text(report), "utf-8")
-    print(tx.read_text("utf-8"), end="")
     return 0
 
 
