@@ -38,6 +38,10 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--bars", type=Path, nargs="+", required=True, help="JSONL bar files")
         p.add_argument("--out", type=Path, required=True, help="output directory")
 
+    def places_source(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--replay-settings", type=Path, default=Path("config/replay.toml"),
+                       help="replay settings TOML (output_decimal_places for the reports)")
+
     def clock(p: argparse.ArgumentParser) -> None:
         p.add_argument("--replay-settings", type=Path, default=Path("config/replay.toml"),
                        help="replay settings TOML (fill model)")
@@ -48,6 +52,7 @@ def _parser() -> argparse.ArgumentParser:
     bars_and_out(p)
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
     p.add_argument("--settings", type=Path, required=True, help="research TOML")
+    places_source(p)
     p.add_argument("--config", type=Path, default=Path("config/bot.toml"),
                    help="bot config: its calendar gives each day's regular close")
 
@@ -74,6 +79,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--baseline-strategy", help="NAME or NAME:VERSION to keep from baseline")
     p.add_argument("--candidate-strategy", help="NAME or NAME:VERSION to keep from candidate")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
     p = sub.add_parser("latency", help="quote latency and stream notice counters from capture")
@@ -83,20 +89,27 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--source", choices=("stream", "snapshot"), default="stream",
                    help="which captured quotes to measure")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
     p = sub.add_parser("refusals", help="per day and setup: first failed checks, refusals, entries")
     p.add_argument("--decisions", type=Path, nargs="+", required=True, help="decision JSONL")
     p.add_argument("--strategy", help="NAME or NAME:VERSION to keep")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
     p = sub.add_parser("slippage", help="stopped trades: planned against realized loss, per day")
     p.add_argument("--database", type=Path, required=True, help="the bot's database (read only)")
     p.add_argument("--environment", help="keep only trades of runs in this environment")
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
+    places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
     return parser
+
+
+# Commands whose reports round to the replay settings' output_decimal_places (its only home).
+REPORT_COMMANDS = frozenset({"outcomes", "diff", "latency", "refusals", "slippage"})
 
 
 def _filter(records, spec: str | None):
@@ -107,13 +120,15 @@ def _filter(records, spec: str | None):
 
 
 def _run(args: argparse.Namespace) -> dict:
+    if args.command in REPORT_COMMANDS:
+        places = load_settings(args.replay_settings).output_decimal_places
     if args.command == "outcomes":
         settings = load_research_settings(args.settings)
         cfg = bot_config.load(args.config)
         calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
         rows = outcomes(load_records(args.decisions), load_bars(args.bars), settings,
                         lambda day: calendar.day(day).regular_close)
-        return report.write_outcomes(rows, args.out, settings.output_decimal_places)
+        return report.write_outcomes(rows, args.out, places)
     if args.command == "diff":
         settings = load_research_settings(args.settings)
         result = compare.diff(
@@ -121,24 +136,24 @@ def _run(args: argparse.Namespace) -> dict:
             _filter(load_records(args.candidate), args.candidate_strategy),
             settings.session_timezone,
         )
-        return report.write_diff(result, args.out, settings.output_decimal_places)
+        return report.write_diff(result, args.out, places)
     if args.command == "latency":
         settings = load_research_settings(args.settings)
         result = latency_report(args.quotes, args.notices, args.source,
                                 settings.session_timezone)
         return report.write_latency(result, args.source, args.out,
-                                    settings.output_decimal_places)
+                                    places)
     if args.command == "refusals":
         settings = load_research_settings(args.settings)
         rows = refusals.table(_filter(load_records(args.decisions), args.strategy),
                               settings.session_timezone)
-        return report.write_refusals(rows, args.out, settings.output_decimal_places)
+        return report.write_refusals(rows, args.out, places)
     if args.command == "slippage":
         settings = load_research_settings(args.settings)
         trades = slippage.stopped_trades(args.database, settings.session_timezone,
                                          args.environment)
         return report.write_slippage(trades, args.environment, args.out,
-                                     settings.output_decimal_places)
+                                     places)
     replay_settings = load_settings(args.replay_settings)
     clock_for = session_clock(args.config)
     places = replay_settings.output_decimal_places
