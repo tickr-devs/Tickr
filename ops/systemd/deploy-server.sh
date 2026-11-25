@@ -11,7 +11,7 @@
 # and the database: `require-flat` runs in the bot's own image (compose service `preflight`, so
 # the env file is mounted and sourced as for a real job; compose needs the freshly rendered
 # limits.env for the bot's grace period) and never sends an order; any doubt refuses and nothing
-# is installed; (3) install the files and reload systemd; (4) enable the timers and the API. The
+# is installed; (3) install the files (all or nothing) and reload systemd; (4) enable the timers and the API. The
 # bot is never started or stopped here: a running job keeps the code it started with, the next
 # scheduled start uses the new units.
 #
@@ -52,8 +52,22 @@ if ! "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm prefli
   exit 1
 fi
 
-cp "$scratch"/tickr-*.service "$scratch"/tickr-*.timer "$units_dir"/
-cp "$scratch"/ports.env "$scratch"/limits.env "$etc"/
+# Install all or nothing: stage every file as a hidden temp file inside its target folder (a
+# copy that fails removes the staged files and installs nothing), then rename each into place
+# (same folder, so each rename is atomic). Only then is systemd told to reload.
+staged=""
+cleanup_staged() { for f in $staged; do rm -f "$f"; done; }
+stage() { # SOURCE TARGET_DIR
+  tmp="$2/.tickr-stage.$$.$(basename "$1")"
+  staged="$staged $tmp"
+  cp "$1" "$tmp" || { cleanup_staged; echo "refused: copy to $2 failed; nothing was installed" >&2; exit 1; }
+}
+for f in "$scratch"/tickr-*.service "$scratch"/tickr-*.timer; do stage "$f" "$units_dir"; done
+for f in "$scratch"/ports.env "$scratch"/limits.env; do stage "$f" "$etc"; done
+for tmp in $staged; do
+  target=$(dirname "$tmp")/$(basename "$tmp" | sed "s/^\.tickr-stage\.$$\.//")
+  mv -f "$tmp" "$target"
+done
 "$systemctl" daemon-reload
 "$systemctl" enable tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer tickr-api.service
 "$systemctl" start tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer

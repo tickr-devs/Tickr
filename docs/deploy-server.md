@@ -109,6 +109,15 @@ nothing changed) unless `python -m tickr.runtime require-flat` passes, run in th
 fresh read-only broker read (the one `release` uses) shows no position and no open order, and
 the database has no open trade. It never starts or stops the bot. Not yet run on a real server.
 
+Before the first deploy (and after every `git pull`), build the image so it contains
+`require-flat` (step 4 above). The script runs `require-flat` inside the image: an older image
+answers it with a usage error (exit 2), which the script treats as "not flat", so it fails
+closed (refuses, installs nothing) rather than deploying; rebuild and run it again.
+
+The install is all or nothing: every file is first copied to a hidden temp file in its target
+folder (a failed copy removes them and installs nothing), then renamed into place, and
+`systemctl daemon-reload` runs only after every file is there.
+
 ### Hand-written timers (example, superseded by `render-systemd`)
 
 One service and one timer per job. Times are the `[runtime]` values (03:30, 04:00, 09:05 on

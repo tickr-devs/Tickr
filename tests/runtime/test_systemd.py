@@ -238,3 +238,15 @@ def test_the_nightly_fetch_unit_runs_the_compose_service_at_the_configured_time(
     assert "OnCalendar=Mon,Tue,Wed,Thu,Fri *-*-* 19:00:00 America/New_York" in (
         out / "tickr-nightly-fetch.timer").read_text("utf-8")
     assert re.search(r"(?m)^  nightly-fetch:$", (ROOT / "ops/docker/compose.yaml").read_text())
+
+
+def test_deploy_script_installs_nothing_when_a_copy_fails(tmp_path):
+    repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
+    missing = tmp_path / "no-such-etc"  # the units stage fine, then the etc files cannot be copied
+    done = subprocess.run(
+        [str(SCRIPT), str(repo), str(missing)], capture_output=True, text=True, check=False,
+        env={"PATH": "/usr/bin:/bin", "TICKR_UNITS_DIR": str(units),
+             "TICKR_SYSTEMCTL": str(systemctl), "TICKR_DOCKER": str(docker)})
+    assert done.returncode == 1 and "nothing was installed" in done.stderr
+    assert list(units.iterdir()) == []  # no unit, and no staged file left behind
+    assert not (tmp_path / "systemctl.log").exists()  # no daemon-reload
