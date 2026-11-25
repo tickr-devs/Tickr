@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import TickrDesign
 import TickrKit
@@ -139,8 +140,13 @@ import TickrKit
   @Test("Nine stages, nine different hues, in the approved order")
   func distinct() {
     #expect(PipelineStage.allCases.count == 9)
-    #expect(Set(PipelineStage.allCases.map { "\($0.fill)" }).count == 9)
-    #expect(Set(PipelineStage.allCases.map { "\($0.text)" }).count == 9)
+    // Compared as resolved colours in each appearance, not by their descriptions.
+    for scheme in [ColorScheme.light, .dark] {
+      var environment = EnvironmentValues()
+      environment.colorScheme = scheme
+      #expect(Set(PipelineStage.allCases.map { $0.fill.resolve(in: environment) }).count == 9)
+      #expect(Set(PipelineStage.allCases.map { $0.text.resolve(in: environment) }).count == 9)
+    }
   }
 
   @Test("Priced cyan, Bought orange and Checked lime are the new palette colours")
