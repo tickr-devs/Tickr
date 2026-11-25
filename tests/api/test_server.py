@@ -178,6 +178,11 @@ def test_status_served_with_age(api, settings):
     # The API's own start, so the apps read /settings again after a restart.
     assert body["api_started_at"] == contract.to_jsonable(server.started_at)
     assert errors(schema("status-response-v1"), body) == []
+    # The file holds no derived key (an older reader refuses unknown keys); the API adds it.
+    assert "decider" not in json.loads(settings.status_path.read_text("utf-8"))
+    assert body["status"]["decider"] == {"kind": "strategy", "name": "price-action-v1",
+                                         "version": "1"}
+    assert [t["decider"] for t in body["status"]["trades_today"]] == [body["status"]["decider"]]
 
 
 def test_status_stale(api, settings):

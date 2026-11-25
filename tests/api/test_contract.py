@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +18,9 @@ from .schema_check import errors
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 EXAMPLE = FIXTURES / "status-v1.example.json"
+# status-v1 as the reader before derived `decider` keys shipped (main at f79d8a7, the PR's
+# base) accepts it: its schema states that reader's rules (required keys, no unknown keys).
+BEFORE_DECIDER = Path(__file__).resolve().parent / "frozen" / "status-v1.before-decider.schema.json"
 
 
 def test_committed_schemas_match_the_code(tmp_path):
@@ -34,7 +37,7 @@ def test_golden_example_still_parses_and_round_trips():
     """Breaking this test means the macOS app's decoder would break too."""
     raw = json.loads(EXAMPLE.read_text("utf-8"))
     parsed = contract.from_jsonable(StatusV1, raw)
-    assert contract.to_jsonable(parsed) == raw
+    assert contract.to_jsonable(parsed, derived=False) == raw
     assert errors(contract.json_schema(StatusV1), raw) == []
 
 
@@ -264,3 +267,42 @@ def test_decider_is_rebuilt_on_read_and_optional_in_older_documents():
         del trade["decider"]
     assert errors(contract.json_schema(StatusV1), raw) == []
     assert contract.from_jsonable(StatusV1, raw) == status()
+
+
+def _keys(value: object) -> set[str]:
+    if isinstance(value, dict):
+        return set(value) | {k for v in value.values() for k in _keys(v)}
+    if isinstance(value, list):
+        return {k for v in value for k in _keys(v)}
+    return set()
+
+
+def test_status_file_has_no_derived_keys_and_an_older_reader_accepts_it(tmp_path):
+    """A rollback or a mixed-version run: the reader from before `decider` refuses unknown keys
+    (the watchdog would take an unreadable status file as a bot not running), so the files the
+    bot writes never carry derived keys; the reader rebuilds them."""
+    path = tmp_path / "status.json"
+    contract.write_status(path, status())
+    raw = json.loads(path.read_text("utf-8"))
+    assert "decider" not in _keys(raw)
+    before = json.loads(BEFORE_DECIDER.read_text("utf-8"))
+    assert errors(before, raw) == []
+    assert set(raw) == set(before["properties"])
+    trade = before["properties"]["trades_today"]["items"]
+    assert all(set(t) == set(trade["properties"]) for t in raw["trades_today"])
+    assert raw["trades_today"]
+    read = contract.read_status(path)
+    assert read == status()
+    assert json.loads(contract.dumps(read))["decider"] == STRATEGY_DECIDER  # derived on read
+
+
+def test_no_file_the_bot_writes_carries_derived_keys(tmp_path):
+    command = contract.new_command(CommandKind.FLATTEN, T0, "test")
+    contract.write_command(tmp_path / "inbox", command)
+    assert "decider" not in _keys(json.loads((tmp_path / "inbox" /
+                                              f"{command.command_id}.json").read_text("utf-8")))
+    derived = {f.name for cls in contract.SCHEMA_TYPES.values() for f in fields(cls)
+               if contract.DERIVED_FROM in f.metadata}
+    assert derived == {"decider"}  # every derived key is covered by the status file test
+    for cls in (contract.AccountV1, contract.QuotesV1, contract.CommandV1):
+        assert not [f for f in fields(cls) if contract.DERIVED_FROM in f.metadata]

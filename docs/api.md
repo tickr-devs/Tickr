@@ -1105,12 +1105,15 @@ top level (`status.decider`, who decides this run's entries) and each `trades_to
 decided its entry; null with a null `strategy`, a manual trade), each `/decisions` row, each
 `/skipped` signal, and `/explain`. Today every decision is a strategy's, so it is always `kind`
 `strategy` with the `strategy` name and version beside it; it is built from them when the
-document is served (an older status file without it still reads), and `model` is never sent
+document is served, and `model` is never sent
 until the model decides and the decision records say so. GET /settings has it too (the active
 strategy's `[strategy]` name and version from its strategy.toml, read when the API starts), null
 with `decider_cause` `strategy_file_unreadable` when that file cannot be read. Added after
 version 1 shipped: a reader takes a document without it as null; the existing `strategy` keys
-stay.
+stay. It is only in API responses, never in a file the bot writes: status.json has no `decider`
+(a reader from before it refuses unknown keys, and the watchdog takes an unreadable status file
+as a bot not running), so a rollback or a mixed-version run still reads the file; the API adds
+it when it serves the status.
 
 ### GET /explain (read-only)
 

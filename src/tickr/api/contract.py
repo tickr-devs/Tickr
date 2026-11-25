@@ -133,7 +133,8 @@ DERIVED_FROM = "derived_from"
 def _derived(of: Callable[[Any], Any]) -> Any:
     """A key computed from the document's own fields (`of(document)`) when it is encoded, like
     `_reasons_of`: never written by hand, skipped on read and rebuilt. Added after version 1
-    shipped, so an older document without it still reads."""
+    shipped, so an older document without it still reads. Only API responses carry it: files
+    are written without it (`stored`), so an older reader still reads them."""
     return field(init=False, default=None, metadata={DERIVED_FROM: of, ADDED_AFTER_V1: True})
 
 
@@ -2894,14 +2895,19 @@ def parse_time(text: str) -> datetime:
     return _decode("time", text, datetime)
 
 
-def to_jsonable(value: Any) -> Any:
+def to_jsonable(value: Any, *, derived: bool = True) -> Any:
+    """`value` as JSON values. `derived` False leaves out every `_derived` key: the form of a
+    file the bot writes (status.json, account.json, quotes, commands), which an older reader of
+    the same version 1 still reads strictly (unknown keys refused), so a rollback or a mixed
+    run never makes it unreadable. API responses carry them (`derived` True)."""
     if is_dataclass(value) and not isinstance(value, type):
         return {f.name: to_jsonable(_codes_for(value, f.metadata[REASONS_OF],
                                                f.metadata[REASONS_OTHERWISE])
                                     if REASONS_OF in f.metadata else
                                     f.metadata[DERIVED_FROM](value)
-                                    if DERIVED_FROM in f.metadata else getattr(value, f.name))
-                for f in fields(value)}
+                                    if DERIVED_FROM in f.metadata else getattr(value, f.name),
+                                    derived=derived)
+                for f in fields(value) if derived or DERIVED_FROM not in f.metadata}
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, bool | int | str) or value is None:
@@ -2915,9 +2921,9 @@ def to_jsonable(value: Any) -> Any:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, tuple | list):
-        return [to_jsonable(v) for v in value]
+        return [to_jsonable(v, derived=derived) for v in value]
     if isinstance(value, dict):
-        return {str(k): to_jsonable(v) for k, v in value.items()}
+        return {str(k): to_jsonable(v, derived=derived) for k, v in value.items()}
     raise ContractError(f"cannot encode {type(value).__name__}")
 
 
@@ -2932,8 +2938,16 @@ def seconds_between(earlier: datetime, later: datetime) -> Decimal:
     return (Decimal(micro) / _MICROSECONDS_PER_SECOND).quantize(_MILLISECOND)
 
 
-def dumps(value: Any) -> str:
-    return json.dumps(to_jsonable(value), ensure_ascii=False, separators=(",", ":"))
+def dumps(value: Any, *, derived: bool = True) -> str:
+    """An API response body; `derived=False` for a file the bot writes (see `to_jsonable`)."""
+    return json.dumps(to_jsonable(value, derived=derived), ensure_ascii=False,
+                      separators=(",", ":"))
+
+
+def stored(value: Any) -> str:
+    """The text of a file the bot or the API writes for another process to read: no derived
+    keys, so a reader of any version 1 accepts it; the reader rebuilds them."""
+    return dumps(value, derived=False)
 
 
 # ---------------------------------------------------------------- strict decoding
@@ -3155,7 +3169,7 @@ def write_atomic(path: Path, text: str) -> None:
 
 def write_status(path: Path | str, status: StatusV1) -> None:
     """Called by the bot after each loop step that changes what /status shows."""
-    write_atomic(Path(path), dumps(status))
+    write_atomic(Path(path), stored(status))
 
 
 def read_status(path: Path | str) -> StatusV1:
@@ -3165,12 +3179,12 @@ def read_status(path: Path | str) -> StatusV1:
 
 def write_account(path: Path | str, account: AccountV1) -> None:
     """Called by the bot after each successful broker read of positions and open orders."""
-    write_atomic(Path(path), dumps(account))
+    write_atomic(Path(path), stored(account))
 
 
 def write_quotes(path: Path | str, quotes: QuotesV1) -> None:
     """Called by the bot's quotes file thread when a quote changed."""
-    write_atomic(Path(path), dumps(quotes))
+    write_atomic(Path(path), stored(quotes))
 
 
 def read_quotes(path: Path | str) -> QuotesV1:
@@ -3194,7 +3208,7 @@ def write_command(inbox: Path | str, command: CommandV1) -> Path:
     if not _UUID.match(command.command_id):
         raise ContractError(f"command_id {command.command_id!r} is not a lowercase uuid")
     path = Path(inbox) / f"{command.command_id}.json"
-    write_atomic(path, dumps(command))
+    write_atomic(path, stored(command))
     return path
 
 

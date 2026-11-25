@@ -9,6 +9,13 @@ public enum ModelState: String, Codable, Sendable {
   case off
   case notLoaded = "not_loaded"
   case refused
+  /// A state a later API sends that this app does not know: read as such, so the rest of the
+  /// document still reads, and never taken for one of the states above.
+  case unrecognized
+
+  public init(from decoder: Decoder) throws {
+    self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unrecognized
+  }
 }
 
 /// The trained model on the System card. `state` nil with `cause` when the API cannot know it.

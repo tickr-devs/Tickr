@@ -10,7 +10,16 @@ public struct StrategyId: Codable, Hashable, Sendable {
 }
 
 /// What kind of decider made a decision.
-public enum DeciderKind: String, Codable, Sendable { case strategy, model }
+public enum DeciderKind: String, Codable, Sendable {
+  case strategy, model
+  /// A kind a later API sends that this app does not know: read as such, so the rest of the
+  /// document still reads, and never taken for a strategy or a model.
+  case unrecognized
+
+  public init(from decoder: Decoder) throws {
+    self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unrecognized
+  }
+}
 
 /// Who made a decision: a strategy (its `[strategy]` name and version) or a trained model bundle.
 public struct DeciderV1: Codable, Hashable, Sendable {

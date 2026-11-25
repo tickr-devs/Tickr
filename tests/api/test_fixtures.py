@@ -881,19 +881,28 @@ _LAUNCHD = (LaunchdJobV1("preflight", "08:30", (1, 2, 3, 4, 5)),
             LaunchdJobV1("nightly-fetch", "19:00", (1, 2, 3, 4, 5)))
 
 
-def _text(document: object) -> str:
-    return json.dumps(contract.to_jsonable(document), indent=2, ensure_ascii=False) + "\n"
+# Fixtures of files the bot writes (not API responses): encoded as stored, without derived keys.
+STORED = ("status-v1",)
+
+
+def _derived(name: str) -> bool:
+    return name.split(".", 1)[0] not in STORED
+
+
+def _text(name: str, document: object) -> str:
+    return json.dumps(contract.to_jsonable(document, derived=_derived(name)), indent=2,
+                      ensure_ascii=False) + "\n"
 
 
 def test_fixtures_are_current():
     docs = documents()
     if os.environ.get("TICKR_WRITE_FIXTURES") == "1":
         for name, document in docs.items():
-            (FIXTURES / f"{name}.json").write_text(_text(document), "utf-8")
+            (FIXTURES / f"{name}.json").write_text(_text(name, document), "utf-8")
     on_disk = {p.stem for p in FIXTURES.glob("*.json")}
     assert on_disk == set(docs), "fixtures on disk differ from documents()"
     for name, document in docs.items():
-        assert (FIXTURES / f"{name}.json").read_text("utf-8") == _text(document), (
+        assert (FIXTURES / f"{name}.json").read_text("utf-8") == _text(name, document), (
             f"{name}: regenerate with TICKR_WRITE_FIXTURES=1 and review the diff")
 
 
@@ -903,4 +912,5 @@ def test_fixture_matches_schema_and_parses(path):
     cls = contract.SCHEMA_TYPES[schema_name]
     raw = json.loads(path.read_text("utf-8"))
     assert errors(contract.json_schema(cls), raw) == []
-    assert contract.to_jsonable(contract.from_jsonable(cls, raw)) == raw
+    assert contract.to_jsonable(contract.from_jsonable(cls, raw),
+                                derived=_derived(path.stem)) == raw

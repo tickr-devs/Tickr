@@ -95,6 +95,7 @@ public struct Trade: Codable, Hashable, Sendable {
     try c.encodeNullable(strategy, forKey: .strategy)
     try c.encodeNullable(codeVersion, forKey: .codeVersion)
     try c.encodeNullable(resultExactUsd, forKey: .resultExactUsd)
-    try c.encodeNullable(decider, forKey: .decider)
+    // Only the API's answer carries `decider`; the bot's status file has none (docs/api.md, "Decider").
+    try c.encodeIfPresent(decider, forKey: .decider)
   }
 }
