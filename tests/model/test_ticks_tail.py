@@ -367,7 +367,7 @@ def prefix_rows(folder, trades, quotes, minute):
     return rows[rows.m == minute].reset_index(drop=True)
 
 
-@pytest.mark.parametrize("seed", range(6))
+@pytest.mark.parametrize("seed", range(len(FIRST_MINUTES)))  # each window once
 def test_reconnect_restart_and_late_corrections_equal_the_full_prefix(tmp_path, seed):
     """Every closed minute of the stream's incremental rows equals, exactly, the full-prefix
     conversion of the final inputs (late correction records and the later correction codes of
