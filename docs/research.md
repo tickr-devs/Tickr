@@ -13,6 +13,7 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `latency` | How late do captured quotes arrive, by symbol and hour? What do stream notices say? | (measured) |
 | `refusals` | Per day and setup: which check refused first, which platform causes, how many entries? | (counts) |
 | `slippage` | How far below the planned stop did stops fill? Planned against realized loss per day? | `measured` |
+| `fill-quality` | Entry, exit and stop slippage, fees and fill delay of real fills; one record set or two side by side | `measured` |
 
 Live observers see only the symbols discovery kept, and discovery applies the active strategy's
 liquidity rules, so observer results are comparable only while the active strategy (and its
@@ -224,6 +225,42 @@ observers). The fixed value stays the default. A missing or malformed file, a ne
 value, or fewer than `measured_slippage_min_trades` measured trades is refused, never replaced
 by the fixed value. Not measured yet: how far the price traded through the stop (trade prints,
 `ticks/list`), and entry slippage.
+
+## fill-quality: real fills against the assumptions (M4)
+
+```
+python -m tickr.research fill-quality --database data/tickr.sqlite3 [--environment NAME] \
+  [--quotes capture/<day>/quotes.jsonl ...] [--label sandbox] \
+  [--compare-database other.sqlite3 [--compare-quotes ...] [--compare-environment NAME] \
+   [--compare-label production]] [--replay-settings config/replay.toml] \
+  --settings config/research.toml --out out/fill-quality
+```
+
+Works on the records of any environment: the environment is only which database (and optional
+`--environment` filter on its runs) you point it at; the code never names one. Read only, over
+closed trades with a fill, days = New York date of the close. Positive = worse than the reference.
+
+- **Entry slippage**: fill - entry limit, and fill - ask of the last captured quote received at
+  or before the entry decision (the `order-intent` journal row) on the same day. Needs
+  `--quotes`; without a quote the trade has a `cause` and is left out of that figure. The quote's
+  age is in the trades CSV, never cut off.
+- **Exit and stop slippage**: stops are R5's measure (`slippage`), reused as is. A market exit is
+  its decision's bid - its fill (needs `--quotes`).
+- **Fees**: the broker's recorded fees on all filled orders of the trade, per trade and per share
+  filled. A trade with any unrecorded fee is counted in `trades_without_fees`, never as free.
+  The replay and the backtest are gross of fees (no fee model in config), so the fee "assumption"
+  is none and the compare file leaves it empty; fees are shown as measured.
+- **Fill delay**: `order-attempted` to the first `order-observed` row with fills (entry and
+  market exit; a resting stop's wait is not a delay). The bot polls, so this is an upper bound.
+
+Percent figures are share-weighted: sum(slip x shares) / sum(reference x shares) x 100. The
+`assumed` column of the compare file is the replay's `slippage_percent` (the measured one when
+`measured_slippage_file` is set) for the three quote and stop slippage figures.
+
+Outputs: `<label>/fill_quality_trades.csv`, `<label>/fill_quality_days.csv` (a row per day,
+then `all`), `fill_quality_compare.csv` (metric, assumed, a column per set, and `difference` =
+second minus first when two sets are given, e.g. Sandbox now against the assumptions, Production
+against Sandbox later) and `fill_quality_summary.json`.
 
 ## Settings
 
