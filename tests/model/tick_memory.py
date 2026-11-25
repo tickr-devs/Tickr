@@ -25,9 +25,17 @@ LAST_MINUTE = 24 * 60 - 1
 # ru_maxrss is in kibibytes on Linux and in bytes on macOS.
 RSS_BYTES = 1 if sys.platform == "darwin" else 1024
 MIB = 1024 * 1024
+KIB = 1024
 
 
 def _peak_mib() -> float:
+    """Peak resident memory of this process. Linux: VmHWM, which starts again at the exec (the
+    rusage peak keeps the forking parent's, here the whole synthetic day); elsewhere rusage."""
+    status = Path("/proc/self/status")
+    if status.exists():
+        for line in status.read_text().splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * KIB / MIB
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_BYTES / MIB
 
 
@@ -53,9 +61,31 @@ def measure(trades: Path, quotes: Path, groups: int, out: Path) -> dict:
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
+def differences(a, b) -> dict:
+    """Where two tables of the same keys differ: per column, the rows that differ and the
+    largest absolute and relative difference (missing equals missing)."""
+    import numpy as np
+
+    out = {}
+    if list(a.columns) != list(b.columns) or len(a) != len(b) or not (
+            a[["sym", "m"]].equals(b[["sym", "m"]])):
+        return {"keys": "differ"}
+    for c in a.columns[2:]:
+        x, y = a[c].to_numpy(dtype=float, na_value=np.nan), b[c].to_numpy(dtype=float,
+                                                                         na_value=np.nan)
+        both = np.isnan(x) & np.isnan(y)
+        diff = ~both & ~(x == y)
+        if diff.any():
+            d = np.abs(x[diff] - y[diff])
+            scale = np.maximum(np.abs(x[diff]), np.abs(y[diff]))
+            out[c] = {"rows": int(diff.sum()), "max_abs": float(np.nanmax(d)),
+                      "max_rel": float(np.nanmax(np.where(scale > 0, d / scale, np.inf)))}
+    return out
+
+
 def compare(folder: Path, trades: Path, quotes: Path) -> tuple[list[dict], bool]:
     """Both group counts on the same files: the two records and whether the tables are equal,
-    exactly."""
+    exactly (where not, the differences are printed)."""
     import pandas as pd
 
     from tickr.model.features import ticks
@@ -68,6 +98,7 @@ def compare(folder: Path, trades: Path, quotes: Path) -> tuple[list[dict], bool]
     try:
         pd.testing.assert_frame_equal(tables[0], tables[1], check_exact=True)
     except AssertionError:
+        print(json.dumps({"differences": differences(tables[0], tables[1])}))
         return records, False
     return records, True
 
