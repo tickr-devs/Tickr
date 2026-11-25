@@ -779,9 +779,83 @@ def test_the_collar_needs_a_previous_quote_and_passes_a_close_one(tmp_path):
     _collared(rig, bar="0.05")
     rig.evaluator.tick(Market(["ABC"]))
     rig.now = NOW + timedelta(minutes=1)
-    rig.inbox.on_quote(Quote("ABC", D("10.04"), D("10.06"), D(100), D(100), rig.now, rig.now))
+    for seconds in (1, 0):  # a fresh previous quote, then the newest
+        at = rig.now - timedelta(seconds=seconds)
+        rig.inbox.on_quote(Quote("ABC", D("10.04"), D("10.06"), D(100), D(100), at, at))
     rig.source.add_bars(bars("ABC", OPEN + timedelta(minutes=6), 1))
     rig.evaluator.tick(Market(["ABC"]))
     first, second = load_records(list(rig.dir.rglob("*.jsonl")))
     assert first.refusal_cause == f"{AdmissionCause.PRICE_COLLAR_UNKNOWN}: no previous quote"
     assert second.admission is RecordAdmission.TAKEN, second.refusal_cause
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_with_the_collar_on_a_remainder_is_recorded_not_evaluated(tmp_path):
+    """A remainder (the rest of a breakout minute put aside for protection) is never admitted:
+    its ENTERs are recorded `not_evaluated`, never PRICE_COLLAR_UNKNOWN for want of a
+    reference. SYNTHETIC bars and quotes."""
+    rig = Rig(tmp_path)
+    _collared(rig, bar="0.05", quote="0.05")
+    for symbol in BREAKOUT:
+        rig.inbox.on_quote(Quote(symbol, D("10.03"), D("10.04"), D(100), D(100),
+                                 rig.now - timedelta(seconds=1), rig.now - timedelta(seconds=1)))
+        rig.symbol(symbol)
+        rig.strategy.verdicts[symbol] = Verdict.ENTER
+    rig.evaluator.tick(Market(list(BREAKOUT)))
+    protect(rig)
+    rig.now += timedelta(seconds=20)
+    rig.evaluator.tick(Market(list(BREAKOUT)))
+    assert records(rig) == [("ABC", "09:34", "taken"), ("DEF", "09:34", "not_evaluated"),
+                            ("GHI", "09:34", "not_evaluated")]
+
+
+class Discovering(Market):
+    """Discovery is in flight on the first pass, so the candidates wait for a later pass."""
+
+    def __init__(self, symbols) -> None:
+        super().__init__(symbols)
+        self.passes = 0
+
+    def discovering(self) -> bool:
+        self.passes += 1
+        return self.passes == 1
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_candidates_evaluated_on_a_later_pass_get_the_collar_references(tmp_path):
+    """Candidates that wait for discovery are evaluated later in their minute with the
+    inbox's newest quote and the one it replaced, so the collar sees real references.
+    SYNTHETIC bars and quotes."""
+    rig = Rig(tmp_path)
+    rig.inbox.on_quote(Quote("ABC", D("10.03"), D("10.04"), D(100), D(100),
+                             rig.now - timedelta(seconds=1), rig.now - timedelta(seconds=1)))
+    rig.symbol("ABC")
+    rig.strategy.verdicts["ABC"] = Verdict.ENTER
+    _collared(rig, bar="0.05", quote="0.05")
+    market = Discovering(["ABC"])
+    rig.evaluator.tick(market)
+    assert rig.strategy.seen == []
+    rig.now += timedelta(seconds=10)
+    for seconds in (1, 0):  # a fresh previous quote, then the newest
+        at = rig.now - timedelta(seconds=seconds)
+        rig.inbox.on_quote(Quote("ABC", D("10.04"), D("10.06"), D(100), D(100), at, at))
+    rig.evaluator.tick(market)
+    (record,) = load_records(list(rig.dir.rglob("*.jsonl")))
+    assert record.admission is RecordAdmission.TAKEN, record.refusal_cause
+
+
+@pytest.mark.skipif(not GATE_OPEN, reason="the configured trading gate is closed")
+def test_a_stale_previous_quote_is_no_collar_reference(tmp_path):
+    """The quote the newest replaced is older than [risk] max_quote_age_seconds: refused as
+    PRICE_COLLAR_UNKNOWN, nothing sent. SYNTHETIC bars and quotes."""
+    rig = Rig(tmp_path)
+    stale = rig.now - timedelta(seconds=float(CFG.risk.max_quote_age_seconds) + 1)
+    rig.inbox.on_quote(Quote("ABC", D("10.03"), D("10.04"), D(100), D(100), stale, stale))
+    rig.symbol("ABC")  # the newest quote, at now
+    rig.strategy.verdicts["ABC"] = Verdict.ENTER
+    _collared(rig, quote="0.05")
+    rig.evaluator.tick(Market(["ABC"]))
+    (record,) = load_records(list(rig.dir.rglob("*.jsonl")))
+    assert record.refusal_cause == (f"{AdmissionCause.PRICE_COLLAR_UNKNOWN}: previous quote "
+                                    "6.0 s old > 5 s (regular)")
+    assert rig.broker.sent == []

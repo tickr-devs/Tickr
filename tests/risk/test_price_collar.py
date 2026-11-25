@@ -81,6 +81,8 @@ def test_a_breach_is_refused_with_both_distances(lim, bar, quote_side, close, as
     dict(previous_quote=replace(PREVIOUS, symbol="WXYZ")),
     dict(previous_quote=replace(PREVIOUS, ask=D(0))),
     dict(previous_quote=replace(PREVIOUS, provider_time=NOW)),  # after the current quote
+    # Older than [risk] max_quote_age_seconds (5 s in the baseline), the current quote's bound.
+    dict(previous_quote=replace(PREVIOUS, provider_time=NOW - timedelta(seconds=6))),
 ])
 @pytest.mark.parametrize("side", ["bar", "quote"])
 def test_while_either_side_is_on_both_references_are_needed(lim, changes, side):
@@ -105,3 +107,16 @@ def test_negative_maxima_are_refused_by_config(tmp_path):
                    "utf-8")
     with pytest.raises(ConfigError, match="entry_collar"):
         load(bad)
+
+
+def test_the_previous_quote_is_held_to_the_quote_age_limit(lim):
+    """The previous quote may be as old as the current one may (`[risk]
+    max_quote_age_seconds` in the regular window), no older: a stale quote is no reference."""
+    limits = collared(lim, quote_side="0.5")
+    oldest = replace(PREVIOUS, provider_time=NOW - timedelta(seconds=float(
+        lim.max_quote_age_seconds)))
+    assert admit(with_references(previous_quote=oldest), limits).ok
+    stale = replace(oldest, provider_time=oldest.provider_time - timedelta(milliseconds=1))
+    result = admit(with_references(previous_quote=stale), limits)
+    assert result.cause is C.PRICE_COLLAR_UNKNOWN
+    assert result.detail == "previous quote 5.001 s old > 5 s (regular)"

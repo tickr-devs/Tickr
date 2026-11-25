@@ -98,8 +98,9 @@ entry_snapshot_interval_seconds = 3
 # otherwise), and the refusal records both distances. Blocks entries only, never an exit or a stop; read by safety.
 entry_collar_bar_ratio = 0
 # Price collar, the quote side: refused when the final limit price is further than this ratio from the ask of the
-# stream quote before the current one, |limit - previous ask| / previous ask. 0 = off, shipped off like the bar side
-# (no measured number yet); read by safety.
+# stream quote before the current one, |limit - previous ask| / previous ask; that quote may be no older than
+# max_quote_age_seconds (PRICE_COLLAR_UNKNOWN otherwise). 0 = off, shipped off like the bar side (no measured number
+# yet); read by safety.
 entry_collar_quote_ratio = 0
 
 [session]

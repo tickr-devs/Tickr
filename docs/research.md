@@ -199,7 +199,8 @@ own measure, as a ratio (0.02 = 2%).
   before the quote's provider time or the decision time; a revised bar's last version).
   Reference `quote`: the ask of the stream quote before it, as the bot's stream inbox keeps them
   (a quote older than the newest one is skipped); for a decision, the quote before the newest one
-  received by then.
+  received by then. The live collar refuses a previous quote older than the quote age limit;
+  the tool measures every pair as captured.
 - `collar.csv`: one row per entry kind, reference and symbol, plus `symbol = all`: `count`,
   nearest-rank `p50`, `p90`, `p99`, `p99_9`, and `max`.
 - `collar_summary.json`: the `all` rows, `missing_reference` (entry prices with no completed bar

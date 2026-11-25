@@ -427,8 +427,11 @@ def collar_distance(price: Decimal, reference: Decimal) -> Decimal:
     return abs(price - reference) / reference
 
 
-def _collar_references(i: AdmissionInputs) -> tuple[Decimal, Decimal] | str:
-    """(last completed bar's close, previous quote's ask), or why either is not usable."""
+def _collar_references(i: AdmissionInputs,
+                       lim: AdmissionLimits) -> tuple[Decimal, Decimal] | str:
+    """(last completed bar's close, previous quote's ask), or why either is not usable. The
+    previous quote may be no older than the window's quote age limit, the one `_check_quote`
+    holds the current quote to."""
     d, bar, prev, q = i.decision, i.last_bar, i.previous_quote, i.quote
     assert q is not None  # `_check_quote` passed
     if bar is None:
@@ -447,6 +450,11 @@ def _collar_references(i: AdmissionInputs) -> tuple[Decimal, Decimal] | str:
         return f"previous ask {prev.ask} not a price"
     if not _aware(prev.provider_time) or prev.provider_time > q.provider_time:
         return "previous quote time not an aware time at or before the quote's"
+    window = _window(i, lim)
+    max_age, _, _ = window_limits(window, lim)
+    age = Decimal(str((i.now - prev.provider_time).total_seconds()))
+    if age > max_age:
+        return f"previous quote {age} s old > {max_age} s ({window.kind})"
     return bar.close, prev.ask
 
 
@@ -459,7 +467,7 @@ def _check_collar(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     if bar_max == 0 and quote_max == 0:
         return None
     assert i.limit_price is not None  # `_check_decision` passed
-    found = _collar_references(i)
+    found = _collar_references(i, lim)
     if isinstance(found, str):
         return _refuse(C.PRICE_COLLAR_UNKNOWN, found)
     close, ask = found
