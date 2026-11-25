@@ -39,14 +39,6 @@ struct BotCheck: Identifiable {
 
 /// The Bot card's checks (mockup Main): one status line on the card, every check in its popover.
 enum BotChecks {
-  /// Fence names the bot raises for a position or an open order it did not place (engine
-  /// Fence.FOREIGN_POSITION and FOREIGN_ORDER). A fence kind is the name, then ":" and a key
-  /// when it has one, as in "foreign-position:ABCD".
-  static let foreignPositionFence = "foreign-position"
-  static let foreignOrderFence = "foreign-order"
-  /// Separator between a fence's name and its key (protocol value).
-  static let fenceKeySeparator: Character = ":"
-
   /// What the status line says: how many checks pass, and the one that leads when not all do
   /// (the first failing with a loss tone, else the first failing).
   struct Summary: Equatable {
@@ -65,9 +57,12 @@ enum BotChecks {
   static func checks(_ status: StatusV1, limits: BrokerReadAge.Limits?, now: Date) -> [BotCheck] {
     let positions = Board.positions(status)
     let verified = positions.filter { $0.stop.state.isProtected }.count
-    let fenceNames = Set(status.fences.map { String($0.kind.prefix { $0 != fenceKeySeparator }) })
-    // Positions or orders the bot did not place, in one check.
-    let foreign = fenceNames.contains(foreignPositionFence) || fenceNames.contains(foreignOrderFence)
+    // Positions or orders the bot did not place, in one check. A fence kind is its name, then ":"
+    // and a key when it has one; ApiText reads the name into the generated FenceKind.
+    let fenceKinds = Set(status.fences.compactMap { fence in
+      ApiText.fenceKindCase(String(fence.kind.split(separator: Fence.keySeparator, maxSplits: 1).first ?? ""))
+    })
+    let foreign = !fenceKinds.isDisjoint(with: [.foreignPosition, .foreignOrder])
     let stream = status.freshness.stream
     let entries = positions.map { (symbol: $0.symbol, entry: $0.entry) }
       + status.tradesToday.map { (symbol: $0.symbol, entry: $0.entry) }
