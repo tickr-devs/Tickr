@@ -397,6 +397,12 @@ class MassiveConfig:
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
     calendar_lookback_days: int
+    benzinga_news_path: str
+    benzinga_earnings_path: str
+    news_probe_poll_seconds: int
+    news_probe_news_lookback_seconds: int
+    news_probe_earnings_lookback_days: int
+    news_probe_dir: str
 
 
 @dataclass(frozen=True)
