@@ -77,7 +77,7 @@ def test_templates_hold_no_clock_time(repo):
 def test_every_job_requires_the_secrets_unit_and_holds_no_value(config_path, repo, tmp_path):
     out = tmp_path / "out"
     _render(config_path, out)
-    for job in ("preflight", "bot", "watchdog"):
+    for job in ("preflight", "bot", "watchdog", "nightly-fetch"):
         text = (out / f"tickr-{job}.service").read_text("utf-8")
         assert "Requires=docker.service tickr-secrets.service\n" in text
         assert "After=docker.service tickr-secrets.service\n" in text
@@ -171,7 +171,7 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
     python.write_text(
         '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done\n'
         'mkdir -p "$out"; : > "$out/tickr-bot.service"; : > "$out/tickr-bot.timer"\n'
-        ': > "$out/ports.env"\n', "utf-8")
+        ': > "$out/ports.env"; echo TICKR_BOT_EXIT_TIMEOUT=1 > "$out/limits.env"\n', "utf-8")
     docker = tmp_path / "docker"
     docker.write_text(f"#!/bin/sh\nexit {0 if flat else 1}\n", "utf-8")
     systemctl = tmp_path / "systemctl"
@@ -204,8 +204,37 @@ def test_deploy_script_installs_the_units_when_flat(tmp_path):
     assert done.returncode == 0, done.stderr
     assert sorted(p.name for p in (tmp_path / "units").iterdir()) == [
         "tickr-bot.service", "tickr-bot.timer"]
-    assert (tmp_path / "etc" / "ports.env").exists()
+    assert (tmp_path / "etc" / "ports.env").exists() and (tmp_path / "etc" / "limits.env").exists()
     log = (tmp_path / "systemctl.log").read_text("utf-8")
     assert "daemon-reload" in log and "tickr-bot.timer" in log
     # The bot unit is never started or restarted by a deploy.
     assert not re.search(r"(start|restart) .*tickr-bot\.service", log)
+
+
+def test_the_bots_grace_period_is_the_exit_timeout_from_config_only(config_path, repo, tmp_path):
+    cfg = _pinned(config_path)
+    out = tmp_path / "out"
+    systemd.render_all(cfg, repo / "ops" / "systemd", out, systemd.values(cfg, PATHS, ZONE))
+    rendered = (out / "limits.env").read_text("utf-8")
+    assert rendered == (f"TICKR_BOT_EXIT_TIMEOUT={cfg.runtime.bot_exit_timeout_seconds}\n"
+                        f"TICKR_NIGHTLY_OUT={cfg.runtime.nightly_fetch_out}\n"
+                        f"TICKR_NIGHTLY_SEED={cfg.runtime.nightly_fetch_seed}\n")
+    compose = (ROOT / "ops" / "docker" / "compose.yaml").read_text("utf-8")
+    # compose reads the rendered value and holds no number of its own.
+    assert re.findall(r"(?m)^\s*stop_grace_period: (.*)$", compose) == [
+        "${TICKR_BOT_EXIT_TIMEOUT:?run render-systemd and load its limits.env}s"]
+    for job in ("api", "preflight", "bot", "watchdog", "nightly-fetch"):
+        assert "EnvironmentFile=/srv/tickr/etc/limits.env\n" in (
+            out / f"tickr-{job}.service").read_text("utf-8")
+
+
+def test_the_nightly_fetch_unit_runs_the_compose_service_at_the_configured_time(
+        config_path, repo, tmp_path):
+    cfg = _pinned(config_path)
+    out = tmp_path / "out"
+    systemd.render_all(cfg, repo / "ops" / "systemd", out, systemd.values(cfg, PATHS, ZONE))
+    assert "--profile jobs run --rm nightly-fetch\n" in (
+        out / "tickr-nightly-fetch.service").read_text("utf-8")
+    assert "OnCalendar=Mon,Tue,Wed,Thu,Fri *-*-* 19:00:00 America/New_York" in (
+        out / "tickr-nightly-fetch.timer").read_text("utf-8")
+    assert re.search(r"(?m)^  nightly-fetch:$", (ROOT / "ops/docker/compose.yaml").read_text())

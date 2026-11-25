@@ -23,7 +23,7 @@ alert channel is an owner decision (see "Open owner decisions").
 | Lock and watchdog | The watchdog checks the pid in the bot's lock file. | Separate containers have separate pid namespaces, so the watchdog would always see "no live pid" and alert `bot-down-with-open-trade`. | `pid: host` on the bot and watchdog services (see "Before real money"). |
 | API binding | `[api] host` = 127.0.0.1, enforced by the API (refuses a non-loopback host). | With Docker's bridge network a 127.0.0.1 bind inside the container is unreachable from the host, and publishing a port would need a 0.0.0.0 bind, which the API refuses. | `network_mode: host`: the API is on the server's own loopback only; Docker publishes no ports. Phone access works as on the Mac (`tailscale serve` on the host to `[api] remote_port`). |
 | Env file | Sourced by `/bin/sh` (`set -a; . file`) in the plist; Tickr never reads it. | Compose `env_file:` would put the values into `docker inspect`. | Bind-mounted read-only; the entrypoint sources it the same way. Only its path is in the container environment. A set-but-unreadable file refuses the start (exit 2). |
-| Stopping | `launchctl kill TERM`; launchd `ExitTimeOut` = `bot_exit_timeout_seconds`. | `docker compose stop bot` sends SIGTERM; `stop_grace_period` is the SIGKILL delay. `init: true` (tini) forwards the signal to the supervisor. | `stop_grace_period: 120s`, kept equal to `[runtime] bot_exit_timeout_seconds` by hand. |
+| Stopping | `launchctl kill TERM`; launchd `ExitTimeOut` = `bot_exit_timeout_seconds`. | `docker compose stop bot` sends SIGTERM; `stop_grace_period` is the SIGKILL delay. `init: true` (tini) forwards the signal to the supervisor. | `stop_grace_period: ${TICKR_BOT_EXIT_TIMEOUT}s`, from `[runtime] bot_exit_timeout_seconds` through the rendered `limits.env`. |
 | Token approval | `token-needs-confirmation` alert, approve in the Webull app. | Same, but without an alert channel nobody is asked. | Covered by the blocker. |
 
 ## Files
@@ -83,22 +83,25 @@ alert channel is an owner decision (see "Open owner decisions").
 `python -m tickr.runtime --config /srv/tickr/etc/bot.toml render-systemd --out OUT` writes, from
 `ops/systemd/*.template` and `bot.toml` only:
 
-- `tickr-api.service` (always on; `docker compose up -d api`) and `tickr-{preflight,bot,watchdog}`
+- `tickr-api.service` (always on; `docker compose up -d api`) and `tickr-{preflight,bot,watchdog,nightly-fetch}`
   `.service` + `.timer` (the compose jobs, `--profile jobs`). Timer times and weekdays are
-  `[runtime]` `preflight_start_local`, `bot_start_local`, `watchdog_start_local` and
+  `[runtime]` `preflight_start_local`, `bot_start_local`, `watchdog_start_local`, `nightly_fetch_start_local` and
   `launch_weekdays`, in `America/New_York` (`--timezone`); a start missed while the server was
   down is not caught up.
 - Every job unit has `Requires=` and `After=tickr-secrets.service`, the oneshot unit that writes
   the env file at `/run/tickr/env`. That unit comes from the server bootstrap; this command does
   not render it. Units name the env file by path (`TICKR_ENV_FILE_HOST`), never a value; compose
   mounts it read-only and the entrypoint sources it.
+- `limits.env`: `TICKR_BOT_EXIT_TIMEOUT`, `TICKR_NIGHTLY_OUT`, `TICKR_NIGHTLY_SEED` (below).
 - `ports.env`: `TICKR_API_PORT` and `TICKR_API_REMOTE_PORT` from `[api] port` and `remote_port`.
   Install it at `/srv/tickr/etc/ports.env`.
 
 Defaults (flags `--repo`, `--etc`, `--env-file`, `--user`): `/srv/tickr/repo`, `/srv/tickr/etc`
-(`bot.toml` is `TICKR_CONFIG_HOST`), `/run/tickr/env`, `tickr`. The nightly fetch has no compose
-service, so no unit. The compose `stop_grace_period` is still kept equal to
-`bot_exit_timeout_seconds` by hand, and `[runtime] watchdog_restart_command` (a launchctl call
+(`bot.toml` is `TICKR_CONFIG_HOST`), `/run/tickr/env`, `tickr`. `limits.env` (install it at `/srv/tickr/etc/limits.env`) holds
+`TICKR_BOT_EXIT_TIMEOUT` = `[runtime] bot_exit_timeout_seconds` and the nightly fetch's
+folders (`nightly_fetch_out`, `nightly_fetch_seed`); every unit loads it and
+compose.yaml reads it as the bot's `stop_grace_period`, so the number lives only in `bot.toml`
+(for a hand-run compose command: `set -a; . /srv/tickr/etc/limits.env; set +a`). `[runtime] watchdog_restart_command` (a launchctl call
 today) must be set for the server before the watchdog's restart can work.
 
 `ops/systemd/deploy-server.sh [REPO [ETC]]` installs the rendered files, and refuses (exit 1,
@@ -152,7 +155,7 @@ WantedBy=timers.target
 - **Pin the base image by digest** (`FROM python:3.12-slim-bookworm@sha256:...`), so a rebuild
   cannot pull a different Python or Debian without a reviewed change.
 - **Render the times from `[runtime]`.** Use `render-systemd` (above) for the timers; the compose
-  `stop_grace_period` (`bot_exit_timeout_seconds`) is still copied by hand.
+  `stop_grace_period` (`bot_exit_timeout_seconds`) comes from `bot.toml` through `limits.env`.
 - **Until an alert channel exists, a failed systemd unit is the only signal.** Preflight and the
   bot job exit 1 and the watchdog never exits 0 without a channel; nothing reaches the phone.
   Watch `systemctl list-units --failed` and the container logs yourself.
@@ -166,4 +169,3 @@ WantedBy=timers.target
    on it, since root can read the env file and the token folder).
 3. **How its clock is synced** (chrony or systemd-timesyncd, which servers), and whether
    preflight should check `timedatectl`'s "synchronized" flag (it does not today).
-4. Whether `render-systemd` should also write the compose `stop_grace_period`.
