@@ -410,10 +410,10 @@ class Service:
             return
         store = self.engine.store
         if isinstance(found, Adoption):
+            with store.transaction():  # journaled before admission uses it
+                store.append(PROTECTION_ADOPTED, found.journal_body(), run_id=self.engine.run_id)
             if self.evaluator is not None:
                 self.evaluator.desk.adopt(self.protection.risk)
-            with store.transaction():
-                store.append(PROTECTION_ADOPTED, found.journal_body(), run_id=self.engine.run_id)
             return
         with store.transaction():
             store.append(PROTECTION_IGNORED, found.journal_body(), run_id=self.engine.run_id)

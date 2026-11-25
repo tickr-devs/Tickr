@@ -3,14 +3,17 @@
 A running bot looks at its config file once per loop pass, before any strategy work. The file's
 SHA-256 is the version check: an unchanged digest costs one read and nothing else, and each new
 digest is examined exactly once. A new version is validated in full exactly as at startup
-(`config.loads` on the very bytes that were digested, so a file caught half-written is an
-invalid file, never a torn mix). It is adopted only when it differs from the config the bot
-started with in protection settings alone (`protection_specs`), and every protection value that
-moved is stricter than the one in force, by the direction the settings schema records
-(`settings_schema.Loosens`). Then all of them are adopted together; otherwise none is: a looser
-value, an invalid or unreadable file, or a change of any other key is ignored for the rest of
-this run (a typed `protection-change-ignored` row and an alert). Loosening and every other
-setting take effect at the next start, as before (api/settingsapply.py).
+(`config.loads` on the very bytes that were digested, so a file caught half-written is an invalid
+file, never a torn mix). It is adopted only when it differs from the last valid version the bot
+examined (at first: the config it started with) in protection settings alone (`protection_specs`),
+and every protection value that moved is stricter than the one in force, by the direction the
+settings schema records (`settings_schema.Loosens`). Then all of them are adopted together;
+otherwise none is: a looser value, an invalid or unreadable file, or a change of any other key is
+ignored for the rest of this run (a typed `protection-change-ignored` row and an alert). Loosening
+and every other setting take effect at the next start, as before (api/settingsapply.py). A change of
+another key is reported once: a later version that differs from it in protection settings alone (the
+settings API's next tightening) is adopted, while the other key keeps its started value until the
+next start, so the apply answer's `restart_needed` holds for that change only.
 
 What is adopted feeds entry admission only (`EntryDesk.adopt`): a tightening affects new
 entries, never the protection of a trade already open (its broker stop stays as placed) and
@@ -110,6 +113,9 @@ class LiveProtection:
     def __init__(self, started: Config, path: Path,
                  read: Reader = lambda p: p.read_bytes()) -> None:
         self.started = started  # the config this run started with
+        # The last valid version examined: other keys are compared with it, so a change of one
+        # (ignored, never adopted) is reported once and does not block later tightenings.
+        self._last_valid = started
         self.path = path
         self._read = read
         self.specs = protection_specs()
@@ -142,7 +148,9 @@ class LiveProtection:
             found = config_module.loads(raw, self.path, self.started.root)
         except (ValueError, TypeError) as exc:  # ConfigError and a bad encoding are ValueError
             return Ignored(digest, IgnoredCause.INVALID, str(exc))
-        if other := self._other_changes(found):
+        other = self._other_changes(found)
+        self._last_valid = found
+        if other:
             return Ignored(digest, IgnoredCause.OTHER_KEYS,
                            "changed outside live protection: " + ", ".join(other))
         moved: list[tuple[Setting, Any, Any]] = []
@@ -163,14 +171,14 @@ class LiveProtection:
         return Adoption(before, digest, tuple((s.key, o, n) for s, o, n in moved))
 
     def _other_changes(self, found: Config) -> list[str]:
-        """Keys of `found` that differ from the started config and are not live protection."""
+        """Keys of `found` outside live protection that differ from the last valid version."""
         live = {attribute(s) for s in self.specs}
         other = [f"[{f.name}]" for f in fields(Config)
                  if f.name not in _NOT_SECTIONS
-                 and getattr(found, f.name) != getattr(self.started, f.name)]
+                 and getattr(found, f.name) != getattr(self._last_valid, f.name)]
         other += [f"{RISK}.{f.name}" for f in fields(RiskConfig)
                   if f.name not in live
-                  and getattr(found.risk, f.name) != getattr(self.started.risk, f.name)]
+                  and getattr(found.risk, f.name) != getattr(self._last_valid.risk, f.name)]
         return other
 
     def in_force(self) -> tuple[tuple[str, Any, datetime | None], ...]:

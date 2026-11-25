@@ -172,6 +172,26 @@ def test_a_change_outside_live_protection_is_ignored_whole(tmp_path):
     assert rig.in_force()[SLOTS] == "3"
 
 
+def test_a_tightening_after_a_change_that_waits_for_a_restart_is_adopted(tmp_path):
+    """The settings API answers restart_needed only for the when-flat change; the tightening
+    applied after it in the same run must then take effect without a restart."""
+    rig = Rig(tmp_path)
+    snapshot = "risk.entry_snapshot_interval_seconds"
+    write(rig.path, (snapshot, "7"))
+    rig.pass_()
+    assert [r["cause"] for r in rig.rows(IGNORED)] == ["other_keys"]
+    write(rig.path, (SLOTS, "1"))
+    rig.pass_()
+    (row,) = rig.rows(ADOPTED)
+    assert row["changes"] == [{"key": SLOTS, "before": "3", "after": "1"}]
+    assert len(rig.rows(IGNORED)) == 1 and len(rig.alerts.sent) == 1
+    # The waiting change is still not in force: it applies at the next start.
+    assert rig.protection.config.risk.entry_snapshot_interval_seconds == \
+        rig.cfg.risk.entry_snapshot_interval_seconds
+    assert rig.desk.enter("AAA").admission == "taken"
+    assert rig.desk.enter("BBB").refusal_cause.startswith("POSITION_LIMIT_REACHED")
+
+
 def test_an_unreadable_file_is_reported_once_per_stretch(tmp_path):
     rig = Rig(tmp_path)
     rig.path.unlink()

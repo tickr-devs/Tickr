@@ -809,15 +809,18 @@ a `settings-history-v1` document.
   pass, before any strategy work, the bot reads `config/bot.toml` and compares its SHA-256 with
   the last one it examined. A new version is validated exactly as at startup, from the same
   bytes it digested (a file caught half-written is invalid, never a torn mix). It is adopted
-  only when it differs from the config the bot started with in live protection settings alone
+  only when it differs from the last valid version it examined (at first: the config it started
+  with) in live protection settings alone
   (the platform settings whose `applies` is `at_once` and that have a loosening direction) and
   every one of them that moved is stricter than the value in force; then all of them take
   effect together for new entries (journal `protection-adopted` with each key's `before` and
   `after`). Anything else (a looser value, an invalid or unreadable file, a change of any other
   key) is ignored for the rest of the run: journal `protection-change-ignored` with its `cause`
   (`loosens`, `invalid`, `unreadable`, `other_keys`) and alert `protection-change-ignored`;
-  nothing of it is applied. A tightening never touches what is already placed: an open trade
-  keeps its broker stop and a working entry its order. Status `protection_in_force` lists every
+  nothing of it is applied. A change of another key is reported once and keeps its started value
+  until the next start (`restart_needed`); a later version that differs from it in live
+  protection alone (the next tightening) is adopted. A tightening never touches what is
+  already placed: an open trade keeps its broker stop and a working entry its order. Status `protection_in_force` lists every
   live protection setting with the value new entries are admitted under now and `adopted_at`
   (null: the value the bot started with).
 - POST /settings/rollback `{"version": n, "base", "biometric_confirmed"}`: every key changed by
