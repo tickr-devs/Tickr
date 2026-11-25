@@ -200,6 +200,8 @@ def test_cli_resolves_a_trade_with_a_recorded_fill_and_sends_nothing(tmp_path, m
     b.orders[cid] = replace(b.orders[cid], filled_quantity=D(30), state=OrderState.FILLED)
     run(e, 8)
     assert f"{Fence.ORDER_CONFLICT}:{cid}" in e.fences()
+    # A stop Detail could not read for a while: the command's read of it settles that too.
+    e._set_fence(Fence.DETAIL_UNREADABLE, stop.client_order_id, "Detail unreadable")
     s.close()
     b.cancel(stop.client_order_id)  # the operator, in the Webull app
     del b.holdings["ABC"]

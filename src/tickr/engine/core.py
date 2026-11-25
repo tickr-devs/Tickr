@@ -588,7 +588,10 @@ class Engine:
                     "cancel them in the Webull app first")
         with self.store.transaction():
             for order, detail in ended:
+                # Recorded as Detail shows it; that read also settles its read-only fences.
                 self._apply_detail(order, detail, resurrected=False)
+                for fence in _RESOLVED_FENCES:
+                    self._unfence_row(fence, order.client_order_id)
             for cid, why in evidence.items():
                 self.store.execute("UPDATE orders SET operator_resolved_at = ? "
                                    "WHERE client_order_id = ?", (self.store.stamp(), cid))
