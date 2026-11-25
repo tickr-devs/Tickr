@@ -698,7 +698,7 @@ private struct LiveFlowCard: View {
     let positions = recorded ? [] : status.positions
     let verified = positions.filter { $0.stop.state.isProtected }.count
     let flowVerified = flow?.stops.filter { $0.state == .verified }.count
-    // The one stage rule of both apps (`StopState.stageTone`): neutral with no position, else the
+    // The one stage rule of both apps (`StopState.stageTone`): green with no position, else the
     // worst of the open and the day's stops.
     let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (flow?.stops ?? []).map(\.state))
     guard current || recorded else {

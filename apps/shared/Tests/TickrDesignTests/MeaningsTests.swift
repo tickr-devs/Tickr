@@ -34,10 +34,10 @@ import TickrKit
     #expect(StopState.allProtected([]))
   }
 
-  @Test("The broker-stop stage: neutral with no position on every screen, unless a day's trade lost its stop")
+  @Test("The broker-stop stage: green with no position on every screen, unless a day's trade lost its stop")
   func stopStage() {
-    #expect(StopState.stageTone(open: []) == .neutral)
-    #expect(StopState.stageTone(open: [], day: [.verified, .pending]) == .neutral)
+    #expect(StopState.stageTone(open: []) == .profit)
+    #expect(StopState.stageTone(open: [], day: [.verified, .pending]) == .profit)
     #expect(StopState.stageTone(open: [], day: [.verified, .neverVerified]) == .loss)
     #expect(StopState.stageTone(open: [.verified], day: [.verified]) == .profit)
     #expect(StopState.stageTone(open: [.verified], day: [.pending]) == .warning)

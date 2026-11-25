@@ -485,7 +485,7 @@ private struct LiveFlowCard: View {
     let positions = status.map(Board.positions) ?? []
     // An open position whose stop is not verified outranks the day's count of verified stops.
     let unprotected = positions.first { !$0.stop.state.isProtected }
-    // The one stage rule of both apps (`StopState.stageTone`): neutral with no position, else the
+    // The one stage rule of both apps (`StopState.stageTone`): green with no position, else the
     // worst of the open and the day's stops.
     let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (model.flow?.stops ?? []).map(\.state))
     // Checked lime while the broker agrees (or has not been compared); red on a mismatch or a fence.
