@@ -184,23 +184,18 @@ MFA_PASSKEY_LOGIN_ENABLED = True
 MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = DEBUG
 USERSESSIONS_TRACK_ACTIVITY = True
 
-# --- Email: Amazon SES over SMTP, from the tickr.bot domain ---
+# --- Email: Amazon SES API with the server's instance role (no stored mail password) ---
 DEFAULT_FROM_EMAIL = _required("TICKR_WEB_FROM_EMAIL")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
-if _optional("TICKR_WEB_SMTP_HOST"):
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-    EMAIL_HOST = _required("TICKR_WEB_SMTP_HOST")
-    EMAIL_HOST_USER = _required("TICKR_WEB_SMTP_USER")
-    EMAIL_HOST_PASSWORD = _required("TICKR_WEB_SMTP_PASSWORD")
-    # SES SMTP submission port with STARTTLS.
-    EMAIL_PORT = 587
-    EMAIL_USE_TLS = True
-    # Seconds to wait for the mail server before giving up on one message.
-    EMAIL_TIMEOUT = 20
+if _optional("TICKR_WEB_SES_REGION"):
+    EMAIL_BACKEND = "django_ses.SESBackend"
+    USE_SES_V2 = True
+    AWS_SES_REGION_NAME = _required("TICKR_WEB_SES_REGION")
+    AWS_SES_REGION_ENDPOINT = f"email.{AWS_SES_REGION_NAME}.amazonaws.com"
 elif DEBUG:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    raise ImproperlyConfigured("Environment variable TICKR_WEB_SMTP_HOST is not set.")
+    raise ImproperlyConfigured("Environment variable TICKR_WEB_SES_REGION is not set.")
 
 # --- Early-access list (tickrweb/waitlist.py) ---
 # The rate-limit counters live in this process's memory: gunicorn runs ONE worker process

@@ -37,7 +37,7 @@ names the variable:
 | `TICKR_WEB_DB_NAME`, `TICKR_WEB_DB_USER`, `TICKR_WEB_DB_HOST`, `TICKR_WEB_DB_PORT` | Postgres |
 | `TICKR_WEB_DB_PASSWORD` | Postgres password (secret; optional with peer/trust auth) |
 | `TICKR_WEB_FROM_EMAIL` | Sender, e.g. `tickr.bot <hello@tickr.bot>` |
-| `TICKR_WEB_SMTP_HOST`, `TICKR_WEB_SMTP_USER`, `TICKR_WEB_SMTP_PASSWORD` | Amazon SES SMTP (password secret) |
+| `TICKR_WEB_SES_REGION` | Amazon SES region, e.g. `us-east-1`; mail is sent with the server's instance role |
 | `TICKR_WEB_DEBUG` | `1` only on a developer machine |
 
 ## Tests
