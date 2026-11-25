@@ -13,7 +13,7 @@ import pytest
 from tickr import cli, config
 from tickr.api.history import trade_net
 from tickr.broker.fake import FakeBroker
-from tickr.engine.core import ORDER_RESOLVED, Engine, Fence, Leg, TradeState
+from tickr.engine.core import ORDER_RESOLVED, Engine, Fence, Leg, SendState, TradeState
 from tickr.runtime.entries import realized_loss_today
 from tickr.store import Store
 from tickr.types import OrderState
@@ -154,3 +154,25 @@ def test_cli_resolve_order_with_the_bot_stopped(tmp_path, monkeypatch, capsys):
     del b.holdings["ABC"]
     assert cli.main(["--config", str(bot), "resolve-order", cid]) == 0
     assert f"trade {t} closed as {ORDER_RESOLVED}" in capsys.readouterr().out
+
+
+def test_a_resolved_unknown_order_listed_working_is_revived(store):
+    """An order whose send outcome stayed unknown, resolved, then listed working by the
+    broker: revived like any other (never left working while invisible to the loop)."""
+    b = FakeBroker()
+    e = make(store, b)
+    b.script("unknown")
+    t = enter(e, "2")
+    cid = legs(e, t, Leg.ENTRY)[0].client_order_id
+    real = b.orders.pop(cid)  # Detail cannot find it yet: unknown stays unknown
+    assert e.order(cid).send_state is SendState.UNKNOWN
+    with store.transaction():  # resolved by the operator (the command's effect)
+        store.execute("UPDATE orders SET operator_resolved_at = ? WHERE client_order_id = ?",
+                      (store.stamp(), cid))
+        store.execute("UPDATE trades SET state = 'closed' WHERE trade_id = ?", (t,))
+    assert e.live_orders() == []
+    b.orders[cid] = real  # now listed working at the broker
+    e.reconcile()
+    assert e.order(cid).live and e.order(cid).operator_resolved_at is None
+    assert e.trade(t).state is not TradeState.CLOSED
+    assert has(e, Fence.RESURRECTED)

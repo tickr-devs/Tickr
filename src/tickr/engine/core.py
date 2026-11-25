@@ -591,7 +591,8 @@ class Engine:
                 self._unfence_row(Fence.ORDER_CONFLICT, cid + LISTED_KEY)
                 for fence in _RESOLVED_FENCES:
                     self._unfence_row(fence, cid)
-        self._close(self.trade(trade.trade_id), ORDER_RESOLVED)
+            # One transaction: a crash never leaves resolved orders on an open trade.
+            self._close_row(trade, ORDER_RESOLVED)
         return None
 
     def _unsettled_by_detail(self, row: OrderRow) -> str | None:
@@ -2267,14 +2268,18 @@ class Engine:
 
     def _close(self, trade: TradeRow, cause: str) -> None:
         with self.store.transaction():
-            self.store.execute(
-                "UPDATE trades SET state = ?, closed_at = ?, close_cause = ? WHERE trade_id = ?",
-                (TradeState.CLOSED, self.store.stamp(), cause, trade.trade_id))
-            self.store.append("trade-closed", {"cause": cause}, key=trade.trade_id,
-                              run_id=self.run_id)
+            self._close_row(trade, cause)
+
+    def _close_row(self, trade: TradeRow, cause: str) -> None:
+        """Close the trade inside an already open transaction."""
+        self.store.execute(
+            "UPDATE trades SET state = ?, closed_at = ?, close_cause = ? WHERE trade_id = ?",
+            (TradeState.CLOSED, self.store.stamp(), cause, trade.trade_id))
+        self.store.append("trade-closed", {"cause": cause}, key=trade.trade_id,
+                          run_id=self.run_id)
         for fence in (Fence.UNPROTECTED, Fence.QUANTITY_MISMATCH, Fence.OVER_PROTECTED,
                       Fence.STOP_HELD):
-            self._clear_fence(fence, trade.trade_id)
+            self._unfence_row(fence, trade.trade_id)
 
     # --- stop replace (probe F5) --------------------------------------------------------------
 
@@ -2438,6 +2443,10 @@ class Engine:
             row = rows.get(cid)
             if row is None:
                 self._set_fence(Fence.FOREIGN_ORDER, cid, "open order not in our records")
+            elif row.operator_resolved_at is not None:
+                # Resolved by the operator (`resolve_order`), whatever its send state: it is
+                # ours again, and the operator is called back.
+                self._resurrect(row, order, "resolved by the operator but working at the broker")
             elif row.send_state is SendState.UNKNOWN:
                 with self.store.transaction():
                     self._apply_detail(row, order, resurrected=False)
