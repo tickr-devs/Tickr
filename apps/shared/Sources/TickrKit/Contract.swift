@@ -23,6 +23,36 @@ public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 public struct StrategyId: Codable, Hashable, Sendable {
   public let name: String
   public let version: String
+  /// The settings version the bot computed from the strategy's values (backlog S3, docs/api.md);
+  /// `version` is the owner's name for it. Nil when not recorded.
+  public let fingerprint: String?
+
+  enum CodingKeys: String, CodingKey {
+    case name
+    case version
+    case fingerprint
+  }
+
+  public init(name: String, version: String, fingerprint: String? = nil) {
+    self.name = name
+    self.version = version
+    self.fingerprint = fingerprint
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    name = try c.decode(String.self, forKey: .name)
+    version = try c.decode(String.self, forKey: .version)
+    // Added after version 1 shipped: an older bot's strategy has no such key.
+    fingerprint = try c.decodeIfPresent(String.self, forKey: .fingerprint)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(name, forKey: .name)
+    try c.encode(version, forKey: .version)
+    try c.encodeNullable(fingerprint, forKey: .fingerprint)
+  }
 }
 
 public struct EntryBlock: Codable, Hashable, Sendable {
