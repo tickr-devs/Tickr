@@ -343,6 +343,12 @@ class StatusV1:
     # the order rows round sub-dollar fill prices; null until a balance read made after the
     # last of today's trades closed. For the whole account, so it includes manual trades.
     result_today_broker_usd: Decimal | None = _added_later(None)
+    # Added after v1 shipped (backlog T11): the loss locks' counts as admission reads them,
+    # whether or not the lock is on (settings `risk.max_weekly_loss_usd`,
+    # `risk.stop_out_streak_limit`; 0 = off). This New York week's net realized loss after
+    # fees (Monday to today, >= 0; null = unknown), and the stop-outs in a row today.
+    realized_loss_week_usd: Decimal | None = _added_later(None)
+    stop_out_streak: int | None = _added_later(None)
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
 
 
@@ -851,6 +857,9 @@ class RiskSettings:
     max_open_positions: int
     max_quote_age_seconds: Decimal
     min_daily_room_usd: Decimal
+    # Added after v1 shipped (backlog T11): the loss locks; 0 = that lock is off.
+    max_weekly_loss_usd: Decimal | None = _added_later(None)
+    stop_out_streak_limit: int | None = _added_later(None)
 
 
 @dataclass(frozen=True)

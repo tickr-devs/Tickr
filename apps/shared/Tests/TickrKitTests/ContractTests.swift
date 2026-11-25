@@ -267,6 +267,15 @@ func roundTrip<T: Codable>(_ type: T.Type, _ data: Data) throws -> (Any, Any) {
     #expect(settings.risk.minDailyRoomUsd.text == "10")
   }
 
+  @Test func lossLockValues() throws {
+    let status = try Wire.decoder().decode(StatusV1.self, from: fixture("status-v1.example.json"))
+    #expect(status.realizedLossWeekUsd?.text == "41.20")
+    #expect(status.stopOutStreak == 1)
+    let settings = try Wire.decoder().decode(SettingsV1.self, from: fixture("settings-v1.json"))
+    #expect(settings.risk.maxWeeklyLossUsd?.text == "0")
+    #expect(settings.risk.stopOutStreakLimit == 3)
+  }
+
   @Test func settingsValues() throws {
     let settings = try Wire.decoder().decode(SettingsV1.self, from: fixture("settings-v1.json"))
     #expect(settings.risk.maxDailyLossUsd.text == "300")

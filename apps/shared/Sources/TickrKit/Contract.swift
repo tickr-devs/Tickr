@@ -160,6 +160,11 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let feesTodayUsd: DecimalString?
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
+  /// This New York week's net realized loss after fees, as the weekly loss limit counts it; nil when
+  /// unknown or from an older bot.
+  public let realizedLossWeekUsd: DecimalString?
+  /// Stop-outs in a row today, as the stop-out streak lock counts them; nil from an older bot.
+  public let stopOutStreak: Int?
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -180,6 +185,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case feesTodayUsd = "fees_today_usd"
     case resultTodayNetUsd = "result_today_net_usd"
     case resultTodayBrokerUsd = "result_today_broker_usd"
+    case realizedLossWeekUsd = "realized_loss_week_usd"
+    case stopOutStreak = "stop_out_streak"
     case schemaVersion = "schema_version"
   }
 
@@ -209,6 +216,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
+    realizedLossWeekUsd = try c.decodeIfPresent(DecimalString.self, forKey: .realizedLossWeekUsd)
+    stopOutStreak = try c.decodeIfPresent(Int.self, forKey: .stopOutStreak)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -236,6 +245,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
+    try c.encodeNullable(realizedLossWeekUsd, forKey: .realizedLossWeekUsd)
+    try c.encodeNullable(stopOutStreak, forKey: .stopOutStreak)
   }
 }
 

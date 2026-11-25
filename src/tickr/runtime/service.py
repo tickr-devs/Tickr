@@ -585,7 +585,7 @@ class Service:
             fence = reasons.fence_reason(name, cause)
             return api.EntryBlock(name.split(":", 1)[0].replace("-", "_"), f"{name}: {cause}",
                                   params={"fence": fence.code, **fence.params})
-        money = self._daily_money_block()
+        money = self._daily_money_block() or self._loss_lock_block()
         if money is not None:
             return money
         if self.entries_off is not None:
@@ -667,6 +667,37 @@ class Service:
                                           "min_room_usd": str(risk.min_daily_room_usd)})
         return None
 
+    def _loss_lock_block(self) -> api.EntryBlock | None:
+        """Entries the loss locks (backlog T11) refuse anyway: this week's money unknown, no
+        room left under the weekly ceiling after the open reservations, or the stop-out streak
+        at its limit. A lock at 0 is off. Admission still decides each entry."""
+        from tickr.runtime.entries import (  # entries imports this module
+            realized_loss_week,
+            stop_out_streak,
+        )
+
+        risk, now = self.config.risk, self.now()
+        if risk.max_weekly_loss_usd != ZERO:
+            loss = realized_loss_week(self.engine, now)
+            if loss is None:
+                return api.EntryBlock("weekly_money_unknown",
+                                      "A trade closed this week has fills without a known price.")
+            reserved = sum((t.reservation for t in self.engine.trades()), ZERO)
+            if loss + reserved >= risk.max_weekly_loss_usd:
+                return api.EntryBlock("weekly_ceiling",
+                                      f"Weekly loss ceiling {risk.max_weekly_loss_usd} USD: no "
+                                      "room left this week.",
+                                      params={"limit_usd": str(risk.max_weekly_loss_usd)})
+        if risk.stop_out_streak_limit:
+            streak = stop_out_streak(self.engine, now)
+            if streak >= risk.stop_out_streak_limit:
+                return api.EntryBlock("stop_out_streak",
+                                      f"{streak} stop-outs in a row today: no new entries "
+                                      "until tomorrow.",
+                                      params={"count": str(streak),
+                                              "limit": str(risk.stop_out_streak_limit)})
+        return None
+
     @staticmethod
     def _gate(open_: bool, cause: str) -> api.Gate:
         reason = reasons.gate_reason(cause)
@@ -722,6 +753,15 @@ class Service:
         reserved = sum((t.reservation for t in self.engine.trades()), ZERO)
         return (entries.realized_loss_today(self.engine, now), reserved,
                 entries.daily_loss_room(self.engine, self.config, now))
+
+    def _loss_locks(self) -> tuple[Decimal | None, int]:
+        """(this week's net realized loss, stop-outs in a row today) as admission counts them
+        for the loss locks (backlog T11); the loss is None when this week's money is unknown."""
+        from tickr.runtime import entries  # entries imports this module
+
+        now = self.now()
+        return (entries.realized_loss_week(self.engine, now),
+                entries.stop_out_streak(self.engine, now))
 
     def _closed_today(self) -> list[api.DayTrade]:
         today = self.now().astimezone(NEW_YORK).date()
@@ -818,6 +858,7 @@ class Service:
         fees = self._fees_today(closed)
         positions = self._positions()
         loss, reserved, room = self._daily_money()
+        week_loss, streak = self._loss_locks()
         return api.StatusV1(
             written_at=self.now(), bot_state=self.state, run_id=self.engine.run_id,
             environment=self.config.environment_name,
@@ -835,7 +876,8 @@ class Service:
             daily_room_usd=room, positions=positions,
             code_version=self.engine.store.run_code_version(self.engine.run_id),
             fees_today_usd=fees, result_today_net_usd=total_net(closed),
-            result_today_broker_usd=self._broker_result_today(closed))
+            result_today_broker_usd=self._broker_result_today(closed),
+            realized_loss_week_usd=week_loss, stop_out_streak=streak)
 
     def check_disk(self) -> None:
         """Each loop pass: below [runtime] min_free_disk_mb free on the data disk (or unknown),
