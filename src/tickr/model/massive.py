@@ -340,7 +340,9 @@ class MinuteStream:
                 except TimeoutError:
                     continue
                 arrived = self.clock()
-                for message in json.loads(raw):
+                batch = json.loads(raw)
+                # the server bundles events into a JSON array; a single event may come bare
+                for message in batch if isinstance(batch, list) else [batch]:
                     if message.get("ev") == "status":
                         status = message.get("status")
                         if status == "auth_success":

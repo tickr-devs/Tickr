@@ -284,3 +284,10 @@ def test_a_bar_of_another_day_is_counted_not_kept():
     msg["s"] += 86400000
     bars.add(msg, 0.0)
     assert bars.other_day == 1 and bars.frame().empty
+
+
+def test_a_single_event_sent_bare_is_read_like_a_batch(creds):
+    msg = am_messages(model_bars.market(1)[0][1].head(1))[0]
+    stream, stop, bars, _ = run_stream([{"ev": "status", "status": "auth_success"}, msg])
+    stream.session(stop)
+    assert len(bars.frame()) == 1
