@@ -442,6 +442,14 @@ To look at the apps with a full made-up day, turn on "Demo day" in their Setting
 it with them and need neither this Mac nor the bot (docs/demo.md). To serve the same day from a
 real bot on a simulated exchange (never Webull, its own folder): `tickr demo`, same document.
 
+News delay probe (Codex items 9-12, backlog R34; read only, needs only the Massive key): in a
+Terminal, `set -a; . ~/.config/tickr/env; set +a; tickr probe-news-delay`, left running all day
+(Ctrl-C stops it). Every `[massive] news_probe_poll_seconds` it lists Massive's general news, Benzinga news and
+earnings and appends each new or changed record, with its published / last_updated time and our
+receipt time, to `<data_dir>/massive/news-probe/<New York date>.jsonl`. Delay of a `new` record =
+`received_utc - published` (at most; it arrived after `previous_poll_sent_utc`). Lines of the
+first poll are `baseline` and time nothing.
+
 The demo day had a launchd job of its own (`local.tickr.demo`) until the apps carried the day
 themselves. If it is still installed on this Mac, remove it once:
 
@@ -478,6 +486,20 @@ as missing), corrections, list latency and, for each list member, whether its ba
 decision minute had arrived. `--flat-file PATH` uses a file already on disk. The report points
 are report columns only; no guard reads them. Keep the Mac's clock synchronised (Date & Time:
 set automatically): delays are measured on its wall clock.
+
+When the run reaches the extended close it also keeps the stream-built day (Codex 102, point 3):
+`data/massive/stream_days/<date>.csv.gz` (the flat file's bar columns as the model's `DayBars`
+holds them at the end, plus each row's first and last receipt and its correction count) and
+`<date>.gaps.json` (drops, and the hours the recorder was not running). Once the flat file is
+published, compare the two (report only):
+
+```sh
+tickr compare-stream-day 2026-11-27 > stream-day-2026-11-27.txt
+```
+
+Per session it counts symbol-minutes equal in every column, different (which column, by how
+much), only in the stream and only in the file, with the minutes a gap may have touched counted
+apart.
 
 ## Disk upkeep: `tickr maintain`
 
