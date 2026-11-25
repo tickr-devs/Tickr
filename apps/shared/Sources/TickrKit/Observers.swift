@@ -121,10 +121,14 @@ public struct ObserversV1: Codable, Hashable, Sendable {
   public let day: WireDate
   public let observers: [ObserverV1]
   public let apiVersion: Int
+  /// The platform rules the simulation obeyed; nil from an older bot (added after version 1
+  /// shipped).
+  public let simulationRules: SimulationRulesV1?
 
   enum CodingKeys: String, CodingKey {
     case day, observers
     case apiVersion = "api_version"
+    case simulationRules = "simulation_rules"
   }
 
   public init(from decoder: Decoder) throws {
@@ -132,6 +136,7 @@ public struct ObserversV1: Codable, Hashable, Sendable {
     apiVersion = try c.decodeVersion(forKey: .apiVersion, expected: Wire.apiVersion)
     day = try c.decode(WireDate.self, forKey: .day)
     observers = try c.decode([ObserverV1].self, forKey: .observers)
+    simulationRules = try c.decodeIfPresent(SimulationRulesV1.self, forKey: .simulationRules)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -139,6 +144,7 @@ public struct ObserversV1: Codable, Hashable, Sendable {
     try c.encode(day, forKey: .day)
     try c.encode(observers, forKey: .observers)
     try c.encode(apiVersion, forKey: .apiVersion)
+    try c.encodeNullable(simulationRules, forKey: .simulationRules)
   }
 }
 
@@ -340,10 +346,14 @@ public struct SkippedV1: Codable, Hashable, Sendable {
   public let day: WireDate
   public let signals: [SkippedSignalV1]
   public let apiVersion: Int
+  /// The platform rules the simulation obeyed; nil from an older bot (added after version 1
+  /// shipped).
+  public let simulationRules: SimulationRulesV1?
 
   enum CodingKeys: String, CodingKey {
     case day, signals
     case apiVersion = "api_version"
+    case simulationRules = "simulation_rules"
   }
 
   public init(from decoder: Decoder) throws {
@@ -351,6 +361,7 @@ public struct SkippedV1: Codable, Hashable, Sendable {
     apiVersion = try c.decodeVersion(forKey: .apiVersion, expected: Wire.apiVersion)
     day = try c.decode(WireDate.self, forKey: .day)
     signals = try c.decode([SkippedSignalV1].self, forKey: .signals)
+    simulationRules = try c.decodeIfPresent(SimulationRulesV1.self, forKey: .simulationRules)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -358,6 +369,7 @@ public struct SkippedV1: Codable, Hashable, Sendable {
     try c.encode(day, forKey: .day)
     try c.encode(signals, forKey: .signals)
     try c.encode(apiVersion, forKey: .apiVersion)
+    try c.encodeNullable(simulationRules, forKey: .simulationRules)
   }
 }
 

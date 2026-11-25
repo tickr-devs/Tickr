@@ -65,7 +65,7 @@ public struct TradeWhatIfSignalsV1: Codable, Hashable, Sendable {
   public let filled: Int
   /// The price never came into the entry window.
   public let missed: Int
-  /// Live admission would refuse it on time alone.
+  /// Replay timing or the live platform rules refuse it.
   public let rejected: Int
   /// A simulated position of the symbol was already open.
   public let ignored: Int
@@ -89,10 +89,14 @@ public struct TradeWhatIfV1: Codable, Hashable, Sendable {
   public let apiVersion: Int
   /// The codes of `cause` (added after version 1 shipped: empty from an older API).
   public let causeCodes: [ReasonV1]
+  /// The platform rules the simulation obeyed; nil from an older bot (added after version 1
+  /// shipped).
+  public let simulationRules: SimulationRulesV1?
 
   enum CodingKeys: String, CodingKey {
     case day, symbol, folder, strategy, version, signals, trades, cause
     case causeCodes = "cause_codes"
+    case simulationRules = "simulation_rules"
     case resultR = "result_r"
     case resultGrossUsd = "result_gross_usd"
     case apiVersion = "api_version"
@@ -112,6 +116,7 @@ public struct TradeWhatIfV1: Codable, Hashable, Sendable {
     resultGrossUsd = try c.decodeNullable(DecimalString.self, forKey: .resultGrossUsd)
     cause = try c.decodeNullable(String.self, forKey: .cause)
     causeCodes = try c.decodeIfPresent([ReasonV1].self, forKey: .causeCodes) ?? []
+    simulationRules = try c.decodeIfPresent(SimulationRulesV1.self, forKey: .simulationRules)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -128,6 +133,7 @@ public struct TradeWhatIfV1: Codable, Hashable, Sendable {
     try c.encodeNullable(cause, forKey: .cause)
     try c.encode(apiVersion, forKey: .apiVersion)
     try c.encode(causeCodes, forKey: .causeCodes)
+    try c.encodeNullable(simulationRules, forKey: .simulationRules)
   }
 
   /// Why it could not be computed, in the person's language (the bot's words for an unknown code).
