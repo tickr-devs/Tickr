@@ -68,8 +68,10 @@ private final class MemoryItems: KeychainItems {
   /// False: writes answer success but the item stays as it was.
   private let keepsWrites: Bool
 
-  init(stored: String? = nil, updateStatus: OSStatus = errSecSuccess, addStatus: OSStatus = errSecSuccess,
-    keepsWrites: Bool = true) {
+  init(
+    stored: String? = nil, updateStatus: OSStatus = errSecSuccess, addStatus: OSStatus = errSecSuccess,
+    keepsWrites: Bool = true
+  ) {
     state = Mutex(State(stored: stored.map { Data($0.utf8) }))
     self.updateStatus = updateStatus
     self.addStatus = addStatus
