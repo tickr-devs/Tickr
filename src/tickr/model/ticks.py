@@ -327,7 +327,10 @@ class TickStream:
 
 class TickBackfill:
     """A symbol's trades and quotes of a time range from Massive's REST, paged to the end, into
-    the TickStore. One request per page, never retried; a failure refuses and keeps nothing."""
+    the TickStore. One request per page, never retried; a failure refuses and keeps nothing.
+    Paging has no count limit (none is measured yet): it refuses a server that makes no
+    progress, a next_url already fetched or a page whose last SIP time does not pass the
+    previous page's. Every backfill returns its page counts, the measurement of real sizes."""
 
     def __init__(self, cfg: Config, store: TickStore, opener: Opener = _open,
                  clock: Callable[[], int] = time.time_ns) -> None:
@@ -342,8 +345,10 @@ class TickBackfill:
         query = {"timestamp.gte": str(from_ns), "timestamp.lt": str(to_ns), "order": "asc",
                  "sort": "timestamp", "limit": str(self.m.tick_page_limit)}
         url = f"https://{self.m.api_host}{path}?{urllib.parse.urlencode(query)}"
-        pages = []
-        for _ in range(self.m.tick_max_pages):
+        pages: list[tuple[list[dict[str, Any]], int]] = []
+        seen = {url}
+        last_ts: int | None = None
+        while True:
             headers = {"Authorization": "Bearer " + credential(self.m.api_key_variable)}
             body = _get(self.opener, url, headers, self.m.http_timeout_seconds)
             recv_ns = self.clock()
@@ -366,17 +371,25 @@ class TickBackfill:
             if parts.scheme != "https" or parts.hostname != self.m.api_host:
                 # the next request carries the key: only to the configured host over https
                 raise ModelRefused("backfill_unreadable", "next page not on the https api host")
+            # a next page promised after a page with no later row is a server without progress
+            page_last = max((r["sip_timestamp"] for r in rows), default=None)
+            if page_last is None or (last_ts is not None and page_last <= last_ts):
+                raise ModelRefused("backfill_no_progress", f"{path}: page {len(pages)}")
+            last_ts = page_last
+            if nxt in seen:
+                raise ModelRefused("backfill_no_progress", f"{path}: a next page fetched before")
+            seen.add(nxt)
             url = nxt
-        raise ModelRefused("backfill_incomplete",
-                           f"{path}: more than {self.m.tick_max_pages} pages")
 
-    def backfill(self, symbol: str, from_ns: int, to_ns: int) -> dict[str, int]:
-        """Trades and quotes of `symbol` with SIP time in [from_ns, to_ns); returns the new rows
-        per kind (rows the stream already holds are repeats, see TickStore.add)."""
+    def backfill(self, symbol: str, from_ns: int, to_ns: int) -> dict[str, dict[str, int]]:
+        """Trades and quotes of `symbol` with SIP time in [from_ns, to_ns); returns per kind the
+        new rows (rows the stream already holds are repeats, see TickStore.add) and the pages
+        fetched."""
         if (not isinstance(symbol, str) or not symbol or isinstance(from_ns, bool)
                 or isinstance(to_ns, bool) or not isinstance(from_ns, int)
                 or not isinstance(to_ns, int) or from_ns >= to_ns):
             raise ModelRefused("backfill_range", f"{symbol!r} {from_ns!r}..{to_ns!r}")
         fetched = {kind: self._pages(kind, symbol, from_ns, to_ns) for kind in KINDS}
-        return {kind: sum(self.store.add(kind, rows, recv_ns, REST)
-                          for rows, recv_ns in fetched[kind]) for kind in KINDS}
+        return {kind: {"rows": sum(self.store.add(kind, rows, recv_ns, REST)
+                                   for rows, recv_ns in fetched[kind]),
+                       "pages": len(fetched[kind])} for kind in KINDS}

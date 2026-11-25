@@ -272,7 +272,8 @@ def test_backfill_pages_both_kinds_and_dedupes_the_overlap_with_the_stream(creds
                                                 rest_quote(200, T0 + 456)]}]})
     times = iter([70, 80, 90])
     back = ticks.TickBackfill(CFG, store, wire, clock=lambda: next(times))
-    assert back.backfill("AAPL", START, T0 + MS) == {"trades": 1, "quotes": 1}
+    assert back.backfill("AAPL", START, T0 + MS) == {"trades": {"rows": 1, "pages": 2},
+                                                     "quotes": {"rows": 1, "pages": 1}}
     first = urllib.parse.urlsplit(wire.requests[0].full_url)
     assert first.path == "/v3/trades/AAPL"
     assert urllib.parse.parse_qs(first.query) == {
@@ -327,13 +328,23 @@ def test_a_failed_backfill_refuses_once_and_keeps_nothing(creds, answers, cause)
     assert all(not v for v in wire.answers.values())  # every request sent once, none retried
 
 
-def test_too_many_pages_refuse_the_backfill(creds):
-    cfg = dataclasses.replace(CFG, massive=dataclasses.replace(CFG.massive, tick_max_pages=2))
-    page = {"status": "OK", "results": [], "next_url": NEXT}
-    wire = Wire({"trades": [page, page]})
+@pytest.mark.parametrize("pages", [
+    # an empty page that promises another
+    [{"status": "OK", "results": [], "next_url": NEXT}],
+    # a page whose last SIP time does not pass the previous page's
+    [{"status": "OK", "results": [rest_trade(1, T0 + 5)], "next_url": NEXT},
+     {"status": "OK", "results": [rest_trade(2, T0 + 5)], "next_url": NEXT + "x"}],
+    # a next_url fetched before
+    [{"status": "OK", "results": [rest_trade(1, T0)], "next_url": NEXT},
+     {"status": "OK", "results": [rest_trade(2, T0 + 1)], "next_url": NEXT}],
+])
+def test_paging_without_progress_is_refused(creds, pages):
+    wire = Wire({"trades": list(pages)})
+    store = ticks.TickStore(DAY)
     with pytest.raises(ModelRefused) as exc:
-        ticks.TickBackfill(cfg, ticks.TickStore(DAY), wire).backfill("AAPL", START, END)
-    assert exc.value.cause == "backfill_incomplete"
+        ticks.TickBackfill(CFG, store, wire, clock=lambda: 1).backfill("AAPL", START, END)
+    assert exc.value.cause == "backfill_no_progress"
+    assert len(wire.requests) == len(pages) and store.frame("trades").empty
 
 
 @pytest.mark.parametrize("args", [("AAPL", END, START), ("", START, END),

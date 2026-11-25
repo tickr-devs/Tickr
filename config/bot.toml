@@ -833,10 +833,6 @@ tick_subscription = "symbols"
 # Rows asked per REST page of a symbol's trades or quotes backfill (Massive's documented largest page for /v3/trades
 # and /v3/quotes); read by tickr.model.ticks.
 tick_page_limit = 50000
-# Most REST pages one trades or quotes backfill may take; more refuses the backfill as incomplete (a bound against a
-# server that keeps sending next pages, not a measured value: the first real backfills record their page counts); read
-# by tickr.model.ticks.
-tick_max_pages = 1000
 
 [runtime]
 # Minimum free disk space on the data_dir volume, megabytes; below it preflight fails and the running bot takes no new
