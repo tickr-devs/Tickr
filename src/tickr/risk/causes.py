@@ -62,6 +62,7 @@ class AdmissionCause(StrEnum):
     # 7. Request budget
     ENTRY_BUDGET_UNAVAILABLE = "ENTRY_BUDGET_UNAVAILABLE"
     STOP_BUDGET_UNAVAILABLE = "STOP_BUDGET_UNAVAILABLE"
+    TRADABILITY_BUDGET_UNAVAILABLE = "TRADABILITY_BUDGET_UNAVAILABLE"
     # Tradability (backlog T8; only with [risk] tradability_check_enabled), read from the
     # broker after every check above passed, before the buying power
     TRADABILITY_UNKNOWN = "TRADABILITY_UNKNOWN"

@@ -61,6 +61,15 @@ def test_on_refuses_sends_nothing_and_skips_the_balance(tmp_path, given, cause):
     assert d.broker.sent == [] and d.broker.balance_reads == 0
 
 
+def test_no_budget_for_the_reads_refuses_before_reading(tmp_path):
+    d = desk(tmp_path)
+    d.broker.tradable["ABC"] = answer()
+    d.broker.tradability_budget = False
+    record = d.decide(decision())
+    assert record.refusal_cause.startswith("TRADABILITY_BUDGET_UNAVAILABLE")
+    assert d.broker.tradability_reads == 0 and d.broker.sent == []
+
+
 def test_an_earlier_refusal_reads_no_tradability(tmp_path):
     d = desk(tmp_path)
     record = d.decide(decision(), q=quote(ask="10.50"))  # ask above the window

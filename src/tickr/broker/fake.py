@@ -72,6 +72,7 @@ class FakeBroker:
     # What tradability(symbol) returns per symbol; a symbol not listed raises BrokerError.
     tradable: dict[str, Tradability] = field(default_factory=dict)
     tradability_reads: int = 0
+    tradability_budget: bool = True  # what can_read_tradability() answers
 
     def script(self, *outcomes: str) -> None:
         self.outcomes.extend(outcomes)
@@ -99,6 +100,9 @@ class FakeBroker:
         if found is None:
             raise BrokerError(f"no tradability scripted for {symbol}")
         return found
+
+    def can_read_tradability(self) -> bool:
+        return self.tradability_budget
 
     def positions(self) -> list[Position]:
         return [p for p in self.holdings.values() if p.quantity != 0]

@@ -910,6 +910,10 @@ class WebullBroker:
             row.instrument_id)
         return Tradability(symbol, row.fields.get(PROFILE_STATUS_KEY), policy, reason)
 
+    def can_read_tradability(self) -> bool:
+        """Check 7's question for the two reads `tradability` sends (one each route)."""
+        return all(self._budget.can_take(route.path) for route in TRADABILITY_ROUTES)
+
     def tradability_sources(self, symbols: Sequence[str]) -> list[tuple[str, SourceRead]]:
         """Probe T8, read only: the snapshot and the instrument profiles of `symbols` (one
         request each), then the trade instrument of every profile row's instrument id, each
@@ -1331,6 +1335,8 @@ def read_profiles(body: Any) -> dict[str, InstrumentProfile]:
 TRADE_POLICY_KEY = "trade_policy"
 FORBID_REASON_KEY = "forbid_reason"
 PROFILE_STATUS_KEY = "status"
+# The reads `WebullBroker.tradability` sends, one request each, in order.
+TRADABILITY_ROUTES = (Route.PROFILES, Route.TRADE_INSTRUMENT)
 
 
 def read_trade_instrument(body: Any, instrument_id: str) -> tuple[str, str | None]:

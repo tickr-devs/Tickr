@@ -77,6 +77,14 @@ def test_the_api_reads_every_tradability_refusal(answer, cause):
     assert refusal.code is RefusalCode(cause) and refusal.message
 
 
+def test_check_7_refuses_when_the_tradability_reads_do_not_fit():
+    starved = inputs(tradability_budget_available=False, tradability=synthetic())
+    result = admit(starved, on())
+    assert result.cause is C.TRADABILITY_BUDGET_UNAVAILABLE
+    assert refusal_before_broker_reads(starved, on()) == result  # before any read is made
+    assert admit(starved, limits()).ok  # the check off: the reads are not needed
+
+
 def test_close_only_detail_carries_the_forbid_reason():
     result = admit(inputs(tradability=synthetic(trade_policy="CLOSE_ONLY", forbid_reason="r")),
                    on())

@@ -14,6 +14,7 @@ import pytest
 
 from tickr import cli, config
 from tickr.broker.base import TradabilityReader
+from tickr.broker.budget import RouteLimit
 from tickr.broker.webull import (
     ACCOUNT_FREE_ROUTES,
     MARKET_DATA_ROUTES,
@@ -67,6 +68,14 @@ def test_tradability_reads_the_profile_then_the_instrument_once_each():
         "ABC", "OC", "CLOSE_ONLY", "synthetic reason", None)
     assert transport.sent == [(Route.PROFILES, {"symbols": "ABC", "category": "US_STOCK"}),
                               (Route.TRADE_INSTRUMENT, {"instrument_id": "913"})]
+
+
+def test_can_read_tradability_needs_both_routes_and_takes_nothing():
+    b, transport, budget = broker(limit=RouteLimit(1, 60, 60))
+    assert b.can_read_tradability()
+    budget.take(Route.TRADE_INSTRUMENT.path)  # the instrument route is spent
+    assert not b.can_read_tradability()
+    assert transport.sent == []
 
 
 def test_several_instruments_for_a_symbol_are_refused_before_the_instrument_read():

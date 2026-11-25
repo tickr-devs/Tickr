@@ -117,6 +117,11 @@ class TradabilityReader(Protocol):
         cannot be read or do not name one instrument."""
         ...
 
+    def can_read_tradability(self) -> bool:
+        """True if the request budget would admit every read `tradability` sends now. Takes
+        nothing and sends nothing."""
+        ...
+
 
 class Broker(Protocol):
     def account(self) -> AccountSnapshot: ...

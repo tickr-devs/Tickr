@@ -167,6 +167,9 @@ class AdmissionInputs:
     buying_power: BuyingPower
     entry_budget_available: bool
     stop_budget_available: bool
+    tradability_budget_available: bool = True
+    """The request budget admits the tradability reads now (check 7; asked only when the
+    tradability check is on)."""
     tradability: Tradability | None = None
     """The broker's tradability answers for the decision's symbol, read only when the check is
     on and every earlier check passed; None = not read."""
@@ -497,6 +500,9 @@ def _check_budget(i: AdmissionInputs, lim: AdmissionLimits) -> Admission | None:
     if not i.stop_budget_available:
         return _refuse(C.STOP_BUDGET_UNAVAILABLE, "no request budget for the protective stops "
                        "of every working entry and this one")
+    if lim.tradability is not None and not i.tradability_budget_available:
+        return _refuse(C.TRADABILITY_BUDGET_UNAVAILABLE,
+                       "no request budget for the tradability reads (profile, trade instrument)")
     return None
 
 

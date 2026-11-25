@@ -95,7 +95,8 @@ entry_snapshot_interval_seconds = 3
 # symbol's instrument profile and its trade instrument (`GET /trade/instrument`) and refuses the entry when Webull says
 # HALTED (INSTRUMENT_HALTED), CLOSE_ONLY (INSTRUMENT_CLOSE_ONLY) or DENIED (INSTRUMENT_DENIED), when the profile status
 # is listed in tradability_blocked_profile_statuses (INSTRUMENT_NOT_TRADABLE), and when any answer is missing, unknown or
-# unreadable (TRADABILITY_UNKNOWN); exits are never checked. Two more reads per admitted entry. false = off (the two
+# unreadable (TRADABILITY_UNKNOWN); exits are never checked. Two more reads per admitted entry, counted in the request
+# budget check (TRADABILITY_BUDGET_UNAVAILABLE when they do not fit). false = off (the two
 # lists below are then not read). Off until the owner has run `tickr probe-tradability` (docs/manual-trade.md) and
 # checked the lists below against what Webull showed; read by safety and runtime.entries.
 tradability_check_enabled = false

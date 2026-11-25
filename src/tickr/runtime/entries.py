@@ -385,6 +385,14 @@ class EntryDesk:
 
     # --- tradability ------------------------------------------------------------------------
 
+    def _tradability_budget(self) -> bool:
+        """Check 7: the budget admits the tradability reads (only asked when the check is on;
+        a broker that cannot read tradability is left to the tradability check's refusal)."""
+        broker = self.engine.broker
+        if self.limits.tradability is None or not isinstance(broker, TradabilityReader):
+            return True
+        return broker.can_read_tradability()
+
     def _read_tradability(self, symbol: str) -> Tradability:
         """The broker's tradability answers for `symbol` (backlog T8), read once per entry
         that reaches the check; a failed read or a broker that cannot say is recorded as the
@@ -436,6 +444,7 @@ class EntryDesk:
             buying_power=self._buying_power(),
             entry_budget_available=engine.broker.can_place(1),
             stop_budget_available=engine.broker.can_place(1 + stop_requests_owed(engine)),
+            tradability_budget_available=self._tradability_budget(),
         )
 
     # --- the one entry point ---------------------------------------------------------------
