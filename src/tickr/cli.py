@@ -510,6 +510,24 @@ def _probe_quote_sources(args: argparse.Namespace) -> int:
     return code
 
 
+def _probe_prev_day(args: argparse.Namespace) -> int:
+    """Read-only, overnight (docs/manual-trade.md): when the previous session's Massive day
+    files and splits appear before the 04:00 ET start. Exit 0 at the window's end, 3 refused."""
+    from tickr.model import prevday_probe
+    from tickr.model.errors import ModelRefused
+
+    cfg = config_module.load(args.config)
+    if args.summary:
+        prevday_probe.summary(cfg, print)
+        return 0
+    try:
+        calendar = SessionCalendar.load((cfg.root / cfg.session.calendar_file).parent)
+        return prevday_probe.run(cfg, calendar, now=NOW, sleep=SLEEP, out=print)
+    except (ModelRefused, CalendarRefused) as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 3
+
+
 def _check_quote(args: argparse.Namespace) -> int:
     """Read-only: one snapshot quote through the probes' market-data path, and whether its age
     passes the check `probe-replace-stop` applies. Sends no orders. Exit 0 fresh, 3 not."""
@@ -903,6 +921,11 @@ def main(argv: list[str] | None = None) -> int:
                              "extended snapshot, top of book and newest trades, with the age "
                              "of each; sends no orders")
     sources.add_argument("symbols", nargs="+")
+    prev_day = sub.add_parser("probe-prev-day", help="read-only, overnight ([probe] "
+                              "prev_day_*): when the previous session's Massive day files and "
+                              "splits appear before the 04:00 ET start; sends no orders")
+    prev_day.add_argument("--summary", action="store_true", help="print the first-available "
+                          "times over every captured night; sends no request")
     explain_parser = sub.add_parser("explain", help="read-only: the latest decision recorded "
                                     "today for a symbol, with every check")
     explain_parser.add_argument("symbol")
@@ -953,6 +976,8 @@ def main(argv: list[str] | None = None) -> int:
             return _check_quote(args)
         if args.command == "probe-quote-sources":
             return _probe_quote_sources(args)
+        if args.command == "probe-prev-day":
+            return _probe_prev_day(args)
         if args.command == "explain":
             return _explain(args)
         if args.command == "maintain":
