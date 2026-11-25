@@ -165,6 +165,14 @@ def test_the_live_feature_wait_stays_unmeasured_until_set():
     assert model.live_wait_after_minute_seconds == "" and config.live_wait_seconds(model) is None
 
 
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_live_table_workers_must_be_at_least_one(tmp_path, value):
+    text = re.sub(r"(?m)^live_table_workers = \S+", f"live_table_workers = {value}",
+                  BOT.read_text("utf-8"))
+    with pytest.raises(config.ConfigError, match="live_table_workers"):
+        config.load(_copy(tmp_path, text))
+
+
 @pytest.mark.parametrize(("value", "ok"), [('"2.5"', True), ('"0"', True), ('"-1"', False),
                                            ('"soon"', False), ('"NaN"', False)])
 def test_a_set_live_feature_wait_must_be_seconds(tmp_path, value, ok):

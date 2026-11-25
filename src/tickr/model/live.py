@@ -7,9 +7,10 @@ It composes the pieces that already exist, each the training's own code or its f
 
 - bars: today's full-market minute bars from `MinuteStream` into `DayBars`, cut at m (bars of a
   later minute are left out, the prefix rule), and the 20-session `DayState`; the table code's
-  rows of m (`full.table_rows`) are the COHORT: the training's row rule decides which symbols
-  get a row. Webull's lists (what the bot may trade) stay apart: a symbol the caller wants that
-  has no row is refused `not_in_cohort`.
+  rows of m (`incremental.DayTable`: the rows of `full.table_rows`, bit for bit, without
+  rebuilding the whole market's day at every minute) are the COHORT: the training's row rule
+  decides which symbols get a row. Webull's lists (what the bot may trade) stay apart: a symbol
+  the caller wants that has no row is refused `not_in_cohort`.
 - ticks: `TickStream` / `TickStore` (trades and quotes as flat-file rows) and `TickBackfill`.
   A symbol enters the tick path the first minute it has a row and stays in it for the day (its
   later rows need the earlier minutes: windows of `wm2tk`, the converter's carried events). On
@@ -71,7 +72,7 @@ from tickr.config import Config, live_wait_seconds
 from tickr.model import features
 from tickr.model import ticks as feed
 from tickr.model.errors import ModelRefused
-from tickr.model.features import full, ticks
+from tickr.model.features import full, incremental, ticks
 
 INPUT_NAMES = ("reference", "benzinga", "fl_facts")
 STICKY = ("backfill_missing", "tick_gap", "tick_late", "bar_gap")
@@ -137,6 +138,7 @@ class LiveFeatures:
         self.day, self.state, self.types = day, state, types
         self.bars, self.store, self.stream, self.backfill = bars, store, stream, backfill
         self.inputs, self.clock = inputs, clock
+        self.table = incremental.DayTable(day, state, types, cfg.model.live_table_workers)
         self.marker = cfg.model.live_marker_quote
         self.wait = live_wait_seconds(cfg.model)
         self.parts = Path(tick_dir) / day
@@ -188,7 +190,7 @@ class LiveFeatures:
         bars = self.bars.frame()
         bars = bars[bars.window_start < self._end(minute)]
         table = (None if bars.empty  # no bar yet today: no row (an empty frame has no types)
-                 else full.table_rows(bars, self.day, minute, self.state, self.types))
+                 else self.table.rows(bars, minute))
         cohort = [] if table is None else list(table.sym)
         seconds["bars"] = time.perf_counter() - t0
 

@@ -784,6 +784,10 @@ live_marker_quote = false
 # is empty and a clock-driven close refuses (feature_wait_unmeasured) instead of guessing; read by config.load and
 # tickr.model.live.
 live_wait_after_minute_seconds = ""
+# Processes that compute the cohort's table rows side by side at each close of tickr.model.live (the pinned table code
+# on chunks of at most 500 tickers, tickr.model.features.incremental); 1 = in the bot's own process, no worker. A count
+# of processes, at least 1; read by config.load and tickr.model.live.
+live_table_workers = 1
 
 [massive]
 # Market data vendor of the model's inputs (owner 2026-11-20: the model's features come live from Massive, the same
