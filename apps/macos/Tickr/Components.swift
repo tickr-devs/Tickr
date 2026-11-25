@@ -25,7 +25,7 @@ extension Severity {
 @MainActor
 enum MenuBarMark {
   static let image: NSImage = {
-    let side = Tokens.Size.menuBarGlyph
+    let side = BrandGlyph.menuBarSide
     let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
       guard let context = NSGraphicsContext.current?.cgContext else { return false }
       BrandGlyph.draw(in: context, rect: rect)

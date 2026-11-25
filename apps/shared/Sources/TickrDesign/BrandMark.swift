@@ -53,6 +53,9 @@ public struct BrandMark: View {
   static let gridSide = 0.6
   /// The halo's side as a multiple of the tile's: it reaches 8 of 40 past each edge, as on the site.
   static let haloSide = 1.4
+  /// Seconds of one breath of the halo (out and back) and how far it grows, as on the site.
+  static let haloSeconds = 3.2
+  static let haloScale: CGFloat = 1.12
   /// Seconds before the line starts drawing, so a window is on screen before it moves.
   static let drawDelay = 0.35
 
@@ -134,6 +137,8 @@ public struct BrandMark: View {
 /// The mark's line and dot alone, without tile or halo, filling its frame with the 24-unit grid:
 /// in the current foreground style, for one-colour places such as the Mac menu bar.
 public struct BrandGlyph: View {
+  /// The glyph's side in the Mac menu bar: a menu-bar extra's image side.
+  public static let menuBarSide: CGFloat = 18
   let size: CGFloat
 
   public init(size: CGFloat) {
@@ -207,7 +212,7 @@ struct TickLine: Shape {
     BrandMark(live: true)
     BrandMark.empty()
     BrandMark.empty(.muted)
-    BrandGlyph(size: Tokens.Size.menuBarGlyph)
+    BrandGlyph(size: BrandGlyph.menuBarSide)
   }
     .padding()
     .background(Palette.background)

@@ -7,8 +7,8 @@ import AppKit
 #endif
 
 /// The live part of the brand mark: its halo breathing slowly, as on the tickr.bot site (from
-/// `Opacity.muted` to full and from its size to `Tokens.Motion.haloScale` times it, and back, every
-/// `Tokens.Motion.haloSeconds`). Core Animation runs it in the render server. As a SwiftUI
+/// `Opacity.muted` to full and from its size to `BrandMark.haloScale` times it, and back, every
+/// `BrandMark.haloSeconds`). Core Animation runs it in the render server. As a SwiftUI
 /// `repeatForever` animation it moved every display frame inside the Overview's header, and each
 /// frame laid out the whole Overview again, texts included: about a full CPU core at idle
 /// (Instruments, 2026-11-15).
@@ -105,14 +105,14 @@ final class BrandMarkLiveView: PlatformView {
   private func startLoop() {
     let grow = CABasicAnimation(keyPath: Self.scalePath)
     grow.fromValue = 1
-    grow.toValue = Tokens.Motion.haloScale
+    grow.toValue = BrandMark.haloScale
     let brighten = CABasicAnimation(keyPath: Self.opacityPath)
     brighten.fromValue = Tokens.Opacity.muted
     brighten.toValue = 1
     let breath = CAAnimationGroup()
     breath.animations = [grow, brighten]
     // Half a breath out, the same back.
-    breath.duration = Tokens.Motion.haloSeconds / 2
+    breath.duration = BrandMark.haloSeconds / 2
     breath.autoreverses = true
     breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     // decorative: the brand mark's halo is an ornament (owner, 2026-11-15).

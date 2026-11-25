@@ -320,7 +320,7 @@ size unchanged.
 | `menuGlyph` | 13 | The settings gear (`DesignGlyph.settings`) in the macOS menu-bar panel, at `Stroke.glyphHeavy` (2.2 grid units); elsewhere the gear is stroked at `Stroke.gear` (1.9). Both apps draw this one gear for Settings (iOS Home header, Mac menu bar, Mac Settings General tab), never an SF Symbol |
 | `dayResultWidth` | 300 | Overview's day result beside the header |
 | `gridColumnMin` | 300 | Narrowest column of a card grid before it stacks |
-| `logo` / `logoSmall` / `emptyMark` / `menuBarGlyph` | 52 / 26 / 64 / 18 | Brand mark's tile (`BrandMark`) in a header, a panel, an empty screen; `BrandGlyph` in the Mac menu bar |
+| `logo` / `logoSmall` / `emptyMark` | 52 / 26 / 64 | Brand mark's tile (`BrandMark`) in a header, a panel, an empty screen |
 | `sparkline` | 34 | Sparkline height |
 | `bar` | 8 | Progress bar height |
 | `barThin` | 4 | Thin progress bar inside a row (Watching closely) |
@@ -600,8 +600,8 @@ halo. Tile and line look the same in light and dark.
   generated files. `tests/test_brand_assets.py` fails when they differ.
 - In the apps the same tile and line are `BrandMark` (TickrDesign): the line draws itself on
   appear and the dot pops in; while the bot's data is current (macOS Overview header, iOS Home
-  bar) the halo then breathes as on the site (from `Opacity.muted` to full and to `haloScale`,
-  and back, every `haloSeconds`; ornament), still at `Opacity.muted` otherwise and with Reduce
+  bar) the halo then breathes as on the site (from `Opacity.muted` to full and to `BrandMark.haloScale`,
+  and back, every `BrandMark.haloSeconds`; ornament), still at `Opacity.muted` otherwise and with Reduce
   Motion. `.muted` draws the line in `brandMuted` without a halo. `BrandGlyph` is the line and dot
   alone in one colour.
 - iOS opening (`LaunchHandoff`): the app starts exactly as the launch screen, flashes the spark
@@ -619,5 +619,5 @@ halo. Tile and line look the same in light and dark.
   `ContentUnavailableView` illustration, muted (`.muted`) when the bot cannot be reached. Errors
   keep a warning SF Symbol, so they never look like a calm empty state.
 - macOS has no launch screen (Apple HIG). The menu bar extra shows `BrandGlyph` as a template
-  image (`menuBarGlyph`) while all is calm and the severity's SF Symbol on attention or alarm, so
+  image (`BrandGlyph.menuBarSide`) while all is calm and the severity's SF Symbol on attention or alarm, so
   the bot's state stays visible; notifications and the About panel use the app icon.
