@@ -46,6 +46,32 @@ resource "aws_secretsmanager_secret" "bot_env" {
   description = "Tickr bot credential variables, JSON object of NAME to value; read only by the bot server role"
 }
 
+# Identity policies alone would let any account admin read the value too. This resource policy
+# denies reading it to every principal but the server role. The owner still writes it
+# (PutSecretValue) and can change this policy as account admin, which CloudTrail records.
+data "aws_iam_policy_document" "bot_env" {
+  statement {
+    sid       = "OnlyTheServerReads"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = ["*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "ArnNotEquals"
+      variable = "aws:PrincipalArn"
+      values   = [aws_iam_role.bot.arn]
+    }
+  }
+}
+
+resource "aws_secretsmanager_secret_policy" "bot_env" {
+  secret_arn = aws_secretsmanager_secret.bot_env.arn
+  policy     = data.aws_iam_policy_document.bot_env.json
+}
+
 # --- Machine role ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ec2_assume" {

@@ -16,10 +16,10 @@ monthly cost at the same time.
 |---|---|
 | `aws_instance.bot` (`var.instance_type`, Ubuntu 24.04, IMDSv2, termination protection) | The bot, the API and the live feed. Type is a variable until the model's live memory is measured. |
 | `aws_ebs_volume.data` (gp3, encrypted, `prevent_destroy`) at `/srv/tickr/data` | The data folder: SQLite, archives, Webull token. Separate from the root disk so the server can be rebuilt without it. |
-| `aws_dlm_lifecycle_policy.data` | One snapshot a night at `snapshot_time_utc`, `snapshot_keep_days` kept. |
+| `aws_dlm_lifecycle_policy.data` | One snapshot a night at `snapshot_time_utc`, `snapshot_keep_days` kept. Crash-consistent (like pulling the power): SQLite recovers from its WAL, and the time is outside every session, when the bot is not running. The bot's own daily backup stays the consistent copy. |
 | `aws_eip.bot` | Fixed address: the domain's A record at Namecheap and the Webull key binding. |
 | `aws_security_group.bot` | Port 443 in, nothing else. No SSH: sessions through SSM. |
-| `aws_secretsmanager_secret.bot_env` (`tickr-bot/env`) | The bot's credential variables, filled by the owner. Only the server role may read it. |
+| `aws_secretsmanager_secret.bot_env` (`tickr-bot/env`) | The bot's credential variables, filled by the owner. A resource policy denies reading the value to every principal but the server role, account admins included (they can still write it, and change the policy on the record). |
 | `aws_iam_role.bot` | SSM sessions, read of that one secret, one CloudWatch namespace (`Tickr/Bot`). Denied all SSM parameters. |
 | Alarms `tickr-bot-system-check`, `tickr-bot-instance-check` | AWS hardware failure: the server is recovered onto new hardware and the owner is mailed. Operating system hung: mail only (a reboot is the owner's call while a position may be open). |
 
