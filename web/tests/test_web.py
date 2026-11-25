@@ -104,6 +104,9 @@ def test_cabinet_shows_the_account_and_is_not_cached(client):
     client.force_login(user)
     response = client.get("/app")
     assert b"owner@example.com" in response.content
+    assert b"Sample data" in response.content
+    assert response.context["device_count"] == 1
+    assert response.context["passkey_count"] == 0
     assert response["Cache-Control"] == "no-store"
 
 
