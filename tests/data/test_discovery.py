@@ -709,3 +709,78 @@ def test_check_times_are_kept_in_the_record_and_seed_a_restart():
     assert latest_checked([json.dumps({"old": "record"}) + "\n"], "x") is None
     restarted.start(OPEN + timedelta(days=1))  # the next session starts from screener order
     assert restarted.remembered() == ()
+
+
+class Broken(Screen):
+    """An observer whose liquidity rules raise."""
+
+    def session_liquidity(self, session_bars):
+        raise ValueError("observer bug")
+
+
+def observing(md: FakeMarketData, observers, **overrides):
+    return discover(md, settings(**overrides), Screen(), OPEN, lambda: NOW,
+                    observers=observers)
+
+
+def thin_and_liquid(md: FakeMarketData) -> None:
+    """THIN trades 1.5M dollars (the active strategy's floor is 5M), AAA 6M."""
+    md.set_screener(G, [row(G, 1, "THIN"), row(G, 2, "AAA")])
+    md.set_quote(quote("THIN"))
+    md.add_bars(bars("THIN", 30, volume="5000"))
+    liquid(md, "AAA")
+
+
+def test_an_observer_with_a_lower_turnover_floor_sees_a_symbol_the_active_strategy_refuses():
+    md = FakeMarketData()
+    thin_and_liquid(md)
+    result = observing(md, [Screen(min_dollar_volume_usd="1000000")])
+    assert [c.instrument.symbol for c in result.candidates] == ["AAA"]
+    assert [c.instrument.symbol for c in result.observed] == ["THIN"]
+    (refusal,) = result.rejections  # the active strategy's refusal is still the record
+    assert (refusal.symbol, refusal.cause, refusal.stage) == (
+        "THIN", Cause.STRATEGY_LIQUIDITY, Stage.BARS)
+    assert result.summary() == "evaluated 2 of 2"
+    assert pass_record(result, NOW)["observed"] == ["THIN"]
+    assert observing(md, []).observed == ()  # without observers: as before
+
+
+def test_an_observer_with_a_wider_spread_sees_a_symbol_refused_at_the_snapshot():
+    md = FakeMarketData()
+    md.set_screener(G, [row(G, 1, "WIDE")])
+    md.set_quote(quote("WIDE", bid="10.00", ask="10.20"))
+    md.add_bars(bars("WIDE", 30))
+    strict = observing(md, [Screen()])
+    assert strict.observed == () and ("bars", ("WIDE",)) not in md.calls  # nobody wants it
+    result = observing(md, [Screen(max_spread_ratio="0.05")])
+    assert result.candidates == () and [c.instrument.symbol for c in result.observed] == ["WIDE"]
+    assert [(r.cause, r.stage) for r in result.rejections] == [
+        (Cause.STRATEGY_LIQUIDITY, Stage.SNAPSHOT)]
+    # Its own rules must pass on both stages: a looser spread alone is not enough.
+    thin = FakeMarketData()
+    thin.set_screener(G, [row(G, 1, "WIDE")])
+    thin.set_quote(quote("WIDE", bid="10.00", ask="10.20"))
+    thin.add_bars(bars("WIDE", 30, volume="5000"))
+    assert observing(thin, [Screen(max_spread_ratio="0.05")]).observed == ()
+
+
+def test_an_observer_whose_rules_raise_never_fails_the_pass():
+    md = FakeMarketData()
+    thin_and_liquid(md)
+    result = observing(md, [Broken(min_dollar_volume_usd="1000000")])
+    assert [c.instrument.symbol for c in result.candidates] == ["AAA"]
+    assert result.observed == ()
+
+
+def test_observer_only_bars_are_read_after_the_active_strategys_and_with_its_reserve():
+    md = FakeMarketData()
+    md.set_screener(G, [row(G, 1, "WIDE"), row(G, 2, "AAA")])  # WIDE is listed first
+    md.set_quote(quote("WIDE", bid="10.00", ask="10.20"))
+    md.add_bars(bars("WIDE", 30))
+    liquid(md, "AAA")
+    md.limit("bars", 1)
+    result = observing(md, [Screen(max_spread_ratio="0.05")], bars_symbols_per_request=1)
+    assert ("bars", ("AAA",)) in md.calls and ("bars", ("WIDE",)) not in md.calls
+    assert [c.instrument.symbol for c in result.candidates] == ["AAA"]
+    assert result.observed == () and result.stopped is not None
+    assert md.bars_reserves == [3, 3]  # the read the budget refused kept the reserve too

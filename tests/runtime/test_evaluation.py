@@ -65,8 +65,9 @@ def prior_bars(symbol: str) -> list[Bar]:
 class Market:
     """The evaluation's view of runtime.market: fixed candidates, discovery passes counted."""
 
-    def __init__(self, symbols, on_discover=None, recorder=None) -> None:
+    def __init__(self, symbols, on_discover=None, recorder=None, observed=()) -> None:
         self.symbols = list(symbols)
+        self.observers_only = list(observed)
         self.discovered = 0
         self.on_discover = on_discover
         self.recorder = recorder  # runtime.screeners.ScreenerRecorder, or none outside tests of it
@@ -87,6 +88,9 @@ class Market:
 
     def candidates(self) -> list[str]:
         return list(self.symbols)
+
+    def observed(self) -> list[str]:
+        return list(self.observers_only)
 
 
 class Scripted:
@@ -483,12 +487,12 @@ def _reads_take(rig: Rig, delay: timedelta, quote_on_the_way: bool) -> None:
     """Make the bar read last `delay`, optionally with an L1 quote arriving during it."""
     read = rig.source.bars
 
-    def slow(symbols, count):
+    def slow(symbols, count, *, budget_reserve=0):
         rig.now += delay
         if quote_on_the_way:
             rig.inbox.on_quote(Quote("ABC", D("10.04"), D("10.05"), D(100), D(100),
                                      rig.now, rig.now))
-        return read(symbols, count)
+        return read(symbols, count, budget_reserve=budget_reserve)
 
     rig.source.bars = slow
     rig.evaluator.desk.last_broker_read_at = lambda: rig.now
@@ -745,3 +749,39 @@ def test_a_candidate_bug_never_skips_the_positions_minute(tmp_path):
     rig.evaluator.history = rig.evaluator.history.inner
     rig.evaluator.tick(Market(["CAN"]))
     assert [c.symbol for c in rig.strategy.seen] == ["WAT", "WAT", "CAN"]
+
+
+def test_an_observer_only_symbol_goes_to_the_observers_and_never_to_the_strategy(tmp_path):
+    rig = Rig(tmp_path)
+    rig.symbol("CAN")
+    rig.symbol("OBS")
+    rig.strategy.verdicts["OBS"] = Verdict.ENTER  # never asked: it never reaches the desk
+    rig.evaluator.tick(Market(["CAN"], observed=["OBS", "CAN"]))
+    assert [c.symbol for c in rig.strategy.seen] == ["CAN"]
+    assert [c.symbol for c in rig.evaluator.contexts] == ["CAN", "OBS"]
+    observed = rig.evaluator.contexts[-1]
+    assert observed.position is None
+    assert len(observed.prior_sessions) == CFG.market_data.history_sessions
+    today = [b.start.minute for b in observed.bars if b.start.date() == MONDAY]
+    assert today == [30, 31, 32, 33, 34]
+    assert rig.engine.trades() == [] and rig.evaluator.watch == set()
+    reserve = CFG.market_data.discovery_bars_reserve_requests
+    reads = [c for c in rig.source.calls if c[0] in ("bars", "bars_before")]
+    own = [r for c, r in zip(reads, rig.source.bars_reserves, strict=True) if "OBS" in c[1]]
+    assert own and set(own) == {reserve}  # its bars and history leave discovery's reserve
+    assert rig.store.journal(EVALUATION_STOPPED) == []
+
+
+def test_a_refused_observer_only_read_stops_only_their_part_of_the_minute(tmp_path):
+    rig = Rig(tmp_path)
+    rig.symbol("CAN")
+    rig.symbol("OBS")
+    rig.evaluator.tick(Market(["CAN"]))  # CAN's history is read once a day
+    rig.now += timedelta(minutes=1)
+    rig.source.limit("bars", sum(1 for c in rig.source.calls if c[0] == "bars") + 1)
+    rig.evaluator.tick(Market(["CAN"], observed=["OBS"]))
+    assert [c.symbol for c in rig.strategy.seen] == ["CAN", "CAN"]
+    assert [c.symbol for c in rig.evaluator.contexts] == ["CAN"]
+    (row,) = rig.store.journal(EVALUATION_STOPPED)
+    assert row.body == {"bar_start": "2026-11-16T09:35:00-05:00", "stage": "observed-bars",
+                        "error": "RateLimited"}

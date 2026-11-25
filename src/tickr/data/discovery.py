@@ -40,6 +40,17 @@ session starts. So the split costs requests once per symbol per recheck period, 
 Every screener row, snapshot quote and completed bar read is handed to the capture sink with the
 receipt time taken right after the call returned.
 
+Observers (R11): discovery applies the union of the active strategy's and the observers'
+liquidity rules, so an observer with looser rules is not starved of symbols. A symbol the
+active strategy refuses is still refused (`rejections`, with the active strategy's check) and
+never becomes a candidate; when an observer's own rules (quote and session) accept it, it is
+`observed` instead: the evaluation hands it to the observers only, never to the active strategy
+or the entry desk. Its bars are read after every symbol the active strategy's quote rules
+accepted, so on a pass the budget stops, observer-only reads never take a candidate's place,
+and they use the same request budget and reserve as every discovery read. An observer whose
+liquidity rule raises counts as refusing the symbol (its own evaluation fails the same way and
+switches it off); it never fails the pass.
+
 Each pass also measures the active strategy's fast movers (when the strategy defines them,
 `FastMovers`) on the session bars it already read, and the result keeps every instrument's
 outcome: candidate, refused with its cause, or not reached when the pass stopped early.
@@ -173,6 +184,9 @@ class DiscoveryResult:
     """Every screener row the pass read, in list order (the profile recorder's input)."""
     checked_symbols: tuple[CheckedSymbol, ...] = ()
     """When each symbol was last decided this session, after the pass (`CheckedSymbols`)."""
+    observed: tuple[Candidate, ...] = ()
+    """Symbols the active strategy refused (in `rejections`) that an observer's liquidity
+    rules accept, in screener order: for the observers only, never the trading path."""
 
     def universe_symbols(self) -> set[str]:
         """The merged instruments that passed the universe rules (exchange, currency, type)."""
@@ -479,6 +493,15 @@ def quote_check(instrument: Instrument, quote: Quote | None, now: datetime,
     return strategy_refusal(instrument, screen.quote_liquidity(quote), screen, Stage.SNAPSHOT)
 
 
+def _accepts[T](rules: Callable[[T], Sequence[Check]], value: T) -> bool:
+    """An observer's rules pass on `value`; a rule that raises refuses (never fails the
+    pass)."""
+    try:
+        return all(c.passed for c in rules(value))
+    except Exception:  # noqa: BLE001 - an observer's bug never stops discovery
+        return False
+
+
 def completed_session_bars(bars: Sequence[Bar], session_open: datetime,
                            now: datetime) -> tuple[Bar, ...]:
     """Bars of the current regular session whose minute has ended by `now`, oldest first."""
@@ -497,8 +520,10 @@ def discover(
     today_bars: TodayBars | None = None,
     wait: Callable[[float], object] | None = None,
     checked_symbols: CheckedSymbols | None = None,
+    observers: Sequence[Liquidity] = (),
 ) -> DiscoveryResult:
-    """Run one discovery pass with `screen` (the active strategy) as the liquidity rules.
+    """Run one discovery pass with `screen` (the active strategy) as the liquidity rules, and
+    `observers`' rules for the symbols it refuses (`DiscoveryResult.observed`).
     `clock` returns the aware current time. `refused_symbols` carries the symbols refused as
     unknown from pass to pass within the session (a fresh memory when None). Every bars read
     is also kept in `today_bars` (with the time it was sent) for the strategy's evaluation.
@@ -561,6 +586,7 @@ def discover(
             rejections.append(refusal)
 
     movers: list[Mover] = []
+    observed: list[Candidate] = []
 
     def result(candidates: list[Candidate], stop: Stopped | None) -> DiscoveryResult:
         decided = {r.symbol for r in rejections} | {c.instrument.symbol for c in candidates}
@@ -569,11 +595,12 @@ def discover(
                            | {c.instrument.symbol for c in candidates}), clock())
         rank = {i.symbol: n for n, i in enumerate(universe)}
         ranked = sorted(candidates, key=lambda c: rank[c.instrument.symbol])
+        seen = sorted(observed, key=lambda c: rank[c.instrument.symbol])
         return DiscoveryResult(started, tuple(read), merged, len(universe),
                                tuple(ranked), tuple(rejections), stop, tuple(instruments),
                                not_reached, tuple(movers), isinstance(screen, FastMovers),
                                session_open, memory.remembered(), tuple(rows),
-                               checks.remembered())
+                               checks.remembered(), tuple(seen))
 
     if stopped is not None:
         return result([], stopped)
@@ -587,7 +614,9 @@ def discover(
         else:
             asked.append(instrument.symbol)
     asked = checks.order(asked)  # a pass the budget stops early continues here next time
-    quote_ok: list[tuple[Instrument, Quote]] = []
+    # Symbols past the quote stage: whether the active strategy's rules accepted it, and the
+    # observers whose quote rules did.
+    quote_ok: list[tuple[Instrument, Quote, bool, tuple[Liquidity, ...]]] = []
     def refused_by(stage: Stage, unknown: list[str]) -> Callable[[str], None]:
         def found(symbol: str) -> None:  # remembered at once: survives a budget stop
             memory.remember(symbol, stage, clock())
@@ -613,15 +642,23 @@ def discover(
         for symbol in chunk:
             instrument = by_symbol[symbol]
             refusal = quote_check(instrument, latest.get(symbol), now, settings, screen)
-            if refusal is None:
-                quote_ok.append((instrument, latest[symbol]))
-            else:
+            if refusal is not None and refusal.cause is not Cause.STRATEGY_LIQUIDITY:
+                rejections.append(refusal)  # the platform's quote rules: for everyone
+                continue
+            quote = latest[symbol]
+            looser = tuple(o for o in observers if _accepts(o.quote_liquidity, quote))
+            if refusal is not None:
                 rejections.append(refusal)
+                if not looser:
+                    continue
+            quote_ok.append((instrument, quote, refusal is None, looser))
 
-    # The strategy's session rules, from M1 bars.
+    # The strategy's session rules, from M1 bars: the active strategy's symbols first, so
+    # observer-only reads never take a candidate's place in the budget.
     candidates: list[Candidate] = []
-    entries = {i.symbol: (i, q) for i, q in quote_ok}
-    for chunk in _chunks([i.symbol for i, _ in quote_ok], settings.bars_symbols_per_request):
+    entries = {i.symbol: (i, q, active, looser) for i, q, active, looser in quote_ok}
+    ordered = sorted(entries, key=lambda s: not entries[s][2])
+    for chunk in _chunks(ordered, settings.bars_symbols_per_request):
         unknown = []
         # Each symbol's own request: its send time (a split read sends several).
         sent_at: dict[str, datetime] = {}
@@ -650,30 +687,30 @@ def discover(
         if capture is not None:
             capture.bars(completed, provider, clock())
         for symbol in chunk:
-            instrument, quote = entries[symbol]
+            instrument, quote, active, looser = entries[symbol]
             own = [b for b in completed if b.symbol == symbol]
-            if not own:
-                rejections.append(Rejection(instrument.instrument_id, symbol, Cause.NO_BARS,
-                                            "0 bars", "at least one completed M1 bar",
-                                            Stage.BARS))
-                continue
             session = completed_session_bars(own, session_open, sent_at[symbol])
             if not session:
-                rejections.append(Rejection(instrument.instrument_id, symbol, Cause.NO_BARS,
-                                            "0 session bars",
-                                            "at least one completed bar of this session",
-                                            Stage.BARS))
+                if active:  # an observer-only symbol is already refused at the snapshot
+                    rejections.append(Rejection(
+                        instrument.instrument_id, symbol, Cause.NO_BARS,
+                        "0 session bars" if own else "0 bars",
+                        "at least one completed bar of this session" if own
+                        else "at least one completed M1 bar", Stage.BARS))
                 continue
-            if isinstance(screen, FastMovers):
-                mover = screen.fast_mover(symbol, session)
-                if mover is not None:
-                    movers.append(mover)
-            refusal = strategy_refusal(instrument, screen.session_liquidity(session), screen,
-                                       Stage.BARS)
-            if refusal is not None:
+            if active:
+                if isinstance(screen, FastMovers):
+                    mover = screen.fast_mover(symbol, session)
+                    if mover is not None:
+                        movers.append(mover)
+                refusal = strategy_refusal(instrument, screen.session_liquidity(session),
+                                           screen, Stage.BARS)
+                if refusal is None:
+                    candidates.append(Candidate(instrument, quote, session))
+                    continue
                 rejections.append(refusal)
-                continue
-            candidates.append(Candidate(instrument, quote, session))
+            if any(_accepts(o.session_liquidity, session) for o in looser):
+                observed.append(Candidate(instrument, quote, session))
 
     return result(candidates, None)
 
@@ -751,7 +788,8 @@ def pass_record(result: DiscoveryResult, finished_at: datetime) -> dict[str, Any
     """One discovery pass as a JSON object (Decimal values as strings, times ISO-8601 UTC):
     the screeners read, where it stopped, every instrument's sources, every refusal with its
     cause, measured value, threshold and the strategy's failed check, the candidates, the
-    symbols not reached, and the fast movers with their signals."""
+    observers' own symbols (`observed`), the symbols not reached, and the fast movers with
+    their signals."""
     def at(value: datetime) -> str:
         return value.astimezone(UTC).isoformat()
 
@@ -770,6 +808,7 @@ def pass_record(result: DiscoveryResult, finished_at: datetime) -> dict[str, Any
                         "threshold": r.threshold, "check": _check_record(r.check)}
                        for r in result.rejections],
         "candidates": [c.instrument.symbol for c in result.candidates],
+        "observed": [c.instrument.symbol for c in result.observed],
         "not_reached": list(result.not_reached),
         "movers_measured": result.movers_measured,
         "session_open": None if result.session_open is None else at(result.session_open),

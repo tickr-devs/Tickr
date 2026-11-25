@@ -250,6 +250,22 @@ def test_without_a_strategy_discovery_captures_but_keeps_no_candidate(tmp_path):
     assert not any(c[0] == "bars" for c in rig.source.calls)
 
 
+def test_symbols_only_an_observer_accepts_are_kept_apart_from_the_candidates(tmp_path):
+    rig = Rig(tmp_path)
+    rig.market.screen = NoStrategy()  # the active strategy refuses everything
+    rig.market.observer_screens = (PassAll(),)
+    rig.source.set_screener(ScreenerKind.GAINERS, [ScreenerRow(
+        ScreenerKind.GAINERS, 1, "id-ABC", "ABC", "NSQ", "USD", "COMMON_STOCK", {})])
+    rig.source.set_quote(quote(rig.now))
+    rig.source.add_bars([Bar("ABC", rig.now - timedelta(minutes=2), D(10), D(10), D(10), D(10),
+                             D(100))])
+    rig.market.tick()
+    assert rig.market.candidates() == [] and rig.market.observed() == ["ABC"]
+    assert "ABC" not in rig.market.subscribed  # only an observer's WATCH subscribes it
+    row = rig.store.journal(DISCOVERY)[-1]
+    assert row.body["candidates"] == [] and row.body["observed"] == ["ABC"]
+
+
 def test_discovery_never_runs_outside_the_session(tmp_path):
     rig = Rig(tmp_path, now=SATURDAY)
     rig.market.tick()

@@ -104,6 +104,9 @@ class StubMarket:
     def candidates(self) -> list[str]:
         return []
 
+    def observed(self) -> list[str]:
+        return []
+
     def freshness(self, last_broker_read_at):
         return api.Freshness(last_broker_read_at, None, api.StreamHealth.OFF)
 

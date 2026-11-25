@@ -152,6 +152,7 @@ class DiscoveryState:
     at: datetime
     summary: str
     candidates: tuple[Candidate, ...]
+    observed: tuple[Candidate, ...] = ()  # for the observers only (DiscoveryResult.observed)
 
 
 class DiscoveryCancelled(Exception):
@@ -343,6 +344,9 @@ class MarketRuntime:
         # The active strategy's liquidity rules, set by the caller once the strategy is loaded;
         # until then discovery still captures screeners and quotes but keeps no candidate.
         self.screen: Liquidity = NoStrategy()
+        # The running observers' liquidity rules, set by the service each pass: discovery also
+        # keeps the symbols they accept and the active strategy refuses, for them only (R11).
+        self.observer_screens: tuple[Liquidity, ...] = ()
         self._candidates_retry_at = monotonic()  # candidates off until then after a refusal
         self._observers_retry_at = monotonic()  # observer symbols off until then after one
         self._observers_next_sync = monotonic()  # observer tier changes at most once until then
@@ -426,6 +430,12 @@ class MarketRuntime:
         """The symbols of the latest discovery's candidates, best first."""
         found = self.discovery
         return [] if found is None else [c.instrument.symbol for c in found.candidates]
+
+    def observed(self) -> list[str]:
+        """The symbols of the latest discovery that only the observers' liquidity rules
+        accept (the active strategy refused them), best first: never for the trading path."""
+        found = self.discovery
+        return [] if found is None else [c.instrument.symbol for c in found.observed]
 
     def _journal_stream_events(self) -> None:
         events = self.inbox.take_events()
@@ -658,6 +668,7 @@ class MarketRuntime:
         # subscriptions or this object's state.
         source = _StopsBetweenRequests(self.source, self._worker.stopping)
         settings, screen, ignition = self.settings, self.screen, self.ignition
+        observer_screens = self.observer_screens
         tee = None if ignition is None else _Tee(self.capture, ignition)
         capture = self.capture if tee is None else tee
         refused, checked, today_bars, clock, monotonic = (
@@ -670,7 +681,7 @@ class MarketRuntime:
             begun = monotonic()
             try:
                 result = discover(source, settings, screen, session_open, clock, capture,
-                                  refused, today_bars, wait, checked)
+                                  refused, today_bars, wait, checked, observer_screens)
             except Exception as exc:  # noqa: BLE001 - collected and journaled by the loop
                 return DiscoveryOutcome(now, clock(), monotonic() - begun, None, exc)
             failed: Exception | None = None
@@ -713,7 +724,7 @@ class MarketRuntime:
         summary = result.summary()
         if kept:
             summary += f"; kept {len(kept)} earlier candidates not reached"
-        self.discovery = DiscoveryState(outcome.started, summary, candidates)
+        self.discovery = DiscoveryState(outcome.started, summary, candidates, result.observed)
         if self.capture is not None:
             try:
                 self.capture.discovery(pass_record(result, outcome.finished), outcome.finished)
@@ -724,6 +735,7 @@ class MarketRuntime:
             self.engine.store.append(DISCOVERY, {
                 "summary": summary, "evaluated": result.evaluated,
                 "candidates": [c.instrument.symbol for c in candidates], "kept": kept,
+                "observed": [c.instrument.symbol for c in result.observed],
                 "seconds": outcome.seconds},
                 run_id=self.engine.run_id)
 

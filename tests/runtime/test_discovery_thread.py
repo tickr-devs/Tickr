@@ -299,6 +299,9 @@ class InFlight:
     def candidates(self) -> list[str]:
         return list(self.symbols)
 
+    def observed(self) -> list[str]:
+        return []
+
 
 def test_a_pass_that_outlives_its_minute_never_evaluates_that_minute_late(tmp_path):
     rig = EvalRig(tmp_path)

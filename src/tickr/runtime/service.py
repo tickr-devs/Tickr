@@ -505,6 +505,9 @@ class Service:
                                       else set(observers.watching(
                                           self.now(), timedelta(seconds=float(
                                               self.config.observers.watching_seconds)))))
+        # The next discovery pass keeps the symbols only these observers' rules accept (R11).
+        self.market.observer_screens = (() if observers is None
+                                        else tuple(o.strategy for o in observers.enabled))
 
     def _feed_observers(self) -> None:
         """The contexts the active strategy just saw go to the observers, after all broker

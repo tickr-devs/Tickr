@@ -158,6 +158,8 @@ def test_observer_watch_symbols_reach_the_market_and_go_when_observers_stop(tmp_
     assert observers.wait_idle(5)
     bot.service._evaluate()
     assert bot.service.market.observer_watch == {"ABC"}
+    # Discovery's next pass also applies the running observers' liquidity rules (R11).
+    assert bot.service.market.observer_screens == tuple(o.strategy for o in observers.enabled)
 
     def broken(context, at):
         raise RuntimeError("hook bug")
@@ -165,3 +167,4 @@ def test_observer_watch_symbols_reach_the_market_and_go_when_observers_stop(tmp_
     observers.on_evaluation = broken  # type: ignore[method-assign]
     bot.service._evaluate()
     assert bot.service.observers is None and bot.service.market.observer_watch == set()
+    assert bot.service.market.observer_screens == ()

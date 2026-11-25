@@ -137,6 +137,9 @@ class StubMarket:
         found = self.discovery
         return [] if found is None else [c.instrument.symbol for c in found.candidates]
 
+    def observed(self) -> list[str]:
+        return []
+
     def freshness(self, last_broker_read_at):
         return api.Freshness(last_broker_read_at, None, api.StreamHealth.OFF)
 

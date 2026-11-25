@@ -30,6 +30,14 @@ minute (never the room left at replay time), for the record only: an ENTER is re
 (keyed by the bar) is written before the records, so a restart never records the remainder twice; a
 remainder whose bars or history cannot be read is journaled, never silently dropped. Nothing here
 ever ends the trading loop.
+
+After the candidates, when nothing stopped the minute, the symbols discovery kept for the
+observers only (`observed`: the active strategy's liquidity rules refused them, an observer's
+accepted them; R11) get a context for the observers, built like any other, and nothing else: the
+active strategy never evaluates them, so they never reach the entry desk or the WATCH set. Their
+bars and history reads leave `[market_data] discovery_bars_reserve_requests` of the route free,
+like discovery's, so they never take the trading path's requests; a refused or failed read stops
+them for the minute (journaled `evaluation-stopped`, stage `observed-bars` or `observed-history`).
 """
 
 from __future__ import annotations
@@ -83,6 +91,11 @@ class CandidateSource(Protocol):
 
     def candidates(self) -> list[str]:
         """The latest discovery's candidate symbols, best first."""
+        ...
+
+    def observed(self) -> list[str]:
+        """The latest discovery's symbols for the observers only (the active strategy refused
+        them), best first."""
         ...
 
     def record_screeners(self, day: MarketDay, now: datetime) -> list[ScreenerRow] | None:
@@ -238,7 +251,45 @@ class Evaluator:
         first = self._waiting[1]
         self._waiting = None
         later = [s for s in market.candidates() if s not in first]
-        self._run(later, bar_start, day.regular_open, self._positions(), late=None)
+        if self._run(later, bar_start, day.regular_open, self._positions(), late=None):
+            return
+        taken = set(first) | set(later) | set(self._positions())
+        self._observe([s for s in market.observed() if s not in taken], bar_start,
+                      day.regular_open)
+
+    def _observe(self, symbols: list[str], bar_start: datetime, regular_open: datetime) -> None:
+        """Contexts for the observers only (see the module docstring): never the active
+        strategy, the entry desk or the WATCH set."""
+        md = self.config.market_data
+        reserve = md.discovery_bars_reserve_requests
+        today = bar_start.astimezone(NEW_YORK).date()
+        for chunk in _chunks(symbols, md.bars_symbols_per_request):
+            now = self.now()
+            read = self._today_bars(list(chunk), bar_start, regular_open, reserve)
+            if isinstance(read, Exception):
+                self._journal(EVALUATION_STOPPED, {"bar_start": bar_start.isoformat(),
+                                                   "stage": "observed-bars",
+                                                   "error": type(read).__name__})
+                return
+            owns = {s: [b for b in read[s] if regular_open <= b.start <= bar_start
+                        and b.start + M1 <= now] for s in chunk}
+            owns = {s: bars for s, bars in owns.items() if bars}
+            if not owns:
+                continue
+            histories = self.history.prior_sessions(list(owns), today, md.history_sessions,
+                                                    budget_reserve=reserve)
+            self._reloaded(bar_start, histories.reloads)
+            for symbol, own in owns.items():
+                error, history = self._history(histories, symbol, today)
+                if error is not None:
+                    self._journal(EVALUATION_STOPPED, {"bar_start": bar_start.isoformat(),
+                                                       "stage": "observed-history",
+                                                       "symbol": symbol, "error": error})
+                    return
+                whole = reaches_open(read[symbol], regular_open, md.bars_per_symbol)
+                self.contexts.append(self._context(symbol, own, history, None,
+                                                   self.inbox.latest(symbol),
+                                                   regular_open if whole else None))
 
     def _late(self) -> None:
         """The candidates of the waiting minute were never evaluated: its minute is over
@@ -340,11 +391,12 @@ class Evaluator:
             held = (bar_start, count + (0 if held is None else held[1]))
         self._reloads = held
 
-    def _today_bars(self, chunk: list[str], bar_start: datetime,
-                    regular_open: datetime) -> dict[str, tuple[Bar, ...]] | Exception:
+    def _today_bars(self, chunk: list[str], bar_start: datetime, regular_open: datetime,
+                    budget_reserve: int = 0) -> dict[str, tuple[Bar, ...]] | Exception:
         """Today's bars of `chunk`: discovery's read when it was sent after the minute was
         over, else one read here of the symbols missing (kept for later minutes and
-        remainders too). The read's error is returned, not raised."""
+        remainders too), leaving `budget_reserve` requests of the route free. The read's
+        error is returned, not raised."""
         md = self.config.market_data
         found: dict[str, tuple[Bar, ...]] = {}
         missing: list[str] = []
@@ -358,7 +410,7 @@ class Evaluator:
             return found
         sent = self.now()  # before the request (see TodayBars)
         try:
-            bars = self.source.bars(missing, md.bars_per_symbol)
+            bars = self.source.bars(missing, md.bars_per_symbol, budget_reserve=budget_reserve)
         except (MarketDataError, BrokerError) as exc:  # RateLimited, DelayedData included
             return exc
         self.today_bars.put(regular_open, missing, bars, sent)
@@ -402,12 +454,18 @@ class Evaluator:
         assert read.error is not None  # neither found nor refused: the error stopped it
         return type(read.error).__name__, None
 
+    def _context(self, symbol: str, today_bars: list[Bar], history: SessionHistory | None,
+                 position: PositionView | None, quote: Quote | None,
+                 session_open: datetime | None) -> SymbolContext:
+        prior = () if history is None else tuple(history.bars_of(d) for d in history.sessions)
+        bars = ([] if history is None else list(history.bars)) + today_bars
+        return SymbolContext(symbol, tuple(bars), prior, quote, position, self._budget,
+                             session_open)
+
     def _evaluate(self, symbol: str, today_bars: list[Bar], history: SessionHistory | None,
                   position: PositionView | None, now: datetime,
                   session_open: datetime | None, *, late_quote: Quote | None = None,
                   late: bool = False) -> None:
-        prior = () if history is None else tuple(history.bars_of(d) for d in history.sessions)
-        bars = ([] if history is None else list(history.bars)) + today_bars
         quote = late_quote if late else self.inbox.latest(symbol)
         if position is not None and not late:
             # An exit goes out on the strategy's word alone, with no admission to check the
@@ -417,8 +475,7 @@ class Evaluator:
             quote = usable_quote(quote, self.now(),
                                  timedelta(seconds=float(risk.max_quote_age_seconds)),
                                  timedelta(seconds=float(risk.max_clock_skew_seconds)))
-        context = SymbolContext(symbol, tuple(bars), prior, quote, position, self._budget,
-                                session_open)
+        context = self._context(symbol, today_bars, history, position, quote, session_open)
         try:
             decision = self.strategy.evaluate(context)
         except Exception as exc:  # noqa: BLE001 - a strategy bug never ends the loop
