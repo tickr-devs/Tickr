@@ -6,7 +6,7 @@ from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.urls import include, path
 
-from . import views
+from . import views, waitlist
 
 # The admin uses the site's own sign-in (password, passkey or email code), never its own form.
 admin.site.login = login_required(admin.site.login)
@@ -18,4 +18,7 @@ urlpatterns = [
     path("app", views.cabinet, name="cabinet"),
     path("app/admin/", admin.site.urls),
     path("api/healthz", views.healthz, name="healthz"),
+    path("api/waitlist", waitlist.join, name="waitlist_join"),
+    path("api/waitlist/confirm", waitlist.confirm, name="waitlist_confirm"),
+    path("api/waitlist/unsubscribe", waitlist.unsubscribe, name="waitlist_unsubscribe"),
 ]

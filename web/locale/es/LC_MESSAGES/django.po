@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-25 15:59-0500\n"
+"POT-Creation-Date: 2026-11-25 16:02-0500\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,6 +17,20 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? "
 "1 : 2;\n"
+
+#: tickrweb/templates/account/login.html:4
+#: tickrweb/templates/account/login.html:6
+#: tickrweb/templates/account/login.html:18
+msgid "Sign In"
+msgstr "Iniciar sesión"
+
+#: tickrweb/templates/account/login.html:9
+msgid "Sign in with a passkey"
+msgstr "Iniciar sesión con una llave de acceso"
+
+#: tickrweb/templates/account/login.html:21
+msgid "Send me a sign-in code"
+msgstr "Envíame un código de inicio de sesión"
 
 #: tickrweb/templates/base.html:19 tickrweb/templates/cabinet/index.html:3
 #: tickrweb/templates/cabinet/index.html:6
@@ -196,3 +210,66 @@ msgstr "Llaves de acceso y verificación en dos pasos"
 #: tickrweb/templates/cabinet/index.html:58
 msgid "Password"
 msgstr "Contraseña"
+
+#: tickrweb/templates/waitlist/confirm_body.txt:1
+msgid "Hi,"
+msgstr "Hola:"
+
+#: tickrweb/templates/waitlist/confirm_body.txt:3
+msgid ""
+"Someone, hopefully you, asked to join the tickr.bot early-access list with "
+"this address. Confirm it here:"
+msgstr "Alguien, esperamos que tú, pidió unirse a la lista de acceso anticipado de tickr.bot con esta dirección. Confírmala aquí:"
+
+#: tickrweb/templates/waitlist/confirm_body.txt:7
+msgid ""
+"If it wasn't you, ignore this email and the address is deleted in 7 days. To "
+"remove it now:"
+msgstr "Si no fuiste tú, ignora este correo y la dirección se eliminará en 7 días. Para eliminarla ahora:"
+
+#: tickrweb/templates/waitlist/confirm_subject.txt:1
+msgid "Confirm your place on the tickr.bot list"
+msgstr "Confirma tu lugar en la lista de tickr.bot"
+
+#: tickrweb/templates/waitlist/result.html:3
+#: tickrweb/templates/waitlist/result.html:6
+msgid "Early access"
+msgstr "Acceso anticipado"
+
+#: tickrweb/templates/waitlist/result.html:8
+msgid "You're on the list"
+msgstr "Ya estás en la lista"
+
+#: tickrweb/templates/waitlist/result.html:9
+msgid ""
+"We'll email you when tickr.bot opens. Every email has a link to leave the "
+"list."
+msgstr "Te escribiremos cuando abra tickr.bot. Cada correo incluye un enlace para salir de la lista."
+
+#: tickrweb/templates/waitlist/result.html:11
+msgid "Leave the list?"
+msgstr "¿Salir de la lista?"
+
+#: tickrweb/templates/waitlist/result.html:12
+msgid "Your address will be deleted from the tickr.bot list."
+msgstr "Tu dirección se eliminará de la lista de tickr.bot."
+
+#: tickrweb/templates/waitlist/result.html:13
+msgid "Delete my address"
+msgstr "Eliminar mi dirección"
+
+#: tickrweb/templates/waitlist/result.html:15
+msgid "Address deleted"
+msgstr "Dirección eliminada"
+
+#: tickrweb/templates/waitlist/result.html:16
+msgid "You won't get any more email from tickr.bot."
+msgstr "No recibirás más correos de tickr.bot."
+
+#: tickrweb/templates/waitlist/result.html:18
+msgid "This link has expired"
+msgstr "Este enlace ha caducado"
+
+#: tickrweb/templates/waitlist/result.html:19
+msgid "Sign up again on the early-access page to get a new one."
+msgstr "Regístrate de nuevo en la página de acceso anticipado para recibir uno nuevo."
