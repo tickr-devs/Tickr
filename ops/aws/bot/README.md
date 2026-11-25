@@ -58,3 +58,25 @@ Terraform ignores a new Ubuntu image and changes to `user-data.sh` on the existi
 apply never stops or replaces it. A change to the first-boot script is run once through SSM
 while the bot is flat, or the server is rebuilt on a weekend while flat: turn off termination
 protection, `terraform apply -replace=aws_instance.bot`; the data disk and address stay.
+
+## Runtime on the server (first boot)
+
+`user-data.sh` also installs the files in `files/`:
+
+- `tickr-secrets` and `tickr-secrets.service`: at every boot, before the bot's jobs (their units
+  carry `Requires=`/`After=tickr-secrets.service`), the secret is written to `/run/tickr/env`,
+  mode 600, owner `tickr`, in the `NAME='value'` form the container entrypoint sources. `/run`
+  is memory: the file never reaches the disk or its snapshots. The script refuses, writing
+  nothing, a secret that is not a JSON object of names to non-empty strings, or a value holding
+  `'` or a newline. It never prints a value.
+- Caddy (`Caddyfile`, drop-in `caddy-tickr.conf`): HTTPS for `bot_domain` in front of the API's
+  remote port, certificate from Let's Encrypt through the TLS-ALPN challenge on 443. Caddy
+  forwards the original Host, so the API's `remote_hosts_file` (in the data folder) must list
+  the domain, as it lists the Tailscale name on the Mac.
+- `tickr-heartbeat` with a one-minute timer: one CloudWatch point (`Tickr/Bot` `Heartbeat`) while
+  the server and its local API answer. Alarm `tickr-bot-heartbeat` mails the owner after
+  `heartbeat_missing_minutes` without one.
+
+Caddy and the heartbeat read `/srv/tickr/etc/ports.env` (`TICKR_API_PORT`,
+`TICKR_API_REMOTE_PORT`), which `render-systemd` writes from `config/bot.toml` on the first
+deploy, so the ports have one source. Until then both fail and the heartbeat alarm is on.

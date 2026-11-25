@@ -15,6 +15,8 @@ locals {
   partition = data.aws_partition.current.partition
   role_tag  = "bot"
   subnet_id = coalesce(var.subnet_id, sort(data.aws_subnets.default.ids)[0])
+  runtime_files = ["tickr-secrets", "tickr-secrets.service", "tickr-heartbeat",
+  "tickr-heartbeat.service", "tickr-heartbeat.timer", "Caddyfile", "caddy-tickr.conf"]
 }
 
 data "aws_vpc" "default" {
@@ -218,6 +220,9 @@ resource "aws_instance" "bot" {
     data_volume_id  = aws_ebs_volume.data.id
     aws_cli_version = var.installers.aws_cli_version
     aws_cli_sha256  = var.installers.aws_cli_sha256
+    bot_domain      = var.bot_domain
+    # Runtime files (files/), passed as base64 so the template never interprets their text.
+    files = { for name in local.runtime_files : name => filebase64("${path.module}/files/${name}") }
   })
 
   tags = {
@@ -331,6 +336,27 @@ resource "aws_cloudwatch_metric_alarm" "instance_check" {
   evaluation_periods  = 3
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+  ok_actions          = [aws_sns_topic.alarms.arn]
+}
+
+# --- Off-server heartbeat -------------------------------------------------------------------
+
+# The server sends one point a minute while it and its local API answer (files/tickr-heartbeat).
+# No point for 5 minutes = the server is down, hung or cut off: mail the owner. The bot's own
+# watchdog runs on this server and cannot report that. Missing data counts as breaching, so a
+# server that never started sending alarms too.
+resource "aws_cloudwatch_metric_alarm" "heartbeat" {
+  alarm_name          = "tickr-bot-heartbeat"
+  alarm_description   = "Bot server: no heartbeat for 5 minutes (server or its API down, hung or cut off)"
+  namespace           = "Tickr/Bot"
+  metric_name         = "Heartbeat"
+  statistic           = "SampleCount"
+  period              = 60
+  evaluation_periods  = var.heartbeat_missing_minutes
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
   alarm_actions       = [aws_sns_topic.alarms.arn]
   ok_actions          = [aws_sns_topic.alarms.arn]
 }

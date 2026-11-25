@@ -1,11 +1,12 @@
 #!/bin/bash
-# First boot of the bot server. Holds no secret: the bot's credentials stay in Secrets Manager
-# until a later step reads them into memory (/run). Re-running this script is safe.
+# First boot of the bot server. Holds no secret: tickr-secrets.service reads the bot's
+# credentials from Secrets Manager into memory (/run/tickr/env) at each boot. Re-running this
+# script is safe.
 # Terraform ignores changes to it on a running server (main.tf); apply a change through SSM.
 set -eu
 
 apt-get update -q
-apt-get install -y -q docker.io docker-compose-v2 chrony unzip curl
+apt-get install -y -q docker.io docker-compose-v2 chrony unzip curl caddy python3
 
 # Clock: Amazon Time Sync, the link-local NTP server of every EC2 host. The bot refuses quotes
 # more than [risk] max_clock_skew_seconds away from its clock.
@@ -42,3 +43,22 @@ grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /srv/tickr/data ext4 defaults,nof
 mountpoint -q /srv/tickr/data || mount /srv/tickr/data
 chown tickr:tickr /srv/tickr/data
 chmod 700 /srv/tickr/data
+
+# Runtime files (files/ in the repo).
+put() { echo "$2" | base64 -d > "$1"; chmod "$3" "$1"; }
+put /usr/local/bin/tickr-secrets '${files["tickr-secrets"]}' 755
+put /etc/systemd/system/tickr-secrets.service '${files["tickr-secrets.service"]}' 644
+put /usr/local/bin/tickr-heartbeat '${files["tickr-heartbeat"]}' 755
+put /etc/systemd/system/tickr-heartbeat.service '${files["tickr-heartbeat.service"]}' 644
+put /etc/systemd/system/tickr-heartbeat.timer '${files["tickr-heartbeat.timer"]}' 644
+put /etc/caddy/Caddyfile '${files["Caddyfile"]}' 644
+install -d /etc/systemd/system/caddy.service.d
+put /etc/systemd/system/caddy.service.d/tickr.conf '${files["caddy-tickr.conf"]}' 644
+echo "TICKR_DOMAIN=${bot_domain}" > /srv/tickr/etc/domain.env
+chmod 644 /srv/tickr/etc/domain.env
+
+systemctl daemon-reload
+systemctl enable --now tickr-secrets.service
+# Caddy and the heartbeat need /srv/tickr/etc/ports.env, written by the first deploy
+# (render-systemd); until then they fail and the heartbeat alarm stays on, as it should.
+systemctl enable caddy.service tickr-heartbeat.timer

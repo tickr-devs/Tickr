@@ -40,6 +40,18 @@ variable "snapshot_time_utc" {
   default     = "07:00"
 }
 
+variable "bot_domain" {
+  description = "Name the apps reach the bot at over HTTPS (Caddy's certificate name). Its A record at Namecheap points at the server_address output; the API's remote_hosts_file must list it."
+  type        = string
+  default     = "bot.ticker.bot"
+}
+
+variable "heartbeat_missing_minutes" {
+  description = "Minutes without a heartbeat point before the tickr-bot-heartbeat alarm mails the owner (one point a minute is sent)."
+  type        = number
+  default     = 5
+}
+
 variable "alert_email" {
   description = "Address the server alarms (machine checks failed, heartbeat missing) are mailed to. Personal data: pass it at apply time (-var or an untracked tfvars file), never commit it. AWS mails a confirmation link once."
   type        = string

@@ -1,0 +1,7 @@
+[Unit]
+Description=Tickr: off-server heartbeat (CloudWatch Tickr/Bot Heartbeat)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/tickr/etc/ports.env
+ExecStart=/usr/local/bin/tickr-heartbeat
