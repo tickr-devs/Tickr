@@ -213,6 +213,10 @@ def bundle_folder(cfg: Config) -> Path:
     """The configured bundle's folder: `<data_dir>/<bundles_dir>/<bundle>`."""
     if not cfg.model.bundle:
         raise ModelRefused("bundle_not_configured", "[model] bundle is empty")
+    for key, value in (("bundles_dir", cfg.model.bundles_dir), ("bundle", cfg.model.bundle)):
+        path = Path(value)
+        if path.is_absolute() or ".." in path.parts or (key == "bundle" and len(path.parts) != 1):
+            raise ModelRefused("bundle_path_outside", f"[model] {key} must be relative")
     return cfg.root / cfg.run.data_dir / cfg.model.bundles_dir / cfg.model.bundle
 
 

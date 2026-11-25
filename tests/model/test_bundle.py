@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import shutil
@@ -192,6 +193,17 @@ def test_the_configured_bundle_is_found_under_the_data_folder(tmp_path, rows):
     cfg = config.load(tmp_path / "config" / "bot.toml", root=tmp_path)
     write_bundle(tmp_path / cfg.run.data_dir / cfg.model.bundles_dir, rows)
     assert B.load_configured(cfg).bundle.identity == f"{NAME}-{VERSION}"
+
+
+@pytest.mark.parametrize("key,value", [
+    ("bundles_dir", "/tmp/models"), ("bundles_dir", "../models"), ("bundle", "../l1-x"),
+    ("bundle", "a/l1-x")])
+def test_bundle_paths_stay_under_the_data_folder(key, value):
+    cfg = config.load(ROOT / "config" / "bot.toml")
+    model = dataclasses.replace(cfg.model, **{"bundle": "l1-x", key: value})
+    with pytest.raises(ModelRefused) as exc:
+        B.bundle_folder(dataclasses.replace(cfg, model=model))
+    assert exc.value.cause == "bundle_path_outside"
 
 
 def test_switching_the_model_on_is_refused_until_it_is_wired(tmp_path):

@@ -52,10 +52,12 @@ PINS = {
     "wm2ref.py": "8c2ce78eb813ddf060141b4e4d3b6200",
     "wm2tk.py": "e480668bb0b49819d4226eb85f26c749",
 }
-# The variables the pinned code reads by name; the training refuses to run when one is set
-# (l1labels.env_refuse), and so does the bot. Only these names are asked, never the whole
+# The variables the pinned code reads by name; the training refuses to run when one of the first
+# five is set (l1labels.env_refuse), and so does the bot. WM_PROGRESS (a progress file the pinned
+# `progress()` writes) is refused too: the bot never calls it, and a set one means a training
+# shell's environment leaked into the bot. Only these names are asked, never the whole
 # environment (hard rule 10).
-TABLE_VARIABLES = ("WM_TOPN", "WM_LAG", "WM_REF", "WM_TICK", "WM_TSPAN")
+TABLE_VARIABLES = ("WM_TOPN", "WM_LAG", "WM_REF", "WM_TICK", "WM_TSPAN", "WM_PROGRESS")
 # The defaults the training runs the table code with (l1labels.settings_ok).
 TABLE_DEFAULTS = {"NDAYS": 20, "TOPN": 500, "LAG": 0}
 LIST_FEATURES = ("inl", "nin", "tofl")
@@ -98,13 +100,18 @@ def table_code() -> Any:
             import pandas  # noqa: F401
         except ImportError as exc:
             raise ModelRefused("model_libraries_missing", exc.name or "") from exc
-        # The pinned files import each other by their top-level names, as in the training.
+        # The pinned files import each other by their top-level names, as in the training. No
+        # other module of the bot has one of these names; a module of the same name imported
+        # earlier from elsewhere would win over the pinned file, so each is checked below.
         if str(PINNED_DIR) not in sys.path:
             sys.path.insert(0, str(PINNED_DIR))
         import wm2_l1f  # type: ignore[import-not-found]
 
-        if Path(wm2_l1f.__file__).resolve() != (PINNED_DIR / "wm2_l1f.py").resolve():
-            raise ModelRefused("table_code_md5", f"wm2_l1f imported from {wm2_l1f.__file__}")
+        for name in PINS:
+            module = sys.modules.get(name.removesuffix(".py"))
+            where = getattr(module, "__file__", None)
+            if where is None or Path(where).resolve() != (PINNED_DIR / name).resolve():
+                raise ModelRefused("table_code_shadowed", f"{name} imported from {where}")
         if not hasattr(wm2_l1f, "_CAP"):
             wm2_l1f._CAP = {}
         wm2_l1f._L1_READ_TYPES = _types_reader_unused

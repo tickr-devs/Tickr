@@ -123,9 +123,24 @@ def test_a_changed_pinned_file_is_refused(monkeypatch):
     assert exc.value.cause == "table_code_md5"
 
 
-def test_a_set_table_variable_is_refused(monkeypatch):
-    monkeypatch.setenv("WM_TOPN", "200")
+@pytest.mark.parametrize("name", features.TABLE_VARIABLES)
+def test_a_set_table_variable_is_refused(monkeypatch, name):
+    monkeypatch.setenv(name, "1")
     monkeypatch.setattr(features, "_CODE", {})
     with pytest.raises(ModelRefused) as exc:
         features.table_code()
     assert exc.value.cause == "table_variable_set"
+
+
+def test_a_pinned_name_imported_from_elsewhere_is_refused(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    stray = types.ModuleType("wide")
+    stray.__file__ = str(tmp_path / "wide.py")
+    monkeypatch.setitem(sys.modules, "wide", stray)
+    monkeypatch.setitem(sys.modules, "wm2_l1f", sys.modules["wm2_l1f"])
+    monkeypatch.setattr(features, "_CODE", {})
+    with pytest.raises(ModelRefused) as exc:
+        features.table_code()
+    assert exc.value.cause == "table_code_shadowed"
