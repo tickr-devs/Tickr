@@ -3,6 +3,7 @@ prefix rule (where it holds and where it does not), the refusals."""
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 
@@ -82,6 +83,50 @@ def test_the_bot_path_does_not_import_boto3():
     done = subprocess.run([sys.executable, "-c", code], check=True, capture_output=True,
                           text=True)
     assert done.stdout.strip() == "False"
+
+
+# The pinned converter's `main()` and `creds()` read S3 credential values (environment or Secrets
+# Manager) for the training's download modes. They are the one place in the repository where
+# credential values are read, byte-pinned and unreachable from the bot path: the bot calls only
+# `day()` and reads the constants TCOLS and QCOLS. These two tests are that exception (rule 4).
+BOT_USES_OF_THE_CONVERTER = {"day", "TCOLS", "QCOLS"}
+
+
+def test_the_bot_only_uses_day_and_constants_of_the_converter():
+    seen = set()
+    for path in ticks.PINNED_DIR.parents[3].rglob("*.py"):
+        if ticks.PINNED_DIR in path.parents:
+            continue
+        tree = ast.parse(path.read_text("utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = [a.name for a in node.names] + [getattr(node, "module", None) or ""]
+                assert not [n for n in names if n.split(".")[0] in ("boto3", "botocore")], path
+            if isinstance(node, ast.Attribute):
+                base = node.value
+                is_converter = (isinstance(base, ast.Call) and getattr(
+                    base.func, "id", getattr(base.func, "attr", None)) == "converter") or (
+                    path.name == "ticks.py" and isinstance(base, ast.Name) and base.id == "w")
+                if is_converter:
+                    seen.add(node.attr)
+            if isinstance(node, ast.Constant) and node.value in ("main", "creds"):
+                assert path.name != "ticks.py", f"{path}: a name string of a converter entry"
+    assert seen == BOT_USES_OF_THE_CONVERTER, seen
+
+
+def test_tick_rows_runs_with_main_and_creds_raising_and_boto3_blocked(tmp_path, events,
+                                                                       monkeypatch):
+    t, q = files(tmp_path, *events)
+    module = ticks.converter()
+
+    def boom(*_a, **_k):
+        raise AssertionError("a credential-reading converter entry point was reached")
+
+    monkeypatch.setattr(module, "main", boom)
+    monkeypatch.setattr(module, "creds", boom)
+    for name in ("boto3", "botocore"):
+        monkeypatch.setitem(sys.modules, name, None)  # `import boto3` now raises ImportError
+    assert len(ticks.tick_rows(t, q, DAY, LAST_MINUTE)) > 0
 
 
 def test_the_table_equals_the_converters_local_mode(tmp_path, events):
