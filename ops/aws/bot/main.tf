@@ -202,6 +202,13 @@ resource "aws_instance" "bot" {
     delete_on_termination = true
   }
 
+  # Burstable types (t3): "unlimited" keeps full CPU when the bot needs it (a throttled bot at the
+  # open is worse than a few dollars); CPU above the baseline is billed, at most about $0.05 per
+  # vCPU-hour, which the account budget mail covers. Ignored by non-burstable types.
+  credit_specification {
+    cpu_credits = "unlimited"
+  }
+
   metadata_options {
     http_tokens   = "required"
     http_endpoint = "enabled"
