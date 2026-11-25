@@ -219,3 +219,22 @@ def test_cli_resolves_a_trade_with_a_recorded_fill_and_sends_nothing(tmp_path, m
     assert stop_row["operator_resolved_at"] is None
     assert s.query("SELECT name FROM fences") == []
     s.close()
+
+
+def test_recovery_leaves_a_resolved_crashed_send_alone(store):
+    """The bot died during a send and the operator resolved that order before any restart:
+    the next start's recovery does not turn it back into an unknown send with a fence no read
+    could ever clear (Fable review of #751)."""
+    b = FakeBroker()
+    e = make(store, b)
+    t = enter(e, "2")
+    cid = legs(e, t, Leg.ENTRY)[0].client_order_id
+    del b.orders[cid]  # Detail never finds it
+    with store.transaction():  # as a crash between the attempt and the answer leaves it
+        store.execute("UPDATE orders SET send_state = ? WHERE client_order_id = ?",
+                      (SendState.ATTEMPTED, cid))
+    assert e.resolve_order(cid) is None
+    again = make(store, b)
+    again.recover()
+    assert e.order(cid).send_state is SendState.ATTEMPTED
+    assert not has(again, Fence.UNKNOWN_ORDER) and again.fences() == {}

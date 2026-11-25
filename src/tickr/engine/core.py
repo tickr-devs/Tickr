@@ -2392,10 +2392,13 @@ class Engine:
         self._set_fence(Fence.STARTUP_RECONCILE, "", "startup reconciliation pending")
         self._clear_fence(Fence.SHUTTING_DOWN)
         # Only rows a crash can leave half done: never attempted, attempted without an answer,
-        # or a cancel requested without one (not the closed history, backlog T17).
+        # or a cancel requested without one (not the closed history, backlog T17). An order the
+        # operator resolved (`resolve_order`) is settled: recovering it would set a fence no read
+        # could ever clear.
         pending = self.store.query(
-            "SELECT * FROM orders WHERE send_state IN (?, ?) OR cancel_state = 'requested' "
-            "ORDER BY rowid", (SendState.INTENT, SendState.ATTEMPTED))
+            "SELECT * FROM orders WHERE (send_state IN (?, ?) OR cancel_state = 'requested') "
+            "AND operator_resolved_at IS NULL ORDER BY rowid",
+            (SendState.INTENT, SendState.ATTEMPTED))
         for row in map(order_from_row, pending):
             if row.send_state is SendState.INTENT:
                 # The attempt was never written, so the broker was never called.
