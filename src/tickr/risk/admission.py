@@ -497,7 +497,8 @@ SIMULATED_CHECKS = (
 """The checks a simulation (the model's dollar exam, a backtest on stored model answers) runs
 through `admit_simulated`: the platform's rules on the trading window, the position and
 working-entry limits, one trade per symbol, the pause after a loss, the decision and its order
-prices, size and the daily loss ceiling. The same functions as `CHECKS`, in the same order, never a copy."""
+prices, size and the daily loss ceiling. The same functions as `CHECKS`, in the same order,
+never a copy."""
 
 NOT_SIMULATED = ("gate", "reconciliation", "quote", "request_budget", "buying_power")
 """The checks a simulation has no counterpart for: the trading gate, broker reads and the

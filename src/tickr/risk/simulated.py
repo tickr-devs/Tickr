@@ -2,9 +2,9 @@
 
 A simulation (the model's dollar exam, a backtest on stored model answers) admits each
 simulated ENTER through `admit_simulated` of `tickr.risk.admission`: the same check functions
-the live bot runs, fed from a simulated book of the day instead of broker reads. `SimulationRules` carries the limits (bot.toml `[risk]`,
-`[session]`, as live) and names them, so every simulated result says which rules and values it
-was computed under.
+the live bot runs, fed from a simulated book of the day instead of broker reads.
+`SimulationRules` carries the limits (bot.toml `[risk]`, `[session]`, as live) and names them,
+so every simulated result says which rules and values it was computed under.
 
 The book counts a simulated ENTER from its decision time as a working entry (a slot and a
 working entry, its planned loss reserved), from its fill as an open position, and frees it at
