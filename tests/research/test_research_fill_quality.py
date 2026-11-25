@@ -17,6 +17,7 @@ from tickr.store import Store
 
 SETTINGS = str(HERE / "research_settings.toml")
 REPLAY = str(HERE / "replay_settings.toml")  # slippage_percent = 0.1
+CONFIG = str(HERE.parent.parent / "config" / "bot.toml")
 DAY_ONE = datetime(2026, 11, 16, 15, 0, tzinfo=UTC)  # 10:00 New York
 DAY_TWO = datetime(2026, 11, 17, 15, 0, tzinfo=UTC)
 
@@ -94,7 +95,7 @@ def _rows(path):
 
 def _run(tmp_path, *extra: str) -> dict:
     out = tmp_path / "out"
-    assert main(["fill-quality", "--settings", SETTINGS, "--replay-settings", REPLAY,
+    assert main(["fill-quality", "--settings", SETTINGS, "--replay-settings", REPLAY, "--config", CONFIG,
                  "--out", str(out), *extra]) == 0
     return json.loads((out / "fill_quality_summary.json").read_text())
 
@@ -150,7 +151,7 @@ def test_without_quotes_the_quote_figures_are_empty_with_a_cause(tmp_path):
 
 def test_bad_inputs_are_refused(tmp_path, capsys):
     db = _database(tmp_path / "a.sqlite3", "sandbox")
-    base = ["fill-quality", "--settings", SETTINGS, "--replay-settings", REPLAY,
+    base = ["fill-quality", "--settings", SETTINGS, "--replay-settings", REPLAY, "--config", CONFIG,
             "--out", str(tmp_path / "o")]
     assert main([*base, "--database", str(tmp_path / "none.sqlite3")]) == 2
     assert "database not found" in capsys.readouterr().err
