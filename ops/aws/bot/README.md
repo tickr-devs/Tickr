@@ -42,7 +42,8 @@ Confirm the e-mail from AWS Notifications once. Commit `.terraform.lock.hcl` aft
 
 One JSON object, variable name to value, with the names the bot reads (`config/bot.toml`): the
 active environment's Webull app key and secret, `TICKR_TELEGRAM_BOT_TOKEN`,
-`TICKR_TELEGRAM_CHAT_ID`, and the Massive key when the live feed needs it. Write it from a file
+`TICKR_TELEGRAM_CHAT_ID` (Telegram is the alert channel on the server; preflight refuses
+without both), and the Massive key when the live feed needs it. Write it from a file
 that never enters the repo, then delete the file:
 
 ```sh
