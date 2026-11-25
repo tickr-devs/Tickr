@@ -1,0 +1,21 @@
+"""URLs. Public marketing pages are static files served by Caddy; Django owns only
+/login, /account/, /app and /api/ (see web/README.md)."""
+
+from allauth.account.views import login
+from django.contrib import admin
+from django.contrib.auth.decorators import login_required
+from django.urls import include, path
+
+from . import views
+
+# The admin uses the site's own sign-in (password, passkey or email code), never its own form.
+admin.site.login = login_required(admin.site.login)
+
+urlpatterns = [
+    path("account/", include("allauth.urls")),
+    # After allauth's URLs, so that reverse("account_login") gives /login.
+    path("login", login, name="account_login"),
+    path("app", views.cabinet, name="cabinet"),
+    path("app/admin/", admin.site.urls),
+    path("api/healthz", views.healthz, name="healthz"),
+]

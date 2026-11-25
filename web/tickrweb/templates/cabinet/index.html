@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block head_title %}{% translate "Account" %}{% endblock %}
+{% block content %}
+<main class="acct">
+<p class="label">{% translate "Account" %}</p>
+<h1>{% translate "Your account" %}</h1>
+<section class="card" id="account">
+<header><h2>{% translate "Sign-in and security" %}</h2></header>
+<dl class="rows">
+<div><dt>{% translate "Signed in as" %}</dt><dd>{{ user.email }}</dd></div>
+</dl>
+<ul class="menu">
+<li><a href="{% url 'mfa_index' %}">{% translate "Passkeys and two-step sign-in" %} ›</a></li>
+<li><a href="{% url 'account_change_password' %}">{% translate "Password" %} ›</a></li>
+<li><a href="{% url 'usersessions_list' %}">{% translate "Signed-in devices" %} ›</a></li>
+</ul>
+</section>
+</main>
+{% endblock %}
