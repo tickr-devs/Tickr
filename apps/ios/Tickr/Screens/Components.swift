@@ -3,6 +3,18 @@ import TickrDesign
 import TickrKit
 
 extension Board.Event.Tone {
+  var ticker: TickerItem.Tone {
+    switch self {
+    case .teal: return .teal
+    case .green: return .green
+    case .blue: return .blue
+    case .amber: return .amber
+    case .violet: return .violet
+    case .red: return .red
+    case .muted: return .muted
+    }
+  }
+
   /// The tone's fill (dots, bars), from the shared map (`Tone(_:)` in TickrDesign).
   var color: Color { TickrDesign.Tone(self).fill }
 

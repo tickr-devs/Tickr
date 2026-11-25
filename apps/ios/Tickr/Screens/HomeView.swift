@@ -3,11 +3,11 @@ import TickrDesign
 import TickrKit
 
 /// The first screen (IOSHome board): the one line that says what the bot is doing, the day's
-/// result, open positions, today's funnel and the fast movers. The day's events are on Activity.
-/// The power button opens bot control.
+/// result, the day's events as a ticker, open positions, today's funnel and the fast movers. The
+/// power button opens bot control.
 struct HomeView: View {
   /// Order in which the blocks rise in (`rise(step:)`); open positions follow one step apart.
-  private enum Order: Int { case day = 1, summary, positions, flow = 5, movers }
+  private enum Order: Int { case day = 1, summary, ticker, positions, flow = 6, movers }
 
   @Environment(AppModel.self) private var model
   @State private var showControl = false
@@ -15,7 +15,7 @@ struct HomeView: View {
   @State private var dayModel = Container.shared.homeDayModel()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  /// Whether Home's looping ornament (the brand mark's halo) moves: it reads
+  /// Whether Home's looping ornaments (the brand mark's halo, the ticker's scroll) move: they read
   /// as "the bot is at work", so only on the live day with a fresh status while the bot runs.
   private var ornamentMoves: Bool {
     guard model.isLive else { return false }
@@ -89,6 +89,10 @@ struct HomeView: View {
         FastMoversCard(movers: model.movers?.day == model.shownDay ? model.movers : nil, failure: model.moversError)
           .rise(step: Order.movers.rawValue)
       } else if let status = model.status {
+        if let strip = EventStrip.make(status: status,
+          skipped: model.skipped?.day == model.today ? model.skipped : nil) {
+          strip.moving(ornamentMoves).rise(step: Order.ticker.rawValue)
+        }
         ForEach(Array(Board.positions(status).enumerated()), id: \.element.symbol) { index, position in
           PositionRow(position: position, marks: prices.marks[position.symbol])
             .rise(step: Order.positions.rawValue + index)
@@ -949,7 +953,51 @@ private struct LiveFlowCard: View {
   }
 }
 
-/// When a looping ornament that reads as activity moves (Home's brand halo): only
+/// The day's events as the design's ticker strip: each event's tag in its tone and what happened,
+/// newest first (a risk refusal counts as an event), on a sunken strip faded at both ends. As on
+/// the board it scrolls, the whole row once every `Motion.tickerLoopSeconds`: the scroll is
+/// ornament (docs/design-system.md, rule 5); its items change only on real events. It scrolls only
+/// while `OrnamentGate` allows; otherwise, and under Reduce Motion, it holds still and a finger
+/// scrolls it.
+private struct EventStrip: View {
+  /// Most events the strip carries.
+  static let maxEvents = 12
+  /// Corner radius of the strip, in points.
+  static var radius: CGFloat { Tokens.Radius.large }
+
+  let items: [TickerItem]
+  /// Whether the strip scrolls (`OrnamentGate`); still otherwise, and a finger scrolls it.
+  var scrolls = false
+
+  /// The same strip, scrolling when `on`.
+  func moving(_ on: Bool) -> EventStrip {
+    var strip = self
+    strip.scrolls = on
+    return strip
+  }
+
+  /// Today's events from the status and the day's refusals, newest first; nil when there are none.
+  static func make(status: StatusV1, skipped: SkippedV1?) -> EventStrip? {
+    guard let latest = Board.latestEvent(status, skipped: skipped) else { return nil }
+    let rest = Board.events(status).filter { $0.id != latest.id }
+    let items = ([latest] + rest).prefix(maxEvents).map {
+      TickerItem(id: $0.id, tag: $0.tag.uppercased(), text: $0.text, tone: $0.tone.ticker)
+    }
+    return EventStrip(items: Array(items))
+  }
+
+  var body: some View {
+    Ticker(items, moving: scrolls, loopSeconds: Tokens.Motion.tickerLoopSeconds)
+      // The first tag starts clear of the faded edge.
+      .contentMargins(.horizontal, Tokens.Space.l, for: .scrollContent)
+      .padding(.vertical, Tokens.Space.s)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+      .overlay(RoundedRectangle(cornerRadius: Self.radius, style: .continuous).strokeBorder(Palette.separator))
+  }
+}
+
+/// When a looping ornament that reads as activity moves (Home's brand halo and ticker scroll): only
 /// while the bot runs and the app shows the live day with a fresh status. Stopped, stale,
 /// unreachable or on a recorded day it stands still, as with Reduce Motion (the macOS ornaments'
 /// `OrnamentGate` rule).
