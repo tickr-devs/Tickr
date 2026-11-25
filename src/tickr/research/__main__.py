@@ -19,7 +19,15 @@ from tickr.replay.__main__ import platform_sizing, session_clock, strategy_facto
 from tickr.replay.bars import load_bars
 from tickr.replay.errors import ReplayError
 from tickr.replay.settings import load_settings
-from tickr.research import compare, fill_quality, observer_report, refusals, report, slippage
+from tickr.research import (
+    calibration,
+    compare,
+    fill_quality,
+    observer_report,
+    refusals,
+    report,
+    slippage,
+)
 from tickr.research.errors import ResearchError
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
@@ -108,6 +116,13 @@ def _parser() -> argparse.ArgumentParser:
     places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
+    p = sub.add_parser("calibration", help="reliability table by tenths per probability column")
+    p.add_argument("--answers", type=Path, required=True,
+                   help="CSV of stored model answers: outcome (0/1) and p_<name> columns")
+    p.add_argument("--settings", type=Path, required=True, help="research TOML (bucket count)")
+    places_source(p)
+    p.add_argument("--out", type=Path, required=True, help="output directory")
+
     p = sub.add_parser("fill-quality", help="entry, exit and stop slippage, fees and fill delay "
                        "of real fills; one record set, or two side by side")
     p.add_argument("--database", type=Path, required=True, help="the bot's database (read only)")
@@ -129,7 +144,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 # Commands whose reports round to the replay settings' output_decimal_places (its only home).
-REPORT_COMMANDS = frozenset({"outcomes", "diff", "latency", "refusals", "slippage"})
+REPORT_COMMANDS = frozenset({"outcomes", "diff", "latency", "refusals", "slippage", "calibration"})
 
 
 def _fill_quality(args: argparse.Namespace) -> dict:
@@ -195,6 +210,11 @@ def _run(args: argparse.Namespace) -> dict:
         rows = refusals.table(_filter(load_records(args.decisions), args.strategy),
                               settings.session_timezone)
         return report.write_refusals(rows, args.out, places)
+    if args.command == "calibration":
+        settings = load_research_settings(args.settings)
+        reports = calibration.calibration(args.answers, settings.calibration_buckets)
+        return report.write_calibration(reports, args.out, places)
+
     if args.command == "fill-quality":
         return _fill_quality(args)
     if args.command == "slippage":
