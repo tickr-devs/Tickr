@@ -397,6 +397,9 @@ class MassiveConfig:
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
     calendar_lookback_days: int
+    tick_subscription: str
+    tick_page_limit: int
+    tick_max_pages: int
 
 
 @dataclass(frozen=True)
@@ -727,6 +730,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
             or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
                           "1, stream_reconnect_seconds above 0, stock_types not empty")
+    if (massive.tick_subscription not in ("symbols", "market") or massive.tick_page_limit < 1
+            or massive.tick_max_pages < 1):
+        raise ConfigError("[massive] tick_subscription must be \"symbols\" or \"market\", "
+                          "tick_page_limit and tick_max_pages at least 1")
     risk: RiskConfig = built["risk"]
     if risk.symbol_cooldown_minutes_after_loss < 1:
         raise ConfigError("[risk] symbol_cooldown_minutes_after_loss must be at least 1; to "
