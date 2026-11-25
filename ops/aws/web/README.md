@@ -41,10 +41,11 @@ never leave it; they are not in Terraform state, the repository or the bucket.
    ```
    Caddy gets the HTTPS certificate by itself once the DNS records have spread (minutes to an
    hour).
-5. Owner account, then sign in at https://tickr.bot/login with the emailed code and add a passkey:
+5. Owner account, then sign in at https://tickr.bot/login with the emailed code and add a passkey
+   (the admin at /app/admin/ needs a passkey sign-in):
    ```sh
    aws ssm start-session --target "$(terraform output -raw instance_id)"
-   sudo -u tickrweb sh -c 'cd /srv/tickr-web/repo/web/deploy && set -a && . /srv/tickr-web/etc/compose.env && set +a && docker compose exec app /entrypoint.sh /venv/bin/python manage.py invite you@example.com --staff'
+   sudo -u tickrweb sh -c 'cd /srv/tickr-web/repo/web/deploy && set -a && . /srv/tickr-web/etc/compose.env && set +a && docker compose exec app /entrypoint.sh /venv/bin/python manage.py invite you@example.com --superuser'
    ```
 6. Old early-access list: download `tickr-signups/emails.csv` from Namecheap File Manager,
    copy it into the app container, and run `manage.py import_waitlist emails.csv` the same
