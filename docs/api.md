@@ -113,6 +113,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/` | The status page (one HTML file, read-only, refreshes every `poll_seconds`). |
 | GET | `/status` | `200` `status-response-v1`, always this shape. |
 | GET | `/commands/pending` | `200` `pending-commands-v1`: commands written but not yet consumed. |
+| GET | `/commands/receipt` | Header `Idempotency-Key`. `200` `command-receipt-v1`: what the `POST /commands/*` with that key was answered (`queued` true, `accepted` its `command-accepted-v1`), or `queued` false when no command was queued with it within its lifetime; writes nothing (see Idempotency-Key below). `400` without a well-formed key. |
 | GET | `/schema` | `200` all schemas by name. |
 | GET | `/days` | `200` `days-v1`: every New York date with records (closed trades, a bot run, captured data), newest first, each with its clean-day verdict (`clean`). |
 | GET | `/days/<YYYY-MM-DD>` | `200` `day-v1`: trades closed that New York date (with prices after the exit and overshoot) and the symbols with captured M1 bars that start on that date. A date without records answers with empty lists. |
@@ -1532,6 +1533,17 @@ new key is stored). Within that lifetime:
   also when the inbox is full;
 - the same key with another command answers `409 conflict` and queues nothing;
 - an unreadable record of the key answers `500 internal` and queues nothing.
+
+`GET /commands/receipt` with the same header reads the key's record without queuing or storing
+anything: `200 command-receipt-v1` with `queued: true` and the first answer as `accepted`, or
+`queued: false` and `accepted: null` when no command was queued with the key within its
+lifetime; an unreadable record answers `500 internal`, never "not queued". The apps use it
+when a send's answer was lost (timeout, dropped connection): they keep the key, show the
+outcome as unknown and read the receipt until it says queued or not, instead of sending again
+under a new key (two commands). It reads under the same lock as the send, so a send of that key
+in progress is seen whole or not at all. The crash window below (command file written, key not
+yet) reads as "not queued" although the command is in the inbox: the safe side, since a second
+send is tolerated and a receipt never claims a command that was not queued.
 
 After its lifetime a key is new again. The lifetime must be above
 `[api] command_max_age_seconds` (checked at startup), so a repeat can never queue a second copy of

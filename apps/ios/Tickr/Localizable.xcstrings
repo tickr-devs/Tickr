@@ -7305,6 +7305,40 @@
         }
       }
     },
+    "notice.notQueued" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ was not queued: the Mac never received it. Send it again if you still want it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no quedó en cola: la Mac no lo recibió. Envíalo otra vez si aún lo quieres."
+          }
+        }
+      }
+    },
+    "notice.outcomeUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: no answer from the Mac (%@). Checking whether it was queued; pressing it again cannot queue it twice."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: sin respuesta de la Mac (%@). Comprobando si quedó en cola; pulsarlo de nuevo no lo pondrá en cola dos veces."
+          }
+        }
+      }
+    },
     "notice.queued" : {
       "extractionState" : "manual",
       "localizations" : {
