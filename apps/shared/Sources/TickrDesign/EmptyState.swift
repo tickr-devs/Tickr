@@ -23,8 +23,9 @@ public struct EmptyState: View {
     self.symbol = symbol
   }
 
-  public init(_ title: LocalizedStringResource, detail: LocalizedStringResource? = nil,
-    symbol: String = Self.nothingSymbol) {
+  public init(
+    _ title: LocalizedStringResource, detail: LocalizedStringResource? = nil, symbol: String = Self.nothingSymbol
+  ) {
     self.init(Text(title), detail: detail.map { Text($0) }, symbol: symbol)
   }
 
