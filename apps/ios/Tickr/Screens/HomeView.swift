@@ -721,20 +721,20 @@ private struct LiveFlowCard: View {
     let fromStatus = flow == nil && !recorded
     let allowed = recorded || status.entriesAllowed
     return [
-      Stage(id: .screen, name: L10n.Flow.screen, value: count(.screeners), color: Palette.accent),
-      Stage(id: .stocks, name: L10n.Flow.stocks, value: count(.universe), color: Palette.seriesUniverse),
-      Stage(id: .quote, name: L10n.FlowStages.quote, value: reached(.quote), color: Palette.accentText),
-      Stage(id: .bars, name: L10n.FlowStages.bars, value: reached(.bars), color: Palette.info),
+      Stage(id: .screen, name: L10n.Flow.screen, value: count(.screeners), color: PipelineStage.screeners.fill),
+      Stage(id: .stocks, name: L10n.Flow.stocks, value: count(.universe), color: PipelineStage.universe.fill),
+      Stage(id: .quote, name: L10n.FlowStages.quote, value: reached(.quote), color: PipelineStage.quote.fill),
+      Stage(id: .bars, name: L10n.FlowStages.bars, value: reached(.bars), color: PipelineStage.bars.fill),
       Stage(id: .strategy, name: L10n.Flow.strategy,
-        value: count(.strategy) ?? (fromStatus ? status.strategy.version : nil), color: Palette.highlight),
+        value: count(.strategy) ?? (fromStatus ? status.strategy.version : nil), color: PipelineStage.strategy.fill),
       Stage(id: .risk, name: L10n.Flow.risk,
         value: riskCount ?? (fromStatus && status.entriesAllowed ? RiskFormat.amount(status.dailyRoomUsd?.value) : nil),
-        color: blocked ? Palette.loss : allowed ? Palette.warning : Palette.textQuaternary,
+        color: blocked ? Palette.loss : allowed ? PipelineStage.risk.fill : Palette.textQuaternary,
         urgent: blocked,
         flag: allowed ? nil : blocked ? L10n.Flow.blocked : L10n.Risk.notNow,
         flagColor: blocked ? Palette.lossText : Palette.textQuaternary),
       Stage(id: .order, name: L10n.Flow.order,
-        value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: Palette.info),
+        value: count(.order) ?? (fromStatus ? String(status.tradesToday.count) : nil), color: PipelineStage.order.fill),
       Stage(id: .stop, name: L10n.Flow.stop, value: stops ?? Format.missing,
         color: stopTone.fill, urgent: verified < positions.count),
       reconcileStage,
@@ -757,7 +757,7 @@ private struct LiveFlowCard: View {
     }
     let agrees = fences.isEmpty && agreement == .match
     return Stage(id: .reconcile, name: L10n.FlowStages.reconcile, value: value.map { String(localized: $0) },
-      color: value == nil ? Palette.textQuaternary : agrees ? Palette.profit : Palette.loss,
+      color: value == nil ? Palette.textQuaternary : agrees ? PipelineStage.reconcile.fill : Palette.loss,
       urgent: !fences.isEmpty || agreement == .mismatch)
   }
 
