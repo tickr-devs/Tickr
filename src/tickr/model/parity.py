@@ -343,6 +343,50 @@ def reference_table(path: Path, day: str) -> Any:
     return frame
 
 
+class ReferenceTable:
+    """The training's feature table of the day kept on disk: the run reads one minute's rows
+    when it compares that minute (`minute`), instead of holding the whole day in memory (the
+    2026-11-17 Mac run held it from its first minute). Opening checks what `reference_table`
+    checks, over the file."""
+
+    def __init__(self, path: Path, day: str) -> None:
+        import duckdb
+
+        self.path = path
+        con = duckdb.connect()
+        try:
+            have = [r[0] for r in con.execute("SELECT name FROM parquet_schema(?)",
+                                              [str(path)]).fetchall()]
+            missing = [c for c in ["date", "sym", *full.full_features()] if c not in have]
+            if missing:
+                raise ModelRefused("replay_table_columns", ", ".join(missing))
+            other, rows, keys = con.execute(
+                "SELECT count(*) FILTER (WHERE CAST(date AS VARCHAR) <> ?), count(*), "
+                "count(DISTINCT (sym, m)) FROM read_parquet(?)", [day, str(path)]).fetchone()
+        except duckdb.Error as exc:
+            raise ModelRefused("replay_table_unreadable", type(exc).__name__) from exc
+        finally:
+            con.close()
+        if other:
+            raise ModelRefused("replay_table_wrong_day", day)
+        if rows != keys:
+            raise ModelRefused("replay_table_key_duplicate", day)
+
+    def minute(self, m: int) -> Any:
+        """The rows of table minute `m`, in file order."""
+        return _read(self.path, "replay_table_unreadable",
+                     "SELECT * FROM read_parquet(?) WHERE m = ?", [int(m)])
+
+    def kinds(self, names: Sequence[str]) -> dict[str, str]:
+        """`column_kinds` over the whole day, column by column (one column in memory)."""
+        kinds = {}
+        for c in names:
+            frame = _read(self.path, "replay_table_unreadable",
+                          f'SELECT "{c}" FROM read_parquet(?)')
+            kinds.update(column_kinds(frame, [c]))
+        return kinds
+
+
 def tick_table(path: Path, symbols: set[str], through: int) -> Any:
     """The rows of `symbols` up to minute `through` (of the New York day) of a v11 tick file
     (tk61), checked to hold v11's columns in v11's order."""
@@ -1045,8 +1089,8 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
         chosen = table_minutes(minutes)
     code = full.full_code()
     groups = full.full_groups()
-    want = None if ticks_only else reference_table(inputs.table, day)
-    kinds = None if want is None else column_kinds(want, full.full_features())
+    want = None if ticks_only else ReferenceTable(inputs.table, day)
+    kinds = None if want is None else want.kinds(full.full_features())
     types, types_md5 = _types(inputs.types)
     splits = _splits(inputs.reference) if not ticks_only else {}
     frames = [(d, massive.read_day_file((inputs.bars / f"{d}.csv.gz").read_bytes(), d))
@@ -1315,7 +1359,7 @@ def _finish(run: _Run, record: dict[str, Any], assembled: Any,
         t0 = time.perf_counter()
         one: list[dict[str, Any]] = []
         record["variants"][variant] = {"minute": m, **compare(
-            got, run.want[run.want.m == m], run.groups, run.tolerance, run.kinds,
+            got, run.want.minute(m), run.groups, run.tolerance, run.kinds,
             run.covered, one)}
         _collect(cells, one, variant, m, "features")
         record["final_quote"][variant] = final_quote_cases(m, set(got.sym), run.scan,

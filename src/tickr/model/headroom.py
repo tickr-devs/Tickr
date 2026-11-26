@@ -9,6 +9,9 @@ Mac, with 39 GB of swap in use. So:
 
 - every conversion writes into its own folder under the run's work folder (`--work-dir`),
   removed as soon as the conversion is done (never only at exit);
+- while a conversion runs, the available memory is sampled with its folder (below); if it fell
+  below `[parity] memory_reserve_gb` the conversion refuses `memory_insufficient` at its end
+  and its result is not used (the 2026-11-17 run went to 6.97 GB inside one);
 - BEFORE a conversion writes anything, `Headroom.conversion` refuses `memory_insufficient` when
   the available memory is below `[parity] memory_reserve_gb`, and `disk_space_insufficient` when
   the free space of the work folder minus the bytes the conversion will write would fall below
@@ -123,6 +126,7 @@ class _Peak:
     def __init__(self, folder: Path) -> None:
         self.folder = str(folder)
         self.peak = 0
+        self.low = math.inf  # the least available memory sampled while watched, bytes
         self.lock = threading.Lock()
 
     def sample(self) -> None:
@@ -224,6 +228,8 @@ class Headroom:
         def poll() -> None:
             while not stop.wait(self.limits.poll_seconds):
                 watch.sample()
+                with contextlib.suppress(ModelRefused):  # unreadable: the end check refuses
+                    watch.low = min(watch.low, self._memory())
 
         sampler = threading.Thread(target=poll, daemon=True)
         _WATCHED.append(watch)
@@ -260,6 +266,17 @@ class Headroom:
         with self._watched(kind) as watch:
             yield Path(watch.folder)
         self._record(kind, rows, watch.peak)
+        self._after(kind, watch)
+
+    def _after(self, kind: str, watch: _Peak) -> None:
+        """Refuse memory_insufficient when the memory sampled during a conversion fell below
+        the reserve: the conversion's result is not used and the run stops there (a resume
+        starts again from that minute)."""
+        low = min(watch.low, self._memory())
+        if low < self.limits.memory_reserve:
+            raise ModelRefused("memory_insufficient",
+                               f"{kind}: {int(low)} bytes available during the conversion, "
+                               f"reserve {self.limits.memory_reserve}")
 
     def usage(self) -> dict[str, int]:
         """The run's resources now, for the per-minute results."""
