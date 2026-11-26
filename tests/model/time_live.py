@@ -14,10 +14,13 @@ credential is read. What it builds, outside the timed span:
 - the training-format reference, Benzinga and fl inputs for the cohort (model_inputs.py), as
   the capture holds them (every record with its receipt, model_inputs.capture);
 - a LiveFeatures in the steady state of a running day: minutes through m - 1 closed (their tick
-  rows as one part, the carry of every earlier event, every symbol on the stream), and minute
-  m's trades and quotes in the TickStore as the stream thread puts them (millisecond stamps).
+  rows as one part, the carry of every earlier event, every symbol entered), the TickStore
+  holding the day before m as the stream put it (each symbol subscribed before its first event
+  and covered by a complete REST window up to m - 1's end, so its snapshot proves it), and
+  minute m's trades and quotes as the stream thread puts them (millisecond stamps).
 Timed: `LiveFeatures.close(m)` = inputs ready -> the 191 columns of every cohort row delivered.
-Stages: bars (DayBars frame + table rows), ticks (store read + carry + v11 + part append; v11
+Stages: bars (DayBars frame + table rows), snapshot (the store's decision snapshot of the whole
+day at the cutoff), ticks (snapshot read + carry + v11 + part append; v11
 alone shown apart), features (cut_inputs reading the tick table and the input folders, then
 assemble: reference, tick features, Benzinga, fl, the rest). The stage clocks wrap the pinned
 functions for the run (values unchanged) and are removed afterwards.
@@ -119,9 +122,7 @@ def _messages(kind: str, frame: pd.DataFrame) -> list[dict]:
 
 
 class _Stream:
-    """The stream as LiveFeatures sees it in the steady state: connected, no gap."""
-
-    connected = True
+    """The stream as LiveFeatures sees it in the steady state: every symbol subscribed."""
 
     def __init__(self) -> None:
         self.symbols: set[str] = set()
@@ -234,6 +235,7 @@ def _one(cfg, m: int, hm: str, today, state, args, work: Path) -> dict:
     (work / "prepared").mkdir()
     inputs.capture(given, DAY, work / "prepared" / DAY, late=inputs.published_receipts(DAY))
     store = feed.TickStore(DAY)
+    store.subscribe(cohort, start - 1)
     stream = _Stream()
     lf = live.LiveFeatures(cfg, ctx, state, None, bars, store, stream, _NoBackfill(),
                            live.FolderInputs(work / "prepared", inputs.CAPTURED), work / "ticks",
@@ -260,13 +262,21 @@ def _one(cfg, m: int, hm: str, today, state, args, work: Path) -> dict:
         carry_t.append(ct[list(feed.columns("trades")[:-2])].astype(object))
         carry_q.append(cq[list(feed.columns("quotes")[:-2])].astype(object))
         for kind, f in (("trades", tr), ("quotes", qu)):
+            store.add(kind, _messages(kind, f[f.sip_timestamp < lo]), lo, feed.STREAM)
+            for s in names:
+                store.window(feed.Window(s, kind, store.start_ns, lo, lo, 1, None, 0))
+        for kind, f in (("trades", tr), ("quotes", qu)):
             now = f[(f.sip_timestamp >= lo) & (f.sip_timestamp < hi)]
             events[kind] += len(now)
             store.add(kind, _messages(kind, now), end_ns, feed.STREAM)
     lf._append(m - 1, pd.concat(parts, ignore_index=True).assign(**{full.RECEIPT_COLUMN: lo}))
     for s in cohort:
         stream.add(s)
-        lf.symbols[s] = live._Symbol(stream_from=lo - 1, rest_until=lo)
+        lf.symbols[s] = live._Symbol(since=start - 1, entered=m - 1)
+    for kind, rows in store.snapshot(lo).rows.items():  # the day before m, converted already
+        cols = feed.columns(kind)[:-2]
+        seq = cols.index("sequence_number")
+        lf.taken[kind] = {(r[0], r[seq]): r[:len(cols)] for r in rows}
     lf.closed = m - 1
     lf.carry = (pd.concat(carry_t, ignore_index=True), pd.concat(carry_q, ignore_index=True))
     print(f"{hm}: set up in {time.perf_counter() - t0:.1f} s, cohort {len(cohort)}, "
