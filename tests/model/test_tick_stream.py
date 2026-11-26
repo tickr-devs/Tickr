@@ -114,18 +114,19 @@ def test_stream_messages_become_flat_file_rows_with_receipt_times(creds):
                             {"action": "subscribe", "params": "T.AAPL,Q.AAPL"}]
     assert store.subscribed == {"AAPL": 2}  # when the subscription was sent
     t = frame(store, "trades")
-    assert list(t.columns) == list(ticks.TRADE_COLUMNS) + ["recv_ns", "source"]
+    assert list(t.columns) == list(ticks.TRADE_COLUMNS) + ["recv_ns", "source", "provisional"]
     first = t.iloc[0].to_dict()
     assert first == {"ticker": "AAPL", "conditions": "12,37", "correction": None,
                      "exchange": 4, "price": 114.125, "size": 100, "sip_timestamp": T0,
                      "sequence_number": 101, "trf_id": 202, "participant_timestamp": T0 - MS,
-                     "recv_ns": 3, "source": "stream"}
+                     "recv_ns": 3, "source": "stream", "provisional": True}
     assert t.iloc[1]["trf_id"] is None and t.iloc[1]["recv_ns"] == 4  # absent, never filled
     assert type(t.iloc[0]["participant_timestamp"]) is int  # exact nanoseconds, no float
     q = frame(store, "quotes").iloc[0].to_dict()
     assert q == {"ticker": "AAPL", "ask_price": 114.2, "ask_size": 160, "bid_price": 114.1,
                  "bid_size": 100, "sip_timestamp": T0, "sequence_number": 200,
-                 "conditions": "1", "indicators": "604", "recv_ns": 3, "source": "stream"}
+                 "conditions": "1", "indicators": "604", "recv_ns": 3, "source": "stream",
+                 "provisional": True}
 
 
 def test_an_empty_quote_side_stays_empty():
@@ -312,22 +313,122 @@ def test_backfill_pages_both_kinds_and_keeps_every_version_with_its_own_receipt(
     assert frame(store, "trades").iloc[1]["source"] == "rest"
 
 
-def test_stream_and_rest_versions_with_a_field_conflict_are_typed_and_refuse_the_symbol(creds):
+OK_EMPTY = {"status": "OK", "results": []}
+
+
+def fill(store, symbol, from_ns, to_ns, at, trades=(), quotes=()):
+    """A complete backfill of both kinds received at `at`."""
+    wire = Wire({"trades": [{"status": "OK", "results": list(trades)}],
+                 "quotes": [{"status": "OK", "results": list(quotes)}]})
+    return ticks.TickBackfill(CFG, store, wire, clock=lambda: at).backfill(symbol, from_ns, to_ns)
+
+
+def streamed(store, sym, recv, q=1, t=T0 // MS, **extra):
+    """A stream trade and quote of `sym` received at `recv`."""
+    store.add("trades", [ticks.stream_row("trades", trade(sym=sym, q=q, t=t, **extra))], recv,
+              ticks.STREAM)
+    store.add("quotes", [ticks.stream_row("quotes", quote(sym=sym, q=q, t=t))], recv,
+              ticks.STREAM)
+
+
+def test_a_rest_revision_from_a_complete_window_is_authoritative_and_refuses_nothing(creds):
+    """codex-109 point 4: complete REST data received by the cutoff is authoritative."""
     store = ticks.TickStore(DAY)
     store.subscribe(["AAPL"], 10)
-    store.add("trades", [ticks.stream_row("trades", trade(q=101))], 50, ticks.STREAM)
-    wire = Wire({"trades": [{"status": "OK", "results": [rest_trade(101, T0 + 7, size=99)]}],
-                 "quotes": [{"status": "OK", "results": []}]})
-    ticks.TickBackfill(CFG, store, wire, clock=lambda: 60).backfill("AAPL", START, END)
-    assert store.conflicts == [ticks.Conflict("trades", "AAPL", 101, ("size",), ("stream", 50),
-                                              ("rest", 60))]
+    streamed(store, "AAPL", 50, q=101)
+    fill(store, "AAPL", START, END, 60, trades=[rest_trade(101, T0 + 7, size=99)])
+    (c,) = store.conflicts
+    assert c == ticks.Conflict(
+        "trades", "AAPL", 101, ("size",), ("stream", 50), ("rest", 60), ticks.REVISION,
+        uncompared=("correction", "participant_timestamp"), lossy=("sip_timestamp",),
+        inputs=True, sip_range=(T0, T0 + MS))
     before, after = store.snapshot(55), store.snapshot(60)
-    assert before.conflicts == () and before.refusal("AAPL") == "tick_no_initial_state"
-    assert after.conflicts == tuple(store.conflicts) and after.refusal("AAPL") == "tick_conflict"
+    assert before.refusal("AAPL") == "tick_no_initial_state"
+    assert before.frame("trades").iloc[0][["size", "provisional"]].tolist() == [100, True]
+    assert after.refusal("AAPL") is None and after.resolutions == ((c, 60),)
+    assert after.frame("trades").iloc[0][["size", "provisional"]].tolist() == [99, False]
+    # the stream quote REST did not return stays a provisional stream value
+    assert after.frame("quotes").iloc[0]["provisional"] is True
+    # a stream copy after the REST version does not reopen the symbol
+    streamed(store, "AAPL", 70, q=101)
+    assert store.conflicts[-1].authority_ns == 60 and store.snapshot(70).refusal("AAPL") is None
+
+
+def test_an_input_conflict_refuses_only_its_symbol_and_its_ranks_until_rest_restores_it(creds):
+    """codex-109 point 4: the affected symbol and the ranks holding it, not the rest of the day,
+    with the receipt time from which it is usable again."""
+    store = ticks.TickStore(DAY)
+    store.subscribe(["AAPL", "MSFT"], T0)
+    for sym in ("AAPL", "MSFT"):
+        streamed(store, sym, T0 + 1, q=101)
+        fill(store, sym, START, T0 + MS, T0 + 2)
+    earlier = store.snapshot(T0 + 2)
+    assert earlier.refusal("AAPL") is None and earlier.refusal("MSFT") is None
+    # the stream repeats AAPL trade 101 at another price: a revision of unproven fidelity
+    streamed(store, "AAPL", T0 + 3, q=101, p=113.5)
+    (c,) = store.conflicts
+    assert (c.fields, c.identity, c.inputs) == (("price",), ticks.REVISION, True)
+    snap = store.snapshot(T0 + 3)
+    assert snap.refusal("AAPL") == "tick_conflict" and snap.refusal("MSFT") is None
+    assert snap.resolutions == ((c, None),)
     with pytest.raises(ModelRefused) as exc:
-        after.require("AAPL")
-    assert exc.value.cause == "tick_conflict"
-    assert after.frame("trades").iloc[0]["size"] == 99
+        snap.require_ranks(["MSFT", "AAPL"])
+    assert exc.value.cause == "tick_ranks_unavailable" and "AAPL: tick_conflict" in exc.value.detail
+    assert earlier.refusal("AAPL") is None  # the earlier decision's view is unchanged
+    # authoritative history of the affected range restores the symbol from its receipt on
+    fill(store, "AAPL", T0, T0 + MS, T0 + 9, trades=[rest_trade(101, T0 + 5, price=113.5)])
+    assert store.snapshot(T0 + 8).refusal("AAPL") == "tick_conflict"
+    later = store.snapshot(T0 + 9)
+    assert later.refusal("AAPL") is None
+    assert [r for _, r in later.resolutions] == [T0 + 9] * len(store.conflicts)
+    later.require_ranks(["AAPL", "MSFT"])
+    assert later.frame("trades", "AAPL").iloc[0][["price", "source"]].tolist() == [113.5, "rest"]
+
+
+def test_identity_and_non_input_differences_are_told_apart(creds):
+    store = ticks.TickStore(DAY)
+    store.subscribe(["AAPL"], T0)
+    streamed(store, "AAPL", T0 + 1, q=101)
+    fill(store, "AAPL", START, T0 + MS, T0 + 2)
+    # a stream copy that differs only in the participant time (px side files, no model input)
+    streamed(store, "AAPL", T0 + 3, q=101, pt=T0 // MS - 2)
+    (pt,) = store.conflicts
+    assert (pt.fields, pt.identity, pt.inputs) == (("participant_timestamp",), ticks.REVISION,
+                                                   False)
+    assert store.snapshot(T0 + 3).refusal("AAPL") is None  # recorded, not refused
+    # REST names sequence 101 at another millisecond: two prints may share the key
+    store.add("trades", [ticks.rest_row("trades", "AAPL", rest_trade(101, T0 + 5 * MS + 3))],
+              T0 + 4, ticks.REST)
+    odd = store.conflicts[-1]
+    assert (odd.identity, odd.fields, odd.inputs) == (ticks.UNCERTAIN, ("sip_timestamp",), True)
+    assert odd.sip_range == (T0, T0 + 6 * MS)
+    assert store.snapshot(T0 + 4).refusal("AAPL") == "tick_conflict"
+    # a complete window that misses the stream version's millisecond does not resolve it
+    fill(store, "AAPL", T0 + MS, T0 + 6 * MS, T0 + 5)
+    assert store.snapshot(T0 + 5).refusal("AAPL") == "tick_conflict"
+    fill(store, "AAPL", T0, T0 + 6 * MS, T0 + 6)
+    assert store.snapshot(T0 + 6).refusal("AAPL") is None
+
+
+def test_a_later_rest_correction_never_changes_an_earlier_cutoffs_snapshot(creds):
+    """codex-109 point 4: prior decision snapshots are immutable."""
+    store = ticks.TickStore(DAY)
+    store.subscribe(["AAPL"], T0)
+    streamed(store, "AAPL", T0 + 1, q=101)
+    fill(store, "AAPL", START, T0 + MS, T0 + 2, trades=[rest_trade(101, T0 + 4)])
+    snap = store.snapshot(T0 + 2)
+    taken = snap.frame("trades").to_dict("records")
+    assert taken[0]["correction"] is None and snap.refusal("AAPL") is None
+    # REST later corrects the print (correction 1, another price) and the fill is complete
+    fill(store, "AAPL", START, T0 + MS, T0 + 20,
+         trades=[rest_trade(101, T0 + 4, correction=1, price=115.0)])
+    assert store.conflicts[-1].fields == ("correction", "price")
+    assert snap.frame("trades").to_dict("records") == taken and snap.conflicts == ()
+    assert snap.refusal("AAPL") is None
+    # taken again as of the same cutoff, the view is the same; at a later cutoff it is repaired
+    assert store.snapshot(T0 + 2).frame("trades").to_dict("records") == taken
+    now = store.snapshot(T0 + 20).frame("trades").iloc[0]
+    assert [now["correction"], now["price"], now["recv_ns"]] == [1, 115.0, T0 + 20]
 
 
 def test_an_empty_quote_side_and_absent_codes_are_no_conflict():
@@ -375,7 +476,7 @@ def test_a_symbol_entering_late_with_no_recent_quote_gets_its_state_from_midnigh
     sock = FakeSocket([[AUTH]])
     store = ticks.TickStore(DAY)
     at_1400 = START + 14 * 3600 * 10**9
-    clock = iter(range(at_1400, at_1400 + 100))
+    clock = iter(range(at_1400, at_1400 + 100 * MS, MS))
     stream = ticks.TickStream(CFG, store, lambda url, max_size: sock, clock=lambda: next(clock))
     stop = threading.Event()
     sock.stop = stop
@@ -391,27 +492,51 @@ def test_a_symbol_entering_late_with_no_recent_quote_gets_its_state_from_midnigh
     assert query["timestamp.gte"] == [str(START)]  # 00:00 New York, not 04:00
     assert all(w.from_ns == START and w.to_ns > subscribed and w.cause is None
                for w in windows.values())
-    snap = store.snapshot(max(w.recv_ns for w in windows.values()))
+    got = max(w.recv_ns for w in windows.values())
+    # the subscription was sent, but no stream row has shown that delivery began
+    assert store.snapshot(got).refusal("LATE") == "tick_coverage_unverified"
+    # its first stream rows: their SIP millisecond lies inside the window, the hand-over holds
+    streamed(store, "LATE", got + 1, q=10, t=subscribed // MS)
+    snap = store.snapshot(got + 1)
     assert snap.refusal("LATE") is None
-    assert snap.frame("quotes", "LATE").sip_timestamp.tolist() == [q0355]
+    assert snap.frame("quotes", "LATE").sip_timestamp.tolist() == [q0355, subscribed]
     assert snap.refusal("OTHER") == "tick_not_subscribed"
 
 
 def test_a_stream_gap_refuses_until_a_complete_backfill_spans_it(creds):
     store = ticks.TickStore(DAY)
     store.subscribe(["AAPL"], T0)
-    ok = {"status": "OK", "results": []}
-    ticks.TickBackfill(CFG, store, Wire({"trades": [ok], "quotes": [ok]}),
-                       clock=lambda: T0).backfill("AAPL", START, T0)
-    assert store.snapshot(T0).refusal("AAPL") is None
+    streamed(store, "AAPL", T0 + 1, q=1)
+    fill(store, "AAPL", START, T0 + MS, T0 + 2)
+    assert store.snapshot(T0 + 2).refusal("AAPL") is None
     store.down(["AAPL"], T0 + 10, "ConnectionError")
     assert store.snapshot(T0 + 15).refusal("AAPL") == "tick_gap"  # still down
     store.up(T0 + 20)
-    assert store.snapshot(T0 + 25).refusal("AAPL") == "tick_gap"  # back, the hole not filled
-    ticks.TickBackfill(CFG, store, Wire({"trades": [ok], "quotes": [ok]}),
-                       clock=lambda: T0 + 30).backfill("AAPL", T0 + 10, T0 + 20)
-    assert store.snapshot(T0 + 25).refusal("AAPL") == "tick_gap"  # the fill arrived later
+    # resubscribed, but delivery after it is not verified by the send
+    assert store.snapshot(T0 + 25).refusal("AAPL") == "tick_coverage_unverified"
+    streamed(store, "AAPL", T0 + 26, q=2, t=T0 // MS + 1)
+    assert store.snapshot(T0 + 26).refusal("AAPL") == "tick_gap"  # delivering, the hole open
+    fill(store, "AAPL", T0 + 10, T0 + 2 * MS, T0 + 30)
+    assert store.snapshot(T0 + 29).refusal("AAPL") == "tick_gap"  # the fill arrived later
     assert store.snapshot(T0 + 30).refusal("AAPL") is None
+
+
+def test_a_reconnect_acknowledgment_does_not_prove_the_gap_was_delivered(creds, monkeypatch):
+    """codex-109 point 4: a subscription send or an ACK alone does not establish delivery."""
+    monkeypatch.setattr(threading.Event, "wait", lambda self, t=None: False)
+    ack = {"ev": "status", "status": "success", "message": "subscribed to: T.AAPL"}
+    first = FakeSocket([[AUTH], [ack], [trade(q=1), quote(q=1)]], drop=True)
+    second = FakeSocket([[AUTH], [ack]])
+    stream, stop, store, _ = make_stream([first, second])
+    stream.add("AAPL")
+    stream.run(stop)
+    fill(store, "AAPL", START, T0 + MS, 6)  # the day up to and past the first rows
+    ((down, up, _),) = store.gaps["AAPL"]
+    fill(store, "AAPL", down, END, up + 10)  # a complete window spanning the whole gap
+    assert store.snapshot(up + 10).refusal("AAPL") == "tick_coverage_unverified"
+    # the first row delivered after the resubscription, inside that window: now verified
+    streamed(store, "AAPL", up + 11, q=2, t=T0 // MS + 2)
+    assert store.snapshot(up + 11).refusal("AAPL") is None
 
 
 def test_lag_and_same_millisecond_counts_are_recorded():

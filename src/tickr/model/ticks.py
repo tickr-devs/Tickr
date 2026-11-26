@@ -22,19 +22,36 @@ so the lag of the feed can be measured before any wait is chosen (owner rule).
 Versions, not one merged row (Codex, codex-108 point 3): every copy of a print that arrives,
 from the stream or from a REST page, is kept as its own version with its own `recv_ns` and
 `source`, keyed by (kind, ticker, sequence_number) inside the store of one New York session
-date; Massive documents the sequence number as unique per ticker within a session. A version
-whose content differs from the version held before it is a typed `Conflict`. A decision reads
-an immutable `TickSnapshot` taken at its receipt cutoff: per key the versions received by the
-cutoff, of which it uses the latest REST version when one arrived by then (nanosecond time,
-`correction`), else the latest stream version, each with its own receipt time. Later arrivals
-never change a snapshot already taken.
+date; Massive documents the sequence number as unique per ticker within a session. A decision
+reads an immutable `TickSnapshot` taken at its receipt cutoff: per key the versions received by
+the cutoff, of which it uses the latest REST version when one arrived by then (nanosecond time,
+`correction`), else the latest stream version, each with its own receipt time. A chosen stream
+version is marked `provisional`: its fidelity to the file is unproven in `STREAM_UNPROVEN`.
+Later arrivals never change a snapshot already taken.
+
+Differences (codex-109 point 4): a version whose content differs from the version held before it
+is a typed `Conflict`. Verified representation differences are normalized first (`_same`);
+columns one source cannot carry comparably are named on the record (`uncompared`, `lossy`). A
+`revision` keeps the print's identity (SIP time at the compared precision and, for a trade, the
+exchange) and changes other fields; `uncertain` identity means the two versions may be different
+prints under one key. Only a conflict that touches a model input (or of uncertain identity)
+refuses, and only its symbol (and ranks over a set holding it), until a complete REST window of
+its kind received at or after its latest REST version (else its later version) spans its SIP
+range: complete REST data received by the cutoff is authoritative. The snapshot records the
+receipt time from which each conflict is resolved (`resolutions`).
 
 Initial state (codex-107 point 2): a symbol's day starts at New York midnight, as the day file
 does (the converter carries a pre-04:00 quote), so `TickBackfill.initial` fetches from 00:00
 America/New_York of the session date. `TickSnapshot.refusal` names why a symbol's ticks are not
-proven complete at the cutoff (not subscribed, no complete backfill from midnight up to its
-subscription, an incomplete backfill, an unfilled stream gap, a conflict); a decision that needs
-the symbol refuses with that cause.
+proven complete at the cutoff (not subscribed, no complete backfill from midnight, an incomplete
+backfill, an unfilled stream gap, coverage not verified, an unresolved conflict); a decision that
+needs the symbol refuses with that cause.
+
+Coverage (codex-109 point 4): sending a subscription, or Massive acknowledging it, does not prove
+that the events after it are delivered. Each (re)subscription of a kind is verified by overlap:
+a complete REST window from midnight (or from the drop) must reach past the SIP millisecond of
+the first stream row of that kind received after the (re)subscription. Until a stream row of
+that kind arrives, the hand-over is unverified and the symbol refused.
 
 Measurement, no thresholds (owner rule): receipt time and lag per symbol, REST requests and
 rate-limit answers, late arrivals (a version received after a snapshot whose cutoff already
@@ -97,6 +114,22 @@ CODE_COLUMNS = {"conditions", "indicators"}
 # millisecond): a difference is a conflict. Two versions of one source compare every column.
 CROSS_COMPARED = {"trades": ("exchange", "price", "size", "conditions", "trf_id"),
                   "quotes": ("ask_price", "ask_size", "bid_price", "bid_size", "indicators")}
+# Columns not compared between a stream and a REST version, named on each such Conflict: the
+# stream sends no correction; its participant time is in ms and absent on ORF prints; its quote
+# condition is one code where REST lists several (tq-field-map gaps 2 and 4).
+CROSS_UNCOMPARED = {"trades": ("correction", "participant_timestamp"), "quotes": ("conditions",)}
+# Compared at the stream's lower precision (milliseconds) between a stream and a REST version.
+CROSS_LOSSY = ("sip_timestamp",)
+# Stream columns whose fidelity to the file is unproven (tq-field-map gaps 1, 2, 4, 5, 7): a
+# chosen stream version is `provisional` until a REST version replaces it.
+STREAM_UNPROVEN = {"trades": ("sip_timestamp", "correction", "size", "participant_timestamp"),
+                   "quotes": ("sip_timestamp", "conditions", "bid_size", "ask_size")}
+# Columns the converter v11 does not turn into model inputs (tq-field-map "converter use": the
+# exchange is a header check, the participant time feeds only the px side files). A difference
+# confined to them is recorded, never refused.
+NOT_INPUTS = {"trades": ("exchange", "participant_timestamp"), "quotes": ()}
+# The columns that name one print besides its key: a difference in them is uncertain identity.
+IDENTITY = {"trades": ("sip_timestamp", "exchange"), "quotes": ("sip_timestamp",)}
 # An empty quote side: the stream leaves it out (None), REST and the file write 0.
 QUOTE_SIDES = {"ask_price", "ask_size", "bid_price", "bid_size"}
 HTTP_TOO_MANY_REQUESTS = "429"  # protocol constant: the status of a rate-limit answer
@@ -171,10 +204,16 @@ def rest_row(kind: str, symbol: str, result: Any) -> dict[str, Any]:
 # --- the day's versions and the decision snapshot --------------------------------------------
 
 
+REVISION, UNCERTAIN = "revision", "uncertain"
+
+
 @dataclass(frozen=True)
 class Conflict:
-    """Two versions of one print whose content differs: `fields` names the columns, `held` and
-    `later` the (source, recv_ns) of the version held before and of the one that arrived."""
+    """Two versions of one print whose content differs: `fields` names the differing columns,
+    `held` and `later` the (source, recv_ns) of the version held before and of the one that
+    arrived. `identity` is REVISION or UNCERTAIN (module text); `uncompared` and `lossy` name
+    the columns not compared or compared at reduced precision; `inputs` says whether it touches
+    a model input; `sip_range` the SIP span [from, to) a resolving window must cover."""
 
     kind: str
     ticker: str
@@ -182,6 +221,18 @@ class Conflict:
     fields: tuple[str, ...]
     held: tuple[str, int]
     later: tuple[str, int]
+    identity: str
+    uncompared: tuple[str, ...]
+    lossy: tuple[str, ...]
+    inputs: bool
+    sip_range: tuple[int, int]
+
+    @property
+    def authority_ns(self) -> int:
+        """A resolving window must be received at or after this: the conflict's latest REST
+        version, else its later version (a stream copy after REST does not reopen it)."""
+        rest = [ns for source, ns in (self.held, self.later) if source == REST]
+        return max(rest) if rest else self.later[1]
 
 
 @dataclass(frozen=True)
@@ -200,6 +251,8 @@ class Window:
 
 
 def _same(col: str, a: Any, b: Any) -> bool:
+    """Equal after the verified representation differences: an empty quote side (None or 0) and
+    absent codes (None or empty), which the converter v11 coalesces to one model input."""
     if a == b:
         return True
     if col in QUOTE_SIDES:
@@ -221,6 +274,9 @@ class TickStore:
         self.conflicts: list[Conflict] = []
         self.windows: list[Window] = []
         self.subscribed: dict[str, int] = {}  # symbol (or MARKET) -> first subscribe sent, ns
+        self._resumed: dict[str, int] = {}  # symbol (or MARKET) -> latest subscribe sent, ns
+        # (kind, ticker) -> (resume ns, recv_ns, SIP ns) of the first stream row after each resume
+        self.first: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
         # symbol (or MARKET) -> [down_ns, up_ns or None while down, cause]: rows sent then are lost
         self.gaps: dict[str, list[list[Any]]] = {}
         # measurement counts: other_day, late, same_ms_trades / _quotes / _trade_quote
@@ -247,16 +303,14 @@ class TickStore:
                     self.counts["late"] += 1
                 if source == STREAM:
                     self._same_ms(kind, row["ticker"], ts // NS_PER_MS)
+                    self._first(kind, row["ticker"], recv_ns, ts)
                 versions = held.setdefault(key, [])
                 if not versions:
                     new += 1
                 else:
-                    before = versions[-1]
-                    fields = self._differs(kind, before, version)
-                    if fields:
-                        self.conflicts.append(Conflict(kind, key[0], key[1], fields,
-                                                       (before[-1], before[-2]),
-                                                       (source, recv_ns)))
+                    conflict = self._conflict(kind, versions[-1], version)
+                    if conflict is not None:
+                        self.conflicts.append(conflict)
                 versions.append(version)
         return new
 
@@ -268,21 +322,43 @@ class TickStore:
             self.counts["same_ms_trade_quote"] += 1
         self._last_ms[(kind, ticker)] = ms
 
-    def _differs(self, kind: str, a: tuple[Any, ...], b: tuple[Any, ...]) -> tuple[str, ...]:
+    def _first(self, kind: str, ticker: str, recv_ns: int, sip_ns: int) -> None:
+        mark = max(self._resumed.get(ticker, -1), self._resumed.get(MARKET, -1))
+        found = self.first.setdefault((kind, ticker), [])
+        if not found or found[-1][0] != mark:
+            found.append((mark, recv_ns, sip_ns))
+
+    def _conflict(self, kind: str, a: tuple[Any, ...], b: tuple[Any, ...]) -> Conflict | None:
         cols = self.cols[kind]
         va, vb = dict(zip(cols, a, strict=True)), dict(zip(cols, b, strict=True))
+        uncompared: tuple[str, ...] = ()
+        lossy: tuple[str, ...] = ()
         if va["source"] == vb["source"]:
             names = [c for c in cols[:-len(EXTRA_COLUMNS)] if not _same(c, va[c], vb[c])]
         else:
             names = [c for c in CROSS_COMPARED[kind] if not _same(c, va[c], vb[c])]
             if va["sip_timestamp"] // NS_PER_MS != vb["sip_timestamp"] // NS_PER_MS:
                 names.append("sip_timestamp")
-        return tuple(names)
+            uncompared, lossy = CROSS_UNCOMPARED[kind], CROSS_LOSSY
+        if not names:
+            return None
+        identity = UNCERTAIN if any(c in IDENTITY[kind] for c in names) else REVISION
+        times = (va["sip_timestamp"], vb["sip_timestamp"])
+        return Conflict(
+            kind, va["ticker"], va["sequence_number"], tuple(names),
+            (va["source"], va["recv_ns"]), (vb["source"], vb["recv_ns"]), identity,
+            uncompared, lossy,
+            inputs=identity == UNCERTAIN or any(c not in NOT_INPUTS[kind] for c in names),
+            # whole milliseconds: a stream time is truncated to its millisecond
+            sip_range=(min(times) // NS_PER_MS * NS_PER_MS,
+                       (max(times) // NS_PER_MS + 1) * NS_PER_MS))
 
     def subscribe(self, keys: list[str], at_ns: int) -> None:
+        """A subscription of `keys` was sent at `at_ns` (not proof of delivery: module text)."""
         with self._lock:
             for key in keys:
                 self.subscribed.setdefault(key, at_ns)
+                self._resumed[key] = at_ns
 
     def down(self, keys: list[str], down_ns: int, cause: str) -> None:
         """The stream of `keys` dropped at `down_ns`; the gap stays open until `up`."""
@@ -293,10 +369,11 @@ class TickStore:
     def up(self, up_ns: int) -> None:
         """The subscription was sent again: every open gap closes at `up_ns`."""
         with self._lock:
-            for gaps in self.gaps.values():
+            for key, gaps in self.gaps.items():
                 for gap in gaps:
                     if gap[1] is None:
                         gap[1] = up_ns
+                        self._resumed[key] = up_ns
 
     def window(self, window: Window) -> None:
         with self._lock:
@@ -332,14 +409,17 @@ class TickStore:
                 subscribed=types.MappingProxyType(
                     {k: v for k, v in self.subscribed.items() if v <= cutoff_ns}),
                 gaps=types.MappingProxyType({k: v for k, v in gaps.items() if v}),
-                last=types.MappingProxyType(last))
+                last=types.MappingProxyType(last),
+                first=types.MappingProxyType(
+                    {k: tuple(f for f in v if f[1] <= cutoff_ns) for k, v in self.first.items()}))
 
 
 @dataclass(frozen=True)
 class TickSnapshot:
     """The ticks a decision saw: per key the version chosen as of `cutoff_ns` (module text), and
     the per-symbol delivery state at that cutoff. Immutable: later arrivals change the store,
-    never a snapshot taken before them."""
+    never a snapshot taken before them. `resolutions` pairs each conflict with the receipt time
+    of the first complete window that resolves it by the cutoff (None while unresolved)."""
 
     day: str
     start_ns: int
@@ -350,15 +430,31 @@ class TickSnapshot:
     subscribed: Mapping[str, int]
     gaps: Mapping[str, tuple[tuple[int, int | None, str], ...]]
     last: Mapping[str, tuple[int, int]]
+    first: Mapping[tuple[str, str], tuple[tuple[int, int, int], ...]]
+
+    @property
+    def resolutions(self) -> tuple[tuple[Conflict, int | None], ...]:
+        return tuple((c, self._resolved(c)) for c in self.conflicts)
+
+    def _complete(self, symbol: str, kind: str) -> list[Window]:
+        return [w for w in self.windows
+                if w.symbol == symbol and w.kind == kind and w.cause is None]
+
+    def _resolved(self, c: Conflict) -> int | None:
+        return min((w.recv_ns for w in self._complete(c.ticker, c.kind)
+                    if w.from_ns <= c.sip_range[0] and w.to_ns >= c.sip_range[1]
+                    and w.recv_ns >= c.authority_ns), default=None)
 
     def frame(self, kind: str, symbol: str | None = None) -> Any:
         """The rows of one kind (one symbol or all) in ticker, SIP time, sequence order, with the
-        flat-file columns followed by recv_ns and source of the chosen version."""
+        flat-file columns followed by recv_ns and source of the chosen version, and
+        `provisional`: True for a stream version (its STREAM_UNPROVEN columns unproven)."""
         import pandas as pd
 
-        rows = [r for r in self.rows[kind] if symbol is None or r[0] == symbol]
+        rows = [r + (r[-1] == STREAM,) for r in self.rows[kind]
+                if symbol is None or r[0] == symbol]
         # object columns: an absent field stays None and a nanosecond time an exact int
-        return pd.DataFrame(rows, columns=list(columns(kind)), dtype=object)
+        return pd.DataFrame(rows, columns=[*columns(kind), "provisional"], dtype=object)
 
     def lag(self, symbol: str) -> tuple[int, int] | None:
         """(receipt ns, receipt minus SIP ns) of the symbol's latest stream version by the
@@ -368,26 +464,43 @@ class TickSnapshot:
         recv, sip = self.last[symbol]
         return recv, recv - sip
 
+    def _coverage(self, symbol: str, from_ns: int, mark: int) -> str | None:
+        """None when, for both kinds, a complete window from `from_ns` reaches past the SIP
+        millisecond of the first stream row received after the (re)subscription at `mark`;
+        "unverified" when no such stream row arrived yet (a send or an acknowledgment proves no
+        delivery); "missing" when no complete window from `from_ns` (reaching past it) arrived."""
+        for kind in KINDS:
+            complete = [w for w in self._complete(symbol, kind) if w.from_ns <= from_ns]
+            if not complete:
+                return "missing"
+            sip = next((s for m, _, s in self.first.get((kind, symbol), ()) if m >= mark), None)
+            if sip is None:
+                return "unverified"
+            if not any(w.to_ns >= (sip // NS_PER_MS + 1) * NS_PER_MS for w in complete):
+                return "missing"
+        return None
+
     def refusal(self, symbol: str) -> str | None:
         """Why the symbol's ticks are not proven complete from midnight to the cutoff (one
         cause), or None. A stream gap (receipt times) is filled by complete windows of both
-        kinds whose SIP range spans it."""
+        kinds from its start past the first stream row after the resubscription; a conflict
+        refuses while it touches an input and is unresolved (module text)."""
         since = min((self.subscribed[k] for k in (symbol, MARKET) if k in self.subscribed),
                     default=None)
         if since is None:
             return "tick_not_subscribed"
-        mine = [w for w in self.windows if w.symbol == symbol]
-        complete = [w for w in mine if w.cause is None]
-        for kind in KINDS:
-            if not any(w.kind == kind and w.from_ns <= self.start_ns and w.to_ns >= since
-                       for w in complete):
-                return ("tick_backfill_incomplete" if any(w.cause for w in mine)
-                        else "tick_no_initial_state")
+        initial = self._coverage(symbol, self.start_ns, since)
+        if initial == "missing":
+            return ("tick_backfill_incomplete"
+                    if any(w.cause for w in self.windows if w.symbol == symbol)
+                    else "tick_no_initial_state")
+        if initial is not None:
+            return "tick_coverage_unverified"
         for down, up, _ in self.gaps.get(symbol, ()) + self.gaps.get(MARKET, ()):
-            if up is None or not all(any(w.kind == kind and w.from_ns <= down and w.to_ns >= up
-                                         for w in complete) for kind in KINDS):
-                return "tick_gap"
-        if any(c.ticker == symbol for c in self.conflicts):
+            gap = "missing" if up is None else self._coverage(symbol, down, up)
+            if gap is not None:
+                return "tick_gap" if gap == "missing" else "tick_coverage_unverified"
+        if any(c.ticker == symbol and c.inputs and r is None for c, r in self.resolutions):
             return "tick_conflict"
         return None
 
@@ -395,6 +508,13 @@ class TickSnapshot:
         cause = self.refusal(symbol)
         if cause is not None:
             raise ModelRefused(cause, f"{symbol} as of {self.cutoff_ns}")
+
+    def require_ranks(self, symbols: list[str]) -> None:
+        """Ranks over `symbols` depend on every member: unavailable while one is refused."""
+        refused = {s: c for s in sorted(symbols) if (c := self.refusal(s)) is not None}
+        if refused:
+            raise ModelRefused("tick_ranks_unavailable", ", ".join(
+                f"{s}: {c}" for s, c in refused.items()) + f" as of {self.cutoff_ns}")
 
 
 # --- the live stream ------------------------------------------------------------------------
@@ -405,7 +525,7 @@ class TickStream:
     grows during the day, `add`) or the full market, by `[massive] tick_subscription`.
     `connect` is `websockets.sync.client.connect` (a stand-in in the tests); `clock` gives
     wall-clock ns, comparable with the SIP timestamps. A subscription is recorded when it is
-    sent (its acknowledgment is not measured yet)."""
+    sent; neither the send nor an acknowledgment proves delivery (TickSnapshot.refusal)."""
 
     def __init__(self, cfg: Config, store: TickStore, connect: Callable[..., Any] | None = None,
                  clock: Callable[[], int] = time.time_ns) -> None:
@@ -610,5 +730,6 @@ class TickBackfill:
     def initial(self, symbol: str) -> dict[str, Window]:
         """The symbol's day so far, from 00:00 America/New_York of the session date (the day
         file's start: the converter carries a pre-04:00 quote) to now. Subscribe the symbol
-        first, so the window reaches past its subscription and no row falls between them."""
+        first and fetch after its first stream row of each kind arrived, so the window reaches
+        past it and the hand-over is verified (TickSnapshot.refusal)."""
         return self.backfill(symbol, self.store.start_ns, min(self.clock(), self.store.end_ns))
