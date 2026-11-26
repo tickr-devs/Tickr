@@ -12,6 +12,15 @@ import Testing
     #expect(String(localized: L10n.tagEnter) == "ENTER")
   }
 
+  @Test("Stop bot's message: what the stop does with nothing open, both choices with positions open")
+  func stopMessage() {
+    #expect(StopText.message(symbols: []) == String(localized: StopText.flatDetail))
+    let open = StopText.message(symbols: ["ABCD"])
+    #expect(open.hasPrefix("Choose what happens to ABCD."))
+    #expect(open.contains("Close and stop: Closes ABCD at market, then stops the bot."))
+    #expect(open.contains("Leave open: The bot stops at once and nothing closes them."))
+  }
+
   @Test func argumentsFillTheText() {
     #expect(String(localized: L10n.apiRefused(409, "busy", "later")) == "API refused (409 busy): later")
     #expect(String(localized: L10n.headlineNoVerifiedStop("ABCD", "missing"))

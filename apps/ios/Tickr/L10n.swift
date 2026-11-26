@@ -225,12 +225,6 @@ enum L10n {
         defaultValue: "Stop the bot?",
         bundle: L10n.bundle)
     }
-    static var stopWarning: LocalizedStringResource {
-      LocalizedStringResource("control.stopWarning",
-        // swiftlint:disable:next line_length
-        defaultValue: "It stays stopped, also tomorrow, until you press Start bot in Settings. Refused while a trade is open or entering: close it first. Face ID confirms.",
-        bundle: L10n.bundle)
-    }
     static var resume: LocalizedStringResource {
       LocalizedStringResource("control.resume", defaultValue: "Resume entries", bundle: L10n.bundle)
     }

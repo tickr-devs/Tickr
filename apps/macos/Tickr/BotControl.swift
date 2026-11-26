@@ -40,6 +40,22 @@ enum BotAction: Identifiable, Equatable {
     }
   }
 
+  /// The command a yes sends: for Stop bot asked with positions open, the choice made (Close and
+  /// stop or Leave open, both a stop-bot); otherwise the action's own command.
+  func command(stopChoice: OperatorCommand?) -> OperatorCommand {
+    guard case .stopBot = self, let stopChoice, stopChoice.kind == .stopBot else { return command }
+    return stopChoice
+  }
+
+  /// The name of a Stop bot choice, as its button says it; nil for any other command.
+  static func title(of command: OperatorCommand) -> String? {
+    switch command {
+    case .closeAndStop: return String(localized: StopText.closeAndStop)
+    case .stopLeavingOpen: return String(localized: StopText.leaveOpen)
+    default: return nil
+    }
+  }
+
   /// The action's name, as its button shows it (in the view's language).
   var label: LocalizedStringResource {
     switch self {
@@ -266,10 +282,18 @@ struct BotCommandButton: View {
     .buttonStyle(.command(action.tier, size: size, detail: detail.map { Text($0) },
       tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
     .disabled(!model.commandsEnabled || !applicable)
-    .inFlight(model.inFlight == action.command ? Text(action.command.inFlightTitle) : nil)
+    .inFlight(busy.map { Text($0.inFlightTitle) })
     // An off close command says why; the rest say what they do.
     .hint(verbatim: applicable ? action.explanation : String(localized: L10n.Bot.noPositions))
     .accessibilityIdentifier(identifier ?? action.id)
+  }
+
+  /// The command in flight when it is this button's: Stop bot's also while one of its choices
+  /// (Close and stop, Leave open) is sent.
+  private var busy: OperatorCommand? {
+    guard let sent = model.inFlight else { return nil }
+    if case .stopBot = action { return sent.kind == .stopBot ? sent : nil }
+    return sent == action.command ? sent : nil
   }
 
   private var applicable: Bool {
@@ -293,21 +317,44 @@ private struct BotCommandQuestions: ViewModifier {
       // The alert closes its binding around its buttons' actions, in an order SwiftUI does not
       // promise; the question is closed by its buttons instead (Escape is the cancel button), so
       // the yes is always read against the question still open.
-      .alert(Text(verbatim: question?.action.question ?? ""), isPresented: Binding(get: { question != nil },
+      .alert(Text(verbatim: question.map(title) ?? ""), isPresented: Binding(get: { question != nil },
         set: { _ in }), presenting: question) { asked in
-        Button(role: asked.action.isDestructive ? .destructive : nil) {
-          model.accept(asked)
-        } label: { Text(asked.action.label) }
+        if choosesStop(asked) {
+          // Stop bot with positions open (mockup Main): Close and stop, Leave open or Cancel.
+          Button(role: .destructive) {
+            model.accept(asked, stopChoice: .closeAndStop)
+          } label: { Text(StopText.closeAndStop) }
+          Button { model.accept(asked, stopChoice: .stopLeavingOpen) } label: { Text(StopText.leaveOpen) }
+        } else {
+          Button(role: asked.action.isDestructive ? .destructive : nil) {
+            model.accept(asked)
+          } label: { Text(asked.action.label) }
+        }
         Button(String(localized: L10n.Common.cancel), role: .cancel) { model.withdraw(asked) }
       } message: { asked in
         // Where the command goes, named in every confirmation: a demo switch left on must never
         // swallow a real command unnoticed.
-        Text(BotControls.confirmation(asked.action.explanation, demo: model.demoDay))
+        Text(BotControls.confirmation(message(asked), demo: model.demoDay))
       }
       // A question lives only while its window or panel does: closed, or opened anew, it holds no
       // question from before (a question never reappears without a new press).
       .onAppear { model.withdrawQuestion(in: place) }
       .onDisappear { model.withdrawQuestion(in: place) }
+  }
+
+  /// Stop bot asked while the bot holds positions: the question offers its two choices.
+  private func choosesStop(_ asked: PendingConfirmation) -> Bool {
+    guard case .stopBot = asked.action else { return false }
+    return !model.positions.isEmpty
+  }
+
+  private func title(_ asked: PendingConfirmation) -> String {
+    choosesStop(asked) ? String(localized: StopText.askTitle(model.positions.count)) : asked.action.question
+  }
+
+  private func message(_ asked: PendingConfirmation) -> String {
+    guard case .stopBot = asked.action else { return asked.action.explanation }
+    return StopText.message(symbols: model.positions.map(\.position.symbol))
   }
 }
 

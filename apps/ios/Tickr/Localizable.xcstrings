@@ -4513,23 +4513,6 @@
         }
       }
     },
-    "control.stopWarning" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It stays stopped, also tomorrow, until you press Start bot in Settings. Refused while a trade is open or entering: close it first. Face ID confirms."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sigue detenido, también mañana, hasta que pulses Iniciar bot en Ajustes. Se rechaza mientras haya una operación abierta o entrando: ciérrala primero. Face ID lo confirma."
-          }
-        }
-      }
-    },
     "control.title" : {
       "extractionState" : "manual",
       "localizations" : {

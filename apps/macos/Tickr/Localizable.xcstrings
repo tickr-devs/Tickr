@@ -932,13 +932,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The bot stops and stays stopped, also tomorrow, until you press Start bot. Refused while a trade is open or entering: close it first."
+            "value" : "The bot stops and stays stopped, also tomorrow, until you press Start bot. With positions open you choose: close them at market first, or leave them open."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El bot se detiene y sigue detenido, también mañana, hasta que pulses Iniciar bot. Se rechaza mientras haya una operación abierta o entrando: ciérrala primero."
+            "value" : "El bot se detiene y sigue detenido, también mañana, hasta que pulses Iniciar bot. Con posiciones abiertas eliges: cerrarlas a mercado antes o dejarlas abiertas."
           }
         }
       }
