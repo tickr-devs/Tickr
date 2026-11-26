@@ -3,11 +3,17 @@
 Prep only: the model stays off and nothing here reaches the order path. No bot loop calls this
 module; a test harness (tests/model/test_live.py) or a later runner drives `LiveFeatures.close`.
 
-It composes the pieces that already exist, each the training's own code or its file format:
+It composes the pieces that already exist, each the training's own code or its file format,
+in the live date context of the day (`full.LiveContext`, built by the caller from the bot's
+calendar and the bundle's session policy: the date boundary, the feature-only table code, the
+day's close). Each close takes the wall clock once (`clock`): that instant is the RECEIPT CUTOFF
+of the minute (`full`, EACH MINUTE HAS TWO BOUNDS) and the receipt of every bar and tick row the
+close hands in, since all of them were in hand at that instant (a minute closed before its end
+refuses `cutoff_before_mark`).
 
 - bars: today's full-market minute bars from `MinuteStream` into `DayBars`, cut at m (bars of a
   later minute are left out, the prefix rule), and the 20-session `DayState`; the table code's
-  rows of m (`incremental.DayTable`: the rows of `full.table_rows`, bit for bit, without
+  rows of m (`incremental.DayTable`: the rows of `LiveContext.table_rows`, bit for bit, without
   rebuilding the whole market's day at every minute) are the COHORT: the training's row rule
   decides which symbols get a row. Webull's lists (what the bot may trade) stay apart: a symbol
   the caller wants that has no row is refused `not_in_cohort`.
@@ -25,11 +31,15 @@ It composes the pieces that already exist, each the training's own code or its f
   rows of the whole-day file. `[model] live_marker_quote` adds the marker quote of #820 (off
   until Codex decides). The rows are appended to the day's tick table as one parquet part per
   close (`<tick_dir>/<day>/part-MMMM.parquet`, v11's schema: sym VARCHAR, m INTEGER, tn / qn
-  BIGINT, 59 DOUBLE); `tick_file` is the glob of the parts, which the training's
-  `l1feat.cut_inputs` reads with duckdb as it reads one day file.
+  BIGINT, 59 DOUBLE, then `full.RECEIPT_COLUMN`, the close's instant); `tick_file` is the glob
+  of the parts, which the training's `l1feat.cut_inputs` reads with duckdb as it reads one day
+  file.
 - reference, Benzinga and fl: folders in the training's formats prepared before the session,
-  through `TrainingInputs` (fetching them is not in scope).
-- features: the training's `cut_inputs` and `assemble` (`full.assemble_rows`) on the rows of m.
+  through `TrainingInputs` (fetching them is not in scope), each record with its receipt as
+  `full` INPUTS requires (a record received after the cutoff is left out; anything the
+  training's cut would still remove refuses `future_input`).
+- features: the training's `cut_inputs` and `assemble` (`LiveContext.assemble_rows`) on the
+  rows of m.
   They read the whole tick table so far, the reference and Benzinga folders and the facts file
   at every minute (pinned code, not edited here): that cost is measured, not avoided.
 
@@ -60,6 +70,7 @@ converter's carry is not persisted.
 
 from __future__ import annotations
 
+import datetime
 import os
 import tempfile
 import time
@@ -80,6 +91,8 @@ TICK_CAUSES = ("backfill_missing", "tick_gap", "tick_late")
 PART_GLOB = "part-*.parquet"
 QUOTE_SIDE_COLUMNS = ("bid_price", "bid_size", "ask_price", "ask_size")
 NS_PER_SECOND = 10**9
+NS_PER_MICROSECOND = 10**3
+EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 
 
 class TrainingInputs(Protocol):
@@ -127,18 +140,21 @@ class _Symbol:
 
 
 class LiveFeatures:
-    """See the module docstring. `state` / `types`: the DayState of the 20 earlier sessions
-    and the training's stock types (None = no filter), as `features.minute_rows` takes them.
-    `clock` gives wall-clock ns (comparable with SIP stamps)."""
+    """See the module docstring. `context`: the live date context of the day
+    (`full.live_context`). `state` / `types`: the DayState of the 20 earlier sessions and the
+    training's stock types (None = no filter), as `features.minute_rows` takes them. `clock`
+    gives wall-clock ns since the epoch (comparable with SIP stamps)."""
 
-    def __init__(self, cfg: Config, day: str, state: features.DayState,
+    def __init__(self, cfg: Config, context: full.LiveContext, state: features.DayState,
                  types: set[str] | None, bars: Any, store: feed.TickStore,
                  stream: feed.TickStream, backfill: feed.TickBackfill, inputs: TrainingInputs,
                  tick_dir: Path, clock: Callable[[], int] = time.time_ns) -> None:
+        day = context.day
+        self.context = context
         self.day, self.state, self.types = day, state, types
         self.bars, self.store, self.stream, self.backfill = bars, store, stream, backfill
         self.inputs, self.clock = inputs, clock
-        self.table = incremental.DayTable(day, state, types, cfg.model.live_table_workers)
+        self.table = incremental.DayTable(context, state, types, cfg.model.live_table_workers)
         self.marker = cfg.model.live_marker_quote
         self.groups = cfg.model.tick_groups
         self.wait = live_wait_seconds(cfg.model)
@@ -184,14 +200,18 @@ class LiveFeatures:
 
         if self.lost is not None:
             raise ModelRefused("live_state_lost", self.lost)
-        if not self.closed < minute < full.full_code().w.NM:
+        ctx = self.context
+        if not self.closed < minute < ctx.code.w.NM:
             raise ModelRefused("minute_order", f"{minute} after {self.closed}")
+        received = self.clock() // NS_PER_MICROSECOND * NS_PER_MICROSECOND
+        cutoff = EPOCH + datetime.timedelta(microseconds=received // NS_PER_MICROSECOND)
         seconds: dict[str, float] = {}
         t0 = time.perf_counter()
         bars = self.bars.frame()
         bars = bars[bars.window_start < self._end(minute)]
         table = (None if bars.empty  # no bar yet today: no row (an empty frame has no types)
-                 else self.table.rows(bars, minute))
+                 else self.table.rows(bars.assign(**{full.RECEIPT_COLUMN: received}), minute,
+                                      cutoff))
         cohort = [] if table is None else list(table.sym)
         seconds["bars"] = time.perf_counter() - t0
 
@@ -211,7 +231,7 @@ class LiveFeatures:
             rows = self._convert(minute, set(joiners))
             seconds["convert"] = time.perf_counter() - t0
             t0 = time.perf_counter()
-            self._append(minute, rows)
+            self._append(minute, rows.assign(**{full.RECEIPT_COLUMN: received}))
         except ModelRefused as exc:
             self.lost = f"{exc.cause} at minute {minute}"
             raise
@@ -226,12 +246,12 @@ class LiveFeatures:
         if absent:
             refused.update({s: Refusal("input_missing", ", ".join(absent)) for s in served})
             served = []
-        out = pd.DataFrame(columns=["sym", *full.full_features()])
+        out = pd.DataFrame(columns=["sym", *ctx.names])
         if served:
             given = full.FullInputs(self.tick_file, paths["reference"], paths["benzinga"],
                                     paths["fl_facts"])
             try:
-                out = full.assemble_rows(table, self.day, minute, self.state, given)
+                out = ctx.assemble_rows(table, minute, self.state, given, cutoff)
             except ModelRefused as exc:
                 refused.update({s: Refusal(exc.cause, exc.detail) for s in served})
                 served = []

@@ -33,7 +33,7 @@ import model_ticks as tick_maker
 import numpy as np
 
 from tickr.model import parity, parity_walk
-from tickr.model.features import full, ticks
+from tickr.model.features import ticks
 
 DAY = "2024-03-06"  # an open-archive day with 20 sessions before it (as test_parity)
 NEWS_MINUTES = [320, 338, 339, 340, 352, 360, 371, 384, 386, 400]
@@ -41,7 +41,7 @@ NEWS_MINUTES = [320, 338, 339, 340, 352, 360, 371, 384, 386, 400]
 
 def build(root: Path, symbols: int, trades: int, quotes: int) -> list[str]:
     """The day's files under `root`; the arguments of a parity run, without minutes."""
-    code = full.full_code()
+    code = inputs.research()
     labels, w = code.labels, code.w
     cal = labels.calendar()
     days = cal[cal.index(DAY) - labels.HIST:cal.index(DAY) + 1]

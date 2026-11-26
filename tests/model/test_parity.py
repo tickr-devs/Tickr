@@ -23,7 +23,7 @@ import pytest
 from tickr import config
 from tickr.model import headroom, parity
 from tickr.model.errors import ModelRefused
-from tickr.model.features import full, ticks
+from tickr.model.features import ticks
 
 DAY = "2024-03-06"  # a day of the open archive with 20 calendar sessions before it
 SYMBOLS = bars_maker.TICKERS
@@ -66,7 +66,7 @@ def _tick_names(frame):
 def _training_table(root, given, tick_file):
     """The training's way: its history and whole-day table from the bar folder (wm2_l1f.day2 on
     files via l1labels.bar_load), its whole-day tick file, l1feat.assemble and l1feat.write."""
-    code = full.full_code()
+    code = inputs.research()
     labels, w = code.labels, code.w
     need = labels.needed(labels.calendar(), labels.bar_names(str(given.bars))[0], DAY)
     body = (given.reference / "splits.jsonl").read_bytes()
@@ -94,7 +94,7 @@ def _training_table(root, given, tick_file):
 @pytest.fixture(scope="module")
 def day(tmp_path_factory):
     root = tmp_path_factory.mktemp("parity")
-    labels = full.full_code().labels
+    labels = inputs.research().labels
     cal = labels.calendar()
     i = cal.index(DAY)
     folder = root / "bars"
@@ -391,7 +391,7 @@ def test_audit_values_v11_cannot_cast_are_refused(day, tmp_path):
 
 
 def test_the_open_day_2026_11_17_passes_the_date_rule(tmp_path):
-    labels = full.full_code().labels
+    labels = inputs.research().labels
     cal = labels.calendar()
     i = cal.index("2026-11-17")
     for d in cal[i - labels.HIST:i + 1]:

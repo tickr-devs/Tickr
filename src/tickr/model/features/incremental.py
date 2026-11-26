@@ -1,8 +1,9 @@
 """The table code's rows of one minute without rebuilding the whole market's day at every minute.
 
-`full.table_rows` hands the pinned `day2` every bar of the day so far, for every ticker of the
-market, at every minute: 27-40 s per minute at 11,000 tickers (#826). `DayTable.rows` gives
-exactly the same rows (every column of `day2`'s table, bit for bit) from two parts:
+`LiveContext.table_rows` (`tickr.model.features.full`) hands the context's feature-only `day2`
+every bar of the day so far, for every ticker of the market, at every minute: 27-40 s per minute
+at 11,000 tickers (#826). `DayTable.rows` gives exactly the same rows (every column of that
+table, bit for bit) in the same live date context, from two parts:
 
 1. THE MARKET PART, carried minute by minute over every ticker (`Market`). `day2` reads the
    whole market for seven columns and for the row rule, and for nothing else:
@@ -21,7 +22,7 @@ exactly the same rows (every column of `day2`'s table, bit for bit) from two par
    in the same order as `np.cumsum`; a rank of one column is that column of the frame's rank).
    That is about 60 lines that copy the pinned text; `tests/model/test_incremental.py` compares
    them with `day2` on randomized markets at every tested minute.
-2. THE TICKER PART, the pinned `day2` itself, run on the whole day so far of the cohort only (the
+2. THE TICKER PART, the context's `day2` itself, run on the whole day so far of the cohort only (the
    tickers with a row at m), in chunks of at most TOPN tickers with SPY and QQQ (the market
    columns read them). Every other column of a row is a function of that ticker's own bars, its
    previous close, its history days and the two ETFs: `day2` computes them per ticker (rolling
@@ -38,10 +39,12 @@ cumulative dollar volume changes the last close, and EWMs of different spans nee
 states), so the per-ticker columns keep the whole day of their ticker and the market columns are
 carried by `Market`.
 
-Late or corrected bars: `rows` takes the day's bars so far as `full.table_rows` does and consumes
-the minutes after the last one. When a bar of a consumed minute was added, removed or changed
-since (the row count and a sum of row hashes of those minutes differ), the market part consumes
-the whole day again from 04:00 (`rebuilds`), so the rows are always those of the bars handed in.
+Late or corrected bars: `rows` takes the day's bars so far as `LiveContext.table_rows` does
+(with their receipts: a bar received after the minute's cutoff is left out, the minute's bounds
+refuse first) and consumes the minutes after the last one. When a bar of a consumed minute was
+added, removed or changed since (the row count and a sum of row hashes of those minutes
+differ), the market part consumes the whole day again from 04:00 (`rebuilds`), so the rows are
+always those of the bars handed in.
 Minute index m counts from 04:00 New York, as in the training.
 """
 
@@ -51,6 +54,7 @@ from typing import Any
 
 from tickr.model import features as base
 from tickr.model.errors import ModelRefused
+from tickr.model.features import full
 
 # The seven columns of a row that the whole market decides (part 1 of the docstring).
 MARKET_COLUMNS = ("inl", "nin", "in2", "r_chg", "r_rv", "r_rng", "brup")
@@ -71,12 +75,13 @@ def _rank(col: Any) -> Any:
 
 
 class Market:
-    """The whole market's carried values, one minute at a time (part 1)."""
+    """The whole market's carried values, one minute at a time (part 1). `w`: the table code
+    module of a live context (its settings: TOPN, MINP, SESS)."""
 
-    def __init__(self, state: base.DayState, types: set[str] | None) -> None:
+    def __init__(self, w: Any, state: base.DayState, types: set[str] | None) -> None:
         import numpy as np
 
-        self.w = base.table_code()
+        self.w = w
         self.state, self.types = state, types
         self.tick = np.array([], dtype=object)
         self.where: dict[str, int] = {}  # ticker -> index in tick
@@ -247,11 +252,11 @@ def chunk_state(state: base.DayState, names: Any) -> base.DayState:
     return sub
 
 
-def chunk_rows(day: str, minute: int, frame: Any, state: base.DayState,
+def chunk_rows(ctx: full.LiveContext, minute: int, frame: Any, state: base.DayState,
                types: set[str] | None, want: Any) -> Any:
-    """The pinned day2 on one chunk's bars: the rows of `minute` of the tickers `want`, in
-    their order, or None when one of them has no row (run in a worker process too)."""
-    t = base._day2(frame, day, state, types, want=True)[0]
+    """The context's day2 on one chunk's bars: the rows of `minute` of the tickers `want`, in
+    their order, or None when one of them has no row."""
+    t = ctx.table(frame, state, types)
     if t is None:
         return None
     t = t.loc[t.m == minute]
@@ -259,22 +264,25 @@ def chunk_rows(day: str, minute: int, frame: Any, state: base.DayState,
     return t if len(t) == len(want) else None
 
 
-def _job(*args: Any) -> Any:
-    """chunk_rows in a worker: a refusal comes back as (cause, detail), raised again here."""
+def _job(market_day: Any, policy: str, *args: Any) -> Any:
+    """chunk_rows in a worker, in the worker's own live context of the same day and policy
+    (`full.live_context`): a refusal comes back as (cause, detail), raised again here."""
     try:
-        return chunk_rows(*args)
+        return chunk_rows(full.live_context(market_day, policy), *args)
     except ModelRefused as exc:
         return (exc.cause, exc.detail)
 
 
 class DayTable:
-    """The rows of each closed minute of one day; see the module docstring. `state` / `types`
-    as `features.minute_rows` takes them. Minutes are closed in increasing order. `workers`:
-    processes that run the chunks of part 2 side by side (1 = in this process)."""
+    """The rows of each closed minute of one day; see the module docstring. `context`: the live
+    date context of the day (`full.live_context`). `state` / `types` as `features.minute_rows`
+    takes them. Minutes are closed in increasing order. `workers`: processes that run the
+    chunks of part 2 side by side (1 = in this process), each in its own context of the day."""
 
-    def __init__(self, day: str, state: base.DayState, types: set[str] | None,
-                 workers: int = 1) -> None:
-        self.day, self.state, self.types = day, state, types
+    def __init__(self, context: full.LiveContext, state: base.DayState,
+                 types: set[str] | None, workers: int = 1) -> None:
+        self.context = context
+        self.day, self.state, self.types = context.day, state, types
         self.workers = workers
         self.pool: Any = None
         self.last = -1  # the last minute asked for
@@ -284,7 +292,7 @@ class DayTable:
 
     def _reset(self) -> None:
         """Forget every consumed minute: the next close consumes the day from 04:00."""
-        self.market = Market(self.state, self.types)
+        self.market = Market(self.context.code.w, self.state, self.types)
         self.frames: list[Any] = []  # the consumed bars (bars_frame rows), minute by minute
         self.codes: list[Any] = []  # a number per ticker for each consumed row (fast selection)
         self.code: dict[str, int] = {}
@@ -301,9 +309,10 @@ class DayTable:
         h = pd.util.hash_pandas_object(frame[list(HASHED)], index=False).to_numpy(np.uint64)
         return int(h.sum(dtype=np.uint64))
 
-    def rows(self, rows: Any, minute: int, chunk: int | None = None) -> Any:
-        """The table code's rows of `minute` (as `full.table_rows`) from the day's bars so far;
-        bars after `minute` refuse. `chunk`: tickers per pinned call (default and most TOPN).
+    def rows(self, rows: Any, minute: int, cutoff: Any, chunk: int | None = None) -> Any:
+        """The table code's rows of `minute` (as `LiveContext.table_rows`) from the day's bars
+        received by `cutoff` (the minute's bounds first, see `LiveContext.received_bars`); bars
+        after `minute` refuse. `chunk`: tickers per pinned call (default and most TOPN).
         A bar of a consumed minute that was added, removed or changed since (a late or
         corrected bar) makes the market part consume the day again from 04:00 (`rebuilds`):
         the rows stay those of the bars handed in, as with the whole-day call."""
@@ -316,6 +325,7 @@ class DayTable:
         t0 = time.perf_counter()
         if not self.last < minute < w.NM:
             raise ModelRefused("minute_order", f"{minute} after {self.last}")
+        rows = self.context.received_bars(rows, minute, cutoff)
         start = pd.Timestamp(self.day, tz=base.NEW_YORK).value
         if (rows.window_start.to_numpy() >= start + (base.DAY_START_MINUTE + minute + 1)
                 * base.NS_PER_MINUTE).any():
@@ -328,7 +338,8 @@ class DayTable:
             self.rebuilds += 1
             old[:] = False
         new = rows[~old]
-        frame = base.bars_frame(new, self.day)  # refuses bad bars before anything is consumed
+        # refuses bad bars before anything is consumed
+        frame = base.bars_frame(new, self.day, w.NM)
         if (frame.m > minute).any():
             raise ModelRefused("bar_after_minute", f"minute {minute}")
         try:
@@ -370,7 +381,7 @@ class DayTable:
             want = names[k:k + size]
             sub = day[np.isin(codes, [self.code[t] for t in want] + etf)]
             every = np.array(sorted(set(want) | set(w.ETF)), dtype=object)
-            jobs.append((self.day, minute, sub, chunk_state(self.state, every), self.types, want))
+            jobs.append((minute, sub, chunk_state(self.state, every), self.types, want))
         if self.workers > 1 and len(jobs) > 1:
             if self.pool is None:
                 import multiprocessing
@@ -378,12 +389,15 @@ class DayTable:
 
                 self.pool = ProcessPoolExecutor(
                     self.workers, mp_context=multiprocessing.get_context("spawn"))
-            parts = list(self.pool.map(_job, *zip(*jobs, strict=True)))
+            ctx = self.context
+            parts = list(self.pool.map(_job, [ctx.market_day] * len(jobs),
+                                       [ctx.session_policy] * len(jobs),
+                                       *zip(*jobs, strict=True)))
             for p in parts:
                 if isinstance(p, tuple):
                     raise ModelRefused(*p)
         else:
-            parts = [chunk_rows(*job) for job in jobs]
+            parts = [chunk_rows(self.context, *job) for job in jobs]
         if any(p is None for p in parts):
             raise ModelRefused("incremental_row_missing", f"minute {minute}")
         t = pd.concat(parts, ignore_index=True)

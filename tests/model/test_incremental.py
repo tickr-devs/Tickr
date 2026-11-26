@@ -1,10 +1,13 @@
 """The incremental table (`features.incremental.DayTable`) against the training's way: for every
-tested minute, the rows of `full.table_rows` (the pinned day2 on the whole market's day so far)
-and of the incremental path are the same frame, bit for bit (check_exact), on randomized markets
-larger than the list depth (see model_market)."""
+tested minute, the rows of `LiveContext.table_rows` (the live context's feature-only day2 on the
+whole market's day so far) and of the incremental path are the same frame, bit for bit
+(check_exact), on randomized markets larger than the list depth (see model_market)."""
 
 from __future__ import annotations
 
+import datetime
+
+import model_inputs as inputs
 import model_market as synthetic
 import pandas as pd
 import pytest
@@ -19,6 +22,25 @@ DAYS = [d.date().isoformat() for d in pd.bdate_range(end="2026-11-18", periods=H
 # Closed minutes (from 04:00): pre-market, the regular open and its first lists, mid-day, a
 # minute right before a session's last row minute, after a flatten (no rows), post-market.
 MINUTES = (45, 335, 336, 480, 690, 708, 709, 721, 800, 953)
+CUTOFF_LAG = datetime.timedelta(seconds=5)  # the receipt cutoff after the minute's mark
+
+
+def _context(today):
+    return full.live_context(inputs.market_day(today))
+
+
+def _cutoff(today, m):
+    return _context(today).mark(m) + CUTOFF_LAG
+
+
+def _cut(bars, today, m):
+    """The day's bars through `m`, each received one second after its minute ends."""
+    return inputs.received_bars(synthetic.cut(bars, today, m))
+
+
+def _whole(cut, today, m, state, types):
+    """The whole-market call: the context's table rows of `m`."""
+    return _context(today).table_rows(cut, m, state, types, _cutoff(today, m))
 
 
 @pytest.fixture(scope="module", params=[11, 12])
@@ -26,8 +48,7 @@ def world(request):
     days = synthetic.market(DAYS, TICKERS, request.param)
     today, bars = days[-1]
     state = features.history(days[:-1], {}, today, None)
-    want = {m: full.table_rows(synthetic.cut(bars, today, m), today, m, state, None)
-            for m in MINUTES}
+    want = {m: _whole(_cut(bars, today, m), today, m, state, None) for m in MINUTES}
     return today, bars, state, want
 
 
@@ -44,11 +65,12 @@ def _same(got, want):
 def test_every_minute_equals_the_whole_market_prefix(world, chunk, workers):
     """Part 2 in one chunk or in several (in worker processes too): the same rows."""
     today, bars, state, want = world
-    table = incremental.DayTable(today, state, None, workers)
+    table = incremental.DayTable(_context(today), state, None, workers)
     rows = 0
     try:
         for m in MINUTES:
-            rows += _same(table.rows(synthetic.cut(bars, today, m), m, chunk), want[m])
+            rows += _same(table.rows(_cut(bars, today, m), m, _cutoff(today, m), chunk),
+                          want[m])
     finally:
         table.close()
     assert rows > 0 and table.rebuilds == 0
@@ -57,39 +79,64 @@ def test_every_minute_equals_the_whole_market_prefix(world, chunk, workers):
 def test_minutes_one_by_one_and_a_types_filter(world):
     today, bars, state, _ = world
     types = set(bars.ticker.unique()[::3]) | {"SPY"}
-    table = incremental.DayTable(today, state, types)
+    table = incremental.DayTable(_context(today), state, types)
     for m in range(331, 337):
-        cut = synthetic.cut(bars, today, m)
-        _same(table.rows(cut, m), full.table_rows(cut, today, m, state, types))
+        cut = _cut(bars, today, m)
+        _same(table.rows(cut, m, _cutoff(today, m)), _whole(cut, today, m, state, types))
 
 
 def test_a_changed_or_late_consumed_bar_starts_the_market_part_again(world):
     """A corrected bar of a consumed minute, then a bar that arrives after its minute was
     consumed: the rows are those of the bars handed in, as with the whole-day call."""
     today, bars, state, _ = world
-    table = incremental.DayTable(today, state, None)
-    table.rows(synthetic.cut(bars, today, 340), 340)
-    cut = synthetic.cut(bars, today, 341).copy()
+    table = incremental.DayTable(_context(today), state, None)
+    table.rows(_cut(bars, today, 340), 340, _cutoff(today, 340))
+    cut = _cut(bars, today, 341).copy()
     early = cut.index[cut.window_start == cut.window_start.min()][0]
     cut.loc[early, "close"] *= 1.01
-    _same(table.rows(cut, 341), full.table_rows(cut, today, 341, state, None))
+    _same(table.rows(cut, 341, _cutoff(today, 341)), _whole(cut, today, 341, state, None))
     assert table.rebuilds == 1
-    late = synthetic.cut(bars, today, 343)
+    late = _cut(bars, today, 343)
     first = late.index[late.window_start == late.window_start.max()][0]
-    table.rows(late.drop(index=first), 343)  # the corrected close is back: started again
+    # the corrected close is back: started again
+    table.rows(late.drop(index=first), 343, _cutoff(today, 343))
     assert table.rebuilds == 2
-    cut = synthetic.cut(bars, today, 344)
-    _same(table.rows(cut, 344), full.table_rows(cut, today, 344, state, None))
+    cut = _cut(bars, today, 344)
+    _same(table.rows(cut, 344, _cutoff(today, 344)), _whole(cut, today, 344, state, None))
     assert table.rebuilds == 3
 
 
 def test_minutes_in_order_and_no_bar_after_the_minute(world):
     today, bars, state, _ = world
-    table = incremental.DayTable(today, state, None)
+    table = incremental.DayTable(_context(today), state, None)
     with pytest.raises(ModelRefused) as e:
-        table.rows(synthetic.cut(bars, today, 341), 340)
+        table.rows(_cut(bars, today, 341), 340, _cutoff(today, 341))
     assert e.value.cause == "bar_after_minute"
-    table.rows(synthetic.cut(bars, today, 340), 340)
+    table.rows(_cut(bars, today, 340), 340, _cutoff(today, 340))
     with pytest.raises(ModelRefused) as e:
-        table.rows(synthetic.cut(bars, today, 340), 340)
+        table.rows(_cut(bars, today, 340), 340, _cutoff(today, 340))
     assert e.value.cause == "minute_order"
+
+
+def test_the_minute_s_bounds_and_receipts_hold_as_in_the_context(world):
+    """The live context's bounds refuse before anything is consumed; a bar received after the
+    cutoff is left out, as `LiveContext.table_rows` leaves it out."""
+    today, bars, state, _ = world
+    ctx = _context(today)
+    table = incremental.DayTable(ctx, state, None)
+    cut = _cut(bars, today, 340)
+    for when, cause in ((ctx.mark(340) - CUTOFF_LAG, "cutoff_before_mark"),
+                        (_cutoff(today, 340).replace(tzinfo=None), "cutoff_not_aware")):
+        with pytest.raises(ModelRefused) as e:
+            table.rows(cut, 340, when)
+        assert e.value.cause == cause
+    with pytest.raises(ModelRefused) as e:
+        table.rows(cut.drop(columns=[full.RECEIPT_COLUMN]), 340, _cutoff(today, 340))
+    assert e.value.cause == "receipt_missing"
+    assert table.closed == -1 and table.last == -1
+    spy = cut.index[(cut.ticker == "SPY") & (cut.window_start == cut.window_start.max())][0]
+    late = cut.copy()
+    late.loc[spy, full.RECEIPT_COLUMN] += 10 * 60 * 10**9  # received ten minutes later
+    got = table.rows(late, 340, _cutoff(today, 340))
+    _same(got, _whole(late, today, 340, state, None))
+    _same(_whole(late.drop(index=spy), today, 340, state, None), got)
