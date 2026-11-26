@@ -9,6 +9,7 @@ import sqlite3
 import sys
 import tomllib
 from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -28,9 +29,9 @@ from tickr.research import (
     report,
     slippage,
 )
+from tickr.research import gate as gate_report
 from tickr.research.collar import collar_report
 from tickr.research.errors import ResearchError
-from tickr.research.gate import gate, load_trades
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
 from tickr.research.records import load_records, write_records
@@ -151,11 +152,16 @@ def _parser() -> argparse.ArgumentParser:
     places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
 
-    p = sub.add_parser("gate", help="R23 Step 0: the gate's numeric criteria, both money lines")
+    p = sub.add_parser("gate", help="R23 Step 0: descriptive gate report, both money lines")
     p.add_argument("--trades", type=Path, required=True,
-                   help="CSV: day, session, result_pct, cost_pct (research/gate.py)")
+                   help="CSV, one row per actual sized trade (docs/research.md, research/gate.py)")
+    p.add_argument("--covered-days", type=Path, required=True,
+                   help="CSV `day`: calendar trading days with data, the rest is missing coverage")
+    p.add_argument("--start", required=True, help="first day of the frozen period, YYYY-MM-DD")
+    p.add_argument("--end", required=True,
+                   help="last day of the frozen period, YYYY-MM-DD; the months are anchored here")
     p.add_argument("--all-sessions-usd", required=True,
-                   help="position size of the all-sessions money line, USD")
+                   help="position size of the hypothetical all-sessions money line, USD")
     p.add_argument("--model-version", required=True, help="the model version's name")
     p.add_argument("--results", choices=("simulated", "real"), required=True,
                    help="what the trades are: simulated (exam) or real fills")
@@ -200,10 +206,22 @@ def _gate(args: argparse.Namespace) -> dict:
     except InvalidOperation as exc:
         raise ResearchError(f"--all-sessions-usd is not a number: {args.all_sessions_usd!r}") \
             from exc
-    result = gate(load_trades(args.trades), bot_config.load(args.config).risk
-                  .position_notional_cap_usd, all_sessions, settings.gate_positive_months,
-                  settings.gate_window_months, settings.gate_drop_best_percent)
-    return report.write_gate(result, args.model_version, args.results, args.out, places)
+    try:
+        start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
+    except ValueError as exc:
+        raise ResearchError("--start and --end must be YYYY-MM-DD") from exc
+    cfg = bot_config.load(args.config)
+    directory = (cfg.root / cfg.session.calendar_file).parent
+    calendar = SessionCalendar.load(directory)
+    frozen = {"start": start.isoformat(), "end": end.isoformat(),
+              "calendar_files_sha256": gate_report.calendar_fingerprint(directory),
+              "calendar_coverage": [[a.isoformat(), b.isoformat()] for a, b in calendar.coverage]}
+    trades = gate_report.load_trades(args.trades)
+    result = gate_report.gate(trades, gate_report.load_covered_days(args.covered_days), start, end,
+                              gate_report.trading_day_test(calendar),
+                              cfg.risk.position_notional_cap_usd, all_sessions, settings)
+    return report.write_gate(result, args.model_version, args.results, args.out, places, trades,
+                             frozen, settings)
 
 
 def _filter(records, spec: str | None):

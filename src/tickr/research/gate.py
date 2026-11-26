@@ -1,118 +1,204 @@
-"""R23 Step 0: the numeric part of the gate before real money (docs/promotion.md).
+"""R23 Step 0 gate report: an offline, DESCRIPTIVE report on one model version's closed trades.
 
-Input CSV, one row per closed trade of one model version on its sealed period (the caller picks
-the rows; the tool cannot tell which months the model saw). It follows the trades shape of the
-`sizing` report (`day`, `session`, `result_pct`) and adds `cost_pct`. Header required, other
-columns (such as `outcome` and `p_<name>`) ignored:
-  day         trading day, YYYY-MM-DD
-  session     `regular` or `extended`
-  result_pct  the trade's net result AFTER costs, percent of its notional (signed)
-  cost_pct    the costs already taken off result_pct, percent of its notional (0 or more)
+Nothing is promoted from it and it never says a gate is passed: binding promotion criteria are
+set with the owner (docs/promotion.md). The full contract is in docs/research.md ("gate").
 
-The repository has no fee model (the replay and the backtest are gross), so the gate adds no cost
-of its own: whoever produced the results applied them, and `cost_pct` states how much, so a gross
-file cannot pass unseen. Results are scaled to the two money lines of docs/promotion.md: main
-session (`regular` rows) at the position cap, all sessions (every row) at the all-sessions size.
+Frozen before evaluation: an explicit --start and --end and the repository's session calendar
+(its files are hashed into the summary). Every month the report looks at is anchored to --end.
 
-Three numeric criteria, each checked on both lines; a criterion passes only when both pass:
-  net        net after costs above 0 on the whole period;
-  months     net above 0 in at least K of the last M calendar months (ending with the month of the
-             last trade; a month without trades on the line has net 0, not in plus);
-  drop_best  net still above 0 after the best X percent of trades by result are removed (the
-             count is rounded up, so any X above 0 removes at least one trade).
-The other R23 items are not numbers: they are listed as checked by hand and never passed here.
+Inputs:
+- trades CSV, one row per actual sized trade (columns in TRADE_COLUMNS). Results are AFTER the
+  costs the row lists; the report charges nothing more, except the bid/ask spread of a row whose
+  result does not include it (`spread_in_result` false), once. An empty cost cell is UNKNOWN,
+  `0` is a valid zero; an unknown cost makes the line inconclusive, never a guessed zero.
+- covered-days CSV (`day`): the calendar trading days on which the producer had data and ran the
+  model. A calendar trading day missing from it is missing coverage; a covered day without a
+  trade is an observed day with zero trades.
+
+Cost sign: every cost column is in the row's return units and positive when it reduced the result
+(fees and spread are never negative; slippage below 0 is a price improvement).
+
+Spread-only baseline (paired, same rows, notionals and dates): each trade replaced by a reference
+that enters and exits at the same midpoint and pays only the row's `spread`, so its result is
+`-spread`. `net - baseline` is what the model earned beyond paying the spread.
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import math
 from collections import defaultdict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from tickr.calendar import FILE_PATTERN, CalendarCause, CalendarRefused, SessionCalendar, ny_date_of
 from tickr.research.errors import ResearchError
+from tickr.research.settings import ResearchSettings
 
-COLUMNS = ("day", "session", "result_pct", "cost_pct")
+TRADE_COLUMNS = ("trade_id", "symbol", "session", "entry_time", "exit_time", "notional_usd",
+                 "return_units", "result", "fees", "slippage", "spread", "spread_in_result",
+                 "cost_provenance", "cost_version")
 SESSIONS = ("regular", "extended")
+RETURN_UNITS = ("pct_of_notional", "usd")
+# broker_fills: real fills, the spread is inside the fill prices; simulated: a model's fills.
+PROVENANCES = ("broker_fills", "simulated")
+BOOLEANS = {"true": True, "false": False}
+COST_SIGN = "positive reduces the result (slippage below 0 is a price improvement)"
 PERCENT = Decimal(100)  # unit factor: percent to fraction
 MONTHS_PER_YEAR = 12  # calendar constant
 ZERO = Decimal(0)
 MANUAL = ("every feature available live (R33 parity)", "stop chosen", "decision frequency chosen")
+HOLDS, NOT_HOLDS, INCONCLUSIVE = "holds", "does not hold", "inconclusive"
+OBSERVED, INSUFFICIENT, OUTSIDE = "observed", "insufficient_coverage", "outside_period"
 
 
 class GateRefused(ResearchError):
-    """The gate cannot be computed. `cause` is one of the class constants."""
+    """The report cannot be computed. `cause` is one of the class constants."""
 
-    EMPTY_PERIOD = "empty_period"
     MISSING_COLUMN = "missing_column"
     NOT_FINITE = "not_finite"
     BAD_VALUE = "bad_value"
-    TOO_FEW_MONTHS = "too_few_months"
+    OUTSIDE_PERIOD = "outside_period"
+    NOT_COVERED = "not_covered"
+    LIMIT = "limit_breach"
+    DUPLICATE = "duplicate"
 
     def __init__(self, cause: str, detail: str) -> None:
-        super().__init__(f"gate refused ({cause}): {detail}")
+        super().__init__(f"gate report refused ({cause}): {detail}")
         self.cause = cause
 
 
 @dataclass(frozen=True)
 class Trade:
-    day: date
+    trade_id: str
+    symbol: str
     session: str
-    result_pct: Decimal
-    cost_pct: Decimal
+    entry_time: datetime
+    exit_time: datetime
+    notional_usd: Decimal
+    return_units: str
+    result: Decimal
+    fees: Decimal | None  # None = unknown
+    slippage: Decimal | None
+    spread: Decimal | None
+    spread_in_result: bool
+    cost_provenance: str
+    cost_version: str
+
+    @property
+    def day(self) -> date:
+        return ny_date_of(self.entry_time)
+
+    def usd(self, value: Decimal | None, scale: Decimal = Decimal(1)) -> Decimal | None:
+        """A value in this row's return units as dollars, times `scale` (hypothetical size)."""
+        if value is None:
+            return None
+        dollars = value if self.return_units == "usd" else self.notional_usd * value / PERCENT
+        return dollars * scale
+
+    @property
+    def spread_charged(self) -> Decimal | None:
+        """Spread the report charges: none when the result already includes it."""
+        return ZERO if self.spread_in_result else self.spread
+
+    @property
+    def known_costs(self) -> bool:
+        return None not in (self.fees, self.slippage, self.spread_charged)
+
+    def net(self, scale: Decimal = Decimal(1)) -> Decimal | None:
+        if not self.known_costs:
+            return None
+        return self.usd(self.result - self.spread_charged, scale)
+
+
+@dataclass(frozen=True)
+class MonthCoverage:
+    month: str  # YYYY-MM
+    trading_days: int | None  # calendar trading days of the whole month; None outside the period
+    covered_days: int
+    coverage: Decimal  # covered / trading days of the whole month (a partial month counts so)
+    status: str  # OBSERVED, INSUFFICIENT or OUTSIDE
 
 
 @dataclass(frozen=True)
 class Month:
-    month: str  # YYYY-MM
+    month: str
+    status: str
     trades: int
     net: Decimal
     in_plus: bool
 
 
 @dataclass(frozen=True)
+class Tail:
+    percent: Decimal
+    trades: int
+    net: Decimal
+    share_pct: Decimal | None  # of the line's net; None when the net is not above 0
+
+
+@dataclass(frozen=True)
 class Line:
     name: str
-    position_usd: Decimal
-    sessions: str  # "regular" or "all" or "all (regular only: no extended trades)"
+    label: str  # "descriptive" or "hypothetical"
+    sizing: str
+    sessions: str
     trades: int
+    unknown_cost_trades: int
     days: int
     days_in_plus: int
     earned: Decimal
     lost: Decimal
     net: Decimal
-    costs: Decimal
+    fees: Decimal | None  # None: a cost the producer did not report (unknown)
+    slippage: Decimal | None
+    spread_in_results: Decimal | None  # spread already inside the results, not charged again
+    spread_charged: Decimal | None  # spread this report charged (rows without it in the result)
+    baseline_net: Decimal | None
+    net_minus_baseline: Decimal | None
     months: tuple[Month, ...]
     months_in_plus: int
-    months_needed: int
     dropped: int
     net_without_best: Decimal
-
-    @property
-    def passed(self) -> dict[str, bool]:
-        return {"net": self.net > 0, "months": self.months_in_plus >= self.months_needed,
-                "drop_best": self.net_without_best > 0}
+    tails: tuple[Tail, ...]
+    checks: dict[str, str]  # check name -> HOLDS, NOT_HOLDS or INCONCLUSIVE
+    causes: tuple[str, ...]  # why the line is inconclusive, empty otherwise
 
 
 @dataclass(frozen=True)
 class Gate:
-    first_day: date
-    last_day: date
-    window: tuple[str, ...]
+    start: date
+    end: date
+    trading_days: int
+    covered_days: int
+    coverage: Decimal
+    window: tuple[MonthCoverage, ...]
     lines: tuple[Line, ...]
-    criteria: dict[str, bool]  # each numeric criterion, passed on both lines
+    provenance: dict[str, int]  # "provenance version (spread in result: x)" -> trades
 
     @property
-    def numeric_passed(self) -> bool:
-        return all(self.criteria.values())
+    def conclusive(self) -> bool:
+        return not any(line.causes for line in self.lines)
 
 
-def _number(path: Path, n: int, column: str, raw: str | None) -> Decimal:
+def _text(path: Path, n: int, row: dict, column: str) -> str:
+    value = (row[column] or "").strip()
+    if not value:
+        raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: {column} is empty")
+    return value
+
+
+def _number(path: Path, n: int, row: dict, column: str, *, optional: bool = False
+            ) -> Decimal | None:
+    raw = (row[column] or "").strip()
+    if optional and not raw:
+        return None
     try:
-        value = Decimal((raw or "").strip())
+        value = Decimal(raw)
     except InvalidOperation as exc:
         raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: {column} is not a number") from exc
     if not value.is_finite():
@@ -120,30 +206,108 @@ def _number(path: Path, n: int, column: str, raw: str | None) -> Decimal:
     return value
 
 
-def load_trades(path: Path) -> list[Trade]:
+def _choice(path: Path, n: int, row: dict, column: str, allowed: Iterable[str]) -> str:
+    value = (row[column] or "").strip()
+    if value not in allowed:
+        raise GateRefused(GateRefused.BAD_VALUE,
+                          f"{path}:{n}: {column} must be one of {', '.join(allowed)}")
+    return value
+
+
+def _time(path: Path, n: int, row: dict, column: str) -> datetime:
+    try:
+        value = datetime.fromisoformat(_text(path, n, row, column))
+    except ValueError as exc:
+        raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: {column} is not ISO 8601") \
+            from exc
+    if value.tzinfo is None:
+        raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: {column} has no UTC offset")
+    return value
+
+
+def _rows(path: Path, columns: Iterable[str]) -> Iterable[tuple[int, dict]]:
     with open(path, newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        missing = [c for c in COLUMNS if c not in (reader.fieldnames or [])]
+        missing = [c for c in columns if c not in (reader.fieldnames or [])]
         if missing:
             raise GateRefused(GateRefused.MISSING_COLUMN, f"{path}: {', '.join(missing)}")
-        out = []
-        for n, row in enumerate(reader, start=2):
-            try:
-                day = date.fromisoformat((row["day"] or "").strip())
-            except ValueError as exc:
-                raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: day is not YYYY-MM-DD") \
-                    from exc
-            if row["session"] not in SESSIONS:
-                raise GateRefused(GateRefused.BAD_VALUE,
-                                  f"{path}:{n}: session must be one of {', '.join(SESSIONS)}")
-            result = _number(path, n, "result_pct", row["result_pct"])
-            cost = _number(path, n, "cost_pct", row["cost_pct"])
-            if cost < 0:
-                raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: cost_pct is below 0")
-            out.append(Trade(day, row["session"], result, cost))
-    if not out:
-        raise GateRefused(GateRefused.EMPTY_PERIOD, f"{path}: no trades")
+        yield from enumerate(reader, start=2)
+
+
+def load_trades(path: Path) -> list[Trade]:
+    """Trades CSV (docs/research.md). An empty file is allowed: the report says inconclusive."""
+    out: list[Trade] = []
+    seen: set[str] = set()
+    for n, row in _rows(path, TRADE_COLUMNS):
+        trade_id = _text(path, n, row, "trade_id")
+        if trade_id in seen:
+            raise GateRefused(GateRefused.DUPLICATE, f"{path}:{n}: trade_id {trade_id} repeats")
+        seen.add(trade_id)
+        costs = {c: _number(path, n, row, c, optional=True) for c in ("fees", "slippage", "spread")}
+        for column in ("fees", "spread"):
+            if costs[column] is not None and costs[column] < 0:
+                raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: {column} is below 0")
+        trade = Trade(
+            trade_id=trade_id, symbol=_text(path, n, row, "symbol"),
+            session=_choice(path, n, row, "session", SESSIONS),
+            entry_time=_time(path, n, row, "entry_time"),
+            exit_time=_time(path, n, row, "exit_time"),
+            notional_usd=_number(path, n, row, "notional_usd"),
+            return_units=_choice(path, n, row, "return_units", RETURN_UNITS),
+            result=_number(path, n, row, "result"), **costs,
+            spread_in_result=BOOLEANS[_choice(path, n, row, "spread_in_result", BOOLEANS)],
+            cost_provenance=_choice(path, n, row, "cost_provenance", PROVENANCES),
+            cost_version=_text(path, n, row, "cost_version"),
+        )
+        if trade.notional_usd <= 0:
+            raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: notional_usd is not above 0")
+        if trade.exit_time < trade.entry_time:
+            raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: exit_time is before entry_time")
+        if trade.cost_provenance == "broker_fills" and not trade.spread_in_result:
+            raise GateRefused(GateRefused.BAD_VALUE,
+                              f"{path}:{n}: broker fills always include the spread")
+        out.append(trade)
     return out
+
+
+def load_covered_days(path: Path) -> set[date]:
+    out: set[date] = set()
+    for n, row in _rows(path, ("day",)):
+        try:
+            day = date.fromisoformat(_text(path, n, row, "day"))
+        except ValueError as exc:
+            raise GateRefused(GateRefused.BAD_VALUE, f"{path}:{n}: day is not YYYY-MM-DD") \
+                from exc
+        if day in out:
+            raise GateRefused(GateRefused.DUPLICATE, f"{path}:{n}: day {day} repeats")
+        out.add(day)
+    return out
+
+
+def trading_day_test(calendar: SessionCalendar) -> Callable[[date], bool]:
+    """True on a calendar trading day (half days included), False on a weekend or closure;
+    any other calendar refusal (out of coverage, invalid file) propagates."""
+
+    def is_trading_day(day: date) -> bool:
+        try:
+            calendar.day(day)
+        except CalendarRefused as refused:
+            if refused.cause in (CalendarCause.WEEKEND, CalendarCause.HOLIDAY):
+                return False
+            raise
+        return True
+
+    return is_trading_day
+
+
+def calendar_fingerprint(directory: Path) -> dict[str, str]:
+    """sha256 of each calendar file, frozen into the summary."""
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(directory.iterdir()) if FILE_PATTERN.match(p.name)}
+
+
+def _days(first: date, last: date) -> list[date]:
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
 
 
 def _month_index(day: date) -> int:
@@ -155,55 +319,147 @@ def _month_name(index: int) -> str:
     return f"{year:04d}-{month + 1:02d}"
 
 
-def _line(name: str, sessions: str, usd: Decimal, trades: list[Trade], window: list[int],
-          positive_months: int, drop_percent: Decimal) -> Line:
-    if not trades:
-        raise GateRefused(GateRefused.EMPTY_PERIOD, f"no trades for the {name} line")
-    results = [(t.day, usd * t.result_pct / PERCENT) for t in trades]
+def _month_days(index: int) -> tuple[date, date]:
+    year, month = divmod(index, MONTHS_PER_YEAR)
+    first = date(year, month + 1, 1)
+    nxt = date(year + (month + 1) // MONTHS_PER_YEAR, (month + 1) % MONTHS_PER_YEAR + 1, 1)
+    return first, nxt - timedelta(days=1)
+
+
+def _fraction(part: int, whole: int) -> Decimal:
+    return Decimal(part) / Decimal(whole) if whole else ZERO
+
+
+def _coverage(start: date, end: date, covered: set[date], months: int, minimum: Decimal,
+              is_trading_day: Callable[[date], bool]) -> tuple[MonthCoverage, ...]:
+    out = []
+    for index in range(_month_index(end) - months + 1, _month_index(end) + 1):
+        first, last = _month_days(index)
+        if last < start:
+            out.append(MonthCoverage(_month_name(index), None, 0, ZERO, OUTSIDE))
+            continue
+        days = [d for d in _days(first, last) if is_trading_day(d)]
+        hits = sum(1 for d in days if d in covered)
+        share = _fraction(hits, len(days))
+        out.append(MonthCoverage(_month_name(index), len(days), hits, share,
+                                 OBSERVED if share * PERCENT >= minimum else INSUFFICIENT))
+    return tuple(out)
+
+
+def _outcome(value: bool, causes: list[str]) -> str:
+    if causes:
+        return INCONCLUSIVE
+    return HOLDS if value else NOT_HOLDS
+
+
+def _line(name: str, label: str, sizing: str, sessions: str,
+          rows: list[tuple[Trade, Decimal]], window: tuple[MonthCoverage, ...],
+          period_ok: bool, settings: ResearchSettings) -> Line:
+    known = [(t, s) for t, s in rows if t.known_costs]
+    nets = [(t.day, t.net(s)) for t, s in known]
     per_day: dict[date, Decimal] = defaultdict(Decimal)
-    per_month: dict[int, list[Decimal]] = defaultdict(list)
-    for day, value in results:
+    per_month: dict[str, list[Decimal]] = defaultdict(list)
+    for day, value in nets:
         per_day[day] += value
-        per_month[_month_index(day)].append(value)
-    earned = sum((v for _, v in results if v > 0), ZERO)
-    lost = -sum((v for _, v in results if v < 0), ZERO)
-    months = tuple(Month(_month_name(m), len(per_month[m]), sum(per_month[m], ZERO),
-                         sum(per_month[m], ZERO) > 0) for m in window)
-    dropped = math.ceil(len(results) * drop_percent / PERCENT)
-    best = sorted((v for _, v in results), reverse=True)[:dropped]
+        per_month[_month_name(_month_index(day))].append(value)
+    earned = sum((v for _, v in nets if v > 0), ZERO)
+    lost = -sum((v for _, v in nets if v < 0), ZERO)
+    net = earned - lost
+    ranked = sorted((v for _, v in nets), reverse=True)
+
+    def top(percent: Decimal) -> tuple[int, Decimal]:
+        count = math.ceil(len(ranked) * percent / PERCENT)
+        return count, sum(ranked[:count], ZERO)
+
+    tails = []
+    for percent in settings.gate_tail_percents:
+        count, value = top(percent)
+        tails.append(Tail(percent, count, value, value / net * PERCENT if net > 0 else None))
+    dropped, best = top(settings.gate_drop_best_percent)
+    spreads = [t.usd(t.spread, s) for t, s in rows]
+    baseline = None if None in spreads else -sum(spreads, ZERO)
+    months = tuple(Month(m.month, m.status, len(per_month[m.month]), sum(per_month[m.month], ZERO),
+                         sum(per_month[m.month], ZERO) > 0) for m in window)
+    months_in_plus = sum(1 for m in months if m.in_plus)
+
+    causes = []
+    if not period_ok:
+        causes.append("insufficient coverage of the period")
+    if not known:
+        causes.append("zero assessable trades")
+    if len(known) < len(rows):
+        causes.append(f"{len(rows) - len(known)} trades with an unknown cost")
+    month_causes = [*causes, *(f"{m.month} {m.status}" for m in window if m.status != OBSERVED)]
+    checks = {
+        "net_after_costs_above_0": _outcome(net > 0, causes),
+        "sensitivity_k_of_m_months": _outcome(
+            months_in_plus >= settings.gate_positive_months, month_causes),
+        "sensitivity_without_best": _outcome(net - best > 0, causes),
+        "net_above_spread_only_baseline": _outcome(
+            baseline is not None and net > baseline,
+            [*causes, *(["unknown spread"] if baseline is None else [])]),
+    }
+
+    def total(field: str, only_in_result: bool | None = None) -> Decimal | None:
+        values = [t.usd(getattr(t, field), s) for t, s in rows
+                  if only_in_result is None or t.spread_in_result == only_in_result]
+        return None if None in values else sum(values, ZERO)
+
     return Line(
-        name=name, position_usd=usd, sessions=sessions, trades=len(results), days=len(per_day),
+        name=name, label=label, sizing=sizing, sessions=sessions, trades=len(rows),
+        unknown_cost_trades=len(rows) - len(known), days=len(per_day),
         days_in_plus=sum(1 for v in per_day.values() if v > 0), earned=earned, lost=lost,
-        net=earned - lost, costs=sum((usd * t.cost_pct / PERCENT for t in trades), ZERO),
-        months=months, months_in_plus=sum(1 for m in months if m.in_plus),
-        months_needed=positive_months, dropped=dropped,
-        net_without_best=earned - lost - sum(best, ZERO),
+        net=net, fees=total("fees"), slippage=total("slippage"),
+        spread_in_results=total("spread", True), spread_charged=total("spread", False),
+        baseline_net=baseline, net_minus_baseline=None if baseline is None else net - baseline,
+        months=months, months_in_plus=months_in_plus, dropped=dropped, net_without_best=net - best,
+        tails=tuple(tails), checks=checks, causes=tuple(causes),
     )
 
 
-def gate(trades: list[Trade], cap_usd: Decimal, all_sessions_usd: Decimal, positive_months: int,
-         window_months: int, drop_percent: Decimal) -> Gate:
-    if not trades:
-        raise GateRefused(GateRefused.EMPTY_PERIOD, "no trades")
-    for usd in (cap_usd, all_sessions_usd):
-        if not usd.is_finite():
-            raise GateRefused(GateRefused.NOT_FINITE, f"money line size {usd} is not finite")
-        if usd <= 0:
-            raise GateRefused(GateRefused.BAD_VALUE, f"money line size {usd} is not above 0")
-    first = min(t.day for t in trades)
-    last = max(t.day for t in trades)
-    span = _month_index(last) - _month_index(first) + 1
-    if span < window_months:
-        raise GateRefused(GateRefused.TOO_FEW_MONTHS,
-                          f"{first} to {last} spans {span} calendar months, the gate needs "
-                          f"{window_months}")
-    window = list(range(_month_index(last) - window_months + 1, _month_index(last) + 1))
+def gate(trades: list[Trade], covered: set[date], start: date, end: date,
+         is_trading_day: Callable[[date], bool], cap_usd: Decimal, all_sessions_usd: Decimal,
+         settings: ResearchSettings) -> Gate:
+    if start > end:
+        raise GateRefused(GateRefused.BAD_VALUE, f"--start {start} is after --end {end}")
+    if not all_sessions_usd.is_finite():
+        raise GateRefused(GateRefused.NOT_FINITE, "the all-sessions size is not finite")
+    if all_sessions_usd <= 0:
+        raise GateRefused(GateRefused.BAD_VALUE, "the all-sessions size is not above 0")
+    period = [d for d in _days(start, end) if is_trading_day(d)]
+    for day in sorted(covered):
+        if not start <= day <= end:
+            raise GateRefused(GateRefused.OUTSIDE_PERIOD, f"covered day {day} is outside "
+                              f"{start}..{end}")
+        if not is_trading_day(day):
+            raise GateRefused(GateRefused.BAD_VALUE, f"covered day {day} is not a trading day")
+    for t in trades:
+        if not start <= t.day <= end:
+            raise GateRefused(GateRefused.OUTSIDE_PERIOD,
+                              f"trade {t.trade_id} on {t.day} is outside {start}..{end}")
+        if t.day not in covered:
+            raise GateRefused(GateRefused.NOT_COVERED,
+                              f"trade {t.trade_id} on {t.day}, a day not in the covered days")
+        if t.notional_usd > cap_usd:
+            raise GateRefused(GateRefused.LIMIT, f"trade {t.trade_id} notional {t.notional_usd} "
+                              f"is above the position cap {cap_usd}")
+    share = _fraction(len(covered), len(period))
+    period_ok = share * PERCENT >= settings.gate_min_coverage_percent
+    window = _coverage(start, end, covered, settings.gate_window_months,
+                       settings.gate_min_coverage_percent, is_trading_day)
     extended = any(t.session != "regular" for t in trades)
+    one = Decimal(1)
     lines = (
-        _line("main_session", "regular", cap_usd, [t for t in trades if t.session == "regular"],
-              window, positive_months, drop_percent),
-        _line("all_sessions", "all" if extended else "all (regular only: no extended trades)",
-              all_sessions_usd, trades, window, positive_months, drop_percent),
+        _line("main_session", "descriptive", "actual sized notional", "regular",
+              [(t, one) for t in trades if t.session == "regular"], window, period_ok, settings),
+        _line("all_sessions", "hypothetical", f"every trade rescaled to {all_sessions_usd} USD",
+              "all" if extended else "all (regular only: no extended trades)",
+              [(t, all_sessions_usd / t.notional_usd) for t in trades], window, period_ok,
+              settings),
     )
-    criteria = {name: all(line.passed[name] for line in lines) for name in lines[0].passed}
-    return Gate(first, last, tuple(_month_name(m) for m in window), lines, criteria)
+    provenance: dict[str, int] = defaultdict(int)
+    for t in trades:
+        provenance[f"{t.cost_provenance} {t.cost_version} (spread in result: "
+                   f"{str(t.spread_in_result).lower()})"] += 1
+    return Gate(start, end, len(period), len(covered), share, window, lines,
+                dict(sorted(provenance.items())))

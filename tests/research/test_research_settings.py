@@ -24,6 +24,7 @@ def test_repository_settings_load():
     assert settings.horizons_minutes == (1, 5, 15, 30, 60)
     assert settings.atr_period >= 1
     assert (settings.gate_positive_months, settings.gate_window_months) == (2, 3)
+    assert settings.gate_tail_percents == (1, 5, 10)
 
 
 def _table(**changes):
@@ -46,6 +47,11 @@ def _table(**changes):
         ({"gate_drop_best_percent": 100}, "0..100"),
         ({"gate_drop_best_percent": -1}, "0..100"),
         ({"gate_drop_best_percent": "1"}, "must be a number"),
+        ({"gate_tail_percents": []}, "non-empty list"),
+        ({"gate_tail_percents": [5, 1]}, "strictly increase"),
+        ({"gate_tail_percents": [0, 5]}, "gate_tail_percents must be in"),
+        ({"gate_min_coverage_percent": 0}, "gate_min_coverage_percent must be in"),
+        ({"gate_min_coverage_percent": 101}, "gate_min_coverage_percent must be in"),
     ],
 )
 def test_bad_settings_refused(changes, cause):
