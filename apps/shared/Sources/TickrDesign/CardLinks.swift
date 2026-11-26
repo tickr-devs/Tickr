@@ -161,11 +161,14 @@ public struct CardFooterLink: View {
   public static var rowHeight: CGFloat { Tokens.Size.footerLink }
 }
 
-/// The round chip at the end of a footer link, holding the chevron in `infoText`.
-struct FooterChevronChip: View {
+/// The round chip at the end of a footer link, holding the chevron in `infoText`; also the end of
+/// any row that opens something (the funnel line, the day picker's rows).
+public struct FooterChevronChip: View {
   @Environment(\.footerLinkHovered) private var hovered
 
-  var body: some View {
+  public init() {}
+
+  public var body: some View {
     Chevron()
       .foregroundStyle(Palette.infoText)
       .frame(width: Tokens.Size.footerChip, height: Tokens.Size.footerChip)

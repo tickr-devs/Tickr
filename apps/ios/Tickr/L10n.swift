@@ -300,15 +300,6 @@ enum L10n {
     static func clockET(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("home.clockET", defaultValue: "\(time) ET", bundle: L10n.bundle)
     }
-    static var previousDay: LocalizedStringResource {
-      LocalizedStringResource("home.previousDay", defaultValue: "Previous trading day", bundle: L10n.bundle)
-    }
-    static var nextDay: LocalizedStringResource {
-      LocalizedStringResource("home.nextDay", defaultValue: "Next trading day", bundle: L10n.bundle)
-    }
-    static var backToToday: LocalizedStringResource {
-      LocalizedStringResource("home.backToToday", defaultValue: "Today", bundle: L10n.bundle)
-    }
     static var demoTitle: LocalizedStringResource {
       LocalizedStringResource("home.demoTitle", defaultValue: "Demo day: commands are not sent to the bot",
         bundle: L10n.bundle)
@@ -407,18 +398,37 @@ enum L10n {
   }
 
   enum Flow {
-    /// The funnel's key to the tiles' pink counts.
-    static var droppedKey: LocalizedStringResource {
-      LocalizedStringResource("flow.droppedKey", defaultValue: "−N dropped here", bundle: L10n.bundle)
+    /// Home's funnel card label (IOS2Home).
+    static var funnel: LocalizedStringResource {
+      LocalizedStringResource("flow.funnel", defaultValue: "Funnel", bundle: L10n.bundle)
     }
-    /// The event line's tag for a signal risk refused: "REFUSED".
-    /// Symbols a live-flow stage dropped today, on its tile: "−144".
-    static func dropped(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("flow.dropped", defaultValue: "−\(count)", bundle: L10n.bundle)
+    /// Under the funnel's rings: symbols the screeners found and the entries bought.
+    static func foundBought(_ found: String, _ bought: String) -> LocalizedStringResource {
+      LocalizedStringResource("flow.foundBought", defaultValue: "\(found) found → \(bought) bought", bundle: L10n.bundle)
     }
-    /// VoiceOver label of a tile's dropped count: "144 dropped here today".
-    static func droppedCount(_ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("flow.droppedCount", defaultValue: "\(count) dropped here today", bundle: L10n.bundle)
+    /// Under the funnel's summary: every stop of the day confirmed at the broker.
+    static var allProtected: LocalizedStringResource {
+      LocalizedStringResource("flow.allProtected", defaultValue: "all protected", bundle: L10n.bundle)
+    }
+    /// Under the funnel's summary: some of the day's stops never confirmed ("3 of 4 protected").
+    static func protectedOf(_ verified: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.protectedOf", defaultValue: "\(verified) of \(total) protected", bundle: L10n.bundle)
+    }
+    /// Under the funnel's summary: one open position waits for its broker stop.
+    static var stopPending: LocalizedStringResource {
+      LocalizedStringResource("flow.stopPending", defaultValue: "1 stop pending", bundle: L10n.bundle)
+    }
+    /// Under the funnel's summary: several open positions wait for their broker stops.
+    static func stopsPending(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stopsPending", defaultValue: "\(count) stops pending", bundle: L10n.bundle)
+    }
+    /// VoiceOver hint of the funnel row: a tap opens the funnel sheet.
+    static var funnelHint: LocalizedStringResource {
+      LocalizedStringResource("flow.funnelHint", defaultValue: "Shows each stage's count", bundle: L10n.bundle)
+    }
+    /// The funnel sheet's footer link: the Symbols screen, every symbol by stage.
+    static var symbolsAtEachStage: LocalizedStringResource {
+      LocalizedStringResource("flow.symbolsAtEachStage", defaultValue: "Symbols at each stage", bundle: L10n.bundle)
     }
     /// Card title on Home: the stages a setup passes through.
     static var title: LocalizedStringResource {
@@ -427,28 +437,6 @@ enum L10n {
     /// The flow card's title on a recorded day: nothing on it is live.
     static var titleRecorded: LocalizedStringResource {
       LocalizedStringResource("flow.titleRecorded", defaultValue: "Flow", bundle: L10n.bundle)
-    }
-    static var screen: LocalizedStringResource {
-      LocalizedStringResource("flow.screen", defaultValue: "screen", bundle: L10n.bundle)
-    }
-    static var stocks: LocalizedStringResource {
-      LocalizedStringResource("flow.stocks", defaultValue: "stocks", bundle: L10n.bundle)
-    }
-    static var strategy: LocalizedStringResource {
-      LocalizedStringResource("flow.strategy", defaultValue: "strategy", bundle: L10n.bundle)
-    }
-    static var risk: LocalizedStringResource {
-      LocalizedStringResource("flow.risk", defaultValue: "risk", bundle: L10n.bundle)
-    }
-    static var order: LocalizedStringResource {
-      LocalizedStringResource("flow.order", defaultValue: "order", bundle: L10n.bundle)
-    }
-    static var stop: LocalizedStringResource {
-      LocalizedStringResource("flow.stop", defaultValue: "stop", bundle: L10n.bundle)
-    }
-    /// The risk stage when new entries are blocked.
-    static var blocked: LocalizedStringResource {
-      LocalizedStringResource("flow.blocked", defaultValue: "blocked", bundle: L10n.bundle)
     }
     /// Verified broker stops of all open positions, under the stop stage: "2/3 ✓".
     static func stopsVerified(_ verified: Int, _ total: Int) -> LocalizedStringResource {
@@ -1210,18 +1198,6 @@ enum L10n {
 
   /// The "Watching closely" card (GET /watching).
   enum FlowStages {
-    /// Funnel stage: a fresh quote with a spread within the limit.
-    static var quote: LocalizedStringResource {
-      LocalizedStringResource("flowStages.quote", defaultValue: "quote", bundle: L10n.bundle)
-    }
-    /// Funnel stage: minute bars with enough dollar volume.
-    static var bars: LocalizedStringResource {
-      LocalizedStringResource("flowStages.bars", defaultValue: "bars", bundle: L10n.bundle)
-    }
-    /// Funnel stage: the bot's records against the broker's.
-    static var reconcile: LocalizedStringResource {
-      LocalizedStringResource("flowStages.reconcile", defaultValue: "reconcile", bundle: L10n.bundle)
-    }
     /// Reconcile stage value: the records match the broker ("ok", as on the IOSHome board).
     static var match: LocalizedStringResource {
       LocalizedStringResource("flowStages.match", defaultValue: "ok", bundle: L10n.bundle)

@@ -4591,70 +4591,70 @@
         }
       }
     },
-    "flow.blocked" : {
+    "flow.allProtected" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "blocked"
+            "value" : "all protected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "bloqueado"
+            "value" : "todas protegidas"
           }
         }
       }
     },
-    "flow.dropped" : {
+    "flow.foundBought" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "−%lld"
+            "value" : "%1$@ found → %2$@ bought"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "−%lld"
+            "value" : "%1$@ halladas → %2$@ compradas"
           }
         }
       }
     },
-    "flow.droppedCount" : {
+    "flow.funnel" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld dropped here today"
+            "value" : "Funnel"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld descartados aquí hoy"
+            "value" : "Embudo"
           }
         }
       }
     },
-    "flow.droppedKey" : {
+    "flow.funnelHint" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "−N dropped here"
+            "value" : "Shows each stage's count"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "−N descartados"
+            "value" : "Muestra el recuento de cada etapa"
           }
         }
       }
@@ -4710,19 +4710,19 @@
         }
       }
     },
-    "flow.order" : {
+    "flow.protectedOf" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "order"
+            "value" : "%1$lld of %2$lld protected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "orden"
+            "value" : "%1$lld de %2$lld protegidas"
           }
         }
       }
@@ -4744,40 +4744,6 @@
         }
       }
     },
-    "flow.risk" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "risk"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "riesgo"
-          }
-        }
-      }
-    },
-    "flow.screen" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "screen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "filtro"
-          }
-        }
-      }
-    },
     "flow.stageDetailsHint" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4795,36 +4761,19 @@
         }
       }
     },
-    "flow.stocks" : {
+    "flow.stopPending" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "stocks"
+            "value" : "1 stop pending"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "acciones"
-          }
-        }
-      }
-    },
-    "flow.stop" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "stop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "stop"
+            "value" : "1 stop pendiente"
           }
         }
       }
@@ -4846,6 +4795,23 @@
         }
       }
     },
+    "flow.stopsPending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld stops pending"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld stops pendientes"
+          }
+        }
+      }
+    },
     "flow.stopsVerified" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4863,19 +4829,19 @@
         }
       }
     },
-    "flow.strategy" : {
+    "flow.symbolsAtEachStage" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "strategy"
+            "value" : "Symbols at each stage"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "estrategia"
+            "value" : "Símbolos en cada etapa"
           }
         }
       }
@@ -4910,23 +4876,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Flujo"
-          }
-        }
-      }
-    },
-    "flowStages.bars" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "bars"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "velas"
           }
         }
       }
@@ -4982,40 +4931,6 @@
         }
       }
     },
-    "flowStages.quote" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "quote"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cotización"
-          }
-        }
-      }
-    },
-    "flowStages.reconcile" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "reconcile"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "conciliar"
-          }
-        }
-      }
-    },
     "flowStages.symbolsHint" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5046,23 +4961,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ · %2$@"
-          }
-        }
-      }
-    },
-    "home.backToToday" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Today"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hoy"
           }
         }
       }
@@ -5339,23 +5237,6 @@
         }
       }
     },
-    "home.nextDay" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next trading day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Siguiente día de trading"
-          }
-        }
-      }
-    },
     "home.noPosition" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5420,23 +5301,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ es un día registrado. Sus operaciones están en la pestaña Actividad."
-          }
-        }
-      }
-    },
-    "home.previousDay" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Previous trading day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Día de trading anterior"
           }
         }
       }
