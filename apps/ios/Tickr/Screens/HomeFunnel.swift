@@ -225,13 +225,23 @@ extension FunnelCard {
     guard !states.isEmpty else { return nil }
     let tone = StopState.stageTone(open: open, day: day)
     let symbol = StopState.combinedSymbol(open + day.map(StopState.init))
-    let waiting = open.filter { !$0.isProtected }.count
-    if waiting > 0 {
-      return (waiting == 1 ? L10n.Flow.stopPending : L10n.Flow.stopsPending(waiting), symbol, tone)
+    if let words = Self.unprotectedWords(open) {
+      return (words, symbol, tone)
     }
     let verified = states.filter(\.isProtected).count
     return (verified == states.count ? L10n.Flow.allProtected : L10n.Flow.protectedOf(verified, states.count),
       symbol, tone)
+  }
+
+  /// The words for open positions whose stop is not confirmed, the worst state winning: a stop
+  /// missing or unknown at the broker ("1 stop missing") before one still pending ("2 stops
+  /// pending"); nil when every open stop is verified.
+  static func unprotectedWords(_ open: [StopState]) -> LocalizedStringResource? {
+    let missing = open.filter { $0 == .missing || $0 == .unknown }.count
+    if missing > 0 { return missing == 1 ? L10n.Flow.stopMissing : L10n.Flow.stopsMissing(missing) }
+    let pending = open.filter { $0 == .pending }.count
+    if pending > 0 { return pending == 1 ? L10n.Flow.stopPending : L10n.Flow.stopsPending(pending) }
+    return nil
   }
 
   /// The order stage's count: the flow's, else (only when /flow failed) the status's trades today.
