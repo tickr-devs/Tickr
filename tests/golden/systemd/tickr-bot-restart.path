@@ -6,6 +6,7 @@
 # Rendered by `python -m tickr.runtime render-systemd`; see docs/deploy-server.md.
 [Unit]
 Description=Tickr bot restart request watch
+RequiresMountsFor=/srv/tickr/data
 
 [Path]
 PathExists=/srv/tickr/data/control/restart-request

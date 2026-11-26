@@ -7,23 +7,27 @@
 #   ETC_DIR   folder of bot.toml; ports.env is installed here (default /srv/tickr/etc)
 #   DATA_DIR  host data folder mounted as the containers' data folder (default /srv/tickr/data)
 #
-# Order: (1) render the units, ports.env and limits.env into a scratch folder with
-# `render-systemd` (writes nothing outside it); (2) prove flat with a fresh read-only broker read
+# Order: (0) refuse unless DATA_DIR is an existing folder (never created here) and a mount point (the data disk is in fstab with nofail: an
+# unmounted disk leaves an empty folder on the root disk, and a bot started there has no state;
+# the units also carry RequiresMountsFor=DATA_DIR); (1) render the units, ports.env and
+# limits.env into a scratch folder with `render-systemd` (writes nothing outside it); (2) refuse
+# unless the data folder's owner uid:gid is the image's runtime user (`id -u` and `id -g` in a
+# throwaway container of the preflight service, entrypoint replaced: no job, no broker, no env
+# file read), so the containers can write the bind-mounted data folder; (3) prove flat with a fresh read-only broker read
 # and the database: `require-flat` runs in the bot's own image (compose service `preflight`, so
 # the env file is mounted and sourced as for a real job; compose needs the freshly rendered
 # limits.env for the bot's grace period) and never sends an order; any doubt refuses and nothing
-# is installed; (3) refuse on a restart request left in the control folder (it would restart
-# the bot the moment the path unit starts), then create the control folder (owned by the
-# service account, mode 700); (4) install the files (all or nothing) and reload systemd; (5)
+# is installed; (4) refuse on a restart request left in the control folder (it would restart
+# the bot the moment the path unit starts), then create only the control folder under the
+# verified mount (owned by the image's uid:gid, mode 700); (5) install the files (all or nothing) and reload systemd; (6)
 # enable the timers, the restart request watch and the API. The bot is never started or stopped
 # here: a running job keeps the code it started with, the next scheduled start uses the new
 # units.
 #
 # Overrides (names only): TICKR_UNITS_DIR (default /etc/systemd/system), TICKR_SYSTEMCTL
 # (default systemctl), TICKR_DOCKER (default docker), TICKR_ENV_FILE_HOST (default
-# /run/tickr/env), TICKR_SERVICE_USER (default tickr: the units' User= and the uid the image is
-# built with, so the containers' tickr user). This script never reads the env file, prints the environment or traces the
-# shell (docs/deploy-server.md).
+# /run/tickr/env), TICKR_SERVICE_USER (default tickr: the units' User=), TICKR_MOUNTPOINT (default mountpoint). This script never reads the env file,
+# prints the environment or traces the shell (docs/deploy-server.md).
 set -eu
 
 if [ "$#" -gt 3 ]; then
@@ -37,9 +41,19 @@ user=${TICKR_SERVICE_USER:-tickr}
 units_dir=${TICKR_UNITS_DIR:-/etc/systemd/system}
 systemctl=${TICKR_SYSTEMCTL:-systemctl}
 docker=${TICKR_DOCKER:-docker}
+mountpoint=${TICKR_MOUNTPOINT:-mountpoint}
 TICKR_CONFIG_HOST="$etc/bot.toml"
 TICKR_ENV_FILE_HOST=${TICKR_ENV_FILE_HOST:-/run/tickr/env}
 export TICKR_CONFIG_HOST TICKR_ENV_FILE_HOST
+
+if [ ! -d "$data" ] || [ -L "$data" ]; then
+  echo "refused: data-missing: $data is not an existing folder (it is never created here); nothing was changed" >&2
+  exit 1
+fi
+if ! "$mountpoint" -q "$data"; then
+  echo "refused: data-not-mounted: $data is not a mount point (is the data disk mounted?); nothing was changed" >&2
+  exit 1
+fi
 
 cd "$repo"
 scratch=$(mktemp -d)
@@ -54,6 +68,22 @@ fi
 set -a
 . "$scratch/limits.env"
 set +a
+compose_id() { # id -u or id -g of the image's runtime user, in a throwaway container
+  "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm --no-deps -T \
+    --entrypoint id preflight "$1"
+}
+if ! image_uid=$(compose_id -u) || ! image_gid=$(compose_id -g); then
+  echo "refused: image-user-unknown: cannot read the image's runtime uid and gid; nothing was changed" >&2
+  exit 1
+fi
+if ! data_owner=$(stat -c %u:%g "$data"); then
+  echo "refused: data-owner-unknown: cannot read the owner of $data; nothing was changed" >&2
+  exit 1
+fi
+if [ "$data_owner" != "$image_uid:$image_gid" ]; then
+  echo "refused: data-owner-mismatch: $data is owned by $data_owner but the image runs as $image_uid:$image_gid (build with TICKR_UID and TICKR_GID of the data folder's owner); nothing was changed" >&2
+  exit 1
+fi
 if ! "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm preflight \
     python -m tickr.runtime --config /app/config/bot.toml require-flat; then
   echo "refused: the bot is not proven flat (see the require-flat line above); nothing was changed" >&2
@@ -71,7 +101,13 @@ if [ -e "$request" ]; then
   echo "refused: a bot restart request is waiting at $request; read it, remove it, deploy again" >&2
   exit 1
 fi
-install -d -m 700 -o "$user" -g "$user" "$(dirname "$request")"
+control=$(dirname "$request")
+if [ "$(dirname "$control")" != "$data" ]; then
+  echo "refused: the request folder $control is not directly under $data; nothing was installed" >&2
+  exit 1
+fi
+# Only the control folder is created, under the verified mount, owned by the image's user.
+install -d -m 700 -o "$image_uid" -g "$image_gid" "$control"
 
 # Install all or nothing: stage every file as a hidden temp file inside its target folder (a
 # copy that fails removes the staged files and installs nothing), then rename each into place

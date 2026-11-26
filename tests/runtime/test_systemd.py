@@ -178,11 +178,20 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
         'mkdir -p "$out"; : > "$out/tickr-bot.service"; : > "$out/tickr-bot.timer"\n'
         'echo "PathExists=$data/control/restart-request" > "$out/tickr-bot-restart.path"\n'
         ': > "$out/ports.env"; echo TICKR_BOT_EXIT_TIMEOUT=1 > "$out/limits.env"\n', "utf-8")
+    # The fake docker answers `--entrypoint id preflight -u|-g` with the uid and gid of
+    # IMAGE_IDS (default: the data folder's owner, this test's own ids) and require-flat with
+    # the flat result.
     docker = tmp_path / "docker"
-    docker.write_text(f"#!/bin/sh\nexit {0 if flat else 1}\n", "utf-8")
+    docker.write_text(
+        '#!/bin/sh\ncase "$*" in\n'
+        f'  *"--entrypoint id preflight -u") echo "${{IMAGE_UID:-{os.getuid()}}}" ;;\n'
+        f'  *"--entrypoint id preflight -g") echo "${{IMAGE_GID:-{os.getgid()}}}" ;;\n'
+        f'  *) exit {0 if flat else 1} ;;\nesac\n', "utf-8")
+    mounted = tmp_path / "mountpoint"
+    mounted.write_text('#!/bin/sh\n[ "$1" = -q ] && [ ! -e "$2/.not-mounted" ]\n', "utf-8")
     systemctl = tmp_path / "systemctl"
     systemctl.write_text(f'#!/bin/sh\necho "$@" >> {tmp_path}/systemctl.log\n', "utf-8")
-    for script in (python, docker, systemctl):
+    for script in (python, docker, systemctl, mounted):
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
     units, etc = tmp_path / "units", tmp_path / "etc"
     units.mkdir()
@@ -190,19 +199,69 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
     return repo, docker, systemctl, units, etc
 
 
-def _script_env(units: Path, systemctl: Path, docker: Path) -> dict[str, str]:
+def _script_env(units: Path, systemctl: Path, docker: Path, **extra: str) -> dict[str, str]:
     return {"PATH": "/usr/bin:/bin", "TICKR_UNITS_DIR": str(units),
             "TICKR_SYSTEMCTL": str(systemctl), "TICKR_DOCKER": str(docker),
-            "TICKR_SERVICE_USER": pwd.getpwuid(os.getuid()).pw_name}
+            "TICKR_MOUNTPOINT": str(docker.parent / "mountpoint"),
+            "TICKR_SERVICE_USER": pwd.getpwuid(os.getuid()).pw_name, **extra}
 
 
-def _deploy(tmp_path: Path, flat: bool) -> subprocess.CompletedProcess:
+def _deploy(tmp_path: Path, flat: bool, **extra: str) -> subprocess.CompletedProcess:
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, flat)
     data = tmp_path / "data"
     data.mkdir(exist_ok=True)
     return subprocess.run(
         [str(SCRIPT), str(repo), str(etc), str(data)], capture_output=True, text=True,
+        env=_script_env(units, systemctl, docker, **extra), check=False)
+
+
+def _nothing_changed(tmp_path: Path) -> None:
+    assert list((tmp_path / "units").iterdir()) == [] and list((tmp_path / "etc").iterdir()) == []
+    assert not (tmp_path / "systemctl.log").exists()
+    assert not (tmp_path / "data" / "control").exists()
+
+
+@pytest.mark.parametrize("make", [None, "file", "link"])
+def test_deploy_script_refuses_and_never_creates_a_missing_data_folder(tmp_path, make):
+    data = tmp_path / "data"
+    if make == "file":
+        data.write_text("", "utf-8")
+    elif make == "link":
+        (tmp_path / "elsewhere").mkdir()
+        data.symlink_to(tmp_path / "elsewhere")
+    repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
+    done = subprocess.run(
+        [str(SCRIPT), str(repo), str(etc), str(data)], capture_output=True, text=True,
         env=_script_env(units, systemctl, docker), check=False)
+    assert done.returncode == 1 and "refused: data-missing" in done.stderr
+    assert list(units.iterdir()) == [] and list(etc.iterdir()) == []
+    assert not (tmp_path / "systemctl.log").exists()
+    assert make is not None or not data.exists()
+    assert not (tmp_path / "elsewhere" / "control").exists()
+
+
+def test_deploy_script_refuses_when_the_data_disk_is_not_mounted(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / ".not-mounted").touch()
+    done = _deploy(tmp_path, flat=True)
+    assert done.returncode == 1 and "refused: data-not-mounted" in done.stderr
+    _nothing_changed(tmp_path)
+
+
+@pytest.mark.parametrize("extra", [{"IMAGE_UID": "1000"}, {"IMAGE_GID": "1000"}])
+def test_deploy_script_refuses_when_the_image_user_does_not_own_the_data(tmp_path, extra):
+    if os.getuid() == 1000 or os.getgid() == 1000:
+        extra = {name: "1500" for name in extra}
+    done = _deploy(tmp_path, flat=True, **extra)
+    assert done.returncode == 1 and "refused: data-owner-mismatch" in done.stderr
+    _nothing_changed(tmp_path)
+
+
+def test_every_unit_that_uses_the_data_folder_requires_its_mount(config_path, repo, tmp_path):
+    out = tmp_path / "out"
+    _render(config_path, out)
+    for unit in [*out.glob("*.service"), *out.glob("*.path")]:
+        assert "RequiresMountsFor=/srv/tickr/data\n" in unit.read_text("utf-8"), unit.name
 
 
 def test_deploy_script_refuses_when_not_flat(tmp_path):
@@ -263,6 +322,7 @@ def test_the_nightly_fetch_unit_runs_the_compose_service_at_the_configured_time(
 def test_deploy_script_installs_nothing_when_a_copy_fails(tmp_path):
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
     missing = tmp_path / "no-such-etc"  # the units stage fine, then the etc files cannot be copied
+    (tmp_path / "data").mkdir()
     done = subprocess.run(
         [str(SCRIPT), str(repo), str(missing), str(tmp_path / "data")], capture_output=True,
         text=True, check=False, env=_script_env(units, systemctl, docker))
@@ -295,7 +355,8 @@ def test_the_restart_unit_restarts_once_with_the_bots_grace_and_never_retries(
         "/bin/mv -fT /srv/tickr/data/control/restart-request "
         "/srv/tickr/data/control/restart-request.taken",
         "/usr/bin/docker compose -f /srv/tickr/repo/ops/docker/compose.yaml -p tickr "
-        f"--profile jobs restart -t {cfg.runtime.bot_exit_timeout_seconds} bot",
+        "--profile jobs up -d --force-recreate --no-deps --pull never --no-build "
+        f"-t {cfg.runtime.bot_exit_timeout_seconds} bot",
         "/bin/cat /srv/tickr/data/control/restart-request.taken"]
     assert "Type=oneshot\n" in service
     assert not re.search(r"(?m)^(Restart|StartLimit|ExecStartPre|ExecStopPost)", service)
