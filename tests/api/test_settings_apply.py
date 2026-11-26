@@ -351,3 +351,18 @@ def test_promote_refuses_a_pending_value_the_config_loader_rejects(served, monke
     assert not written and "would not load" in note and "stream_reserved_symbols" in note
     assert _untouched(server, root) == before
     assert _history(server)[0]["changes"][0]["state"] == "pending"
+
+
+@pytest.mark.parametrize("key", [
+    "environments.production.trading_enabled", 'environments."production".trading_enabled',
+    "Environments.Production.x", "run.environment", "no_such_table.key"])
+def test_apply_refuses_a_closed_or_unclassified_key_and_writes_nothing(served, key):
+    # S2: apply checks through draft_document, so a closed key (any depth or spelling) and a key
+    # with no class are refused before anything is journaled or written.
+    server, root = served
+    before = (root / "config/bot.toml").read_bytes()
+    resp, body = _apply(server, ("platform", key, "true"), biometric=True)
+    assert resp.status == 400
+    assert ("CLOSED_KEY" if key != "no_such_table.key" else "UNKNOWN_KEY") in body["cause"]
+    assert (root / "config/bot.toml").read_bytes() == before
+    assert _history(server) == []

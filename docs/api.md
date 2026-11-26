@@ -782,7 +782,9 @@ a `settings-history-v1` document.
     its status lists no position and no open reservation (a working entry reserves its planned
     loss), and it is fresh, or the bot is stopped with no process holding its lock. Otherwise
     `409 conflict` with the cause. It reaches the bot through a safe restart (stop-bot, then
-    start-bot: normal startup and reconciliation); nothing is reloaded in a running bot;
+    start-bot: normal startup and reconciliation); nothing is reloaded in a running bot. So a
+    `when_flat` strategy setting is written while the bot is flat, but a bot that keeps running
+    trades with its old values until it restarts;
   - a setting that needs retraining is refused (`409`): it applies only with a newly trained
     model.
   A change of a key that has a pending change replaces it (the old one becomes `superseded`),
@@ -790,6 +792,8 @@ a `settings-history-v1` document.
 - `biometric_confirmed` is the app's word that the owner passed Face ID (Touch ID on the Mac)
   for this change; the server cannot check it. The protection is the paired device token on
   the remote port plus this flag; the local port has no token, as for every other route.
+  The loopback port is therefore trusted for loosening: there, `biometric_confirmed` is whatever
+  the caller says.
 - Writes are atomic and journaled first: under an exclusive lock (`<history file>.lock`; held by
   another writer: `409 conflict`, nothing changed) every listed owner file must still have its
   `base` digest (else `409`: read GET /settings/values again); each candidate file must load
