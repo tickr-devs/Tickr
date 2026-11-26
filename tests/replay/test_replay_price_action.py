@@ -8,13 +8,15 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from tickr.replay.__main__ import session_clock
+from tickr import config
+from tickr.replay.__main__ import platform_sizing, session_clock
 from tickr.replay.engine import ExitReason, SignalOutcome, replay
 from tickr.replay.settings import load_settings
 from tickr.strategy import price_action_v1 as pa
 from tickr.types import Bar
 
 ROOT = Path(__file__).resolve().parents[2]
+BOT_HISTORY = config.load(ROOT / "config" / "bot.toml").market_data.history_sessions
 NY = ZoneInfo("America/New_York")
 SYMBOL = "ABCD"
 PRIOR_DAYS = [date(2026, 11, n) for n in (6, 9, 10, 11, 12)]
@@ -51,13 +53,14 @@ def today() -> list[Bar]:
 
 def test_real_strategy_enters_and_trades():
     values = tomllib.loads((ROOT / "strategies" / "price-action-v1" / "strategy.toml").read_text())
-    settings = load_settings(ROOT / "config" / "replay.toml")
+    settings = load_settings(ROOT / "config" / "replay.toml", BOT_HISTORY)
     bars = [b for day in PRIOR_DAYS for b in flat_day(day)] + today()
     result = replay(
         lambda: pa.create(values),
         {SYMBOL: bars},
         settings,
         session_clock(ROOT / "config" / "bot.toml"),
+        platform_sizing(ROOT / "config" / "bot.toml"),
     )
     assert (result.strategy, result.version) == ("price-action-v1", "1")
     assert result.verdict_counts.get("ENTER", 0) >= 1

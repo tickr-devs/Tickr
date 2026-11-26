@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import shutil
+import tomllib
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -43,6 +45,7 @@ COMMENTED_TOML = [
     ROOT / "config" / "replay.toml",
     ROOT / "config" / "backtest.toml",
     ROOT / "config" / "demo.toml",
+    ROOT / "config" / "settings_schema.toml",
     *sorted((ROOT / "strategies").glob("*/strategy.toml")),
 ]
 
@@ -51,6 +54,42 @@ COMMENTED_TOML = [
                          ids=lambda p: str(p.relative_to(ROOT)))
 def test_every_key_is_commented(path: Path):
     assert config.uncommented_keys(path.read_text("utf-8")) == []
+
+
+# The planned loss and the notional cap per trade live only in bot.toml [risk] (owner
+# 2026-11-15, backlog T2/T3): no other file may set them again, under any name they had.
+SIZING_KEYS = {"planned_loss_usd", "max_position_notional_usd", "position_notional_cap_usd"}
+SIZING_HOME = {(BOT, ("risk", "planned_loss_usd")), (BOT, ("risk", "position_notional_cap_usd"))}
+
+
+def _sizing_keys(table: object, path: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    """Every key path in a parsed TOML document that is a sizing key or a [sizing] table."""
+    if isinstance(table, dict):
+        items = list(table.items())
+    elif isinstance(table, list):
+        items = list(enumerate(table))
+    else:
+        return []
+    found: list[tuple[str, ...]] = []
+    for key, value in items:
+        here = (*path, str(key))
+        if key in SIZING_KEYS or key == "sizing":
+            found.append(here)
+        found.extend(_sizing_keys(value, here))
+    return found
+
+
+def test_sizing_limits_live_only_in_the_bot_risk_table():
+    found = {(path, keys) for path in COMMENTED_TOML + [ROOT / "config" / "research.toml"]
+             for keys in _sizing_keys(tomllib.loads(path.read_text("utf-8")))}
+    assert found == SIZING_HOME
+
+
+def test_a_strategy_sizing_key_that_reappears_is_detected():
+    text = "[liquidity]\nmax_spread_ratio = 1\n\n[sizing]\nplanned_loss_usd = 50\n"
+    assert _sizing_keys(tomllib.loads(text)) == [("sizing",), ("sizing", "planned_loss_usd")]
+    text = "[entry]\nmax_position_notional_usd = 1000\n"
+    assert _sizing_keys(tomllib.loads(text)) == [("entry", "max_position_notional_usd")]
 
 
 def test_uncommented_key_is_detected():
@@ -64,10 +103,105 @@ def test_hash_inside_string_is_not_a_comment():
 
 
 def test_environments_have_identical_keys():
-    import tomllib
     envs = tomllib.loads(BOT.read_text("utf-8"))["environments"]
     key_sets = {name: set(table) for name, table in envs.items()}
     assert len({frozenset(k) for k in key_sets.values()}) == 1, key_sets
+
+
+# Every setting has one source of truth (owner 2026-11-15, backlog T7). A key name that sits in two
+# different homes (file + table) is refused unless the name is listed below with the reason the
+# two keys mean different things. The Sandbox and Production tables repeat equal values on
+# purpose (spec section 4): they count as one home. Every strategy.toml counts as one file, and
+# settings_schema.toml only describes keys that live elsewhere, so it is not scanned.
+# Add a name here only after checking that the two keys really are different settings.
+SAME_NAME_DIFFERENT_MEANING = {
+    "api_key_variable": "different services: [advisor] Anthropic, [massive] Massive",
+    "request_timeout_seconds": "different servers: [advisor] one proposal, [api] one idle client",
+    "history_dir": "different caches: [market_data] live bars, [massive] model minute files",
+    "history_max_pages": "different routes: [probe] probe H2, [environments.*] display read",
+    "enabled": "different switches: [model] the trained model, [trailing_stop] stop tightening",
+    "atr_period": "research.toml measures moves in ATR itself, not the strategy indicator",
+    "environment": "config/demo.toml names the demo run, bot.toml [run] the real one",
+    "observers": "config/demo.toml is the demo copy of bot.toml [strategy] observers",
+    "max_open_positions": "config/demo.toml is the demo copy of bot.toml [risk]",
+    "max_session_dollar_volume_usd": "rules of different strategies ([liquidity] vs [signal])",
+    "lookback_bars": "different strategy features: [breakout] and [spike]",
+    "window_minutes": "different strategy features: [no_progress] and [signal]",
+    "block": "structural key of strategy rule lists, not a setting",
+    "percent": "structural key of strategy rule lists, not a setting",
+    "kind": "structural key of demo scenario lists, not a setting",
+    "legs": "structural key of demo scenario lists, not a setting",
+    "role": "structural key of demo scenario lists, not a setting",
+    "symbol": "structural key of demo scenario lists, not a setting",
+}
+
+
+Home = tuple[str, str]  # (source file, table path)
+
+
+def _key_homes(table: dict, source: str, path: tuple[str, ...] = ()) -> list[tuple[str, Home]]:
+    """(key name, home) for every setting; environment tables and list items collapse."""
+    found: list[tuple[str, Home]] = []
+    for key, value in table.items():
+        if isinstance(value, dict):
+            name = "*" if path[-1:] == ("environments",) else key
+            found += _key_homes(value, source, (*path, name))
+        elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
+            for item in value:
+                found += _key_homes(item, source, (*path, f"{key}[]"))
+        else:
+            found.append((key, (source, ".".join(path))))
+    return found
+
+
+def _repeated_keys(files: list[tuple[str, str]]) -> dict[str, set[Home]]:
+    """Key names that sit in more than one home; `files` is (source name, TOML text) pairs.
+
+    Pairs with one source name (every strategy.toml) count as one file."""
+    homes: dict[str, set[Home]] = {}
+    for source, text in files:
+        for key, home in _key_homes(tomllib.loads(text), source):
+            homes.setdefault(key, set()).add(home)
+    return {key: found for key, found in homes.items() if len(found) > 1}
+
+
+def _scanned_config() -> list[tuple[str, str]]:
+    paths = [p for p in sorted((ROOT / "config").glob("*.toml"))
+             if p.name != "settings_schema.toml"]
+    files = [(str(p.relative_to(ROOT)), p.read_text("utf-8")) for p in paths]
+    files += [("strategies/*", p.read_text("utf-8"))
+              for p in sorted((ROOT / "strategies").glob("*/strategy.toml"))]
+    return files
+
+
+def test_no_setting_is_repeated_under_the_same_name():
+    repeated = _repeated_keys(_scanned_config())
+    unexplained = {k: sorted(h) for k, h in repeated.items()
+                   if k not in SAME_NAME_DIFFERENT_MEANING}
+    assert unexplained == {}, (
+        "one source of truth: a key sits in two places; keep one, or list it in "
+        "SAME_NAME_DIFFERENT_MEANING with the reason they differ"
+    )
+    stale = sorted(set(SAME_NAME_DIFFERENT_MEANING) - set(repeated))
+    assert stale == [], f"SAME_NAME_DIFFERENT_MEANING has keys no longer repeated: {stale}"
+
+
+def test_the_output_rounding_has_one_home():
+    replay = tomllib.loads((ROOT / "config" / "replay.toml").read_text("utf-8"))
+    homes = {home for key, home in _key_homes(replay, "replay") if key == "output_decimal_places"}
+    assert homes == {("replay", "replay")}
+    assert "output_decimal_places" not in _repeated_keys(_scanned_config())
+
+
+def test_a_key_repeated_in_two_files_or_tables_is_detected_but_environments_are_not():
+    files = [
+        ("a.toml", "[x]\nspeed = 1\n[environments.sandbox]\nlimit = 2\n"
+                   "[environments.production]\nlimit = 2\n"),
+        ("b.toml", "[y]\nspeed = 1\n"),
+    ]
+    assert _repeated_keys(files) == {"speed": {("a.toml", "x"), ("b.toml", "y")}}
+    assert _repeated_keys([("a.toml", "[x]\nspeed = 1\n[y]\nspeed = 1\n")]) == {
+        "speed": {("a.toml", "x"), ("a.toml", "y")}}
 
 
 def test_unknown_key_refused(tmp_path):
@@ -570,3 +704,38 @@ def test_extended_sessions_refused_at_load(tmp_path, key, value, match):
     text = re.sub(rf"(?m)^{key} = \S+", f"{key} = {value}", BOT.read_text("utf-8"))
     with pytest.raises(config.ConfigError, match=match):
         config.load(_copy(tmp_path, text))
+
+
+def test_trailing_stop_ships_off_with_the_backlog_starting_values():
+    trailing = config.load(BOT).trailing_stop
+    assert trailing.enabled is False
+    assert (trailing.atr_multiple, trailing.breakeven_after_r, trailing.min_move_usd) == (
+        Decimal("1.5"), Decimal("1.0"), Decimal(0))
+
+
+@pytest.mark.parametrize("value", ["0", "0.05"])
+def test_trailing_stop_min_move_accepts_zero_and_a_positive_step(tmp_path: Path, value: str):
+    text = BOT.read_text("utf-8")
+    assert "min_move_usd = 0\n" in text
+    cfg = config.load(_copy(tmp_path, text.replace("min_move_usd = 0\n",
+                                                   f"min_move_usd = {value}\n", 1)))
+    assert cfg.trailing_stop.min_move_usd == Decimal(value)
+
+
+@pytest.mark.parametrize(("old", "new"), [
+    ("[trailing_stop]\n", None),
+    ("atr_multiple = 1.5", "atr_multiple = 0"),
+    ("breakeven_after_r = 1.0", "breakeven_after_r = -1"),
+    ("min_move_usd = 0\n", "min_move_usd = -0.01\n"),
+])
+def test_trailing_stop_refuses_on_and_non_positive_values(tmp_path: Path, old: str,
+                                                          new: str | None):
+    text = BOT.read_text("utf-8")
+    if new is None:  # switch it on
+        head, tail = text.split(old, 1)
+        new_text = head + old + tail.replace("enabled = false", "enabled = true", 1)
+    else:
+        assert old in text
+        new_text = text.replace(old, new, 1)
+    with pytest.raises(config.ConfigError, match=r"\[trailing_stop\]"):
+        config.load(_copy(tmp_path, new_text))

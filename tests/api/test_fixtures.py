@@ -16,6 +16,7 @@ import pytest
 
 from tickr.advisor_files import OwnerVerdict
 from tickr.advisor_files import Verdict as HoldoutVerdict
+from tickr.api import alerts as alerts_api
 from tickr.api import contract
 from tickr.api.advisor import NO_FOLDER as NO_ADVISOR_FOLDER
 from tickr.api.contract import (
@@ -123,6 +124,9 @@ from tickr.api.performance import performance
 from tickr.data.base import ScreenerKind
 from tickr.replay.engine import ExitReason
 from tickr.research.records import Admission
+from tickr.runtime.alert_routing import Routing
+from tickr.runtime.alerts import AlertKind
+from tickr.settings_schema import Applies, Cause, Compare, Kind, Loosens, Unit
 from tickr.strategy.base import Verdict
 
 from .samples import T0, account, entry, status
@@ -214,6 +218,30 @@ def documents() -> dict[str, object]:
         "status-response-v1": _response(status(), Decimal("2.000"), False),
         "status-response-v1.minimal": _response(minimal, Decimal("0.250"), False),
         "status-response-v1.stale": _response(status(), Decimal("42.500"), True),
+        # A close_and_stop in progress: exit requests sent, one trade not closed yet.
+        "status-response-v1.closing": _response(status(stop_progress=contract.StopProgress(
+            "5d2a7c9e-1b3f-4a6d-8e0c-7f9b2d4a6c8e", contract.StopMode.CLOSE_AND_STOP,
+            contract.StopStep.CLOSING_POSITIONS, T0, 1)), Decimal("2.000"), False),
+        # Stopped with a position left open (mode leave_open): the last status the bot wrote,
+        # stale now, still lists the position as of the last broker read.
+        "status-response-v1.stopped-left-open": _response(status(
+            bot_state=BotState.STOPPED, entry_block=contract.EntryBlock(
+                "bot_stopped", "The bot is stopped."),
+            recent_commands=(contract.CommandRecord(
+                "6e3b8d0f-2c4a-4b7e-9f1d-8a0c3e5b7d9f", CommandKind.STOP_BOT, T0, T0,
+                contract.CommandOutcome.DONE, "1 trade(s) left open: nothing closes them; "
+                "their broker stops are DAY orders"),),
+            stop_progress=contract.StopProgress(
+                "6e3b8d0f-2c4a-4b7e-9f1d-8a0c3e5b7d9f", contract.StopMode.LEAVE_OPEN,
+                contract.StopStep.STOPPED, T0, 1)), Decimal("3600.000"), True),
+        # Cancel entry: one entry working at the broker with nothing filled yet (2026-11-26).
+        "status-response-v1.working-entry": _response(status(working_entries=(
+            contract.WorkingEntry("KLMN", Decimal("15"), Decimal("9.02"), Decimal("8.78"),
+                                  Decimal("3.60"), EntrySend(
+                                      "ap-0002-e", T0, T0 + timedelta(milliseconds=2),
+                                      contract.SendOutcome.ACKNOWLEDGED,
+                                      contract.SendOutcome.ACKNOWLEDGED, 1, None),
+                                  None, False),)), Decimal("2.000"), False),
         "status-response-v1.unavailable": _response(
             None, None, False, "the bot has not written a status file"),
         "command-accepted-v1": CommandAcceptedV1(command=command, warning=None),
@@ -224,6 +252,10 @@ def documents() -> dict[str, object]:
         "command-accepted-v1.warning": CommandAcceptedV1(
             command=command, warning="the bot does not look alive; the command runs only if "
                                      "the bot reads it before it expires"),
+        # Stop bot with open positions: close them first, then stop (backlog V4).
+        "command-accepted-v1.stop-close-and-stop": CommandAcceptedV1(
+            command=CommandV1("5d2a7c9e-1b3f-4a6d-8e0c-7f9b2d4a6c8e", CommandKind.STOP_BOT,
+                              T0, "api", mode=contract.StopMode.CLOSE_AND_STOP), warning=None),
         "command-accepted-v1.flatten-symbol": CommandAcceptedV1(
             command=CommandV1("8b1e4d2c-6a3f-4e9b-8c7d-2f1a0b9c8d7e", CommandKind.FLATTEN,
                               T0, "api", "ABCD"), warning=None),
@@ -309,6 +341,46 @@ def documents() -> dict[str, object]:
             ConfigSectionV1("run", (
                 ConfigKeyV1("maintain_keep_sessions", "0", "Closed sessions kept "
                             "uncompressed."),)),)),
+        # Settings API (S4): a platform protection limit, a strategy switch, one rule.
+        "settings-schema-v1": contract.SettingsSchemaV1((
+            contract.SettingSpecV1(
+                "platform", "risk.max_daily_loss_usd", Kind.DECIMAL, Unit.USD, "risk.daily_loss",
+                "Daily loss ceiling.", "Límite de pérdida diaria.", Applies.AT_ONCE,
+                Loosens.RAISE, True, False, Decimal("0"), False, None, Decimal("1")),
+            contract.SettingSpecV1(
+                "price-action-v3", "indicators.refuse_when_relative_volume_unavailable",
+                Kind.BOOL, Unit.SWITCH, "strategy.indicators",
+                "Refuse a symbol whose volume history is missing.",
+                "Rechazar un símbolo sin historial de volumen.", Applies.WHEN_FLAT,
+                Loosens.NEVER, False, False, None, True, None, None)), (
+            contract.SettingRuleV1(
+                "platform", "daily_room_below_ceiling", "risk.min_daily_room_usd",
+                Compare.BELOW, "risk.max_daily_loss_usd",
+                "The smallest daily room must be below the daily loss ceiling.",
+                "El margen diario mínimo debe ser inferior al límite de pérdida diaria."),)),
+        "settings-values-v1": contract.SettingsValuesV1((
+            contract.SettingsFileV1("platform", "config/bot.toml", "9" * 64),
+            contract.SettingsFileV1("price-action-v3", "strategies/price-action-v3/strategy.toml",
+                                    "a" * 64)), (
+            contract.SettingValueV1("platform", "risk.max_daily_loss_usd", "50"),
+            contract.SettingValueV1("platform", "risk.max_entry_rest_bars", None),
+            contract.SettingValueV1("price-action-v3",
+                                    "indicators.refuse_when_relative_volume_unavailable",
+                                    "true"))),
+        # A loosening raise (next session, Face ID) and a tightening cut (at once).
+        "settings-draft-v1": contract.SettingsDraftV1(True, (), (
+            contract.SettingChangeV1("platform", "risk.max_daily_loss_usd", "50", "60", True,
+                                     Applies.NEXT_SESSION, True, False),
+            contract.SettingChangeV1("platform", "risk.max_open_positions", "2", "1", True,
+                                     Applies.AT_ONCE, False, False))),
+        "settings-draft-v1.refused": contract.SettingsDraftV1(False, (
+            contract.SettingRefusalV1("platform", "risk.min_daily_room_usd", Cause.RULE_BROKEN,
+                                      "daily_room_below_ceiling: risk.min_daily_room_usd 60 "
+                                      "must be < risk.max_daily_loss_usd 50"),
+            contract.SettingRefusalV1("platform", "risk.max_open_positions", Cause.WRONG_TYPE,
+                                      "expected int as TOML text, got '1.5'")), (
+            contract.SettingChangeV1("platform", "risk.min_daily_room_usd", "10", "60", True,
+                                     Applies.AT_ONCE, False, False),)),
         "settings-v1": SettingsV1(
             "sandbox", "price-action-v1", ("price-action-v1-lookback8",),
             RiskSettings(Decimal("50"), Decimal("2500"), Decimal("300"), 1, Decimal("5"),
@@ -421,6 +493,24 @@ def documents() -> dict[str, object]:
             None, "no machine services on this host ([api] system_services = none)"),
         # Settings > Environment: Sandbox loaded; Production off with a record for an old digest.
         "readiness-v1": _readiness(),
+        # The notification settings: disk-low kept off iMessage; push not built yet.
+        "alerts-v1": contract.AlertsV1((
+            contract.AlertChannelV1(contract.AlertChannel.MAC, True, None),
+            contract.AlertChannelV1(contract.AlertChannel.IMESSAGE, False,
+                                    contract.AlertChannelCause.CHECK_FAILED),
+            contract.AlertChannelV1(contract.AlertChannel.PUSH, False,
+                                    contract.AlertChannelCause.NOT_BUILT)),
+            alerts_api._kinds(Routing(frozenset({(AlertKind.DISK_LOW,
+                                                  contract.AlertChannel.IMESSAGE)}))), None),
+        "alerts-v1.unreadable": contract.AlertsV1((
+            contract.AlertChannelV1(contract.AlertChannel.MAC, False,
+                                    contract.AlertChannelCause.NO_PREFLIGHT),
+            contract.AlertChannelV1(contract.AlertChannel.IMESSAGE, False,
+                                    contract.AlertChannelCause.NO_PREFLIGHT),
+            contract.AlertChannelV1(contract.AlertChannel.PUSH, False,
+                                    contract.AlertChannelCause.NOT_BUILT)),
+            alerts_api._kinds(Routing(frozenset())),
+            "routing-file-unreadable: Expecting value: line 1 column 1 (char 0)"),
         # The Overview's journal card: the latest rows, oldest first; "line #731".
         "journal-v1": JournalV1(731, (
             JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),

@@ -26,8 +26,9 @@ from pathlib import Path
 
 from tickr.api import contract as api
 from tickr.api import reasons
+from tickr.api.causes import safe_cause
 from tickr.api.history import HistoryUnavailable
-from tickr.api.system import NO_HOST, _morning_check, _watchdog
+from tickr.api.system import NO_HOST, _watchdog, morning_check
 from tickr.calendar import ny_date_of
 from tickr.config import (
     SYSTEM_SERVICES_MAC,
@@ -158,7 +159,7 @@ def _clean(settings: ReadinessSettings, today: date,
         count = clean_days(today)
     except (HistoryUnavailable, OSError) as exc:
         return _check(api.ReadinessCode.CLEAN_DAYS, name, UNKNOWN,
-                      cause=str(exc) or type(exc).__name__)
+                      cause=safe_cause(exc))
     value = f"{count} / {settings.clean_days}"
     if count >= settings.clean_days:
         return _check(api.ReadinessCode.CLEAN_DAYS, name, PASS, value)
@@ -168,7 +169,7 @@ def _clean(settings: ReadinessSettings, today: date,
 
 def _preflight(settings: ReadinessSettings, today: date) -> api.ReadinessCheckV1:
     name = settings.config.environment_name
-    morning, cause = _morning_check(settings.preflight_record)
+    morning, cause = morning_check(settings.preflight_record)
     if morning is None:
         return _check(api.ReadinessCode.PREFLIGHT, name, UNKNOWN, cause=cause)
     value = morning.day.isoformat()

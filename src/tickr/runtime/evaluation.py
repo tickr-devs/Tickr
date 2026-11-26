@@ -51,7 +51,14 @@ from tickr.runtime.entries import EntryDesk, daily_loss_room
 from tickr.runtime.market import StreamInbox
 from tickr.runtime.preload import HistoryPreload
 from tickr.runtime.protection import busy
-from tickr.strategy.base import PositionView, Strategy, SymbolContext, Verdict, usable_quote
+from tickr.strategy.base import (
+    PositionView,
+    SizingLimits,
+    Strategy,
+    SymbolContext,
+    Verdict,
+    usable_quote,
+)
 from tickr.types import Bar, Quote
 
 M1 = timedelta(minutes=1)
@@ -408,7 +415,8 @@ class Evaluator:
                   late: bool = False) -> None:
         prior = () if history is None else tuple(history.bars_of(d) for d in history.sessions)
         bars = ([] if history is None else list(history.bars)) + today_bars
-        quote = late_quote if late else self.inbox.latest(symbol)
+        quote, previous = ((late_quote, None) if late
+                           else self.inbox.latest_and_previous(symbol))
         if position is not None and not late:
             # An exit goes out on the strategy's word alone, with no admission to check the
             # quote's age, so a held position is decided only on a quote admission would take
@@ -418,7 +426,7 @@ class Evaluator:
                                  timedelta(seconds=float(risk.max_quote_age_seconds)),
                                  timedelta(seconds=float(risk.max_clock_skew_seconds)))
         context = SymbolContext(symbol, tuple(bars), prior, quote, position, self._budget,
-                                session_open)
+                                session_open, SizingLimits.of(self.config.risk))
         try:
             decision = self.strategy.evaluate(context)
         except Exception as exc:  # noqa: BLE001 - a strategy bug never ends the loop
@@ -436,5 +444,6 @@ class Evaluator:
         # time of this decision: the reads above take time, and the tick's own start would make
         # a quote received meanwhile look like the future and an old one look fresh.
         self.desk.on_decision(decision, bar_start=today_bars[-1].start, quote=quote,
-                              now=self.now())
+                              now=self.now(), last_bar=today_bars[-1],
+                              previous_quote=previous)
         self.contexts.append(context)

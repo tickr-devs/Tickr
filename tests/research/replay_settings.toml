@@ -9,8 +9,6 @@ slippage_min_usd = 0.01
 entry_wait_bars = 2
 # Decimal places for prices, R and percent in CSV and summary outputs; read by replay/report.py.
 output_decimal_places = 4
-# Prior sessions passed to the strategy as history; read by replay/engine.py.
-history_sessions = 2
 # true = synthetic quote around each completed bar's close; read by replay/engine.py.
 synthesize_quote = true
 # Synthetic quote spread, percent of the close; read by replay/engine.py.
@@ -19,3 +17,7 @@ synthetic_spread_percent = 0.1
 synthetic_spread_min_usd = 0.02
 # Bid and ask size of the synthetic quote, shares; read by replay/engine.py.
 synthetic_quote_size_shares = 100
+# Measured slippage file written by `python -m tickr.research slippage` (its slippage_summary.json), relative to this file's folder; when set, its measured stop slippage replaces slippage_percent; "" = use slippage_percent; read by replay/settings.py.
+measured_slippage_file = ""
+# Fewest measured stopped trades the selected measured slippage file must hold, else the replay refuses; count; read by replay/settings.py.
+measured_slippage_min_trades = 20
