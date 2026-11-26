@@ -966,8 +966,8 @@ Which alert kinds go to which channel (backlog T14). Code: `src/tickr/api/alerts
   fences), plus unprotected position, unknown order status and order conflicts, foreign
   exposure, failing broker reads, a lost stream with a position, not flat after the flatten,
   every bot-down, crash, start and stop failure, preflight failed, the token waiting for
-  confirmation, every `watchdog-*` kind, `api-credentials-unexpected`, `remote-auth-blocked`
-  and `strategy-not-loaded`.
+  confirmation, every `watchdog-*` kind, `api-credentials-unexpected`,
+  `remote-auth-blocked`, `risk-command-used` and `strategy-not-loaded`.
 - `routing_cause`: null, or why the routing file cannot be used (then every kind goes to every
   channel and writes are refused until the owner deletes the file).
 
