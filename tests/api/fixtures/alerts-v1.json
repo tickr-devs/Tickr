@@ -278,8 +278,6 @@
       "group": "critical",
       "locked": true,
       "channels": {
-        "mac": true,
-        "imessage": true,
         "telegram": true,
         "push": true
       }
