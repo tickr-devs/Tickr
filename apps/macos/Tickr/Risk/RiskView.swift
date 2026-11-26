@@ -279,8 +279,8 @@ private struct LossRoomCard: View {
           FigureRow(L10n.Risk.nextPlannedLoss, value: amount(model.settings?.risk.plannedLossUsd),
             symbol: Self.plannedSymbol)
         }
-        if model.status != nil && room == nil {
-          Footnote(L10n.Risk.roomNotReported, color: Palette.warningText)
+        if let note = RiskRoomText.roomNote(model.status) {
+          Footnote(note, color: Palette.warningText)
         }
         Footnote(L10n.Risk.lossRoomNote, color: Palette.textTertiary)
         PlannedLine(text: L10n.Risk.lossBacklog)

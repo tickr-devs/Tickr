@@ -112,7 +112,7 @@ private struct RoomCard: View {
           EntrySizing(size: watching.latestSize, configured: SizingLimits(
             plannedLossUsd: risk.plannedLossUsd.value, notionalCapUsd: risk.positionNotionalCapUsd.value,
             dailyRoomUsd: room), text: .money)
-        })
+        }, roomNote: RiskRoomText.roomNote(status))
       } else {
         RiskLine(label: L10n.Risk.room, value: RiskFormat.amount(status.dailyRoomUsd?.value))
       }
