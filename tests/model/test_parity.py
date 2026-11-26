@@ -444,7 +444,8 @@ def test_the_prefix_goes_compressed_and_its_folder_is_removed(day, tmp_path, mon
     assert rows > 0 and per_row > 0
     monkeypatch.setattr(ticks, "tick_rows", real)
     pd.testing.assert_frame_equal(got, real(tmp_path / "t.csv", tmp_path / "q.csv", DAY,
-                                            minute + 240), check_exact=True)
+                                            minute + 240, groups=ticks.default_groups()),
+                                  check_exact=True)
 
 
 def test_the_guard_refuses_before_writing(day, tmp_path, monkeypatch):
