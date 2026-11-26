@@ -273,7 +273,7 @@ performance `<name>_cause`. Codes (params in braces; wire times become `HH:MM` N
   `run_without_report`, `version_never_started`, `run_file_unreadable` {file, error},
   `calendar_file_unreadable` {detail}, `no_bars_for_symbol_on` {symbol, day},
   `no_cached_history` {symbol, day}, `cached_history_refused` {detail}, `cached_history_empty`
-  {symbol}, `cached_history_overlaps`, `history_sessions_differ` {replay, bot},
+  {symbol}, `cached_history_overlaps`,
   `simulation_failed` {error, detail}, `strategy_without_module` {folder, strategy},
   `module_not_importable` {folder, module, detail}, `module_without_create` {folder, module},
   `values_refused` {folder, module, detail}, `identity_differs` {folder}, `no_history_need`
@@ -750,8 +750,10 @@ a journal row or a database row; applying a draft, its history and rollback are 
   (no refusal), `refusals[]` (`owner`, `key`, `cause`, `detail`) and `changes[]`. Causes:
   `UNKNOWN_KEY` (not a schema setting, or no such owner), `WRONG_TYPE` (the text is not of the
   setting's kind), `BELOW_MINIMUM`, `ABOVE_MAXIMUM`, `OFF_STEP`, `RULE_BROKEN` (the draft over
-  the file breaks a rule; named on the rule's left key), `ENGINEERING_KEY` / `CLOSED_KEY` (the key is in the file but is file-only, or closed:
-  environment, Production authorization, secrets; refused whatever its value, backlog S2),
+  the file breaks a rule; named on the rule's left key), `ENGINEERING_KEY` (the key is in the file but is file-only), `CLOSED_KEY` (the key is, or lies at
+  any depth under, a closed table or key in any spelling of its path, in the file or not:
+  environment, Production authorization, secrets; refused whatever its value, even when a schema
+  record names it, backlog S2),
   `VALUE_MISSING` (the file has no present
   value to compare with, or a rule needs a key the file lacks). `changes[]` holds every draft key
   of the right kind with a present value: `current` and `draft` (TOML text), `changed` (false
@@ -782,7 +784,9 @@ a `settings-history-v1` document.
     its status lists no position and no open reservation (a working entry reserves its planned
     loss), and it is fresh, or the bot is stopped with no process holding its lock. Otherwise
     `409 conflict` with the cause. It reaches the bot through a safe restart (stop-bot, then
-    start-bot: normal startup and reconciliation); nothing is reloaded in a running bot;
+    start-bot: normal startup and reconciliation); nothing is reloaded in a running bot. So a
+    `when_flat` strategy setting is written while the bot is flat, but a bot that keeps running
+    trades with its old values until it restarts;
   - a setting that needs retraining is refused (`409`): it applies only with a newly trained
     model.
   A change of a key that has a pending change replaces it (the old one becomes `superseded`),
@@ -790,6 +794,8 @@ a `settings-history-v1` document.
 - `biometric_confirmed` is the app's word that the owner passed Face ID (Touch ID on the Mac)
   for this change; the server cannot check it. The protection is the paired device token on
   the remote port plus this flag; the local port has no token, as for every other route.
+  The loopback port is therefore trusted for loosening: there, `biometric_confirmed` is whatever
+  the caller says.
 - Writes are atomic and journaled first: under an exclusive lock (`<history file>.lock`; held by
   another writer: `409 conflict`, nothing changed) every listed owner file must still have its
   `base` digest (else `409`: read GET /settings/values again); each candidate file must load
@@ -1049,8 +1055,7 @@ Code: `src/tickr/api/trade_whatif.py`.
   `result_gross_usd`: their sums; USD is null when a trade has no quantity. Gross: slippage in,
   commissions and fees out.
 - When it cannot be computed (unreadable or unknown folder, no module, a version that needs more
-  history than the bot caches, replay.toml `history_sessions` differing from
-  `[market_data] history_sessions`, no captured bars for the symbol that day, no or empty cached
+  history than the bot caches, no captured bars for the symbol that day, no or empty cached
   prior sessions, a refused simulation, a version that raises) `cause` says why, `signals` and the sums are null and `trades`
   is empty. Paths in a cause are relative to the repo.
 
