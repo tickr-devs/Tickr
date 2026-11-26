@@ -96,9 +96,9 @@ resource "aws_iam_role_policy" "image_push" {
   policy = data.aws_iam_policy_document.image_push.json
 }
 
-# The server pulls the image and may add a tag to an image already in the registry (PutImage with
-# an existing manifest: tickr-image-pull marks a deployed release). It cannot upload layers or
-# delete an image, and tags are immutable, so no existing tag can be moved.
+# The server pulls the image and may add any new tag to content already in the registry (PutImage;
+# ECR has no condition key for the tag): tickr-image-pull marks a release with it. It cannot upload
+# layers or delete an image, and tags are immutable, so no existing tag can be moved.
 data "aws_iam_policy_document" "bot_pull" {
   statement {
     sid       = "Login"

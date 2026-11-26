@@ -25,21 +25,48 @@ export AWS_DEFAULT_REGION
 registry=${TICKR_IMAGE_REPOSITORY%%/*}
 repository=${TICKR_IMAGE_REPOSITORY#*/}
 
-trap 'docker logout "$registry" >/dev/null 2>&1 || true' EXIT
+work=$(mktemp -d)
+trap 'docker logout "$registry" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
 aws ecr get-login-password | docker login --username AWS --password-stdin "$registry" >/dev/null
-# Quiet: the registry host holds the account number, which no output repeats.
+# Quiet on success: the registry host holds the account number (not a credential). A failed pull's
+# error from Docker may still name it.
 docker pull -q "$TICKR_IMAGE_REPOSITORY:$commit" >/dev/null
 
 release="release-$commit"
+digest_of() {
+  aws ecr describe-images --repository-name "$repository" --image-ids imageTag="$1" \
+    --query 'imageDetails[0].imageDigest' --output text
+}
 if aws ecr describe-images --repository-name "$repository" --image-ids imageTag="$release" >/dev/null 2>&1; then
+  if [ "$(digest_of "$release")" != "$(digest_of "$commit")" ]; then
+    echo "tickr-image-pull: $release and $commit are different images in the registry; refusing" >&2
+    exit 1
+  fi
   echo "tickr-image-pull: $repository:$release already marked"
 else
-  manifest=$(aws ecr batch-get-image --repository-name "$repository" --image-ids imageTag="$commit" \
-    --query 'images[0].imageManifest' --output text)
-  media=$(aws ecr batch-get-image --repository-name "$repository" --image-ids imageTag="$commit" \
-    --query 'images[0].imageManifestMediaType' --output text)
+  # The manifest goes to put-image byte for byte (JSON parsed, written to a file, passed as
+  # file://), and the answer's digest must equal the commit image's: otherwise ECR stored a second
+  # image and the commit tag would stay unprotected by the release rule.
+  aws ecr batch-get-image --repository-name "$repository" --image-ids imageTag="$commit" \
+    --output json > "$work/get.json"
+  python3 -I - "$work" <<'PY'
+import json, sys
+work = sys.argv[1]
+image = json.load(open(f"{work}/get.json", encoding="utf-8"))["images"][0]
+with open(f"{work}/manifest.json", "w", encoding="utf-8", newline="") as out:
+    out.write(image["imageManifest"])
+with open(f"{work}/media", "w", encoding="utf-8") as out:
+    out.write(image["imageManifestMediaType"])
+with open(f"{work}/digest", "w", encoding="utf-8") as out:
+    out.write(image["imageId"]["imageDigest"])
+PY
   aws ecr put-image --repository-name "$repository" --image-tag "$release" \
-    --image-manifest "$manifest" --image-manifest-media-type "$media" >/dev/null
+    --image-manifest "file://$work/manifest.json" --image-manifest-media-type "$(cat "$work/media")" \
+    --query 'image.imageId.imageDigest' --output text > "$work/put"
+  if [ "$(cat "$work/put")" != "$(cat "$work/digest")" ]; then
+    echo "tickr-image-pull: marking $release created a different image; refusing" >&2
+    exit 1
+  fi
   echo "tickr-image-pull: marked $repository:$release"
 fi
 echo "tickr-image-pull: $repository:$commit is on this server"

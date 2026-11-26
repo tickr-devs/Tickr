@@ -127,6 +127,17 @@ terraform import aws_iam_openid_connect_provider.github \
 
 ## Release on the server
 
+A server created before `tickr-image-pull` and `registry.env` existed (the first one, 2026-11-26)
+gets them once, from the Mac in `ops/aws/bot` (the script travels base64-encoded; no secret is in
+it):
+
+```sh
+aws ssm send-command --instance-ids "$(terraform output -raw instance_id)" \
+  --document-name AWS-RunShellScript --parameters commands="echo TICKR_IMAGE_REPOSITORY=$(terraform output -raw image_repository) > /srv/tickr/etc/registry.env && chmod 644 /srv/tickr/etc/registry.env && echo $(base64 < files/tickr-image-pull | tr -d '\n') | base64 -d > /usr/local/bin/tickr-image-pull && chmod 755 /usr/local/bin/tickr-image-pull"
+```
+
+Then, for each release:
+
 In an SSM session, with the full commit of main whose image CI pushed:
 
 ```sh
