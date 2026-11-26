@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import dataclasses
 import datetime
 import gzip
 import io
@@ -26,7 +27,7 @@ from tickr.model.features import full
 HISTORY_DAYS = 6  # the table code needs at least 5 earlier days (MINH) for the hist group
 DAY = "2024-03-06"  # a day of the open archive: no date rule of the training is touched
 LIVE_DAY = "2026-12-02"  # after the research archive's last day (2026-11-19)
-OTHER_LIVE_DAY = "2026-11-27"
+OTHER_LIVE_DAY = "2026-11-25"
 LIVE_MINUTE = 400  # 10:40 New York
 LIVE_FIRST = "2026-08-15"  # a Benzinga file may not span the sealed window SEAL (it refuses)
 SYMBOLS = ["SPY", "QQQ"] + [f"T{i:03d}" for i in range(12)]
@@ -46,6 +47,17 @@ NO_LIVE_PATH = {
     "bz": ("test",),
     "tk2": ("test",),
 }
+
+
+CUTOFF_LAG = datetime.timedelta(seconds=5)  # the receipt cutoff after the minute's mark
+
+
+def _rows(ctx, bars, minute, state, snap, root, late=None, late_bars=None, cutoff=None):
+    """`ctx.minute_rows` on the capture of `snap` and the bars with their receipts (see
+    `model_inputs.capture`), cut off CUTOFF_LAG after the minute's mark unless `cutoff`."""
+    held = inputs.capture(snap, ctx.day, root, late)
+    return ctx.minute_rows(inputs.received_bars(bars, late_bars), minute, state, None, held,
+                           cutoff or ctx.mark(minute) + CUTOFF_LAG)
 
 
 def _inputs(root, day, first):
@@ -127,7 +139,7 @@ def test_a_minute_in_the_live_context_equals_the_training_s_whole_day(setup, who
     out, _ = whole_day
     ctx = full.live_context(inputs.market_day(today))
     snap = inputs.asof(today, minute, given, tmp_path / "cut")
-    got = ctx.minute_rows(synthetic.cut(bars, today, minute), minute, state, None, snap)
+    got = _rows(ctx, synthetic.cut(bars, today, minute), minute, state, snap, tmp_path / "c")
     cols = ["sym", *full.full_features()]
     want = out.loc[out.m == minute, cols].sort_values("sym").reset_index(drop=True)
     got = got.sort_values("sym").reset_index(drop=True)
@@ -140,10 +152,10 @@ def test_a_minute_in_the_live_context_equals_the_training_s_whole_day(setup, who
         assert np.array_equal(a, b, equal_nan=True), c
 
 
-def test_a_live_day_has_news_values(live):
+def test_a_live_day_has_news_values(live, tmp_path):
     today, bars, state, _, snap = live
-    got = full.live_context(inputs.market_day(today)).minute_rows(bars, LIVE_MINUTE, state,
-                                                                  None, snap)
+    got = _rows(full.live_context(inputs.market_day(today)), bars, LIVE_MINUTE, state, snap,
+                tmp_path / "c")
     assert len(got) > 0
     assert got["bz_n1d"].notna().all() and got["nw_n"].notna().all()
 
@@ -186,7 +198,7 @@ def test_a_fresh_process_never_imports_the_builder_under_its_research_names():
         "from tickr.model.features import full\n"
         f"ctx = full.live_context(model_inputs.market_day('{OTHER_LIVE_DAY}'))\n"
         f"assert ctx.code.labels.HARD_LAST == '{OTHER_LIVE_DAY}'\n"
-        "print(sorted(n for n in full.BUILDER if n in sys.modules))\n"
+        "print(sorted(n for n in (*full.BUILDER, *full.TABLE) if n in sys.modules))\n"
     )
     root = inputs.CALENDAR_DIR.parents[1]
     done = subprocess.run([sys.executable, "-c", script], cwd=root, capture_output=True,
@@ -237,7 +249,7 @@ def test_only_the_bot_calendar_builds_a_context():
         assert exc.value.cause == "live_day_not_from_calendar"
     ctx = full.live_context(inputs.market_day(LIVE_DAY))
     with pytest.raises(ModelRefused) as exc:
-        full.LiveContext(object(), LIVE_DAY, ctx.code)
+        full.LiveContext(object(), LIVE_DAY, ctx.code, ctx.end_minute)
     assert exc.value.cause == "live_context_outside_bot"
 
 
@@ -332,10 +344,16 @@ def _future_cases():
                     {"benzinga_id": "late", "published": late, "tickers": [SYMBOLS[2]],
                      "channels": []})
 
-    def report(snap, _):  # scheduled for later today, in the file that holds the day
+    def report(snap, _):  # timed later today but already reported: not a scheduled report
         _add_gz_row(next(snap.benzinga.glob("earnings-*")),
                     {"benzinga_id": "late", "ticker": SYMBOLS[3], "date": LIVE_DAY,
                      "time": "16:30:00", "last_updated": inputs._ny_utc(LIVE_DAY, 300),
+                     "actual_eps": 0.3, "estimated_eps": 0.1})
+
+    def later_date(snap, _):  # dated after the day in the file that holds the day
+        _add_gz_row(next(snap.benzinga.glob("earnings-*")),
+                    {"benzinga_id": "late", "ticker": SYMBOLS[3], "date": _after(LIVE_DAY, 1),
+                     "time": "08:00:00", "last_updated": inputs._ny_utc(LIVE_DAY, 300),
                      "actual_eps": None, "estimated_eps": 0.1})
 
     def ref_news(snap, _):
@@ -343,8 +361,14 @@ def _future_cases():
                      {"id": "late", "published_utc": late,
                       "publisher": {"name": inputs.PUBLISHER}, "tickers": [SYMBOLS[4]]})
 
-    return [("ticks", ticks), ("article", article), ("report_later_today", report),
-            ("reference_news", ref_news)]
+    return [("ticks", ticks), ("article", article), ("reported_before_its_time", report),
+            ("report_dated_later", later_date), ("reference_news", ref_news)]
+
+
+def _in_hand(day):
+    """Receipts that put every tick row in hand before the session: a tick row of a later
+    minute is then not left out by its receipt and meets the training's prefix rule."""
+    return lambda source, _record: inputs.early(day) if source == "tk" else None
 
 
 def _copy(snap, root):
@@ -359,19 +383,19 @@ def _copy(snap, root):
 def test_what_the_training_would_cut_is_refused(live, tmp_path, name, change):
     today, bars, state, given, snap = live
     ctx = full.live_context(inputs.market_day(today))
-    assert len(ctx.minute_rows(bars, LIVE_MINUTE, state, None, snap)) > 0
+    assert len(_rows(ctx, bars, LIVE_MINUTE, state, snap, tmp_path / "c1")) > 0
     mine = _copy(snap, tmp_path)
     mine = change(mine, given) or mine
     with pytest.raises(ModelRefused) as exc:
-        ctx.minute_rows(bars, LIVE_MINUTE, state, None, mine)
+        _rows(ctx, bars, LIVE_MINUTE, state, mine, tmp_path / "c2", late=_in_hand(today))
     assert exc.value.cause == "future_input", name
 
 
 def test_what_the_training_keeps_passes_on_a_live_day(live, tmp_path):
     today, bars, state, _, snap = live
     mine = _announce(_copy(snap, tmp_path), today)
-    got = full.live_context(inputs.market_day(today)).minute_rows(bars, LIVE_MINUTE, state,
-                                                                  None, mine)
+    got = _rows(full.live_context(inputs.market_day(today)), bars, LIVE_MINUTE, state, mine,
+                tmp_path / "c")
     assert len(got) > 0
 
 
@@ -385,11 +409,11 @@ def test_the_kept_later_records_are_in_the_parity_day(setup, whole_day):
         assert out.loc[out.m == minute, "er_next"].notna().any(), minute
 
 
-def test_the_uncut_day_is_refused_not_cut(live):
+def test_the_uncut_day_is_refused_not_cut(live, tmp_path):
     today, bars, state, given, _ = live
     with pytest.raises(ModelRefused) as exc:
-        full.live_context(inputs.market_day(today)).minute_rows(bars, LIVE_MINUTE, state, None,
-                                                                given)
+        _rows(full.live_context(inputs.market_day(today)), bars, LIVE_MINUTE, state, given,
+              tmp_path / "c", late=_in_hand(today))
     assert exc.value.cause == "future_input" and exc.value.detail.startswith("ticks")
 
 
@@ -412,15 +436,16 @@ def test_a_benzinga_file_across_the_sealed_window_refuses(tmp_path):
     given = _inputs(tmp_path / "x", today, "2026-08-14")
     snap = inputs.asof(today, LIVE_MINUTE, given, tmp_path / "cut")
     with pytest.raises(ModelRefused) as exc:
-        full.live_context(inputs.market_day(today)).minute_rows(
-            synthetic.cut(bars, today, LIVE_MINUTE), LIVE_MINUTE, state, None, snap)
+        _rows(full.live_context(inputs.market_day(today)), synthetic.cut(bars, today, LIVE_MINUTE),
+              LIVE_MINUTE, state, snap, tmp_path / "c")
     assert exc.value.cause == "feature_code_refused" and "sealed_date" in exc.value.detail
 
 
-def test_bars_after_the_minute_are_refused(setup):
+def test_bars_after_the_minute_are_refused(setup, tmp_path):
     today, bars, state, given = setup
     with pytest.raises(ModelRefused) as exc:
-        full.live_context(inputs.market_day(today)).minute_rows(bars, 340, state, None, given)
+        _rows(full.live_context(inputs.market_day(today)), bars, 340, state, given,
+              tmp_path / "c", cutoff=full.live_context(inputs.market_day(today)).mark(959))
     assert exc.value.cause == "bar_after_minute"
 
 
@@ -445,3 +470,249 @@ def test_a_changed_settings_byte_is_refused(monkeypatch, fresh):
     with pytest.raises(ModelRefused) as exc:
         full.live_context(inputs.market_day(LIVE_DAY))
     assert exc.value.cause == "table_code_md5"
+
+
+# ---- Codex 109 point 3: the table code without outcomes, half days, receipts, scheduled reports
+
+
+def _same(a, b):
+    a = a.sort_values("sym").reset_index(drop=True)
+    b = b.sort_values("sym").reset_index(drop=True)
+    if list(a.sym) != list(b.sym):
+        return False
+    return all(np.array_equal(a[c].to_numpy(np.float64), b[c].to_numpy(np.float64),
+                              equal_nan=True) for c in a.columns if c != "sym")
+
+
+def _boom(*_args, **_kwargs):
+    raise AssertionError("an outcome function was reached")
+
+
+def test_the_live_table_evaluates_no_outcome(setup, whole_day, monkeypatch, tmp_path):
+    """Every label, barrier, highest-high and other outcome function of the table code and of
+    the builder (in the context and in the research import) raises; the 191 features of the
+    live context still equal the training's whole day at every test minute."""
+    today, bars, state, given = setup
+    out, _ = whole_day
+    ctx = full.live_context(inputs.market_day(today))
+    rigged = set()
+    for stem in full.TABLE:
+        module = getattr(ctx.code.table, stem)
+        for name, obj in list(vars(module).items()):
+            if callable(obj) and not name.startswith("__") and name != "day2":
+                monkeypatch.setattr(module, name, _boom)
+                rigged.add(f"{stem}.{name}")
+    for holder, names in NO_LIVE_PATH.items():
+        for name in names:
+            monkeypatch.setattr(getattr(ctx.code, holder), name, _boom)
+    for stem, names in (("wm", ("labels",)), ("wm2_l1f", ("labels", "barriers", "maxhigh"))):
+        for name in names:
+            monkeypatch.setattr(sys.modules[stem], name, _boom)
+    assert {"wm.labels", "wm2_l1f.labels", "wm2_l1f.barriers", "wm2_l1f.maxhigh",
+            "wm2_l1f.uniq", "wm2_l1f.derived", "wm2_l1f.volunits", "wide.outcome",
+            "wide.scan"} <= rigged
+    cols = ["sym", *full.full_features()]
+    for minute in CUTS:
+        snap = inputs.asof(today, minute, given, tmp_path / f"cut{minute}")
+        got = _rows(ctx, synthetic.cut(bars, today, minute), minute, state, snap,
+                    tmp_path / f"c{minute}")
+        want = out.loc[out.m == minute, cols]
+        assert len(want) > 0 and _same(got, want), minute
+
+
+def test_the_feature_only_table_is_the_declared_replacement():
+    pinned = (features.PINNED_DIR / "wm2_l1f.py").read_text("utf-8")
+    text = full.feature_only_text(pinned)
+    kept = [a for a in pinned.splitlines() if a not in text.splitlines()]
+    assert len(kept) == 8  # the label statements; nothing is added but the row mask's line
+    assert "g = rq <= rf - 2; ri = ri[g]; rq = rq[g]; rf = rf[g]; s = SS[rq]" in text
+    code = full.live_context(inputs.market_day(LIVE_DAY)).code
+    used = set(code.w.day2.__code__.co_names)
+    assert not used & {"labels", "barriers", "maxhigh", "LAB", "TG2", "RK", "HZ", "BAR"}
+    for name in ("labels", "barriers", "maxhigh", "uniq", "days2", "load"):
+        with pytest.raises(ModelRefused) as exc:
+            getattr(code.w, name)()
+        assert exc.value.cause == "outside_live_context"
+    with pytest.raises(ModelRefused) as exc:
+        full.feature_only_text(pinned.replace("g = rq <= rf - 2", "g = rq <= rf - 3"))
+    assert exc.value.cause == "table_code_replacement"
+
+
+HALF_DAY = "2026-11-27"  # the bot calendar's early close (13:00 New York)
+
+
+def test_a_half_day_follows_the_bundle_s_session_policy(tmp_path):
+    day = inputs.market_day(HALF_DAY)
+    assert day.half_day and day.regular_close.hour == 13
+    with pytest.raises(ModelRefused) as exc:
+        full.live_context(day)
+    assert exc.value.cause == "half_day_outside_session_policy"
+    ctx = full.live_context(day, full.HALF_DAYS_UNTIL_CLOSE)
+    assert ctx.end_minute == 540  # 13:00 New York, from the calendar
+    today, bars, state = _day(HALF_DAY)
+    given = _inputs(tmp_path / "x", today, LIVE_FIRST)
+    snap = inputs.asof(today, LIVE_MINUTE, given, tmp_path / "cut")
+    got = _rows(ctx, synthetic.cut(bars, today, LIVE_MINUTE), LIVE_MINUTE, state, snap,
+                tmp_path / "c1")
+    table = features._day2(features.bars_frame(synthetic.cut(bars, today, LIVE_MINUTE), today),
+                           today, state, None, want=True)[0]
+    want = table.loc[table.m == LIVE_MINUTE, ["sym", *features.live_features()]]
+    assert len(got) > 0 and _same(got[want.columns], want)
+    for minute in (540, 700):
+        with pytest.raises(ModelRefused) as exc:
+            _rows(ctx, synthetic.cut(bars, today, minute), minute, state, snap,
+                  tmp_path / f"c{minute}")
+        assert exc.value.cause == "after_exchange_close"
+
+
+def test_a_full_day_with_other_hours_or_an_unknown_policy_is_refused():
+    day = inputs.market_day(LIVE_DAY)
+    other = dataclasses.replace(day, regular_close=day.regular_close.replace(hour=15))
+    with pytest.raises(ModelRefused) as exc:
+        full.live_context(other)
+    assert exc.value.cause == "session_hours_differ"
+    with pytest.raises(ModelRefused) as exc:
+        full.live_context(day, "half_days")
+    assert exc.value.cause == "session_policy_unknown"
+    assert full.live_context(day, full.HALF_DAYS_UNTIL_CLOSE).end_minute == 960
+
+
+def _probe_cases(day, sym, ticks):
+    """(name, add the record to a copy of the snapshot, the record's (source, match)): one
+    record per source for `sym`, each with an event time before the minute's mark."""
+    def news(snap):
+        _add_gz_row(next(snap.benzinga.glob("news-*")),
+                    {"benzinga_id": "probe", "published": inputs._ny_utc(day, LIVE_MINUTE - 10),
+                     "tickers": [sym], "channels": ["movers"]})
+
+    def report(snap):
+        d = _after(day, -2)
+        _add_gz_row(next(snap.benzinga.glob("earnings-*")),
+                    {"benzinga_id": "probe", "ticker": sym, "date": d, "time": "16:05:00",
+                     "last_updated": inputs._ny_utc(d, 900), "actual_eps": 0.5,
+                     "estimated_eps": 0.1})
+
+    def ref_news(snap):
+        _append_line(snap.reference / f"news-{day[:7]}.jsonl",
+                     {"id": "probe", "published_utc": inputs._ny_utc(day, LIVE_MINUTE - 10),
+                      "publisher": {"name": inputs.PUBLISHER}, "tickers": [sym]})
+
+    def shares(snap):
+        _append_line(snap.reference / "shares-outstanding-asof-a.jsonl",
+                     {"ticker": sym, "date": _after(day, -10), "id": "probe",
+                      "share_class_shares_outstanding": 5e7, "list_date": "2010-01-04",
+                      "sic_code": "7372"})
+
+    def fact(snap):
+        with open(snap.fl_facts, "a") as f:
+            f.write(f"{sym},99,2024-06-30,{_after(day, -10)},{_after(day, -8)},4e9,0.9,1,10-K\n")
+
+    last_tick = int(ticks.loc[(ticks.sym == sym) & (ticks.m <= LIVE_MINUTE + 240), "m"].max())
+    return [
+        ("article", news, ("bz", lambda r: r.get("benzinga_id") == "probe")),
+        ("report", report, ("bz", lambda r: r.get("benzinga_id") == "probe")),
+        ("reference_news", ref_news, ("ref", lambda r: r.get("id") == "probe")),
+        ("shares", shares, ("ref", lambda r: r.get("id") == "probe")),
+        ("fl_fact", fact, ("fl", lambda r: r.get("cik") == "99")),
+        ("tick_row", lambda _snap: None,
+         ("tk", lambda r: r["sym"] == sym and r["m"] == last_tick)),
+    ]
+
+
+def test_a_record_received_after_the_cutoff_is_not_used(live, tmp_path):
+    """Each source: a record whose event time is before the mark but whose receipt is after the
+    cutoff gives the features of the capture without it, and the record matters (received in
+    time it changes them)."""
+    import duckdb
+
+    today, bars, state, _, snap = live
+    ctx = full.live_context(inputs.market_day(today))
+    after = ctx.mark(LIVE_MINUTE) + CUTOFF_LAG + datetime.timedelta(seconds=1)
+    base_rows = _rows(ctx, bars, LIVE_MINUTE, state, snap, tmp_path / "base")
+    sym = next(s for s in SYMBOLS[2:] if s in set(base_rows.sym))
+    ticks = duckdb.sql(f"SELECT sym, m FROM read_parquet('{snap.tick_file}')").df()
+    for name, add, (source, match) in _probe_cases(today, sym, ticks):
+        mine = _copy(snap, tmp_path / name)
+        add(mine)
+
+        def hit(src, record, source=source, match=match):
+            return src == source and match(record)
+
+        in_time = _rows(ctx, bars, LIVE_MINUTE, state, mine, tmp_path / f"{name}-in")
+        late = _rows(ctx, bars, LIVE_MINUTE, state, mine, tmp_path / f"{name}-late",
+                     late=lambda src, r, hit=hit: after if hit(src, r) else None)
+        held = inputs.capture(mine, today, tmp_path / f"{name}-none", omit=hit)
+        absent = ctx.minute_rows(inputs.received_bars(bars), LIVE_MINUTE, state, None, held,
+                                 ctx.mark(LIVE_MINUTE) + CUTOFF_LAG)
+        assert _same(late, absent), name
+        assert not _same(in_time, late), name
+    start = int(bars.loc[bars.ticker == sym, "window_start"].max())
+    late = _rows(ctx, bars, LIVE_MINUTE, state, snap, tmp_path / "bar-late",
+                 late_bars={(sym, start): after})
+    absent = _rows(ctx, bars[~((bars.ticker == sym) & (bars.window_start == start))],
+                   LIVE_MINUTE, state, snap, tmp_path / "bar-none")
+    assert _same(late, absent) and not _same(base_rows, late)
+
+
+def test_receipts_are_required_and_the_cutoff_is_not_before_the_mark(live, tmp_path):
+    today, bars, state, _, snap = live
+    ctx = full.live_context(inputs.market_day(today))
+    with pytest.raises(ModelRefused) as exc:
+        _rows(ctx, bars, LIVE_MINUTE, state, snap, tmp_path / "c1",
+              cutoff=ctx.mark(LIVE_MINUTE) - datetime.timedelta(seconds=1))
+    assert exc.value.cause == "cutoff_before_mark"
+    with pytest.raises(ModelRefused) as exc:
+        ctx.minute_rows(bars, LIVE_MINUTE, state, None,
+                        inputs.capture(snap, today, tmp_path / "c2"),
+                        ctx.mark(LIVE_MINUTE) + CUTOFF_LAG)
+    assert (exc.value.cause, exc.value.detail) == ("receipt_missing", "bars")
+    held = inputs.capture(snap, today, tmp_path / "c3")
+    path = next(held.benzinga.glob("news-*"))
+    rows = [json.loads(x) for x in gzip.open(path, "rt")]
+    path.unlink()
+    _gz_rows(path, [{k: v for k, v in rows[0].items() if k != full.RECEIPT_FIELD}, *rows[1:]])
+    with pytest.raises(ModelRefused) as exc:
+        ctx.minute_rows(inputs.received_bars(bars), LIVE_MINUTE, state, None, held,
+                        ctx.mark(LIVE_MINUTE) + CUTOFF_LAG)
+    assert exc.value.cause == "receipt_missing" and exc.value.detail.startswith("benzinga")
+
+
+SCHEDULED_TIME = "10:50:00"  # eligible from minute 409 (its mark is 10:50:00 New York)
+
+
+def test_a_report_scheduled_later_today_is_left_out_then_admitted(setup, tmp_path):
+    """A report of the day scheduled for later stays in the capture with its true date and
+    receipt: the minutes before its time equal the training's whole day without its effect,
+    the minutes from its time on admit it, as the training's cut does."""
+    today, bars, state, given = setup
+    full_day = _copy(given, tmp_path / "given")
+    shutil.copy(given.tick_file, tmp_path / "given" / "tk.parquet")
+    full_day = full.FullInputs(tmp_path / "given" / "tk.parquet", full_day.reference,
+                               full_day.benzinga, full_day.fl_facts)
+    code = inputs.research()
+    table = features._day2(features.bars_frame(bars, today), today, state, None, want=True)[0]
+    table = table.reset_index(drop=True)
+    early_rows = table.loc[table.m == 400, "sym"]
+    sym = next(s for s in SYMBOLS[2:] if s in set(early_rows)
+               and s in set(table.loc[table.m == 415, "sym"]))
+    row = {"benzinga_id": "today", "ticker": sym, "date": today, "time": SCHEDULED_TIME,
+           "last_updated": inputs._ny_utc(today, 200), "actual_eps": None,
+           "estimated_eps": 0.2}
+    _add_gz_row(next(full_day.benzinga.glob(f"earnings-*_{today}.jsonl.gz")), row)
+    prev = np.array([state.prev.get(s, np.nan) for s in table.sym.values], np.float64)
+    with contextlib.redirect_stdout(io.StringIO()):
+        out, _ = code.feat.assemble(table, prev, today, str(full_day.tick_file),
+                                    str(full_day.reference), str(full_day.benzinga),
+                                    str(full_day.fl_facts), code.settings,
+                                    str(tmp_path), code.w, code.ref, code.tk)
+    ctx = full.live_context(inputs.market_day(today))
+    cols = ["sym", *full.full_features()]
+    since = {}
+    for minute in (400, 408, 409, 415):
+        snap = inputs.asof(today, minute, given, tmp_path / f"cut{minute}")
+        _add_gz_row(next(snap.benzinga.glob(f"earnings-*_{today}.jsonl.gz")), row)  # captured
+        got = _rows(ctx, synthetic.cut(bars, today, minute), minute, state, snap,
+                    tmp_path / f"c{minute}")
+        assert _same(got, out.loc[out.m == minute, cols]), minute
+        since[minute] = float(got.loc[got.sym == sym, "er_since"].iloc[0])
+    assert since[400] > 0 and since[408] > 0 and since[409] == since[415] == 0

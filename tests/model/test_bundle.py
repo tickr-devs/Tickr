@@ -18,6 +18,7 @@ from tickr import config
 from tickr.model import bundle as B
 from tickr.model import features
 from tickr.model.errors import ModelRefused
+from tickr.model.features import full
 
 ROOT = Path(__file__).resolve().parents[2]
 NAME, VERSION = "l1", "2026-12-01a"
@@ -193,6 +194,15 @@ def test_manifest_refusals(tmp_path, rows, change, cause):
     folder = write_bundle(tmp_path, rows)
     rewrite(folder, **change)
     assert refused(folder) == cause
+
+
+def test_the_session_policy_is_the_bundle_s_and_defaults_to_full_days(tmp_path, rows):
+    assert B.open_bundle(write_bundle(tmp_path, rows)).session_policy == full.FULL_DAYS
+    folder = write_bundle(tmp_path / "half", rows, session_policy=full.HALF_DAYS_UNTIL_CLOSE)
+    assert B.open_bundle(folder).session_policy == full.HALF_DAYS_UNTIL_CLOSE
+    for bad in ("half_days", None, 1):
+        rewrite(folder, session_policy=bad)
+        assert refused(folder) == "manifest_session_policy"
 
 
 def test_no_manifest_is_refused(tmp_path):
