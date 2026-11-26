@@ -183,7 +183,8 @@ _NOT_FROM_APP = {
 def draft_document(settings: tuple[Setting, ...], changes: tuple[tuple[str, str, str], ...],
                    config_file: Path, root: Path, classes: schema.Classes) -> SettingsDraftV1:
     """Check `changes` (owner, dotted key, value text) against the schema and the files now.
-    A key of the engineering or closed class is refused whatever its value (`classes`).
+    A key of the closed class is refused whatever its value or depth, an engineering key in the
+    file likewise, and a key with no class as UNKNOWN_KEY (`classes`, fail closed).
     Raises SettingsUnavailable when an owner's file cannot be read."""
     owners = owners_of(settings)
     refusals: list[SettingRefusalV1] = []
@@ -200,12 +201,15 @@ def draft_document(settings: tuple[Setting, ...], changes: tuple[tuple[str, str,
         draft: dict[str, Any] = {}
         found: list[Refusal] = []
         for _, key, text in mine:
-            spec = specs.get(key)
+            # The class is decided first, on the whole key path, so a closed key is refused even
+            # when a record names it; only an OWNER key reaches its record.
+            klass = schema.classify(classes, owner, key)
+            refused = None if klass is None else _NOT_FROM_APP.get(klass)
+            if refused is not None and (klass is schema.SettingClass.CLOSED or key in current):
+                found.append(Refusal(key, refused[0], f"{key} {refused[1]}"))
+                continue
+            spec = specs.get(key) if klass is schema.SettingClass.OWNER else None
             if spec is None:
-                refused = _NOT_FROM_APP.get(schema.classify(classes, owner, key))  # type: ignore[arg-type]
-                if refused is not None and key in current:
-                    found.append(Refusal(key, refused[0], f"{key} {refused[1]}"))
-                    continue
                 draft[key] = text  # validate refuses it as UNKNOWN_KEY
                 continue
             value = _value_of(spec, text)
