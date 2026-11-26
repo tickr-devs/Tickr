@@ -178,13 +178,15 @@ def test_one_group_equals_the_converters_default_exactly(tmp_path, events):
     t, q = files(tmp_path, *events)
     assert ticks.default_groups() == 24 and ticks.ONE_GROUP == 1
     default = rows(t, q, LAST_MINUTE, groups=ticks.default_groups())
-    one = rows(t, q, LAST_MINUTE, groups=ticks.ONE_GROUP)
+    one = ticks.tick_rows(t, q, DAY, LAST_MINUTE, groups=ticks.ONE_GROUP,
+                          experiment_groups=True)
     assert len(default) > 0 and default.sym.nunique() == SYMBOLS
     pd.testing.assert_frame_equal(one, default, check_exact=True)
 
 
-@pytest.mark.parametrize("groups", [0, 2, 23, 25])
+@pytest.mark.parametrize("groups", [0, 1, 2, 23, 25])
 def test_another_group_count_is_refused(tmp_path, events, groups):
+    """Only the pinned 24 for the bot; one group is withdrawn (codex-109 point 1)."""
     t, q = files(tmp_path, *cut(events, "10:00:00"), suffix=".csv")
     with pytest.raises(ModelRefused) as exc:
         rows(t, q, minute_of("10:00"), groups=groups)

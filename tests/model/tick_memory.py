@@ -46,7 +46,8 @@ def _convert(trades: str, quotes: str, groups: int, out: str) -> dict:
     ticks.converter()
     before = _peak_mib()
     start = time.perf_counter()
-    table = ticks.tick_rows(trades, quotes, DAY, LAST_MINUTE, groups=groups)
+    table = ticks.tick_rows(trades, quotes, DAY, LAST_MINUTE, groups=groups,
+                            experiment_groups=True)
     seconds = time.perf_counter() - start
     table.to_pickle(out)
     return {"groups": groups, "peak_rss_mib_before": round(before, 1),
