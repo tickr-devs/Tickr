@@ -136,7 +136,7 @@ MONO = Mono()
 
 def complete(store, symbol, upto=ALL):
     for kind in ticks.KINDS:
-        store.window(ticks.Window(symbol, kind, store.start_ns, upto, 0, 1, None))
+        store.window(ticks.Window(symbol, kind, store.start_ns, upto, 0, 1, None, 0))
 
 
 def test_one_connection_subscribes_both_channel_sets_and_records_each_acknowledgment(make):
@@ -247,7 +247,7 @@ SECOND = 10**9  # test data: one second in ns
 
 def fill(store, frm, to, recv, cause=None, symbol="AAPL"):
     for kind in ticks.KINDS:
-        store.window(ticks.Window(symbol, kind, frm, to, recv, 1, cause))
+        store.window(ticks.Window(symbol, kind, frm, to, recv, 1, cause, 0))
 
 
 def test_a_drop_gaps_bars_and_ticks_at_once_and_the_reconnect_resubscribes(make):
@@ -262,7 +262,7 @@ def test_a_drop_gaps_bars_and_ticks_at_once_and_the_reconnect_resubscribes(make)
     def on_connect(n):
         if n == 1:  # between the drop and the second connection
             s = holder["stream"]
-            fill(s.ticks, START, T0 + 1, ALL)  # the initial state, past the first event
+            fill(s.ticks, START, T0 + MS, ALL)  # the initial state, past the first event's ms
             snap = s.tick_snapshot(ALL)
             open_state.update(bars=s.bars_refusal(ALL), ticks=s.tick_refusal(snap, "AAPL"),
                               open_bars=s.bars.open_gap, open_ticks=snap.gaps["AAPL"])
@@ -279,7 +279,8 @@ def test_a_drop_gaps_bars_and_ticks_at_once_and_the_reconnect_resubscribes(make)
     assert open_state["bars"] == "bars_gap" and open_state["ticks"] == "tick_gap"
     down, cause = open_state["open_bars"]
     assert cause == "ConnectionError"
-    assert open_state["open_ticks"] == ((down, None, "ConnectionError"),)
+    assert [(g.down_ns, g.up_ns, g.cause) for g in open_state["open_ticks"]] == [
+        (down, None, "ConnectionError")]
     # the new connection authenticates and sends every subscription again
     assert second.sent == [{"action": "auth", "params": KEY},
                            {"action": "subscribe", "params": "AM.*,T.AAPL,Q.AAPL"}]
@@ -290,20 +291,24 @@ def test_a_drop_gaps_bars_and_ticks_at_once_and_the_reconnect_resubscribes(make)
     am_up = stream.acks["AM.*"][1].acked_ns
     tick_up = stream.acks["Q.AAPL"][1].acked_ns
     assert bars.gaps == [(down, am_up, "ConnectionError")] and bars.open_gap is None
-    assert store.gaps["AAPL"] == [[down, tick_up, "ConnectionError"]]
+    [gap] = store.gaps["AAPL"]
+    assert (gap.down_ns, gap.up_ns, gap.cause) == (down, tick_up, "ConnectionError")
+    assert gap.duration_ns > 0  # monotonic, apart from the wall-clock receipts
     assert stream.take_backfill() == [("AM", "*", down, am_up),
                                       ("ticks", "AAPL", down, tick_up)]
     assert stream.take_backfill() == []
     # what to recover, in event time
     snap = stream.tick_snapshot(ALL)
-    assert snap.recovery("AAPL") == (("trades", t1, t2), ("quotes", t1, t2))
+    assert snap.repair_from("AAPL") == t1
     assert bars.needed(ALL) == [(m0, m1)]
     assert stream.bars_refusal(ALL) == "bars_gap"
     assert stream.tick_refusal(snap, "AAPL") == "tick_gap"
     # the receipt times of the drop taken as SIP times fill nothing
     fill(store, down, tick_up, ALL)
     assert stream.tick_refusal(stream.tick_snapshot(ALL), "AAPL") == "tick_gap"
-    fill(store, t1, t2 + 1, ALL)  # overlaps both verified events
+    fill(store, t1, t2 + 1, ALL)  # ends inside the first verified row's millisecond
+    assert stream.tick_refusal(stream.tick_snapshot(ALL), "AAPL") == "tick_gap"
+    fill(store, t1, t2 + MS, ALL)  # overlaps both verified rows' milliseconds
     assert stream.tick_refusal(stream.tick_snapshot(ALL), "AAPL") is None
     assert len(store.versions["trades"]) == 3
 
@@ -354,19 +359,20 @@ def test_a_reset_after_midnight_recovers_both_channels_from_day_start(make):
     stream.run(stop)
     assert store.counts["other_day"] == 2 and bars.other_day == 1
     snap = stream.tick_snapshot(ALL)
-    assert snap.recovery("AAPL") == (("trades", START, early), ("quotes", START, early))
-    assert stream.tick_refusal(snap, "AAPL") == "tick_gap"
+    assert snap.repair_from("AAPL") == START
+    # nothing of the new date was proven before the reset: the day's own state is missing
+    assert stream.tick_refusal(snap, "AAPL") == "tick_no_initial_state"
     assert bars.needed(ALL) == [(START // MS, minute)]
     stalled = {"status": "OK", "results": [rest_trade(3, START + SECOND)],
                "next_url": f"https://{CFG.massive.api_host}/v3/trades/AAPL?cursor=a"}
     wire = Wire({"trades": [stalled, dict(stalled)], "quotes": [{"status": "OK", "results": []}]})
     back = ticks.TickBackfill(CFG0, store, wire, clock=lambda: ALL - 1)
-    assert back.backfill("AAPL", START, early + 1)["trades"].cause == "backfill_no_progress"
-    assert stream.tick_refusal(stream.tick_snapshot(ALL), "AAPL") == "tick_gap"
+    assert back.backfill("AAPL", START, early + MS)["trades"].cause == "backfill_no_progress"
+    assert stream.tick_refusal(stream.tick_snapshot(ALL), "AAPL") == "tick_backfill_incomplete"
     wire = Wire({"trades": [{"status": "OK", "results": [rest_trade(3, START + SECOND)]}],
                  "quotes": [{"status": "OK", "results": [rest_quote(4, START + SECOND)]}]})
     windows = ticks.TickBackfill(CFG0, store, wire, clock=lambda: ALL - 1).backfill(
-        "AAPL", START, early + 1)
+        "AAPL", START, early + MS)
     assert all(w.cause is None for w in windows.values())  # the last page had no next_url
     snap = stream.tick_snapshot(ALL)
     assert stream.tick_refusal(snap, "AAPL") is None
@@ -443,7 +449,7 @@ def test_still_unacknowledged_after_the_resend_reconnects_and_resubscribes(make,
     assert second.sent[1] == {"action": "subscribe", "params": "AM.*,T.AAPL,Q.AAPL"}
     assert [link.cause for link in stream.links] == ["ack_timeout", "stopped"]
     assert "reconnecting" in caplog.text
-    assert [g[2] for g in store.gaps["AAPL"]] == ["ack_timeout"]
+    assert [g.cause for g in store.gaps["AAPL"]] == ["ack_timeout"]
     assert [g[2] for g in bars.gaps] == ["ack_timeout"]
     assert stream.acks["Q.AAPL"][1].acked_ns is not None
 
@@ -483,7 +489,7 @@ def test_the_full_market_path_shares_the_connection(make):
     stream, stop, _, store, _ = make([server, Server([[AUTH]])], cfg)
     stream.run(stop)
     assert server.sent[1] == {"action": "subscribe", "params": "AM.*,T.*,Q.*"}
-    assert "*" in store.subscribed and [g[2] for g in store.gaps["*"]] == ["ConnectionError"]
+    assert "*" in store.subscribed and [g.cause for g in store.gaps["*"]] == ["ConnectionError"]
     assert ("ticks", "*") in [r[:2] for r in stream.take_backfill()]
 
 

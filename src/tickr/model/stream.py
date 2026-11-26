@@ -35,10 +35,11 @@ WebSocket connection?").
   window), connects, authenticates, re-sends every subscription, and closes each key's gap at
   its new acknowledgment. Each closed gap is queued as a notice (`take_backfill`, receipt times
   for the record only). What to recover is told in event time, never by receipt times
-  (codex-109 point 6): `TickSnapshot.recovery` gives each tick hole from the last verified event
-  (or day start, so a reset after New York midnight recovers the events before 04:00) through
-  the first verified event after the reconnect, to fill with `TickBackfill.backfill` (complete
-  only when its paging was exhausted); `DayBars.needed` gives the bar minutes a complete-market
+  (codex-109 point 6): `TickSnapshot.repair_from` gives where a tick repair must start (the
+  last stream row seen before the drop, or day start, so a reset after New York midnight
+  recovers the events before 04:00); a `TickBackfill.backfill` from there fills the gap once it
+  is complete (paging exhausted) and reaches past the first stream row received after the new
+  acknowledgment (`TickSnapshot.refusal`); `DayBars.needed` gives the bar minutes a complete-market
   repair must cover. A cohort-only bar backfill cannot restore market-wide ranks, breadth or
   membership: until a complete-market repair arrives the bars stay unavailable (`bars_gap`).
 - **Readiness.** A channel is ready at a cutoff only with all three: its acknowledgment, every
@@ -332,7 +333,7 @@ class SharedStream:
             self.ticks.subscribe([key], recv_ns)
             if key in self._open:
                 down, _ = self._open.pop(key)
-                self.ticks.up(recv_ns, [key])
+                self.ticks.up(recv_ns, recv_mono, [key])
                 self._backfill.append(("ticks", key, down, recv_ns))
 
     def _acked_at(self, param: str, cutoff_ns: int) -> bool:
@@ -376,7 +377,7 @@ class SharedStream:
             return [(e.param, e.conn, e.wait_ns, e.resent_mono is not None)
                     for entries in self.acks.values() for e in entries if e.wait_ns is not None]
 
-    def _dropped(self, down: int, cause: str) -> None:
+    def _dropped(self, down: int, down_mono: int, cause: str) -> None:
         """Every channel of the connection that ended at `down` is gapped until re-acked."""
         with self._lock:
             for entries in self.acks.values():
@@ -385,7 +386,7 @@ class SharedStream:
                         entry.dropped_ns = down
             keys = self._tick_keys()
             self.bars.down(down, cause)
-            self.ticks.down([k for k in keys if k not in self._open], down, cause)
+            self.ticks.down([k for k in keys if k not in self._open], down, cause, down_mono)
             for key in [BARS_PARAM, *keys]:
                 self._open.setdefault(key, (down, cause))
 
@@ -491,7 +492,7 @@ class SharedStream:
                     self.links[-1].cause = "stopped" if stop.is_set() else cause
                 if stop.is_set():
                     return
-                self._dropped(self.clock(), cause)
+                self._dropped(self.clock(), self.mono(), cause)
                 stop.wait(float(self.m.stream_release_pause_seconds))
         finally:
             for lane in (self.router, *self.lanes.values()):
