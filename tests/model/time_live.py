@@ -1,7 +1,7 @@
 """Time one LiveFeatures minute end to end on a synthetic day (codex-108 point 2: "time the
 full minute through feature delivery at peak").
 
-    TICK_THREADS=1 python tests/model/time_live.py --minutes 09:35 15:30 [--groups 1]
+    TICK_THREADS=1 python tests/model/time_live.py --minutes 09:35 15:30
 
 A measurement, not a test (pytest does not collect it). Nothing leaves the machine; no
 credential is read. What it builds, outside the timed span:
@@ -25,10 +25,8 @@ alone shown apart), features (cut_inputs reading the tick table and the input fo
 assemble: reference, tick features, Benzinga, fl, the rest). The stage clocks wrap the pinned
 functions for the run (values unchanged) and are removed afterwards.
 
-`--groups` sets v11's group count KB for this run only (module attribute after the checked
-import; the pinned file is not edited). Codex codex-108 point 2 allows TICK_GROUPS=1 once
-#806 proves 1-versus-24 equality; until then the bot path refuses the variable, so the tool
-sets the attribute itself. Default 1; `--groups 24` gives v11's own default.
+v11's group count is the bot's `[model] tick_groups` (#806 pins it; `ticks.tick_rows` sets it
+on every call), for the warm-up and the timed close alike.
 """
 
 from __future__ import annotations
@@ -178,12 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--trades", type=int, default=30000, help="trades per symbol-day (mean)")
     p.add_argument("--quotes", type=int, default=40000, help="quotes per symbol-day (mean)")
     p.add_argument("--chunk", type=int, default=50, help="symbols per v11 warm-up run")
-    p.add_argument("--groups", type=int, default=1, help="v11 group count KB for this run")
     p.add_argument("--json", type=Path, help="also write the numbers here")
     args = p.parse_args(argv)
     threads = os.environ.get("TICK_THREADS")
-    v11 = ticks.converter()
-    v11.KB = args.groups
     cfg = config.load(ROOT / "config" / "bot.toml")
     labels = inputs.research().labels
     cal = labels.calendar()
@@ -202,8 +197,8 @@ def main(argv: list[str] | None = None) -> int:
             m = labels.cut_minute(hm)
             results.append(_one(cfg, m, hm, today, state, args, work / hm.replace(":", "")))
     out = {"day": DAY, "market_tickers": args.market, "trades_per_symbol": args.trades,
-           "quotes_per_symbol": args.quotes, "tick_threads": threads, "tick_groups": args.groups,
-           "minutes": results,
+           "quotes_per_symbol": args.quotes, "tick_threads": threads,
+           "tick_groups": cfg.model.tick_groups, "minutes": results,
            "peak_rss_mb_whole_run": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024}
     text = json.dumps(out, indent=1)
     print(text)
@@ -256,7 +251,7 @@ def _one(cfg, m: int, hm: str, today, state, args, work: Path) -> dict:
             tf, qf = Path(t) / "t.csv", Path(t) / "q.csv"
             ticks.write_flat_file(tr[tr.sip_timestamp < lo], tf, ticks.trade_columns())
             ticks.write_flat_file(qu[qu.sip_timestamp < lo], qf, ticks.quote_columns())
-            rows = ticks.tick_rows(tf, qf, DAY, through)
+            rows = ticks.tick_rows(tf, qf, DAY, through, groups=cfg.model.tick_groups)
         parts.append(rows[rows.m <= through])
         ct, cq = ticks.tail_carry(tr[tr.sip_timestamp < lo], qu[qu.sip_timestamp < lo])
         carry_t.append(ct[list(feed.columns("trades")[:-2])].astype(object))

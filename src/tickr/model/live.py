@@ -183,6 +183,7 @@ class LiveFeatures:
         self.bars, self.store, self.stream, self.backfill = bars, store, stream, backfill
         self.inputs, self.clock = inputs, clock
         self.marker = cfg.model.live_marker_quote
+        self.groups = cfg.model.tick_groups
         self.wait = live_wait_seconds(cfg.model)
         self.parts = Path(tick_dir) / day
         if self.parts.exists() and any(self.parts.glob(PART_GLOB)):
@@ -418,7 +419,8 @@ class LiveFeatures:
             tf, qf = os.path.join(tmp, "trades.csv"), os.path.join(tmp, "quotes.csv")
             ticks.write_flat_file(all_t, tf, ticks.trade_columns())
             ticks.write_flat_file(conv_q, qf, ticks.quote_columns())
-            rows = ticks.tick_rows(tf, qf, self.day, through + 1 if self.marker else through)
+            rows = ticks.tick_rows(tf, qf, self.day, through + 1 if self.marker else through,
+                                   groups=self.groups)
         first = self.closed + 1 + features.DAY_START_MINUTE
         keep = (rows.m <= through) & ((rows.m >= first) | rows.sym.isin(joiners))
         return rows[keep].reset_index(drop=True)

@@ -290,7 +290,7 @@ def minute_ticks(work: Path, day: str, minute: int, marker: bool) -> Any:
         con.execute(f"COPY ({quotes}) TO '{q}' (HEADER, DELIMITER ',')")
     finally:
         con.close()
-    table = ticks.tick_rows(t, q, day, through)
+    table = ticks.tick_rows(t, q, day, through, groups=ticks.default_groups())
     return table[table.m <= minute + features.DAY_START_MINUTE].reset_index(drop=True)
 
 
