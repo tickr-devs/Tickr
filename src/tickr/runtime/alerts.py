@@ -124,6 +124,9 @@ class AlertKind(StrEnum):
     # give it (any, while [chart] webull_enabled is false; any but the active environment's app
     # key and secret while it is true): its plist is stale or hand-edited (runtime/launchd.py).
     API_CREDENTIALS_UNEXPECTED = "api-credentials-unexpected"
+    # Raised by the API for each accepted entry-stop "off" or start-bot: the device (by name),
+    # the port and the time, so a stolen device token shows up at once.
+    RISK_COMMAND_USED = "risk-command-used"
 
 
 class Delivery(StrEnum):

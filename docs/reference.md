@@ -255,3 +255,4 @@ risk). **Today** means look before the next session. **Info** means no action is
 | `fees-unknown` | Today | An order's broker fees are not known, so today's money is unknown and entries are refused. Wait for the fees to appear; if they do not, report it. |
 | `fees-corrected` | Info | The account's cash activity showed the recorded fees were wrong, and they were replaced. |
 | `api-credentials-unexpected` | Today | The local API holds a credential variable it must not have. See [operations.md](operations.md#the-api-job-and-the-webull-keys). |
+| `risk-command-used` | Today | A paired device (or the local port) turned entries back on or started the bot. If you did not do this, revoke that device. See [operations.md](operations.md#risk-command-used). |

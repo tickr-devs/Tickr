@@ -136,14 +136,14 @@ def unexpected_credentials(cfg: config_module.Config,
 
 
 def _api_notifier(cfg: config_module.Config) -> Notifier | None:
-    """The Mac notification (run without any credential variable) and the alerts feed file; no
-    iMessage (the API has no recipient variable); None off macOS."""
+    """The alerts feed file always, and on macOS the Mac notification (run without any
+    credential variable) too; no iMessage (the API has no recipient variable)."""
+    feed = FeedNotifier(feed_path(cfg.root, cfg.run.data_dir, cfg.alerts))
     if sys.platform != "darwin":
-        return None
+        return Channels((), ((FEED, feed),))
     run = functools.partial(subprocess.run,
                             env=config_module.environ_without(
                                 config_module.credential_variables(cfg)))
-    feed = FeedNotifier(feed_path(cfg.root, cfg.run.data_dir, cfg.alerts))
     return Channels((), ((MACOS, mac_notifier(cfg.alerts, run)), (FEED, feed)))
 
 
@@ -248,6 +248,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
     server = make_server(settings, warm=True)
+    # risk-command-used: shared by the remote listener made below.
+    server.alerter = Alerter(cfg.alerts, f"{ALERT_TITLE} {cfg.environment_name}",
+                             _api_notifier(cfg))
     print(f"tickr api on http://{settings.host}:{server.server_port}/", file=sys.stderr)
     remote = None
     if settings.remote_hosts:
