@@ -177,6 +177,7 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
         ' [ "$1" = --data ] && data=$2; shift; done\n'
         'mkdir -p "$out"; : > "$out/tickr-bot.service"; : > "$out/tickr-bot.timer"\n'
         'echo "PathExists=$data/control/restart-request" > "$out/tickr-bot-restart.path"\n'
+        'echo "PathExists=$data/control/start-request" > "$out/tickr-bot-start.path"\n'
         ': > "$out/ports.env"; echo TICKR_BOT_EXIT_TIMEOUT=1 > "$out/limits.env"\n', "utf-8")
     # The fake docker answers `--entrypoint id preflight -u|-g` with the uid and gid of
     # IMAGE_IDS (default: the data folder's owner, this test's own ids) and require-flat with
@@ -275,12 +276,15 @@ def test_deploy_script_installs_the_units_when_flat(tmp_path):
     done = _deploy(tmp_path, flat=True)
     assert done.returncode == 0, done.stderr
     assert sorted(p.name for p in (tmp_path / "units").iterdir()) == [
-        "tickr-bot-restart.path", "tickr-bot.service", "tickr-bot.timer"]
+        "tickr-bot-restart.path", "tickr-bot-start.path", "tickr-bot.service",
+        "tickr-bot.timer"]
     assert (tmp_path / "etc" / "ports.env").exists() and (tmp_path / "etc" / "limits.env").exists()
     log = (tmp_path / "systemctl.log").read_text("utf-8")
     assert "daemon-reload" in log and "tickr-bot.timer" in log
     assert re.search(r"(?m)^enable .*tickr-bot-restart\.path", log)
     assert re.search(r"(?m)^start .*tickr-bot-restart\.path", log)
+    assert re.search(r"(?m)^enable .*tickr-bot-start\.path", log)
+    assert re.search(r"(?m)^start .*tickr-bot-start\.path", log)
     # The control folder: created by the deploy, the service account's only.
     control = tmp_path / "data" / "control"
     assert control.is_dir() and stat.S_IMODE(control.stat().st_mode) == 0o700
@@ -331,17 +335,32 @@ def test_deploy_script_installs_nothing_when_a_copy_fails(tmp_path):
     assert not (tmp_path / "systemctl.log").exists()  # no daemon-reload
 
 
-def test_deploy_script_refuses_over_a_waiting_restart_request(tmp_path):
+@pytest.mark.parametrize(("name", "kind"), [("restart-request", "restart"),
+                                             ("start-request", "start")])
+def test_deploy_script_refuses_over_a_waiting_request(tmp_path, name, kind):
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
     control = tmp_path / "data" / "control"
     control.mkdir(parents=True)
-    (control / "restart-request").write_text("{}\n", "utf-8")
+    (control / name).write_text("{}\n", "utf-8")
     done = subprocess.run(
         [str(SCRIPT), str(repo), str(etc), str(tmp_path / "data")], capture_output=True,
         text=True, check=False, env=_script_env(units, systemctl, docker))
-    assert done.returncode == 1 and "restart request is waiting" in done.stderr
+    assert done.returncode == 1 and f"bot {kind} request is waiting" in done.stderr
     assert list(units.iterdir()) == [] and not (tmp_path / "systemctl.log").exists()
-    assert (control / "restart-request").exists()  # left for the owner to read
+    assert (control / name).exists()  # left for the owner to read
+
+
+def test_deploy_script_refuses_a_start_request_outside_the_control_folder(tmp_path):
+    repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
+    python = repo / ".venv" / "bin" / "python"
+    python.write_text(python.read_text("utf-8").replace("control/start-request",
+                                                        "other/start-request"), "utf-8")
+    (tmp_path / "data").mkdir()
+    done = subprocess.run(
+        [str(SCRIPT), str(repo), str(etc), str(tmp_path / "data")], capture_output=True,
+        text=True, check=False, env=_script_env(units, systemctl, docker))
+    assert done.returncode == 1 and "is not in the request folder" in done.stderr
+    assert list(units.iterdir()) == [] and not (tmp_path / "systemctl.log").exists()
 
 
 def test_the_restart_unit_restarts_once_with_the_bots_grace_and_never_retries(
@@ -363,6 +382,42 @@ def test_the_restart_unit_restarts_once_with_the_bots_grace_and_never_retries(
     path = (out / "tickr-bot-restart.path").read_text("utf-8")
     assert "PathExists=/srv/tickr/data/control/restart-request\n" in path
     assert "Unit=tickr-bot-restart.service\n" in path
+
+
+def test_the_start_unit_never_recreates_a_running_bot_and_never_retries(
+        config_path, repo, tmp_path):
+    cfg = _pinned(config_path)
+    out = tmp_path / "out"
+    systemd.render_all(cfg, repo / "ops" / "systemd", out, systemd.values(cfg, PATHS, ZONE))
+    service = (out / "tickr-bot-start.service").read_text("utf-8")
+    steps = re.findall(r"(?m)^ExecStart=(.*)$", service)
+    assert steps == [
+        "/bin/mv -fT /srv/tickr/data/control/start-request "
+        "/srv/tickr/data/control/start-request.taken",
+        "/usr/bin/docker compose -f /srv/tickr/repo/ops/docker/compose.yaml -p tickr "
+        "--profile jobs up -d --no-recreate --no-deps --pull never --no-build bot",
+        "/bin/cat /srv/tickr/data/control/start-request.taken"]
+    assert "--force-recreate" not in service and " restart " not in steps[1]
+    assert "Type=oneshot\n" in service
+    assert "After=tickr-bot-restart.service\n" in service  # never beside a restart
+    assert not re.search(r"(?m)^(Restart|StartLimit|ExecStartPre|ExecStopPost)", service)
+    path = (out / "tickr-bot-start.path").read_text("utf-8")
+    assert "PathExists=/srv/tickr/data/control/start-request\n" in path
+    assert "Unit=tickr-bot-start.service\n" in path
+
+
+@pytest.mark.parametrize("value", ["other/start-request", "control/restart-request",
+                                   "start-request", "/abs/control/start-request",
+                                   "control/../start-request"])
+def test_a_start_request_outside_the_control_folder_is_refused(config_path, repo, value):
+    text = config_path.read_text("utf-8")
+    old = 'server_start_request_file = "control/start-request"'
+    assert old in text
+    config_path.write_text(text.replace(old, f"server_start_request_file = {value!r}".replace(
+        "'", '"')), "utf-8")
+    cfg = _pinned(config_path)
+    with pytest.raises(config_module.ConfigError, match="server_start_request_file"):
+        systemd.values(cfg, PATHS, ZONE)
 
 
 def test_the_compose_project_name_is_tickr_and_data_is_the_host_folder():

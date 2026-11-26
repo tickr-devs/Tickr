@@ -1,0 +1,30 @@
+# Tickr bot start on request: started by tickr-bot-start.path when the owner pressed Start in
+# the app. The request file (request time in UTC and cause): {{START_REQUEST}}
+# Steps, each once: (1) take the request (rename it to .taken, so a request written during the
+# start is a new event); (2) `up -d --no-recreate` the compose service `bot`: a running bot
+# container is never stopped, recreated or restarted; a stopped one is started as it is (the
+# image it was created from); a missing one is created and started; the image is never pulled
+# or built here, a missing image fails the step; (3) log the request to the journal. Never
+# retried: no Restart=, no loop. A failed step stops the rest and stays visible in
+# `systemctl status tickr-bot-start.service`.
+# The env file is the path {{ENV_FILE}} on the host, written by tickr-secrets.service; only its
+# path is named here, never a value.
+# Rendered by `python -m tickr.runtime render-systemd`; see docs/deploy-server.md.
+[Unit]
+Description=Tickr bot start on request
+RequiresMountsFor={{DATA_HOST}}
+Requires=docker.service tickr-secrets.service
+After=docker.service tickr-secrets.service
+# Never at the same time as a restart on request: when both are queued, this one waits for it.
+After=tickr-bot-restart.service
+
+[Service]
+Type=oneshot
+User={{USER}}
+WorkingDirectory={{REPO}}
+EnvironmentFile={{COMPOSE_ENV}}
+Environment=TICKR_CONFIG_HOST={{CONFIG_HOST}}
+Environment=TICKR_ENV_FILE_HOST={{ENV_FILE}}
+ExecStart=/bin/mv -fT {{START_REQUEST}} {{START_TAKEN}}
+ExecStart=/usr/bin/docker compose -f {{REPO}}/ops/docker/compose.yaml -p tickr --profile jobs up -d --no-recreate --no-deps --pull never --no-build bot
+ExecStart=/bin/cat {{START_TAKEN}}

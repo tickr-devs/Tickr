@@ -20,6 +20,12 @@ data folder, and `tickr-bot-restart.service` restarts the compose service `bot` 
 bot's own `stop_grace_period` read from compose.yaml here (`bot_stop_grace`), never a number of
 its own.
 
+Bot start on request: `tickr-bot-start.path` watches the start request the API's Start writes
+inside its container, and `tickr-bot-start.service` runs `up -d --no-recreate` for the compose
+service `bot` once: a running bot container is never touched, a stopped or missing one is
+started. The start request lives in the restart request's folder (the one control folder
+deploy-server.sh creates).
+
 Times are wall-clock times in a zone the caller names (an IANA name): the server's own zone is
 never assumed, so a host on UTC still starts the bot at 04:00 New York time.
 """
@@ -144,6 +150,8 @@ def values(config: Config, paths: Paths, zone: str) -> dict[str, str]:
     data = _safe("data", str(paths.data))
     request = _safe("server_restart_request_file",
                     str(paths.data / restartrequest.relative_request_file(config)))
+    start = _safe("server_start_request_file",
+                  str(paths.data / restartrequest.relative_start_request_file(config)))
     grace = bot_stop_grace((config.root / COMPOSE_FILE).read_text("utf-8"),
                            compose_values(config, data))
     return {
@@ -155,6 +163,8 @@ def values(config: Config, paths: Paths, zone: str) -> dict[str, str]:
         "DATA_HOST": data,
         "RESTART_REQUEST": request,
         "RESTART_TAKEN": request + restartrequest.TAKEN_SUFFIX,
+        "START_REQUEST": start,
+        "START_TAKEN": start + restartrequest.TAKEN_SUFFIX,
         "BOT_STOP_GRACE": str(grace),
         "PREFLIGHT_CALENDAR": _calendar(sched.preflight, sched.weekdays, zone),
         "BOT_CALENDAR": _calendar(sched.bot, sched.weekdays, zone),

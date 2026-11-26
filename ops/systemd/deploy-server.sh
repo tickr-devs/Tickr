@@ -17,10 +17,10 @@
 # and the database: `require-flat` runs in the bot's own image (compose service `preflight`, so
 # the env file is mounted and sourced as for a real job; compose needs the freshly rendered
 # limits.env for the bot's grace period) and never sends an order; any doubt refuses and nothing
-# is installed; (4) refuse on a restart request left in the control folder (it would restart
-# the bot the moment the path unit starts), then create only the control folder under the
+# is installed; (4) refuse on a restart or start request left in the control folder (it would
+# restart or start the bot the moment its path unit starts), then create only the control folder under the
 # verified mount (owned by the image's uid:gid, mode 700); (5) install the files (all or nothing) and reload systemd; (6)
-# enable the timers, the restart request watch and the API. The bot is never started or stopped
+# enable the timers, the restart and start request watches and the API. The bot is never started or stopped
 # here: a running job keeps the code it started with, the next scheduled start uses the new
 # units.
 #
@@ -90,20 +90,34 @@ if ! "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm prefli
   exit 1
 fi
 
-# The restart request watch (tickr-bot-restart.path) fires as soon as it starts if a request is
-# already there: never install over one. The folder of the request is created here only.
+# The request watches (tickr-bot-restart.path, tickr-bot-start.path) fire as soon as they start
+# if a request is already there: never install over one. The folder of the requests (one folder
+# for both) is created here only.
 request=$(sed -n 's/^PathExists=//p' "$scratch/tickr-bot-restart.path")
 if [ -z "$request" ]; then
   echo "refused: the rendered tickr-bot-restart.path names no request file; nothing was installed" >&2
+  exit 1
+fi
+start_request=$(sed -n 's/^PathExists=//p' "$scratch/tickr-bot-start.path")
+if [ -z "$start_request" ]; then
+  echo "refused: the rendered tickr-bot-start.path names no request file; nothing was installed" >&2
   exit 1
 fi
 if [ -e "$request" ]; then
   echo "refused: a bot restart request is waiting at $request; read it, remove it, deploy again" >&2
   exit 1
 fi
+if [ -e "$start_request" ]; then
+  echo "refused: a bot start request is waiting at $start_request; read it, remove it, deploy again" >&2
+  exit 1
+fi
 control=$(dirname "$request")
 if [ "$(dirname "$control")" != "$data" ]; then
   echo "refused: the request folder $control is not directly under $data; nothing was installed" >&2
+  exit 1
+fi
+if [ "$(dirname "$start_request")" != "$control" ]; then
+  echo "refused: the start request $start_request is not in the request folder $control; nothing was installed" >&2
   exit 1
 fi
 # Only the control folder is created, under the verified mount, owned by the image's user.
@@ -129,8 +143,8 @@ for tmp in $staged; do
 done
 "$systemctl" daemon-reload
 "$systemctl" enable tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer \
-  tickr-bot-restart.path tickr-api.service
+  tickr-bot-restart.path tickr-bot-start.path tickr-api.service
 "$systemctl" start tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer \
-  tickr-bot-restart.path
+  tickr-bot-restart.path tickr-bot-start.path
 "$systemctl" restart tickr-api.service
 echo "deployed: units installed in $units_dir, ports.env and limits.env in $etc"
