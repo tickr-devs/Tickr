@@ -628,7 +628,7 @@ enum L10n {
       LocalizedStringResource("risk.title", defaultValue: "Risk", bundle: L10n.bundle)
     }
     static var room: LocalizedStringResource {
-      LocalizedStringResource("risk.room", defaultValue: "Risk room today", bundle: L10n.bundle)
+      LocalizedStringResource("risk.room", defaultValue: "Room left today", bundle: L10n.bundle)
     }
     /// Open positions against the most allowed: "2 of 3".
     static func positionsOf(_ count: Int, _ limit: Int) -> LocalizedStringResource {
@@ -636,7 +636,7 @@ enum L10n {
     }
     /// The broker account card.
     static var account: LocalizedStringResource {
-      LocalizedStringResource("risk.account", defaultValue: "Account · broker", bundle: L10n.bundle)
+      LocalizedStringResource("risk.account", defaultValue: "Account", bundle: L10n.bundle)
     }
     /// Account equity: cash plus positions at market.
     static var equity: LocalizedStringResource {
@@ -648,7 +648,7 @@ enum L10n {
     }
     /// Intraday buying power.
     static var buyingPower: LocalizedStringResource {
-      LocalizedStringResource("risk.buyingPower", defaultValue: "Buying power · day", bundle: L10n.bundle)
+      LocalizedStringResource("risk.buyingPower", defaultValue: "Buying power", bundle: L10n.bundle)
     }
     /// Buying power held overnight.
     static var overnightBuyingPower: LocalizedStringResource {
@@ -664,18 +664,31 @@ enum L10n {
     }
     /// The broker's profit or loss for today.
     static var dayResult: LocalizedStringResource {
-      LocalizedStringResource("risk.dayResult", defaultValue: "Day P&L · broker", bundle: L10n.bundle)
+      LocalizedStringResource("risk.dayResult", defaultValue: "Day P&L", bundle: L10n.bundle)
     }
     /// Day trades left when the broker sets no limit.
     static var noLimit: LocalizedStringResource {
       LocalizedStringResource("risk.noLimit", defaultValue: "no limit", bundle: L10n.bundle)
     }
-    /// Margin facts under the balances: day trades left, margin calls, maintenance margin, read time.
-    static func marginLine(_ dayTrades: String, _ calls: String, _ margin: String, _ time: String)
-      -> LocalizedStringResource {
-      LocalizedStringResource("risk.marginLine",
-        defaultValue: "day trades left \(dayTrades) · margin calls \(calls) · maintenance \(margin) · balance at \(time) ET",
-        bundle: L10n.bundle)
+    /// The disclosure holding the other balances.
+    static var moreBalances: LocalizedStringResource {
+      LocalizedStringResource("risk.moreBalances", defaultValue: "More balances", bundle: L10n.bundle)
+    }
+    /// Day trades the broker still allows today.
+    static var dayTradesLeft: LocalizedStringResource {
+      LocalizedStringResource("risk.dayTradesLeft", defaultValue: "Day trades left", bundle: L10n.bundle)
+    }
+    /// Open margin calls.
+    static var marginCalls: LocalizedStringResource {
+      LocalizedStringResource("risk.marginCalls", defaultValue: "Margin calls", bundle: L10n.bundle)
+    }
+    /// The maintenance margin.
+    static var maintenance: LocalizedStringResource {
+      LocalizedStringResource("risk.maintenance", defaultValue: "Maintenance", bundle: L10n.bundle)
+    }
+    /// When the broker was read, beside the account kind: "at 10:48:03 ET".
+    static func readAt(_ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("risk.readAt", defaultValue: "at \(time) ET", bundle: L10n.bundle)
     }
     /// No balance read yet.
     static var balanceNote: LocalizedStringResource {
@@ -1222,9 +1235,9 @@ enum L10n {
     static var title: LocalizedStringResource {
       LocalizedStringResource("symbols.title", defaultValue: "Symbols", bundle: L10n.bundle)
     }
-    /// Under the title: day, end of the latest discovery pass, symbols the screeners listed.
-    static func context(_ day: String, _ time: String, _ count: Int) -> LocalizedStringResource {
-      LocalizedStringResource("symbols.context", defaultValue: "\(day) · \(time) ET · \(count) screened", bundle: L10n.bundle)
+    /// Under the title: the day and the end of the latest discovery pass.
+    static func context(_ day: String, _ time: String) -> LocalizedStringResource {
+      LocalizedStringResource("symbols.context", defaultValue: "\(day) · \(time) ET", bundle: L10n.bundle)
     }
     /// A failed read of the symbols or movers; argument: the error.
     static func unavailable(_ error: String) -> LocalizedStringResource {
@@ -1262,17 +1275,13 @@ enum L10n {
     static var noMovers: LocalizedStringResource {
       LocalizedStringResource("symbols.noMovers", defaultValue: "No fast movers yet.", bundle: L10n.bundle)
     }
-    /// Detail: the symbol's stages today.
-    static var pathToday: LocalizedStringResource {
-      LocalizedStringResource("symbols.pathToday", defaultValue: "Path today", bundle: L10n.bundle)
-    }
     /// Detail link: the Chart on this symbol.
     static var openChart: LocalizedStringResource {
       LocalizedStringResource("symbols.openChart", defaultValue: "Open chart", bundle: L10n.bundle)
     }
     /// Accessibility hint of a row: opens its detail.
     static var rowHint: LocalizedStringResource {
-      LocalizedStringResource("symbols.rowHint", defaultValue: "Shows the symbol's path today", bundle: L10n.bundle)
+      LocalizedStringResource("symbols.rowHint", defaultValue: "Shows the symbol's steps today", bundle: L10n.bundle)
     }
   }
   enum FastMovers {
@@ -2017,7 +2026,7 @@ enum ChartText {
   static let zoomOut = LocalizedStringResource("chart.zoomOut", defaultValue: "Zoom out")
   static let liveHint = LocalizedStringResource("chart.live.hint",
     defaultValue: "Scrolls to the newest candle.")
-  static let todayLive = LocalizedStringResource("chart.todayLive", defaultValue: "today · live")
+  static let todayLive = LocalizedStringResource("chart.todayLive", defaultValue: "today")
   /// The day's high, low and volume beside the price, as on the design: "H", "L", "V".
   static let highShort = LocalizedStringResource("chart.highShort", defaultValue: "H")
   static let lowShort = LocalizedStringResource("chart.lowShort", defaultValue: "L")
@@ -2101,17 +2110,9 @@ enum ChartText {
   static func rsi(_ period: Int) -> LocalizedStringResource {
     LocalizedStringResource("chart.indicator.rsi", defaultValue: "RSI\(period)")
   }
-  /// The line above the chart while no candle is read: timeframe and candles on screen (both
-  /// already formatted), and how to move and read the chart.
-  static func caption(_ range: String, _ timeframe: String, _ bars: String) -> LocalizedStringResource {
-    LocalizedStringResource("chart.caption",
-      defaultValue: "\(range) · \(timeframe) · \(bars) · drag to scroll · pinch to zoom · touch and hold to read")
-  }
-
-  /// Candles on screen, for `caption`.
-  static func bars(_ count: Int) -> LocalizedStringResource {
-    LocalizedStringResource("chart.bars", defaultValue: "\(count) bars")
-  }
+  /// The line above the chart while no candle is read: how to move and read the chart.
+  static let caption = LocalizedStringResource("chart.caption",
+    defaultValue: "drag to scroll · pinch to zoom · touch and hold to read")
 
   /// The crosshair readout's letters before a candle's open, high, low, close and volume.
   static let readoutOpen = LocalizedStringResource("chart.readout.open", defaultValue: "O")
@@ -2119,16 +2120,14 @@ enum ChartText {
   static let readoutLow = LocalizedStringResource("chart.readout.low", defaultValue: "L")
   static let readoutClose = LocalizedStringResource("chart.readout.close", defaultValue: "C")
   static let readoutVolume = LocalizedStringResource("chart.readout.volume", defaultValue: "V")
-  /// The caption where the full one does not fit on its line: range, interval, bars on screen.
-  static func captionShort(_ range: String, _ timeframe: String, _ bars: String) -> LocalizedStringResource {
-    LocalizedStringResource("chart.captionShort", defaultValue: "\(range) · \(timeframe) · \(bars)")
-  }
+  /// The caption where the full one does not fit on its line.
+  static let captionShort = LocalizedStringResource("chart.captionShort", defaultValue: "touch and hold to read")
   static let decisions = LocalizedStringResource("chart.decisions",
     defaultValue: "Why the bot acted")
   static let noDecisions = LocalizedStringResource("chart.decisions.none",
     defaultValue: "No decisions recorded for this symbol that day.")
   static let noEntries = LocalizedStringResource("chart.decisions.noEntries",
-    defaultValue: "No entries or exits; the strategy only watched.")
+    defaultValue: "No entries or exits; the bot only waited.")
   static let keyDecisions = LocalizedStringResource("chart.decisions.key",
     defaultValue: "Entries and exits only")
   static let tradingStrategy = LocalizedStringResource("chart.decisions.strategyLabel",

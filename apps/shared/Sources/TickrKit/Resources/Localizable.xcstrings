@@ -1307,13 +1307,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Strategy liquidity rule"
+            "value" : "Liquidity too low"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Regla de liquidez de la estrategia"
+            "value" : "Liquidez insuficiente"
           }
         }
       }
@@ -10691,23 +10691,6 @@
         }
       }
     },
-    "kit.sizing.badge" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Size"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tamaño"
-          }
-        }
-      }
-    },
     "kit.sizing.exampleLead" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10738,6 +10721,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cada límite permite:"
+          }
+        }
+      }
+    },
+    "kit.sizing.limitedBy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limited by: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limitado por: %@"
           }
         }
       }
@@ -10861,6 +10861,125 @@
         }
       }
     },
+    "kit.sizing.place" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ at %2$@ · %3$@ ET"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a %2$@ · %3$@ ET"
+          }
+        }
+      }
+    },
+    "kit.sizing.placeNoPrice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@ ET"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@ ET"
+          }
+        }
+      }
+    },
+    "kit.sizing.plain.dailyRoom" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Room left %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Margen restante %@"
+          }
+        }
+      }
+    },
+    "kit.sizing.plain.notionalCap" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position size cap %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tope por posición %@"
+          }
+        }
+      }
+    },
+    "kit.sizing.plain.plannedLoss" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planned loss %1$@ · stop %2$@ away"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pérdida planificada %1$@ · stop a %2$@"
+          }
+        }
+      }
+    },
+    "kit.sizing.plainName.dailyRoom" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "room left"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "margen restante"
+          }
+        }
+      }
+    },
+    "kit.sizing.plainName.notionalCap" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "position size cap"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tope por posición"
+          }
+        }
+      }
+    },
     "kit.sizing.row.dailyRoom" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10946,6 +11065,23 @@
         }
       }
     },
+    "kit.sizing.setByPlannedLoss" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set by the planned loss"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fijado por la pérdida planificada"
+          }
+        }
+      }
+    },
     "kit.sizing.shares" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10959,6 +11095,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ acc."
+          }
+        }
+      }
+    },
+    "kit.sizing.sharesLine" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ shares"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ acciones"
           }
         }
       }
@@ -12388,6 +12541,159 @@
         }
       }
     },
+    "kit.symbols.caption.bars" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enough trading"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suficiente negociación"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.fast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sudden jump since the last bar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salto repentino desde la última barra"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.order" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Order filled"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orden ejecutada"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.quote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fresh price, tight spread"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Precio reciente, diferencial estrecho"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.risk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Within risk limits"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dentro de los límites de riesgo"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.screeners" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From the screeners"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De los filtros"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.stop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop at broker"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop en el bróker"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.strategy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld chosen to enter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld elegidos para entrar"
+          }
+        }
+      }
+    },
+    "kit.symbols.caption.universe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Common stocks only"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo acciones ordinarias"
+          }
+        }
+      }
+    },
     "kit.symbols.changeDown" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12445,13 +12751,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ATR"
+            "value" : "Move"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ATR"
+            "value" : "Movimiento"
           }
         }
       }
@@ -12479,13 +12785,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "$vol ×"
+            "value" : "$ traded"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "$vol ×"
+            "value" : "$ negociados"
           }
         }
       }
@@ -12530,13 +12836,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Outcome · reason"
+            "value" : "Result"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Resultado · motivo"
+            "value" : "Resultado"
           }
         }
       }
@@ -12615,30 +12921,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vol ×"
+            "value" : "Volume"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vol ×"
-          }
-        }
-      }
-    },
-    "kit.symbols.decided" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · %2$@"
+            "value" : "Volumen"
           }
         }
       }
@@ -12660,23 +12949,6 @@
         }
       }
     },
-    "kit.symbols.fastMover" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fast mover"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Movimiento rápido"
-          }
-        }
-      }
-    },
     "kit.symbols.fastMovers" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12690,6 +12962,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Movimiento rápido"
+          }
+        }
+      }
+    },
+    "kit.symbols.fastNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fast mover at %1$@ · %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Movimiento rápido a las %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "kit.symbols.fastRule" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flagged when a one-minute bar trades at least %1$@ and its volume is %2$@× the last %3$lld bars, or it moves %4$@× its usual range (ATR), or its dollars traded are %5$@×. Open positions and waiting symbols stay on top."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se marca cuando una barra de un minuto negocia al menos %1$@ y su volumen es %2$@× el de las últimas %3$lld barras, o se mueve %4$@× su rango habitual (ATR), o sus dólares negociados son %5$@×. Las posiciones abiertas y los símbolos en espera quedan arriba."
+          }
+        }
+      }
+    },
+    "kit.symbols.fastRuleLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How a fast mover is flagged"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo se marca un movimiento rápido"
           }
         }
       }
@@ -12762,121 +13085,87 @@
         }
       }
     },
-    "kit.symbols.flagged" : {
+    "kit.symbols.fired.dollars" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "flagged %@"
+            "value" : "$ traded %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "marcado %@"
+            "value" : "$ negociados %@"
           }
         }
       }
     },
-    "kit.symbols.lastDecision" : {
+    "kit.symbols.fired.move" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Last strategy decision"
+            "value" : "Move %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Última decisión de la estrategia"
+            "value" : "Movimiento %@"
           }
         }
       }
     },
-    "kit.symbols.more" : {
+    "kit.symbols.fired.volume" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "+%lld"
+            "value" : "Volume %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "+%lld"
+            "value" : "Volumen %@"
           }
         }
       }
     },
-    "kit.symbols.mover.met" : {
+    "kit.symbols.foundBy" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "met ≥ %@"
+            "value" : "Found by %1$@ · first seen %2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "cumple ≥ %@"
+            "value" : "Encontrado por %1$@ · visto por primera vez %2$@"
           }
         }
       }
     },
-    "kit.symbols.mover.unmet" : {
+    "kit.symbols.notEntered" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "< %@"
+            "value" : "Not entered"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "< %@"
-          }
-        }
-      }
-    },
-    "kit.symbols.noDecision" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No strategy decision today."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sin decisión de la estrategia hoy."
-          }
-        }
-      }
-    },
-    "kit.symbols.notFlagged" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "not flagged today"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sin marcar hoy"
+            "value" : "No entró"
           }
         }
       }
@@ -12938,13 +13227,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Passed"
+            "value" : "Entered"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aprobado"
+            "value" : "Entró"
+          }
+        }
+      }
+    },
+    "kit.symbols.outcome.skipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartado"
           }
         }
       }
@@ -12989,13 +13295,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "stop verified"
+            "value" : "Stop verified at broker"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "stop verificado"
+            "value" : "Stop verificado en el bróker"
           }
         }
       }
@@ -13006,30 +13312,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Position"
+            "value" : "Open"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Posición"
-          }
-        }
-      }
-    },
-    "kit.symbols.rank" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "#%lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "#%lld"
+            "value" : "Abierta"
           }
         }
       }
@@ -13047,23 +13336,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@×"
-          }
-        }
-      }
-    },
-    "kit.symbols.reachedStage" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "reached %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "alcanzó %@"
           }
         }
       }
@@ -13119,36 +13391,19 @@
         }
       }
     },
-    "kit.symbols.screeners" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Screeners"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filtros"
-          }
-        }
-      }
-    },
     "kit.symbols.seen" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "seen %@"
+            "value" : "first seen %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "visto %@"
+            "value" : "visto por primera vez %@"
           }
         }
       }
@@ -13261,13 +13516,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bars"
+            "value" : "Volume ok"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Velas"
+            "value" : "Volumen ok"
           }
         }
       }
@@ -13278,13 +13533,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Order"
+            "value" : "Bought"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Orden"
+            "value" : "Comprado"
           }
         }
       }
@@ -13295,13 +13550,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quote"
+            "value" : "Price ok"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cotización"
+            "value" : "Precio ok"
           }
         }
       }
@@ -13312,13 +13567,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Risk"
+            "value" : "Risk ok"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Riesgo"
+            "value" : "Riesgo ok"
           }
         }
       }
@@ -13329,13 +13584,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Screeners"
+            "value" : "Found"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Filtros"
+            "value" : "Encontrados"
           }
         }
       }
@@ -13346,13 +13601,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Broker stop"
+            "value" : "Stop set"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop en el bróker"
+            "value" : "Stop puesto"
           }
         }
       }
@@ -13363,13 +13618,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Strategy"
+            "value" : "Decision"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Estrategia"
+            "value" : "Decisión"
           }
         }
       }
@@ -13380,64 +13635,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Universe"
+            "value" : "Stocks"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Universo"
-          }
-        }
-      }
-    },
-    "kit.symbols.stat.dollars" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "$ vol ×"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "$ vol ×"
-          }
-        }
-      }
-    },
-    "kit.symbols.stat.move" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move ATR"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mov. ATR"
-          }
-        }
-      }
-    },
-    "kit.symbols.stat.volume" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vol ×"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vol ×"
+            "value" : "Acciones"
           }
         }
       }
@@ -13455,6 +13659,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "no alcanzada"
+          }
+        }
+      }
+    },
+    "kit.symbols.stepsPassed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld passed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld superados"
+          }
+        }
+      }
+    },
+    "kit.symbols.stepsToday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steps today"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasos de hoy"
           }
         }
       }
