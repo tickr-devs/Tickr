@@ -142,5 +142,6 @@
       "adopted_at": "2026-11-16T14:55:00.123Z"
     }
   ],
+  "stop_progress": null,
   "schema_version": 1
 }
