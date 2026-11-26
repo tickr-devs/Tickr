@@ -419,8 +419,8 @@ struct CandleChart: View {
       case .stochastic: Text(L10n.Chart.stochastic)
       case .atr:
         if let value = plot.atr.last(where: { $0 != nil }) ?? nil {
-          Text(L10n.Chart.atr(Indicators.atrPeriod)) + Text(verbatim: Format.itemSeparator)
-            + Text(verbatim: Money.value(value)).foregroundStyle(Palette.seriesATRText)
+          Text.joined(Text(L10n.Chart.atr(Indicators.atrPeriod)), Text(verbatim: Format.itemSeparator),
+            Text(verbatim: Money.value(value)).foregroundStyle(Palette.seriesATRText))
         } else {
           Text(L10n.Chart.atr(Indicators.atrPeriod))
         }
@@ -433,14 +433,13 @@ struct CandleChart: View {
     .allowsHitTesting(false)
   }
 
-  /// "VOL 23.4K · avg 20 · rel. volume 2.6×" for the newest candle; the volume alone until the
-  /// average has its first value.
+  /// "Volume 23.4K · rel. volume 2.6×" for the newest candle (against the average of the last
+  /// `ChartPlot.volumeAveragePeriod`); the volume alone until the average has its first value.
   @ViewBuilder private var volumeName: some View {
     if let last = candles.indices.last {
       let volume = Self.volumeText(candles[last].volume)
       if let average = plot.volumeAverage[last], average > 0 {
-        Text(L10n.Chart.volumePane(
-          volume, ChartPlot.volumeAveragePeriod, Money.number(candles[last].volume / average, fractionDigits: Self.ratioDigits)))
+        Text(L10n.Chart.volumePane(volume, Money.number(candles[last].volume / average, fractionDigits: Self.ratioDigits)))
       } else {
         Text(L10n.Chart.volumePaneShort(volume))
       }
