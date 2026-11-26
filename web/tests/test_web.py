@@ -7,6 +7,7 @@ from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.management import CommandError, call_command
+from django.test import Client
 from django.urls import reverse
 
 pytestmark = pytest.mark.django_db
@@ -181,3 +182,23 @@ def test_spanish_cabinet(client):
     client.force_login(_invite())
     response = client.get("/app", HTTP_ACCEPT_LANGUAGE="es")
     assert "Cerrar sesión" in response.content.decode()
+
+
+def _ask_code(email, forwarded_for):
+    """One request from a fresh browser session (a pending code would short-cut the form)."""
+    return Client().post(
+        reverse("account_request_login_code"),
+        {"email": email},
+        HTTP_X_FORWARDED_FOR=forwarded_for,
+    )
+
+
+def test_per_ip_limits_count_each_visitor_behind_the_proxy(settings):
+    """Caddy sends the visitor's address as the last X-Forwarded-For entry: one visitor's
+    requests must not use up another's limit, and a forged first entry changes nothing."""
+    settings.ACCOUNT_RATE_LIMITS = {**settings.ACCOUNT_RATE_LIMITS, "request_login_code": "3/5m/ip"}
+    for n in range(3):
+        assert _ask_code(f"a{n}@example.com", "203.0.113.1").status_code == 302
+    assert _ask_code("a3@example.com", "203.0.113.1").status_code == 200  # form error
+    assert _ask_code("a4@example.com", "198.51.100.7, 203.0.113.1").status_code == 200
+    assert _ask_code("b0@example.com", "203.0.113.2").status_code == 302

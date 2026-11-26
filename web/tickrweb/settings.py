@@ -162,6 +162,11 @@ ACCOUNT_LOGIN_BY_CODE_ENABLED = True
 ACCOUNT_EMAIL_SUBJECT_PREFIX = "tickr.bot · "
 ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = False
 ACCOUNT_SESSION_REMEMBER = True
+# Proxies in front of gunicorn: one, Caddy. It overwrites X-Forwarded-For with the address it
+# saw, so allauth takes the last entry as the client and its per-IP limits count per visitor.
+# Without this every visitor shares Caddy's address and one bucket. gunicorn must be reachable
+# only by Caddy (web/README.md).
+ALLAUTH_TRUSTED_PROXY_COUNT = 1
 # allauth's own limits: "count/period[/key]" with periods s, m, h, d.
 ACCOUNT_RATE_LIMITS = {
     # Wrong passwords for one account from one IP: 5 per 15 minutes.

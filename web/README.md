@@ -18,6 +18,16 @@ keys. It imports nothing from `src/tickr`.
 
 Public pages must not use `/login`, `/account`, `/app`, `/api` or `/static`.
 
+## Behind the proxy
+
+Exactly one proxy, Caddy, sits in front of gunicorn (`ALLAUTH_TRUSTED_PROXY_COUNT = 1`), and
+allauth's per-IP sign-in limits take the last `X-Forwarded-For` entry as the visitor. That holds
+only if:
+- gunicorn is reachable by Caddy alone (loopback, a unix socket, or a container network with
+  no published port), so nobody can call it directly with a made-up header;
+- Caddy overwrites `X-Forwarded-For` with the address it saw and never passes on one the client
+  sent.
+
 ## Accounts
 
 Public sign-up is closed. `python manage.py invite you@example.com [--staff | --superuser]` creates an
