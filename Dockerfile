@@ -9,8 +9,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# The container user's uid must be able to read the env file (chmod 600 on the host): build
-# with --build-arg TICKR_UID=$(id -u) --build-arg TICKR_GID=$(id -g) on the server.
+# The container user's uid must be able to read the env file (chmod 600 on the host). The
+# server's release image is built by CI with 1500:1500, the server's tickr account
+# (.github/workflows/server-image.yml); an image built by hand passes the owner's own ids.
 ARG TICKR_UID=1000
 ARG TICKR_GID=1000
 RUN groupadd --gid "$TICKR_GID" tickr \

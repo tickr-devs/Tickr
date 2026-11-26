@@ -37,7 +37,34 @@ alert channel is an owner decision (see "Open owner decisions").
   and so on whatever folder compose runs from), `api` (always on, `restart: unless-stopped`) and,
   under the `jobs` profile, `preflight`, `bot` and `watchdog` (`restart: "no"`, like the launchd
   jobs). Config and env file are read-only bind mounts; the data folder is a read-write bind
-  mount of the host folder `TICKR_DATA_HOST`.
+  mount of the host folder `TICKR_DATA_HOST`. Every service runs the image `TICKR_IMAGE` names
+  (no default, `pull_policy: never`, no `build:`): compose never builds or pulls.
+
+## Release flow (the server)
+
+The server never builds an image. CI builds one from every change on main and pushes it to the
+account's registry as `tickr-bot:<commit>` (full 40-character commit, uid and gid 1500;
+`.github/workflows/server-image.yml`, `ops/aws/bot/README.md`, "Release image"). To release a
+commit `<commit>` of main, while the bot is flat, on the server:
+
+```sh
+tickr-image-pull <commit>                                  # the host helper (below)
+sudo /srv/tickr/repo/ops/systemd/deploy-server.sh <commit>
+```
+
+1. `tickr-image-pull <commit>` is the host helper installed by the server bootstrap
+   (`ops/aws/bot`, owned there, not by this page): it signs in to the registry, pulls
+   `tickr-bot:<commit>` and adds a never-expiring `release-<commit>` tag. It reads the registry
+   from `/srv/tickr/etc/registry.env`.
+2. `deploy-server.sh <commit>` (below) checks the commit and that the image is already on the
+   host (it never pulls), then writes `TICKR_IMAGE=<registry>/tickr-bot:<commit>` into
+   `limits.env` with the other compose values. From then on every unit and every hand-run
+   compose command (after loading `limits.env`) runs that image.
+
+`/srv/tickr/etc/registry.env` (mode 644, written by the server's user-data) holds one line,
+`TICKR_IMAGE_REPOSITORY=<account>.dkr.ecr.<region>.amazonaws.com/tickr-bot`, the full repository
+address (the `image_repository` output of `ops/aws/bot`). The address holds the AWS account id,
+so it lives only on the host: never in the repo, and the deploy script never prints it.
 
 ## Steps
 
@@ -58,22 +85,24 @@ alert channel is an owner decision (see "Open owner decisions").
    Compose also needs `limits.env` (rendered by `render-systemd`, below: the bot's grace period
    and `TICKR_DATA_HOST`, the data folder). Load both before a hand-run compose command:
    `set -a; . /srv/tickr/etc/compose.env; . /srv/tickr/etc/limits.env; set +a`.
-4. Build as the dedicated service account that owns the env file (see "Before real money"):
+4. The image: on the server, the release image (above, "Release flow"); `deploy-server.sh`
+   writes it into `limits.env` as `TICKR_IMAGE`. Its user is uid and gid 1500, the server's
+   `tickr` account; an image whose user does not own the data folder is refused
+   (`data-owner-mismatch`).
+
+   **An image built by hand** (a test box or a laptop, never the AWS server): build it with
+   plain `docker build`, as the account that owns the env file, and name it in `TICKR_IMAGE`
+   yourself:
    ```sh
-   cd /srv/tickr/repo
-   set -a; . /srv/tickr/etc/compose.env; set +a
-   docker compose -f ops/docker/compose.yaml build \
+   docker build -t tickr:dev \
        --build-arg TICKR_UID=$(id -u) --build-arg TICKR_GID=$(id -g) \
-       --build-arg TICKR_CODE_VERSION=$(git rev-parse HEAD)$(git diff --quiet HEAD || echo -dirty)
+       --build-arg TICKR_CODE_VERSION=$(git rev-parse HEAD)$(git diff --quiet HEAD || echo -dirty) .
+   export TICKR_IMAGE=tickr:dev
    ```
    `TICKR_CODE_VERSION` is the commit the image is built from (`-dirty` when a tracked file
    differs from it). The image has no `.git`, so this is how every run and trade records the
    code it ran on; without it preflight fails with `code-version-unknown` and the bot refuses
-   to start. Rebuild after every `git pull`.
-   On the AWS server the `tickr` account is uid and gid 1500, so the server image is built with
-   `TICKR_UID=1500` and `TICKR_GID=1500` (what `$(id -u)` and `$(id -g)` give as that account).
-   The Dockerfile's default (1000) cannot write the data folder there, and `deploy-server.sh`
-   refuses such an image (`data-owner-mismatch`).
+   to start. CI's release image sets it to the commit.
 5. Token folder in the data folder (name from `[environments.*] token_dir`), then preflight:
    ```sh
    C="docker compose -f ops/docker/compose.yaml --profile jobs"
@@ -104,11 +133,13 @@ alert channel is an owner decision (see "Open owner decisions").
 - `tickr-bot-restart.path` and `tickr-bot-restart.service`: the watchdog's bot restart on the
   server (below, "Bot restart on the server").
 - `limits.env`: `TICKR_BOT_EXIT_TIMEOUT`, `TICKR_NIGHTLY_OUT`, `TICKR_NIGHTLY_SEED`,
-  `TICKR_DATA_HOST` (below).
+  `TICKR_DATA_HOST` and `TICKR_IMAGE` (below).
 - `ports.env`: `TICKR_API_PORT` and `TICKR_API_REMOTE_PORT` from `[api] port` and `remote_port`.
   Install it at `/srv/tickr/etc/ports.env`.
 
-Defaults (flags `--repo`, `--etc`, `--env-file`, `--data`, `--user`): `/srv/tickr/repo`,
+`--image` (required, no default) is the image every compose service runs, written to
+`limits.env` as `TICKR_IMAGE`; `deploy-server.sh` passes the release image. Defaults (flags
+`--repo`, `--etc`, `--env-file`, `--data`, `--user`): `/srv/tickr/repo`,
 `/srv/tickr/etc` (`bot.toml` is `TICKR_CONFIG_HOST`), `/run/tickr/env`, `/srv/tickr/data` (the
 data disk, written to `limits.env` as `TICKR_DATA_HOST`), `tickr`. `limits.env` (install it at `/srv/tickr/etc/limits.env`) holds
 `TICKR_BOT_EXIT_TIMEOUT` = `[runtime] bot_exit_timeout_seconds` and the nightly fetch's
@@ -117,8 +148,16 @@ compose.yaml reads it as the bot's `stop_grace_period`, so the number lives only
 (for a hand-run compose command: `set -a; . /srv/tickr/etc/limits.env; set +a`). `[runtime] watchdog_restart_command` (a launchctl call
 today) must be set for the server before the watchdog's restart can work (cutover, below).
 
-`ops/systemd/deploy-server.sh [REPO [ETC [DATA]]]` installs the rendered files. It refuses
-(exit 1, nothing changed), in this order:
+`ops/systemd/deploy-server.sh COMMIT [REPO [ETC [DATA]]]` installs the rendered files. It
+refuses (exit 1, nothing changed), in this order:
+
+- `bad-commit`: `COMMIT` is not 40 lowercase hex characters (the tag CI gives the release
+  image: `$GITHUB_SHA`). A branch name or a short commit is refused, never resolved.
+- `registry-unknown`: `/srv/tickr/etc/registry.env` (`TICKR_REGISTRY_FILE`) is missing, or has no
+  single unquoted `TICKR_IMAGE_REPOSITORY=<registry>/<repository>` line. The script reads that
+  one line with `sed`; it never sources the file, and uses or prints no other line.
+- `image-missing`: `<TICKR_IMAGE_REPOSITORY>:COMMIT` is not on the host (`docker image inspect`).
+  The script never pulls: run `tickr-image-pull COMMIT` first.
 
 - `data-missing`: `DATA` (default `/srv/tickr/data`) is not an existing folder. It is never
   created here.
@@ -127,11 +166,12 @@ today) must be set for the server before the watchdog's restart can work (cutove
   bot started there would have no state. For the same reason every rendered unit that uses the
   data folder (the API, the four jobs, the restart path and service) carries
   `RequiresMountsFor=DATA`: systemd refuses to start them without the mount.
-- `image-user-unknown`, `data-owner-unknown` / `data-owner-mismatch`: the owner uid:gid of `DATA` is not the image's
-  runtime user, read with `id -u` and `id -g` in a throwaway container of the `preflight`
-  service with the entrypoint replaced (no job runs, no broker is called, the env file is not
+- `image-user-unknown`, `data-owner-unknown` / `data-owner-mismatch`: the owner uid:gid of `DATA` is not the
+  release image's runtime user, read with `id -u` and `id -g` in a throwaway container of the
+  `preflight` service (run with the freshly rendered `limits.env`, so `TICKR_IMAGE` is the
+  release image, and `--pull never`) with the entrypoint replaced (no job runs, no broker is called, the env file is not
   read). The containers could not write the bind-mounted data folder.
-- unless `python -m tickr.runtime require-flat` passes, run in the bot's image: a fresh
+- unless `python -m tickr.runtime require-flat` passes, run in the release image: a fresh
   read-only broker read (the one `release` uses) shows no position and no open order, and the
   database has no open trade.
 - while a bot restart request is waiting in `DATA/control` (the path unit would restart the
@@ -148,10 +188,11 @@ server), so nothing needs copying. Had one, the copy while flat and with every j
 be: `sudo cp -a "$(docker volume inspect <OLD_VOLUME> --format '{{ .Mountpoint }}')/." /srv/tickr/data/`,
 then check the owner is the image's uid:gid.
 
-Before the first deploy (and after every `git pull`), build the image so it contains
-`require-flat` (step 4 above). The script runs `require-flat` inside the image: an older image
+The script runs `require-flat` inside the release image: an image older than that command
 answers it with a usage error (exit 2), which the script treats as "not flat", so it fails
-closed (refuses, installs nothing) rather than deploying; rebuild and run it again.
+closed (refuses, installs nothing) rather than deploying. The clone at `REPO` gives the unit
+templates, `compose.yaml` and the `.venv` that renders them: check it out at the same commit
+as the image.
 
 The install is all or nothing: every file is first copied to a hidden temp file in its target
 folder (a failed copy removes them and installs nothing), then renamed into place, and
@@ -178,7 +219,7 @@ systemd, so the restart goes through a request file on the data folder:
    --profile jobs up -d --force-recreate --no-deps --pull never --no-build -t <grace> bot`: the
    same compose definition the scheduled `tickr-bot.service` starts. A running (hung) container
    is stopped within `<grace>` and recreated; a crashed or removed one is created again. The
-   image is never pulled or built here: a missing `tickr:local` image fails the step. `<grace>`
+   image is never pulled or built here: a missing `TICKR_IMAGE` (from `limits.env`) fails the step. `<grace>`
    is the bot's `stop_grace_period` read from `compose.yaml` when the unit is rendered (today
    `[runtime] bot_exit_timeout_seconds` through `limits.env`; render-systemd refuses when
    compose gives the bot none); (c) prints the taken request (time and cause) to the journal.
@@ -266,8 +307,8 @@ Delete the zip from the data folder after copying it.
 
 - **Dedicated service account.** With `pid: host` the bot and watchdog containers see every
   process on the server. Run Tickr under its own account (for example `tickr`), not a
-  personal or admin one: build with that account's uid and gid as `TICKR_UID` and
-  `TICKR_GID`, and make it the owner of the env file (`chmod 600`) and of the systemd units'
+  personal or admin one: its uid and gid are the image user's (1500 for the release image,
+  `TICKR_UID` and `TICKR_GID` for one built by hand), and make it the owner of the env file (`chmod 600`) and of the systemd units'
   `User=`.
 - **The local API has no authentication.** With `network_mode: host` it listens on the
   server's own 127.0.0.1, which every local account can reach: it can switch entries and send

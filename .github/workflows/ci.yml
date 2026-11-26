@@ -107,14 +107,26 @@ jobs:
     if: needs.python-changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TICKR_CONFIG_HOST: /srv/tickr/etc/bot.toml
+      TICKR_ENV_FILE_HOST: /srv/tickr/etc/env
+      TICKR_BOT_EXIT_TIMEOUT: "1"
+      TICKR_NIGHTLY_OUT: data/nightly
+      TICKR_NIGHTLY_SEED: data/nightly-seed
+      TICKR_DATA_HOST: /srv/tickr/data
     steps:
       - uses: actions/checkout@v7
       - run: docker build -t tickr:ci .
-      - run: docker compose -f ops/docker/compose.yaml --profile jobs config -q
+      # compose runs the image TICKR_IMAGE names (on the server: the release image, through
+      # limits.env), here the one just built; every service runs it.
+      - run: |
+          docker compose -f ops/docker/compose.yaml --profile jobs config -q
+          test "$(docker compose -f ops/docker/compose.yaml --profile jobs config --images | sort -u)" = tickr:ci
         env:
-          TICKR_CONFIG_HOST: /srv/tickr/etc/bot.toml
-          TICKR_ENV_FILE_HOST: /srv/tickr/etc/env
-          TICKR_BOT_EXIT_TIMEOUT: "1"
-          TICKR_NIGHTLY_OUT: data/nightly
-          TICKR_NIGHTLY_SEED: data/nightly-seed
-          TICKR_DATA_HOST: /srv/tickr/data
+          TICKR_IMAGE: tickr:ci
+      # Without TICKR_IMAGE compose refuses: there is no default image and nothing to build.
+      - run: |
+          if docker compose -f ops/docker/compose.yaml --profile jobs config -q; then
+            echo "compose accepted a missing TICKR_IMAGE" >&2
+            exit 1
+          fi

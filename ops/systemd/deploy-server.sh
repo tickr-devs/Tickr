@@ -1,17 +1,28 @@
 #!/bin/sh
 # Install the Tickr systemd units on a Linux server, and only while the bot is flat.
 #
-#   ops/systemd/deploy-server.sh [REPO_DIR [ETC_DIR [DATA_DIR]]]
+#   ops/systemd/deploy-server.sh COMMIT [REPO_DIR [ETC_DIR [DATA_DIR]]]
 #
+#   COMMIT    the release: a full commit of main (40 lowercase hex characters), the tag of the
+#             release image <registry>/tickr-bot:<COMMIT> (.github/workflows/server-image.yml)
 #   REPO_DIR  the clone with ops/docker and a built `.venv` (default /srv/tickr/repo)
-#   ETC_DIR   folder of bot.toml; ports.env is installed here (default /srv/tickr/etc)
+#   ETC_DIR   folder of bot.toml; ports.env and limits.env are installed here
+#             (default /srv/tickr/etc)
 #   DATA_DIR  host data folder mounted as the containers' data folder (default /srv/tickr/data)
 #
-# Order: (0) refuse unless DATA_DIR is an existing folder (never created here) and a mount point (the data disk is in fstab with nofail: an
+# Order: (a) refuse a COMMIT that is not 40 lowercase hex characters (bad-commit); (b) read only
+# TICKR_IMAGE_REPOSITORY from /srv/tickr/etc/registry.env (written by the server's user-data,
+# also read by tickr-image-pull; never sourced here, no other line is used or printed) and
+# refuse when the file or the variable is missing (registry-unknown); (c) refuse unless the
+# image $TICKR_IMAGE_REPOSITORY:COMMIT is already on this host (`docker image inspect`;
+# image-missing): this script never pulls, the host helper `tickr-image-pull COMMIT` does; the
+# registry address (it holds the AWS account id) is never printed; (0) refuse unless DATA_DIR
+# is an existing folder (never created here) and a mount point (the data disk is in fstab with nofail: an
 # unmounted disk leaves an empty folder on the root disk, and a bot started there has no state;
 # the units also carry RequiresMountsFor=DATA_DIR); (1) render the units, ports.env and
-# limits.env into a scratch folder with `render-systemd` (writes nothing outside it); (2) refuse
-# unless the data folder's owner uid:gid is the image's runtime user (`id -u` and `id -g` in a
+# limits.env into a scratch folder with `render-systemd --image` (writes nothing outside it;
+# limits.env gets TICKR_IMAGE, so every unit and compose command runs that image); (2) refuse
+# unless the data folder's owner uid:gid is the release image's runtime user (`id -u` and `id -g` in a
 # throwaway container of the preflight service, entrypoint replaced: no job, no broker, no env
 # file read), so the containers can write the bind-mounted data folder; (3) prove flat with a fresh read-only broker read
 # and the database: `require-flat` runs in the bot's own image (compose service `preflight`, so
@@ -26,17 +37,19 @@
 #
 # Overrides (names only): TICKR_UNITS_DIR (default /etc/systemd/system), TICKR_SYSTEMCTL
 # (default systemctl), TICKR_DOCKER (default docker), TICKR_ENV_FILE_HOST (default
-# /run/tickr/env), TICKR_SERVICE_USER (default tickr: the units' User=), TICKR_MOUNTPOINT (default mountpoint). This script never reads the env file,
+# /run/tickr/env), TICKR_SERVICE_USER (default tickr: the units' User=), TICKR_MOUNTPOINT (default mountpoint),
+# TICKR_REGISTRY_FILE (default /srv/tickr/etc/registry.env). This script never reads the env file,
 # prints the environment or traces the shell (docs/deploy-server.md).
 set -eu
 
-if [ "$#" -gt 3 ]; then
-  echo "usage: $0 [REPO_DIR [ETC_DIR [DATA_DIR]]]" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
+  echo "usage: $0 COMMIT [REPO_DIR [ETC_DIR [DATA_DIR]]]" >&2
   exit 2
 fi
-repo=${1:-/srv/tickr/repo}
-etc=${2:-/srv/tickr/etc}
-data=${3:-/srv/tickr/data}
+commit=$1
+repo=${2:-/srv/tickr/repo}
+etc=${3:-/srv/tickr/etc}
+data=${4:-/srv/tickr/data}
 user=${TICKR_SERVICE_USER:-tickr}
 units_dir=${TICKR_UNITS_DIR:-/etc/systemd/system}
 systemctl=${TICKR_SYSTEMCTL:-systemctl}
@@ -45,6 +58,26 @@ mountpoint=${TICKR_MOUNTPOINT:-mountpoint}
 TICKR_CONFIG_HOST="$etc/bot.toml"
 TICKR_ENV_FILE_HOST=${TICKR_ENV_FILE_HOST:-/run/tickr/env}
 export TICKR_CONFIG_HOST TICKR_ENV_FILE_HOST
+
+if ! printf '%s\n' "$commit" | grep -Eqx '[0-9a-f]{40}'; then
+  echo "refused: bad-commit: the release commit must be 40 lowercase hex characters (the image tag); nothing was changed" >&2
+  exit 1
+fi
+registry_file=${TICKR_REGISTRY_FILE:-/srv/tickr/etc/registry.env}
+if [ ! -f "$registry_file" ] || ! registry=$(sed -n 's/^TICKR_IMAGE_REPOSITORY=//p' "$registry_file"); then
+  echo "refused: registry-unknown: $registry_file is missing or unreadable; nothing was changed" >&2
+  exit 1
+fi
+if [ -z "$registry" ] || [ "$(printf '%s\n' "$registry" | wc -l)" -ne 1 ] \
+    || ! printf '%s\n' "$registry" | grep -Eqx '[a-z0-9][a-z0-9.-]*(:[0-9]+)?/[a-z0-9][a-z0-9._/-]*'; then
+  echo "refused: registry-unknown: $registry_file has no single unquoted TICKR_IMAGE_REPOSITORY=<registry>/<repository> line; nothing was changed" >&2
+  exit 1
+fi
+image="$registry:$commit"  # never printed: the registry address holds the AWS account id
+if ! "$docker" image inspect "$image" >/dev/null 2>&1; then
+  echo "refused: image-missing: the release image of $commit (TICKR_IMAGE_REPOSITORY in $registry_file) is not on this host (pull it first: tickr-image-pull $commit); nothing was changed" >&2
+  exit 1
+fi
 
 if [ ! -d "$data" ] || [ -L "$data" ]; then
   echo "refused: data-missing: $data is not an existing folder (it is never created here); nothing was changed" >&2
@@ -60,7 +93,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 if ! .venv/bin/python -m tickr.runtime --config "$etc/bot.toml" render-systemd \
     --repo "$repo" --etc "$etc" --env-file "$TICKR_ENV_FILE_HOST" --data "$data" \
-    --user "$user" --out "$scratch" >/dev/null; then
+    --user "$user" --image "$image" --out "$scratch" >/dev/null; then
   echo "refused: render-systemd failed; run it by hand to read the cause" >&2
   exit 1
 fi
@@ -70,7 +103,7 @@ set -a
 set +a
 compose_id() { # id -u or id -g of the image's runtime user, in a throwaway container
   "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm --no-deps -T \
-    --entrypoint id preflight "$1"
+    --pull never --entrypoint id preflight "$1"
 }
 if ! image_uid=$(compose_id -u) || ! image_gid=$(compose_id -g); then
   echo "refused: image-user-unknown: cannot read the image's runtime uid and gid; nothing was changed" >&2
@@ -81,10 +114,10 @@ if ! data_owner=$(stat -c %u:%g "$data"); then
   exit 1
 fi
 if [ "$data_owner" != "$image_uid:$image_gid" ]; then
-  echo "refused: data-owner-mismatch: $data is owned by $data_owner but the image runs as $image_uid:$image_gid (build with TICKR_UID and TICKR_GID of the data folder's owner); nothing was changed" >&2
+  echo "refused: data-owner-mismatch: $data is owned by $data_owner but the image runs as $image_uid:$image_gid (the release image runs as the server's tickr account, ops/aws/bot service_uid); nothing was changed" >&2
   exit 1
 fi
-if ! "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm preflight \
+if ! "$docker" compose -f ops/docker/compose.yaml --profile jobs run --rm --pull never preflight \
     python -m tickr.runtime --config /app/config/bot.toml require-flat; then
   echo "refused: the bot is not proven flat (see the require-flat line above); nothing was changed" >&2
   exit 1
@@ -133,4 +166,4 @@ done
 "$systemctl" start tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer \
   tickr-bot-restart.path
 "$systemctl" restart tickr-api.service
-echo "deployed: units installed in $units_dir, ports.env and limits.env in $etc"
+echo "deployed: release image of $commit; units installed in $units_dir, ports.env and limits.env in $etc"

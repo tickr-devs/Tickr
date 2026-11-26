@@ -22,9 +22,13 @@ from tickr.types import Position
 ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = ROOT / "tests" / "golden" / "systemd"
 SCRIPT = ROOT / "ops" / "systemd" / "deploy-server.sh"
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+# A made-up registry: a real one holds the AWS account id, which never enters the repo.
+REGISTRY = "registry.example/tickr-bot"
+IMAGE = f"{REGISTRY}:{COMMIT}"
 PATHS = systemd.Paths(repo=Path("/srv/tickr/repo"), config_host=Path("/srv/tickr/etc/bot.toml"),
                       env_file=Path("/run/tickr/env"), data=Path("/srv/tickr/data"),
-                      user="tickr")
+                      user="tickr", image=IMAGE)
 ZONE = "America/New_York"
 # The values the golden files were made with: set in the test config, so the golden files do
 # not move when the owner edits config/bot.toml.
@@ -92,10 +96,13 @@ def test_every_job_requires_the_secrets_unit_and_holds_no_value(config_path, rep
 @pytest.mark.parametrize("field,value", [
     ("repo", "/srv/with space"), ("repo", "/srv/a$b"), ("config_host", "/srv/a%h"),
     ("env_file", '/srv/"q"'), ("user", "a b"), ("repo", "relative/repo"),
-    ("data", "relative/data"), ("data", "/srv/da ta")])
+    ("data", "relative/data"), ("data", "/srv/da ta"), ("image", "tickr-bot"),
+    ("image", "registry.example/tickr-bot:a b"), ("image", "Registry/tickr-bot:x"),
+    ("image", "registry.example/tickr-bot@sha256:00")])
 def test_unsafe_or_relative_values_are_refused(config_path, repo, field, value):
     cfg = _pinned(config_path)
-    bad = systemd.Paths(**{**vars(PATHS), field: value if field == "user" else Path(value)})
+    bad = systemd.Paths(**{**vars(PATHS),
+                           field: value if field in ("user", "image") else Path(value)})
     with pytest.raises(config_module.ConfigError):
         systemd.values(cfg, bad, ZONE)
 
@@ -117,10 +124,19 @@ def test_a_bad_schedule_is_refused_like_launchd(config_path, repo):
 
 def test_render_systemd_command(config_path, repo, tmp_path, capsys):
     out = tmp_path / "units"
-    assert main(["--config", str(config_path), "render-systemd", "--out", str(out)]) == 0
+    assert main(["--config", str(config_path), "render-systemd", "--image", IMAGE,
+                 "--out", str(out)]) == 0
     assert sorted(p.name for p in out.iterdir()) == sorted(p.name for p in GOLDEN.iterdir())
     assert "Environment=TICKR_CONFIG_HOST=/srv/tickr/etc/bot.toml" in (
         out / "tickr-bot.service").read_text("utf-8")
+    assert f"TICKR_IMAGE={IMAGE}\n" in (out / "limits.env").read_text("utf-8")
+
+
+def test_render_systemd_has_no_default_image(config_path, repo, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--config", str(config_path), "render-systemd", "--out", str(tmp_path / "units")])
+    assert exit_info.value.code == 2 and "--image" in capsys.readouterr().err
+    assert not (tmp_path / "units").exists()
 
 
 class _Broker:
@@ -174,16 +190,24 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
     python = repo / ".venv" / "bin" / "python"
     python.write_text(
         '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do [ "$1" = --out ] && out=$2;'
-        ' [ "$1" = --data ] && data=$2; shift; done\n'
+        ' [ "$1" = --data ] && data=$2; [ "$1" = --image ] && image=$2; shift; done\n'
         'mkdir -p "$out"; : > "$out/tickr-bot.service"; : > "$out/tickr-bot.timer"\n'
         'echo "PathExists=$data/control/restart-request" > "$out/tickr-bot-restart.path"\n'
-        ': > "$out/ports.env"; echo TICKR_BOT_EXIT_TIMEOUT=1 > "$out/limits.env"\n', "utf-8")
-    # The fake docker answers `--entrypoint id preflight -u|-g` with the uid and gid of
-    # IMAGE_IDS (default: the data folder's owner, this test's own ids) and require-flat with
-    # the flat result.
+        ': > "$out/ports.env"\n'
+        'printf "TICKR_BOT_EXIT_TIMEOUT=1\\nTICKR_IMAGE=%s\\n" "$image" > "$out/limits.env"\n',
+        "utf-8")
+    # The fake docker: `image inspect REF` succeeds only for the images in PRESENT (default: the
+    # release image of COMMIT); a compose command fails unless TICKR_IMAGE (from the rendered
+    # limits.env) is that image; `--entrypoint id preflight -u|-g` answers IMAGE_UID/IMAGE_GID
+    # (default: the data folder's owner, this test's own ids) and require-flat the flat result.
+    # Every call is logged.
     docker = tmp_path / "docker"
     docker.write_text(
-        '#!/bin/sh\ncase "$*" in\n'
+        f'#!/bin/sh\necho "$@" >> {tmp_path}/docker.log\n'
+        'if [ "$1 $2" = "image inspect" ]; then\n'
+        f'  for ref in ${{PRESENT-{IMAGE}}}; do [ "$ref" = "$3" ] && exit 0; done; exit 1\nfi\n'
+        f'[ "$TICKR_IMAGE" = "{IMAGE}" ] || exit 1\n'
+        'case "$*" in\n'
         f'  *"--entrypoint id preflight -u") echo "${{IMAGE_UID:-{os.getuid()}}}" ;;\n'
         f'  *"--entrypoint id preflight -g") echo "${{IMAGE_GID:-{os.getgid()}}}" ;;\n'
         f'  *) exit {0 if flat else 1} ;;\nesac\n', "utf-8")
@@ -196,6 +220,7 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
     units, etc = tmp_path / "units", tmp_path / "etc"
     units.mkdir()
     etc.mkdir()
+    (tmp_path / "registry.env").write_text(f"TICKR_IMAGE_REPOSITORY={REGISTRY}\n", "utf-8")
     return repo, docker, systemctl, units, etc
 
 
@@ -203,15 +228,21 @@ def _script_env(units: Path, systemctl: Path, docker: Path, **extra: str) -> dic
     return {"PATH": "/usr/bin:/bin", "TICKR_UNITS_DIR": str(units),
             "TICKR_SYSTEMCTL": str(systemctl), "TICKR_DOCKER": str(docker),
             "TICKR_MOUNTPOINT": str(docker.parent / "mountpoint"),
+            "TICKR_REGISTRY_FILE": str(docker.parent / "registry.env"),
             "TICKR_SERVICE_USER": pwd.getpwuid(os.getuid()).pw_name, **extra}
 
 
-def _deploy(tmp_path: Path, flat: bool, **extra: str) -> subprocess.CompletedProcess:
+def _deploy(tmp_path: Path, flat: bool, commit: str = COMMIT, registry: str | None = None,
+            no_registry: bool = False, **extra: str) -> subprocess.CompletedProcess:
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, flat)
+    if registry is not None:
+        (tmp_path / "registry.env").write_text(registry, "utf-8")
+    if no_registry:
+        (tmp_path / "registry.env").unlink()
     data = tmp_path / "data"
     data.mkdir(exist_ok=True)
     return subprocess.run(
-        [str(SCRIPT), str(repo), str(etc), str(data)], capture_output=True, text=True,
+        [str(SCRIPT), commit, str(repo), str(etc), str(data)], capture_output=True, text=True,
         env=_script_env(units, systemctl, docker, **extra), check=False)
 
 
@@ -231,7 +262,7 @@ def test_deploy_script_refuses_and_never_creates_a_missing_data_folder(tmp_path,
         data.symlink_to(tmp_path / "elsewhere")
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
     done = subprocess.run(
-        [str(SCRIPT), str(repo), str(etc), str(data)], capture_output=True, text=True,
+        [str(SCRIPT), COMMIT, str(repo), str(etc), str(data)], capture_output=True, text=True,
         env=_script_env(units, systemctl, docker), check=False)
     assert done.returncode == 1 and "refused: data-missing" in done.stderr
     assert list(units.iterdir()) == [] and list(etc.iterdir()) == []
@@ -267,8 +298,7 @@ def test_every_unit_that_uses_the_data_folder_requires_its_mount(config_path, re
 def test_deploy_script_refuses_when_not_flat(tmp_path):
     done = _deploy(tmp_path, flat=False)
     assert done.returncode == 1 and "not proven flat" in done.stderr
-    assert list((tmp_path / "units").iterdir()) == [] and list((tmp_path / "etc").iterdir()) == []
-    assert not (tmp_path / "systemctl.log").exists()
+    _nothing_changed(tmp_path)
 
 
 def test_deploy_script_installs_the_units_when_flat(tmp_path):
@@ -297,7 +327,8 @@ def test_the_bots_grace_period_is_the_exit_timeout_from_config_only(config_path,
     assert rendered == (f"TICKR_BOT_EXIT_TIMEOUT={cfg.runtime.bot_exit_timeout_seconds}\n"
                         f"TICKR_NIGHTLY_OUT={cfg.runtime.nightly_fetch_out}\n"
                         f"TICKR_NIGHTLY_SEED={cfg.runtime.nightly_fetch_seed}\n"
-                        "TICKR_DATA_HOST=/srv/tickr/data\n")
+                        "TICKR_DATA_HOST=/srv/tickr/data\n"
+                        f"TICKR_IMAGE={IMAGE}\n")
     compose = (ROOT / "ops" / "docker" / "compose.yaml").read_text("utf-8")
     # compose reads the rendered value and holds no number of its own.
     assert re.findall(r"(?m)^\s*stop_grace_period: (.*)$", compose) == [
@@ -321,10 +352,12 @@ def test_the_nightly_fetch_unit_runs_the_compose_service_at_the_configured_time(
 
 def test_deploy_script_installs_nothing_when_a_copy_fails(tmp_path):
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
-    missing = tmp_path / "no-such-etc"  # the units stage fine, then the etc files cannot be copied
+    # The units stage fine, then the etc files cannot be copied.
+    missing = tmp_path / "no-such-etc"
     (tmp_path / "data").mkdir()
     done = subprocess.run(
-        [str(SCRIPT), str(repo), str(missing), str(tmp_path / "data")], capture_output=True,
+        [str(SCRIPT), COMMIT, str(repo), str(missing), str(tmp_path / "data")],
+        capture_output=True,
         text=True, check=False, env=_script_env(units, systemctl, docker))
     assert done.returncode == 1 and "nothing was installed" in done.stderr
     assert list(units.iterdir()) == []  # no unit, and no staged file left behind
@@ -337,7 +370,7 @@ def test_deploy_script_refuses_over_a_waiting_restart_request(tmp_path):
     control.mkdir(parents=True)
     (control / "restart-request").write_text("{}\n", "utf-8")
     done = subprocess.run(
-        [str(SCRIPT), str(repo), str(etc), str(tmp_path / "data")], capture_output=True,
+        [str(SCRIPT), COMMIT, str(repo), str(etc), str(tmp_path / "data")], capture_output=True,
         text=True, check=False, env=_script_env(units, systemctl, docker))
     assert done.returncode == 1 and "restart request is waiting" in done.stderr
     assert list(units.iterdir()) == [] and not (tmp_path / "systemctl.log").exists()
@@ -419,3 +452,123 @@ def test_render_refuses_when_compose_gives_the_bot_no_grace(config_path, repo, t
     compose.write_text(re.sub(r"(?m)^\s*stop_grace_period: .*\n", "", text), "utf-8")
     with pytest.raises(config_module.ConfigError, match="no stop_grace_period"):
         systemd.values(cfg, PATHS, ZONE)
+
+
+@pytest.mark.parametrize("commit", [
+    "", "main", COMMIT[:12], COMMIT + "0", COMMIT.upper(), COMMIT[:-1] + "g",
+    f"{COMMIT[:20]} {COMMIT[21:]}"])
+def test_deploy_script_refuses_a_bad_commit(tmp_path, commit):
+    done = _deploy(tmp_path, flat=True, commit=commit)
+    assert done.returncode == 1 and "refused: bad-commit" in done.stderr
+    _nothing_changed(tmp_path)
+    assert not (tmp_path / "docker.log").exists()
+
+
+def test_deploy_script_needs_the_commit(tmp_path):
+    repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
+    done = subprocess.run([str(SCRIPT)], capture_output=True, text=True, check=False,
+                          env=_script_env(units, systemctl, docker))
+    assert done.returncode == 2 and "usage:" in done.stderr and "COMMIT" in done.stderr
+
+
+@pytest.mark.parametrize("registry", [
+    None,  # no file
+    "",  # empty file
+    "AWS_DEFAULT_REGION=us-east-1\n",  # another variable only
+    "TICKR_IMAGE_REPOSITORY=\n",
+    f'TICKR_IMAGE_REPOSITORY="{REGISTRY}"\n',
+    f"TICKR_IMAGE_REPOSITORY={REGISTRY}\nTICKR_IMAGE_REPOSITORY={REGISTRY}\n",
+    f"TICKR_IMAGE_REPOSITORY={REGISTRY} extra\n",
+    "TICKR_IMAGE_REPOSITORY=tickr-bot\n",  # no registry host
+])
+def test_deploy_script_refuses_an_unknown_registry(tmp_path, registry):
+    done = _deploy(tmp_path, flat=True, registry=registry, no_registry=registry is None)
+    assert done.returncode == 1 and "refused: registry-unknown" in done.stderr
+    _nothing_changed(tmp_path)
+    assert not (tmp_path / "docker.log").exists()
+
+
+def test_deploy_script_reads_only_the_repository_from_the_registry_file(tmp_path):
+    other = "TICKR_SOMETHING_ELSE=do-not-print-0451\n"
+    done = _deploy(tmp_path, flat=True,
+                   registry=f"# from user-data\n{other}TICKR_IMAGE_REPOSITORY={REGISTRY}\n")
+    assert done.returncode == 0, done.stderr
+    assert "do-not-print-0451" not in done.stdout + done.stderr
+    # The registry address (an AWS account id on the server) is never printed either.
+    assert REGISTRY not in done.stdout + done.stderr
+    assert (tmp_path / "etc" / "limits.env").read_text("utf-8").endswith(f"TICKR_IMAGE={IMAGE}\n")
+
+
+@pytest.mark.parametrize("present", ["", f"{REGISTRY}:{'f' * 40}", f"tickr:local {REGISTRY}"])
+def test_deploy_script_refuses_when_the_release_image_is_not_on_the_host(tmp_path, present):
+    done = _deploy(tmp_path, flat=True, PRESENT=present)
+    assert done.returncode == 1 and "refused: image-missing" in done.stderr
+    assert f"tickr-image-pull {COMMIT}" in done.stderr and REGISTRY not in done.stderr
+    _nothing_changed(tmp_path)
+    # Only the inspect ran: no pull, no compose command.
+    assert (tmp_path / "docker.log").read_text("utf-8") == f"image inspect {IMAGE}\n"
+
+
+def test_deploy_script_checks_the_uid_and_flat_in_the_release_image_and_never_pulls(tmp_path):
+    done = _deploy(tmp_path, flat=True)
+    assert done.returncode == 0, done.stderr
+    calls = (tmp_path / "docker.log").read_text("utf-8").splitlines()
+    assert calls[0] == f"image inspect {IMAGE}"
+    # The fake docker fails every compose call whose TICKR_IMAGE is not the release image, so
+    # the uid check and require-flat ran against it; none of them may pull.
+    compose = calls[1:]
+    assert len(compose) == 3 and sum("--entrypoint id preflight" in c for c in compose) == 2
+    assert all(c.startswith("compose ") and "--pull never" in c for c in compose)
+
+
+def test_deploy_script_refuses_when_the_uid_check_cannot_run_the_release_image(tmp_path):
+    # The rendered limits.env names another image: the fake docker's compose calls fail.
+    repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
+    python = repo / ".venv" / "bin" / "python"
+    python.write_text(python.read_text("utf-8").replace('"$image"', '"tickr:local"'), "utf-8")
+    (tmp_path / "data").mkdir()
+    done = subprocess.run(
+        [str(SCRIPT), COMMIT, str(repo), str(etc), str(tmp_path / "data")], capture_output=True,
+        text=True, check=False, env=_script_env(units, systemctl, docker))
+    assert done.returncode == 1 and "refused: image-user-unknown" in done.stderr
+    _nothing_changed(tmp_path)
+
+
+def test_compose_runs_only_the_image_it_is_given():
+    compose = (ROOT / "ops" / "docker" / "compose.yaml").read_text("utf-8")
+    assert not re.search(r"(?m)^\s*build:", compose)
+    assert re.findall(r"(?m)^\s*image: (.*)$", compose) == [
+        "${TICKR_IMAGE:?image to run; on the server deploy-server.sh writes it into limits.env}"]
+    assert re.findall(r"(?m)^\s*pull_policy: (.*)$", compose) == ["never"]
+
+
+COMPOSE_VALUES = {"TICKR_CONFIG_HOST": "/srv/tickr/etc/bot.toml",
+                  "TICKR_ENV_FILE_HOST": "/run/tickr/env", "TICKR_BOT_EXIT_TIMEOUT": "1",
+                  "TICKR_NIGHTLY_OUT": "data/nightly", "TICKR_NIGHTLY_SEED": "data/backtest",
+                  "TICKR_DATA_HOST": "/srv/tickr/data"}
+
+
+def _compose_config(*args: str, **values: str) -> subprocess.CompletedProcess:
+    # Only named variables reach compose (CLAUDE.md rule 10): never this process's environment.
+    env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/nonexistent", **values}
+    return subprocess.run(
+        ["docker", "compose", "-f", str(ROOT / "ops" / "docker" / "compose.yaml"),
+         "--profile", "jobs", "config", *args], capture_output=True, text=True, check=False,
+        env=env)
+
+
+def _has_compose() -> bool:
+    try:
+        return _compose_config("--help").returncode == 0
+    except OSError:
+        return False
+
+
+@pytest.mark.skipif(not _has_compose(), reason="docker compose is not installed here "
+                    "(ci.yml's docker-image job runs the same check)")
+def test_compose_config_resolves_every_service_to_tickr_image():
+    done = _compose_config("--images", **COMPOSE_VALUES, TICKR_IMAGE=IMAGE)
+    assert done.returncode == 0, done.stderr
+    assert set(done.stdout.split()) == {IMAGE}
+    missing = _compose_config("-q", **COMPOSE_VALUES)
+    assert missing.returncode != 0 and "TICKR_IMAGE" in missing.stderr

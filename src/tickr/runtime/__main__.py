@@ -342,7 +342,8 @@ def _render_systemd(args: argparse.Namespace) -> int:
     launchd.check_timings(cfg)
     launchd.check_lab_folder(cfg)
     paths = systemd.Paths(repo=args.repo, config_host=args.etc / SERVER_CONFIG,
-                          env_file=args.env_file, data=args.data, user=args.user)
+                          env_file=args.env_file, data=args.data, user=args.user,
+                          image=args.image)
     filled = systemd.values(cfg, paths, args.timezone)
     for path in systemd.render_all(cfg, cfg.root / SYSTEMD_TEMPLATE_DIR, args.out, filled):
         print(path)
@@ -477,6 +478,9 @@ def main(argv: list[str] | None = None) -> int:
     units.add_argument("--data", type=Path, default=SERVER_DATA,
                        help="host data folder compose mounts as the containers' data folder")
     units.add_argument("--user", default=SERVER_USER, help="service account of the units")
+    units.add_argument("--image", required=True,
+                       help="image reference every compose service runs (TICKR_IMAGE in "
+                            "limits.env): the release image <registry>/tickr-bot:<commit>")
     units.add_argument("--timezone", default=SERVER_ZONE, help="IANA zone of the [runtime] times")
     request = sub.add_parser(REQUEST_RESTART,
                              help="server: ask the host to restart the bot container once")
