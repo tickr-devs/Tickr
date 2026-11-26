@@ -5088,19 +5088,19 @@
         }
       }
     },
-    "lab.activeRole" : {
+    "lab.active" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "trades · set in the bot config"
+            "value" : "Which version trades"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "opera · definida en la configuración del bot"
+            "value" : "Qué versión opera"
           }
         }
       }
@@ -5190,36 +5190,53 @@
         }
       }
     },
-    "lab.candidateNote" : {
+    "lab.compareAbout" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "candidate · replay only"
+            "value" : "How the comparison runs"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "candidata · solo repetición"
+            "value" : "Cómo se hace la comparación"
           }
         }
       }
     },
-    "lab.closedWinsLosses" : {
+    "lab.daySummary" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld · %2$lld W · %3$lld L"
+            "value" : "%1$@ · %2$lld closed, %3$lld won, %4$lld lost"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld · %2$lld G · %3$lld P"
+            "value" : "%1$@ · %2$lld cerradas, %3$lld ganadas, %4$lld perdidas"
+          }
+        }
+      }
+    },
+    "lab.decidedBy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decided by %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decidido por %@"
           }
         }
       }
@@ -5230,30 +5247,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Explain a symbol"
+            "value" : "Why did the model decide that?"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Explicar un símbolo"
+            "value" : "¿Por qué decidió eso el modelo?"
           }
         }
       }
     },
-    "lab.explainBacklog" : {
+    "lab.explainCause" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "strategy blocks behind each check"
+            "value" : "Cause: %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "bloques de la estrategia detrás de cada comprobación"
+            "value" : "Causa: %@"
           }
         }
       }
@@ -5271,23 +5288,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@"
-          }
-        }
-      }
-    },
-    "lab.explainHeadline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · cause: %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · causa: %2$@"
           }
         }
       }
@@ -5451,13 +5451,47 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Why signals were refused"
+            "value" : "Blocked by safety rules"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Por qué se rechazaron señales"
+            "value" : "Bloqueadas por reglas de seguridad"
+          }
+        }
+      }
+    },
+    "lab.refusalsAbout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What this counts"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué cuenta esto"
+          }
+        }
+      }
+    },
+    "lab.refusalsInfo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Times the model wanted to enter and the platform's limits said no."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veces que el modelo quiso entrar y los límites de la plataforma dijeron que no."
           }
         }
       }
@@ -5468,13 +5502,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Why signals were refused today"
+            "value" : "today"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Por qué se rechazaron señales hoy"
+            "value" : "hoy"
           }
         }
       }
@@ -5485,13 +5519,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Replay · compare versions"
+            "value" : "Compare two versions"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repetición · comparar versiones"
+            "value" : "Comparar dos versiones"
+          }
+        }
+      }
+    },
+    "lab.replayAllFigures" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All figures"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las cifras"
           }
         }
       }
@@ -5989,23 +6040,6 @@
         }
       }
     },
-    "lab.replaySimulated" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "simulated · fetched data"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "simulado · datos descargados"
-          }
-        }
-      }
-    },
     "lab.replayThen" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6097,13 +6131,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "with bot limits"
+            "value" : "net with bot limits"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "con los límites del bot"
+            "value" : "neto con los límites del bot"
           }
         }
       }
@@ -6159,57 +6193,6 @@
         }
       }
     },
-    "lab.screenerBacklog" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "screener source × rank → move after 15 min"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "fuente del filtro × posición → movimiento tras 15 min"
-          }
-        }
-      }
-    },
-    "lab.shownDayResult" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Result"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resultado"
-          }
-        }
-      }
-    },
-    "lab.shownDayTrades" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trades"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Operaciones"
-          }
-        }
-      }
-    },
     "lab.swapNote" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6257,6 +6240,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Candidato"
+          }
+        }
+      }
+    },
+    "lab.testedOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tested on the last %lld sessions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probada en las últimas %lld sesiones"
           }
         }
       }
@@ -6329,6 +6329,57 @@
         }
       }
     },
+    "lab.verdictLess" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ earned %2$@ less"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ganó %2$@ menos"
+          }
+        }
+      }
+    },
+    "lab.verdictMore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ earned %2$@ more · not proven yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ganó %2$@ más · aún sin probar"
+          }
+        }
+      }
+    },
+    "lab.verdictSame" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Both earned the same"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ambas ganaron lo mismo"
+          }
+        }
+      }
+    },
     "lab.verdictWatch" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6369,13 +6420,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Strategy versions"
+            "value" : "Model versions"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versiones de la estrategia"
+            "value" : "Versiones del modelo"
+          }
+        }
+      }
+    },
+    "lab.versionsAbout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How versions swap"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo se cambian las versiones"
           }
         }
       }
@@ -9300,13 +9368,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Strategy lab"
+            "value" : "Model lab"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Laboratorio"
+            "value" : "Laboratorio del modelo"
           }
         }
       }
