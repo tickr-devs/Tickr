@@ -36,6 +36,18 @@ DAY = tp.DAY
 MS = 10**6
 MINUTES = ["04:30", "09:44", "09:45", "12:00", "15:30"]
 LATER_RECORDS = (10, 11, 12)  # correction codes the stream is not documented to send
+# Every cohort symbol has ticks here: a symbol enters the conversion only once its snapshot
+# proves a stream row of each kind after its subscription (TickSnapshot.refusal), so the day is
+# denser than test_parity's (events per symbol-day).
+TRADES, QUOTES = 1500, 2500
+
+
+def _names(frame):
+    """day_events' names as the bar tickers (S0000 -> T000 ...), its last symbol NO_BARS."""
+    n = len(bars_maker.TICKERS) - 2
+    names = {f"S{i:04d}": f"T{i:03d}" for i in range(n)}
+    names[f"S{n:04d}"] = tp.NO_BARS
+    return frame.assign(ticker=frame.ticker.map(lambda t: names.get(t, t)))
 
 
 def with_model(**changes) -> config.Config:
@@ -62,8 +74,8 @@ def world(tmp_path_factory):
     for k, d in enumerate(cal[i - labels.HIST:i + 1]):
         bars_maker.day_bars(d, k, closes, d == DAY).to_csv(folder / f"{d}.csv.gz", index=False,
                                                            compression="gzip")
-    trades, quotes = tick_maker.day_events(DAY, tp.TICK_SYMBOLS, tp.TRADES, tp.QUOTES)
-    trades, quotes = tp._tick_names(trades), tp._tick_names(quotes)
+    trades, quotes = tick_maker.day_events(DAY, len(bars_maker.TICKERS) + 1, TRADES, QUOTES)
+    trades, quotes = _names(trades), _names(quotes)
     quiet = ((quotes.ticker == tp.QUIET)
              & (quotes.sip_timestamp >= tick_maker.stamp(DAY, "11:55:00"))
              & (quotes.sip_timestamp < tick_maker.stamp(DAY, "12:01:00")))
@@ -102,6 +114,16 @@ def world(tmp_path_factory):
 
 
 PREPARED = inputs.CAPTURED
+
+
+def _minute(hm):
+    return parity.table_minutes([hm])[0]
+
+
+def _label(m):
+    """Table minute `m` (from 04:00) as HH:MM New York."""
+    t = m + features.DAY_START_MINUTE
+    return f"{t // 60:02d}:{t % 60:02d}"
 
 
 # --- stand-ins ----------------------------------------------------------------------------
@@ -248,16 +270,24 @@ class Harness:
             f = f[(f.sip_timestamp >= self.fed) & (f.sip_timestamp < end)]
             for r in f.to_dict("records"):
                 info = self.live.symbols.get(r["ticker"])
-                if r["ticker"] in self.stream.symbols and r["sip_timestamp"] >= info.stream_from:
+                if r["ticker"] in self.stream.symbols and r["sip_timestamp"] >= info.since:
                     batch.append(_message(kind, r))
+        self.fed = end
+        self.now = end + MS  # received just after the minute's end, before its close
         if batch and self.thread.is_alive():  # a closed connection receives nothing
             self.sock.push(batch)
-        self.fed = end
-        self.now = end + MS
 
     def close(self, minute, wanted=()):
         self.feed_to(minute)
         return self.live.close(minute, wanted)
+
+    def warm(self, first, last):
+        """Close every minute from `first` to `last` (HH:MM): a cohort symbol is subscribed at
+        the first close it has a row, backfilled at the next, and enters at the one after."""
+        return [self.close(m) for m in range(_minute(first), _minute(last) + 1)]
+
+    def entered(self):
+        return {s for s, i in self.live.symbols.items() if i.entered is not None}
 
     def shut(self):
         if not self.thread.is_alive():
@@ -284,11 +314,23 @@ def harness(world, tmp_path):
 # --- parity -------------------------------------------------------------------------------
 
 
+# each parity minute closes after the closes that let its cohort enter (Harness.warm): on this
+# day the cohort's symbols join until 09:43 and 11:50 when the closes start at 09:35 and 11:40
+WARM = {"04:30": "04:00", "09:44": "09:40", "09:45": "09:45", "12:00": "11:50",
+        "15:30": "15:28"}
+OPEN_WARM = ("09:35", "09:44")  # a fresh day's closes before a 09:45 with every symbol entered
+NOON_WARM = ("11:40", "11:50")  # the same before 11:51
+
+
 def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
     h = harness(cfg=with_model(live_marker_quote=True))
     groups = full.full_groups()
+    closed = []
     for hm in MINUTES:
         m = parity.table_minutes([hm])[0]
+        if WARM[hm] != hm:
+            h.warm(WARM[hm], _label(m - 1))
+        closed.extend(range(_minute(WARM[hm]), m + 1))
         got = h.close(m, wanted=[tp.NO_BARS])
         want = world.table[world.table.m == m]
         assert got.refused == {tp.NO_BARS: live.Refusal("not_in_cohort")}, hm
@@ -305,25 +347,17 @@ def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
     whole = con.execute(f"SELECT * FROM read_parquet('{world.whole}') ORDER BY sym, m").df()
     con.close()
     last = parity.table_minutes([MINUTES[-1]])[0] + features.DAY_START_MINUTE
-    whole = whole[whole.sym.isin(set(h.live.symbols)) & (whole.m <= last)]
-    closes = {h.live._end(parity.table_minutes([hm])[0]) + MS for hm in MINUTES}
+    whole = whole[whole.sym.isin(h.entered()) & (whole.m <= last)]
+    closes = {h.live._end(m) + MS for m in closed}
     assert set(parts.pop(full.RECEIPT_COLUMN)) <= closes  # a close with no tick row: no part row
     pd.testing.assert_frame_equal(parts, whole.reset_index(drop=True), check_exact=True)
     assert tp.NO_BARS not in h.stream.symbols
-    # every tracked symbol: one backfill from the day's start, one up to the next close
-    firsts = [u for u in h.rest.requests if f"timestamp.gte={feed.day_bounds_ns(DAY)[0]}" in u]
-    assert len(firsts) == 2 * len(h.live.symbols)
-
-
-def test_without_the_marker_only_the_tick_groups_differ(world, harness):
-    h = harness()
-    assert CFG.model.live_marker_quote is False  # off with the model (codex-108 point 1)
-    m = parity.table_minutes(["12:00"])[0]
-    got = h.close(m)
-    r = parity.compare(got.rows, world.table[world.table.m == m], full.full_groups(), None)
-    assert r["bar_groups_exact"] and not got.refused
-    assert r["columns"] and {c["group"] for c in r["columns"].values()} <= tp.TICK_GROUPS
-    assert tp.QUIET in r["symbols"]
+    # every backfill is a symbol's day from New York midnight (TickBackfill.initial), of an
+    # entered symbol, and sent only by a close whose snapshot lacked it
+    start = f"timestamp.gte={feed.day_bounds_ns(DAY)[0]}"
+    assert all(start in u for u in h.rest.requests)
+    asked = {urllib.parse.urlsplit(u).path.split("/")[3] for u in h.rest.requests}
+    assert asked == h.entered() == set(h.live.symbols)
 
 
 # the converter's columns whose value weighs a quote by how long it stood (v11's `d`)
@@ -344,7 +378,9 @@ def _parts(h):
 def test_the_marker_stays_inside_the_weighting(world, harness, monkeypatch):
     """codex-108 point 1: the marker is added only for a symbol with a real quote among the
     events a close converts (on a one-minute close: in that minute), at the start of the next
-    minute, and stays out of the raw capture, the carry, every count and the next minute."""
+    minute, and stays out of the raw capture, the carry, every count and the next minute.
+    Without it (the default, off with the model) only the tick groups differ from training."""
+    assert CFG.model.live_marker_quote is False
     plain, mark = harness(), harness(cfg=with_model(live_marker_quote=True))
     made = []
     real = ticks.marker_quotes
@@ -356,29 +392,40 @@ def test_the_marker_stays_inside_the_weighting(world, harness, monkeypatch):
     monkeypatch.setattr(ticks, "marker_quotes", spy)
     q = world.quotes
     served = {}
-    for hm in ("11:58", "11:59", "12:00", "12:01"):
-        m = _minute(hm)
-        before = set(mark.live.symbols)
+    for m in range(_minute(NOON_WARM[0]), _minute("12:01") + 1):
+        hm = _label(m)
+        before = mark.entered()
         got = {"plain": plain.close(m), "marker": mark.close(m)}
-        assert not got["plain"].refused and not got["marker"].refused, hm
-        served[hm] = got
+        entering = mark.entered() - before
+        assert plain.entered() == mark.entered(), hm
         start, end = mark.live._end(m - 1), mark.live._end(m)
+        if made:
+            symbols, at = made.pop()
+            assert not made and at == end, hm  # once per close, at the start of the next minute
+        else:  # no quote among the converted events: no marker
+            symbols = set()
         quoted = set(q[q.ticker.isin(before) & (q.sip_timestamp >= start)
                        & (q.sip_timestamp < end)].ticker)
-        entering = set(mark.live.symbols) - before
-        symbols, at = made.pop()
-        assert not made and at == end, hm  # once per close, at the start of the next minute
-        # a tracked symbol: a real quote in the minute; an entering one (its day so far is
+        # an entered symbol: a real quote in the minute; an entering one (its day so far is
         # converted at this close): a real quote today
         assert symbols == quoted | (entering & set(q[q.sip_timestamp < end].ticker)), hm
         assert symbols - entering == quoted, hm
-        if hm == "12:00":  # tracked, no quote in the minute: no marker (11:54 keeps weight 0)
-            assert tp.QUIET in before and tp.QUIET not in symbols
         # raw capture and carry: identical with and without the marker
-        assert plain.store.rows == mark.store.rows and plain.store.log == mark.store.log, hm
-        for a, b in zip(plain.live.carry, mark.live.carry, strict=True):
-            pd.testing.assert_frame_equal(a, b, check_exact=True)
-        assert not (mark.live.carry[1].sip_timestamp >= end).any(), hm
+        assert plain.store.versions == mark.store.versions, hm
+        if mark.live.carry is not None:
+            for a, b in zip(plain.live.carry, mark.live.carry, strict=True):
+                pd.testing.assert_frame_equal(a, b, check_exact=True)
+            assert not (mark.live.carry[1].sip_timestamp >= end).any(), hm
+        if hm < "11:58":
+            continue  # the cohort enters (Harness.warm)
+        assert not got["plain"].refused and not got["marker"].refused, hm
+        served[hm] = got
+        if hm == "12:00":  # entered, no quote in the minute: no marker (11:54 keeps weight 0)
+            assert tp.QUIET in before and tp.QUIET not in symbols
+            r = parity.compare(got["plain"].rows, world.table[world.table.m == m],
+                               full.full_groups(), None)
+            assert r["bar_groups_exact"] and r["columns"] and tp.QUIET in r["symbols"]
+            assert {c["group"] for c in r["columns"].values()} <= tp.TICK_GROUPS
     # counts and the next minute: the stored parts differ only in the weighted columns, and
     # nothing after the last closed minute is stored
     a, b = _parts(plain), _parts(mark)
@@ -395,68 +442,141 @@ def test_the_marker_stays_inside_the_weighting(world, harness, monkeypatch):
         pd.testing.assert_frame_equal(x[counts], y[counts], check_exact=True)
 
 
+# --- the cutoff -----------------------------------------------------------------------------
+
+
+def _store_row(snap, kind, symbol, lo, hi):
+    """One chosen version of `symbol` with SIP time in [lo, hi) as flat-file columns."""
+    f = snap.frame(kind, symbol)
+    r = f[(f.sip_timestamp >= lo) & (f.sip_timestamp < hi)].iloc[0].to_dict()
+    return {c: r[c] for c in feed.columns(kind)[:-2]}
+
+
+def test_a_close_uses_only_what_had_arrived_by_its_cutoff(world, harness, monkeypatch):
+    """codex-109 point 4: a close reads the store's snapshot as of its own instant. A stream row
+    that arrives while the close runs and a later REST correction of a print it converted stay
+    out of it, the snapshot it read never changes, and the next close refuses the symbols whose
+    converted minute they would change (`tick_late`; the correction: #793's `tick_conflict`)."""
+    h = harness()
+    h.warm(*OPEN_WARM)
+    assert not h.close(_minute("09:45")).refused
+    m = _minute("09:46")
+    lo, hi = h.live._end(m - 1), h.live._end(m)
+    h.feed_to(m)
+    held = h.store.snapshot(h.now)  # what is in hand at the close's instant
+    extra = {**_store_row(held, "trades", "T002", lo, hi), "sequence_number": 10**9}
+    fixed = _store_row(held, "trades", "T003", lo, hi)
+    fixed["price"] = fixed["price"] * 1.01
+    real = h.bars.frame
+
+    def during(*a, **k):  # the stream thread keeps adding after the close took the clock
+        h.bars.frame = real
+        h.now += MS
+        h.sock.push([_message("trades", extra)])
+        return real(*a, **k)
+
+    monkeypatch.setattr(h.bars, "frame", during)
+    got = h.live.close(m)
+    snap = h.live.snapshot
+    assert not got.refused and snap.cutoff_ns == hi + MS
+    keys = {(r[0], r[TRADE_SEQ]) for r in snap.rows["trades"]}
+    assert ("T002", 10**9) not in keys
+    assert snap.rows == held.rows  # exactly what had arrived by the cutoff
+    frozen = dict(snap.rows)
+    h.store.add("trades", [fixed], h.now + MS, feed.REST)  # a REST correction, received later
+    got = h.close(m + 1)
+    assert dict(snap.rows) == frozen  # the earlier snapshot is immutable
+    assert got.refused["T002"] == live.Refusal("tick_late", "trades")
+    # the correction differs from the version converted: an unresolved conflict of an input
+    # (TickSnapshot.refusal), sticky once the symbol entered
+    assert got.refused["T003"] == live.Refusal("tick_conflict")
+    assert h.live.snapshot.frame("trades", "T003").price.isin([fixed["price"]]).any()
+    assert not snap.frame("trades", "T003").price.isin([fixed["price"]]).any()
+
+
+TRADE_SEQ = feed.columns("trades").index("sequence_number")
+
+
 # --- refusals -----------------------------------------------------------------------------
 
 
-def _minute(hm):
-    return parity.table_minutes([hm])[0]
-
-
 def test_tick_refusals_are_typed_sticky_and_refuse_the_rank_peers(world, harness):
-    h = harness(fail={"T001"})
-    got = h.close(_minute("09:45"), wanted=["ZZZZ", "SPY"])
+    h = harness()
+    got = h.close(_minute(OPEN_WARM[0]), wanted=["ZZZZ"])
     cohort = set(got.refused) - {"ZZZZ"}
-    assert {"T001", "T002", "T003"} <= cohort and got.rows.empty
-    assert got.refused["T001"] == live.Refusal("backfill_missing", "http_status")
-    assert got.refused["ZZZZ"] == live.Refusal("not_in_cohort")
-    assert all(got.refused[s] == live.Refusal("rank_peer_refused", "T001")
-               for s in cohort - {"T001"})
-    # a stream gap while the symbol is still read from REST loses nothing
-    end = h.live._end(_minute("09:45"))
-    h.store.gap(["T002"], end + 10 * 10**9, end + 20 * 10**9, "ConnectionError")
+    assert got.refused.pop("ZZZZ") == live.Refusal("not_in_cohort") and got.rows.empty
+    # subscribed after the cutoff: nothing proven at it
+    assert set(got.refused.values()) == {live.Refusal("tick_not_subscribed")}
+    # three symbols with a row (the training table's) at every minute this test closes
+    minutes = [_minute(OPEN_WARM[0]) + k for k in (0, 1)] + [_minute(x) for x in (
+        "09:45", "09:46", "09:47", "09:48")]
+    a, b, c = sorted(set.intersection(
+        cohort, *(set(world.table[world.table.m == x].sym) for x in minutes)))[:3]
+    h.rest.fail = {a}  # its first backfill fails: sent once, never retried
+    # a stream gap before the symbol enters: its backfill from midnight covers it
+    h.store.down([c], h.now, "ConnectionError", 0)
+    h.store.up(h.now + 1, 1)
+    got = h.close(_minute(OPEN_WARM[0]) + 1)
+    assert got.refused[a] == live.Refusal("backfill_missing", "http_status")
+    assert got.refused[b] == live.Refusal("backfill_missing", "tick_no_initial_state")
+    h.warm(_label(_minute(OPEN_WARM[0]) + 2), OPEN_WARM[1])
+    got = h.close(_minute("09:45"))
+    assert got.refused[a] == live.Refusal("backfill_missing", "http_status")  # sticky
+    assert {b, c} <= h.entered() and a not in h.entered()
+    assert all(got.refused[s] == live.Refusal("rank_peer_refused", a)
+               for s in set(got.refused) - {a})
+    # a gap after it entered refuses it for the rest of the day (here still open; a closed one
+    # stays refused too: test_a_stream_that_is_down_refuses_the_symbols_it_feeds)
+    h.store.down([b], h.now, "ConnectionError", 0)
     got = h.close(_minute("09:46"))
-    assert got.refused["T001"].cause == "backfill_missing"
-    assert got.refused["T002"].cause == "rank_peer_refused"
-    # a gap after it switched to the stream refuses it for the rest of the day
-    end = h.live._end(_minute("09:46"))
-    h.store.gap(["T002"], end + 10 * 10**9, end + 20 * 10**9, "ConnectionError")
-    got = h.close(_minute("09:47"))
-    assert got.refused["T002"] == live.Refusal("tick_gap", "ConnectionError")
+    assert got.refused[b] == live.Refusal("tick_gap", "ConnectionError")
     # an event that arrives after its minute was converted
-    late = world.quotes[world.quotes.ticker == "T003"].iloc[0].to_dict()
+    end = h.live._end(_minute("09:46"))
+    h.close(_minute("09:47"))
+    late = world.quotes[world.quotes.ticker == c].iloc[0].to_dict()
     late.update(sip_timestamp=end - 5 * MS, sequence_number=10**9)
     h.sock.push([_message("quotes", late)])
     got = h.close(_minute("09:48"))
-    assert got.refused["T003"] == live.Refusal("tick_late", "quotes")
-    assert got.refused["T002"].cause == "tick_gap" and got.refused["T001"].cause == \
-        "backfill_missing"
+    assert got.refused[c] == live.Refusal("tick_late", "quotes")
+    assert got.refused[b] == live.Refusal("tick_gap", "ConnectionError")
+    assert got.refused[a].cause == "backfill_missing"
 
 
 def test_a_stream_that_is_down_refuses_the_symbols_it_feeds(world, harness):
     h = harness(cfg=with_model(live_marker_quote=True))
-    assert not h.close(_minute("09:44")).refused
-    assert not h.close(_minute("09:45")).refused  # still REST: the stream is not relied on
-    relied = {s for s, i in h.live.symbols.items() if i.stream_from <= i.rest_until}
-    h.shut()
-    assert not h.stream.connected
+    h.warm(*OPEN_WARM)
+    assert not h.close(_minute("09:45")).refused
+    h.shut()  # the connection ends: TickStream.run records the drop of every subscribed key
+    h.store.down(sorted(h.stream.symbols), h.now, "ConnectionError", 0)
     got = h.close(_minute("09:46"))
-    gap = {s for s, r in got.refused.items() if r == live.Refusal("tick_gap", "stream down")}
-    assert got.rows.empty and gap == relied & set(got.refused) and gap
-    # a symbol still read from REST up to this minute: refused only as a rank peer
-    assert {r.cause for s, r in got.refused.items() if s not in gap} <= {"rank_peer_refused"}
+    assert got.rows.empty and got.refused
+    assert set(got.refused.values()) == {live.Refusal("tick_gap", "ConnectionError")}
+    h.store.up(h.now, 1)  # subscribed again: the gap is not filled, the refusal stays
+    got = h.close(_minute("09:47"))
+    assert set(got.refused.values()) == {live.Refusal("tick_gap", "ConnectionError")}
 
 
-def test_missing_inputs_and_bar_gaps_refuse_every_row(world, harness, tmp_path):
+def test_missing_inputs_receipts_and_bar_gaps_refuse_every_row(world, harness, tmp_path):
+    """A missing training-format input, prepared inputs without their receipts (`full`
+    INPUTS) and a bar-stream gap each refuse every row of the minute."""
     bare = tmp_path / "bare" / DAY
     bare.mkdir(parents=True)
     for name in ("reference", "benzinga"):
         (bare / PREPARED[name]).symlink_to(world.prepared / DAY / PREPARED[name])
     h = harness(inputs_root=bare.parent)
+    h.warm(*OPEN_WARM)
     got = h.close(_minute("09:45"))
     assert got.rows.empty and set(got.refused.values()) == {live.Refusal("input_missing",
                                                                          "fl_facts")}
-    h.bars.gap(1.0, 2.0, "ConnectionError")
+    head, *body = (world.prepared / DAY / PREPARED["fl_facts"]).read_text().splitlines()
+    cut = head.rsplit(",", 1)[0]
+    (bare / PREPARED["fl_facts"]).write_text("\n".join(
+        [cut, *(x.rsplit(",", 1)[0] for x in body)]) + "\n")
     got = h.close(_minute("09:46"))
+    assert got.rows.empty and got.refused
+    assert set(got.refused.values()) == {live.Refusal("receipt_missing", "fl facts")}
+    h.bars.gap(1.0, 2.0, "ConnectionError")
+    got = h.close(_minute("09:47"))
     assert {r.cause for r in got.refused.values()} == {"bar_gap"}
 
 
@@ -505,22 +625,8 @@ def test_a_minute_closed_before_its_end_refuses_and_changes_nothing(world, harne
         h.live.close(m)
     assert exc.value.cause == "cutoff_before_mark"
     assert h.live.closed == -1 and not h.live.symbols and h.live.lost is None
+    assert h.store.counts["late"] == 0 and h.live.snapshot is None
     h.now = h.live._end(m) + MS
     got = h.live.close(m)
-    assert not got.refused and len(got.rows) > 0
-
-
-def test_inputs_without_receipts_refuse_the_minute(world, harness, tmp_path):
-    """Prepared inputs without their receipts (`full` INPUTS) refuse every row of the minute."""
-    bare = tmp_path / "bare" / DAY
-    bare.mkdir(parents=True)
-    for name in ("reference", "benzinga"):
-        (bare / PREPARED[name]).symlink_to(world.prepared / DAY / PREPARED[name])
-    head, *body = (world.prepared / DAY / PREPARED["fl_facts"]).read_text().splitlines()
-    cut = head.rsplit(",", 1)[0]
-    (bare / PREPARED["fl_facts"]).write_text("\n".join(
-        [cut, *(x.rsplit(",", 1)[0] for x in body)]) + "\n")
-    h = harness(inputs_root=bare.parent)
-    got = h.close(_minute("09:45"))
-    assert got.rows.empty and got.refused
-    assert set(got.refused.values()) == {live.Refusal("receipt_missing", "fl facts")}
+    assert h.live.closed == m and got.refused and h.live.symbols
+    assert {r.cause for r in got.refused.values()} == {"tick_not_subscribed"}

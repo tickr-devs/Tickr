@@ -7,9 +7,10 @@ It composes the pieces that already exist, each the training's own code or its f
 in the live date context of the day (`full.LiveContext`, built by the caller from the bot's
 calendar and the bundle's session policy: the date boundary, the feature-only table code, the
 day's close). Each close takes the wall clock once (`clock`): that instant is the RECEIPT CUTOFF
-of the minute (`full`, EACH MINUTE HAS TWO BOUNDS) and the receipt of every bar and tick row the
-close hands in, since all of them were in hand at that instant (a minute closed before its end
-refuses `cutoff_before_mark`).
+of the minute (`full`, EACH MINUTE HAS TWO BOUNDS), the receipt of every bar and tick row the
+close hands in, and the cutoff of the close's tick snapshot (`TickStore.snapshot`): the close
+uses only what had arrived by that instant (a minute closed before its end refuses
+`cutoff_before_mark`).
 
 - bars: today's full-market minute bars from `MinuteStream` into `DayBars`, cut at m (bars of a
   later minute are left out, the prefix rule), and the 20-session `DayState`; the table code's
@@ -17,14 +18,22 @@ refuses `cutoff_before_mark`).
   rebuilding the whole market's day at every minute) are the COHORT: the training's row rule
   decides which symbols get a row. Webull's lists (what the bot may trade) stay apart: a symbol
   the caller wants that has no row is refused `not_in_cohort`.
-- ticks: `TickStream` / `TickStore` (trades and quotes as flat-file rows) and `TickBackfill`.
-  A symbol enters the tick path the first minute it has a row and stays in it for the day (its
-  later rows need the earlier minutes: windows of `wm2tk`, the converter's carried events). On
-  entry it is subscribed and backfilled from REST from the start of the New York day (the span
-  of the training's day file; the flat files hold nothing before 04:00 on a normal day, so this
-  is the same as from 04:00 and leaves nothing out). Its next minute is backfilled once more up
-  to that minute's end, because the stream only covers events after the subscription (overlap
-  is deduplicated by the store's key); from then on the stream alone feeds it.
+- ticks: `TickStream` / `TickStore` (every version of each trade and quote as flat-file rows)
+  and `TickBackfill`. Each close reads the store's decision snapshot as of its cutoff
+  (`TickSnapshot`, codex-109 point 4): per key the version chosen by that instant, immutable, so
+  a later arrival or REST correction never changes what an earlier close saw. A symbol is
+  subscribed the first minute it has a row (it is TRACKED from then on, for the day). The
+  snapshot says whether its ticks are proven complete from New York midnight to the cutoff
+  (`TickSnapshot.refusal`: subscribed, a complete REST window from midnight reaching past the
+  first stream row of each kind after the subscription, every stream gap filled, no unresolved
+  conflict). While it says no initial state (or a closed gap is unfilled), the close backfills
+  the symbol from midnight to now (`TickBackfill.initial`: sent once per such close, never
+  retried); that window is received after the cutoff, so the next close's snapshot reads it.
+  The first close whose snapshot proves the symbol complete ENTERS it: its whole day so far is
+  converted then, and it stays in the conversion for the day (its later rows need the earlier
+  minutes: windows of `wm2tk`, the converter's carried events). Each later close converts the
+  keys its snapshot holds that the conversion has not taken yet (or whose chosen version
+  changed); one of a minute already converted came late (`tick_late`).
 - conversion: the frozen converter v11 once per close, on the incremental input of #820
   (`tail_carry` of every earlier event, plus the new events), together with the whole day so far
   of the symbols entering at this close; v11 partitions every column by symbol, so both give the
@@ -54,12 +63,18 @@ refuses `cutoff_before_mark`).
   at every minute (pinned code, not edited here): that cost is measured, not avoided.
 
 REFUSALS (hard rule 7): every row of the cohort is either served with all 191 values or refused
-with one cause, never filled. Sticky causes hold for the rest of the day, because the lost
+with one cause, never filled. The tick causes are the snapshot's (`TickSnapshot.refusal`), named
+as live.py names them: `tick_no_initial_state` and `tick_backfill_incomplete` are
+`backfill_missing` (the snapshot's cause as the detail), `tick_gap` stays `tick_gap` (the
+gap's cause as the detail), and `tick_not_subscribed`, `tick_coverage_unverified` and
+`tick_conflict` keep #793's names. Before a symbol enters, its cause is the snapshot's at that
+close (it can still enter later). Sticky causes hold for the rest of the day, because the lost
 events stay in the converter's carry and in the 30-minute windows:
-- `backfill_missing`: a REST backfill of the symbol failed (sent once, never retried);
-- `tick_gap`: the stream was down (a gap recorded by TickStream for the symbol or the whole
-  market) or is down now, while the symbol relied on it;
-- `tick_late`: an event arrived after its minute had been converted;
+- `backfill_missing`: a REST backfill of the symbol failed or came back incomplete (sent once,
+  never retried);
+- any snapshot refusal of an entered symbol (`tick_gap`: a stream gap recorded by TickStream
+  for the symbol or the whole market, open or unfilled at the cutoff; the others above);
+- `tick_late`: a version of an event in a minute already converted arrived after that close;
 - `bar_gap`: the minute-bar stream had a gap today (DayBars cannot say which minutes).
 Per minute:
 - `input_missing`: a training-format input folder or file is not there;
@@ -96,8 +111,12 @@ from tickr.model.errors import ModelRefused
 from tickr.model.features import full, incremental, ticks
 
 INPUT_NAMES = ("reference", "benzinga", "fl_facts")
-STICKY = ("backfill_missing", "tick_gap", "tick_late", "bar_gap")
-TICK_CAUSES = ("backfill_missing", "tick_gap", "tick_late")
+# the snapshot's causes (TickSnapshot.refusal) that live.py names `backfill_missing`
+BACKFILL_CAUSES = ("tick_no_initial_state", "tick_backfill_incomplete")
+# the snapshot's causes a backfill from midnight can cure for a symbol not entered yet
+BACKFILL_CURES = (*BACKFILL_CAUSES, "tick_gap")
+TICK_CAUSES = ("backfill_missing", "tick_gap", "tick_late", "tick_not_subscribed",
+               "tick_coverage_unverified", "tick_conflict")
 PART_GLOB = "part-*.parquet"
 QUOTE_SIDE_COLUMNS = ("bid_price", "bid_size", "ask_price", "ask_size")
 NS_PER_SECOND = 10**9
@@ -145,8 +164,8 @@ class MinuteResult:
 
 @dataclass
 class _Symbol:
-    stream_from: int  # wall-clock ns of the subscription: the stream covers events after it
-    rest_until: int  # SIP ns: REST holds every event before it
+    since: int  # wall-clock ns the subscription was asked (TickStream.add)
+    entered: int | None = None  # the table minute whose close entered it in the conversion
 
 
 class LiveFeatures:
@@ -175,9 +194,12 @@ class LiveFeatures:
         if store.day != day:
             raise ModelRefused("live_day_mismatch", f"store {store.day}, day {day}")
         self.closed = -1  # last closed table minute
-        self.symbols: dict[str, _Symbol] = {}
+        self.symbols: dict[str, _Symbol] = {}  # tracked: subscribed for the day
         self.broken: dict[str, Refusal] = {}
-        self.cursor = dict.fromkeys(feed.KINDS, 0)
+        # kind -> (ticker, sequence_number) -> flat-file columns of the version taken
+        self.taken: dict[str, dict[tuple[str, int], tuple[Any, ...]]] = {
+            kind: {} for kind in feed.KINDS}
+        self.snapshot: feed.TickSnapshot | None = None  # the last close's
         self.pending: dict[str, dict[str, dict[int, dict[str, Any]]]] = {
             kind: {} for kind in feed.KINDS}
         self.carry: tuple[Any, Any] | None = None
@@ -226,19 +248,25 @@ class LiveFeatures:
         seconds["bars"] = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        joiners = [s for s in cohort if s not in self.symbols]
-        for s in joiners:
-            self.stream.add(s)
-            self.symbols[s] = _Symbol(stream_from=self.clock(),
-                                      rest_until=feed.day_bounds_ns(self.day)[0])
-        self._backfill(minute)
+        snap = self.store.snapshot(received)  # what had arrived by the cutoff, frozen
+        self.snapshot = snap
+        seconds["snapshot"] = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        for s in cohort:
+            if s not in self.symbols:
+                self.stream.add(s)
+                self.symbols[s] = _Symbol(since=self.clock())
+        entering = [s for s, info in self.symbols.items() if info.entered is None
+                    and s not in self.broken and snap.refusal(s) is None]
+        self._backfill(snap)
         seconds["backfill"] = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        try:  # from here the store's rows are consumed: a refusal loses the day's tick state
-            self._read_store()
-            self._check_stream(minute, set(joiners))
-            rows = self._convert(minute, set(joiners))
+        try:  # from here the snapshot's rows are consumed: a refusal loses the day's tick state
+            self._check_entered(snap)
+            self._read_snapshot(snap, entering)
+            rows = self._convert(minute, set(entering))
             seconds["convert"] = time.perf_counter() - t0
             t0 = time.perf_counter()
             self._append(minute, rows.assign(**{full.RECEIPT_COLUMN: received}))
@@ -246,10 +274,13 @@ class LiveFeatures:
             self.lost = f"{exc.cause} at minute {minute}"
             raise
         self.closed = minute
+        for s in entering:
+            if s not in self.broken:
+                self.symbols[s].entered = minute
         seconds["append"] = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        refused = self._refusals(cohort)
+        refused = self._refusals(cohort, snap)
         paths = {n: self.inputs.path(n, self.day) for n in INPUT_NAMES}
         absent = [n for n, p in paths.items() if p is None]
         served = [s for s in cohort if s not in refused]
@@ -278,55 +309,72 @@ class LiveFeatures:
             for kind in feed.KINDS:
                 self.pending[kind].pop(symbol, None)
 
-    def _backfill(self, minute: int) -> None:
-        """REST for every symbol the stream does not cover yet, up to the end of `minute`."""
-        end = self._end(minute)
+    def _backfill(self, snap: feed.TickSnapshot) -> None:
+        """REST from New York midnight to now for every tracked symbol not entered yet whose
+        snapshot lacks what a backfill can give (no initial state, or a closed gap unfilled).
+        A failed or incomplete backfill is sent once, never retried: the symbol is refused for
+        the day."""
         for s, info in self.symbols.items():
-            if s in self.broken or info.rest_until >= end or info.stream_from <= info.rest_until:
+            if (s in self.broken or info.entered is not None
+                    or snap.refusal(s) not in BACKFILL_CURES
+                    or any(g.up_ns is None
+                           for g in snap.gaps.get(s, ()) + snap.gaps.get(feed.MARKET, ()))):
                 continue
             try:
-                self.backfill.backfill(s, info.rest_until, end)
+                windows = self.backfill.initial(s)
             except ModelRefused as exc:
                 self._break(s, "backfill_missing", exc.cause)
                 continue
-            info.rest_until = end
+            causes = [w.cause for w in windows.values() if w.cause is not None]
+            if causes:
+                self._break(s, "backfill_missing", causes[0])
 
-    def _read_store(self) -> None:
-        """The store's rows added or replaced since the last close, of the tracked symbols."""
-        for kind in feed.KINDS:
-            got, self.cursor[kind] = self.store.since(kind, self.cursor[kind])
-            held = self.pending[kind]
-            for row in got:
-                s = row["ticker"]
-                if s in self.symbols and s not in self.broken:
-                    held.setdefault(s, {})[row["sequence_number"]] = row
+    @staticmethod
+    def _tick_refusal(snap: feed.TickSnapshot, symbol: str) -> Refusal | None:
+        """The snapshot's refusal of `symbol` named as live.py names it (module text)."""
+        cause = snap.refusal(symbol)
+        if cause is None:
+            return None
+        if cause in BACKFILL_CAUSES:
+            return Refusal("backfill_missing", cause)
+        if cause == "tick_gap":
+            gaps = snap.gaps.get(symbol, ()) + snap.gaps.get(feed.MARKET, ())
+            return Refusal(cause, gaps[-1].cause if gaps else "")
+        return Refusal(cause)
 
-    def _check_stream(self, minute: int, joiners: set[str]) -> None:
-        """Sticky refusals of the symbols that rely on the stream for part of the minutes up to
-        `minute`: the stream is down now, or a recorded gap overlaps that part; and of the
-        symbols holding an event older than the last converted minute (it came late)."""
-        end, done = self._end(minute), self._end(self.closed)
-        up = self.stream.connected
-        gaps = self.store.gaps
+    def _check_entered(self, snap: feed.TickSnapshot) -> None:
+        """Sticky refusals of the entered symbols the snapshot does not prove complete."""
         for s, info in self.symbols.items():
-            if s in self.broken:
-                continue
-            if info.rest_until < end:
-                if not up:
-                    self._break(s, "tick_gap", "stream down")
+            if info.entered is not None and s not in self.broken:
+                refusal = self._tick_refusal(snap, s)
+                if refusal is not None:
+                    self._break(s, refusal.cause, refusal.detail)
+
+    def _read_snapshot(self, snap: feed.TickSnapshot, entering: list[str]) -> None:
+        """The snapshot's chosen versions the conversion has not taken yet (a new key, or a
+        version other than the one taken), of the entered and `entering` symbols; one of an
+        entered symbol in a minute already converted refuses it `tick_late`."""
+        done = self._end(self.closed)
+        joining = set(entering)
+        for kind in feed.KINDS:
+            cols = feed.columns(kind)[:-2]
+            seq, ts = cols.index("sequence_number"), cols.index("sip_timestamp")
+            taken, held = self.taken[kind], self.pending[kind]
+            for version in snap.rows[kind]:
+                s = version[0]
+                info = self.symbols.get(s)
+                if (info is None or s in self.broken
+                        or (info.entered is None and s not in joining)):
                     continue
-                hit = [g for g in gaps.get(s, []) + gaps.get(feed.MARKET, [])
-                       if g[0] < end and g[1] > info.rest_until]
-                if hit:
-                    self._break(s, "tick_gap", hit[0][2])
+                body = version[:len(cols)]
+                key = (s, body[seq])
+                if taken.get(key) == body:
                     continue
-            if s in joiners:
-                continue
-            for kind in feed.KINDS:
-                if any(r["sip_timestamp"] < done
-                       for r in self.pending[kind].get(s, {}).values()):
+                if info.entered is not None and body[ts] < done:
                     self._break(s, "tick_late", kind)
-                    break
+                    continue
+                taken[key] = body
+                held.setdefault(s, {})[body[seq]] = dict(zip(cols, body, strict=True))
 
     def _take(self, kind: str, symbols: Iterable[str], end: int) -> Any:
         """The pending rows of `symbols` before `end` as a flat-file frame (removed from
@@ -354,7 +402,8 @@ class LiveFeatures:
         import pandas as pd
 
         end = self._end(minute)
-        alive = [s for s in self.symbols if s not in self.broken]
+        alive = [s for s, info in self.symbols.items() if s not in self.broken
+                 and (info.entered is not None or s in joiners)]
         trades = self._take("trades", alive, end)
         quotes = self._take("quotes", alive, end)
         old_t, old_q = self.carry if self.carry is not None else (trades.iloc[:0],
@@ -393,13 +442,19 @@ class LiveFeatures:
         finally:
             con.close()
 
-    def _refusals(self, cohort: list[str]) -> dict[str, Refusal]:
+    def _refusals(self, cohort: list[str], snap: feed.TickSnapshot) -> dict[str, Refusal]:
         refused: dict[str, Refusal] = {}
         if self.bars.gaps:
             refused = {s: Refusal("bar_gap", str(len(self.bars.gaps))) for s in cohort}
         for s in cohort:
-            if s in self.broken and s not in refused:
+            if s in refused:
+                continue
+            if s in self.broken:
                 refused[s] = self.broken[s]
+            elif self.symbols[s].entered is None:  # not proven complete at this cutoff yet
+                waiting = self._tick_refusal(snap, s)
+                if waiting is not None:
+                    refused[s] = waiting
         tick_bad = sorted(s for s, r in refused.items() if r.cause in TICK_CAUSES)
         if tick_bad:
             for s in cohort:

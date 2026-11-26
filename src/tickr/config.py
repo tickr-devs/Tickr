@@ -410,6 +410,7 @@ class ModelConfig:
     live_marker_quote: bool
     live_wait_after_minute_seconds: str
     live_table_workers: int
+    tick_groups: int
 
 
 @dataclass(frozen=True)
@@ -452,7 +453,12 @@ class MassiveConfig:
     max_pages: int
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
+    stream_release_pause_seconds: Decimal
+    stream_ack_timeout_seconds: Decimal
     calendar_lookback_days: int
+    revision_poll_enabled: bool
+    revision_store_dir: str
+    revision_poll_overlap_seconds: int
     tick_subscription: str
     tick_page_limit: int
     massive_news_path: str
@@ -468,6 +474,7 @@ class MassiveConfig:
     arrival_tail_seconds: int
     arrival_report_points_seconds: tuple[Decimal, ...]
     stream_day_dir: str
+    revision_report_quantiles: tuple[Decimal, ...]
 
 
 @dataclass(frozen=True)
@@ -823,6 +830,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "yet) or a number of seconds of at least 0 written as text")
     if model.live_table_workers < 1:
         raise ConfigError("[model] live_table_workers must be at least 1")
+    if model.tick_groups < 1:
+        raise ConfigError("[model] tick_groups must be at least 1")
     trailing: TrailingStopConfig = built["trailing_stop"]
     if trailing.enabled:
         raise ConfigError("[trailing_stop] enabled must stay false: stop replacement is not in "
@@ -841,10 +850,15 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
+            or massive.stream_release_pause_seconds < 0 or massive.stream_ack_timeout_seconds < 0
             or massive.calendar_lookback_days < 1
-            or not massive.stock_types):
+            or not all(0 < q < 1 for q in massive.revision_report_quantiles)
+            or massive.revision_poll_overlap_seconds < 0 or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
-                          "1, stream_reconnect_seconds above 0, stock_types not empty")
+                          "1, stream_reconnect_seconds above 0, stream_release_pause_seconds and "
+                          "stream_ack_timeout_seconds not below 0, stock_types not empty, "
+                          "revision_report_quantiles each above 0 and below 1, "
+                          "revision_poll_overlap_seconds at least 0")
     if massive.tick_subscription not in ("symbols", "market") or massive.tick_page_limit < 1:
         raise ConfigError("[massive] tick_subscription must be \"symbols\" or \"market\", "
                           "tick_page_limit at least 1")
