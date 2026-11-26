@@ -870,9 +870,6 @@ enum L10n {
     static var hintEntry: LocalizedStringResource {
       LocalizedStringResource("activity.hintEntry", defaultValue: "Entry", bundle: L10n.bundle)
     }
-    static var calendar: LocalizedStringResource {
-      LocalizedStringResource("activity.calendar", defaultValue: "Calendar", bundle: L10n.bundle)
-    }
     static func pastDay(_ day: String) -> LocalizedStringResource {
       LocalizedStringResource("activity.pastDay", defaultValue: "\(day) · read-only", bundle: L10n.bundle)
     }
@@ -1971,10 +1968,6 @@ enum ChartText {
   static let failedTitle = LocalizedStringResource("chart.failed.title",
     defaultValue: "Could not load the chart")
   static let retry = LocalizedStringResource("chart.retry", defaultValue: "Try Again")
-  static let previousDay = LocalizedStringResource("chart.previousDay",
-    defaultValue: "Previous day")
-  static let nextDay = LocalizedStringResource("chart.nextDay", defaultValue: "Next day")
-  static let day = LocalizedStringResource("chart.day", defaultValue: "Day")
   static let live = LocalizedStringResource("chart.live", defaultValue: "Live")
   static let timeframe = LocalizedStringResource("chart.timeframe", defaultValue: "Interval")
   /// The range picker and its segments: the chosen day, five sessions, one and three months, a year.
@@ -2013,7 +2006,6 @@ enum ChartText {
   static let zoomOut = LocalizedStringResource("chart.zoomOut", defaultValue: "Zoom out")
   static let liveHint = LocalizedStringResource("chart.live.hint",
     defaultValue: "Scrolls to the newest candle.")
-  static let todayLive = LocalizedStringResource("chart.todayLive", defaultValue: "today")
   /// The day's high, low and volume beside the price, as on the design: "H", "L", "V".
   static let highShort = LocalizedStringResource("chart.highShort", defaultValue: "H")
   static let lowShort = LocalizedStringResource("chart.lowShort", defaultValue: "L")

@@ -273,23 +273,6 @@
         }
       }
     },
-    "activity.calendar" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Calendar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Calendario"
-          }
-        }
-      }
-    },
     "activity.calendarLosses" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2415,23 +2398,6 @@
         }
       }
     },
-    "chart.day" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Día"
-          }
-        }
-      }
-    },
     "chart.dayStats" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3163,23 +3129,6 @@
         }
       }
     },
-    "chart.nextDay" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Día siguiente"
-          }
-        }
-      }
-    },
     "chart.noBars.body" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3312,23 +3261,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "abierta"
-          }
-        }
-      }
-    },
-    "chart.previousDay" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Previous day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Día anterior"
           }
         }
       }
@@ -3788,23 +3720,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gráfico"
-          }
-        }
-      }
-    },
-    "chart.todayLive" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "today"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "hoy"
           }
         }
       }

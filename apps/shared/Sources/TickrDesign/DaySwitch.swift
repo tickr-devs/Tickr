@@ -37,18 +37,9 @@ public struct DaySwitch: View {
   /// Somewhere to go from the shown day: an older or newer day, or back to today.
   private var opens: Bool { steps.visible || away }
 
-  private var title: Text { caption.map { Text(verbatim: $0) } ?? Text(DayWords.today) }
-
   public var body: some View {
     if opens {
-      Button { open = true } label: {
-        HStack(spacing: Tokens.Space.xs + Tokens.Space.xxs) {
-          title
-          Image(systemName: Symbols.scrollMore)
-            .font(Tokens.Typography.annotationBold)
-            .foregroundStyle(Palette.textTertiary)
-        }
-      }
+      Button { open = true } label: { DayCapsule(caption: caption) }
       .buttonStyle(DayButtonStyle())
       .accessibilityLabel(Text(DayWords.label(day)))
       .sheet(isPresented: $open) {
@@ -56,9 +47,7 @@ public struct DaySwitch: View {
         CardSheet(title: DayWords.title, subtitle: nil, close: { shown.wrappedValue = false }, rows: { picker })
       }
     } else {
-      title
-        .font(Tokens.Typography.button)
-        .foregroundStyle(Palette.textPrimary)
+      DayCapsule(caption: caption, opens: false)
         .accessibilityLabel(Text(DayWords.label(day)))
     }
   }
@@ -119,10 +108,44 @@ public struct DaySwitch: View {
   }
 }
 
+/// What the day capsule says: the day ("Today", or "Fri Nov 13") and the down chevron, the face of
+/// a `DaySwitch` or of any other control that opens the shown day's choices (the iPhone Chart's
+/// menu of recorded days, Activity's calendar), styled `DayButtonStyle`. With nowhere to go
+/// (`opens` false) the day alone, as plain text in the capsule's font.
+public struct DayCapsule: View {
+  /// nil on today ("Today"), else the shown day.
+  let caption: String?
+  let opens: Bool
+
+  public init(caption: String?, opens: Bool = true) {
+    self.caption = caption
+    self.opens = opens
+  }
+
+  public var body: some View {
+    let title = caption.map { Text(verbatim: $0) } ?? Text(DayWords.today)
+    if opens {
+      HStack(spacing: Tokens.Space.xs + Tokens.Space.xxs) {
+        title
+        Image(systemName: Symbols.scrollMore)
+          .font(Tokens.Typography.annotationBold)
+          .foregroundStyle(Palette.textTertiary)
+      }
+    } else {
+      title
+        .font(Tokens.Typography.button)
+        .foregroundStyle(Palette.textPrimary)
+    }
+  }
+}
+
 /// The day button's capsule (the board's `.daycap`): the chip fill under a strong outline, the day
-/// in `Typography.button`, pressed in while held; `Size.dayButton` tall, a `touchTarget`.
-struct DayButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
+/// in `Typography.button`, pressed in while held; `Size.dayButton` tall, a `touchTarget`. On a
+/// `Menu`, with `.menuStyle(.button)`.
+public struct DayButtonStyle: ButtonStyle {
+  public init() {}
+
+  public func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(Tokens.Typography.button)
       .foregroundStyle(Palette.textPrimary)

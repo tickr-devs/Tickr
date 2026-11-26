@@ -260,12 +260,9 @@ struct HeaderIcon: View {
   @ScaledMetric(relativeTo: .title3) private var circle = HeaderIcon.glassSide
   let glyph: Glyph
   var glass = true
-  /// A wash of `info` under the glyph: the button's panel is open (Activity's calendar).
-  var selected = false
 
-  init(_ glyph: DesignGlyph, selected: Bool = false) {
+  init(_ glyph: DesignGlyph) {
     self.glyph = .design(glyph)
-    self.selected = selected
   }
 
   init(symbol: String, glass: Bool = true) {
@@ -283,7 +280,7 @@ struct HeaderIcon: View {
     .frame(width: glass ? circle : nil, height: glass ? circle : nil)
     .background {
       if glass {
-        Circle().fill(selected ? Palette.info.opacity(TickrTabBar.selectedWash) : .clear)
+        Circle().fill(.clear)
           .glassSurface(in: Circle(), shadow: Tokens.Opacity.wash)
       }
     }
