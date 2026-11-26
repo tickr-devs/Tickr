@@ -20,8 +20,9 @@ manifest line, with the training's parser. `--table`: the feature table the trai
 the day (`l1feat.py` output: date, sym, m, sess and the 191 features).
 
 DATES. Before any file is opened, the day must pass the pinned training rules (`l1labels.needed`
-on the bar folder's NAMES only): a sealed day (2026-07-01 .. 2026-08-14, or after the research
-archive's last day, the HARD_LAST of the pinned l1labels.py, not the live replacement), a day
+on the bar folder's NAMES only, the pinned l1labels.py imported the research way, as the training
+imports it): a sealed day (2026-07-01 .. 2026-08-14, or after the research archive's last day,
+the pinned HARD_LAST, not a live context's date), a day
 off the calendar, the embargo after the sealed window, history reaching into the sealed window
 or before the archive, or a missing bar file refuses with the training's own cause. Sealed data
 is never read.
@@ -32,7 +33,12 @@ REPLAY, for each chosen minute m (HH:MM, 04:00 .. 19:59), as the bot would see i
 2. ticks: trades and quotes of those symbols with sip_timestamp before the end of m -> the
    frozen converter v11 through `ticks.tick_rows` -> the tick table of the day so far (the
    converter partitions every column by symbol, so keeping only the row symbols is exact);
-3. `full.minute_rows_full` with that tick table and the reference, Benzinga and fl inputs.
+3. the bot's live date context of the day (`full.live_context`, the training's full-day
+   sessions: the pinned table has no early close) on the snapshot of the inputs as of the mark
+   of m: the training's own `l1feat.cut_inputs` cuts the reference and Benzinga inputs at the
+   mark (the capture's job live), and every record of the snapshot, the bars through m and the
+   tick table carry the mark as their receipt; the receipt cutoff is the mark. So
+   `LiveContext.minute_rows` runs every check of the live path and finds nothing to refuse.
 
 MARKER QUOTE (`--marker`, a proposal for Codex, findings item 4; the report then holds both
 variants). v11 weighs a quote update until the next update of the stock, capped at the end of
@@ -73,7 +79,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
+import gzip
 import hashlib
+import io
 import json
 import math
 import os
@@ -83,8 +92,10 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from tickr.calendar import NEW_YORK, MarketDay
 from tickr.model import features
 from tickr.model.errors import ModelRefused
 from tickr.model.features import full, ticks
@@ -96,6 +107,7 @@ VARIANTS = ("plain", "marker")
 # The marker's quote values (module docstring): SQL over the symbol's latest quote of the prefix.
 MARKER_VALUES = {"ask_price": "ask_price", "ask_size": "ask_size", "bid_price": "bid_price",
                  "bid_size": "bid_size", "conditions": "NULL", "indicators": "NULL"}
+_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 _CSV = "read_csv(?, header=true, all_varchar=true, delim=',', quote='\"', escape='\"')"
 
 
@@ -122,19 +134,39 @@ def _training(cause: str):
         raise ModelRefused(cause, str(exc)) from None
 
 
+def research() -> Any:
+    """The pinned feature builder imported the way the training imports it (by its module
+    names, from the pinned folder that the table code puts on sys.path), after the md5 check of
+    every pinned file: the day rules of a replay are the training's, with its own HARD_LAST."""
+    features.table_code()
+    differ = sorted(n for n, d in full.full_digests().items() if d != full.FULL_PINS[n])
+    if differ:
+        raise ModelRefused("table_code_md5", ", ".join(differ))
+    with _training("replay_code_refused"):
+        import l1feat  # type: ignore[import-not-found]
+        import l1labels  # type: ignore[import-not-found]
+    return SimpleNamespace(labels=l1labels, feat=l1feat)
+
+
 def archive_last() -> str:
-    """HARD_LAST of the pinned l1labels.py: the old text of LIVEPATCH, which `full.live_text`
-    checks to occur exactly once in the md5-pinned file."""
-    full.full_code()
-    old = full.LIVEPATCH[0][1]
-    return old.split("'")[1]
+    """HARD_LAST of the pinned l1labels.py: the research archive's last open day."""
+    return str(research().labels.HARD_LAST)
+
+
+def market_day(day: str) -> MarketDay:
+    """The replayed day with the training's sessions (`full.TRAINED_SESSION_MINUTES`): the
+    training's table of an archive day has no early close, so neither has its replay."""
+    d = datetime.date.fromisoformat(day)
+    start = datetime.datetime(d.year, d.month, d.day, tzinfo=NEW_YORK)
+    at = [start + datetime.timedelta(minutes=features.DAY_START_MINUTE + m)
+          for m in full.TRAINED_SESSION_MINUTES]
+    return MarketDay(d, *at, False, "replay of an archive day: the training's sessions")
 
 
 def day_files(day: str, bars: Path) -> list[str]:
     """The training's day rule on the bar folder's names: the 20 sessions before `day` and
     `day`, or the training's refusal (cause `replay_day_refused`, the training's text)."""
-    code = full.full_code()
-    labels = code.labels
+    labels = research().labels
     with _training("replay_day_refused"):
         labels.day_ok(day)
         if day > archive_last():
@@ -147,7 +179,7 @@ def day_files(day: str, bars: Path) -> list[str]:
 
 def table_minutes(hhmm: Sequence[str]) -> list[int]:
     """Table minutes (from 04:00) of HH:MM texts, by the training's `cut_minute`."""
-    labels = full.full_code().labels
+    labels = research().labels
     with _training("replay_minute_invalid"):
         got = [labels.cut_minute(x) for x in hhmm]
     if not got or len(set(got)) != len(got):
@@ -161,20 +193,20 @@ def hhmm(minute: int) -> str:
 
 
 def _splits(reference: Path) -> dict[str, list[tuple[str, float]]]:
-    code = full.full_code()
+    labels = research().labels
     man = json.loads((reference / "manifest.json").read_text("utf-8"))
     path = reference / "splits.jsonl"
     body = path.read_bytes()
     if man.get("files", {}).get(path.name) != [len(body), hashlib.md5(body).hexdigest()]:
         raise ModelRefused("replay_input_changed", path.name)
     with _training("replay_input_unreadable"):
-        return code.labels.splits_parse(body)
+        return labels.splits_parse(body)
 
 
 def _types(path: Path | None) -> tuple[set[str] | None, str | None]:
     if path is None:
         return None, None
-    labels = full.full_code().labels
+    labels = research().labels
     with _training("replay_input_unreadable"):
         got = labels.read_types(str(path))
         return got, labels.md5b(labels.raw(str(path)))
@@ -275,6 +307,60 @@ def write_tick_file(table: Any, path: Path) -> Path:
     return path
 
 
+def snapshot(day: str, minute: int, tick_file: Path, reference: Path, benzinga: Path,
+             fl_facts: Path, received: datetime.datetime, work: Path) -> full.FullInputs:
+    """The inputs as the bot holds them at the mark of `minute`: cut by the training's own
+    `l1feat.cut_inputs` at the minute, every record carrying `received` as its receipt
+    (`full.RECEIPT_COLUMN` / `full.RECEIPT_FIELD`), in the training's formats."""
+    import duckdb
+
+    feat = research().feat
+    work.mkdir()
+    with _training("replay_input_unreadable"), contextlib.redirect_stdout(io.StringIO()):
+        tk, bz, ref, _ = feat.cut_inputs(day, minute, str(tick_file), str(benzinga),
+                                         str(work), str(reference))
+    stamp = received.astimezone(datetime.UTC).isoformat()
+    ns = (received - _EPOCH) // datetime.timedelta(microseconds=1) * 1000
+    root = work / "received"
+    root.mkdir()
+    con = duckdb.connect()
+    try:
+        con.execute(f"COPY (SELECT *, CAST({int(ns)} AS BIGINT) AS {full.RECEIPT_COLUMN} FROM "
+                    f"read_parquet(?)) TO '{root / 'tk.parquet'}' (FORMAT parquet)", [tk])
+    finally:
+        con.close()
+
+    def stamped(line: str) -> str:
+        return json.dumps({**json.loads(line), full.RECEIPT_FIELD: stamp}) + "\n"
+
+    (root / "bz").mkdir()
+    for path in sorted(Path(bz).iterdir()):
+        with gzip.open(path, "rt", encoding="utf-8") as f, \
+                gzip.open(root / "bz" / path.name, "wt", encoding="utf-8") as g:
+            g.write("".join(stamped(x) for x in f if x.strip()))
+    (root / "ref").mkdir()
+    manifest = json.loads((Path(ref) / "manifest.json").read_text("utf-8"))
+    for name in manifest["files"]:
+        if not (Path(ref) / name).is_file():
+            continue  # the training's own ref_view refuses a needed file that is missing
+        lines = (Path(ref) / name).read_text("utf-8").splitlines()
+        (root / "ref" / name).write_text("".join(stamped(x) for x in lines if x.strip()),
+                                         "utf-8")
+        manifest["files"][name] = feat.ident(str(root / "ref" / name))
+    (root / "ref" / "manifest.json").write_text(json.dumps(manifest, sort_keys=True), "utf-8")
+    lines = Path(fl_facts).read_text("utf-8").splitlines()
+    (root / "fl.csv").write_text("\n".join([f"{lines[0]},{full.RECEIPT_FIELD}",
+                                            *(f"{x},{stamp}" for x in lines[1:])]) + "\n",
+                                 "utf-8")
+    return full.FullInputs(root / "tk.parquet", root / "ref", root / "bz", root / "fl.csv")
+
+
+def received_bars(bars: Any, received: datetime.datetime) -> Any:
+    """The bars with `received` as their receipt (`full.RECEIPT_COLUMN`)."""
+    ns = (received - _EPOCH) // datetime.timedelta(microseconds=1) * 1000
+    return bars.assign(**{full.RECEIPT_COLUMN: ns})
+
+
 def _num(x: float) -> float | str:
     return x if math.isfinite(x) else str(x)
 
@@ -347,7 +433,8 @@ def replay(day: str, minutes: Sequence[str], inputs: ReplayInputs, *, marker: bo
 
     need = day_files(day, inputs.bars)  # before any file is opened
     chosen = table_minutes(minutes)
-    code = full.full_code()
+    labels = research().labels
+    ctx = full.live_context(market_day(day))
     groups = full.full_groups()
     want = reference_table(inputs.table, day)
     types, types_md5 = _types(inputs.types)
@@ -367,7 +454,7 @@ def replay(day: str, minutes: Sequence[str], inputs: ReplayInputs, *, marker: bo
     report: dict[str, Any] = {
         "day": day, "minutes": [hhmm(m) for m in chosen], "history": need[:-1],
         "inputs": {k: str(v) for k, v in inputs.__dict__.items()},
-        "types_md5": types_md5, "types_is_training_pin": types_md5 == code.labels.TYPES_MD5,
+        "types_md5": types_md5, "types_is_training_pin": types_md5 == labels.TYPES_MD5,
         "tick_threads": os.environ.get("TICK_THREADS"),
         "tolerance": None if tolerance is None else {"rtol": tolerance[0],
                                                      "atol": tolerance[1]},
@@ -377,9 +464,11 @@ def replay(day: str, minutes: Sequence[str], inputs: ReplayInputs, *, marker: bo
         for m in chosen:
             tick_file = write_tick_file(minute_ticks(work, day, m, variant == "marker"),
                                         work / f"tk-{variant}-{m}.parquet")
-            given = full.FullInputs(tick_file, inputs.reference, inputs.benzinga,
-                                    inputs.fl_facts)
-            got = full.minute_rows_full(bars_through(m), day, m, state, types, given)
+            mark = ctx.mark(m)
+            given = snapshot(day, m, tick_file, inputs.reference, inputs.benzinga,
+                             inputs.fl_facts, mark, work / f"snap-{variant}-{m}")
+            got = ctx.minute_rows(received_bars(bars_through(m), mark), m, state, types,
+                                  given, mark)
             per[hhmm(m)] = {"minute": m, **compare(got, want[want.m == m], groups, tolerance)}
         report["variants"][variant] = per
     return report

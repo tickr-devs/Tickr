@@ -53,7 +53,7 @@ def world(tmp_path_factory):
     """The parity day of test_parity with events a live reader can hold exactly: stamps on the
     millisecond (the stream's unit) and no later cancel / error / correction records."""
     root = tmp_path_factory.mktemp("live")
-    labels = full.full_code().labels
+    labels = inputs.research().labels
     cal = labels.calendar()
     i = cal.index(DAY)
     folder = root / "bars"
@@ -79,20 +79,29 @@ def world(tmp_path_factory):
         mp.setenv("TICK_THREADS", "1")
         subprocess.run([sys.executable, str(ticks.PINNED_DIR / ticks.CONVERTER_FILE), "local",
                         str(tf), str(qf), str(whole)], check=True, capture_output=True)
-    prepared = root / "prepared" / DAY
-    prepared.mkdir(parents=True)
+    source = root / "source"
+    source.mkdir()
     given = parity.ReplayInputs(
         bars=folder, types=None, trades=tf, quotes=qf,
-        reference=inputs.reference(prepared / "reference", DAY, tp.SYMBOLS, tp.NEWS_MINUTES),
-        benzinga=inputs.benzinga(prepared / "benzinga", DAY, tp.SYMBOLS, tp.NEWS_MINUTES,
+        reference=inputs.reference(source / "reference", DAY, tp.SYMBOLS, tp.NEWS_MINUTES),
+        benzinga=inputs.benzinga(source / "benzinga", DAY, tp.SYMBOLS, tp.NEWS_MINUTES,
                                  "2023-01-02"),
-        fl_facts=inputs.fl_facts(prepared / "fl-facts.csv", DAY, tp.SYMBOLS), table=root / "x")
+        fl_facts=inputs.fl_facts(source / "fl-facts.csv", DAY, tp.SYMBOLS), table=root / "x")
     table = parity.reference_table(tp._training_table(root, given, whole), DAY)
+    # the prepared folders as the capture holds them: every record with its receipt, a news
+    # record of the day received one second after it was published
+    (root / "prepared").mkdir()
+    inputs.capture(full.FullInputs(whole, given.reference, given.benzinga, given.fl_facts), DAY,
+                   root / "prepared" / DAY, late=inputs.published_receipts(DAY))
     need = parity.day_files(DAY, folder)
     frames = [(d, massive.read_day_file((folder / f"{d}.csv.gz").read_bytes(), d)) for d in need]
     state = features.history(frames[:-1], parity._splits(given.reference), DAY, None)
     return SimpleNamespace(trades=trades, quotes=quotes, whole=whole, table=table, state=state,
-                           bars=frames[-1][1], prepared=root / "prepared")
+                           bars=frames[-1][1], prepared=root / "prepared",
+                           context=full.live_context(inputs.market_day(DAY)))
+
+
+PREPARED = inputs.CAPTURED
 
 
 # --- stand-ins ----------------------------------------------------------------------------
@@ -219,9 +228,9 @@ class Harness:
         self.sock.push([{"ev": "status", "status": "auth_success"}])
         self.rest = Rest(w, fail)
         back = feed.TickBackfill(cfg, self.store, self.rest, clock=clock)
-        self.live = live.LiveFeatures(cfg, DAY, w.state, None, self.bars, self.store,
+        self.live = live.LiveFeatures(cfg, w.context, w.state, None, self.bars, self.store,
                                       self.stream, back,
-                                      live.FolderInputs(inputs_root or w.prepared),
+                                      live.FolderInputs(inputs_root or w.prepared, PREPARED),
                                       tmp / "ticks", clock)
         self.fed = self.now
 
@@ -287,7 +296,8 @@ def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
         assert r["rows_compared"] == len(want) == len(got.rows) > 0, hm
         assert r["columns"] == {} and r["bar_groups_exact"], hm
         assert list(got.rows.columns) == ["sym", *full.full_features()]
-    # the parts are the training's whole-day tick file up to the last close, row for row
+    # the parts are the training's whole-day tick file up to the last close, row for row, each
+    # with the receipt of the close that wrote it (the instant that close took the clock)
     import duckdb
 
     con = duckdb.connect()
@@ -296,6 +306,8 @@ def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
     con.close()
     last = parity.table_minutes([MINUTES[-1]])[0] + features.DAY_START_MINUTE
     whole = whole[whole.sym.isin(set(h.live.symbols)) & (whole.m <= last)]
+    closes = {h.live._end(parity.table_minutes([hm])[0]) + MS for hm in MINUTES}
+    assert set(parts.pop(full.RECEIPT_COLUMN)) <= closes  # a close with no tick row: no part row
     pd.testing.assert_frame_equal(parts, whole.reset_index(drop=True), check_exact=True)
     assert tp.NO_BARS not in h.stream.symbols
     # every tracked symbol: one backfill from the day's start, one up to the next close
@@ -368,8 +380,8 @@ def test_a_stream_that_is_down_refuses_the_symbols_it_feeds(world, harness):
 def test_missing_inputs_and_bar_gaps_refuse_every_row(world, harness, tmp_path):
     bare = tmp_path / "bare" / DAY
     bare.mkdir(parents=True)
-    (bare / "reference").symlink_to(world.prepared / DAY / "reference")
-    (bare / "benzinga").symlink_to(world.prepared / DAY / "benzinga")
+    for name in ("reference", "benzinga"):
+        (bare / PREPARED[name]).symlink_to(world.prepared / DAY / PREPARED[name])
     h = harness(inputs_root=bare.parent)
     got = h.close(_minute("09:45"))
     assert got.rows.empty and set(got.refused.values()) == {live.Refusal("input_missing",
@@ -389,7 +401,7 @@ def test_the_wait_is_unmeasured_and_a_restart_or_a_repeat_refuses(world, harness
         h.live.close(_minute("04:30"))
     assert exc.value.cause == "minute_order"
     with pytest.raises(ModelRefused) as exc:
-        live.LiveFeatures(CFG, DAY, world.state, None, h.bars, h.store, h.stream,
+        live.LiveFeatures(CFG, world.context, world.state, None, h.bars, h.store, h.stream,
                           h.live.backfill, h.live.inputs, h.live.parts.parent)
     assert exc.value.cause == "live_ticks_exist"
     h.live.wait = config.live_wait_seconds(with_model(live_wait_after_minute_seconds="2.5")
@@ -411,3 +423,35 @@ def test_a_converter_refusal_loses_the_day_and_says_so(world, harness, monkeypat
     with pytest.raises(ModelRefused) as exc:
         h.close(_minute("09:45"))
     assert exc.value.cause == "live_state_lost" and "tick_converter_refused" in exc.value.detail
+
+
+def test_a_minute_closed_before_its_end_refuses_and_changes_nothing(world, harness):
+    """The close's instant is the minute's receipt cutoff: before the minute's mark it refuses
+    (`cutoff_before_mark`) before anything is consumed; the same minute closes once it is over."""
+    h = harness()
+    m = _minute("09:45")
+    h.feed_to(m)
+    h.now = h.live._end(m) - MS
+    with pytest.raises(ModelRefused) as exc:
+        h.live.close(m)
+    assert exc.value.cause == "cutoff_before_mark"
+    assert h.live.closed == -1 and not h.live.symbols and h.live.lost is None
+    h.now = h.live._end(m) + MS
+    got = h.live.close(m)
+    assert not got.refused and len(got.rows) > 0
+
+
+def test_inputs_without_receipts_refuse_the_minute(world, harness, tmp_path):
+    """Prepared inputs without their receipts (`full` INPUTS) refuse every row of the minute."""
+    bare = tmp_path / "bare" / DAY
+    bare.mkdir(parents=True)
+    for name in ("reference", "benzinga"):
+        (bare / PREPARED[name]).symlink_to(world.prepared / DAY / PREPARED[name])
+    head, *body = (world.prepared / DAY / PREPARED["fl_facts"]).read_text().splitlines()
+    cut = head.rsplit(",", 1)[0]
+    (bare / PREPARED["fl_facts"]).write_text("\n".join(
+        [cut, *(x.rsplit(",", 1)[0] for x in body)]) + "\n")
+    h = harness(inputs_root=bare.parent)
+    got = h.close(_minute("09:45"))
+    assert got.rows.empty and got.refused
+    assert set(got.refused.values()) == {live.Refusal("receipt_missing", "fl facts")}
