@@ -69,6 +69,7 @@ training's file (its last update weighs 0 there).
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import importlib.util
@@ -78,6 +79,7 @@ import os
 import sys
 import tempfile
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -103,6 +105,7 @@ GROUPS_VARIABLE = "TICK_GROUPS"
 ONE_GROUP = 1
 # Read by the converter's engine connection only: the memory cap. Allowed.
 RESOURCE_VARIABLES = ("TICK_MEM",)
+MEMORY_VARIABLE = "TICK_MEM"  # the converter's engine memory limit (duckdb words, e.g. 4GB)
 NEW_YORK = ZoneInfo("America/New_York")
 NS_PER_SECOND = 10**9
 NS_PER_MINUTE = 60 * NS_PER_SECOND
@@ -195,13 +198,16 @@ def _bounds(day: str, through: int) -> tuple[int, int]:
 
 
 def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, through: int, *,
-              groups: int) -> Any:
+              groups: int, tmp_dir: str | Path | None = None,
+              memory: str | None = None) -> Any:
     """The converter's table of `day` from the day's trades and quotes so far: files in the
-    flat-file layout (header row, at least the converter's columns, csv or csv.gz). Every event
-    must lie on New York `day` and before the end of minute `through` (minute of the New York
-    day); an event outside is refused, never dropped. `groups` is `[model] tick_groups`.
-    Returns a pandas frame: sym, m and the 61 columns, sorted by sym and m, every minute up to
-    `through` that has an event."""
+    flat-file layout (header row, at least the converter's columns, csv, csv.gz or csv.zst).
+    Every event must lie on New York `day` and before the end of minute `through` (minute of
+    the New York day); an event outside is refused, never dropped. `groups` is `[model]
+    tick_groups`. Returns a pandas frame: sym, m and the 61 columns, sorted by sym and m, every
+    minute up to `through` that has an event. `tmp_dir`: the folder for the converter's own
+    files and spill (default the system's); `memory`: its engine's memory limit (duckdb
+    words), handed over as its own TICK_MEM, which must then be unset (`tick_variable_set`)."""
     w = converter()
     lo, hi = _bounds(day, through)
     import duckdb
@@ -221,12 +227,13 @@ def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, throug
         raise ModelRefused("tick_file_unreadable", f"{type(exc).__name__}") from exc
     finally:
         con.close()
-    with _LOCK, tempfile.TemporaryDirectory(prefix="tickr-ticks-") as tmp:
+    with _LOCK, tempfile.TemporaryDirectory(prefix="tickr-ticks-", dir=tmp_dir) as tmp:
         out = os.path.join(tmp, "tk.parquet")
         _check_variables()
         _set_groups(w, groups)
         try:
-            w.day(str(trades_file), str(quotes_file), out, tmp)
+            with _memory_limit(memory):
+                w.day(str(trades_file), str(quotes_file), out, tmp)
         except SystemExit as exc:  # the converter's own refusal (a missing column)
             raise ModelRefused("tick_converter_refused", str(exc.code)) from exc
         con = duckdb.connect()
@@ -275,13 +282,15 @@ def tail_carry(trades: Any, quotes: Any) -> tuple[Any, Any]:
 
 
 def minute_rows(carry: tuple[Any, Any], trades: Any, quotes: Any, day: str, minute: int, *,
-                groups: int, marker: bool = False) -> Any:
+                groups: int, marker: bool = False, tmp_dir: str | Path | None = None,
+                memory: str | None = None) -> Any:
     """The converter's rows of one closed `minute` of `day` (minute of the New York day) from a
     bounded tail: `carry` from `tail_carry` of every earlier event of the day, and the minute's
     own trades and quotes (frames in the flat-file layout). Equal to the rows of that minute in
     `tick_rows` of the whole day through `minute`; with `marker`, to the training's day file for
     every stock that quotes again later (module text). An event outside its part is refused; the
-    marker of the day's last minute (1439) would lie on the next day and is refused too."""
+    marker of the day's last minute (1439) would lie on the next day and is refused too.
+    `tmp_dir` / `memory` as in `tick_rows` (the live path leaves both to the defaults)."""
     import pandas as pd
 
     lo, start, hi = _minute_span(day, minute)
@@ -294,11 +303,12 @@ def minute_rows(carry: tuple[Any, Any], trades: Any, quotes: Any, day: str, minu
     tail_quotes = [carry[1], quotes]
     if marker and len(quotes):
         tail_quotes.append(marker_quotes(quotes, hi))
-    with tempfile.TemporaryDirectory(prefix="tickr-tail-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="tickr-tail-", dir=tmp_dir) as tmp:
         t, q = os.path.join(tmp, "trades.csv"), os.path.join(tmp, "quotes.csv")
         write_flat_file(pd.concat([carry[0], trades], ignore_index=True), t, trade_columns())
         write_flat_file(pd.concat(tail_quotes, ignore_index=True), q, quote_columns())
-        rows = tick_rows(t, q, day, minute + 1 if marker else minute, groups=groups)
+        rows = tick_rows(t, q, day, minute + 1 if marker else minute, groups=groups,
+                         tmp_dir=tmp, memory=memory)
     return rows[rows.m == minute].reset_index(drop=True)
 
 
@@ -402,6 +412,21 @@ def marker_quotes(quotes: Any, at_ns: int) -> Any:
     mark["conditions"] = ""
     mark["indicators"] = ""
     return mark
+
+
+@contextlib.contextmanager
+def _memory_limit(memory: str | None) -> Iterator[None]:
+    """The converter's TICK_MEM set to `memory` for one call (None: left as it is)."""
+    if memory is None:
+        yield
+        return
+    if os.environ.get(MEMORY_VARIABLE) is not None:
+        raise ModelRefused("tick_variable_set", f"{MEMORY_VARIABLE} (the caller sets it)")
+    os.environ[MEMORY_VARIABLE] = memory
+    try:
+        yield
+    finally:
+        del os.environ[MEMORY_VARIABLE]
 
 
 def write_flat_file(rows: Any, path: Any, columns: list[str]) -> None:

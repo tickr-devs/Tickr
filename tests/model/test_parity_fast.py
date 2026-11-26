@@ -10,9 +10,9 @@ import json
 
 import pandas as pd
 import pytest
-from test_parity import DAY, MINUTES, _args, day  # noqa: F401 - the fixture `day`
+from test_parity import DAY, MINUTES, ROOMY, _args, _room, day  # noqa: F401 - fixture `day`
 
-from tickr.model import parity, parity_walk
+from tickr.model import headroom, parity, parity_walk
 from tickr.model.errors import ModelRefused
 from tickr.model.features import ticks
 
@@ -25,6 +25,8 @@ WALK_MINUTES = ["04:00", "04:30", "06:10", "09:30", "09:31", "09:32", "09:33", "
 @pytest.fixture(autouse=True)
 def one_thread(monkeypatch):
     monkeypatch.setenv("TICK_THREADS", "1")
+    monkeypatch.setattr(headroom, "free_bytes", lambda path: ROOMY)
+    monkeypatch.setattr(headroom, "available_memory", lambda: ROOMY)
 
 
 def test_the_walk_gives_the_full_prefix_tick_table_of_every_variant(day, tmp_path):
@@ -32,19 +34,22 @@ def test_the_walk_gives_the_full_prefix_tick_table_of_every_variant(day, tmp_pat
     symbols = set(trades.ticker) | set(quotes.ticker)
     minutes = parity.table_minutes(WALK_MINUTES)
     parity.extract_events(given, symbols, parity._ns_end(DAY, minutes[-1]), tmp_path)
-    walk = parity_walk.TickWalk(tmp_path, DAY, plain=True, groups=ticks.default_groups())
+    room = _room(tmp_path)
+    walk = parity_walk.TickWalk(room, DAY, plain=True, groups=ticks.default_groups())
     try:
         for m in minutes:
             through = m + 240
             walk.advance(through)
             for variant in parity.VARIANTS:
-                want = parity.minute_ticks(tmp_path, DAY, m, variant != "plain" and variant)
+                want = parity.minute_ticks(room, DAY, m, variant != "plain" and variant)
                 got = walk.table(variant, through)
                 pd.testing.assert_frame_equal(got, want, check_exact=True,
                                               obj=f"{variant} {parity.hhmm(m)}")
     finally:
         walk.close()
     assert walk.calls > len(minutes)
+    assert {"minute", "span", "prefix"} <= set(room.measured)
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith("conv-")]
     with pytest.raises(ModelRefused) as exc:  # a table only where the walk stands
         walk.table("plain", minutes[0] + 240)
     assert exc.value.cause == "replay_engine_order"
@@ -57,7 +62,7 @@ def _run(given, out, *extra):
 
 def _results(report):
     """What a run found, without its clocks or engine settings."""
-    drop = {"seconds", "engine", "verify_full_prefix", "engine_check"}
+    drop = {"seconds", "engine", "verify_full_prefix", "engine_check", "resources"}
     return {k: v for k, v in report.items() if k not in drop}
 
 
@@ -155,3 +160,39 @@ def test_a_difference_between_the_engines_is_reported(day, tmp_path, monkeypatch
     assert {"engine-ticks", "engine-features"} <= set(engine.group)
     text = (out / f"parity-{DAY}.txt").read_text()
     assert "ENGINE DIFFERENCE at 12:00 15:30" in text
+
+
+def test_the_walk_stops_at_the_guard_and_a_resume_finishes_the_day(day, tmp_path,
+                                                                   monkeypatch, capsys):
+    """The incremental engine's conversions go through the same guard: below the disk reserve
+    the run stops with a `stop` line in the journal and a report of the minutes done (exit 3);
+    with room again, --resume redoes the stopped minute and gives the whole run's results."""
+    given = day[0]
+    whole = _run(given, tmp_path / "whole", "--engine", "incremental")
+    out = tmp_path / "out"
+    real = parity_walk.TickWalk._convert
+    stop_at = parity.table_minutes([MINUTES[2]])[0] + 240
+
+    def tight(self, carry, t, q, first, through, marker):
+        if through >= stop_at:  # from here on the disk is full but for the reserve
+            self.room.free = lambda path: self.room.limits.disk_reserve
+        return real(self, carry, t, q, first, through, marker)
+
+    monkeypatch.setattr(parity_walk.TickWalk, "_convert", tight)
+    args = _args(given, out, "--mode", "all", "--engine", "incremental")
+    assert parity.main(args) == 3
+    report = json.loads((out / f"parity-{DAY}.json").read_text())
+    assert report["stopped"]["cause"] == "disk_space_insufficient"
+    assert report["stopped"]["minute"] == MINUTES[2] and report["minutes_done"] == MINUTES[:2]
+    stopped = report["stopped"]
+    assert stopped["resources"]["free_disk_bytes"] == stopped["limits"]["disk_reserve"]
+    assert all(report["resources"][hm]["peak_rss_bytes"] > 0 for hm in MINUTES[:2])
+    assert "STOPPED at 12:00: disk_space_insufficient" in capsys.readouterr().out
+    kinds = [json.loads(x)["kind"] for x in (out / f"parity-{DAY}.jsonl").read_text().splitlines()]
+    assert kinds == ["header", "minute", "minute", "stop"]
+    monkeypatch.setattr(parity_walk.TickWalk, "_convert", real)
+    for f in (out / f"parity-{DAY}.json", out / f"parity-{DAY}.txt"):
+        f.unlink()
+    again = _run(given, out, "--engine", "incremental", "--resume")
+    assert again["stopped"] is None and again["complete"]
+    assert _results(again) == _results(whole)

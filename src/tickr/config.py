@@ -382,6 +382,15 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class ParityConfig:
+    disk_reserve_gb: int
+    memory_reserve_gb: int
+    duckdb_memory_gb: int
+    probe_rows: int
+    disk_poll_seconds: Decimal
+
+
+@dataclass(frozen=True)
 class MassiveConfig:
     api_host: str
     stream_host: str
@@ -502,6 +511,7 @@ class Config:
     advisor: AdvisorConfig
     model: ModelConfig
     massive: MassiveConfig
+    parity: ParityConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -533,6 +543,7 @@ _SECTIONS: dict[str, type] = {
     "advisor": AdvisorConfig,
     "model": ModelConfig,
     "massive": MassiveConfig,
+    "parity": ParityConfig,
 }
 
 
@@ -743,6 +754,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "yet) or a number of seconds of at least 0 written as text")
     if model.live_table_workers < 1:
         raise ConfigError("[model] live_table_workers must be at least 1")
+    parity: ParityConfig = built["parity"]
+    if (min(parity.disk_reserve_gb, parity.memory_reserve_gb, parity.duckdb_memory_gb,
+            parity.probe_rows) < 1 or parity.disk_poll_seconds <= 0):
+        raise ConfigError("[parity] reserves, duckdb_memory_gb and probe_rows must be at least "
+                          "1, disk_poll_seconds above 0")
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0

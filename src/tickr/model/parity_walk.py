@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from tickr.model import headroom
 from tickr.model.errors import ModelRefused
 from tickr.model.features import ticks
 
@@ -48,7 +49,7 @@ BATCH_VECTORS = 64
 class _Events:
     """The events of one extracted file in time order, handed out minute by minute."""
 
-    def __init__(self, path: Path, columns: list[str]) -> None:
+    def __init__(self, path: Path, columns: list[str], room: headroom.Headroom) -> None:
         import duckdb
 
         casts = []
@@ -59,7 +60,7 @@ class _Events:
                 casts.append(f"CAST({c} AS DOUBLE) AS {c}")
             else:
                 casts.append(f"CAST({c} AS BIGINT) AS {c}")
-        self.con = duckdb.connect()
+        self.con = room.connect()
         try:
             self.con.execute("SET threads=1")
             self.con.execute(
@@ -95,14 +96,16 @@ class _Events:
 
 
 def span_rows(carry: tuple[Any, Any], trades: Any, quotes: Any, day: str, first: int,
-              through: int, *, groups: int, marker: bool) -> Any:
+              through: int, *, groups: int, marker: bool, tmp_dir: Path | None = None,
+              memory: str | None = None) -> Any:
     """`ticks.minute_rows` for the minutes `first` .. `through` at once: the carry of every
     earlier event and the span's own events in one conversion, with `marker` one marker quote
     per symbol that quoted in the span (its latest quote, at the first nanosecond after the
     span); the rows of the span's minutes. By v11's prefix rule a row of minute k reads only
     events up to k and, for the weight of k's last quote, the stamp of the next update, capped
     at the end of k: inside the span that is the real next update, after the span's last quote
-    of a symbol the marker, exactly as minute-by-minute closes give."""
+    of a symbol the marker, exactly as minute-by-minute closes give. `tmp_dir` / `memory` as
+    in `ticks.tick_rows`."""
     import os
     import tempfile
 
@@ -119,24 +122,27 @@ def span_rows(carry: tuple[Any, Any], trades: Any, quotes: Any, day: str, first:
     tail_quotes = [carry[1], quotes]
     if marker and len(quotes):
         tail_quotes.append(ticks.marker_quotes(quotes, hi))
-    with tempfile.TemporaryDirectory(prefix="tickr-span-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="tickr-span-", dir=tmp_dir) as tmp:
         t, q = os.path.join(tmp, "trades.csv"), os.path.join(tmp, "quotes.csv")
         ticks.write_flat_file(pd.concat([carry[0], trades], ignore_index=True), t,
                               ticks.trade_columns())
         ticks.write_flat_file(pd.concat(tail_quotes, ignore_index=True), q,
                               ticks.quote_columns())
-        rows = ticks.tick_rows(t, q, day, through + 1 if marker else through, groups=groups)
+        rows = ticks.tick_rows(t, q, day, through + 1 if marker else through, groups=groups,
+                               tmp_dir=tmp, memory=memory)
     return rows[(rows.m >= first) & (rows.m <= through)].reset_index(drop=True)
 
 
 class TickWalk:
     """The day's tick rows, one closed minute at a time (module docstring). `plain`: also the
-    plain rows (variants plain and marker-minute); `groups`: v11's group count."""
+    plain rows (variants plain and marker-minute); `groups`: v11's group count. Every
+    conversion runs in a conversion folder of `room` (the harness's disk and memory guard,
+    kinds `minute` and `span`: their files are plain csv written from frames)."""
 
-    def __init__(self, work: Path, day: str, *, plain: bool, groups: int) -> None:
-        self.day, self.plain, self.groups = day, plain, groups
-        self.trades = _Events(work / "trades.parquet", ticks.trade_columns())
-        self.quotes = _Events(work / "quotes.parquet", ticks.quote_columns())
+    def __init__(self, room: headroom.Headroom, day: str, *, plain: bool, groups: int) -> None:
+        self.day, self.plain, self.groups, self.room = day, plain, groups, room
+        self.trades = _Events(room.work / "trades.parquet", ticks.trade_columns(), room)
+        self.quotes = _Events(room.work / "quotes.parquet", ticks.quote_columns(), room)
         self.next = 0  # the next minute of the New York day to convert
         self.carry: tuple[Any, Any] | None = None
         self.parts: list[Any] = []  # marker rows of the converted minutes not yet in `whole`
@@ -179,11 +185,28 @@ class TickWalk:
     def _convert(self, carry: tuple[Any, Any], t: Any, q: Any, first: int, through: int,
                  marker: bool) -> Any:
         self.calls += 1
-        if first == through:
-            return ticks.minute_rows(carry, t, q, self.day, through, groups=self.groups,
-                                     marker=marker)
-        return span_rows(carry, t, q, self.day, first, through, groups=self.groups,
-                         marker=marker)
+        kind = "minute" if first == through else "span"
+        memory = self.room.duckdb_memory()
+
+        def run(folder: Path, frames: tuple[Any, Any, Any, Any]) -> Any:
+            c, tt, qq = (frames[0], frames[1]), frames[2], frames[3]
+            if first == through:
+                return ticks.minute_rows(c, tt, qq, self.day, through, groups=self.groups,
+                                         marker=marker, tmp_dir=folder, memory=memory)
+            return span_rows(c, tt, qq, self.day, first, through, groups=self.groups,
+                             marker=marker, tmp_dir=folder, memory=memory)
+
+        frames = (carry[0], carry[1], t, q)
+        # a marker per quoting symbol at most: counted as one row per quote symbol
+        rows = sum(len(f) for f in frames) + (q.ticker.nunique() if marker and len(q) else 0)
+
+        def probe(folder: Path, n: int) -> int:
+            part = tuple(f.head(n) for f in frames)
+            run(folder, part)
+            return sum(len(f) for f in part)
+
+        with self.room.conversion(kind, rows, probe) as folder:
+            return run(folder, frames)
 
     def table(self, variant: str, through: int) -> Any:
         """The tick table of the variant up to `through` (every minute up to it converted), as

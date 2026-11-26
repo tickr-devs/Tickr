@@ -6,8 +6,10 @@ days are refused before any file is read."""
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
+import os
 import subprocess
 import sys
 
@@ -18,7 +20,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tickr.model import parity
+from tickr import config
+from tickr.model import headroom, parity
 from tickr.model.errors import ModelRefused
 from tickr.model.features import full, ticks
 
@@ -37,8 +40,21 @@ COVERED = {"T001", EARLY, HALTED}  # the tickers of the synthetic audit copy
 
 @pytest.fixture(autouse=True)
 def one_thread(monkeypatch):
-    """One converter thread on both sides: the comparison is then bit-exact."""
+    """One converter thread on both sides: the comparison is then bit-exact. The run's disk
+    and memory readers say there is room (the machine's own are read in test_headroom.py), so
+    these tests do not depend on the machine."""
     monkeypatch.setenv("TICK_THREADS", "1")
+    monkeypatch.setattr(headroom, "free_bytes", lambda path: ROOMY)
+    monkeypatch.setattr(headroom, "available_memory", lambda: ROOMY)
+
+
+ROOMY = 10**15  # bytes: far above any reserve
+
+
+def _room(work, **limits):
+    """The harness's guard on `work` with config/bot.toml's [parity], `limits` replaced."""
+    base = headroom.Limits.from_config(config.load(parity.DEFAULT_CONFIG).parity)
+    return headroom.Headroom(work, dataclasses.replace(base, **limits))
 
 
 def _tick_names(frame):
@@ -213,12 +229,13 @@ def test_the_marker_makes_the_last_quote_minute_the_whole_day_value(day, tmp_pat
     through = minute + 240
     symbols = set(whole.sym)
     parity.extract_events(given, symbols, parity._ns_end(DAY, minute), tmp_path)
+    room = _room(tmp_path)
     want = whole[whole.m <= through].reset_index(drop=True)
     stale = (want.sym == QUIET) & (want.m == 11 * 60 + 54)
     assert stale.sum() == 1
-    marked = parity.minute_ticks(tmp_path, DAY, minute, marker=True)
+    marked = parity.minute_ticks(room, DAY, minute, marker=True)
     pd.testing.assert_frame_equal(marked, want, check_exact=True)
-    plain = parity.minute_ticks(tmp_path, DAY, minute, marker=False)
+    plain = parity.minute_ticks(room, DAY, minute, marker=False)
     cols = ["qspr", "qbs", "qas", "qimb", "qbad", "qbd", "qad"]
     a, b = plain.loc[stale, cols].to_numpy(), want.loc[stale, cols].to_numpy()
     assert not np.array_equal(a, b, equal_nan=True)
@@ -226,7 +243,7 @@ def test_the_marker_makes_the_last_quote_minute_the_whole_day_value(day, tmp_pat
     monkeypatch.setattr(parity, "MARKER_VALUES", {**parity.MARKER_VALUES, "bid_price": "'0'",
                                                   "ask_price": "'0'", "bid_size": "'0'",
                                                   "ask_size": "'0'", "conditions": "'1'"})
-    pd.testing.assert_frame_equal(parity.minute_ticks(tmp_path, DAY, minute, marker=True), want,
+    pd.testing.assert_frame_equal(parity.minute_ticks(room, DAY, minute, marker=True), want,
                                   check_exact=True)
 
 
@@ -381,3 +398,116 @@ def test_the_open_day_2026_11_17_passes_the_date_rule(tmp_path):
         (tmp_path / f"{d}.csv.gz").write_bytes(b"")
     got = parity.day_files("2026-11-17", tmp_path)
     assert got[-1] == "2026-11-17" and len(got) == labels.HIST + 1
+
+
+# --- disk and memory guard (tickr.model.headroom) -------------------------------------------
+
+
+def _extracted(day, work, hm):
+    given = day[0]
+    minute = table_minute(hm)
+    parity.extract_events(given, set(_whole_day(given).sym), parity._ns_end(DAY, minute), work)
+    return minute
+
+
+def test_the_prefix_goes_compressed_and_its_folder_is_removed(day, tmp_path, monkeypatch):
+    """The converter reads the prefix as zstd csv (bytes of the old uncompressed csv measured
+    beside it), in a conversion folder under the work folder that is gone after the minute;
+    the rows are the same as from the uncompressed prefix."""
+    import duckdb
+
+    minute = _extracted(day, tmp_path, "15:30")
+    room = _room(tmp_path)
+    seen = []
+    real = ticks.tick_rows
+
+    def spy(t, q, *args, **kw):
+        seen.append({"inputs": [str(t), str(q)], "bytes": os.path.getsize(t) + os.path.getsize(q),
+                     "tmp_dir": kw.get("tmp_dir"), "memory": kw.get("memory")})
+        return real(t, q, *args, **kw)
+
+    monkeypatch.setattr(ticks, "tick_rows", spy)
+    got = parity.minute_ticks(room, DAY, minute, marker=False)
+    assert len(seen) == 1 and all(p.endswith(".csv.zst") for p in seen[0]["inputs"])
+    assert seen[0]["tmp_dir"].parent == tmp_path and seen[0]["memory"] == room.duckdb_memory()
+    assert not seen[0]["tmp_dir"].exists()
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith("conv-")]
+    pick = f"CAST(sip_timestamp AS BIGINT) < {parity._ns_end(DAY, minute)}"
+    w = ticks.converter()
+    plain = 0
+    for kind, cols, name in (("trades", w.TCOLS, "t.csv"), ("quotes", w.QCOLS, "q.csv")):
+        duckdb.execute(f"COPY (SELECT {', '.join(cols)} FROM read_parquet('{tmp_path}/"
+                       f"{kind}.parquet') WHERE {pick}) TO '{tmp_path / name}' (HEADER)")
+        plain += (tmp_path / name).stat().st_size
+    assert seen[0]["bytes"] * 2 < plain  # 104,823 against 318,360 bytes on this day
+    rows, per_row = room.measured["prefix"]
+    assert rows > 0 and per_row > 0
+    monkeypatch.setattr(ticks, "tick_rows", real)
+    pd.testing.assert_frame_equal(got, real(tmp_path / "t.csv", tmp_path / "q.csv", DAY,
+                                            minute + 240, groups=ticks.default_groups()),
+                                  check_exact=True)
+
+
+def test_the_guard_refuses_before_writing(day, tmp_path, monkeypatch):
+    """With the bytes per row measured on the run, a conversion that would leave less than the
+    disk reserve is refused before anything is written; so is one below the memory reserve."""
+    minute = _extracted(day, tmp_path, "12:00")
+    free = {"bytes": ROOMY}
+    memory = {"bytes": ROOMY}
+    room = _room(tmp_path, disk_reserve=1000)
+    room.free, room.memory = (lambda path: free["bytes"]), (lambda: memory["bytes"])
+    parity.minute_ticks(room, DAY, minute - 1, marker=True)
+    rows, per_row = room.measured["prefix"]
+    before = sorted(p.name for p in tmp_path.iterdir())
+    calls = []
+    monkeypatch.setattr(ticks, "tick_rows", lambda *a, **k: calls.append(a))
+    free["bytes"] = 1000 + rows * per_row  # the next minute has more rows
+    with pytest.raises(ModelRefused) as exc:
+        parity.minute_ticks(room, DAY, minute, marker=True)
+    assert exc.value.cause == "disk_space_insufficient"
+    assert "bytes measured" in exc.value.detail and "reserve 1000" in exc.value.detail
+    free["bytes"], memory["bytes"] = ROOMY, room.limits.memory_reserve - 1
+    with pytest.raises(ModelRefused) as exc:
+        parity.minute_ticks(room, DAY, minute, marker=True)
+    assert exc.value.cause == "memory_insufficient"
+    assert calls == [] and sorted(p.name for p in tmp_path.iterdir()) == before
+
+
+def test_a_large_first_conversion_is_measured_by_a_probe(day, tmp_path, monkeypatch):
+    minute = _extracted(day, tmp_path, "12:00")
+    room = _room(tmp_path, probe_rows=10)
+    calls = []
+    real = ticks.tick_rows
+
+    def spy(*args, **kw):
+        calls.append(args)
+        return real(*args, **kw)
+
+    monkeypatch.setattr(ticks, "tick_rows", spy)
+    got = parity.minute_ticks(room, DAY, minute, marker="marker")
+    assert len(calls) == 2  # the probe on the first 10 events of each file, then the minute
+    assert room.measured["prefix"][0] > 20
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith("conv-")]
+    pd.testing.assert_frame_equal(got, parity.minute_ticks(_room(tmp_path), DAY, minute,
+                                                           marker="marker"), check_exact=True)
+
+
+def test_a_refusal_stops_the_run_cleanly_with_a_report(day, tmp_path, monkeypatch, capsys):
+    """The first minute is its own measurement; the next one would go below the reserve: the
+    run stops there, the report holds the minute done, its resources and the refusal, and
+    the work folder is gone."""
+    given = day[0]
+    monkeypatch.setattr(headroom, "free_bytes", lambda path: headroom.GB + 1)
+    work = tmp_path / "scratch"
+    out = tmp_path / "out"
+    assert parity.main(_args(given, out, "--mode", "plain", "--disk-reserve-gb", "1",
+                             "--work-dir", str(work))) == 3
+    report = json.loads((out / f"parity-{DAY}.json").read_text())
+    assert report["stopped"]["cause"] == "disk_space_insufficient"
+    assert report["stopped"]["minute"] == MINUTES[1] and report["minutes_done"] == MINUTES[:1]
+    assert list(report["variants"]["plain"]) == MINUTES[:1] and not report["complete"]
+    used = report["resources"][MINUTES[0]]
+    assert used["peak_rss_bytes"] > 0 and used["free_disk_bytes"] == headroom.GB + 1
+    assert report["stopped"]["limits"]["disk_reserve"] == headroom.GB
+    assert "STOPPED at 09:45: disk_space_insufficient" in capsys.readouterr().out
+    assert work.is_dir() and list(work.iterdir()) == []

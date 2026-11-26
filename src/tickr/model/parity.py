@@ -11,6 +11,8 @@ bucket's layout, copied to a local folder:
         --out <report folder> [--minutes HH:MM ... | --all-minutes] [--mode plain|marker|both|all]
         [--ticks-only] [--rtol R] [--atol A] [--engine full-prefix|incremental]
         [--verify-full-prefix N] [--table-workers K] [--workers W] [--resume] [--rebuild-report]
+        [--work-dir W] [--config bot.toml] [--disk-reserve-gb G] [--memory-reserve-gb G]
+        [--duckdb-memory-gb G]
 
 INPUTS. `--folder` gives the defaults of the research layout (each may be named instead):
 `--bars` = <folder>/minute_aggs (minute_aggs day files `YYYY-MM-DD.csv.gz`: the day and the 20
@@ -113,6 +115,22 @@ with the cells of minutes without a line. The report is built from the journal a
 (`build_report`; `--rebuild-report` writes it from `<out>` without running anything, also for
 a stopped run: `minutes_done`, `complete`).
 
+DISK AND MEMORY (`tickr.model.headroom`, `[parity]` of --config; the harness runs beside the
+live bot): every temporary file lies under `--work-dir` (default --out) in a run folder removed
+at the end; each minute's conversion writes the prefix as zstd csv (v11's read_csv reads it as
+it reads csv.gz; a third of the plain csv on the synthetic test day, not yet measured on a
+real day) into its own folder, removed when the conversion is done, and the minute's tick file
+is removed once its features are built. Before each conversion the guard refuses
+`memory_insufficient` or `disk_space_insufficient` (estimate = input rows x the bytes per row
+measured on this run; the incremental walk's minute and span conversions, the full-prefix
+ones and the engine check's are guarded alike, each kind measured on its own); the run then
+stops: the journal gets a `stop` line (minute, cause, detail, resources), the report holds
+the minutes done and `stopped`, and the command exits 3 (`--resume` continues after the
+cause is fixed, redoing the stopped minute). Every duckdb engine runs with `duckdb_memory_gb`
+and spills inside the work folder. Each minute's journal line has `resources`: the process's
+peak resident bytes so far (a high-water mark: the minute where it rises is the one that
+needed it), free disk and available memory.
+
 REPORT (`<out>/parity-<day>.json`, `.txt` and `-exceptions.csv`; an existing one refuses). The
 threshold is EXACT (codex-108 point 2: pending the per-column bound table); every discrepancy
 cell is an exception, listed in the csv (variant, minute, table, symbol, column, group, class,
@@ -161,7 +179,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tickr.model import features
+from tickr import config
+from tickr.model import features, headroom
 from tickr.model.errors import ModelRefused
 from tickr.model.features import full, ticks
 
@@ -187,6 +206,10 @@ BIGINT_COLUMNS = ("sip_timestamp", "sequence_number")
 DOUBLE_COLUMNS = ("price", "size", "bid_price", "ask_price", "bid_size", "ask_size")
 CODE_COLUMNS = ("conditions", "indicators")
 CODE_PATTERN = "^[0-9]+(,[0-9]+)*$"
+# Refusals of the run's disk and memory guard (tickr.model.headroom): the run stops there and
+# the report holds the minutes done and the refusal.
+STOP_CAUSES = ("disk_space_insufficient", "memory_insufficient")
+DEFAULT_CONFIG = Path("config/bot.toml")  # the bot's config, relative to the repo root
 REGULAR = ("09:30", "15:59")  # the regular session, for the peak minute
 EXCEPTION_FIELDS = ("variant", "minute", "table", "sym", "column", "group", "class",
                     "reference", "replay", "abs", "rel", "ulp")
@@ -457,13 +480,17 @@ def covered_tickers(inputs: ReplayInputs) -> set[str] | None:
         con.close()
 
 
-def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: Path) -> None:
+def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: Path,
+                   room: headroom.Headroom | None = None) -> None:
     """One pass over each day file: the converter's columns of the events of `symbols` stamped
-    before `before` (ns), kept as the file's text in work/trades.parquet, work/quotes.parquet."""
+    before `before` (ns), kept as the file's text in work/trades.parquet, work/quotes.parquet.
+    With `room`, the engine runs within its limits and refuses to start below its reserves."""
     import duckdb
     import pandas as pd
 
-    con = duckdb.connect()
+    if room is not None:
+        room.check("extract", 0)
+    con = room.connect() if room is not None else duckdb.connect()
     try:
         con.register("syms", pd.DataFrame({"sym": sorted(symbols)}, dtype=object))
         for kind in ("trades", "quotes"):
@@ -478,40 +505,61 @@ def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: P
         con.close()
 
 
-def minute_ticks(work: Path, day: str, minute: int, marker: bool | str) -> Any:
+def minute_ticks(room: headroom.Headroom, day: str, minute: int, marker: bool | str) -> Any:
     """The tick table of `day` as the bot holds it at the end of table minute `minute`: the
-    events of work/*.parquet before that end (with the marker quotes of the variant: True or
+    events of <work>/*.parquet before that end (with the marker quotes of the variant: True or
     "marker" for every symbol with a quote, "marker-minute" for the symbols with a quote in the
-    minute) through the frozen converter; rows after the minute are dropped."""
-    import duckdb
-
+    minute) through the frozen converter; rows after the minute are dropped. The prefix goes to
+    the converter as zstd csv in a conversion folder of `room` (checked before it is written,
+    removed after; `headroom`)."""
     w = ticks.converter()
     end, begin = _ns_end(day, minute), _ns_end(day, minute - 1)
     through = minute + features.DAY_START_MINUTE
-    t, q = work / "t.csv", work / "q.csv"
+    trades, quotes_file = room.work / "trades.parquet", room.work / "quotes.parquet"
     pick = f"CAST(sip_timestamp AS BIGINT) < {end}"
-    quotes = f"SELECT {', '.join(w.QCOLS)} FROM read_parquet('{work / 'quotes.parquet'}') " \
-             f"WHERE {pick}"
     if marker:
-        made = {"ticker": "ticker", "sip_timestamp": f"'{end}'",
-                "sequence_number": "CAST(CAST(sequence_number AS BIGINT) + 1 AS VARCHAR)",
-                **MARKER_VALUES}
-        latest = (f"SELECT * FROM ({quotes}) QUALIFY row_number() OVER (PARTITION BY ticker "
-                  "ORDER BY CAST(sip_timestamp AS BIGINT) DESC, "
-                  "CAST(sequence_number AS BIGINT) DESC) = 1")
-        if marker == "marker-minute":
-            latest = f"SELECT * FROM ({latest}) WHERE CAST(sip_timestamp AS BIGINT) >= {begin}"
-        quotes = (f"{quotes} UNION ALL SELECT "
-                  f"{', '.join(f'{made[c]} AS {c}' for c in w.QCOLS)} FROM ({latest})")
         through += 1  # the marker stands at the start of the next minute
-    con = duckdb.connect()
+
+    def selects(limit: int | None) -> tuple[str, str]:
+        cut = "" if limit is None else (" ORDER BY CAST(sip_timestamp AS BIGINT), "
+                                        f"CAST(sequence_number AS BIGINT) LIMIT {int(limit)}")
+        t = f"SELECT {', '.join(w.TCOLS)} FROM read_parquet('{trades}') WHERE {pick}{cut}"
+        q = (f"SELECT * FROM (SELECT {', '.join(w.QCOLS)} FROM read_parquet('{quotes_file}') "
+             f"WHERE {pick}{cut})")
+        if marker:
+            made = {"ticker": "ticker", "sip_timestamp": f"'{end}'",
+                    "sequence_number": "CAST(CAST(sequence_number AS BIGINT) + 1 AS VARCHAR)",
+                    **MARKER_VALUES}
+            latest = (f"SELECT * FROM ({q}) QUALIFY row_number() OVER (PARTITION BY ticker "
+                      "ORDER BY CAST(sip_timestamp AS BIGINT) DESC, "
+                      "CAST(sequence_number AS BIGINT) DESC) = 1")
+            if marker == "marker-minute":
+                latest = f"SELECT * FROM ({latest}) WHERE CAST(sip_timestamp AS BIGINT) >= {begin}"
+            q = (f"{q} UNION ALL SELECT "
+                 f"{', '.join(f'{made[c]} AS {c}' for c in w.QCOLS)} FROM ({latest})")
+        return t, q
+
+    def convert(folder: Path, limit: int | None) -> tuple[Any, int]:
+        t, q = folder / "t.csv.zst", folder / "q.csv.zst"
+        con = room.connect(folder)
+        try:
+            ts, qs = selects(limit)
+            wrote = con.execute(f"COPY ({ts}) TO '{t}' (HEADER, DELIMITER ',')").fetchone()[0]
+            wrote += con.execute(f"COPY ({qs}) TO '{q}' (HEADER, DELIMITER ',')").fetchone()[0]
+        finally:
+            con.close()
+        return ticks.tick_rows(t, q, day, through, groups=ticks.default_groups(),
+                               tmp_dir=folder, memory=room.duckdb_memory()), int(wrote)
+
+    con = room.connect()
     try:
-        con.execute(f"COPY (SELECT {', '.join(w.TCOLS)} FROM read_parquet("
-                    f"'{work / 'trades.parquet'}') WHERE {pick}) TO '{t}' (HEADER, DELIMITER ',')")
-        con.execute(f"COPY ({quotes}) TO '{q}' (HEADER, DELIMITER ',')")
+        rows = con.execute(f"SELECT (SELECT count(*) FROM read_parquet('{trades}') WHERE {pick})"
+                           f" + (SELECT count(*) + count(DISTINCT ticker) FROM read_parquet("
+                           f"'{quotes_file}') WHERE {pick})").fetchone()[0]
     finally:
         con.close()
-    table = ticks.tick_rows(t, q, day, through, groups=ticks.default_groups())
+    with room.conversion("prefix", int(rows), lambda f, n: convert(f, n)[1]) as folder:
+        table = convert(folder, None)[0]
     return table[table.m <= minute + features.DAY_START_MINUTE].reset_index(drop=True)
 
 
@@ -842,7 +890,7 @@ class Journal:
             if old != header:
                 diff = sorted(k for k in set(old) | set(header) if old.get(k) != header.get(k))
                 raise ModelRefused("replay_resume_mismatch", ", ".join(diff))
-            self.done = {r["minute"]: r for r in records}
+            self.done = {r["minute"]: r for r in records if r["kind"] == "minute"}
             self._keep_cells(set(self.done))
             return
         for f in (self.lines, self.cells):
@@ -879,6 +927,11 @@ class Journal:
                                             default=_plain) + "\n")
         self.done[record["minute"]] = record
 
+    def stop(self, record: dict[str, Any]) -> None:
+        """The run stops at a guard's refusal (`STOP_CAUSES`): one `stop` line, synced."""
+        self._append(self.lines, json.dumps({"kind": "stop", **record}, sort_keys=True,
+                                            default=_plain) + "\n")
+
 
 def _plain(x: Any) -> Any:
     """numpy scalars in a record as JSON numbers."""
@@ -904,7 +957,7 @@ def read_journal(path: Path, cut: bool = False) -> tuple[dict[str, Any],
         rows = [json.loads(x) for x in lines]
     except ValueError as exc:
         raise ModelRefused("replay_journal_unreadable", path.name) from exc
-    if not rows or rows[0].get("kind") != "header" or any(r.get("kind") != "minute"
+    if not rows or rows[0].get("kind") != "header" or any(r.get("kind") not in ("minute", "stop")
                                                           for r in rows[1:]):
         raise ModelRefused("replay_journal_unreadable", path.name)
     return rows[0], rows[1:]
@@ -913,9 +966,13 @@ def read_journal(path: Path, cut: bool = False) -> tuple[dict[str, Any],
 def build_report(header: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any]:
     """The report of a run from its journal: the header and the records of the finished
     minutes, in minute order. A run stopped early gives the report of its finished minutes
-    (`minutes_done` against `minutes`)."""
+    (`minutes_done` against `minutes`); `stopped` is the run's last stop line (a guard's
+    refusal) when no minute was finished after it, else None."""
     report = {k: v for k, v in header.items() if k != "kind"}
-    records = sorted(records, key=lambda r: r["m"])
+    stops = [i for i, r in enumerate(records) if r["kind"] == "stop"]
+    last = records[stops[-1]] if stops and stops[-1] == len(records) - 1 else None
+    report["stopped"] = None if last is None else {k: v for k, v in last.items() if k != "kind"}
+    records = sorted((r for r in records if r["kind"] == "minute"), key=lambda r: r["m"])
     report["minutes_done"] = [r["minute"] for r in records]
     report["complete"] = report["minutes_done"] == report["minutes"]
     report.update(variants={}, ticks={}, final_quote={}, versus_plain={})
@@ -938,6 +995,7 @@ def build_report(header: dict[str, Any], records: list[dict[str, Any]]) -> dict[
         "per_minute": checked}
     report["exceptions"] = sum(r["cells"] for r in records)
     report["seconds"] = {r["minute"]: r["seconds"] for r in records}
+    report["resources"] = {r["minute"]: r["resources"] for r in records if "resources" in r}
     return report
 
 
@@ -956,10 +1014,13 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
            tolerance: tuple[float, float] | None = None, all_minutes: bool = False,
            ticks_only: bool = False, exceptions: list[dict[str, Any]] | None = None,
            engine: str = "full-prefix", verify: int = 0, journal: Journal | None = None,
-           table_workers: int = 1, workers: int = 1) -> dict[str, Any]:
+           table_workers: int = 1, workers: int = 1,
+           room: headroom.Headroom | None = None) -> dict[str, Any]:
     """The parity report of `day` at `minutes` (HH:MM; None = the default choice): see the
     module docstring. Exception cells are appended to `exceptions` when given; each finished
-    minute goes to `journal` when given (its finished minutes are skipped)."""
+    minute goes to `journal` when given (its finished minutes are skipped). `room` guards disk
+    and memory (default: `[parity]` of config/bot.toml on `work`); a minute it refuses stops
+    the run, recorded in the journal and the report's `stopped`."""
     from tickr.model import massive
 
     need = day_files(day, inputs.bars)  # before any file is opened
@@ -1019,7 +1080,10 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
     ticked = cohort if covered is None else cohort & covered
     if "scan" not in scans:
         scan_for(ticked)
-    extract_events(inputs, ticked, _ns_end(day, chosen[-1]), work)
+    if room is None:
+        limits = headroom.Limits.from_config(config.load(DEFAULT_CONFIG).parity)
+        room = headroom.Headroom(work, limits)
+    extract_events(inputs, ticked, _ns_end(day, chosen[-1]), work, room)
     last = chosen[-1] + features.DAY_START_MINUTE
     fill = (tick_table(inputs.tk61, cohort - ticked, last)
             if covered is not None and cohort - ticked else None)
@@ -1046,19 +1110,23 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
         from tickr.model import parity_walk
         from tickr.model.features import incremental
 
-        walk = parity_walk.TickWalk(work, day, plain=any(v != "marker" for v in variants),
+        walk = parity_walk.TickWalk(room, day, plain=any(v != "marker" for v in variants),
                                     groups=ticks.default_groups())
         if not ticks_only:
             table = incremental.DayTable(day, state, types, table_workers)
     run = _Run(day, tuple(variants), work, walk, table, state, types, inputs, want, groups,
                kinds, tolerance, covered, tk61, fill, ticked, scans["scan"], ticks_only,
-               bars_through)
+               bars_through, room)
     pool: Any = None
     pending: list[tuple[Any, dict[str, Any], list[dict[str, Any]]]] = []
 
+    at = [chosen[0]]  # the minute being worked, for a stop
+
     def finish(job: Any, record: dict[str, Any], cells: list[dict[str, Any]]) -> None:
+        at[0] = record["m"]
         got = job.result() if pool is not None else job
         _finish(run, record, got, cells)
+        record["resources"] = room.usage()
         if exceptions is not None:
             exceptions.extend(cells)
         journal.add(record, cells)
@@ -1068,26 +1136,36 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
             import multiprocessing
             from concurrent.futures import ProcessPoolExecutor
 
-            pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
-        for m in chosen:
-            through = m + features.DAY_START_MINUTE
-            walked = walk.seconds if walk is not None else 0.0
-            if walk is not None:
-                walk.advance(through)
-            if hhmm(m) in journal.done:
-                continue
-            cells: list[dict[str, Any]] = []
-            record, job = _prepare(run, m, m in checks, cells)
-            if walk is not None:  # the walk's conversion since the previous chosen minute
-                record["seconds"]["walk"] = round(walk.seconds - walked, 3)
-            if job is not None and pool is not None:
-                pending.append((pool.submit(_assemble, *job), record, cells))
-                while len(pending) > 2 * workers or (pending and pending[0][0].done()):
-                    finish(*pending.pop(0))
-            else:
-                finish(None if job is None else _assemble(*job), record, cells)
-        while pending:
-            finish(*pending.pop(0))
+            pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"),
+                                       initializer=_worker_start, initargs=(tempfile.tempdir,))
+        try:
+            for m in chosen:
+                at[0] = m
+                through = m + features.DAY_START_MINUTE
+                walked = walk.seconds if walk is not None else 0.0
+                if walk is not None:
+                    walk.advance(through)
+                if hhmm(m) in journal.done:
+                    continue
+                cells: list[dict[str, Any]] = []
+                record, job = _prepare(run, m, m in checks, cells)
+                if walk is not None:  # the walk's conversion since the previous chosen minute
+                    record["seconds"]["walk"] = round(walk.seconds - walked, 3)
+                if job is not None and pool is not None:
+                    pending.append((pool.submit(_assemble, *job), record, cells))
+                    while len(pending) > 2 * workers or (pending and pending[0][0].done()):
+                        finish(*pending.pop(0))
+                else:
+                    finish(None if job is None else _assemble(*job), record, cells)
+            while pending:
+                finish(*pending.pop(0))
+        except ModelRefused as exc:
+            if exc.cause not in STOP_CAUSES:
+                raise
+            # the run stops here; minutes still pending get no line (a resume redoes them)
+            journal.stop({"minute": hhmm(at[0]), "m": at[0], "cause": exc.cause,
+                          "detail": exc.detail, "limits": room.limits.__dict__,
+                          "resources": room.usage()})
     finally:
         for future, _, _ in pending:
             future.cancel()
@@ -1123,6 +1201,7 @@ class _Run:
     scan: dict[str, Any]
     ticks_only: bool
     bars_through: Any
+    room: headroom.Headroom
 
 
 def _prepare(run: _Run, m: int, check: bool, cells: list[dict[str, Any]]) -> tuple[
@@ -1157,11 +1236,11 @@ def _prepare(run: _Run, m: int, check: bool, cells: list[dict[str, Any]]) -> tup
         t0 = time.perf_counter()
         mine = run.walk.table(variant, through) if run.walk is not None else None
         if mine is None:
-            mine = minute_ticks(run.work, run.day, m, arg)
+            mine = minute_ticks(run.room, run.day, m, arg)
         _clock(record, "ticks", t0)
         if run.walk is not None and check:
             t0 = time.perf_counter()
-            ref = minute_ticks(run.work, run.day, m, arg)
+            ref = minute_ticks(run.room, run.day, m, arg)
             differ = []
             record["engine"].setdefault("variants", {})[variant] = {
                 "ticks": exact_diff(mine, ref, ["sym", "m"], "engine-ticks", differ)}
@@ -1188,6 +1267,11 @@ def _prepare(run: _Run, m: int, check: bool, cells: list[dict[str, Any]]) -> tup
                                    ([] if rows is None else rows.sym) if s in run.state.prev},
                              mprev={}, hist=collections.deque())
     return record, (run.day, m, files, rows, prev, run.types, run.inputs, None)
+
+
+def _worker_start(tmp: str | None) -> None:
+    """A feature worker's temporary folders in the run's work folder, as the main process's."""
+    tempfile.tempdir = tmp
 
 
 def _assemble(day: str, m: int, files: dict[str, Path], rows: Any, state: features.DayState,
@@ -1241,7 +1325,7 @@ def _finish(run: _Run, record: dict[str, Any], assembled: Any,
             t0 = time.perf_counter()
             arg = False if variant == "plain" else variant
             through = m + features.DAY_START_MINUTE
-            ref_ticks = _tick_file(minute_ticks(run.work, run.day, m, arg), run.fill, through,
+            ref_ticks = _tick_file(minute_ticks(run.room, run.day, m, arg), run.fill, through,
                                    run.work / f"tk-ref-{variant}-{m}.parquet")
             ref = full.minute_rows_full(run.bars_through(m), run.day, m, run.state, run.types,
                                         full.FullInputs(ref_ticks, run.inputs.reference,
@@ -1348,6 +1432,16 @@ def text(report: dict[str, Any]) -> str:
     for variant, per in report["versus_plain"].items():
         lines.append(f"{variant} versus plain, cells by class: "
                      + "; ".join(f"{hm} {c}" for hm, c in per.items()))
+    per = report.get("resources") or {}
+    if per:
+        hm, top = max(per.items(), key=lambda x: x[1]["peak_rss_bytes"])
+        lines.append(f"resources: peak resident {top['peak_rss_bytes']} bytes (reached by {hm}), "
+                     f"least free disk {min(x['free_disk_bytes'] for x in per.values())} bytes, "
+                     f"least available memory "
+                     f"{min(x['available_memory_bytes'] for x in per.values())} bytes")
+    if report.get("stopped") is not None:
+        st = report["stopped"]
+        lines.append(f"STOPPED at {st['minute']}: {st['cause']}: {st['detail']}")
     return "\n".join(lines) + "\n"
 
 
@@ -1379,7 +1473,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--ticks-only", action="store_true", help="only our v11 rows against tk61")
     p.add_argument("--rtol", type=float, help="relative tolerance to count cells beyond")
     p.add_argument("--atol", type=float, help="absolute tolerance to count cells beyond")
-    p.add_argument("--work", type=Path, help="scratch folder (default: a new one in --out)")
+    p.add_argument("--work-dir", "--work", dest="work", type=Path,
+                   help="folder for every temporary file (a new run folder is made in it and "
+                        "removed at the end; conversion folders are removed per minute; "
+                        "default: --out)")
+    p.add_argument("--config", type=Path, default=DEFAULT_CONFIG,
+                   help="bot.toml whose [parity] guards disk and memory")
+    for name, key in (("disk-reserve-gb", "disk_reserve_gb"),
+                      ("memory-reserve-gb", "memory_reserve_gb"),
+                      ("duckdb-memory-gb", "duckdb_memory_gb")):
+        p.add_argument(f"--{name}", type=int, dest=key,
+                       help=f"overrides [parity] {key} (see config/bot.toml; the reserves "
+                            "protect the live bot's disk and memory)")
     p.add_argument("--engine", choices=ENGINES, default="full-prefix",
                    help="full-prefix (the reference) or incremental (one walk over the day)")
     p.add_argument("--verify-full-prefix", type=int, default=0, metavar="N",
@@ -1394,6 +1499,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--rebuild-report", action="store_true",
                    help="only write the report from the journal in --out")
     return p
+
+
+def _limits(args: argparse.Namespace) -> headroom.Limits:
+    """[parity] of --config with the command line's overrides."""
+    import dataclasses
+
+    p = config.load(args.config).parity
+    given = {k: getattr(args, k) for k in ("disk_reserve_gb", "memory_reserve_gb",
+                                            "duckdb_memory_gb") if getattr(args, k) is not None}
+    if any(v < 1 for v in given.values()):
+        raise ModelRefused("replay_limit_invalid", ", ".join(sorted(given)))
+    return headroom.Limits.from_config(dataclasses.replace(p, **given))
 
 
 def _inputs(args: argparse.Namespace) -> ReplayInputs:
@@ -1450,20 +1567,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             if f.exists():
                 raise ModelRefused("output_exists", str(f))
         inputs = _inputs(args)
+        limits = _limits(args)
         args.out.mkdir(parents=True, exist_ok=True)
+        if args.work is not None:
+            args.work.mkdir(parents=True, exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="parity-work-", dir=args.work or args.out))
+        saved = tempfile.tempdir
         try:
+            room = headroom.Headroom(work, limits)
+            # the pinned training code's own temporary folders land in the work folder too
+            (work / "tmp").mkdir()
+            tempfile.tempdir = str(work / "tmp")
             report = replay(args.day, args.minutes, inputs, variants=MODES[args.mode],
                             work=work, tolerance=tolerance, all_minutes=args.all_minutes,
                             ticks_only=args.ticks_only, engine=args.engine,
                             verify=args.verify_full_prefix, journal=journal,
-                            table_workers=args.table_workers, workers=args.workers)
+                            table_workers=args.table_workers, workers=args.workers, room=room)
         finally:
+            tempfile.tempdir = saved
             shutil.rmtree(work, ignore_errors=True)
         print(write_report(report, args.out, args.day), end="")
     except ModelRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
+    if report["stopped"] is not None:
+        print(f"STOPPED: {report['stopped']['cause']}: {report['stopped']['detail']}",
+              file=sys.stderr)
+        return 3
     return 0
 
 
