@@ -114,6 +114,9 @@ jobs:
         env:
           TICKR_CONFIG_HOST: /srv/tickr/etc/bot.toml
           TICKR_ENV_FILE_HOST: /srv/tickr/etc/env
+          TICKR_BOT_EXIT_TIMEOUT: "1"
+          TICKR_NIGHTLY_OUT: data/nightly
+          TICKR_NIGHTLY_SEED: data/nightly-seed
   web-tests:
     # The tickr.bot web app (web/, docs in web/README.md): its own uv project and lock, tested
     # against a real Postgres like the one on its server.
