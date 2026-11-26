@@ -26,8 +26,8 @@ The API still binds loopback only. The iPhone reaches it through an HTTPS proxy 
 [Tailscale](https://tailscale.com) `serve`, which is reachable only from devices signed in to the
 owner's tailnet (home Wi-Fi or cellular) and terminates TLS with a certificate for the Mac's
 tailnet name. The proxy points at a second loopback port, `[api] remote_port`, opened only when
-`[api] remote_hosts_file` names a host. Every request on that port must carry the paired token, whatever its
-`Host` header says, except `POST /pair`, which redeems a one-time pairing code for that token; the
+`[api] remote_hosts_file` names a host. Every request on that port must carry a paired device's token, whatever
+its `Host` header says, except `POST /pair`, which redeems a one-time pairing code for a token; the
 local port never accepts the remote name. Whether a token is needed is
 decided by the port a request arrives on, never by a header the caller chooses.
 
@@ -39,26 +39,63 @@ decided by the port a request arrives on, never by a header the caller chooses.
 3. Write that name, one per line, into this Mac's `[api] remote_hosts_file` under `data_dir`
    (`echo mac.tailnet-name.ts.net > data/remote-hosts.txt`) and restart the API. The name belongs
    to this machine, so it lives with its data, never in the shared `config/bot.toml`.
-4. `python -m tickr.api --config config/bot.toml pair` revokes the current phone token at once and
-   leaves a pairing link with a one-time code in a file readable by you only
-   (`[api] remote_pairing_file` under `data_dir`); nothing secret is printed. With the API running,
-   AirDrop that file to the iPhone and open it, or paste the link in Settings › Pair with Mac,
-   within `[api] remote_pairing_code_ttl_seconds`. The phone redeems the code once at `POST /pair`
-   for its token; the API then deletes the link file. A copy of the link left anywhere (Files,
-   iCloud Drive, a clipboard) is worthless after that or after expiry. The Mac keeps only SHA-256
-   digests: of the waiting code (`[api] remote_pairing_code_file`, with its expiry) and of the
-   token (`[api] remote_token_hash_file`).
+4. `python -m tickr.api --config config/bot.toml pair --name iPhone` leaves a pairing link with a
+   one-time code for the device `iPhone` in a file readable by you only (`[api] remote_pairing_file`
+   under `data_dir`); nothing secret is printed. With the API running, AirDrop that file to the
+   iPhone and open it, or paste the link in Settings › Pair with Mac, within
+   `[api] remote_pairing_code_ttl_seconds`. The phone redeems the code once at `POST /pair` for its
+   token; the API then deletes the link file. A copy of the link left anywhere (Files, iCloud
+   Drive, a clipboard) is worthless after that or after expiry. The Mac keeps only SHA-256
+   digests: of the waiting code (`[api] remote_pairing_code_file`, with its expiry and the device
+   name) and of each device's token (`[api] remote_devices_file`).
+
+### Paired devices
+
+Several devices can be paired, each with its own token. The device list
+(`[api] remote_devices_file`, 0600) holds each device's name, its token's SHA-256, when it was
+paired and when it last made an authenticated request (to the minute, so a busy phone does not
+rewrite the file on every request); never a token.
+
+- `pair --name <device>` adds a device once its code is redeemed; the devices already paired keep
+  working. Pairing a name again replaces that device's token when the new code is redeemed (the
+  old one works until then). A name is letters, digits, space, dot, dash and underscore, starting
+  and ending with a letter or digit. A new `pair` replaces a code still waiting.
+- `devices` lists the paired devices: name, paired time, last-used time.
+- `revoke --name <device>` revokes one device: its next request gets `401`; the others keep working.
+
+A token is checked against every paired device's digest with a constant-time compare and no early
+exit, so the time to refuse does not depend on the token. The phone paired before several devices
+existed keeps working: its single hash file (`[api] remote_token_hash_file`) is moved once into the
+device list as the device `default` (paired at the file's time) and deleted, by the API on the
+next request or by `devices`. If both files exist with different tokens, the API refuses (`503`)
+until one is deleted by hand. The iOS Simulator's token (below) is separate and not a device.
+
+**Rolling back to a build without devices.** The migration leaves `remote_devices_file` holding the
+old token's digest as device `default` and **deletes** `remote_token_hash_file`; a `.tmp` sibling
+may remain only after a crash mid-write. An older build reads only `remote_token_hash_file`, so
+after a downgrade every phone gets `401 nothing is paired here` until one of these is done:
+
+- Recreate the old file from one device's digest, so that device keeps working (only one can:
+  the old build knows a single token). Without printing anything, with the API stopped, from the
+  repository folder (`data` is `[run] data_dir`; pick the device by name):
+  `python3 -c 'import json,os;d=json.load(open("data/remote-devices.json"))["devices"];h=[x["sha256"] for x in d if x["name"]=="iPhone"][0];f=os.open("data/remote-token.sha256",os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600);os.write(f,(h+"\n").encode());os.close(f)'`
+  Leave `remote-devices.json` in place: upgrading again finds the same digest in the list and
+  only deletes the old file.
+- Or re-pair the phone with the old build's `pair` (it writes a new `remote_token_hash_file`).
+  Before upgrading again, delete `remote-devices.json`, so the new token migrates as `default`;
+  with both files holding different tokens the new build answers `503` until one is deleted.
 
 Rules on the remote port: `Host` must be one of the names in `remote_hosts_file` (no port when 443, else
 `name:port`), else `403 forbidden_host`; `Authorization: Bearer <token>` is required, else
 `401 unauthorized` with `WWW-Authenticate: Bearer`; an `Origin`, if sent, must be `https://<host>`.
-An unreadable token hash file answers `503 unavailable`. The local port (the Mac app, the status
+An unreadable device list (or old token hash file) answers `503 unavailable`. The local port (the Mac app, the status
 page) needs no token, as before: any process on this Mac can use it.
 
 `POST /pair` (remote port only; the local port answers `404`): the same `Host` and `Origin` rules,
 no token, body exactly `{"code": "<code from the link>"}`. `200` with `paired-v1`
-(`{"token": "...", "api_version": 1}`) once: the code is burnt, a new token's SHA-256 replaces the
-stored one, and the link file is deleted. `401 unauthorized` when no pairing is waiting, the code
+(`{"token": "...", "api_version": 1}`) once: the code is burnt, the new token's SHA-256 is stored
+for the device named at `pair` (added, or replacing that device's earlier token), and the link file
+is deleted. `401 unauthorized` when no pairing is waiting, the code
 is wrong (nothing changes) or it has expired (the code and the link file are deleted); `400` for
 any other body; `503` when the code file is unreadable. Neither the code nor the token appears in
 an error or the log. A missing or empty `remote_hosts_file` (the default) turns remote access off; an unreadable
@@ -129,6 +166,8 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | POST | `/settings/validate` | Body `{"changes": [{"owner", "key", "value"}, ...]}`. `200` `settings-draft-v1`: typed refusals and, per key, when the change would apply and whether it needs Face ID. Writes and applies nothing. `400` for any other body, `503` as GET /settings/values. |
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
 | GET | `/system` | `200` `system-v1`: the apps' System card: the Webull link, the latest preflight (the 03:30 morning check), model training progress, and the machine's own services (on a Mac the watchdog with its restarts and the no-sleep hold), read-only (see GET /system below). |
+| GET | `/alerts` | `200` `alerts-v1`: the notification settings: each owner-facing channel and whether the latest preflight proved it works, and every alert kind with its group, whether it is locked on, and the channels it goes to (see Notification settings below). |
+| PUT | `/alerts/routing` | Body `{"kind": "<alert kind>", "channel": "mac"\|"imessage"\|"push", "on": true\|false}`. Changes that one cell of the owner's alert routing: `200` `alerts-v1`; `400 bad_request` for an unknown kind or channel or another body; `409 conflict` for a locked kind turned off (cause `locked-kind: ...`) or a routing file that cannot be used. Not a bot command. |
 | GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
 | GET | `/advisor` | `200` `advisor-runs-v1`: the AI advisor's newest `[api] advisor_runs` runs with their proposals, ideas, hold-out verdicts and the owner's decision (read-only; see GET /advisor below). |
 | POST | `/advisor/decision` | Body `{"run": "<run id>", "verdict": "accepted"\|"rejected"}`. Records the owner's review of a proposal or idea (a note, nothing is deployed): `200` `advisor-runs-v1`; `404 not_found` without that run; `409 conflict` for a refused, no-change or unreadable run. Not a bot command. |
@@ -144,7 +183,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/symbols?date=<YYYY-MM-DD>` | `200` `symbols-v1`: every symbol the bot looked at that date (default today), with the furthest pipeline stage it reached and where and why it stands now (see GET /symbols below). |
 | GET | `/movers?date=<YYYY-MM-DD>` | `200` `movers-v1`: the fast movers of that date (default today), newest bar first, with the active strategy's thresholds (see GET /movers below). |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
-| POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
+| POST | `/commands/cancel-own-orders` | Body `{}` (every working entry) or `{"symbol": "<TICKER>"}` (only that symbol's, the apps' Cancel entry). `202` `command-accepted-v1`. |
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
 | POST | `/commands/stop-bot` | Body `{}`, `{"mode": "close_and_stop"}` or `{"mode": "leave_open"}` (what to do with open positions, see stop-bot below). Graceful stop that sticks. `202` `command-accepted-v1`. |
 | POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. The apps' "Close all" button. `202` `command-accepted-v1`. |
@@ -157,7 +196,7 @@ Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1, "cause_c
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
 `too_many_pending` 429, `rate_limited` 429 (GET /chart: its request budget is spent and cannot say when it refills),
 `conflict` 409 (an `Idempotency-Key` already used for another command; a Lab replay that cannot
-start now),
+start now; an alert routing write refused),
 `internal` 500, `unavailable` 503 (history cannot be read now: database of another schema
 version, unreadable capture file).
 
@@ -354,6 +393,15 @@ the planned loss of every open trade, and `daily_room_usd` = `[risk] max_daily_l
 realized - reserved (may be negative). Entries are refused while the room is below
 `settings.risk.min_daily_room_usd`. `positions` lists every open position the bot tracks;
 `position` is its first element or `null`, kept for older clients.
+
+`working_entries` (added after version 1 shipped, 2026-11-26; a reader takes a status without it
+as empty) lists every own trade whose entry order is working with nothing filled yet, oldest
+first: `symbol`, `quantity` (the shares asked for), `limit_price`, `stop_price` (the stop placed
+once it fills), `planned_loss_usd` (1 R if it fills), `entry` and `entry_cause` as on a
+position, and `cancel_requested` (the bot asked the broker to cancel it: an operator
+cancel-own-orders, or the entry's own rest or the session's end). A fill of any part makes it a
+`positions` row instead; a cancel the broker confirms (a broker read shows it cancelled)
+removes it. It is the bot's records, as `positions` are.
 
 Fill prices and fees come from the bot's own records: once an order is finished, the loop
 records its fees (`fees[].actual_value`) from Detail, else the order history, and, where the
@@ -851,6 +899,40 @@ machine's own services follow under `host`, so a bot on a server keeps the rest 
 
 No part of this document is per user: a later bot or account identity is one more key.
 
+### Notification settings: GET /alerts and PUT /alerts/routing
+
+Which alert kinds go to which channel (backlog T14). Code: `src/tickr/api/alerts.py` and
+`src/tickr/runtime/alert_routing.py`. Alerts go through the channel interface of
+`runtime/alerts.py` (`Channels`); the routing only tells it which channels to skip for a kind.
+
+- `channels`: `mac` (the Mac notification), `imessage`, `push` (the iPhone app's push, not built
+  yet: always `configured` false, `cause` `not-built`). `configured` comes from the latest
+  preflight record's checks (`alert-channel` for `mac`; that and `alert-recipient` for
+  `imessage`); `cause` `no-preflight`, `preflight-unreadable` or `check-failed` when false.
+  The alerts feed file (`[alerts] feed_file`) is not a routable channel: it gets every alert.
+- `kinds`: every `AlertKind` value in code order, each with `group` (`critical`, `trading`,
+  `day`, `lab`), `locked` and `channels` `{mac, imessage, push}` (true: it goes there).
+  `locked` kinds need the owner now and are on everywhere whatever the file says: every kind an
+  alert-at-once fence raises (`runtime/watch.py` `ALERT_AT_ONCE`, which includes the operator
+  fences), plus unprotected position, unknown order status and order conflicts, foreign
+  exposure, failing broker reads, a lost stream with a position, not flat after the flatten,
+  every bot-down, crash, start and stop failure, preflight failed, the token waiting for
+  confirmation, every `watchdog-*` kind and `api-credentials-unexpected`.
+- `routing_cause`: null, or why the routing file cannot be used (then every kind goes to every
+  channel and writes are refused until the owner deletes the file).
+
+The routing file is `<data_dir>/<[alerts] routing_file>`, an owner preference about where to be
+told, never a trading setting: `{"schema_version": 1, "off": {"<kind>": ["<channel>", ...]}}`,
+holding only the cells turned off, written atomically by PUT /alerts/routing (the API is its
+only writer). Every process that alerts (bot, watchdog, the supervisor's alerts) reads it on
+each alert, so a change applies at the next alert. A missing file means every kind on every
+channel; a file out of shape (an unknown or locked kind, an unknown channel, another
+`schema_version`) is not used at all, never partly. An alert skipped on a channel is journaled
+with `routed_off` naming the channels skipped; when every channel this process has is skipped,
+its `delivery` is `routed-off` (not shown, so not a repeat either). `push` cells are stored and
+shown, and take effect once a push channel exists. On the remote port PUT needs the paired
+token like every other request.
+
 ### GET /journal (read-only)
 
 The Overview's journal card and its "line #N". Code: `src/tickr/api/journal.py`. Reads the
@@ -1242,7 +1324,7 @@ Every refused minute is its own row: consecutive refusals are not merged.
 `{code, message, since, until, params}`, read from the recorded `CODE: detail` at the API (the
 decision file keeps the text):
 - `code`: the admission cause (`risk/causes.py`, in spec order: `GATE_CLOSED` ...
-  `STOP_BUDGET_UNAVAILABLE`), `ENGINE_REFUSED` when admission passed but the engine refused to
+  `STOP_BUDGET_UNAVAILABLE`, then the tradability causes `TRADABILITY_UNKNOWN` ... `INSTRUMENT_NOT_TRADABLE`), `ENGINE_REFUSED` when admission passed but the engine refused to
   open the trade, or `UNKNOWN` (see below). The schema lists the closed set.
 - `message`: the detail as a sentence without raw timestamps. For most codes it is the recorded
   detail itself (`1 own position(s) open`); `SYMBOL_COOLDOWN`, `AFTER_LAST_ENTRY`,
@@ -1264,6 +1346,8 @@ decision file keeps the text):
   `DECISION_INVALID` `{stop, entry_low, entry_high}`; `ORDER_PRICES_INVALID` `{limit, entry_low,
   entry_high}` or `{stop, limit}`; `QUOTE_SYMBOL_MISMATCH` `{quote_symbol, symbol}`;
   `QUOTE_INVALID` `{bid, ask}`; `PRICE_OUTSIDE_WINDOW` `{ask, entry_low, limit}`;
+  `PRICE_COLLAR_BREACH` `{limit, bar_distance, bar_close, bar_max, quote_distance, previous_ask,
+  quote_max}` (distances and maxima as ratios, a maximum of 0 is off);
   `QUANTITY_NOT_WHOLE` `{quantity}`; `QUANTITY_BELOW_ONE` `{quantity, maximum}`;
   `NOTIONAL_OVER_CAP` `{notional, cap}`; `PLANNED_LOSS_OVER_LIMIT` `{planned_loss, limit}`;
   `DAILY_MONEY_UNKNOWN` `{missing}`; `DAILY_CEILING` `{room, ceiling, realized, reserved,
@@ -1486,6 +1570,14 @@ preconditions to every command.
 (added after version 1 shipped) is a stop-bot's mode, `close_and_stop` or `leave_open`, otherwise
 `null`; a reader takes a command without the key as `null`.
 
+- **cancel-own-orders**: asks the broker to cancel every own working entry order, or only
+  those of `symbol` (the apps' Cancel entry); never a stop or a closing order. Each cancel is
+  one send through the engine's cancel path; whether it took is what the next broker read
+  shows (`working_entries`), never assumed. A part that filled first stays a position under its
+  stop. With `symbol`, refused when no entry of it is working ("no working entry in XYZ");
+  `{"symbol": null}`, a lower-case ticker or any other key is `400`. A bot older than this
+  reads the command as a cancel of every working entry, so the bot and the API are released
+  together.
 - **flatten**: every open trade, or only the trades of `symbol`, gets an exit request through
   the normal exit path. Refused when `symbol` has no open position ("no open position in
   XYZ"), while a closing order of a chosen trade was refused before (fence

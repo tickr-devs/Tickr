@@ -233,6 +233,11 @@ _REFUSAL = {
     "PRICE_OUTSIDE_WINDOW": _shapes(
         ("", r"ask (?P<ask>" + _NUM + r") outside (?P<entry_low>" + _NUM + r")\.\.limit "
          r"(?P<limit>" + _NUM + r")")),
+    "PRICE_COLLAR_BREACH": _shapes(
+        ("", r"limit (?P<limit>" + _NUM + r") is (?P<bar_distance>" + _NUM + r") from bar close "
+         r"(?P<bar_close>" + _NUM + r") \(max (?P<bar_max>" + _NUM + r")\) and (?P<quote_distance>"
+         + _NUM + r") from previous ask (?P<previous_ask>" + _NUM + r") \(max (?P<quote_max>"
+         + _NUM + r")\)")),
     "QUANTITY_NOT_WHOLE": _shapes(
         ("", r"quantity (?P<quantity>" + _NUM + r") is not a whole number of shares")),
     "QUANTITY_BELOW_ONE": _shapes(
@@ -653,6 +658,7 @@ _PROSE = _shapes(
     ("stop_interrupted", r"close-and-stop interrupted by a restart: the bot keeps running and "
                          r"entry-stop stays on; send stop-bot again"),
     ("no_open_position", r"no open position in (?P<symbol>\S+)"),
+    ("no_working_entry", r"no working entry in (?P<symbol>\S+)"),
     ("close_refused_before", r"closing order refused before for (?P<trades>.+): look in the "
                              r"Webull app, then clear the fence"),
     ("close_held_outside_session",
