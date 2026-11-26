@@ -272,10 +272,22 @@ refuses (exit 1, nothing changed), in this order:
   already refuses that; the script checks the files it installs).
 
 It then creates only `DATA/control` (under the verified mount, owned by the image's uid:gid,
-mode 700), installs the units and enables the timers, `tickr-bot-restart.path`,
-`tickr-bot-start.path` and the API
-(`TICKR_SERVICE_USER`, default `tickr`, is the units' `User=`). It never starts or stops the
-bot. Not yet run on a real server.
+mode 700) and, when missing, its compose lock `DATA/control/compose.lock` (same owner, mode
+600; never replaced, a unit may hold it), and installs the files (all or nothing, below).
+Then, with the new `limits.env` in place and under the compose lock, it removes a stopped bot
+container: `docker compose --env-file ETC/limits.env -f ETC/compose.yaml -p tickr --profile
+jobs rm -f bot`, without `-s`. Compose's `rm` removes only service containers that are not
+running: `Remove` in `pkg/compose/remove.go` (2.24.6 and 2.40.3, the versions Ubuntu
+24.04 ships, differ there only in names) inspects each container and keeps for removal only those whose
+`State.Running` is false; only `-s` (`--stop`) stops containers first. A running bot is left
+as it is, and no container at all is "No stopped containers", exit 0. So the next Start or
+scheduled start creates the bot from the new release image, never the stopped container of
+the previous one. When the removal fails it refuses with `bot-container-not-removed` (exit 1):
+the new files are in place, but systemd is not reloaded and nothing is enabled or restarted;
+read the docker line, then deploy again. Last it reloads systemd and enables the timers,
+`tickr-bot-restart.path`, `tickr-bot-start.path` and the API (`TICKR_SERVICE_USER`, default
+`tickr`, is the units' `User=`). It never starts or stops the bot. Not yet run on a real
+server.
 
 The data folder was a named Docker volume (`tickr-data`) before the restart unit; it is now the
 host folder `DATA`. No server ever ran on that volume (this deploy was never run on a real
@@ -291,7 +303,8 @@ against the image's copy; `bot.toml` must come from the same commit ("Server fil
 
 The install is all or nothing: every file is first copied to a hidden temp file in its target
 folder (a failed copy removes them and installs nothing), then renamed into place, and
-`systemctl daemon-reload` runs only after every file is there.
+`systemctl daemon-reload` runs only after every file is there and a stopped bot container
+is removed.
 
 ### Bot restart on the server
 
@@ -310,8 +323,9 @@ systemd, so the restart goes through a request file on the data folder:
 2. `tickr-bot-restart.path` (`PathExists=` on that file) starts `tickr-bot-restart.service`
    (`Type=oneshot`, user `tickr`), which runs each step once and stops at the first failure:
    (a) renames the request to `restart-request.taken`, so a request written during the restart
-   is a new event; (b) `docker compose -f /srv/tickr/etc/compose.yaml -p tickr
-   --profile jobs up -d --force-recreate --no-deps --pull never --no-build -t <grace> bot`: the
+   is a new event; (b) under the compose lock (`flock /srv/tickr/data/control/compose.lock`,
+   shared with the start unit, "Bot start on the server") `docker compose -f
+   /srv/tickr/etc/compose.yaml -p tickr --profile jobs up -d --force-recreate --no-deps --pull never --no-build -t <grace> bot`: the
    same compose definition the scheduled `tickr-bot.service` starts. A running (hung) container
    is stopped within `<grace>` and recreated; a crashed or removed one is created again. The
    image is never pulled or built here: a missing `TICKR_IMAGE` (from `limits.env`) fails the step. `<grace>`
@@ -350,8 +364,8 @@ and unit, which never touch a running bot:
 2. `tickr-bot-start.path` (`PathExists=` on that file) starts `tickr-bot-start.service`
    (`Type=oneshot`, user `tickr`, `After=tickr-bot-restart.service`: a start queued with or
    during a restart waits for it), which runs each step once and stops at the first failure:
-   (a) renames the request to `start-request.taken`; (b) `docker compose -f
-   /srv/tickr/etc/compose.yaml -p tickr --profile jobs up -d --no-recreate --no-deps --pull
+   (a) renames the request to `start-request.taken`; (b) under the compose lock (below) `docker
+   compose -f /srv/tickr/etc/compose.yaml -p tickr --profile jobs up -d --no-recreate --no-deps --pull
    never --no-build bot` (the same compose file, project and profile as the restart unit, no
    `WorkingDirectory=`); (c) prints the taken request to the journal.
 3. `--no-recreate` ("If containers already exist, don't recreate them", `docker compose up
@@ -360,15 +374,24 @@ and unit, which never touch a running bot:
    with this policy `mustRecreate` is always false, so an existing bot container is kept; a
    running one is left as it is (no stop, no restart, no new container), and the start phase
    (`startService`) starts only the bot's containers that are not running. A missing container
-   is created and started. Consequence: a stopped container is started as it was created, with
-   the image it was created from (bot.toml and the data folder are bind mounts, so it reads
-   today's files). After a deploy names a new release image (`TICKR_IMAGE` in `limits.env`), the
-   next scheduled start (`tickr-bot.service`, plain `up -d`) recreates it; a Start before that
-   runs the previous image.
-4. Never retried, and the same failure modes as the restart unit: a failed step stays in
+   is created and started. A stopped container is started as it was created, with the image it
+   was created from (bot.toml and the data folder are bind mounts, so it reads today's files),
+   so a stopped container must never outlive its release: `deploy-server.sh` removes a stopped
+   bot container once it has installed the new `limits.env` (above, the server deploy), and the
+   next Start or scheduled start creates the container from the new release image. A bot that
+   was running during the deploy is left alone and keeps its image until it ends; its stopped
+   container is removed by the next deploy, or recreated by the next scheduled start (plain
+   `up -d` recreates a container whose image changed).
+4. The compose step of the restart and the start unit (and the deploy's removal) holds one lock,
+   `DATA/control/compose.lock` (`flock`, which waits for it; the file is created by
+   `deploy-server.sh`), so a restart that arrives while a start runs, or the other way round,
+   waits instead of running a second compose command on the bot at once.
+5. Never retried, and the same failure modes as the restart unit: a failed step stays in
    `systemctl status tickr-bot-start.service`; a failed rename leaves the request, the path unit
    hits its trigger limit and later Starts are ignored until `systemctl reset-failed
-   tickr-bot-start.path`.
+   tickr-bot-start.path`. After the API's `202` (request written), a failed unit step, such as a
+   missing image, shows only in `systemctl status tickr-bot-start.service` and its journal (the
+   app sees a bot that never appears in `/status`; nothing alerts).
 
 **Cutover (the server move release).** `config/bot.toml` itself holds the server's values, so
 the server's `/srv/tickr/etc/bot.toml` is the commit's file with no hand edit, and merging that

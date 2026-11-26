@@ -43,11 +43,13 @@
 # the mounts the jobs get; it never sends an order and any doubt refuses, nothing installed;
 # (4) refuse on a restart or start request left in the control folder (it would restart or
 # start the bot the moment its path unit starts), then create only the control folder under the
-# verified mount (owned by the image's uid:gid, mode 700); (5) install the files (all or
-# nothing) and reload systemd; (6) enable the timers, the restart and start request watches and
-# the API. The bot is never
-# started or stopped here: a running job keeps the image it started with, the next scheduled
-# start uses the new units.
+# verified mount (owned by the image's uid:gid, mode 700) and its compose lock file; (5) install
+# the files (all or nothing); (5b) remove a stopped bot container (`docker compose rm -f bot`,
+# without -s: never a running one), under the units' compose lock, so the next Start or
+# scheduled start creates it from the new release (bot-container-not-removed: systemd is then
+# not reloaded and nothing is enabled), and reload systemd; (6) enable the timers, the restart
+# and start request watches and the API. The bot is never started or stopped here: a running
+# job keeps the image it started with, the next start uses the new release.
 #
 # Overrides (names only): TICKR_UNITS_DIR (default /etc/systemd/system), TICKR_SYSTEMCTL
 # (default systemctl), TICKR_DOCKER (default docker), TICKR_ENV_FILE_HOST (default
@@ -212,6 +214,12 @@ if [ "$(dirname "$start_request")" != "$control" ]; then
 fi
 # Only the control folder is created, under the verified mount, owned by the image's user.
 install -d -m 700 -o "$image_uid" -g "$image_gid" "$control"
+# The compose lock the restart and start units hold around their compose command (render-systemd
+# names it compose.lock in the control folder): created once, never replaced (a unit may hold it).
+lock="$control/compose.lock"
+if [ ! -e "$lock" ]; then
+  install -m 600 -o "$image_uid" -g "$image_gid" /dev/null "$lock"
+fi
 
 # Install all or nothing: stage every file as a hidden temp file inside its target folder (a
 # copy that fails removes the staged files and installs nothing), then rename each into place
@@ -231,6 +239,18 @@ for tmp in $staged; do
   target=$(dirname "$tmp")/$(basename "$tmp" | sed "s/^\.tickr-stage\.$$\.//")
   mv -f "$tmp" "$target"
 done
+# A stopped bot container keeps the image it was created from, and the start unit's
+# `up -d --no-recreate` would start it as it is: remove a stopped one now that limits.env names
+# the new release, so the next Start or scheduled start creates the container from it.
+# `rm -f` without -s removes only service containers that are not running (compose
+# pkg/compose/remove.go, Remove: it inspects each container and keeps those whose
+# State.Running is true); a running bot is left as it is and keeps its image until it ends.
+# Under the units' compose lock, so no start or restart runs compose at the same time.
+if ! TICKR_CONFIG_HOST="$config" TICKR_ENV_FILE_HOST="$env_file" flock "$lock" \
+    "$docker" compose --env-file "$etc/limits.env" -f "$compose" -p tickr --profile jobs rm -f bot; then
+  echo "refused: bot-container-not-removed: a stopped bot container of the previous release could not be removed (read the docker line above; Start would run that container as it is); the new units, ports.env and limits.env are in place but systemd was not reloaded and nothing was enabled or restarted; deploy again" >&2
+  exit 1
+fi
 "$systemctl" daemon-reload
 "$systemctl" enable tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer \
   tickr-bot-restart.path tickr-bot-start.path tickr-api.service

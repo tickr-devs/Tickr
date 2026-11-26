@@ -228,12 +228,27 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path]:
     # owner, this test's own ids; ID_FAILS makes it fail), `--entrypoint cat` prints the image's
     # compose.yaml (IMAGE_COMPOSE, default the etc copy), render-systemd writes the units of
     # the --data and --image it is given (RENDER_IMAGE overrides the image), require-flat
-    # answers the flat result. Every call is logged.
+    # answers the flat result. `compose ... -p tickr --profile jobs rm -f bot` (no -s) models
+    # compose's Remove (pkg/compose/remove.go): the bot container in the file bot-container
+    # ("STATE IMAGE") is removed unless its state is running; it fails unless the compose lock
+    # is held, the paths compose interpolates are set and --env-file names an installed
+    # limits.env of the release image (RM_FAILS makes it fail). Every call is logged.
     docker = tmp_path / "docker"
     docker.write_text(
         f'#!/bin/sh\necho "$@" >> {tmp_path}/docker.log\n'
         'if [ "$1 $2" = "image inspect" ]; then\n'
         f'  for ref in ${{PRESENT-{IMAGE}}}; do [ "$ref" = "$3" ] && exit 0; done; exit 1\nfi\n'
+        'if [ "$1" = compose ]; then\n'
+        '  case " $* " in *" -s "*|*" --stop "*) exit 1 ;; esac\n'
+        '  case "$*" in *" -p tickr --profile jobs rm -f bot") ;; *) exit 1 ;; esac\n'
+        '  [ -n "${TICKR_CONFIG_HOST:-}" ] && [ -n "${TICKR_ENV_FILE_HOST:-}" ] || exit 1\n'
+        f'  ! flock -n {tmp_path}/data/control/compose.lock true || exit 1\n'
+        f'  grep -qxF "TICKR_IMAGE={IMAGE}" "$3" || exit 1\n'
+        '  [ -z "${RM_FAILS:-}" ] || exit 1\n'
+        f'  ctr={tmp_path}/bot-container\n'
+        '  if [ -f "$ctr" ] && [ "$(cut -d" " -f1 "$ctr")" != running ]; then rm -f "$ctr"; fi\n'
+        '  exit 0\n'
+        'fi\n'
         '[ "$1" = run ] || exit 1\n'
         'case " $* " in *" --pull never "*) ;; *) exit 1 ;; esac\n'
         f'case " $* " in *" {IMAGE} "*) ;; *) exit 1 ;; esac\n'
@@ -381,6 +396,42 @@ def test_deploy_script_installs_the_units_when_flat(tmp_path):
     assert not re.search(r"(start|restart) .*tickr-bot\.service", log)
 
 
+def _deploy_with_bot(tmp_path: Path, state: str, **extra: str) -> subprocess.CompletedProcess:
+    """A deploy of COMMIT while the bot container of an older release is in `state`."""
+    (tmp_path / "bot-container").write_text(f"{state} {REGISTRY}:{'f' * 40}\n", "utf-8")
+    return _deploy(tmp_path, flat=True, **extra)
+
+
+def test_deploy_script_removes_a_stopped_bot_container_of_the_old_release(tmp_path):
+    done = _deploy_with_bot(tmp_path, "exited")
+    assert done.returncode == 0, done.stderr
+    # Removed: the next Start or scheduled start creates the bot from the new release.
+    assert not (tmp_path / "bot-container").exists()
+    etc, data = tmp_path / "etc", tmp_path / "data"
+    [rm] = [c for c in _calls(tmp_path) if c.startswith("compose ")]
+    assert rm == (f"compose --env-file {etc}/limits.env -f {etc}/compose.yaml -p tickr "
+                  "--profile jobs rm -f bot")
+    assert " -s" not in rm and "--stop" not in rm  # never stops a running container
+    lock = data / "control" / systemd.COMPOSE_LOCK
+    assert lock.is_file() and stat.S_IMODE(lock.stat().st_mode) == 0o600
+    assert '"$control/' + systemd.COMPOSE_LOCK + '"' in SCRIPT.read_text("utf-8")
+
+
+def test_deploy_script_never_touches_a_running_bot_container(tmp_path):
+    done = _deploy_with_bot(tmp_path, "running")
+    assert done.returncode == 0, done.stderr
+    assert (tmp_path / "bot-container").read_text("utf-8") == f"running {REGISTRY}:{'f' * 40}\n"
+    assert any(c.startswith("compose ") for c in _calls(tmp_path))
+
+
+def test_deploy_script_refuses_when_the_stopped_bot_container_cannot_be_removed(tmp_path):
+    done = _deploy_with_bot(tmp_path, "exited", RM_FAILS="1")
+    assert done.returncode == 1 and "refused: bot-container-not-removed:" in done.stderr
+    assert (tmp_path / "bot-container").exists()
+    # The files were installed before it, but systemd was not reloaded and nothing enabled.
+    assert not (tmp_path / "systemctl.log").exists()
+
+
 def test_the_bots_grace_period_is_the_exit_timeout_from_config_only(config_path, repo, tmp_path):
     cfg = _pinned(config_path)
     out = tmp_path / "out"
@@ -468,6 +519,7 @@ def test_the_restart_unit_restarts_once_with_the_bots_grace_and_never_retries(
     assert steps == [
         "/bin/mv -fT /srv/tickr/data/control/restart-request "
         "/srv/tickr/data/control/restart-request.taken",
+        "/usr/bin/flock /srv/tickr/data/control/compose.lock "
         "/usr/bin/docker compose -f /srv/tickr/etc/compose.yaml -p tickr "
         "--profile jobs up -d --force-recreate --no-deps --pull never --no-build "
         f"-t {cfg.runtime.bot_exit_timeout_seconds} bot",
@@ -489,6 +541,7 @@ def test_the_start_unit_never_recreates_a_running_bot_and_never_retries(
     assert steps == [
         "/bin/mv -fT /srv/tickr/data/control/start-request "
         "/srv/tickr/data/control/start-request.taken",
+        "/usr/bin/flock /srv/tickr/data/control/compose.lock "
         "/usr/bin/docker compose -f /srv/tickr/etc/compose.yaml -p tickr "
         "--profile jobs up -d --no-recreate --no-deps --pull never --no-build bot",
         "/bin/cat /srv/tickr/data/control/start-request.taken"]
@@ -637,8 +690,10 @@ def test_deploy_script_runs_every_python_step_in_the_release_image_and_never_pul
     assert calls[0] == f"image inspect {IMAGE}"
     # The fake docker fails every command that is not `run --pull never` of the release image:
     # the uid check, render-systemd and require-flat all ran in it; none may pull.
-    runs = calls[1:]
+    runs = calls[1:-1]
     assert len(runs) == 5 and all(c.startswith("run --rm --pull never ") for c in runs)
+    # Last, after the files are installed: the removal of a stopped bot container (no pull).
+    assert calls[-1].startswith("compose ") and " rm -f bot" in calls[-1]
     assert sum(f"--entrypoint id {IMAGE} -" in c for c in runs) == 2
     etc, data = tmp_path / "etc", tmp_path / "data"
     [render] = [c for c in runs if " render-systemd " in c]
