@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import hashlib
 import json
 import shutil
 from datetime import date
 from pathlib import Path
 
+import model_inputs as inputs
 import pytest
 
+from tickr.calendar import NEW_YORK, MarketDay
 from tickr.model import features
 from tickr.model.errors import ModelRefused
 from tickr.model.features import calendar_ext as cx
@@ -19,6 +23,18 @@ PINNED = features.PINNED_DIR
 CONFIG_CALENDAR = Path(__file__).parents[2] / "config" / "calendar"
 TRAINING_MD5 = "3c22591622d1f06ce1611f9fcf5c702d"
 TRAINING_LAST = "2026-12-31"
+EXT_DAY = "2027-01-04"  # the extension's first session
+EXT_EARLY = "2027-11-26"  # an extension early close (13:00 New York), a half day of the bot
+
+
+def _standard_day(day):
+    """A MarketDay with the standard hours, not from the bot calendar (a disagreeing day)."""
+    d = datetime.date.fromisoformat(day)
+
+    def at(h, m=0):
+        return datetime.datetime(d.year, d.month, d.day, h, m, tzinfo=NEW_YORK)
+
+    return MarketDay(d, at(4), at(9, 30), at(16), at(20), False, "test: standard hours")
 
 
 def _training():
@@ -111,10 +127,44 @@ def test_disagreement_with_the_bots_calendar_is_refused(tmp_path):
         assert exc.value.cause == "calendar_disagrees"
 
 
-def test_the_live_builder_reads_the_extended_calendar():
-    labels = full.full_code().labels
-    cal = labels.calendar()
+def test_the_live_context_reads_the_extended_calendar_and_research_the_pinned_one():
+    ctx = full.live_context(inputs.market_day(EXT_DAY))
+    cal = ctx.code.labels.calendar()
     assert cal[-1] == cx.load().days[-1] and "2027-03-26" not in cal and "2027-11-26" in cal
     assert cal[: len(_training())] == _training()
     with pytest.raises(SystemExit):
-        labels.calendar(str(PINNED / cx.DAYS_FILE), TRAINING_MD5)  # pin still checked
+        ctx.code.labels.calendar(str(PINNED / cx.DAYS_FILE), TRAINING_MD5)  # pin still checked
+    assert ctx.code.labels.calendar(str(PINNED / "trading-days.txt")) == _training()
+    # the research import keeps the pinned function and file
+    assert inputs.research().labels.calendar() == _training()
+
+
+def test_an_extension_day_passes_the_live_checks():
+    ctx = full.live_context(inputs.market_day(EXT_DAY))
+    assert ctx.day == EXT_DAY and ctx.end_minute == 960
+    with pytest.raises(ModelRefused) as exc:  # past the extension: still unknown
+        full.live_context(inputs.market_day("2029-01-02"))
+    assert exc.value.cause == "unknown_trading_day"
+    closed = _standard_day("2027-03-26")  # Good Friday: in no calendar's sessions
+    with pytest.raises(ModelRefused) as exc:
+        full.live_context(closed)
+    assert exc.value.cause == "unknown_trading_day"
+
+
+def test_an_extension_early_close_meets_the_half_day_policy():
+    day = inputs.market_day(EXT_EARLY)
+    assert day.half_day and day.regular_close.strftime("%H:%M") == cx.load().early_close[EXT_EARLY]
+    with pytest.raises(ModelRefused) as exc:
+        full.live_context(day)
+    assert exc.value.cause == "half_day_outside_session_policy"
+    assert full.live_context(day, full.HALF_DAYS_UNTIL_CLOSE).end_minute == 540  # 13:00
+
+
+def test_a_bot_day_that_disagrees_with_the_extension_is_refused():
+    early = inputs.market_day(EXT_EARLY)
+    later = dataclasses.replace(early, regular_close=early.regular_close.replace(hour=14))
+    for day in (_standard_day(EXT_EARLY), later,
+                dataclasses.replace(inputs.market_day(EXT_DAY), half_day=True)):
+        with pytest.raises(ModelRefused) as exc:
+            full.live_context(day, full.HALF_DAYS_UNTIL_CLOSE)
+        assert exc.value.cause == "calendar_disagrees", day
