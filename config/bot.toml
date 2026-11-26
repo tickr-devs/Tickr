@@ -1040,20 +1040,24 @@ session_lookback_days = 14
 # Free disk space, decimal GB (10^9 bytes), the harness must leave on the disk of its --work-dir: it protects the live
 # bot's disk (database, logs, captures). Before each tick conversion the harness refuses disk_space_insufficient,
 # before writing, when free space minus the conversion's estimated bytes (its input rows times the bytes per row
-# measured on the run) would fall below it; also the cap of every harness duckdb spill. Basis: the live bot's worst
-# measured day of disk growth on the Mac (2026-11-23: 975 MB of data plus 7 MB of api.log, about 1 GB) for each of
-# the two sessions a run started after a close can overlap (it runs under a day); read by tickr.model.parity
-# (--disk-reserve-gb overrides it).
-disk_reserve_gb = 2
+# measured on the run) would fall below it; also the cap of every harness duckdb spill. Basis, single-day samples on
+# the Mac: macOS swap lives on the same boot volume and grows under the harness's memory pressure; its largest
+# measured size is 40,960 MB (2026-11-25, after the 2026-11-17 run), 41 GB counted as growth from an empty swap
+# after a reboot; plus the live bot's worst measured day of disk growth (2026-11-23: 975 MB of data plus 7 MB of
+# api.log, about 1 GB); read by tickr.model.parity (--disk-reserve-gb overrides it).
+disk_reserve_gb = 42
 # Available memory, decimal GB, below which the harness refuses memory_insufficient before a conversion: it protects
 # the live bot's memory (the 2026-11-17 run pushed the Mac into 39 GB of swap). Basis: the measured footprint of the
-# processes that share the Mac on 2026-11-25 (bot, API and apps about 3.3 GB; Claude processes about 3.2 GB), 6.5 GB
-# rounded up; read by tickr.model.parity (--memory-reserve-gb overrides it).
+# processes that share the Mac on 2026-11-25 (bot, API and apps about 3.3 GB; Claude processes about 3.2 GB; a single-day sample),
+# 6.5 GB rounded up; read by tickr.model.parity (--memory-reserve-gb overrides it).
 memory_reserve_gb = 7
 # Memory limit, decimal GB, of every duckdb engine of the harness, the frozen tick converter's included (as its
 # TICK_MEM, which must then be unset; its own default is 10 GB): beyond it duckdb spills into the work folder, within
-# disk_reserve_gb. Basis: memory available on the Mac on 2026-11-25 (10.3 GB, swap 37.4 of 38.9 GB in use) minus
-# memory_reserve_gb, rounded down; read by tickr.model.parity (--duckdb-memory-gb overrides it).
+# disk_reserve_gb. Basis, a single-day sample: memory available on the Mac on 2026-11-25 (10.3 GB, swap 37.4 of
+# 38.9 GB in use) minus memory_reserve_gb, rounded down. Not yet subtracted: the harness's own Python, the
+# converter's non-duckdb memory and the comparison frames; their peak resident size is in each minute's journal line
+# of the first run after the Mac's reboot, and this value is re-derived from it; read by tickr.model.parity
+# (--duckdb-memory-gb overrides it).
 duckdb_memory_gb = 3
 # Events per input file of the probe conversion that measures a conversion kind's bytes per input row when the kind's
 # first conversion is larger (a measurement's size, not a limit), count; read by tickr.model.headroom.
