@@ -28,20 +28,27 @@ public struct DisclosureLine<Content: View>: View {
       .padding(.top, Tokens.Space.xs)
       .frame(maxWidth: .infinity, alignment: .leading)
     } label: {
-      HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
-        Text(title)
-          .font(Tokens.Typography.callout)
-          .foregroundStyle(Palette.infoText)
-          .fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: Tokens.Space.s)
-        if let summary {
-          Text(verbatim: summary)
-            .font(Tokens.Typography.captionMono)
-            .foregroundStyle(summaryColor)
-            .fixedSize()
+      // The whole line opens and closes it: on macOS a disclosure group's label alone does not
+      // (only its small triangle did), so a click on "Details" did nothing.
+      Button {
+        open.toggle()
+      } label: {
+        HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+          Text(title)
+            .font(Tokens.Typography.callout)
+            .foregroundStyle(Palette.infoText)
+            .fixedSize(horizontal: false, vertical: true)
+          Spacer(minLength: Tokens.Space.s)
+          if let summary {
+            Text(verbatim: summary)
+              .font(Tokens.Typography.captionMono)
+              .foregroundStyle(summaryColor)
+              .fixedSize()
+          }
         }
+        .contentShape(.rect)
       }
-      .contentShape(.rect)
+      .buttonStyle(.plain)
     }
     .animation(Tokens.Motion.standard, value: open)
   }
