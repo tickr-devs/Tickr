@@ -223,9 +223,16 @@ extension HomeView {
   /// The open positions, or a card saying there are none.
   @ViewBuilder
   fileprivate func positions(_ status: StatusV1) -> some View {
-    ForEach(Array(Board.positions(status).enumerated()), id: \.element.symbol) { index, position in
-      PositionRow(position: position, marks: prices.marks[position.symbol])
-        .rise(step: Order.positions.rawValue + index)
+    if let stopped = model.stoppedPositions {
+      // Bot stopped with positions open (board IOSHome): the stopped bot's last knowledge
+      // of them in place of the live rows, with Start bot.
+      StoppedPositionsPanel(stopped) { HomeStartButton() }
+        .rise(step: Order.positions.rawValue)
+    } else {
+      ForEach(Array(Board.positions(status).enumerated()), id: \.element.symbol) { index, position in
+        PositionRow(position: position, marks: prices.marks[position.symbol])
+          .rise(step: Order.positions.rawValue + index)
+      }
     }
     if status.positions.isEmpty {
       Text(L10n.Home.noPosition)
@@ -356,6 +363,9 @@ enum EntriesGlyph {
   /// Symbols of the entries glyph: allowed, calm "not now", blocked (paused by the owner draws
   /// `Symbols.pause`).
   static let entriesAllowedSymbol = "lock.open.fill"
+  /// The full stop the "No entries now: …." and "Entries blocked: …." sentences end with: a
+  /// cause that is a sentence of its own already ends with one, which then is not doubled.
+  static let fullStop = "."
   static let entriesNotNowSymbol = "moon.fill"
   static let entriesBlockedSymbol = "hand.raised.fill"
 
@@ -365,8 +375,15 @@ enum EntriesGlyph {
   static func make(_ status: StatusV1) -> (symbol: String, tone: Tone, label: LocalizedStringResource) {
     guard let block = status.entryBlock else { return (entriesAllowedSymbol, .profit, L10n.Home.entriesAllowed) }
     if BlockCode(rawValue: block.cause) == .entryStop { return (Symbols.pause, .warning, L10n.Home.entriesPaused) }
-    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(ApiText.entryBlock(block))) }
-    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(ApiText.entryBlock(block)))
+    let cause = clause(ApiText.entryBlock(block))
+    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(cause)) }
+    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(cause))
+  }
+
+  /// The cause as a clause inside the sentence: without its own final full stop ("…: cause."
+  /// read "cause.." when the cause was a sentence).
+  static func clause(_ cause: String) -> String {
+    cause.hasSuffix(fullStop) ? String(cause.dropLast(fullStop.count)) : cause
   }
 }
 
