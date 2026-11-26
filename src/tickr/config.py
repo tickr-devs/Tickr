@@ -410,7 +410,6 @@ class ModelConfig:
     live_marker_quote: bool
     live_wait_after_minute_seconds: str
     live_table_workers: int
-    tick_groups: int
 
 
 @dataclass(frozen=True)
@@ -830,8 +829,6 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "yet) or a number of seconds of at least 0 written as text")
     if model.live_table_workers < 1:
         raise ConfigError("[model] live_table_workers must be at least 1")
-    if model.tick_groups < 1:
-        raise ConfigError("[model] tick_groups must be at least 1")
     trailing: TrailingStopConfig = built["trailing_stop"]
     if trailing.enabled:
         raise ConfigError("[trailing_stop] enabled must stay false: stop replacement is not in "
