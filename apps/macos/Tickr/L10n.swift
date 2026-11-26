@@ -735,12 +735,6 @@ enum L10n {
     static var configuration: LocalizedStringResource {
       LocalizedStringResource("settings.configuration", defaultValue: "Configuration", bundle: L10n.bundle)
     }
-    static var configFooter: LocalizedStringResource {
-      LocalizedStringResource("settings.configFooter",
-        // swiftlint:disable:next line_length
-        defaultValue: "Read-only, as the file is on disk now. Every key with its comment. Credentials appear only as variable names.",
-        bundle: L10n.bundle)
-    }
     static var configTop: LocalizedStringResource {
       LocalizedStringResource("settings.configTop", defaultValue: "Top level", bundle: L10n.bundle)
     }
@@ -792,12 +786,6 @@ enum L10n {
     static var serviceFlat: LocalizedStringResource {
       LocalizedStringResource("settings.serviceFlat", defaultValue: "flat, nothing open", bundle: L10n.bundle)
     }
-    static var startStopFootnote: LocalizedStringResource {
-      LocalizedStringResource("settings.startStopFootnote",
-        // swiftlint:disable:next line_length
-        defaultValue: "Start = launchctl kickstart of the bot job (preflight runs first), never inside the app or the API. Stop is refused while a trade is open or entering: close the position first.",
-        bundle: L10n.bundle)
-    }
     static func startRefused(_ cause: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.startRefused", defaultValue: "Not started: \(cause)", bundle: L10n.bundle)
     }
@@ -811,18 +799,9 @@ enum L10n {
         defaultValue: "Start requested: the bot runs its preflight first.",
         bundle: L10n.bundle)
     }
-    static var startExplanation: LocalizedStringResource {
-      LocalizedStringResource("settings.startExplanation",
-        // swiftlint:disable:next line_length
-        defaultValue: "launchd starts the bot job as on a scheduled morning: preflight first, then trading if every check passes. An earlier Stop is cleared, so scheduled starts run again.",
-        bundle: L10n.bundle)
-    }
-    static var startQuestion: LocalizedStringResource {
-      LocalizedStringResource("settings.startQuestion", defaultValue: "Start the bot?", bundle: L10n.bundle)
-    }
     static var startBotHint: LocalizedStringResource {
       LocalizedStringResource("settings.startBotHint",
-        defaultValue: "Starts the bot job on this Mac through launchd. The bot runs its preflight first.",
+        defaultValue: "Runs the morning check, then starts the bot",
         bundle: L10n.bundle)
     }
     static var stopBotAction: LocalizedStringResource {
@@ -830,9 +809,6 @@ enum L10n {
     }
     static var startBotAction: LocalizedStringResource {
       LocalizedStringResource("settings.startBotAction", defaultValue: "Start bot", bundle: L10n.bundle)
-    }
-    static var botService: LocalizedStringResource {
-      LocalizedStringResource("settings.botService", defaultValue: "Bot service · launchd job", bundle: L10n.bundle)
     }
     static var general: LocalizedStringResource {
       LocalizedStringResource("settings.general", defaultValue: "General", bundle: L10n.bundle)
@@ -854,11 +830,11 @@ enum L10n {
     }
     static var configFootnote: LocalizedStringResource {
       LocalizedStringResource("settings.configFootnote",
-        defaultValue: "Read from the bot's local API. Change it in config/bot.toml and restart the bot.",
+        defaultValue: "Read-only. Change it in the config on the Mac.",
         bundle: L10n.bundle)
     }
     static var apiAddress: LocalizedStringResource {
-      LocalizedStringResource("settings.apiAddress", defaultValue: "Local API address", bundle: L10n.bundle)
+      LocalizedStringResource("settings.apiAddress", defaultValue: "Address", bundle: L10n.bundle)
     }
     static var useDefault: LocalizedStringResource {
       LocalizedStringResource("settings.useDefault", defaultValue: "Use Default", bundle: L10n.bundle)
@@ -897,11 +873,6 @@ enum L10n {
     static var theme: LocalizedStringResource {
       LocalizedStringResource("settings.theme", defaultValue: "Theme", bundle: L10n.bundle)
     }
-    static var followsSystem: LocalizedStringResource {
-      LocalizedStringResource("settings.followsSystem",
-        defaultValue: "Follows the system appearance",
-        bundle: L10n.bundle)
-    }
     static var invalidAddress: LocalizedStringResource {
       LocalizedStringResource("settings.invalidAddress", defaultValue: "Invalid address", bundle: L10n.bundle)
     }
@@ -920,19 +891,16 @@ enum L10n {
       LocalizedStringResource("settings.plannedLoss", defaultValue: "Planned loss per trade", bundle: L10n.bundle)
     }
     static var notionalCap: LocalizedStringResource {
-      LocalizedStringResource("settings.notionalCap", defaultValue: "Position notional cap", bundle: L10n.bundle)
+      LocalizedStringResource("settings.notionalCap", defaultValue: "Largest position", bundle: L10n.bundle)
     }
     static var dailyLossLimit: LocalizedStringResource {
-      LocalizedStringResource("settings.dailyLossLimit", defaultValue: "Daily loss limit (net)", bundle: L10n.bundle)
+      LocalizedStringResource("settings.dailyLossLimit", defaultValue: "Daily loss limit", bundle: L10n.bundle)
     }
     static var maxOpenPositions: LocalizedStringResource {
       LocalizedStringResource("settings.maxOpenPositions", defaultValue: "Open positions at most", bundle: L10n.bundle)
     }
     static var maxQuoteAge: LocalizedStringResource {
       LocalizedStringResource("settings.maxQuoteAge", defaultValue: "Quote age at most", bundle: L10n.bundle)
-    }
-    static var marketTimezone: LocalizedStringResource {
-      LocalizedStringResource("settings.marketTimezone", defaultValue: "Market timezone", bundle: L10n.bundle)
     }
     static var lastEntry: LocalizedStringResource {
       LocalizedStringResource("settings.lastEntry", defaultValue: "Last entry", bundle: L10n.bundle)
@@ -1015,7 +983,7 @@ enum L10n {
         bundle: L10n.bundle)
     }
     static var jobs: LocalizedStringResource {
-      LocalizedStringResource("settings.jobs", defaultValue: "Jobs on the Mac · launchd", bundle: L10n.bundle)
+      LocalizedStringResource("settings.jobs", defaultValue: "Scheduled jobs", bundle: L10n.bundle)
     }
     static var jobsFooter: LocalizedStringResource {
       LocalizedStringResource("settings.jobsFooter",
@@ -1033,11 +1001,6 @@ enum L10n {
     }
     static var backup: LocalizedStringResource {
       LocalizedStringResource("settings.backup", defaultValue: "Backup", bundle: L10n.bundle)
-    }
-    static var backupFooter: LocalizedStringResource {
-      LocalizedStringResource("settings.backupFooter",
-        defaultValue: "The bot copies its database every day and checks the copy; times are New York time.",
-        bundle: L10n.bundle)
     }
     static var notReported: LocalizedStringResource {
       LocalizedStringResource("settings.notReported", defaultValue: "Not reporting", bundle: L10n.bundle)
@@ -1074,36 +1037,22 @@ enum L10n {
     static var gateClosed: LocalizedStringResource {
       LocalizedStringResource("settings.gateClosed", defaultValue: "closed", bundle: L10n.bundle)
     }
-    static var gateCause: LocalizedStringResource {
-      LocalizedStringResource("settings.gateCause", defaultValue: "Gate cause", bundle: L10n.bundle)
-    }
-    static var apiVersion: LocalizedStringResource {
-      LocalizedStringResource("settings.apiVersion", defaultValue: "Local API version", bundle: L10n.bundle)
-    }
-    static var brokerEnvironment: LocalizedStringResource {
-      LocalizedStringResource("settings.brokerEnvironment", defaultValue: "Broker environment", bundle: L10n.bundle)
-    }
     static var environmentFixed: LocalizedStringResource {
       LocalizedStringResource("settings.environmentFixed",
-        defaultValue: "The environment is set in config/bot.toml. The app cannot switch it, by design.",
+        defaultValue: "Set in the config on the Mac. The app cannot switch it, by design.",
         bundle: L10n.bundle)
     }
     static var recordedDays: LocalizedStringResource {
       LocalizedStringResource("settings.recordedDays", defaultValue: "Recorded days", bundle: L10n.bundle)
     }
     static var firstRecordedDay: LocalizedStringResource {
-      LocalizedStringResource("settings.firstRecordedDay", defaultValue: "First recorded day", bundle: L10n.bundle)
+      LocalizedStringResource("settings.firstRecordedDay", defaultValue: "First day", bundle: L10n.bundle)
     }
     static var daysWithBars: LocalizedStringResource {
-      LocalizedStringResource("settings.daysWithBars", defaultValue: "Days with captured bars", bundle: L10n.bundle)
+      LocalizedStringResource("settings.daysWithBars", defaultValue: "Days with prices", bundle: L10n.bundle)
     }
     static var history: LocalizedStringResource {
       LocalizedStringResource("settings.history", defaultValue: "History", bundle: L10n.bundle)
-    }
-    static var historySource: LocalizedStringResource {
-      LocalizedStringResource("settings.historySource",
-        defaultValue: "History is read from the bot's database and bar captures, read-only.",
-        bundle: L10n.bundle)
     }
     static var statusRefresh: LocalizedStringResource {
       LocalizedStringResource("settings.statusRefresh", defaultValue: "Status refresh", bundle: L10n.bundle)
@@ -1113,31 +1062,6 @@ enum L10n {
     }
     static var staleAfter: LocalizedStringResource {
       LocalizedStringResource("settings.staleAfter", defaultValue: "Status stale after", bundle: L10n.bundle)
-    }
-    static var features: LocalizedStringResource {
-      LocalizedStringResource("settings.features", defaultValue: "Features · from config", bundle: L10n.bundle)
-    }
-    static var featuresFootnote: LocalizedStringResource {
-      LocalizedStringResource("settings.featuresFootnote",
-        defaultValue: "A switch here edits nothing: it shows the value in the bot's configuration; planned ones are off.",
-        bundle: L10n.bundle)
-    }
-    static var featureTrailing: LocalizedStringResource {
-      LocalizedStringResource("settings.featureTrailing", defaultValue: "Trailing stop", bundle: L10n.bundle)
-    }
-    static var featureExtendedHours: LocalizedStringResource {
-      LocalizedStringResource("settings.featureExtendedHours",
-        defaultValue: "Extended hours (limit only)",
-        bundle: L10n.bundle)
-    }
-    static var featureShort: LocalizedStringResource {
-      LocalizedStringResource("settings.featureShort", defaultValue: "Short selling", bundle: L10n.bundle)
-    }
-    static var featureChase: LocalizedStringResource {
-      LocalizedStringResource("settings.featureChase", defaultValue: "Limit-exit chase", bundle: L10n.bundle)
-    }
-    static var featureHalfDays: LocalizedStringResource {
-      LocalizedStringResource("settings.featureHalfDays", defaultValue: "Trade half days", bundle: L10n.bundle)
     }
     static var alerts: LocalizedStringResource {
       LocalizedStringResource("settings.alerts", defaultValue: "Alerts", bundle: L10n.bundle)
@@ -1167,35 +1091,16 @@ enum L10n {
         defaultValue: "The broker token must be confirmed before the open",
         bundle: L10n.bundle)
     }
-    static var environmentGate: LocalizedStringResource {
-      LocalizedStringResource("settings.environmentGate",
-        defaultValue: "Environment · trading gate",
-        bundle: L10n.bundle)
-    }
-    static var backups: LocalizedStringResource {
-      LocalizedStringResource("settings.backups", defaultValue: "Backups · storage", bundle: L10n.bundle)
-    }
     static var backupVerified: LocalizedStringResource {
       LocalizedStringResource("settings.backupVerified",
-        defaultValue: "Daily backup verified · VACUUM INTO + integrity_check",
+        defaultValue: "Backup checked",
         bundle: L10n.bundle)
     }
     static var cleanup: LocalizedStringResource {
       LocalizedStringResource("settings.cleanup",
         // swiftlint:disable:next line_length
-        defaultValue: "Clean-up runs on the Mac with the bot stopped: tickr maintain (a dry run first, then --apply) compresses finished days, prunes the caches and old archives and checkpoints the database.",
+        defaultValue: "Clean-up runs on the Mac while the bot is stopped: it compresses finished days and trims caches and old archives.",
         bundle: L10n.bundle)
-    }
-    static var thisMac: LocalizedStringResource {
-      LocalizedStringResource("settings.thisMac", defaultValue: "this Mac", bundle: L10n.bundle)
-    }
-    static var menuBarNote: LocalizedStringResource {
-      LocalizedStringResource("settings.menuBarNote",
-        defaultValue: "Day result, positions and bot actions one click away",
-        bundle: L10n.bundle)
-    }
-    static var appearanceTheme: LocalizedStringResource {
-      LocalizedStringResource("settings.appearanceTheme", defaultValue: "Appearance · theme", bundle: L10n.bundle)
     }
     static var themeSystem: LocalizedStringResource {
       LocalizedStringResource("settings.themeSystem", defaultValue: "System", bundle: L10n.bundle)
@@ -1206,27 +1111,8 @@ enum L10n {
     static var themeDark: LocalizedStringResource {
       LocalizedStringResource("settings.themeDark", defaultValue: "Dark", bundle: L10n.bundle)
     }
-    static var alwaysLight: LocalizedStringResource {
-      LocalizedStringResource("settings.alwaysLight",
-        defaultValue: "Always light, whatever the system uses",
-        bundle: L10n.bundle)
-    }
-    static var alwaysDark: LocalizedStringResource {
-      LocalizedStringResource("settings.alwaysDark",
-        defaultValue: "Always dark, whatever the system uses",
-        bundle: L10n.bundle)
-    }
     static var timesET: LocalizedStringResource {
       LocalizedStringResource("settings.timesET", defaultValue: "times ET", bundle: L10n.bundle)
-    }
-    static var preBacklog: LocalizedStringResource {
-      LocalizedStringResource("settings.preBacklog", defaultValue: "PRE · BACKLOG", bundle: L10n.bundle)
-    }
-    static func preBacklogFrom(_ time: String) -> LocalizedStringResource {
-      LocalizedStringResource("settings.preBacklogFrom", defaultValue: "PRE \(time) · BACKLOG", bundle: L10n.bundle)
-    }
-    static var postBacklog: LocalizedStringResource {
-      LocalizedStringResource("settings.postBacklog", defaultValue: "POST · BACKLOG", bundle: L10n.bundle)
     }
     static var jobApi: LocalizedStringResource {
       LocalizedStringResource("settings.jobApi", defaultValue: "API", bundle: L10n.bundle)
@@ -1250,17 +1136,14 @@ enum L10n {
       LocalizedStringResource("settings.unreachable", defaultValue: "not reachable", bundle: L10n.bundle)
     }
     static var botStatusInApp: LocalizedStringResource {
-      LocalizedStringResource("settings.botStatusInApp", defaultValue: "Bot · status in this app", bundle: L10n.bundle)
-    }
-    static func backupLast(_ when: String) -> LocalizedStringResource {
-      LocalizedStringResource("settings.backupLast", defaultValue: "last: \(when) · keep latest", bundle: L10n.bundle)
+      LocalizedStringResource("settings.botStatusInApp", defaultValue: "Status in this app", bundle: L10n.bundle)
     }
     static func since(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.since", defaultValue: "since \(time)", bundle: L10n.bundle)
     }
     static func sessionTitle(_ day: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.sessionTitle",
-        defaultValue: "Session · \(day) · NYSE calendar known",
+        defaultValue: "Today's session · \(day)",
         bundle: L10n.bundle)
     }
     static func markOpen(_ time: String) -> LocalizedStringResource {
@@ -1277,12 +1160,48 @@ enum L10n {
     }
     static func addressFootnote(_ example: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.addressFootnote",
-        // swiftlint:disable:next line_length
-        defaultValue: "Enter an http address of the bot's local API, such as \(example). Loopback or your Tailscale address only.",
+        defaultValue: "The bot's address on this Mac or your Tailscale address, for example \(example)",
         bundle: L10n.bundle)
     }
     static func lastShort(_ time: String) -> LocalizedStringResource {
       LocalizedStringResource("settings.lastShort", defaultValue: "last \(time)", bundle: L10n.bundle)
+    }
+    /// Environment: whether the bot may open new positions.
+    static var newEntries: LocalizedStringResource {
+      LocalizedStringResource("settings.newEntries", defaultValue: "New entries", bundle: L10n.bundle)
+    }
+    static var entriesAllowed: LocalizedStringResource {
+      LocalizedStringResource("settings.entriesAllowed", defaultValue: "allowed", bundle: L10n.bundle)
+    }
+    static var entriesPaused: LocalizedStringResource {
+      LocalizedStringResource("settings.entriesPaused", defaultValue: "paused", bundle: L10n.bundle)
+    }
+    static var entriesOff: LocalizedStringResource {
+      LocalizedStringResource("settings.entriesOff", defaultValue: "off", bundle: L10n.bundle)
+    }
+    /// Session strip: why the stretches before and after the regular session are marked.
+    static var notTradedHint: LocalizedStringResource {
+      LocalizedStringResource("settings.notTradedHint",
+        defaultValue: "Pre-market and after-hours are not traded yet",
+        bundle: L10n.bundle)
+    }
+    /// Morning check: every check passed.
+    static func morningAllPassed(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("settings.morningAllPassed", defaultValue: "All \(count) passed", bundle: L10n.bundle)
+    }
+    /// Morning check: how many checks failed, of all.
+    static func morningFailed(_ failed: Int, _ total: Int) -> LocalizedStringResource {
+      LocalizedStringResource("settings.morningFailed", defaultValue: "Failed: \(failed) of \(total)", bundle: L10n.bundle)
+    }
+    static var showAllChecks: LocalizedStringResource {
+      LocalizedStringResource("settings.showAllChecks", defaultValue: "Show all checks", bundle: L10n.bundle)
+    }
+    /// Morning check: a check that passed or failed, spoken.
+    static var checkPassed: LocalizedStringResource {
+      LocalizedStringResource("settings.checkPassed", defaultValue: "passed", bundle: L10n.bundle)
+    }
+    static var checkFailed: LocalizedStringResource {
+      LocalizedStringResource("settings.checkFailed", defaultValue: "failed", bundle: L10n.bundle)
     }
   }
 
@@ -3063,46 +2982,38 @@ enum L10n {
     }
     /// Today's closed trades with wins and losses.
     static func trades(_ closed: Int, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
-      LocalizedStringResource("menuBar.trades", defaultValue: "\(closed) closed · \(wins) W · \(losses) L", bundle: L10n.bundle)
-    }
-    /// Today's trades and the room under the daily loss limit.
-    static func tradesAndRoom(
-      _ closed: Int, _ wins: Int, _ losses: Int, _ room: String, _ limit: String
-    ) -> LocalizedStringResource {
-      LocalizedStringResource("menuBar.tradesAndRoom",
-        defaultValue: "\(closed) closed · \(wins) W · \(losses) L · room \(room) of \(limit)",
+      LocalizedStringResource("menuBar.trades", defaultValue: "\(closed) closed · \(wins) won · \(losses) lost",
         bundle: L10n.bundle)
     }
     /// A position's size in shares.
     static func shares(_ quantity: String) -> LocalizedStringResource {
       LocalizedStringResource("menuBar.shares", defaultValue: "\(quantity) sh", bundle: L10n.bundle)
     }
-    /// A position's entry price, after the entry mark ("→|"); its words are the hint.
+    /// A position's entry price; the full words are the hint.
     static func entry(_ price: String) -> LocalizedStringResource {
-      LocalizedStringResource("menuBar.entry", defaultValue: "→| \(price)", bundle: L10n.bundle)
+      LocalizedStringResource("menuBar.entry", defaultValue: "Entry \(price)", bundle: L10n.bundle)
     }
     /// The age of the last broker read past two minutes, short ("3 min").
     static func ageMinutes(_ minutes: Int) -> LocalizedStringResource {
       LocalizedStringResource("menuBar.ageMinutes", defaultValue: "\(minutes) min", bundle: L10n.bundle)
     }
-    /// Short names of the bot's stages under the flow dots, one word each.
-    static var flowScreen: LocalizedStringResource {
-      LocalizedStringResource("menuBar.flowScreen", defaultValue: "screen", bundle: L10n.bundle)
+    /// The room under the daily loss limit.
+    static func room(_ room: String, _ limit: String) -> LocalizedStringResource {
+      LocalizedStringResource("menuBar.room", defaultValue: "Loss room left \(room) of \(limit)", bundle: L10n.bundle)
     }
-    static var flowStrategy: LocalizedStringResource {
-      LocalizedStringResource("menuBar.flowStrategy", defaultValue: "strategy", bundle: L10n.bundle)
+    /// A position's stop price; its words are the hint.
+    static func stop(_ price: String) -> LocalizedStringResource {
+      LocalizedStringResource("menuBar.stop", defaultValue: "Stop \(price)", bundle: L10n.bundle)
     }
-    static var flowRisk: LocalizedStringResource {
-      LocalizedStringResource("menuBar.flowRisk", defaultValue: "risk", bundle: L10n.bundle)
+    /// A position's last price.
+    static func now(_ price: String) -> LocalizedStringResource {
+      LocalizedStringResource("menuBar.now", defaultValue: "Now \(price)", bundle: L10n.bundle)
     }
-    static var flowOrder: LocalizedStringResource {
-      LocalizedStringResource("menuBar.flowOrder", defaultValue: "order", bundle: L10n.bundle)
-    }
-    static var flowStop: LocalizedStringResource {
-      LocalizedStringResource("menuBar.flowStop", defaultValue: "stop", bundle: L10n.bundle)
-    }
-    static var flowReconcile: LocalizedStringResource {
-      LocalizedStringResource("menuBar.flowReconcile", defaultValue: "reconcile", bundle: L10n.bundle)
+    /// Under the panel's one command: where the others are.
+    static var moreHint: LocalizedStringResource {
+      LocalizedStringResource("menuBar.moreHint",
+        defaultValue: "To close positions or stop the bot, open Tickr.",
+        bundle: L10n.bundle)
     }
   }
   enum Screener {
