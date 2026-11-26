@@ -1066,6 +1066,14 @@ probe_rows = 1000000
 # Seconds between two samples of a conversion folder's size while it converts (pacing of the peak measurement; file
 # removals inside it are sampled too); read by tickr.model.headroom.
 disk_poll_seconds = 0.5
+# Provisional diagnostics of the replay parity engine check (codex-110 point 2), each the text "name day symbol
+# HH:MM column ulp64": one tick-table cell (symbol, row minute New York, v11 column) of one open day that differs
+# between the incremental and full-prefix engines by exactly ulp64 float64 units in the last place. Such a cell is
+# listed apart in the report as class diagnostic, never counted as exact and never a bound for another cell: any
+# other difference stays an engine difference, and the delivered features must still be exact. Measured: the
+# 2026-11-17 Mac run (#839 09d56392, claude-115 R4) found WDC tburst of 19:16 at 1046.190217 / 1046.1902169999998,
+# 1 float64 ULP, 0 float32 ULP, both variants, identical serial settings; read by tickr.model.parity.
+engine_diagnostics = ["wdc-tburst 2026-11-17 WDC 19:16 tburst 1"]
 
 [environments.sandbox]
 # May this process send trading requests in this environment; read by the trading gate.

@@ -168,6 +168,38 @@ tolerance; neither has a default. `--ticks-only` runs only the tick table compar
 `--tk61`), skipping the features. Values are compared as the table stores them (float32
 features, int m and sess). v11 with several engine threads (TICK_THREADS) is not
 bit-deterministic (last-bit differences); the training's tick files carry that noise.
+
+NATIVE PRECISION (codex-110 points 1 and 2; no tolerance or bound is added anywhere, every
+delivered check stays exact). The tk and tk2 values (NATIVE_GROUPS) are read at their native
+computed type, float64, before the pinned code casts them to float32 (`native_values`: the
+arrays of wm2tk_l1.Tick.add's final cast, the kr_* ranks included, and l1tk2.values; the pinned
+bytes are run unchanged). Each exception cell carries `replay_native` (ours) beside the
+delivered `replay` and the training's `reference`; with `--tk61`, at a minute with a tk or tk2
+exception, also `reference_native` (the same pinned code on the training's own v11 tick table
+for the training table's rows of the minute) and `native_abs` / `native_ulp64`; each variant's
+comparison then counts per column the cells whose native values differ while the delivered
+float32 agree (`native`). An empty native field = not captured (the bar, company, news and
+fact groups: their arrays are float32 inside the pinned code or cast on assignment, and the
+harness does not read them; the training table holds float32 only).
+- Ranks: at each minute with a kr_* exception, `ranks` (`rank_recompute`) recomputes the
+  minute's pct ranks from native values over every row of the minute, with the training's
+  native k_X put in for the symbols whose k_X differ, and reports the original mismatches that
+  remain, the previously matching ranks that change, the training's own native ranks against
+  its table, and the symbols whose native k_X differ under equal float32. Without --tk61 it
+  says what is missing instead.
+- Engine check: where the tick tables of the two engines are not bit-equal, the features of
+  both are compared delivered (exact) and native: native-only differences are cells of class
+  `engine-native` and counted in `engine_check.native_cells_delivered_equal`. Two classes of
+  their own are listed apart, never passed silently: `zero_row_schema` (no row in either
+  engine, with one engine having no table or another empty schema) and `diagnostic` (a cell
+  declared in config [parity] engine_diagnostics, matched on day, symbol, row minute, column
+  and its exact float64 ULP: the 2026-11-17 WDC tburst reproducer). A declared cell still makes
+  the delivered features of that minute checked, and an undeclared one is an engine difference.
+
+OUTCOMES: the harness reads no label, return or outcome. Of the training's table it reads only
+date, sym and the 191 features (`_table_columns`); of the pinned l1labels.py only the day rules,
+the minute parser, the splits and types readers and two constants; the table rows come from the
+feature-only table code (full.LiveContext).
 """
 
 from __future__ import annotations
@@ -186,7 +218,7 @@ import os
 import shutil
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -231,7 +263,20 @@ STOP_CAUSES = ("disk_space_insufficient", "memory_insufficient")
 DEFAULT_CONFIG = Path("config/bot.toml")  # the bot's config, relative to the repo root
 REGULAR = ("09:30", "15:59")  # the regular session, for the peak minute
 EXCEPTION_FIELDS = ("variant", "minute", "table", "sym", "column", "group", "class",
-                    "reference", "replay", "abs", "rel", "ulp", "ulp64")
+                    "reference", "replay", "abs", "rel", "ulp", "ulp64", "replay_native",
+                    "reference_native", "native_abs", "native_ulp64")
+# The groups whose values the harness reads at their native computed type (float64), before
+# the pinned code casts them to the model's float32 (codex-110 points 1 and 2): tk (`out[c]` of
+# wm2tk_l1.Tick.add, the kr_* ranks included, ranked in float64) and tk2 (`l1tk2.values`). Every
+# other group is not captured: its exception cells leave the native fields empty.
+NATIVE_GROUPS = ("tk", "tk2")
+NATIVE_FIELDS = ("replay_native", "reference_native", "native_abs", "native_ulp64")
+# The rank columns whose ranks the harness recomputes from native values (codex-110 point 1):
+# kr_X is the pct rank of k_X among the minute's rows (wm2tk_l1.py, the RANKED columns).
+KR_PREFIX, K_PREFIX = "kr_", "k_"
+# A provisional diagnostic of the engine check (codex-110 point 2): one declared tick-table cell
+# (config [parity] engine_diagnostics: name, day, symbol, row minute, column, float64 ULP).
+DIAGNOSTIC_FIELDS = ("name", "day", "sym", "row_minute", "column", "ulp64")
 _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 _CSV = "read_csv(?, header=true, all_varchar=true, delim=',', quote='\"', escape='\"')"
 
@@ -375,12 +420,32 @@ def _read(path: Path, cause: str, sql: str = "SELECT * FROM read_parquet(?)",
         con.close()
 
 
+def _table_columns() -> str:
+    """The columns the harness reads of the training's table: date, sym and the 191 features
+    (m and sess among them), never any other column a table file may hold (a label, return or
+    outcome column is never read: codex-110 point 3)."""
+    names = list(dict.fromkeys(["date", "sym", *full.full_features()]))
+    return ", ".join('"' + c.replace('"', '""') + '"' for c in names)
+
+
 def reference_table(path: Path, day: str) -> Any:
-    """The training's feature table of `day`: one row per (sym, m), every feature present."""
-    frame = _read(path, "replay_table_unreadable")
-    missing = [c for c in ["date", "sym", *full.full_features()] if c not in frame.columns]
+    """The training's feature table of `day`: one row per (sym, m), every feature present
+    (only the key and feature columns are read)."""
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        have = [r[0] for r in con.execute("SELECT name FROM parquet_schema(?)",
+                                          [str(path)]).fetchall()]
+    except duckdb.Error as exc:
+        raise ModelRefused("replay_table_unreadable", type(exc).__name__) from exc
+    finally:
+        con.close()
+    missing = [c for c in ["date", "sym", *full.full_features()] if c not in have]
     if missing:
         raise ModelRefused("replay_table_columns", ", ".join(missing))
+    frame = _read(path, "replay_table_unreadable",
+                  f"SELECT {_table_columns()} FROM read_parquet(?)")
     if (frame["date"].astype(str) != day).any():
         raise ModelRefused("replay_table_wrong_day", day)
     if frame.duplicated(["sym", "m"]).any():
@@ -418,9 +483,9 @@ class ReferenceTable:
             raise ModelRefused("replay_table_key_duplicate", day)
 
     def minute(self, m: int) -> Any:
-        """The rows of table minute `m`, in file order."""
+        """The rows of table minute `m`, in file order: the key and feature columns only."""
         return _read(self.path, "replay_table_unreadable",
-                     "SELECT * FROM read_parquet(?) WHERE m = ?", [int(m)])
+                     f"SELECT {_table_columns()} FROM read_parquet(?) WHERE m = ?", [int(m)])
 
     def check_flags(self) -> None:
         """Refuse replay_flag_schema when a declared flag (`FLAGS`) holds anything but 0, 1 or
@@ -466,6 +531,97 @@ _CACHE: dict[str, Any] = {}
 def _ns_end(day: str, minute: int) -> int:
     """SIP ns of the end of table minute `minute` (from 04:00 New York)."""
     return ticks._bounds(day, minute + features.DAY_START_MINUTE)[1]
+
+
+# --- native values (codex-110 points 1 and 2) ------------------------------------------------
+
+
+class _Float32Casts:
+    """numpy as the pinned wm2tk_l1 sees it while `native_values` reads it: every array handed
+    to np.asarray(..., dtype=np.float32) (Tick.add's final cast, one call per TKCOLS column in
+    that order) is copied before the cast. Every other name is numpy's own."""
+
+    def __init__(self, numpy: Any) -> None:
+        self._numpy = numpy
+        self.seen: list[Any] = []
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._numpy, name)
+
+    def asarray(self, a: Any, dtype: Any = None, **kw: Any) -> Any:
+        if dtype is self._numpy.float32:
+            self.seen.append(self._numpy.array(a, copy=True))
+        return self._numpy.asarray(a, dtype=dtype, **kw)
+
+
+@contextlib.contextmanager
+def native_values(code: Any) -> Iterator[dict[str, Any]]:
+    """While the pinned code of `code` (a date context's builder) runs inside, the values of
+    `NATIVE_GROUPS` at their native computed type, before the cast to float32, aligned with the
+    rows handed to the builder: tk from the arrays of wm2tk_l1.Tick.add's final cast, tk2 from
+    l1tk2.values. Nothing of the pinned bytes changes and no value is recomputed; the harness
+    only reads what the code computes. The dict is filled when the block ends; a capture that
+    does not match the code's own column list, or a value that is not float64, refuses
+    `native_capture_mismatch`."""
+    import numpy as np
+
+    tk, tk2 = code.tk, code.tk2
+    numpy, values = tk.np, tk2.values
+    casts = _Float32Casts(numpy)
+    found: dict[str, Any] = {}
+
+    def recorded(k: Any) -> Any:
+        out = values(k)
+        found.update({c: np.array(v, copy=True) for c, v in out.items()})
+        return out
+
+    tk.np, tk2.values = casts, recorded
+    try:
+        yield found
+    finally:
+        tk.np, tk2.values = numpy, values
+    if casts.seen:
+        cols = list(tk.TKCOLS)
+        if len(casts.seen) != len(cols):
+            raise ModelRefused("native_capture_mismatch",
+                               f"{len(casts.seen)} float32 casts, {len(cols)} tk columns")
+        found.update(zip(cols, casts.seen, strict=True))
+    if found and sorted(found) != sorted([*tk.TKCOLS, *tk2.TK2COLS]):
+        raise ModelRefused("native_capture_mismatch", "not the tk and tk2 columns")
+    bad = sorted(c for c, v in found.items() if v.dtype != np.float64)
+    if bad:
+        raise ModelRefused("native_capture_mismatch", "not float64: " + ", ".join(bad))
+
+
+def _native_frame(found: dict[str, Any], syms: Any) -> Any:
+    """The captured native values as a frame indexed by the rows' symbols (no column when
+    nothing was captured: a minute without rows)."""
+    import pandas as pd
+
+    return pd.DataFrame(found, index=pd.Index(list(syms), name="sym"))
+
+
+def reference_natives(tk61: Path, day: str, rows: Any, work: Path) -> Any:
+    """The training's tk and tk2 values of `rows` (the training table's rows of one minute: sym
+    and m) at their native type, recomputed by the same pinned code (`native_values`) from the
+    training's own v11 tick table of the day (`--tk61`), cut to the rows' symbols and minute
+    (each value reads its own and earlier minutes only, so the cut changes none). The table
+    stores float32 only; without tk61 there is no native training value."""
+    code = context(day).code
+    through = int(rows.m.max()) + features.DAY_START_MINUTE if len(rows) else 0
+    table = tick_table(tk61, set(rows.sym), through)
+    folder = Path(tempfile.mkdtemp(prefix="parity-tk61-", dir=work))
+    try:
+        (folder / day[:4]).mkdir()
+        path = write_tick_file(table, folder / day[:4] / f"{day}.parquet")
+        frame = rows[["sym", "m"]].reset_index(drop=True).copy()
+        with features._LOCK, native_values(code) as found, \
+                contextlib.redirect_stdout(io.StringIO()), _training("replay_tk61_unreadable"):
+            code.tk.Tick(str(folder)).add(frame, day)
+            code.tk2.add(frame, str(path))
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return _native_frame(found, frame.sym)
 
 
 # --- raw ticks ------------------------------------------------------------------------------
@@ -719,10 +875,17 @@ def _ulps(x: Any, y: Any) -> Any:
 def compare(got: Any, want: Any, groups: dict[str, list[str]],
             tolerance: tuple[float, float] | None, kinds: dict[str, str] | None = None,
             tick_symbols: set[str] | None = None,
-            exceptions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+            exceptions: list[dict[str, Any]] | None = None, native: Any = None,
+            ref_native: Any = None,
+            native_cells: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Every feature column of `got` (replay) against `want` (training), joined on sym, exact;
     the tick groups only for `tick_symbols` when given. Each discrepancy cell is appended to
-    `exceptions` (sym, column, group, class, values and differences)."""
+    `exceptions` (sym, column, group, class, values and differences). `native` / `ref_native`
+    (frames indexed by sym, `native_values`): each side's values at their native type; an
+    exception cell then carries them beside the delivered float32 values (empty when a side or
+    the column has none), and `native` in the result counts, per column, the cells whose
+    native values differ although the delivered values agree (each such cell appended to
+    `native_cells`, class `native`). No tolerance: the delivered checks stay exact."""
     import numpy as np
 
     kinds = kinds or column_kinds([c for cs in groups.values() for c in cs])
@@ -737,9 +900,17 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
         "only_in_reference": sorted(set(want.sym) - set(got.sym)),
         "only_in_replay": sorted(set(got.sym) - set(want.sym)), "order_equal": order_equal,
         "groups": {}, "columns": {}, "symbols": {}, "classes": dict.fromkeys(CLASSES, 0),
-        "tick_rows_not_compared": 0}
+        "tick_rows_not_compared": 0, "native": {"columns": {}, "cells_delivered_equal": 0}}
     out["keys_exact"] = (order_equal and not out["only_in_reference"]
                          and not out["only_in_replay"])
+
+    def aligned(frame: Any) -> Any:
+        return None if frame is None or not len(frame.columns) else frame.reindex(common)
+
+    nat, ref_nat = aligned(native), aligned(ref_native)
+
+    def native_of(frame: Any, c: str) -> Any:
+        return None if frame is None or c not in frame.columns else frame[c].to_numpy(np.float64)
     per_symbol = np.zeros(len(common), np.int64)
     covered = np.ones(len(common), bool)
     if tick_symbols is not None:
@@ -756,6 +927,18 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
             both = ~nx & ~ny & rows
             bad = both & (x != y)
             pattern = (nx != ny) & rows
+            fx, fy = native_of(nat, c), native_of(ref_nat, c)
+            if fx is not None and fy is not None:
+                apart = ~((fx == fy) | (np.isnan(fx) & np.isnan(fy))) & rows
+                hidden = apart & ~bad & ~pattern
+                out["native"]["columns"][c] = {"differ": int(apart.sum()),
+                                               "delivered_equal": int(hidden.sum())}
+                out["native"]["cells_delivered_equal"] += int(hidden.sum())
+                if native_cells is not None:
+                    native_cells.extend(
+                        {"sym": str(syms[i]), "column": c, "group": group, "class": "native",
+                         "reference": float(y[i]), "replay": float(x[i]),
+                         **_native_fields(fx[i], fy[i])} for i in np.nonzero(hidden)[0])
             if not (bad.any() or pattern.any()):
                 continue
             with np.errstate(invalid="ignore", over="ignore"):
@@ -795,7 +978,9 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
                         "abs": float(diff[i]) if bad[i] else math.nan,
                         "rel": float(rel[i]) if bad[i] else math.nan,
                         "ulp": int(ulp[i]) if bad[i] else -1,
-                        "ulp64": int(ulp64[i]) if bad[i] else -1})
+                        "ulp64": int(ulp64[i]) if bad[i] else -1,
+                        **_native_fields(None if fx is None else fx[i],
+                                         None if fy is None else fy[i])})
             per_symbol += bad | pattern
             g["columns_differ"] += 1
             g["value_mismatches"] += col["value_mismatches"]
@@ -810,6 +995,19 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
                                and all(out["groups"][g]["columns_differ"] == 0
                                        for g in BAR_GROUPS if g in out["groups"]))
     out["exact"] = out["keys_exact"] and not out["columns"]
+    return out
+
+
+def _native_fields(ours: Any, theirs: Any) -> dict[str, Any]:
+    """The native fields of an exception cell: each side's native value ("" = not captured),
+    and with both their absolute and float64 ULP difference ("" unless both are numbers)."""
+    out: dict[str, Any] = {"replay_native": "" if ours is None else float(ours),
+                           "reference_native": "" if theirs is None else float(theirs),
+                           "native_abs": "", "native_ulp64": ""}
+    if ours is not None and theirs is not None and not (math.isnan(ours) or math.isnan(theirs)):
+        gap = abs(float(ours) - float(theirs))
+        out["native_abs"] = 0.0 if ours == theirs else (gap if math.isfinite(gap) else math.inf)
+        out["native_ulp64"] = int(_ulps64([ours], [theirs])[0])
     return out
 
 
@@ -920,16 +1118,33 @@ def cohort_union(bars: Any, day: str, state: features.DayState, types: set[str] 
 
 
 def exact_diff(mine: Any, ref: Any, keys: list[str], table: str,
-               cells: list[dict[str, Any]]) -> dict[str, Any]:
+               cells: list[dict[str, Any]],
+               diagnostics: dict[tuple[str, str, str], tuple[str, int]] | None = None
+               ) -> dict[str, Any]:
     """`mine` (incremental engine) against `ref` (full-prefix engine), EXACT: keys, their
     order, column names and types, and every value (missing equals missing). Each differing
-    cell is appended to `cells` as class `engine`."""
+    cell is appended to `cells` as class `engine`.
+
+    Two cases are classes of their own, listed apart and never counted as passed silently:
+    - `zero_row_schema` (codex-110 point 2): both engines have no row, and one has no table at
+      all (None) or the two empty tables differ in columns or types (the 2026-11-17 run's
+      "types DIFFER" with 0 rows on both sides at 19:59). The part is then exact (no row, no
+      value), with `zero_row_schema` naming each side ("no table" / "empty table") and whether
+      the empty schemas agree; with rows on either side the full check applies.
+    - `diagnostic`: a cell declared in `diagnostics` ((sym, row minute HH:MM, column) -> (name,
+      float64 ULP), from config [parity] engine_diagnostics for the run's day) whose difference
+      is exactly the declared number of float64 ULP. It is listed in `diagnostic` (and appended
+      to `cells` as class `diagnostic`), not counted in `cells`; any other difference of that
+      cell, and every undeclared cell, stays an engine difference. No bound is derived."""
     import numpy as np
     import pandas as pd
 
+    shape = {"incremental": "no table" if mine is None else
+             ("empty table" if len(mine) == 0 else "rows"),
+             "full_prefix": "no table" if ref is None else
+             ("empty table" if len(ref) == 0 else "rows")}
     # an engine that has no table (None) has no rows: it stands for an empty table of the
-    # other engine's columns and types when the other has one (the 2026-11-17 run reported a
-    # "types DIFFER" between None and an empty bar table at 19:59); rows always count
+    # other engine's columns and types when the other has one; rows always count
     empty = pd.DataFrame(columns=keys)
     if mine is None:
         mine = ref.iloc[:0] if ref is not None else empty
@@ -938,7 +1153,16 @@ def exact_diff(mine: Any, ref: Any, keys: list[str], table: str,
     out: dict[str, Any] = {"rows_incremental": len(mine), "rows_full_prefix": len(ref),
                            "columns_equal": list(mine.columns) == list(ref.columns),
                            "dtypes_equal": [str(t) for t in mine.dtypes]
-                           == [str(t) for t in ref.dtypes], "columns": {}}
+                           == [str(t) for t in ref.dtypes], "columns": {}, "diagnostic": [],
+                           "zero_row_schema": None}
+    if len(mine) == 0 and len(ref) == 0 and ("no table" in shape.values()
+                                             or not out["columns_equal"]
+                                             or not out["dtypes_equal"]):
+        out["zero_row_schema"] = {**shape, "columns_equal": out["columns_equal"],
+                                  "dtypes_equal": out["dtypes_equal"]}
+        out.update(only_incremental=0, only_full_prefix=0, order_equal=True, cells=0,
+                   exact=True)
+        return out
     a, b = mine.set_index(keys), ref.set_index(keys)
     out["only_incremental"] = len(a.index.difference(b.index))
     out["only_full_prefix"] = len(b.index.difference(a.index))
@@ -956,25 +1180,64 @@ def exact_diff(mine: Any, ref: Any, keys: list[str], table: str,
                             for u, v in zip(x, y, strict=True)], dtype=bool)
         if not bad.any():
             continue
-        out["columns"][c] = int(bad.sum())
-        n += int(bad.sum())
+        counted = 0
         for i in np.nonzero(bad)[0]:
             key = common[i]
             num = isinstance(x[i], float)
             with np.errstate(invalid="ignore", over="ignore"):
                 diff = abs(x[i] - y[i]) if num else math.nan
-            cells.append({"sym": str(key[0] if isinstance(key, tuple) else key),
+            ulp64 = int(_ulps64(x[i:i + 1], y[i:i + 1])[0]) if num else -1
+            sym = str(key[0] if isinstance(key, tuple) else key)
+            row = hhmm(int(key[1]) - features.DAY_START_MINUTE) if isinstance(key, tuple) else ""
+            declared = (diagnostics or {}).get((sym, row, c))
+            kind = "engine"
+            if declared is not None and num and ulp64 == declared[1]:
+                kind = "diagnostic"
+                out["diagnostic"].append({"name": declared[0], "sym": sym, "row_minute": row,
+                                          "column": c, "ulp64": ulp64,
+                                          "incremental": float(x[i]),
+                                          "full_prefix": float(y[i])})
+            else:
+                counted += 1
+            cells.append({"sym": sym,
                           "column": c if not isinstance(key, tuple) else f"{c}@m={key[1]}",
-                          "group": table, "class": "engine",
+                          "group": table, "class": kind,
                           "reference": y[i] if num else str(y[i]),
                           "replay": x[i] if num else str(x[i]), "abs": diff,
                           "rel": diff / max(abs(x[i]), abs(y[i])) if num and diff else math.nan,
                           "ulp": int(_ulps(x[i:i + 1], y[i:i + 1])[0]) if num else -1,
-                          "ulp64": int(_ulps64(x[i:i + 1], y[i:i + 1])[0]) if num else -1})
+                          "ulp64": ulp64})
+        if counted:
+            out["columns"][c] = counted
+            n += counted
     out["cells"] = n
     out["exact"] = (n == 0 and out["columns_equal"] and out["dtypes_equal"]
                     and out["order_equal"] and not out["only_incremental"]
                     and not out["only_full_prefix"])
+    return out
+
+
+def engine_diagnostics(entries: Sequence[str], day: str
+                       ) -> dict[tuple[str, str, str], tuple[str, int]]:
+    """The provisional diagnostics of config [parity] engine_diagnostics that name `day`: each
+    entry is "name day sym HH:MM column ulp64" (DIAGNOSTIC_FIELDS); one that does not read so
+    refuses `parity_diagnostic_invalid`."""
+    out: dict[tuple[str, str, str], tuple[str, int]] = {}
+    for entry in entries:
+        parts = entry.split()
+        ok = len(parts) == len(DIAGNOSTIC_FIELDS)
+        if ok:
+            name, when, sym, row, column, ulp = parts
+            try:
+                datetime.date.fromisoformat(when)
+                datetime.time.fromisoformat(row)
+                ok = ulp.isdigit() and int(ulp) > 0 and len(row) == len("HH:MM")
+            except ValueError:
+                ok = False
+        if not ok:
+            raise ModelRefused("parity_diagnostic_invalid", entry)
+        if when == day:
+            out[(sym, row, column)] = (name, int(ulp))
     return out
 
 
@@ -1104,7 +1367,18 @@ def build_report(header: dict[str, Any], records: list[dict[str, Any]]) -> dict[
         "minutes": sorted(checked, key=lambda hm: table_minutes([hm])[0]),
         "differing_minutes": [hm for hm, e in checked.items()
                               if not all(x["exact"] for x in _engine_parts(e))],
+        "diagnostic": [{"minute": hm, **d} for hm, e in checked.items()
+                       for v, x in e.get("variants", {}).items()
+                       for d in [{"variant": v, **c} for c in x["ticks"].get("diagnostic", [])]],
+        "zero_row_schema": [{"minute": hm, "table": name, **x["zero_row_schema"]}
+                            for hm, e in checked.items() for name, x in _engine_named(e)
+                            if x.get("zero_row_schema")],
+        "native_cells_delivered_equal": {
+            hm: {v: x["features"]["native_cells_delivered_equal"]
+                 for v, x in e.get("variants", {}).items() if "features" in x}
+            for hm, e in checked.items()},
         "per_minute": checked}
+    report["ranks"] = {r["minute"]: r["ranks"] for r in records if r.get("ranks")}
     report["exceptions"] = sum(r["cells"] for r in records)
     report["seconds"] = {r["minute"]: r["seconds"] for r in records}
     report["resources"] = {r["minute"]: r["resources"] for r in records if "resources" in r}
@@ -1112,10 +1386,19 @@ def build_report(header: dict[str, Any], records: list[dict[str, Any]]) -> dict[
 
 
 def _engine_parts(check: dict[str, Any]) -> list[dict[str, Any]]:
+    """The exact parts of a minute's engine check: the bar table, each variant's tick table
+    and, where the tick tables were not bit-equal, the delivered features they moved."""
     parts = [check["bars"]] if "bars" in check else []
     for v in check.get("variants", {}).values():
         parts.append(v["ticks"])
+        if "features" in v:
+            parts.append(v["features"])
     return parts
+
+
+def _engine_named(check: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    named = [("bars", check["bars"])] if "bars" in check else []
+    return named + [(f"ticks {v}", x["ticks"]) for v, x in check.get("variants", {}).items()]
 
 
 # --- the replay -------------------------------------------------------------------------------
@@ -1127,12 +1410,14 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
            ticks_only: bool = False, exceptions: list[dict[str, Any]] | None = None,
            engine: str = "full-prefix", verify: int = 0, journal: Journal | None = None,
            table_workers: int = 1, workers: int = 1,
-           room: headroom.Headroom | None = None) -> dict[str, Any]:
+           room: headroom.Headroom | None = None,
+           diagnostics: Sequence[str] | None = None) -> dict[str, Any]:
     """The parity report of `day` at `minutes` (HH:MM; None = the default choice): see the
     module docstring. Exception cells are appended to `exceptions` when given; each finished
     minute goes to `journal` when given (its finished minutes are skipped). `room` guards disk
     and memory (default: `[parity]` of config/bot.toml on `work`); a minute it refuses stops
-    the run, recorded in the journal and the report's `stopped`."""
+    the run, recorded in the journal and the report's `stopped`. `diagnostics`: the
+    provisional engine diagnostics (default: config/bot.toml's [parity] engine_diagnostics)."""
     from tickr.model import massive
 
     need = day_files(day, inputs.bars)  # before any file is opened
@@ -1198,6 +1483,9 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
     if room is None:
         limits = headroom.Limits.from_config(config.load(DEFAULT_CONFIG).parity)
         room = headroom.Headroom(work, limits)
+    if diagnostics is None:
+        diagnostics = config.load(DEFAULT_CONFIG).parity.engine_diagnostics
+    declared = engine_diagnostics(diagnostics, day)
     extract_events(inputs, ticked, _ns_end(day, chosen[-1]), work, room)
     last = chosen[-1] + features.DAY_START_MINUTE
     fill = (tick_table(inputs.tk61, cohort - ticked, last)
@@ -1216,7 +1504,11 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
         "tick_rows_from_tk61_symbols": len(cohort - ticked) if fill is not None else 0,
         "bar_groups": list(BAR_GROUPS), "column_classes": kinds, "variants_run": list(variants),
         "ticks_only": ticks_only, "engine": engine,
-        "verify_full_prefix": [hhmm(m) for m in checks]}
+        "verify_full_prefix": [hhmm(m) for m in checks],
+        "engine_diagnostics": sorted(" ".join([n, day, sym, row, col, str(u)])
+                                     for (sym, row, col), (n, u) in declared.items()),
+        "native_groups": list(NATIVE_GROUPS),
+        "reference_native": "tk61" if inputs.tk61 is not None else None}
     if journal is None:
         journal = Journal(work, day)
     journal.open(header)
@@ -1231,7 +1523,7 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
             table = incremental.DayTable(ctx, state, types, table_workers)
     run = _Run(day, tuple(variants), work, walk, table, state, types, inputs, want, groups,
                kinds, tolerance, covered, tk61, fill, ticked, scans["scan"], ticks_only,
-               bars_through, room)
+               bars_through, room, declared)
     pool: Any = None
     pending: list[tuple[Any, dict[str, Any], list[dict[str, Any]]]] = []
 
@@ -1317,6 +1609,7 @@ class _Run:
     ticks_only: bool
     bars_through: Any
     room: headroom.Headroom
+    diagnostics: dict[tuple[str, str, str], tuple[str, int]]
 
 
 def _prepare(run: _Run, m: int, check: bool, cells: list[dict[str, Any]]) -> tuple[
@@ -1361,7 +1654,8 @@ def _prepare(run: _Run, m: int, check: bool, cells: list[dict[str, Any]]) -> tup
             ref = minute_ticks(run.room, run.day, m, arg)
             differ = []
             record["engine"].setdefault("variants", {})[variant] = {
-                "ticks": exact_diff(mine, ref, ["sym", "m"], "engine-ticks", differ)}
+                "ticks": exact_diff(mine, ref, ["sym", "m"], "engine-ticks", differ,
+                                    run.diagnostics)}
             _collect(cells, differ, variant, m, "engine")
             _clock(record, "verify", t0)
         if run.tk61 is not None:
@@ -1394,38 +1688,45 @@ def _worker_start(tmp: str | None) -> None:
 
 def _assemble(day: str, m: int, files: dict[str, Path], rows: Any, state: features.DayState,
               types: set[str] | None, inputs: ReplayInputs,
-              bars_now: Any) -> tuple[dict[str, Any], float]:
-    """Each variant's 191 columns of minute m from its tick file (deleted afterwards): from
+              bars_now: Any) -> tuple[dict[str, Any], dict[str, Any], float]:
+    """Each variant's 191 columns of minute m and its native values (`bot_rows`) from its tick
+    file (deleted afterwards): from
     the table rows `rows` (incremental) or from the bars so far (full-prefix). Runs in a
     worker process with --workers."""
     import time
 
     t0 = time.perf_counter()
-    got = {}
+    got, natives = {}, {}
     for variant, tick_file in files.items():
-        got[variant] = bot_rows(day, m, tick_file, inputs, state, types, bars_now=bars_now,
-                                rows=rows)
+        got[variant], natives[variant] = bot_rows(day, m, tick_file, inputs, state, types,
+                                                  bars_now=bars_now, rows=rows)
         tick_file.unlink()
-    return got, time.perf_counter() - t0
+    return got, natives, time.perf_counter() - t0
 
 
 def bot_rows(day: str, m: int, tick_file: Path, inputs: ReplayInputs,
              state: features.DayState, types: set[str] | None, *, bars_now: Any = None,
-             rows: Any = None) -> Any:
+             rows: Any = None) -> tuple[Any, Any]:
     """The bot's 191 columns of minute m in the live date context of the day (module
     docstring, REPLAY 3): `LiveContext.minute_rows` on the bars so far (`bars_now`), or
-    `LiveContext.assemble_rows` on the table rows `rows`, from the snapshot as of the mark."""
+    `LiveContext.assemble_rows` on the table rows `rows`, from the snapshot as of the mark.
+    With them, the NATIVE_GROUPS values of the same rows at their native type
+    (`native_values`), indexed by symbol."""
     ctx = context(day)
     mark = ctx.mark(m)
     work = Path(tempfile.mkdtemp(prefix="parity-snapshot-"))
     try:
         given = snapshot(day, m, tick_file, inputs.reference, inputs.benzinga, inputs.fl_facts,
                          mark, work / "in")
-        if bars_now is not None:
-            return ctx.minute_rows(received_bars(bars_now, mark), m, state, types, given, mark)
-        return ctx.assemble_rows(rows, m, state, given, mark)
+        with native_values(ctx.code) as found:
+            if bars_now is not None:
+                got = ctx.minute_rows(received_bars(bars_now, mark), m, state, types, given,
+                                      mark)
+            else:
+                got = ctx.assemble_rows(rows, m, state, given, mark)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    return got, _native_frame(found, got.sym if found else [])
 
 
 def received_bars(bars: Any, received: datetime.datetime) -> Any:
@@ -1490,45 +1791,74 @@ def snapshot(day: str, minute: int, tick_file: Path, reference: Path, benzinga: 
 def _finish(run: _Run, record: dict[str, Any], assembled: Any,
             cells: list[dict[str, Any]]) -> None:
     """The minute's comparisons from its features (`_assemble`'s result, None with
-    --ticks-only): each variant against the archive, its final-quote cases, the engine
-    difference's feature cells, and each variant against plain."""
+    --ticks-only): each variant against the archive (with the native values of both sides
+    when the minute has a tk or tk2 exception and --tk61 is given), its final-quote cases, the
+    rank recompute of its kr_* exceptions, the engine difference's feature cells (delivered
+    and native), and each variant against plain."""
     import time
 
     m = record["m"]
     record["cells"] = len(cells)
     if assembled is None:
         return
-    delivered, spent = assembled
+    delivered, natives, spent = assembled
     record["seconds"]["features"] = round(spent, 3)
+    want = run.want.minute(m)
+    theirs: list[Any] = []  # the training's native values of the minute, made once if needed
+
+    def reference_native() -> Any:
+        if not theirs:
+            theirs.append(reference_natives(run.inputs.tk61, run.day, want, run.work))
+        return theirs[0]
+
+    record["ranks"] = {}
     for variant in run.variants:
         got = delivered[variant]
         t0 = time.perf_counter()
         one: list[dict[str, Any]] = []
-        record["variants"][variant] = {"minute": m, **compare(
-            got, run.want.minute(m), run.groups, run.tolerance, run.kinds,
-            run.covered, one)}
+        r = compare(got, want, run.groups, run.tolerance, run.kinds, run.covered, one,
+                    natives[variant])
+        if run.inputs.tk61 is not None and any(c["group"] in NATIVE_GROUPS for c in one):
+            one = []
+            r = compare(got, want, run.groups, run.tolerance, run.kinds, run.covered, one,
+                        natives[variant], reference_native())
+        record["variants"][variant] = {"minute": m, **r}
         _collect(cells, one, variant, m, "features")
         record["final_quote"][variant] = final_quote_cases(m, set(got.sym), run.scan,
                                                            run.ticked, one, run.day)
+        if any(c["column"].startswith(KR_PREFIX) for c in one):
+            record["ranks"][variant] = rank_recompute(
+                got, natives[variant], want, theirs[0] if theirs else None, one)
         _clock(record, "compare", t0)
         parts = record["engine"].get("variants", {}).get(variant)
-        if parts is not None and not (parts["ticks"]["exact"]
+        if parts is not None and not (parts["ticks"]["exact"] and not parts["ticks"]["diagnostic"]
                                       and record["engine"]["bars"]["exact"]):
-            # the engines differ in an input: the feature cells that difference moves
+            # the engines differ in an input (a declared diagnostic cell included): the feature
+            # cells that difference moves, delivered (exact) and native (raw, reported even
+            # when the delivered float32 agree)
             t0 = time.perf_counter()
             arg = False if variant == "plain" else variant
             through = m + features.DAY_START_MINUTE
             ref_ticks = _tick_file(minute_ticks(run.room, run.day, m, arg), run.fill, through,
                                    run.work / f"tk-ref-{variant}-{m}.parquet")
-            ref = bot_rows(run.day, m, ref_ticks, run.inputs, run.state, run.types,
-                           bars_now=run.bars_through(m))
+            ref, ref_native = bot_rows(run.day, m, ref_ticks, run.inputs, run.state, run.types,
+                                       bars_now=run.bars_through(m))
             ref_ticks.unlink()
             moved: list[dict[str, Any]] = []
-            r = compare(got, ref, run.groups, None, run.kinds, None, moved)
+            raw: list[dict[str, Any]] = []
+            r = compare(got, ref, run.groups, None, run.kinds, None, moved, natives[variant],
+                        ref_native, raw)
             parts["features"] = {"exact": r["exact"], "classes": r["classes"],
-                                 "columns": sorted(r["columns"])}
+                                 "columns": sorted(r["columns"]),
+                                 "native_cells_delivered_equal":
+                                     r["native"]["cells_delivered_equal"],
+                                 "native_columns": sorted(c for c, n in
+                                                          r["native"]["columns"].items()
+                                                          if n["differ"])}
             _collect(cells, [{**c, "class": "engine", "group": "engine-features"}
                              for c in moved], variant, m, "engine")
+            _collect(cells, [{**c, "class": "engine-native", "group": "engine-native"}
+                             for c in raw], variant, m, "engine")
             _clock(record, "verify", t0)
     if "plain" in delivered:
         for variant in run.variants:
@@ -1537,6 +1867,88 @@ def _finish(run: _Run, record: dict[str, Any], assembled: Any,
                     delivered[variant], delivered["plain"], run.groups, None, run.kinds,
                     run.covered)["classes"]
     record["cells"] = len(cells)
+
+
+def rank_recompute(got: Any, native: Any, want: Any, ref_native: Any,
+                      cells: list[dict[str, Any]]) -> dict[str, Any]:
+    """codex-110 point 1, for each kr_* column with an exception at this minute: the minute's
+    pct ranks recomputed from NATIVE values (float64, before the float32 cast) over the whole
+    cohort, every row of the minute, the training's way (wm2tk_l1.py: `pd.Series(out[c])
+    .groupby(rq).rank(pct=True)` on float64, then the cast). Our native k_X of the minute, with
+    the training's native k_X put in for the SUBSTITUTED symbols (those with a k_X exception at
+    this minute), is ranked and cast; against the training table's kr_X:
+    - `remaining`: original mismatches that remain after the substitution;
+    - `changed`: previously matching ranks that the substitution changes;
+    - `training_rank_mismatches`: the training's own native k_X of its rows ranked the same way
+      against its stored kr_X (0 = the native training values reproduce the table's ranks);
+    - `hidden_native`: symbols not substituted whose native k_X differ although the float32
+      values agree (they move ranks that float32 values cannot explain).
+    Each list holds sym, our delivered rank, the training's and the recomputed one. When a
+    native input is missing, `missing` says exactly which, and nothing is approximated."""
+    import numpy as np
+    import pandas as pd
+
+    def same(u: Any, v: Any) -> Any:
+        return (u == v) | (np.isnan(u) & np.isnan(v))
+
+    out: dict[str, Any] = {}
+    for col in sorted({c["column"] for c in cells if c["column"].startswith(KR_PREFIX)}):
+        src = K_PREFIX + col[len(KR_PREFIX):]
+        r: dict[str, Any] = {"source": src}
+        missing = []
+        if src not in native.columns:
+            missing.append(f"our native {src}: not captured at this minute")
+        if ref_native is None:
+            missing.append(f"the training's native {src}: the training table stores float32 "
+                           "only; it is recomputed from --tk61 (the archived v11 tick table), "
+                           "which this run was not given")
+        elif src not in ref_native.columns:
+            missing.append(f"the training's native {src}: not computed from --tk61")
+        if missing:
+            out[col] = {**r, "missing": missing}
+            continue
+        syms = got.sym.to_numpy(object)
+        theirs = ref_native[src]
+        subst = sorted({c["sym"] for c in cells if c["column"] == src
+                        and c["class"] in ("value", "missing")} & set(theirs.index))
+        x = native[src].reindex(syms).to_numpy(np.float64).copy()
+        where = {s: k for k, s in enumerate(syms)}
+        for s in subst:
+            x[where[s]] = theirs[s]
+        rq = got.m.to_numpy(np.int64)
+        again = pd.Series(pd.Series(x).groupby(rq).rank(pct=True).to_numpy().astype(np.float32),
+                          index=syms)
+        own = pd.Series(pd.Series(theirs.to_numpy(np.float64)).groupby(
+            want.m.to_numpy(np.int64)).rank(pct=True).to_numpy().astype(np.float32),
+            index=want.sym.to_numpy(object))
+        common = [s for s in want.sym if s in where]
+        ours = got.set_index("sym")[col].reindex(common).to_numpy(np.float32)
+        table = want.set_index("sym")[col].reindex(common).to_numpy(np.float32)
+        new = again.reindex(common).to_numpy(np.float32)
+        before, after = same(ours, table), same(new, table)
+        lost = native[src].reindex(common).to_numpy(np.float64)
+        found = theirs.reindex(common).to_numpy(np.float64)
+        hidden = ~same(lost, found) & same(lost.astype(np.float32), found.astype(np.float32))
+        put = set(subst)
+        rows = list(zip(common, ours, table, new, strict=True))
+
+        def listed(mask: Any, rows: list[Any] = rows) -> list[dict[str, Any]]:
+            return [{"sym": str(rows[k][0]), "replay": float(rows[k][1]),
+                     "reference": float(rows[k][2]), "recomputed": float(rows[k][3])}
+                    for k in np.nonzero(mask)[0]]
+
+        ref_rows = want.sym.to_numpy(object)
+        own_bad = ~same(own.to_numpy(np.float32), want[col].to_numpy(np.float32))
+        r.update({"rows_replay": len(got), "rows_reference": len(want),
+                  "cohort_equal": list(syms) == list(ref_rows),
+                  "substituted": subst, "original_mismatches": int((~before).sum()),
+                  "resolved": int((~before & after).sum()),
+                  "remaining": listed(~before & ~after), "changed": listed(before & ~after),
+                  "training_rank_mismatches": int(own_bad.sum()),
+                  "hidden_native": [str(common[k]) for k in np.nonzero(hidden)[0]
+                                    if common[k] not in put]})
+        out[col] = r
+    return out
 
 
 def _clock(record: dict[str, Any], name: str, t0: float) -> None:
@@ -1589,6 +2001,20 @@ def text(report: dict[str, Any]) -> str:
                 f"{v} ticks {_engine_text(x['ticks'])}"
                 + (f", features {x['features']['classes']}" if "features" in x else "")
                 for v, x in e.get("variants", {}).items()))
+        for d in check.get("diagnostic", []):
+            lines.append(f"  PROVISIONAL DIAGNOSTIC {d['name']} at {d['minute']} ({d['variant']}):"
+                         f" {d['column']} {d['sym']} row {d['row_minute']}, {d['ulp64']} float64 "
+                         f"ULP ({d['incremental']!r} / {d['full_prefix']!r})")
+        for z in check.get("zero_row_schema", []):
+            lines.append(f"  ZERO-ROW SCHEMA at {z['minute']} {z['table']}: incremental "
+                         f"{z['incremental']}, full-prefix {z['full_prefix']}, columns "
+                         f"{'equal' if z['columns_equal'] else 'DIFFER'}, types "
+                         f"{'equal' if z['dtypes_equal'] else 'DIFFER'}")
+        for hm, per in check.get("native_cells_delivered_equal", {}).items():
+            for v, n in per.items():
+                if n:
+                    lines.append(f"  NATIVE at {hm} ({v}): {n} feature cells differ at their "
+                                 "native type while the delivered float32 agree")
     for variant, per in report["variants"].items():
         for hm, r in per.items():
             lines.append(
@@ -1615,6 +2041,20 @@ def text(report: dict[str, Any]) -> str:
         fq = report["final_quote"].get(variant)
         if fq:
             lines.append(f"{variant} final-quote cases: {fq['summary']}")
+    for hm, per in report.get("ranks", {}).items():
+        for variant, cols in per.items():
+            for col, r in cols.items():
+                if "missing" in r:
+                    lines.append(f"ranks {variant} {hm} {col}: NOT REPRODUCED, missing: "
+                                 + "; ".join(r["missing"]))
+                    continue
+                lines.append(f"ranks {variant} {hm} {col} (native {r['source']}, whole cohort): "
+                             f"original mismatches {r['original_mismatches']}, resolved "
+                             f"{r['resolved']}, remaining {len(r['remaining'])}, previously "
+                             f"matching changed {len(r['changed'])}, training's own native "
+                             f"ranks against its table {r['training_rank_mismatches']}, hidden "
+                             f"native differences {len(r['hidden_native'])}, cohort equal "
+                             f"{'yes' if r['cohort_equal'] else 'NO'}")
     for variant, per in report["ticks"].items():
         for hm, r in per.items():
             lines.append(f"ticks {variant} {hm}: rows tk61 {r['rows_reference']} ours "
@@ -1773,7 +2213,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                             work=work, tolerance=tolerance, all_minutes=args.all_minutes,
                             ticks_only=args.ticks_only, engine=args.engine,
                             verify=args.verify_full_prefix, journal=journal,
-                            table_workers=args.table_workers, workers=args.workers, room=room)
+                            table_workers=args.table_workers, workers=args.workers, room=room,
+                            diagnostics=config.load(args.config).parity.engine_diagnostics)
         finally:
             tempfile.tempdir = saved
             shutil.rmtree(work, ignore_errors=True)

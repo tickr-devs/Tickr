@@ -388,6 +388,7 @@ class ParityConfig:
     duckdb_memory_gb: int
     probe_rows: int
     disk_poll_seconds: Decimal
+    engine_diagnostics: tuple[str, ...]
 
 
 @dataclass(frozen=True)
