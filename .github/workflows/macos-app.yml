@@ -134,6 +134,8 @@ jobs:
       # UI tests (~8 min) run in ui-tests.yml on the `ui-tests` label and nightly on main.
       - name: Xcode workspace builds the macOS app and its UI tests
         run: |
+          # The build's own exit status, not tee's, decides the step.
+          set -o pipefail
           xcodebuild -version
           xcodebuild -workspace Tickr.xcworkspace -scheme "Tickr macOS" \
             -destination "platform=macOS" -derivedDataPath apps/macos/build/xcode \
