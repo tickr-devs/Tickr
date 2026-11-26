@@ -3,17 +3,6 @@
 import Foundation
 
 extension L10n {
-  /// A cause the API writes itself (`<field>_codes`). trades_still_open (values: count)
-  static var proseReasonTradesStillOpen: LocalizedStringResource {
-    LocalizedStringResource("kit.prose.trades_still_open",
-      // swiftlint:disable:next line_length
-      defaultValue: "{count} trade(s) open or entering: close them first (or send the emergency command), then stop the bot", bundle: bundle)
-  }
-  /// A cause the API writes itself (`<field>_codes`). stop_already_running
-  static var proseReasonStopAlreadyRunning: LocalizedStringResource {
-    LocalizedStringResource("kit.prose.stop_already_running",
-      defaultValue: "A close-and-stop is already running", bundle: bundle)
-  }
   /// A cause the API writes itself (`<field>_codes`). trades_left_open (values: count)
   static var proseReasonTradesLeftOpen: LocalizedStringResource {
     LocalizedStringResource("kit.prose.trades_left_open",
