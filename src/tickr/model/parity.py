@@ -1718,6 +1718,8 @@ def bot_rows(day: str, m: int, tick_file: Path, inputs: ReplayInputs,
     try:
         given = snapshot(day, m, tick_file, inputs.reference, inputs.benzinga, inputs.fl_facts,
                          mark, work / "in")
+        # Not under features._LOCK: minute_rows / assemble_rows take that (non-reentrant) lock
+        # themselves, and ctx.code is the context's private modules, walked serially per process.
         with native_values(ctx.code) as found:
             if bars_now is not None:
                 got = ctx.minute_rows(received_bars(bars_now, mark), m, state, types, given,
@@ -1994,7 +1996,8 @@ def text(report: dict[str, Any]) -> str:
         lines.append(f"engine check (incremental against full-prefix, exact) at "
                      f"{len(check['minutes'])} minutes: "
                      + ("all exact" if not check["differing_minutes"] else
-                        f"ENGINE DIFFERENCE at {' '.join(check['differing_minutes'])}"))
+                        f"ENGINE DIFFERENCE at {' '.join(check['differing_minutes'])}")
+                     + f"; zero-row schema parts {len(check.get('zero_row_schema', []))}")
         for hm in check["differing_minutes"]:
             e = check["per_minute"][hm]
             lines.append(f"  {hm}: bars {_engine_text(e['bars'])}; " + "; ".join(
