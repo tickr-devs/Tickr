@@ -286,10 +286,13 @@ private struct MenuControls: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    let paused = model.status?.entryStop ?? false
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      BotCommandButton(action: paused ? .resumeEntries : .pauseEntries, place: .menuBar, size: .compact)
-        .frame(maxWidth: .infinity)
+      // Pause or Resume only once the status says which applies: never guessed while unknown.
+      if let status = model.status {
+        BotCommandButton(action: status.entryStop ? .resumeEntries : .pauseEntries, place: .menuBar,
+          size: .compact)
+          .frame(maxWidth: .infinity)
+      }
       Text(L10n.MenuBar.moreHint)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
