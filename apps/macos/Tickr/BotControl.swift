@@ -156,15 +156,13 @@ struct PendingConfirmation: Identifiable, Equatable {
 /// The bot control buttons, in the design's three tiers: pausing (or resuming) and cancelling,
 /// then the commands that close positions, then the emergency stop alone behind its "Last resort"
 /// divider. Stop bot stands in the Safety card's header (`BotStopButton`). A press that asks first opens its question in the model
-/// (`AppModel.press`); the window or panel around them shows it (`botCommandQuestions(in:)`).
-/// Used on Overview's Safety card and in the menu bar. No title is ever cut: commands go one under
-/// another when their titles do not fit side by side, and a title wraps as a last resort.
+/// (`AppModel.press`); the window around them shows it (`botCommandQuestions(in:)`).
+/// Used on Overview's Safety card. No title is ever cut: commands go one under another when their
+/// titles do not fit side by side, and a title wraps as a last resort.
 struct BotControls: View {
   @Environment(AppModel.self) private var model
-  /// The menu-bar panel's shorter commands, with only Close all in the second row.
-  var compact = false
   /// Where the buttons stand, so their questions open there.
-  var place = CommandPlace.window
+  let place = CommandPlace.window
 
   /// Columns of each row (pause and cancel; the close commands), as in the design.
   static let columns = 2
@@ -176,7 +174,7 @@ struct BotControls: View {
         button(paused ? .resumeEntries : .pauseEntries)
         button(.cancelOrders)
       }
-      CommandColumns(columns: compact ? 1 : Self.columns) {
+      CommandColumns(columns: Self.columns) {
         ForEach(closing) { action in
           button(action)
         }
@@ -200,16 +198,7 @@ struct BotControls: View {
   static let holdDigits = 1
 
   private func button(_ action: BotAction) -> some View {
-    BotCommandButton(action: action, place: place, size: compact ? .compact : .regular,
-      detail: compact ? Self.detail(action, positions: model.positions.count) : nil)
-  }
-
-  /// The words after a menu-bar command's title, as the design's "2 positions" after Close all:
-  /// how many positions it closes; nothing without one (the command is off then) and after the
-  /// other commands.
-  static func detail(_ action: BotAction, positions: Int) -> LocalizedStringResource? {
-    guard case .flattenAll = action, positions > 0 else { return nil }
-    return L10n.Bot.positionCount(positions)
+    BotCommandButton(action: action, place: place, size: .regular)
   }
 
   private var emergency: some View {
@@ -225,11 +214,9 @@ struct BotControls: View {
     .accessibilityIdentifier(action.id)
   }
 
-  /// The second row: one close command per open position, then Close all; the menu-bar panel has
-  /// Close all only.
+  /// The second row: one close command per open position, then Close all.
   private var closing: [BotAction] {
-    if compact { return [.flattenAll] }
-    return model.positions.map { .flatten(symbol: $0.position.symbol) } + [.flattenAll]
+    model.positions.map { .flatten(symbol: $0.position.symbol) } + [.flattenAll]
   }
 }
 
@@ -250,8 +237,6 @@ struct BotCommandButton: View {
   let action: BotAction
   let place: CommandPlace
   let size: CommandButtonStyle.Size
-  /// A few words after the title (`BotControls.detail`).
-  var detail: LocalizedStringResource?
   /// A shorter title in place of the action's own (the position panel's "Close ABCD").
   var title: LocalizedStringResource?
   /// Accessibility id in place of the action's, for a second button of the same command.
@@ -263,8 +248,7 @@ struct BotCommandButton: View {
     } label: {
       Label { Text(title ?? action.label) } icon: { Image(systemName: action.symbol) }
     }
-    .buttonStyle(.command(action.tier, size: size, detail: detail.map { Text($0) },
-      tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
+    .buttonStyle(.command(action.tier, size: size, tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
     .disabled(!model.commandsEnabled || !applicable)
     .inFlight(model.inFlight == action.command ? Text(action.command.inFlightTitle) : nil)
     // An off close command says why; the rest say what they do.
