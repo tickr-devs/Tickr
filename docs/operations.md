@@ -600,12 +600,17 @@ straight to the supervisor. Limits:
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
 `exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`,
 `flatten-after-close`, from the API `api-credentials-unexpected` (Mac notification and feed only, see
-"The API job and the Webull keys"), and from
+"The API job and the Webull keys") and `remote-auth-blocked` (an address used up its
+failed-authentication budget on the remote port, docs/api.md; Mac notification and feed, feed only
+off macOS), and from
 the watchdog `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`,
 `watchdog-restarted-bot`, `watchdog-restart-refused`, `watchdog-restart-failed`, `bot-down`,
 `disk-low`. Every alert goes to
 the Mac notification, to iMessage (`[alerts] imessage_recipient_variable`, see setup step 4) and to
-the alerts feed below.
+the alerts feed below, unless the owner's routing turned its kind off on a channel (PUT
+/alerts/routing, file `[alerts] routing_file` under `data_dir`; docs/api.md, "Notification
+settings"). Critical kinds cannot be turned off, the feed always gets every alert, and deleting
+the routing file turns everything back on.
 The iMessage is sent on a background thread, so the bot's loop never waits for Messages.app; its
 result is journaled as its own `alert` record (`"channel": "imessage"`) once known. An alert
 counts as shown, for repeat suppression, when either channel delivered it.

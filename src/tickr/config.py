@@ -101,6 +101,11 @@ class RiskConfig:
     symbol_cooldown_minutes_after_loss: int
     max_entry_rest_bars: int
     entry_snapshot_interval_seconds: Decimal
+    tradability_check_enabled: bool
+    tradability_entry_profile_statuses: tuple[str, ...]
+    tradability_blocked_profile_statuses: tuple[str, ...]
+    entry_collar_bar_ratio: Decimal
+    entry_collar_quote_ratio: Decimal
 
 
 @dataclass(frozen=True)
@@ -240,6 +245,13 @@ class ApiConfig:
     remote_pairing_file: str
     remote_pairing_code_file: str
     remote_pairing_code_ttl_seconds: int
+    remote_auth_trusted_proxy: str
+    remote_auth_window_seconds: int
+    remote_auth_failures: int
+    remote_pair_window_seconds: int
+    remote_pair_failures: int
+    remote_auth_max_addresses: int
+    remote_auth_ipv6_prefix_length: int
     demo_port: int
     status_file: str
     account_file: str
@@ -489,6 +501,7 @@ class AlertsConfig:
     mac_app: str
     mac_app_timeout_seconds: Decimal
     feed_file: str
+    routing_file: str
 
 
 @dataclass(frozen=True)
@@ -859,6 +872,9 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[risk] max_entry_rest_bars must be at least 1")
     if risk.entry_snapshot_interval_seconds <= 0:
         raise ConfigError("[risk] entry_snapshot_interval_seconds must be above 0")
+    if risk.entry_collar_bar_ratio < 0 or risk.entry_collar_quote_ratio < 0:
+        raise ConfigError("[risk] entry_collar_bar_ratio and entry_collar_quote_ratio must be "
+                          "at least 0 (0 = that side of the collar off)")
     if not 0 <= risk.min_daily_room_usd < risk.max_daily_loss_usd:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     if risk.buying_power_max_age_seconds <= 0:
@@ -892,6 +908,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if system.sleep_check_timeout_seconds <= 0 or system.system_restart_rows < 1:
         raise ConfigError("[api] sleep_check_timeout_seconds must be above 0 and "
                           "system_restart_rows at least 1")
+    risk_cfg: RiskConfig = built["risk"]
+    both = sorted(set(risk_cfg.tradability_entry_profile_statuses)
+                  & set(risk_cfg.tradability_blocked_profile_statuses))
+    if both:
+        raise ConfigError("[risk] tradability_entry_profile_statuses and "
+                          f"tradability_blocked_profile_statuses both list {', '.join(both)}")
     chart: ChartConfig = built["chart"]
     if chart.requests_per_minute < 1 or chart.bars_per_request < 1:
         raise ConfigError("[chart] requests_per_minute and bars_per_request must be at least 1")
