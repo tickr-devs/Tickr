@@ -5,6 +5,7 @@ network, and only the training runs them."""
 from __future__ import annotations
 
 import ast
+import datetime
 import sys
 from pathlib import Path
 
@@ -112,5 +113,7 @@ def test_a_live_minute_never_touches_the_research_modules(monkeypatch, tmp_path)
                 with pytest.raises(ModelRefused) as exc:
                     getattr(module, name)()
                 assert exc.value.cause == "outside_live_context"
-    got = ctx.minute_rows(synthetic.cut(bars, today, 340), 340, state, None, given)
+    got = ctx.minute_rows(inputs.received_bars(synthetic.cut(bars, today, 340)), 340, state,
+                          None, inputs.capture(given, today, tmp_path / "capture"),
+                          ctx.mark(340) + datetime.timedelta(seconds=5))
     assert len(got) > 0
