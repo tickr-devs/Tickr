@@ -3265,6 +3265,23 @@
         }
       }
     },
+    "chart.options" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chart options"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opciones del gráfico"
+          }
+        }
+      }
+    },
     "chart.range" : {
       "extractionState" : "manual",
       "localizations" : {

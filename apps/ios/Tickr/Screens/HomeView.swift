@@ -5,7 +5,7 @@ import TickrKit
 /// The first screen (IOS2Home board, mockup v155): the shown day's button, the one line that says
 /// what the bot is doing, the day's result, the day's events as a ticker, open positions, the
 /// funnel on one line and the fast movers. The power button opens bot control; a sideways swipe
-/// changes the day.
+/// changes the day. In landscape (IOS2Landscape) the same in two columns.
 struct HomeView: View {
   /// Order in which the blocks rise in (`rise(step:)`); open positions follow one step apart.
   private enum Order: Int { case day = 1, summary, ticker, positions, flow = 6, movers }
@@ -17,6 +17,7 @@ struct HomeView: View {
   /// The Symbols tab the funnel sheet picked, pushed on Home.
   @State private var symbolsTab: SymbolsTab?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   /// Whether Home's looping ornaments (the brand mark's halo, the ticker's scroll) move: they read
   /// as "the bot is at work", so only on the live day with a fresh status while the bot runs.
@@ -60,67 +61,61 @@ struct HomeView: View {
       }
       .accessibilityLabel(Text(L10n.Home.settings))
       .accessibilityIdentifier(AccessibilityID.settings)
+      // In landscape the day's button moves into the title row (IOS2Landscape board).
+      if compactHeight { daySwitch }
     } content: {
       if model.connection.demo {
         // Every command from here goes to the demo day: said at the top, as loud as a warning.
         WarningBanner(L10n.Home.demoTitle, detail: L10n.Home.demoDetail, systemImage: SettingsView.demoSymbol)
       }
-      daySwitch.rise(step: Order.day.rawValue)
-      Summary(past: dayModel.shown).rise(step: Order.summary.rawValue)
-      if model.status == nil && model.connectionState.isNeverConnected {
-        // Nothing was ever read: the cards keep their titles over a quiet outline, never a
-        // "no position" or zero we do not know (mockup "no connection" v2).
-        OfflineCard(L10n.App.positions).rise(step: Order.positions.rawValue)
-        OfflineCard(L10n.Watching.title).rise(step: Order.flow.rawValue)
-      } else if !model.isLive, let status = model.status {
-        // A recorded day: its result above, then what it recorded (the flow, its fast movers);
-        // nothing live (no positions, quotes or fences of today).
-        Text(L10n.Home.pastDayNote(DayText.day(model.shownDay.noonInNewYork)))
-          .font(.subheadline)
-          .foregroundStyle(Palette.textTertiary)
+      if compactHeight {
+        // An iPhone in landscape (IOS2Landscape board): two columns, the day on the left (what
+        // the bot does, its result without the ring, its events, the fast movers), the
+        // positions and the funnel on the right.
+        HStack(alignment: .top, spacing: Tokens.Space.m) {
+          VStack(alignment: .leading, spacing: Tokens.Space.m) {
+            Summary(past: dayModel.shown, showsRing: false).rise(step: Order.summary.rawValue)
+            switch phase {
+            case .unread, .offline: EmptyView()
+            case .past: pastNote
+            case .live(let status):
+              ticker(status)
+              movers(of: model.today)
+            }
+          }
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(Tokens.Space.l)
-          .tickrCard()
-          .rise(step: Order.positions.rawValue)
-        let dayFlow = model.flow?.day == model.shownDay ? model.flow : nil
-        FunnelCard(status: status, flow: dayFlow, flowPending: model.flowPending,
-          current: false, recorded: true,
-          sources: StageSources(flow: dayFlow, skipped: model.skipped?.day == model.shownDay ? model.skipped : nil,
-            watching: nil, status: nil, settings: model.settings),
-          symbols: model.symbols?.day == model.shownDay ? model.symbols : nil, moving: false) { symbolsTab = $0 }
-          .rise(step: Order.flow.rawValue)
-        FastMoversCard(movers: model.movers?.day == model.shownDay ? model.movers : nil, failure: model.moversError)
-          .rise(step: Order.movers.rawValue)
-      } else if let status = model.status {
-        if let strip = EventStrip.make(status: status,
-          skipped: model.skipped?.day == model.today ? model.skipped : nil) {
-          strip.moving(ornamentMoves).rise(step: Order.ticker.rawValue)
+          VStack(alignment: .leading, spacing: Tokens.Space.m) {
+            switch phase {
+            case .unread: EmptyView()
+            case .offline: offlineCards
+            case .past(let status):
+              pastFunnel(status)
+              movers(of: model.shownDay)
+            case .live(let status):
+              positions(status)
+              liveFunnel(status)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
-        ForEach(Array(Board.positions(status).enumerated()), id: \.element.symbol) { index, position in
-          PositionRow(position: position, marks: prices.marks[position.symbol])
-            .rise(step: Order.positions.rawValue + index)
+      } else {
+        daySwitch.rise(step: Order.day.rawValue)
+        Summary(past: dayModel.shown).rise(step: Order.summary.rawValue)
+        switch phase {
+        case .unread: EmptyView()
+        case .offline: offlineCards
+        case .past(let status):
+          // A recorded day: its result above, then what it recorded (the flow, its fast movers);
+          // nothing live (no positions, quotes or fences of today).
+          pastNote
+          pastFunnel(status)
+          movers(of: model.shownDay)
+        case .live(let status):
+          ticker(status)
+          positions(status)
+          liveFunnel(status)
+          movers(of: model.today)
         }
-        if status.positions.isEmpty {
-          Text(L10n.Home.noPosition)
-            .font(.subheadline)
-            .foregroundStyle(Palette.textTertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Tokens.Space.l)
-            .tickrCard()
-            .rise(step: Order.positions.rawValue)
-        }
-        let todayFlow = model.flow?.day == model.today ? model.flow : nil
-        let todaySkipped = model.skipped?.day == model.today ? model.skipped : nil
-        let current = model.isFresh && WireDate(newYorkDateOf: status.writtenAt.date) == model.today
-        FunnelCard(status: status, flow: todayFlow, flowPending: model.flowPending,
-          current: current, recorded: false,
-          // The status only while it is current, as the stages' own values.
-          sources: StageSources(flow: todayFlow, skipped: todaySkipped, watching: nil,
-            status: current ? status : nil, settings: model.settings),
-          symbols: model.symbols?.day == model.today ? model.symbols : nil, moving: ornamentMoves) { symbolsTab = $0 }
-          .rise(step: Order.flow.rawValue)
-        FastMoversCard(movers: model.movers?.day == model.today ? model.movers : nil, failure: model.moversError)
-          .rise(step: Order.movers.rawValue)
       }
     }
     .botControl(isPresented: $showControl)
@@ -157,6 +152,104 @@ extension HomeView {
     return DaySwitch(caption: past ?? (isToday ? nil : DayText.day(written)), day: day, away: past != nil,
       steps: dayModel.arrows, today: { dayModel.showToday() }, back: { dayModel.back() },
       forward: { dayModel.forward() })
+  }
+
+  /// An iPhone in landscape: Home lays out in two columns, the day's button in the title row.
+  fileprivate var compactHeight: Bool { verticalSizeClass == .compact }
+
+  /// What Home shows under the summary.
+  fileprivate enum Phase {
+    /// No status yet, with the link not known to be down.
+    case unread
+    /// Nothing was ever read and the link is down.
+    case offline
+    /// A recorded day, with the bot's status.
+    case past(StatusV1)
+    /// Today, with the bot's status.
+    case live(StatusV1)
+  }
+
+  fileprivate var phase: Phase {
+    if model.status == nil && model.connectionState.isNeverConnected { return .offline }
+    guard let status = model.status else { return .unread }
+    return model.isLive ? .live(status) : .past(status)
+  }
+
+  /// Nothing was ever read: the cards keep their titles over a quiet outline, never a
+  /// "no position" or zero we do not know (mockup "no connection" v2).
+  @ViewBuilder
+  fileprivate var offlineCards: some View {
+    OfflineCard(L10n.App.positions).rise(step: Order.positions.rawValue)
+    OfflineCard(L10n.Watching.title).rise(step: Order.flow.rawValue)
+  }
+
+  /// A recorded day says so in a card where today's positions stand.
+  fileprivate var pastNote: some View {
+    Text(L10n.Home.pastDayNote(DayText.day(model.shownDay.noonInNewYork)))
+      .font(.subheadline)
+      .foregroundStyle(Palette.textTertiary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(Tokens.Space.l)
+      .tickrCard()
+      .rise(step: Order.positions.rawValue)
+  }
+
+  /// The recorded day's funnel, from what that day recorded.
+  fileprivate func pastFunnel(_ status: StatusV1) -> some View {
+    let dayFlow = model.flow?.day == model.shownDay ? model.flow : nil
+    return FunnelCard(status: status, flow: dayFlow, flowPending: model.flowPending,
+      current: false, recorded: true,
+      sources: StageSources(flow: dayFlow, skipped: model.skipped?.day == model.shownDay ? model.skipped : nil,
+        watching: nil, status: nil, settings: model.settings),
+      symbols: model.symbols?.day == model.shownDay ? model.symbols : nil, moving: false) { symbolsTab = $0 }
+      .rise(step: Order.flow.rawValue)
+  }
+
+  /// The fast movers of `day`, when they were read for it.
+  fileprivate func movers(of day: WireDate) -> some View {
+    FastMoversCard(movers: model.movers?.day == day ? model.movers : nil, failure: model.moversError)
+      .rise(step: Order.movers.rawValue)
+  }
+
+  /// Today's events as the ticker strip, when there are any.
+  @ViewBuilder
+  fileprivate func ticker(_ status: StatusV1) -> some View {
+    if let strip = EventStrip.make(status: status,
+      skipped: model.skipped?.day == model.today ? model.skipped : nil) {
+      strip.moving(ornamentMoves).rise(step: Order.ticker.rawValue)
+    }
+  }
+
+  /// The open positions, or a card saying there are none.
+  @ViewBuilder
+  fileprivate func positions(_ status: StatusV1) -> some View {
+    ForEach(Array(Board.positions(status).enumerated()), id: \.element.symbol) { index, position in
+      PositionRow(position: position, marks: prices.marks[position.symbol])
+        .rise(step: Order.positions.rawValue + index)
+    }
+    if status.positions.isEmpty {
+      Text(L10n.Home.noPosition)
+        .font(.subheadline)
+        .foregroundStyle(Palette.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Tokens.Space.l)
+        .tickrCard()
+        .rise(step: Order.positions.rawValue)
+    }
+  }
+
+  /// Today's funnel, with the status's own values while it is current.
+  fileprivate func liveFunnel(_ status: StatusV1) -> some View {
+    let todayFlow = model.flow?.day == model.today ? model.flow : nil
+    let todaySkipped = model.skipped?.day == model.today ? model.skipped : nil
+    let current = model.isFresh && WireDate(newYorkDateOf: status.writtenAt.date) == model.today
+    return FunnelCard(status: status, flow: todayFlow, flowPending: model.flowPending,
+      current: current, recorded: false,
+      // The status only while it is current, as the stages' own values.
+      sources: StageSources(flow: todayFlow, skipped: todaySkipped, watching: nil,
+        status: current ? status : nil, settings: model.settings),
+      symbols: model.symbols?.day == model.today ? model.symbols : nil, moving: ornamentMoves) { symbolsTab = $0 }
+      .rise(step: Order.flow.rawValue)
   }
 
   /// What VoiceOver says for the day's ring: the result and counts once the day is read, else
@@ -277,7 +370,8 @@ enum EntriesGlyph {
   }
 }
 
-/// The headline on its own row, and under it the ring with the day's result.
+/// The headline on its own row, and under it the ring with the day's result; in landscape, where
+/// the board has no room for the ring, the result as a figure over the facts.
 private struct Summary: View {
   /// Side of the result ring and the width of its track and arc, in points.
   static let ringSide: CGFloat = 136
@@ -291,6 +385,8 @@ private struct Summary: View {
   @ScaledMetric(relativeTo: .title) private var ringSide = Summary.ringSide
   /// A recorded past day to summarize instead of today's status.
   let past: DaySummary?
+  /// Whether the result stands in its ring (false: a figure on the facts' first line).
+  var showsRing = true
 
   var body: some View {
     let stats = past.map(Board.dayStats) ?? model.status.map(Board.dayStats)
@@ -313,8 +409,9 @@ private struct Summary: View {
           arrangement: .stacked, facts: past == nil ? facts : nil)
       }
       RowStack(spacing: Tokens.Space.l) {
-        ring(stats: stats, result: result)
+        if showsRing { ring(stats: stats, result: result) }
         VStack(alignment: .leading, spacing: Tokens.Space.s) {
+          if !showsRing { resultLine(stats: stats, result: result) }
           if stats?.beforeFees == true {
             // The ring's result does not count the broker's fees yet; wraps rather than cuts.
             Text(L10n.Home.beforeFees)
@@ -382,6 +479,33 @@ private struct Summary: View {
     }
   }
 
+  /// The day's result as a figure: a dash before the day is read, never a $0.00 we do not know;
+  /// else it counts up from zero as it appears and on to each new result (the board's count).
+  @ViewBuilder
+  private func figure(stats: Board.DayStats?, result: Decimal) -> some View {
+    if stats == nil {
+      Text(verbatim: Format.missing)
+        .font(Tokens.Typography.metric)
+        .foregroundStyle(Palette.textQuaternary)
+    } else {
+      CountingText(NSDecimalNumber(decimal: result).doubleValue, period: model.shownDay) { Money.signedUSD(Decimal($0)) }
+        .font(Tokens.Typography.metric)
+        .foregroundStyle(Palette.result(result))
+        // One line at its full size; the ring (or the column) grows around it.
+        .fixedSize()
+    }
+  }
+
+  /// The day's result without its ring: the label and the figure on one line.
+  private func resultLine(stats: Board.DayStats?, result: Decimal) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.s) {
+      CardLabel(past == nil ? L10n.Home.today : L10n.Home.day)
+      figure(stats: stats, result: result)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text(HomeView.dayResultLabel(stats: stats, result: result)))
+  }
+
   /// The day's result in its ring.
   private func ring(stats: Board.DayStats?, result: Decimal) -> some View {
     // Wins in the accent, then losses in the money-loss pink: a day of losses only is a pink
@@ -391,19 +515,7 @@ private struct Summary: View {
       halo: result < 0 ? Palette.seriesATR : Palette.accent, lineWidth: Self.ringLine) {
       VStack(spacing: Tokens.Space.xxs) {
         CardLabel(past == nil ? L10n.Home.today : L10n.Home.day)
-        if stats == nil {
-          // No day was read: a dash, never a $0.00 we do not know.
-          Text(verbatim: Format.missing)
-            .font(Tokens.Typography.metric)
-            .foregroundStyle(Palette.textQuaternary)
-        } else {
-          // Counts up from zero as the ring appears and on to each new result (the board's count).
-          CountingText(NSDecimalNumber(decimal: result).doubleValue, period: model.shownDay) { Money.signedUSD(Decimal($0)) }
-            .font(Tokens.Typography.metric)
-            .foregroundStyle(Palette.result(result))
-            // One line at its full size; the ring grows around it.
-            .fixedSize()
-        }
+        figure(stats: stats, result: result)
       }
       // Inside the ring's opening at every text size.
       .frame(minWidth: 0, maxWidth: ringSide * Self.innerShare)

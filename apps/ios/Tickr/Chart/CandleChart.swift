@@ -139,6 +139,9 @@ struct CandleChart: View {
   /// of the last closed candle's close, as the price above the chart does.
   var livePrice: Double?
   @Binding var viewport: ChartViewport
+  /// Height of the price pane, in points: `priceHeight`, or less where the screen is short (an
+  /// iPhone in landscape, `ChartTab.compactPriceHeight`).
+  var plotHeight = CandleChart.priceHeight
   /// The value scales' width, grown with Dynamic Type so a price such as 128.40 is never cut.
   @ScaledMetric(relativeTo: .caption2) private var axisWidth = CandleChart.axisLabelWidth
   /// A price tag's height on the scale, grown with Dynamic Type like the tag's text.
@@ -194,7 +197,7 @@ struct CandleChart: View {
       legend(priceLegend)
       VStack(spacing: 0) {
         priceChart
-          .frame(height: Self.priceHeight)
+          .frame(height: plotHeight)
         ForEach(lines.panes, id: \.self) { pane in
           paneChart(pane)
             .frame(height: Self.paneHeight)
@@ -461,13 +464,13 @@ struct CandleChart: View {
   /// half a label's height and half a tag's, both grown with Dynamic Type.
   private func labelClearance(_ scale: PriceScale) -> Double {
     AxisLabels.clearance(labelHeight: Double(labelRoom), tagHeight: Double(tagRoom),
-      span: scale.domain.upperBound - scale.domain.lowerBound, height: Double(Self.priceHeight))
+      span: scale.domain.upperBound - scale.domain.lowerBound, height: Double(plotHeight))
   }
 
   /// The price span a tag covers on the scale: a high or low label this close to a tag hides
   /// under it.
   private func tagClearance(_ scale: PriceScale) -> Double {
-    (scale.domain.upperBound - scale.domain.lowerBound) * Double(tagRoom) / Self.priceHeight
+    (scale.domain.upperBound - scale.domain.lowerBound) * Double(tagRoom) / plotHeight
   }
 
   /// Whether a high or low label goes left of its candle: when the candle is in the right half
@@ -861,7 +864,7 @@ struct CandleChart: View {
       shown: shownStretch,
       prices: scale.domain,
       pointsPerSecond: window > 0 ? Double(plot) / window : 0,
-      pointsPerPrice: span > 0 ? Double(Self.priceHeight) / span : 0,
+      pointsPerPrice: span > 0 ? Double(plotHeight) / span : 0,
       side: Double(Self.markerSide), step: Double(Self.markerStep), reach: Self.markerReach)
     return ChartMarkerLayout.place(markers, scale: layout)
   }

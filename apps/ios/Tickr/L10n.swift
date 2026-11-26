@@ -2087,6 +2087,8 @@ enum ChartText {
   static let stochasticToggle = LocalizedStringResource("chart.indicator.stochToggle", defaultValue: "Slow stochastic")
   static let rsiToggle = LocalizedStringResource("chart.indicator.rsiToggle", defaultValue: "RSI")
   static let indicators = LocalizedStringResource("chart.indicators", defaultValue: "Indicators")
+  /// The landscape top bar's button and the sheet it opens: range, timeframe, zoom and lines.
+  static let options = LocalizedStringResource("chart.options", defaultValue: "Chart options")
   static let overlays = LocalizedStringResource("chart.indicators.overlays", defaultValue: "On the price")
   static let panes = LocalizedStringResource("chart.indicators.panes", defaultValue: "Panes below")
   /// The candles / line switch.
