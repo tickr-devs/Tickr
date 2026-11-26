@@ -19,7 +19,7 @@ monthly cost at the same time.
 | `aws_dlm_lifecycle_policy.data` | One snapshot a night at `snapshot_time_utc`, `snapshot_keep_days` kept. Crash-consistent (like pulling the power): SQLite recovers from its WAL, and the time is outside every session, when the bot is not running. The bot's own daily backup stays the consistent copy. |
 | `aws_eip.bot` | Fixed address: the domain's A record at Namecheap and the Webull key binding. |
 | `aws_security_group.bot` | Port 443 in, nothing else. No SSH: sessions through SSM. |
-| `aws_secretsmanager_secret.bot_env` (`tickr-bot/env`) | The bot's credential variables, filled by the owner. A resource policy denies reading the value to every principal but the server role, account admins included (they can still write it, and change the policy on the record). |
+| `aws_secretsmanager_secret.bot_env` (`tickr-bot/env`) | The bot's credential variables, filled by the owner. A resource policy denies reading the value to every principal but the server role, account admins included (they can still write it, and change the policy on the record). This guards the API call only: anyone allowed to open an SSM session on the server gets a shell there and can read the value through the server role. CloudTrail records every session, so keep SSM session rights to the owner. |
 | `aws_iam_role.bot` | SSM sessions, read of that one secret, one CloudWatch namespace (`Tickr/Bot`). Denied all SSM parameters. |
 | Alarms `tickr-bot-system-check`, `tickr-bot-instance-check` | AWS hardware failure: the server is recovered onto new hardware and the owner is mailed. Operating system hung: mail only (a reboot is the owner's call while a position may be open). |
 
@@ -73,7 +73,8 @@ protection, `terraform apply -replace=aws_instance.bot`; the data disk and addre
 - Caddy (`Caddyfile`, drop-in `caddy-tickr.conf`): HTTPS for `bot_domain` in front of the API's
   remote port, certificate from Let's Encrypt through the TLS-ALPN challenge on 443. Caddy
   forwards the original Host, so the API's `remote_hosts_file` (in the data folder) must list
-  the domain, as it lists the Tailscale name on the Mac.
+  the domain, as it lists the Tailscale name on the Mac. Installed but off, with port 443 closed,
+  until the API is exposed (below).
 - `tickr-heartbeat` with a one-minute timer: one CloudWatch point (`Tickr/Bot` `Heartbeat`) while
   the server and its local API answer. Alarm `tickr-bot-heartbeat` mails the owner after
   `heartbeat_missing_minutes` without one.
@@ -81,3 +82,14 @@ protection, `terraform apply -replace=aws_instance.bot`; the data disk and addre
 Caddy and the heartbeat read `/srv/tickr/etc/ports.env` (`TICKR_API_PORT`,
 `TICKR_API_REMOTE_PORT`), which `render-systemd` writes from `config/bot.toml` on the first
 deploy, so the ports have one source. Until then both fail and the heartbeat alarm is on.
+
+## Expose the API
+
+Off by default: with port 443 open, a device token is the only barrier in front of operator
+commands, where on the Mac the tailnet stands in front of it too. Turn it on only when the API
+refuses repeated bad tokens per address, its error paths leak nothing, and the owner has decided
+which commands may be reached from the internet. Then:
+
+1. `terraform apply -var expose_api=true ...` opens 443.
+2. In an SSM session on the server: `sudo systemctl enable --now caddy`.
+3. Add the `bot_domain` A record at the registrar, pointing at `server_address`.

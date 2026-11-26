@@ -59,6 +59,9 @@ chmod 644 /srv/tickr/etc/domain.env
 
 systemctl daemon-reload
 systemctl enable --now tickr-secrets.service
-# Caddy and the heartbeat need /srv/tickr/etc/ports.env, written by the first deploy
-# (render-systemd); until then they fail and the heartbeat alarm stays on, as it should.
-systemctl enable caddy.service tickr-heartbeat.timer
+# The heartbeat needs /srv/tickr/etc/ports.env, written by the first deploy (render-systemd);
+# until then it fails and the heartbeat alarm stays on, as it should. It runs on the host,
+# not in a container, so it reaches the instance role with the metadata hop limit of 1.
+systemctl enable tickr-heartbeat.timer
+# Caddy stays off until the API is exposed (README, "Expose the API"); the package starts it.
+systemctl disable --now caddy.service

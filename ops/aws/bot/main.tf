@@ -138,15 +138,18 @@ resource "aws_iam_instance_profile" "bot" {
 
 resource "aws_security_group" "bot" {
   name        = "tickr-bot"
-  description = "Bot server: HTTPS in (the API behind Caddy), all out"
+  description = "Bot server: HTTPS in only when expose_api is on, all out"
   vpc_id      = data.aws_vpc.default.id
 
-  ingress {
-    description = "HTTPS to Caddy, also the Lets Encrypt TLS-ALPN challenge"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "ingress" {
+    for_each = var.expose_api ? [443] : []
+    content {
+      description = "HTTPS to Caddy, also the Lets Encrypt TLS-ALPN challenge"
+      from_port   = ingress.value
+      to_port     = ingress.value
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
 
   egress {
