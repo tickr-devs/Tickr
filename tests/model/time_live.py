@@ -11,7 +11,8 @@ credential is read. What it builds, outside the timed span:
 - for every cohort symbol, a synthetic tick day of `--trades` / `--quotes` events
   (tests/model/model_ticks.py: 90 % in the regular session, U-shaped, so the open is the peak),
   converted once by the frozen v11 through m - 1 in groups of `--chunk` symbols;
-- the training-format reference, Benzinga and fl inputs for the cohort (model_inputs.py);
+- the training-format reference, Benzinga and fl inputs for the cohort (model_inputs.py), as
+  the capture holds them (every record with its receipt, model_inputs.capture);
 - a LiveFeatures in the steady state of a running day: minutes through m - 1 closed (their tick
   rows as one part, the carry of every earlier event, every symbol on the stream), and minute
   m's trades and quotes in the TickStore as the stream thread puts them (millisecond stamps).
@@ -85,8 +86,13 @@ def _bars(day: str, tickers: list[str], seed: int, closes: dict[str, float]) -> 
                          "transactions": tx[k, j]})
 
 
+def context() -> full.LiveContext:
+    """The live date context of the day (the training's sessions, model_inputs.market_day)."""
+    return full.live_context(inputs.market_day(DAY))
+
+
 def model_minutes() -> int:
-    return int(full.full_code().w.NM)
+    return int(context().code.w.NM)
 
 
 def _messages(kind: str, frame: pd.DataFrame) -> list[dict]:
@@ -132,7 +138,7 @@ class _NoBackfill:
 @contextlib.contextmanager
 def _clocks(spent: dict[str, float]):
     """Wrap the pinned feature steps and v11 with wall clocks (values unchanged)."""
-    code = full.full_code()
+    code = context().code
     feat = code.feat
     targets = [(ticks, "tick_rows", "ticks: v11 conversion"),
                (feat, "cut_inputs", "features: cut_inputs (tick table + input folders)"),
@@ -178,8 +184,7 @@ def main(argv: list[str] | None = None) -> int:
     v11 = ticks.converter()
     v11.KB = args.groups
     cfg = config.load(ROOT / "config" / "bot.toml")
-    code = full.full_code()
-    labels = code.labels
+    labels = inputs.research().labels
     cal = labels.calendar()
     days = cal[cal.index(DAY) - labels.HIST:cal.index(DAY) + 1]
     t0 = time.perf_counter()
@@ -215,17 +220,23 @@ def _one(cfg, m: int, hm: str, today, state, args, work: Path) -> dict:
     for r in today[today.window_start < end_ns].to_dict("records"):
         bars.add({"sym": r["ticker"], "v": r["volume"], "o": r["open"], "c": r["close"],
                   "h": r["high"], "l": r["low"], "s": r["window_start"] // MS}, 0.0)
-    table = full.table_rows(bars.frame(), DAY, m, state, None)
+    ctx = context()
+    received = bars.frame().assign(**{full.RECEIPT_COLUMN: end_ns})
+    table = ctx.table_rows(received, m, state, None, ctx.mark(m))
     cohort = sorted(table.sym)
-    prepared = work / "prepared" / DAY
-    prepared.mkdir(parents=True)
-    inputs.reference(prepared / "reference", DAY, cohort, NEWS_MINUTES)
-    inputs.benzinga(prepared / "benzinga", DAY, cohort, NEWS_MINUTES, "2023-01-02")
-    inputs.fl_facts(prepared / "fl-facts.csv", DAY, cohort)
+    source = work / "source"
+    source.mkdir()
+    given = full.FullInputs(
+        inputs.tick_file(source / "tk.parquet", cohort[:1], range(m, m + 1)),
+        inputs.reference(source / "reference", DAY, cohort, NEWS_MINUTES),
+        inputs.benzinga(source / "benzinga", DAY, cohort, NEWS_MINUTES, "2023-01-02"),
+        inputs.fl_facts(source / "fl-facts.csv", DAY, cohort))
+    (work / "prepared").mkdir()
+    inputs.capture(given, DAY, work / "prepared" / DAY, late=inputs.published_receipts(DAY))
     store = feed.TickStore(DAY)
     stream = _Stream()
-    lf = live.LiveFeatures(cfg, DAY, state, None, bars, store, stream, _NoBackfill(),
-                           live.FolderInputs(work / "prepared"), work / "ticks",
+    lf = live.LiveFeatures(cfg, ctx, state, None, bars, store, stream, _NoBackfill(),
+                           live.FolderInputs(work / "prepared", inputs.CAPTURED), work / "ticks",
                            clock=lambda: end_ns)
     lo, hi = lf._end(m - 1), lf._end(m)
     through = m - 1 + features.DAY_START_MINUTE
@@ -252,7 +263,7 @@ def _one(cfg, m: int, hm: str, today, state, args, work: Path) -> dict:
             now = f[(f.sip_timestamp >= lo) & (f.sip_timestamp < hi)]
             events[kind] += len(now)
             store.add(kind, _messages(kind, now), end_ns, feed.STREAM)
-    lf._append(m - 1, pd.concat(parts, ignore_index=True))
+    lf._append(m - 1, pd.concat(parts, ignore_index=True).assign(**{full.RECEIPT_COLUMN: lo}))
     for s in cohort:
         stream.add(s)
         lf.symbols[s] = live._Symbol(stream_from=lo - 1, rest_until=lo)
