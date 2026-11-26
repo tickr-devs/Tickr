@@ -18,7 +18,7 @@ from .schema_check import errors
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 EXAMPLE = FIXTURES / "status-v1.example.json"
-# status-v1 as the reader before derived `decider` keys shipped (main at f79d8a7, the PR's
+# status-v1 as the reader before derived `decider` keys shipped (main at daea11a, the PR's
 # base) accepts it: its schema states that reader's rules (required keys, no unknown keys).
 BEFORE_DECIDER = Path(__file__).resolve().parent / "frozen" / "status-v1.before-decider.schema.json"
 
