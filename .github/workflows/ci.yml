@@ -153,8 +153,8 @@ jobs:
       - run: uv run --no-sync python manage.py makemigrations --check --dry-run --settings tickrweb.settings_test
       - run: uv run --no-sync pytest -q
   web-image:
-    # Builds the web app's image and checks its server files (web/deploy, ops/aws/web); never
-    # pushes or applies anything.
+    # Builds the web app's image and checks its server files (web/deploy; ops/aws/web is checked
+    # in terraform.yml); never pushes or applies anything.
     needs: python-changes
     if: needs.python-changes.outputs.python == 'true'
     runs-on: ubuntu-latest
@@ -162,6 +162,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker build -t tickr-web:latest web
+      - name: The app reads a mode-600 secrets file owned by the server account's uid
+        run: |
+          uid=$(sed -n 's/^USER \([0-9]*\):.*/\1/p' web/Dockerfile)
+          dir=$(mktemp -d)
+          printf "TICKR_WEB_HOST='x'\n" > "$dir/env"
+          sudo chown "$uid:$uid" "$dir/env"
+          sudo chmod 600 "$dir/env"
+          docker run --rm -v "$dir/env:/run/tickr-web/env:ro" --entrypoint sh tickr-web:latest \
+            -c 'test -r /run/tickr-web/env'
       - run: docker compose -f web/deploy/compose.yaml config -q
         env:
           TICKR_WEB_HOST: tickr.bot
@@ -171,9 +180,3 @@ jobs:
       - run: >-
           docker run --rm -e TICKR_WEB_HOST=tickr.bot -v "$PWD/web/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"
           caddy:2.10 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-      - run: >-
-          docker run --rm -v "$PWD/ops/aws/web:/w" -w /w hashicorp/terraform:1.9
-          fmt -check -diff
-      - run: >-
-          docker run --rm --entrypoint sh -v "$PWD/ops/aws/web:/w" -w /w hashicorp/terraform:1.9
-          -c "terraform init -backend=false -input=false >/dev/null && terraform validate"
