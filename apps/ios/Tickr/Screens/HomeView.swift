@@ -265,6 +265,9 @@ enum EntriesGlyph {
   static let entriesAllowedSymbol = "lock.open.fill"
   static let entriesNotNowSymbol = "moon.fill"
   static let entriesBlockedSymbol = "hand.raised.fill"
+  /// The full stop the "No entries now: …." and "Entries blocked: …." sentences end with: a
+  /// cause that is a sentence of its own already ends with one, which then is not doubled.
+  static let fullStop = "."
 
   /// Whether new entries can open, as on the board: allowed, paused by the owner, a calm
   /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph. The
@@ -272,8 +275,15 @@ enum EntriesGlyph {
   static func make(_ status: StatusV1) -> (symbol: String, tone: Tone, label: LocalizedStringResource) {
     guard let block = status.entryBlock else { return (entriesAllowedSymbol, .profit, L10n.Home.entriesAllowed) }
     if BlockCode(rawValue: block.cause) == .entryStop { return (Symbols.pause, .warning, L10n.Home.entriesPaused) }
-    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(ApiText.entryBlock(block))) }
-    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(ApiText.entryBlock(block)))
+    let cause = clause(ApiText.entryBlock(block))
+    if status.entriesCalm { return (entriesNotNowSymbol, .neutral, L10n.Home.entriesNotNow(cause)) }
+    return (entriesBlockedSymbol, .warning, L10n.Home.entriesBlocked(cause))
+  }
+
+  /// The cause as a clause inside the sentence: without its own final full stop ("…: cause."
+  /// read "cause.." when the cause was a sentence).
+  static func clause(_ cause: String) -> String {
+    cause.hasSuffix(fullStop) ? String(cause.dropLast(fullStop.count)) : cause
   }
 }
 
