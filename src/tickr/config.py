@@ -442,7 +442,6 @@ class MassiveConfig:
     stream_release_pause_seconds: Decimal
     stream_ack_timeout_seconds: Decimal
     calendar_lookback_days: int
-    revision_report_quantiles: tuple[Decimal, ...]
     revision_poll_enabled: bool
     revision_store_dir: str
     revision_poll_overlap_seconds: int
