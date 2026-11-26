@@ -55,6 +55,13 @@ import TickrKit
     #expect(glyph.tone == .warning)
   }
 
+  /// A cause that is a sentence already loses its full stop inside "Entries blocked: …." (it read
+  /// "…..").
+  @Test func causeInsideTheSentenceHasOneFullStop() {
+    #expect(EntriesGlyph.clause("The bot is stopped.") == "The bot is stopped")
+    #expect(EntriesGlyph.clause("Pause after a loss") == "Pause after a loss")
+  }
+
   @Test func connectionDot() throws {
     let current = try fixture(StatusResponseV1.self, "status-response-v1.json")
     let stale = try fixture(StatusResponseV1.self, "status-response-v1.stale.json")
