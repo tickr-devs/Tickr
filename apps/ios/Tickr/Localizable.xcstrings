@@ -2143,6 +2143,74 @@
         }
       }
     },
+    "cause.instrumentCloseOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker allows closing only"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El bróker solo permite cerrar"
+          }
+        }
+      }
+    },
+    "cause.instrumentDenied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broker denies trading this stock"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El bróker no permite negociar esta acción"
+          }
+        }
+      }
+    },
+    "cause.instrumentHalted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trading halted"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Negociación detenida"
+          }
+        }
+      }
+    },
+    "cause.instrumentNotTradable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stock not tradable now"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acción no negociable ahora"
+          }
+        }
+      }
+    },
     "cause.notionalOverCap" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2309,6 +2377,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos los cupos de posición ocupados"
+          }
+        }
+      }
+    },
+    "cause.priceCollarBreach" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limit too far from the last price"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Límite demasiado lejos del último precio"
+          }
+        }
+      }
+    },
+    "cause.priceCollarUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Price collar prices missing"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faltan precios del collar de precio"
           }
         }
       }
@@ -2530,6 +2632,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La estrategia no puede entrar fuera del horario regular"
+          }
+        }
+      }
+    },
+    "cause.tradabilityBudget" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No request budget for the tradability check"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin presupuesto de solicitudes para la comprobación de negociabilidad"
+          }
+        }
+      }
+    },
+    "cause.tradabilityUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tradability not known"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Negociabilidad desconocida"
           }
         }
       }

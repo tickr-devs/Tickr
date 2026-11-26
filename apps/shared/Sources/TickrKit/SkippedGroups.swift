@@ -40,6 +40,8 @@ public enum RefusalCode: String, Sendable, CaseIterable {
   case quoteStale = "QUOTE_STALE"
   case spreadTooWide = "SPREAD_TOO_WIDE"
   case priceOutside = "PRICE_OUTSIDE_WINDOW"
+  case priceCollarUnknown = "PRICE_COLLAR_UNKNOWN"
+  case priceCollarBreach = "PRICE_COLLAR_BREACH"
   case quantityBelowOne = "QUANTITY_BELOW_ONE"
   case quantityNotWhole = "QUANTITY_NOT_WHOLE"
   case notionalOverCap = "NOTIONAL_OVER_CAP"
@@ -51,6 +53,13 @@ public enum RefusalCode: String, Sendable, CaseIterable {
   case buyingPowerShort = "BUYING_POWER_SHORT"
   case entryBudget = "ENTRY_BUDGET_UNAVAILABLE"
   case stopBudget = "STOP_BUDGET_UNAVAILABLE"
+  case tradabilityBudget = "TRADABILITY_BUDGET_UNAVAILABLE"
+  /// The broker's tradability answer (backlog T8, only with the check on in config).
+  case tradabilityUnknown = "TRADABILITY_UNKNOWN"
+  case instrumentHalted = "INSTRUMENT_HALTED"
+  case instrumentCloseOnly = "INSTRUMENT_CLOSE_ONLY"
+  case instrumentDenied = "INSTRUMENT_DENIED"
+  case instrumentNotTradable = "INSTRUMENT_NOT_TRADABLE"
   /// Admission passed but the engine refused to open the trade (src/tickr/runtime/entries.py).
   case engineRefused = "ENGINE_REFUSED"
 
@@ -76,7 +85,8 @@ public enum RefusalCode: String, Sendable, CaseIterable {
   public var symbol: String {
     switch self {
     case .gateClosed, .entryStop, .engineRefused: return Self.gateSymbol
-    case .clockInvalid, .notReconciled, .brokerReadMissing, .brokerReadStale, .buyingPowerUnknown:
+    case .clockInvalid, .notReconciled, .brokerReadMissing, .brokerReadStale, .buyingPowerUnknown,
+      .tradabilityUnknown, .instrumentHalted, .instrumentCloseOnly, .instrumentDenied, .instrumentNotTradable:
       return Self.brokerSymbol
     case .unresolvedExposure, .foreignExposure: return Self.exposureSymbol
     case .calendarUnknown, .calendarDayMismatch, .halfDay, .outsideSession, .beforeFirstEntry, .sessionTimesInvalid,
@@ -88,11 +98,12 @@ public enum RefusalCode: String, Sendable, CaseIterable {
       return Self.setupSymbol
     case .quoteMissing, .quoteSymbolMismatch, .quoteInvalid, .quoteTimeInvalid, .quoteStale, .spreadTooWide:
       return Self.quoteSymbol
-    case .orderPricesMissing, .orderPricesInvalid, .priceOutside: return Self.priceSymbol
+    case .orderPricesMissing, .orderPricesInvalid, .priceOutside, .priceCollarUnknown, .priceCollarBreach:
+      return Self.priceSymbol
     case .quantityBelowOne, .quantityNotWhole, .notionalOverCap, .plannedLossOver, .dailyMoneyUnknown,
       .dailyMoneyInvalid, .dailyCeiling, .buyingPowerShort:
       return Self.sizeSymbol
-    case .entryBudget, .stopBudget: return Self.budgetSymbol
+    case .entryBudget, .stopBudget, .tradabilityBudget: return Self.budgetSymbol
     }
   }
 }

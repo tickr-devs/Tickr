@@ -1209,6 +1209,22 @@ enum L10n {
         defaultValue: "No request budget for the entry", bundle: L10n.bundle)
       case .stopBudget: LocalizedStringResource("cause.stopBudget",
         defaultValue: "No request budget for the stop", bundle: L10n.bundle)
+      case .priceCollarUnknown: LocalizedStringResource("cause.priceCollarUnknown",
+        defaultValue: "Price collar prices missing", bundle: L10n.bundle)
+      case .priceCollarBreach: LocalizedStringResource("cause.priceCollarBreach",
+        defaultValue: "Limit too far from the last price", bundle: L10n.bundle)
+      case .tradabilityBudget: LocalizedStringResource("cause.tradabilityBudget",
+        defaultValue: "No request budget for the tradability check", bundle: L10n.bundle)
+      case .tradabilityUnknown: LocalizedStringResource("cause.tradabilityUnknown",
+        defaultValue: "Tradability not known", bundle: L10n.bundle)
+      case .instrumentHalted: LocalizedStringResource("cause.instrumentHalted",
+        defaultValue: "Trading halted", bundle: L10n.bundle)
+      case .instrumentCloseOnly: LocalizedStringResource("cause.instrumentCloseOnly",
+        defaultValue: "Broker allows closing only", bundle: L10n.bundle)
+      case .instrumentDenied: LocalizedStringResource("cause.instrumentDenied",
+        defaultValue: "Broker denies trading this stock", bundle: L10n.bundle)
+      case .instrumentNotTradable: LocalizedStringResource("cause.instrumentNotTradable",
+        defaultValue: "Stock not tradable now", bundle: L10n.bundle)
       case .engineRefused: LocalizedStringResource("cause.engineRefused",
         defaultValue: "Refused when opening the trade", bundle: L10n.bundle)
       }
