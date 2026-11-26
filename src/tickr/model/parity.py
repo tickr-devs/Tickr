@@ -139,10 +139,12 @@ reference, replay, abs, rel, ulp). Per variant and minute:
   order (`order_equal`), and whether keys and order are exact (`keys_exact`);
 - per column and per group, the cells by DISCREPANCY CLASS: `missing` (a missing value on one
   side only, counted per side), `rank` (kr_*, r_*, *_rk: a rank among the minute's rows),
-  `flag` (a column whose archive values on the day are all 0 or 1: eligibility, has-a-value),
-  `categorical` (sess, sic2, m), `value` (every other float); for value cells the largest
-  absolute, relative (|a-b| / max(|a|,|b|)) and float32 ULP difference, and apart those where
-  one side is 0 (near zero, where a relative difference says nothing);
+  `flag` (the 0/1 columns declared in `FLAGS` from the builders' definitions; the training
+  table must agree, else `replay_flag_schema`), `categorical` (sess, sic2, m), `value` (every
+  other float); for value cells the largest absolute, relative (|a-b| / max(|a|,|b|)), float32
+  ULP (`ulp`: the model's input type) and float64 ULP (`ulp64`: the tables' native type)
+  difference, and apart those where one side is 0 (near zero, where a relative difference
+  says nothing);
 - deterministic columns (the bar groups) must be exact: `bar_groups_exact`;
 - with `--tk61`: our v11 rows of minute m against the tk61 rows of minute m for the symbols
   whose ticks were converted (61 columns, tn / qn counts included), the same classes;
@@ -198,6 +200,11 @@ BASE_MINUTES = ("04:30", "09:45", "12:00", "15:30")  # codex-108 point 9
 MARKER_VALUES = {"ask_price": "ask_price", "ask_size": "ask_size", "bid_price": "bid_price",
                  "bid_size": "bid_size", "conditions": "NULL", "indicators": "NULL"}
 CATEGORICAL = ("m", "sess", "sic2")
+# The 0/1 features, declared from the pinned builders' definitions, never inferred from a day's
+# values (codex-109 point 1): inl (wm2_l1f: inl.astype(float64), list membership), bz_solo and
+# the four bz_c_* channel flags (l1bz: "1 when ...", NaN without an article for bz_solo),
+# nw_any (wm2ref16: nw_n > 0), fl_has (l1fl: "1 when a fact is known ..., else 0").
+FLAGS = ("inl", "bz_solo", "bz_c_earn", "bz_c_anl", "bz_c_deal", "bz_c_mov", "nw_any", "fl_has")
 RANK_PREFIXES, RANK_SUFFIX = ("kr_", "r_"), "_rk"
 CLASSES = ("missing", "rank", "flag", "categorical", "value")
 FORMS = ("flat", "audit")
@@ -212,7 +219,7 @@ STOP_CAUSES = ("disk_space_insufficient", "memory_insufficient")
 DEFAULT_CONFIG = Path("config/bot.toml")  # the bot's config, relative to the repo root
 REGULAR = ("09:30", "15:59")  # the regular session, for the peak minute
 EXCEPTION_FIELDS = ("variant", "minute", "table", "sym", "column", "group", "class",
-                    "reference", "replay", "abs", "rel", "ulp")
+                    "reference", "replay", "abs", "rel", "ulp", "ulp64")
 _CSV = "read_csv(?, header=true, all_varchar=true, delim=',', quote='\"', escape='\"')"
 
 
@@ -377,14 +384,15 @@ class ReferenceTable:
         return _read(self.path, "replay_table_unreadable",
                      "SELECT * FROM read_parquet(?) WHERE m = ?", [int(m)])
 
-    def kinds(self, names: Sequence[str]) -> dict[str, str]:
-        """`column_kinds` over the whole day, column by column (one column in memory)."""
-        kinds = {}
-        for c in names:
-            frame = _read(self.path, "replay_table_unreadable",
-                          f'SELECT "{c}" FROM read_parquet(?)')
-            kinds.update(column_kinds(frame, [c]))
-        return kinds
+    def check_flags(self) -> None:
+        """Refuse replay_flag_schema when a declared flag (`FLAGS`) holds anything but 0, 1 or
+        missing in the training table: the declaration and the archive disagree."""
+        sql = " + ".join(f'count(*) FILTER (WHERE "{c}" IS NOT NULL AND NOT '
+                         f'isnan(CAST("{c}" AS DOUBLE)) AND "{c}" NOT IN (0, 1))' for c in FLAGS)
+        bad = _read(self.path, "replay_table_unreadable",
+                    f"SELECT {sql} AS n FROM read_parquet(?)")
+        if int(bad.n.iloc[0]):
+            raise ModelRefused("replay_flag_schema", f"{int(bad.n.iloc[0])} cells")
 
 
 def tick_table(path: Path, symbols: set[str], through: int) -> Any:
@@ -630,11 +638,9 @@ def _num(x: float) -> float | str:
     return x if math.isfinite(x) else str(x)
 
 
-def column_kinds(want: Any, names: Sequence[str]) -> dict[str, str]:
-    """The discrepancy class of each column (module docstring): rank by name, categorical by
-    name, flag when every archive value of the day is 0 or 1, else value."""
-    import numpy as np
-
+def column_kinds(names: Sequence[str]) -> dict[str, str]:
+    """The discrepancy class of each column (module docstring), from its name only: rank,
+    categorical, flag (`FLAGS`) or value."""
     kinds = {}
     for c in names:
         if c.startswith(RANK_PREFIXES) or c.endswith(RANK_SUFFIX):
@@ -642,14 +648,26 @@ def column_kinds(want: Any, names: Sequence[str]) -> dict[str, str]:
         elif c in CATEGORICAL:
             kinds[c] = "categorical"
         else:
-            v = want[c].to_numpy(np.float64) if c in want.columns else np.array([np.nan])
-            v = v[~np.isnan(v)]
-            kinds[c] = "flag" if len(v) and np.isin(v, (0.0, 1.0)).all() else "value"
+            kinds[c] = "flag" if c in FLAGS else "value"
     return kinds
 
 
+def _ulps64(x: Any, y: Any) -> Any:
+    """Distance in float64 units in the last place: the native type of the tick and bar tables
+    (codex-109 point 1: a float64 reduction is diagnosed in float64, before any cast)."""
+    import numpy as np
+
+    def ordered(v):
+        i = np.asarray(v, np.float64).view(np.int64)
+        return np.where(i < 0, np.iinfo(np.int64).min - i, i).astype(object)
+
+    with np.errstate(invalid="ignore", over="ignore"):
+        return np.abs(ordered(x) - ordered(y))
+
+
 def _ulps(x: Any, y: Any) -> Any:
-    """Distance in float32 units in the last place (the stored type)."""
+    """Distance in float32 units in the last place: the model's input type, the training
+    table's stored type."""
     import numpy as np
 
     def ordered(v):
@@ -669,7 +687,7 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
     `exceptions` (sym, column, group, class, values and differences)."""
     import numpy as np
 
-    kinds = kinds or column_kinds(want, [c for cs in groups.values() for c in cs])
+    kinds = kinds or column_kinds([c for cs in groups.values() for c in cs])
     a = got.set_index("sym")
     b = want.set_index("sym")
     common = [s for s in b.index if s in set(a.index)]
@@ -710,6 +728,7 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
             diff = np.where(np.isnan(diff) | np.isinf(diff), math.inf, diff)
             rel = np.where(np.isinf(diff), math.inf, rel)
             ulp = np.where(bad, _ulps(x, y), 0)
+            ulp64 = np.where(bad, _ulps64(x, y), 0)
             zero = bad & ((x == 0) | (y == 0))
             kind = kinds.get(c, "value")
             col = {"group": group, "class": kind, "value_mismatches": int(bad.sum()),
@@ -718,6 +737,7 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
                    "max_abs": float(diff.max()) if len(diff) else 0.0,
                    "max_rel": float(np.nanmax(rel)) if len(rel) else 0.0,
                    "max_ulp": int(ulp.max()) if len(ulp) else 0,
+                   "max_ulp64": int(ulp64.max()) if len(ulp64) else 0,
                    "one_side_zero": int(zero.sum()),
                    "max_abs_one_side_zero": float(np.where(zero, diff, 0.0).max())
                    if len(diff) else 0.0,
@@ -736,7 +756,8 @@ def compare(got: Any, want: Any, groups: dict[str, list[str]],
                         "reference": float(y[i]), "replay": float(x[i]),
                         "abs": float(diff[i]) if bad[i] else math.nan,
                         "rel": float(rel[i]) if bad[i] else math.nan,
-                        "ulp": int(ulp[i]) if bad[i] else -1})
+                        "ulp": int(ulp[i]) if bad[i] else -1,
+                        "ulp64": int(ulp64[i]) if bad[i] else -1})
             per_symbol += bad | pattern
             g["columns_differ"] += 1
             g["value_mismatches"] += col["value_mismatches"]
@@ -910,7 +931,8 @@ def exact_diff(mine: Any, ref: Any, keys: list[str], table: str,
                           "reference": y[i] if num else str(y[i]),
                           "replay": x[i] if num else str(x[i]), "abs": diff,
                           "rel": diff / max(abs(x[i]), abs(y[i])) if num and diff else math.nan,
-                          "ulp": int(_ulps(x[i:i + 1], y[i:i + 1])[0]) if num else -1})
+                          "ulp": int(_ulps(x[i:i + 1], y[i:i + 1])[0]) if num else -1,
+                          "ulp64": int(_ulps64(x[i:i + 1], y[i:i + 1])[0]) if num else -1})
     out["cells"] = n
     out["exact"] = (n == 0 and out["columns_equal"] and out["dtypes_equal"]
                     and out["order_equal"] and not out["only_incremental"]
@@ -1095,7 +1117,9 @@ def replay(day: str, minutes: Sequence[str] | None, inputs: ReplayInputs, *,
     code = full.full_code()
     groups = full.full_groups()
     want = None if ticks_only else ReferenceTable(inputs.table, day)
-    kinds = None if want is None else want.kinds(full.full_features())
+    if want is not None:
+        want.check_flags()
+    kinds = None if want is None else column_kinds(full.full_features())
     types, types_md5 = _types(inputs.types)
     splits = _splits(inputs.reference) if not ticks_only else {}
     frames = [(d, massive.read_day_file((inputs.bars / f"{d}.csv.gz").read_bytes(), d))

@@ -511,3 +511,11 @@ def test_a_refusal_stops_the_run_cleanly_with_a_report(day, tmp_path, monkeypatc
     assert report["stopped"]["limits"]["disk_reserve"] == headroom.GB
     assert "STOPPED at 09:45: disk_space_insufficient" in capsys.readouterr().out
     assert work.is_dir() and list(work.iterdir()) == []
+
+
+def test_flags_come_from_the_declaration_not_from_the_day():
+    """codex-109 point 1: a column whose values happen to be 0 or 1 is not a flag; a declared
+    flag is one whatever its values."""
+    kinds = parity.column_kinds(["ret1", "inl", "fl_has", "kr_spr5", "sess"])
+    assert kinds == {"ret1": "value", "inl": "flag", "fl_has": "flag", "kr_spr5": "rank",
+                     "sess": "categorical"}

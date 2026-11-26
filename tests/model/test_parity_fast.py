@@ -231,3 +231,33 @@ def test_no_table_equals_an_empty_table_but_never_a_table_with_rows():
     rows = pd.DataFrame({"sym": ["A"], "m": [1], "x": [1.0]})
     assert not parity.exact_diff(None, rows, keys, "bars", [])["exact"]
     assert not parity.exact_diff(rows, None, keys, "bars", [])["exact"]
+
+
+def test_a_span_end_marker_equals_closing_every_minute_of_the_span(day, tmp_path):
+    """codex-109 point 5: catching up over a span with one marker at its end gives, for every
+    minute of the span and the later windows, the rows that closing each minute on its own
+    gives. The synthetic day holds silent minutes, a halted symbol and a symbol's final real
+    quote, all inside the spans walked here."""
+    given, trades, quotes = day[0], day[1], day[2]
+    symbols = set(trades.ticker) | set(quotes.ticker)
+    first, last = parity.table_minutes(["09:30", "15:59"])
+    every = list(range(first, last + 1))
+    stops = parity.table_minutes(["09:30", "09:45", "11:59", "15:59"])
+    one, two = tmp_path / "one", tmp_path / "two"
+    for work in (one, two):
+        work.mkdir()
+        parity.extract_events(given, symbols, parity._ns_end(DAY, last), work)
+    walks = [parity_walk.TickWalk(_room(w), DAY, plain=False, groups=ticks.default_groups())
+             for w in (one, two)]
+    try:
+        for m in every:
+            walks[0].advance(m + 240)
+            if m in stops:
+                walks[1].advance(m + 240)
+                pd.testing.assert_frame_equal(walks[1].table("marker", m + 240),
+                                              walks[0].table("marker", m + 240),
+                                              check_exact=True, obj=parity.hhmm(m))
+    finally:
+        for w in walks:
+            w.close()
+    assert walks[0].calls > walks[1].calls
