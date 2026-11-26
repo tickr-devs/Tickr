@@ -45,6 +45,7 @@ tickr status                                 # environment, gate, bot pid, last 
 tickr check-quote SYMBOL                     # read-only: is the snapshot quote fresh?
 tickr probe-quote-sources SYM [SYM...]       # read-only probe Q1: which read is fresh outside RTH
 tickr probe-tradability SYM [SYM...]         # read-only probe T8: how a halt or a non-tradable stock shows
+tickr probe-prev-day [--summary]             # read-only, overnight: when the previous session's data appears
 tickr trade SYMBOL --limit 12.34            # quantity and stop default from [probe]
 tickr trade SYMBOL --limit 12.34 --stop 12.10
 tickr probe-replace-stop --to 12.20          # probe F5, see below
@@ -296,6 +297,22 @@ When: in the regular session (a halt only shows while the market trades), on a d
      its whole body is the evidence (is it a bare object, or wrapped in `data`?).
 4. Paste `run.txt` and the `tradability.jsonl` it names into the project chat. From them the
    owner decides the `[risk]` profile status lists and whether to turn the check on.
+
+## Previous-session probe (prev-day)
+
+`tickr probe-prev-day` answers when the previous session's Massive inputs become available
+before the bot's 04:00 ET start: the minute_aggs, trades and quotes day files (HEAD only, nothing
+downloaded) and the splits listing. It sends no order, reads no account and does not need the
+bot stopped. It waits for the `[probe] prev_day_window_start`-`prev_day_window_end` window
+(New York time) and checks every `prev_day_poll_seconds`; each answer is a line in
+`data/probes/prev-day/<start day>.jsonl`. Details: `src/tickr/model/prevday_probe.py`.
+
+1. In the evening, in Terminal (the Mac must stay awake, hence `caffeinate`):
+   `cd ~/Development/Tickr && set -a; . ~/.config/tickr/env; set +a; caffeinate -i .venv/bin/tickr probe-prev-day 2>&1 | tee -a data/probe-prev-day.txt`.
+   Exit 0 at the window's end; exit 3 refused before any request (a missing credential is named).
+2. Repeat on as many nights as you can, including a night after an early close.
+3. `.venv/bin/tickr probe-prev-day --summary` prints the first-available time of every input per
+   night relative to 04:00 ET; paste it into the project chat.
 
 ## Probe day (Monday 2026-11-16)
 

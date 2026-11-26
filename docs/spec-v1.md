@@ -90,7 +90,7 @@ Admission (all must hold; the first failure is the single recorded cause):
 
 Tradability (backlog T8, `[risk] tradability_check_enabled`, off until `tickr probe-tradability` has answered): after check 7 and before the buying power part of check 6, the bot reads the symbol's instrument profile and trade instrument and refuses the entry when check 7's request budget cannot also hold those two reads (`TRADABILITY_BUDGET_UNAVAILABLE`, checked before anything is read), when Webull says HALTED (`INSTRUMENT_HALTED`), CLOSE_ONLY (`INSTRUMENT_CLOSE_ONLY`) or DENIED (`INSTRUMENT_DENIED`), when the profile status is one the config lists as not tradable (`INSTRUMENT_NOT_TRADABLE`), and when any answer is missing, unknown or unread (`TRADABILITY_UNKNOWN`). Exits never go through admission, so they are never blocked.
 
-Operator controls (local API + CLI): `entry-stop set|clear` (blocks entries only, survives restart), `cancel-own-orders` (own entry orders only, never stops), `flatten` (closes own position through the normal exit path; from the API optionally one symbol), and from the API `stop-bot` (graceful stop that sticks until `tickr clear-stop`) and `emergency` (entry-stop on, cancel own orders, flatten all); see docs/api.md.
+Operator controls (local API + CLI): `entry-stop set|clear` (blocks entries only, survives restart), `cancel-own-orders` (own entry orders only, never stops), `flatten` (closes own position through the normal exit path; from the API optionally one symbol), and from the API `stop-bot` (graceful stop that sticks until `tickr clear-stop`; with positions open, mode `close_and_stop` or `leave_open`) and `emergency` (entry-stop on, cancel own orders, flatten all); see docs/api.md.
 
 ## 8. Environments and the trading gate
 
