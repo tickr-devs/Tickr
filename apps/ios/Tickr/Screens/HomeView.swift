@@ -152,6 +152,7 @@ extension HomeView {
     return DaySwitch(caption: past ?? (isToday ? nil : DayText.day(written)), day: day, away: past != nil,
       steps: dayModel.arrows, today: { dayModel.showToday() }, back: { dayModel.back() },
       forward: { dayModel.forward() })
+      .accessibilityIdentifier(AccessibilityID.daySwitch)
   }
 
   /// An iPhone in landscape: Home lays out in two columns, the day's button in the title row.

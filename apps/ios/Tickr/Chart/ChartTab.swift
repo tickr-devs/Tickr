@@ -343,6 +343,7 @@ private struct DayBar: View {
         }
         .buttonStyle(DayButtonStyle())
         .accessibilityLabel(Text(ChartText.options))
+        .accessibilityIdentifier(AccessibilityID.chartOptions)
       }
       dayCapsule
         .skeleton(chart.selectedDay == nil)

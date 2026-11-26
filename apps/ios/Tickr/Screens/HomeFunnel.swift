@@ -68,6 +68,7 @@ struct FunnelCard: View {
       .buttonStyle(.washPress(Palette.info))
       .accessibilityElement(children: .combine)
       .accessibilityHint(Text(L10n.Flow.funnelHint))
+      .accessibilityIdentifier(AccessibilityID.funnel)
       ForEach(liveFences, id: \.kind) { fence in
         Label { Text(verbatim: Board.fenceText(fence, status: status)) } icon: {
           Image(systemName: Symbols.failure)
@@ -123,10 +124,12 @@ struct FunnelCard: View {
       Button { pick(tab) } label: { row }
         .buttonStyle(.washPress(stage.color))
         .accessibilityHint(Text(L10n.FlowStages.symbolsHint))
+        .accessibilityIdentifier(AccessibilityID.funnelStage)
     } else {
       Button { checkOpen = true } label: { row }
         .buttonStyle(.washPress(stage.color))
         .accessibilityHint(Text(L10n.Flow.stageDetailsHint))
+        .accessibilityIdentifier(AccessibilityID.funnelStage)
         .popover(isPresented: $checkOpen, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
           StageDetailView(name: stage.stage.title, color: stage.color, stage: stage.stage, sources: sources)
             .presentationCompactAdaptation(.popover)

@@ -142,6 +142,7 @@ public struct CardSheet<Rows: View>: View {
       .keyboardShortcut(.cancelAction)
       .help(Text(ListWords.closeHelp))
       .accessibilityLabel(Text(ListWords.close))
+      .accessibilityIdentifier(ListCap.closeID)
     }
   }
 }
