@@ -63,6 +63,7 @@ _CRITICAL = frozenset({
     AlertKind.WATCHDOG_RESTART_REFUSED,
     AlertKind.WATCHDOG_RESTART_FAILED,
     AlertKind.API_CREDENTIALS_UNEXPECTED,
+    AlertKind.RISK_COMMAND_USED,  # entries turned back on or the bot started remotely
 })
 LOCKED: frozenset[AlertKind] = _CRITICAL | frozenset(
     FENCE_ALERTS[fence] for fence in ALERT_AT_ONCE if fence in FENCE_ALERTS)
