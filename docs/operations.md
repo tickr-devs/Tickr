@@ -583,7 +583,7 @@ straight to the supervisor. Limits:
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
 `exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`,
-`flatten-after-close`, from the API `api-credentials-unexpected` (feed only, see
+`flatten-after-close`, from the API `api-credentials-unexpected` and `risk-command-used` (feed only, see
 "The API job and the Webull keys") and `remote-auth-blocked` (an address used up its
 failed-authentication budget on the remote port, docs/api.md; feed only), and from
 the watchdog `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`,
@@ -620,6 +620,15 @@ It reads only that file (no credentials, no environment). After each wake it rep
 lines and starts waiting again. The feed works only while that session runs; Telegram
 does not depend on it. A feed line that cannot be written (a full disk) is recorded as
 a failed `feed` channel like any other.
+
+### `risk-command-used`
+
+The API raises one of these for every accepted command that raises risk: `entry-stop` with
+`off` (entries allowed again) and `start-bot`. The alert names the paired device (the name
+`python -m tickr.api devices` lists, or `local` for the local port), the port (local or
+remote) and the time; never a token. If you did not do this, the device's token is stolen or
+the phone is not yours: revoke that device now (`python -m tickr.api revoke --name <device>`),
+then pair again. Refused commands raise nothing. It goes to the alerts feed.
 
 ### `broker-reads-failing`
 
