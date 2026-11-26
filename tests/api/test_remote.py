@@ -384,6 +384,40 @@ def test_an_unreadable_device_list_refuses_with_a_cause(remote_api, remote_setti
     assert "unreadable" in doc(payload)["cause"]
 
 
+@pytest.mark.parametrize("fails", [
+    PermissionError(13, "Permission denied", "/secret-dir/devices-file.json"),
+    OSError(5, "Input/output error", "/secret-dir/devices-file.json"),
+])
+def test_an_unreadable_device_file_never_leaks_its_path(remote_api, remote_settings,
+                                                        monkeypatch, fails):
+    remote_settings.devices_path.parent.mkdir(parents=True, exist_ok=True)
+    remote_settings.devices_path.write_text("{}", "ascii")
+    real = type(remote_settings.devices_path).read_text
+
+    def read_text(self, *args, **kwargs):
+        if self == remote_settings.devices_path:
+            raise fails
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(remote_settings.devices_path), "read_text", read_text)
+    resp, payload = remote(remote_api, "GET", "/status")  # unauthenticated
+    assert resp.status == 503
+    body = payload.decode() if isinstance(payload, bytes) else str(payload)
+    assert doc(payload)["cause"] == f"device_list_unreadable:{type(fails).__name__}"
+    for leaked in ("/secret-dir", remote_settings.devices_path.name,
+                   str(remote_settings.devices_path.parent), "Permission denied"):
+        assert leaked not in body
+
+
+def test_a_device_list_that_is_a_directory_leaks_no_path_on_redeem(remote_api, remote_settings):
+    code = link_code(pair(remote_settings, PHONE, now=NOW))
+    remote_settings.devices_path.mkdir(parents=True)
+    resp, payload = redeem(remote_api, code)
+    assert resp.status == 503
+    assert doc(payload)["cause"] == "device_list_unreadable:IsADirectoryError"
+    assert str(remote_settings.devices_path.parent) not in payload.decode()
+
+
 @pytest.mark.parametrize("name", ["", " lead", "trail ", "a/b", "ü"])
 def test_a_device_name_must_be_plain(remote_settings, name):
     with pytest.raises(ValueError, match="device name"):

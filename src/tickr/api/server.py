@@ -929,7 +929,7 @@ class Handler(BaseHTTPRequestHandler):
                     sys.stderr.write(f"api: last-used time of device {device.name!r} not "
                                      f"recorded ({type(exc).__name__})\n")
         if not isinstance(paired, tuple):
-            self._error("unavailable", f"the paired devices are unreadable: {paired}")
+            self._device_list_unreadable(paired)
             return False
         if not paired:
             self._error("unauthorized", "nothing is paired here; run `python -m tickr.api "
@@ -942,6 +942,13 @@ class Handler(BaseHTTPRequestHandler):
             self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
         return True
+
+    def _device_list_unreadable(self, exc: Exception) -> None:
+        """503 for a device list that cannot be read. The cause and the log name the exception's
+        type only: its text carries the local path of the file, which never leaves this Mac."""
+        kind = type(exc).__name__
+        sys.stderr.write(f"api: the paired devices are unreadable ({kind})\n")
+        self._error("unavailable", f"device_list_unreadable:{kind}")
 
     def _simulator_authorized(self) -> bool:
         challenge = {"WWW-Authenticate": "Bearer"}
@@ -1207,7 +1214,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 paired = load_devices(settings)
             except (OSError, devices.DeviceFileError) as exc:
-                self._error("unavailable", f"the paired devices are unreadable: {exc}")
+                self._device_list_unreadable(exc)
                 return
             token = secrets.token_urlsafe(settings.token_bytes)
             device = devices.Device(name, devices.digest(token), self.server.clock(), None)
