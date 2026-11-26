@@ -90,9 +90,7 @@ def table_code() -> Any:
     with _LOCK:
         if "wm2" in _CODE:
             return _CODE["wm2"]
-        set_names = [name for name in TABLE_VARIABLES if os.environ.get(name) is not None]
-        if set_names:
-            raise ModelRefused("table_variable_set", ", ".join(set_names))
+        refuse_table_variables()
         got = pinned_digests()
         differ = sorted(name for name, digest in got.items() if digest != PINS[name])
         if differ:
@@ -126,6 +124,14 @@ def table_code() -> Any:
         return wm2_l1f
 
 
+def refuse_table_variables() -> None:
+    """The training refuses to run the table code when one of TABLE_VARIABLES is set; so does
+    the bot. Each variable is asked by name, never the whole environment."""
+    set_names = [name for name in TABLE_VARIABLES if os.environ.get(name) is not None]
+    if set_names:
+        raise ModelRefused("table_variable_set", ", ".join(set_names))
+
+
 def _types_reader_unused(_path: str) -> set[str]:
     raise ModelRefused("table_code_call", "days2 reads files; the bot hands day2 its bars")
 
@@ -155,12 +161,13 @@ class DayState:
     hist: collections.deque = field(default_factory=collections.deque)
 
 
-def bars_frame(rows: Any, day: str) -> Any:
+def bars_frame(rows: Any, day: str, nm: int | None = None) -> Any:
     """The day's minute bars as the training's bar reader returns them (`l1labels.bar_load`,
     the same checks): every row of New York date `day`, finite numbers, prices above 0, volume
     0 or more, window_start an exact minute, (ticker, minute) unique; adds `m` and keeps
     minutes 0..959. `rows`: a pandas frame with at least the columns of BAR_COLUMNS, the
-    columns of a Massive minute aggregates flat file."""
+    columns of a Massive minute aggregates flat file. `nm`: the table code's minutes per day
+    (`NM`), given by a live context that holds its own copy of the table code."""
     import numpy as np
     import pandas as pd
 
@@ -183,8 +190,9 @@ def bars_frame(rows: Any, day: str) -> Any:
     d["m"] = (ts.dt.hour * 60 + ts.dt.minute - DAY_START_MINUTE).astype(np.int32)
     if d.duplicated(["ticker", "m"]).any():
         raise ModelRefused("bar_key_duplicate", day)
-    w = table_code()
-    return d[(d.m >= 0) & (d.m < w.NM)]
+    if nm is None:
+        nm = table_code().NM
+    return d[(d.m >= 0) & (d.m < nm)]
 
 
 def _day2(frame: Any, day: str, state: DayState, types: set[str] | None, want: bool) -> Any:
