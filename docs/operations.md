@@ -554,8 +554,8 @@ tickr diagnostics --out ~/tickr-diagnostics.zip [--days N]     # --out must not 
 ```
 
 `--days` defaults to `[run] diagnostics_days` (7). The zip holds, from an explicit allow-list
-(`src/tickr/diagnostics.py`): `version.txt` (the code version), `config/*.toml` (the folder of
-the config in use; they hold variable names only), `logs/*.log` and rotated `*.log.N` files from
+(`src/tickr/diagnostics.py`): `version.txt` (the code version), `config/<name>.toml` (the config in
+use and the repo's known config files next to it; no other file of that folder), `logs/*.log` and rotated `*.log.N` files from
 `<data_dir>/<[run] diagnostics_logs_dir>` changed in the last N days, `alerts.jsonl` (the feed
 lines of the last N days), `database.json` (schema version and the row count of each table, never
 a row), `status.txt` (what `tickr status` prints) and `manifest.json` (every file with its size).

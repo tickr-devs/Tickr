@@ -5,8 +5,9 @@ An ALLOW-LIST, not a deny-list: the bundle holds exactly these parts and nothing
 opened.
 
 - `version.txt`: the code version (`tickr.version`) or its one cause when unknown;
-- `config/<name>.toml`: the `*.toml` files in the folder of the config file in use (they hold
-  variable NAMES only, rule 4);
+- `config/<name>.toml`: the config file in use and the repo's known config files
+  (`CONFIG_FILES`) next to it, when present; no other file of that folder (they hold variable
+  NAMES only, rule 4);
 - `logs/<name>`: `*.log` and rotated `*.log.<digits>` files in `<data_dir>/<[run]
   diagnostics_logs_dir>` changed within the window (one folder level, links are skipped);
 - `alerts.jsonl`: the lines of the alerts feed (`[alerts] feed_file`) whose `at` is within the
@@ -32,7 +33,11 @@ from pathlib import Path
 from tickr.config import Config
 from tickr.store import DATABASE_FILE, MIGRATIONS, Store
 
-CONFIG_SUFFIX = ".toml"
+# The repo's config files (config/ on main); with the config file in use they are the only
+# config files a bundle takes. Any other file in that folder (a local override, an
+# authorization or credentials file) is never read.
+CONFIG_FILES = ("backtest.toml", "bot.toml", "demo.toml", "replay.toml", "research.toml",
+                "settings_schema.toml")
 LOG_NAME = re.compile(r"^[A-Za-z0-9_.-]+\.log(\.\d+)?$")
 MANIFEST = "manifest.json"
 
@@ -106,9 +111,11 @@ def build(cfg: Config, config_path: Path, out: Path, *, now: datetime, days: int
     since = now - timedelta(days=days)
     data = cfg.root / cfg.run.data_dir
     parts: dict[str, bytes] = {"version.txt": f"{version}\n".encode()}
-    for path in _plain_files(config_path.resolve().parent):
-        if path.suffix == CONFIG_SUFFIX:
-            parts[f"config/{path.name}"] = path.read_bytes()
+    config_dir = config_path.resolve().parent
+    for name in sorted({config_path.name, *CONFIG_FILES}):
+        path = config_dir / name
+        if path.is_file() and not path.is_symlink():
+            parts[f"config/{name}"] = path.read_bytes()
     for path in _plain_files(data / cfg.run.diagnostics_logs_dir):
         if LOG_NAME.match(path.name) and _within(path, since):
             parts[f"logs/{path.name}"] = path.read_bytes()

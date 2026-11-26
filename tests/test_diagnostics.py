@@ -35,6 +35,7 @@ def folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         monkeypatch.setenv(name, DUMMY)
     # Files that must never be read: env files next to the config, a token, the account file.
     (tmp_path / "config" / ".env").write_text(f"WEBULL_APP_KEY={DUMMY}\n")
+    (tmp_path / "config" / "local.toml").write_text(f'token = "{DUMMY}"\n')
     (tmp_path / "config" / "env").write_text(f"WEBULL_APP_SECRET={DUMMY}\n")
     data = tmp_path / cfg.run.data_dir
     (data / env.token_dir).mkdir(parents=True)
