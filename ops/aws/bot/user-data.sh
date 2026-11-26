@@ -26,7 +26,10 @@ if ! command -v aws >/dev/null; then
 fi
 
 # Service account that runs the containers and owns the data (docs/deploy-server.md).
-id tickr >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin tickr
+# Fixed uid and gid: the release image is built with the same ones (TICKR_UID/TICKR_GID in
+# .github/workflows/server-image.yml), so the container user can read /run/tickr/env (mode 600).
+getent group tickr >/dev/null || groupadd --gid ${service_uid} tickr
+id tickr >/dev/null 2>&1 || useradd --uid ${service_uid} --gid ${service_uid} --create-home --shell /usr/sbin/nologin tickr
 usermod -aG docker tickr
 install -d -m 755 /srv/tickr
 install -d -m 700 -o tickr -g tickr /srv/tickr/etc
@@ -51,6 +54,7 @@ put() { echo "$2" | base64 -d > "$1"; chmod "$3" "$1"; }
 put /usr/local/bin/tickr-secrets '${files["tickr-secrets"]}' 755
 put /etc/systemd/system/tickr-secrets.service '${files["tickr-secrets.service"]}' 644
 put /usr/local/bin/tickr-heartbeat '${files["tickr-heartbeat"]}' 755
+put /usr/local/bin/tickr-image-pull '${files["tickr-image-pull"]}' 755
 put /etc/systemd/system/tickr-heartbeat.service '${files["tickr-heartbeat.service"]}' 644
 put /etc/systemd/system/tickr-heartbeat.timer '${files["tickr-heartbeat.timer"]}' 644
 put /etc/caddy/Caddyfile '${files["Caddyfile"]}' 644
@@ -61,6 +65,9 @@ chmod 644 /srv/tickr/etc/domain.env
 # Region for the AWS CLI in tickr-secrets and tickr-heartbeat, so it never depends on a lookup.
 echo "AWS_DEFAULT_REGION=${region}" > /srv/tickr/etc/aws.env
 chmod 644 /srv/tickr/etc/aws.env
+# Where release images come from (not a secret); tickr-image-pull and deploy-server.sh read it.
+echo "TICKR_IMAGE_REPOSITORY=${image_repository}" > /srv/tickr/etc/registry.env
+chmod 644 /srv/tickr/etc/registry.env
 
 systemctl daemon-reload
 # The heartbeat needs /srv/tickr/etc/ports.env, written by the first deploy (render-systemd);

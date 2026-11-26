@@ -91,9 +91,64 @@ deploy, so the ports have one source. Until then both fail and the heartbeat ala
 
 Off by default: with port 443 open, a device token is the only barrier in front of operator
 commands, where on the Mac the tailnet stands in front of it too. Turn it on only when the API
-refuses repeated bad tokens per address, its error paths leak nothing, and the owner has decided
-which commands may be reached from the internet. Then:
+refuses repeated bad tokens per address (it does: `[api] remote_auth_*`, docs/api.md "Failed
+authentication limit", keyed on the last `X-Forwarded-For` entry Caddy sets), its error paths
+leak nothing, and the owner has decided which commands may be reached from the internet. Then:
 
 1. `terraform apply -var expose_api=true ...` opens 443.
 2. In an SSM session on the server: `sudo systemctl enable --now caddy`.
 3. Add the `bot_domain` A record at the registrar, pointing at `server_address`.
+
+## Release image
+
+`image.tf` adds the registry `tickr-bot` (immutable tags, scanned on push, the newest
+`images_kept` kept) and the role `tickr-image-push`, which only a workflow run on `main` of
+`github_repo` can assume through GitHub's OIDC token: no AWS key is stored in GitHub. After the
+apply, the owner sets the repository variable once (a variable, not a secret: an ARN is not a
+credential):
+
+```sh
+gh variable set AWS_IMAGE_PUSH_ROLE --repo tickr-devs/Tickr --body "$(terraform output -raw image_push_role)"
+```
+
+From then on `.github/workflows/server-image.yml` builds every change on main that touches the
+image and pushes `tickr-bot:<commit>`. The server pulls with its own role (pull only). The
+image's user has uid and gid `service_uid` (1500), the same as the server's `tickr` account.
+A test (`tests/ops/test_server_uid.py`) keeps the two values equal. A re-run for a commit
+already pushed skips the push, since tags are immutable. The job log shows the registry host,
+which contains the account number: not a credential.
+
+An account holds one OIDC provider per URL. If one for `token.actions.githubusercontent.com`
+already exists, the first apply stops on it; import it once and apply again:
+
+```sh
+terraform import aws_iam_openid_connect_provider.github \
+  "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):oidc-provider/token.actions.githubusercontent.com"
+```
+
+## Release on the server
+
+A server created before `tickr-image-pull` and `registry.env` existed (the first one, 2026-11-26)
+gets them once, from the Mac in `ops/aws/bot` (the script travels base64-encoded; no secret is in
+it):
+
+```sh
+aws ssm send-command --instance-ids "$(terraform output -raw instance_id)" \
+  --document-name AWS-RunShellScript --parameters commands="echo TICKR_IMAGE_REPOSITORY=$(terraform output -raw image_repository) > /srv/tickr/etc/registry.env && chmod 644 /srv/tickr/etc/registry.env && echo $(base64 < files/tickr-image-pull | tr -d '\n') | base64 -d > /usr/local/bin/tickr-image-pull && chmod 755 /usr/local/bin/tickr-image-pull"
+```
+
+Then, for each release:
+
+In an SSM session, with the full commit of main whose image CI pushed:
+
+```sh
+sudo tickr-image-pull <commit>     # pull it and mark it release-<commit> in the registry
+sudo /srv/tickr/bin/deploy-server.sh <commit>       # refuses unless flat (docs/deploy-server.md)
+```
+
+`tickr-image-pull` reads the repository from `/srv/tickr/etc/registry.env` (written at first
+boot from the stack) and signs in to the registry only for that run. The registry keeps the newest
+`images_kept` commit images and, separately, the newest `releases_kept` deployed releases: an
+image tagged `release-…` is never expired by the commit-count rule, so a rollback or a rebuilt
+server can always pull it. The server role may add a tag to an image already in the registry,
+but cannot upload layers or delete; tags are immutable.

@@ -453,6 +453,12 @@ receipt time, to `<data_dir>/massive/news-probe/<New York date>.jsonl`. Delay of
 `received_utc - published` (at most; it arrived after `previous_poll_sent_utc`). Lines of the
 first poll are `baseline` and time nothing.
 
+Revision poller (Codex 108 point 7; off): with `[massive] revision_poll_enabled = true`, `tickr
+poll-revisions` (same environment as the probe) keeps every version of each Benzinga earnings report
+and news article it receives under `<data_dir>/<revision_store_dir>`, with the poll coverage in
+`coverage/`. A failed poll or a restart leaves a typed gap there; `revisions.write_l1bz` refuses a
+range that touches one.
+
 The demo day had a launchd job of its own (`local.tickr.demo`) until the apps carried the day
 themselves. If it is still installed on this Mac, remove it once:
 
@@ -599,13 +605,18 @@ straight to the supervisor. Limits:
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
 `exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`,
-`flatten-after-close`, from the API `api-credentials-unexpected` (Mac notification and feed only, see
-"The API job and the Webull keys"), and from
+`flatten-after-close`, from the API `api-credentials-unexpected` and `risk-command-used` (Mac notification and feed only, see
+"The API job and the Webull keys") and `remote-auth-blocked` (an address used up its
+failed-authentication budget on the remote port, docs/api.md; Mac notification and feed, feed only
+off macOS), and from
 the watchdog `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`,
 `watchdog-restarted-bot`, `watchdog-restart-refused`, `watchdog-restart-failed`, `bot-down`,
 `disk-low`. Every alert goes to
 the Mac notification, to iMessage (`[alerts] imessage_recipient_variable`, see setup step 4) and to
-the alerts feed below.
+the alerts feed below, unless the owner's routing turned its kind off on a channel (PUT
+/alerts/routing, file `[alerts] routing_file` under `data_dir`; docs/api.md, "Notification
+settings"). Critical kinds cannot be turned off, the feed always gets every alert, and deleting
+the routing file turns everything back on.
 The iMessage is sent on a background thread, so the bot's loop never waits for Messages.app; its
 result is journaled as its own `alert` record (`"channel": "imessage"`) once known. An alert
 counts as shown, for repeat suppression, when either channel delivered it.
@@ -631,6 +642,16 @@ It reads only that file (no credentials, no environment). After each wake it rep
 lines and starts waiting again. The feed works only while that session runs; the Mac notification
 and iMessage do not depend on it. A feed line that cannot be written (a full disk) is recorded as
 a failed `feed` channel like any other.
+
+### `risk-command-used`
+
+The API raises one of these for every accepted command that raises risk: `entry-stop` with
+`off` (entries allowed again) and `start-bot`. The alert names the paired device (the name
+`python -m tickr.api devices` lists, or `local` for the local port), the port (local or
+remote) and the time; never a token. If you did not do this, the device's token is stolen or
+the phone is not yours: revoke that device now (`python -m tickr.api revoke --name <device>`),
+then pair again. Refused commands raise nothing. It goes to the Mac notification (macOS only)
+and the alerts feed.
 
 ### `broker-reads-failing`
 
