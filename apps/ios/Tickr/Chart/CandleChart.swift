@@ -110,8 +110,12 @@ struct CandleChart: View {
   static let timeLabelSlot: CGFloat = 52
   /// Area of the dot on the touched candle's close, in square points (a Charts symbol size).
   static let scrubDotArea: CGFloat = 36
-  /// Annotations near an edge move inside the chart instead of being cut off.
-  static let keepInside = AnnotationOverflowResolution(x: .fit(to: .chart), y: .fit(to: .chart))
+  /// Annotations near an edge move inside instead of being cut off: sideways inside the plot, so a
+  /// plate near the right edge never lies over the price scale ("BUY 51 @ 19.21" was cut by it).
+  static let keepInside = AnnotationOverflowResolution(x: .fit(to: .plot), y: .fit(to: .chart))
+  /// How many tag heights a mark's plate stands above its mark (the marker, then the plate): a
+  /// high this close above a labelled mark would touch its plate.
+  static let plateTagHeights = 2.0
   /// Colours of the moving-average lines, in the order of `Studies.movingAveragePeriods`.
   static let averageColours = [Palette.info, Palette.warning, Palette.highlight]
   /// Line series of the moving averages, in the same order.
@@ -388,9 +392,7 @@ struct CandleChart: View {
     let lifts = markerLifts(scale)
     // Every mark on screen carries its label while they are few, as on the Mac; with more, only
     // the marks of the held or touched candle do.
-    let labelsAll = lifts.count <= Tokens.Chart.markLabelLimit
-    let pointed = selectedCandle
-    let labelled = { (time: Date) in labelsAll || pointed.map { $0.start <= time && time < $0.end } == true }
+    let labelled = markLabelled(lifts)
     ForEach(trades) { trade in
       tradeMarks(trade, lifts, labelled: labelled)
     }
@@ -427,6 +429,41 @@ struct CandleChart: View {
     }
   }
 
+  /// Whether a mark at a time carries its label: every mark while they are few, as on the Mac;
+  /// with more, only the marks of the held or touched candle.
+  private func markLabelled(_ lifts: [MarkerID: Int]) -> (Date) -> Bool {
+    let labelsAll = lifts.count <= Tokens.Chart.markLabelLimit
+    let pointed = selectedCandle
+    return { time in labelsAll || pointed.map { $0.start <= time && time < $0.end } == true }
+  }
+
+  /// The labelled marks on screen, each at its drawn time and price.
+  private func labelledMarks(_ scale: PriceScale) -> [(time: Date, price: Double)] {
+    let labelled = markLabelled(markerLifts(scale))
+    var marks = events.map { (time: eventTime($0), price: $0.price) }
+    for trade in trades {
+      if let at = times.drawn(trade.openedAt.date) { marks.append((at, ChartFormat.double(trade.entryPrice))) }
+      if let at = times.drawn(trade.closedAt.date) { marks.append((at, ChartFormat.double(trade.exitPrice))) }
+    }
+    if let position, let at = times.drawn(position.openedAt.date) {
+      marks.append((at, ChartFormat.double(position.entryPrice)))
+    }
+    return marks.filter { labelled($0.time) }
+  }
+
+  /// Whether the high's label would touch a labelled mark's plate: a mark within the label's width
+  /// of the high's candle and close enough below the high that its plate reaches up to it
+  /// ("19.41" touched "ENTER").
+  private func highMeetsAPlate(_ high: Candle, _ scale: PriceScale) -> Bool {
+    let plot = chartWidth - axisWidth
+    guard plot > 0, window > 0 else { return false }
+    let reach = Double(axisWidth + Self.extremeLeader) * window / Double(plot)
+    let rise = tagClearance(scale) * Self.plateTagHeights
+    return labelledMarks(scale).contains { mark in
+      abs(mark.time.timeIntervalSince(middle(high))) <= reach && high.high - mark.price <= rise
+    }
+  }
+
   /// The highest high and lowest low on screen, each labelled with its price.
   @ChartContentBuilder
   private func extremes(_ scale: PriceScale) -> some ChartContent {
@@ -438,10 +475,10 @@ struct CandleChart: View {
       let highLeft = labelGoesLeft(high)
       let lowLeft = labelGoesLeft(low)
       // A high or low at a tagged price (the last close, an entry, a stop) is already named by
-      // its tag: a second label there would lie over it.
+      // its tag: a second label there would lie over it. The high also yields to a mark's plate.
       let tagged = priceTags(scale).map(\.shownAt)
       let clearance = tagClearance(scale)
-      if !tagged.contains(where: { abs($0 - high.high) < clearance }) {
+      if !tagged.contains(where: { abs($0 - high.high) < clearance }), !highMeetsAPlate(high, scale) {
         PointMark(x: .value(Plot.time, middle(high)), y: .value(Plot.price, high.high))
           .symbolSize(0)
           .annotation(position: highLeft ? .leading : .trailing, spacing: Tokens.Space.xxs,
