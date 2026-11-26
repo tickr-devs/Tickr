@@ -7,7 +7,8 @@ import TickrKit
 /// colours and glyphs), and under them how many symbols were found and bought and whether every
 /// stop is at the broker. A tap opens "Today's funnel" (IOS2Funnel): the same summary, each stage
 /// as a bar with its count and what it dropped (a tap on a stage opens its symbols, or the broker
-/// check's detail), and "Symbols at each stage ›". A status that is stale, failed or from an
+/// check's detail), and "Symbols at each stage ›". While Home's ornaments move, ticker dots fall
+/// through the bars (`FunnelDrops`, IOSFunnel board, mockup v159). A status that is stale, failed or from an
 /// earlier session shows faint rings and says so; a recorded day shows that day's flow.
 struct FunnelCard: View {
   let status: StatusV1
@@ -109,9 +110,13 @@ struct FunnelCard: View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       summary
       let all = stages
-      ForEach(all) { stage in
-        bar(stage, in: all)
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        ForEach(all) { stage in
+          bar(stage, in: all)
+        }
       }
+      // decorative: owner-approved funnel sheet dots (mockup v159, 2026-11-26)
+      .overlay { FunnelDrops(moving: moving && current) }
       CardFooterLink(L10n.Flow.symbolsAtEachStage) { pick(.stage(.screeners)) }
     }
   }

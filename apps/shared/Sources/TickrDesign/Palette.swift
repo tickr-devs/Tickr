@@ -131,6 +131,10 @@ public enum Palette {
   /// A symbol the funnel dropped (mockup v100: pink; red stays for danger).
   public static let dropped = seriesATR
   public static let droppedText = seriesATRText
+  /// The ticker dots falling through the funnel sheet's bars (`FunnelDrops`, mockup v159): white
+  /// with a glow of it, in both appearances, and their dark rim (at `Opacity.funnelDropRim`).
+  public static let funnelDrop = Color(light: 0xFFFFFF, dark: 0xFFFFFF)
+  public static let funnelDropRim = Color(light: 0x000000, dark: 0x000000)
 
   // MARK: light-mode depth
 
