@@ -116,3 +116,14 @@ jobs:
           fi
           grep -E "warning:" test.log | grep -v "/SourcePackages/" || true
           grep -E "✔|passed" test.log | tail -n 5
+      # The owner's own build: ⌘R in Xcode with the "Tickr iOS" scheme for his iPhone (iphoneos),
+      # not the Simulator. Unsigned here. On 2026-11-26 that build rejected code the Simulator
+      # build above accepted, so both are compiled.
+      - name: Build for a device, as the owner runs it (unsigned)
+        run: |
+          if ! xcodebuild build -workspace ../../Tickr.xcworkspace -scheme 'Tickr iOS' \
+              -destination 'generic/platform=iOS' -configuration Debug CODE_SIGNING_ALLOWED=NO > device.log 2>&1; then
+            grep -E "error:" device.log | tail -n 60 || tail -n 80 device.log
+            exit 1
+          fi
+          grep -E "warning:" device.log | grep -v "/SourcePackages/" || true
