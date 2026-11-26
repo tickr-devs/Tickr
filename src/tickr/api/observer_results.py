@@ -224,7 +224,7 @@ def replay_inputs(paths: SimulationPaths) -> tuple[ReplaySettings, ClockFor]:
         settings = load_settings(paths.replay_settings, paths.history_sessions)
     except ReplayError as exc:
         raise NoInputs(f"replay settings unreadable: {safe_cause(exc)}") from exc
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise NoInputs(f"replay settings unreadable: {type(exc).__name__}",
                        transient=True) from exc
     return settings, calendar_clock(load_calendar(paths), paths.session)

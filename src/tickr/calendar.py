@@ -183,7 +183,7 @@ class SessionCalendar:
                 files.append(_parse_file(path, int(match.group(1))))
         if not files:
             raise CalendarRefused(
-                CalendarCause.CALENDAR_INVALID, f"no calendar files in {directory}"
+                CalendarCause.CALENDAR_INVALID, "no calendar files in the calendar directory"
             )
         return cls(files)
 
