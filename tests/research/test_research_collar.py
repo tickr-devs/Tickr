@@ -9,8 +9,6 @@ import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
 
-from research_helpers import HERE
-
 from tickr.data.capture import CaptureWriter
 from tickr.research.__main__ import main
 from tickr.research.collar import distribution
@@ -20,7 +18,6 @@ from tickr.types import Bar, Quote
 
 T0 = datetime(2026, 11, 13, 15, 0, tzinfo=UTC)  # 10:00 New York
 DAY = "2026-11-13"
-SETTINGS = ["--settings", str(HERE / "research_settings.toml")]
 
 
 def quote(symbol: str, seconds: int, ask: str) -> Quote:
@@ -62,7 +59,7 @@ def test_collar_from_capture_files_end_to_end(tmp_path):
                                              Admission.TAKEN)])
 
     assert main(["collar", "--quotes", str(day / "quotes.jsonl"),
-                 "--bars", str(day / "bars.jsonl"), "--decisions", str(decisions), *SETTINGS,
+                 "--bars", str(day / "bars.jsonl"), "--decisions", str(decisions),
                  "--out", str(tmp_path / "out")]) == 0
     with open(tmp_path / "out" / "collar.csv", newline="") as handle:
         rows = {(r["entry"], r["reference"], r["symbol"]): r for r in csv.DictReader(handle)}
@@ -86,6 +83,6 @@ def test_a_malformed_bar_file_is_refused(tmp_path, capsys):
     quotes.write_text("")
     bars = tmp_path / "bars.jsonl"
     bars.write_text("{not json}\n")
-    assert main(["collar", "--quotes", str(quotes), "--bars", str(bars), *SETTINGS,
+    assert main(["collar", "--quotes", str(quotes), "--bars", str(bars),
                  "--out", str(tmp_path / "out")]) == 2
     assert "bars.jsonl:1" in capsys.readouterr().err
