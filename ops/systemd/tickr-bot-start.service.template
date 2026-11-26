@@ -21,10 +21,9 @@ After=tickr-bot-restart.service
 [Service]
 Type=oneshot
 User={{USER}}
-WorkingDirectory={{REPO}}
 EnvironmentFile={{COMPOSE_ENV}}
 Environment=TICKR_CONFIG_HOST={{CONFIG_HOST}}
 Environment=TICKR_ENV_FILE_HOST={{ENV_FILE}}
 ExecStart=/bin/mv -fT {{START_REQUEST}} {{START_TAKEN}}
-ExecStart=/usr/bin/docker compose -f {{REPO}}/ops/docker/compose.yaml -p tickr --profile jobs up -d --no-recreate --no-deps --pull never --no-build bot
+ExecStart=/usr/bin/docker compose -f {{COMPOSE}} -p tickr --profile jobs up -d --no-recreate --no-deps --pull never --no-build bot
 ExecStart=/bin/cat {{START_TAKEN}}
