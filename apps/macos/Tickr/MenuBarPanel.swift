@@ -288,12 +288,11 @@ private struct MenuControls: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       // Pause or Resume only once the status says which applies: never guessed while unknown.
-      if let status = model.status {
-        BotCommandButton(action: status.entryStop ? .resumeEntries : .pauseEntries, place: .menuBar,
-          size: .compact)
+      if model.status != nil {
+        BotCommandButton(action: model.pauseAction, place: .menuBar, size: .compact)
           .frame(maxWidth: .infinity)
       }
-      Text(L10n.MenuBar.moreHint)
+      Text(L10n.MenuBar.moreInApp)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
         .fixedSize(horizontal: false, vertical: true)
