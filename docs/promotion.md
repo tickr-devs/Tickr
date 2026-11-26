@@ -54,7 +54,8 @@ trades, every feature available live, stop and decision frequency chosen. Status
 passed. R33 (live feature parity) must hold first. `python -m tickr.research gate`
 (`docs/research.md`) reports the numbers as an offline DESCRIPTIVE report on both money lines: net
 after costs, K of M months and without the best X% as named sensitivity checks, tail
-concentration and a paired spread-only baseline, over a frozen start, end and session calendar.
+concentration and a same-trade spread cost diagnostic (a paired baseline is reported as
+unavailable), over a frozen start, end and session calendar.
 Nothing is promoted from it automatically: binding promotion criteria are set with the owner on
 open development evidence before any exam read, and portfolio dollars count only after a replay of
 cash, slots, repeated symbols, protection, session limits and actual exits (not built yet). The

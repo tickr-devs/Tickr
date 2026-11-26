@@ -16,7 +16,7 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `calibration` | Does a model answer of 0.7 come true 70% of the time? | `measured` |
 | `slippage` | How far below the planned stop did stops fill? Planned against realized loss per day? | `measured` |
 | `fill-quality` | Entry, exit and stop slippage, fees and fill delay of real fills; one record set or two side by side | `measured` |
-| `gate` | Descriptive R23 Step 0 report on one model version's sized trades: net, sensitivity checks, tail concentration, spread-only baseline (never a promotion) | `simulated` or `real` |
+| `gate` | Descriptive R23 Step 0 report on one model version's sized trades: net, sensitivity checks, tail concentration, same-trade spread cost (never a promotion) | `simulated` or `real` |
 
 Live observers see only the symbols discovery kept, and discovery applies the active strategy's
 liquidity rules, so observer results are comparable only while the active strategy (and its
@@ -358,7 +358,12 @@ month that is not observed makes the months check inconclusive.
 
 - `trade_id` (unique), `symbol`, `session` (`regular` or `extended`);
 - `entry_time`, `exit_time`: ISO 8601 with a UTC offset; the trade's day is the New York date of
-  its entry; an exit before the entry is refused;
+  its entry. Both entry and exit must be inside `--start..--end` (`outside_period`, e.g. an exit a
+  year after a report's end). Same-day flatten: the exit must be on the entry's New York day, by
+  that day's extended close in the calendar (`not_same_day`); an exit before the entry is refused;
+- `session` must match where the entry falls in that day's calendar sessions: `regular` in
+  regular_open..regular_close, `extended` in premarket_open..regular_open or
+  regular_close..extended_close (half days use their own closes); otherwise `session_mismatch`;
 - `notional_usd`: the trade's actual sized notional, above 0 and at most
   `[risk] position_notional_cap_usd` (above it: `limit_breach`);
 - `return_units`: `pct_of_notional` (percent of `notional_usd`) or `usd`; `result` and the three
@@ -388,13 +393,21 @@ repeated symbols, protection, session limits or actual exits, so they cannot cou
   4,000 USD line), shown "regular only" while the file has no extended trade.
 
 Each line shows earned on winners, lost on losers, net, fees, slippage, the spread already in the
-results, the spread the report charged, days in plus, and the paired baseline.
+results, the spread the report charged, days in plus, and the same-trade spread cost.
 
-**Spread-only baseline** (paired: the same rows, notionals, dates and sessions, so the same feasible
-rules): each trade is replaced by a reference that enters and exits at the same midpoint and pays
-only its `spread`, so its result is `-spread`. `baseline_net` = minus the sum of the spreads in
-dollars; `net_minus_baseline` = what the model earned beyond paying the spread. An unknown spread on
-any row makes the baseline unknown and its check inconclusive.
+**Same-trade spread cost** (a cost DIAGNOSTIC, not a baseline): the spread paid on the model's own
+trades at an unchanged midpoint. `same_trade_matched` counts the trades with a known net AND a
+known spread; `same_trade_spread_cost` is the spread in dollars over those trades only, so both
+sides of any comparison use the same rows; `net_before_spread` (net plus that cost) is shown only
+when every trade on the line is matched and is empty otherwise (an incomplete delta is never
+printed: with two trades, one of unknown cost, a 10 USD net is not compared with the spread of
+both).
+
+**Paired baseline: unavailable.** A real paired baseline (for example tightest spread) must select
+independently from the same pre-outcome candidates each minute with the same execution, dates,
+costs, quota and constraints. The trade rows cannot reconstruct those opportunities, so `gate.csv`
+and the summary report `paired_baseline` as `unavailable`; a version-bound matched-baseline input
+is future work.
 
 **Checks**, per line (`gate.csv`, kind in brackets):
 
@@ -404,8 +417,7 @@ any row makes the baseline unknown and its check inconclusive.
    the last trade included;
 3. `sensitivity_without_best` (sensitivity): net still above 0 after removing the best
    `gate_drop_best_percent` (X) percent of the line's trades by after-cost result (count rounded up,
-   so 1% of 150 trades removes 2);
-4. `net_above_spread_only_baseline` (paired baseline).
+   so 1% of 150 trades removes 2).
 
 A check is `inconclusive` when an in-period trading day has no data, the line has zero assessable
 trades, or a cost is unknown (and, for the months check, when a window month is not observed); an
@@ -418,12 +430,13 @@ available live, stop chosen, decision frequency chosen) are not numbers: they ar
 
 Refused with a typed cause: `missing_column`, `not_finite`, `bad_value` (not a number, a bad
 time, session, unit, provenance or flag, a negative fee or spread, a notional not above 0,
-`--start` after `--end`), `duplicate`, `outside_period`, `not_covered`, `limit_breach`, and the
-calendar's causes. Outputs: `gate.csv` (line, check, kind, outcome, measured, wanted, why
-inconclusive; then the items checked by hand), `gate_lines.csv`, `gate_months.csv` (status,
-trading, in-period and covered days, period fraction and coverage percent, trades and net per window month and line),
+`--start` after `--end`, a trade on a non-trading day), `duplicate`, `outside_period`,
+`not_covered`, `not_same_day`, `session_mismatch`, `limit_breach`, and the calendar's causes. Outputs: `gate.csv` (line, check, kind, outcome, measured, wanted, why
+inconclusive; then the unavailable paired baseline and the items checked by hand), `gate_lines.csv`, `gate_months.csv` (status,
+trading, in-period and covered days, period fraction and coverage percent, trades and net per
+window month and line),
 `gate_tails.csv`, `gate_trades.csv` (the per-trade cost audit: identity, times, notional, units,
-every cost as given, the spread charged, net and baseline in dollars) and `gate_summary.json` (the
+every cost as given, the spread charged, net and spread in dollars) and `gate_summary.json` (the
 frozen inputs, sensitivity parameters, coverage, cost provenance and versions with trade counts,
 `conclusive`, and each line).
 

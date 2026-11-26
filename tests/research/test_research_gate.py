@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import dataclasses
 import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -21,12 +22,13 @@ from tickr.research.gate import (
     OBSERVED,
     OUTSIDE,
     TRADE_COLUMNS,
+    UNAVAILABLE,
     GateRefused,
     Trade,
     gate,
     load_covered_days,
     load_trades,
-    trading_day_test,
+    market_day_lookup,
 )
 from tickr.research.settings import load_research_settings
 
@@ -37,15 +39,15 @@ CLOCK = ["--replay-settings", str(HERE / "replay_settings.toml"),
          "--config", str(ROOT / "config" / "bot.toml")]
 CAP = Decimal(1000)
 ALL = Decimal(4000)
-TRADING_DAY = trading_day_test(SessionCalendar.load(ROOT / "config" / "calendar"))
+MARKET_DAY = market_day_lookup(SessionCalendar.load(ROOT / "config" / "calendar"))
 START, END = date(2026, 8, 1), date(2026, 10, 31)
-CHECKS = ("net_after_costs_above_0", "sensitivity_k_of_m_months", "sensitivity_without_best",
-          "net_above_spread_only_baseline")
+CHECKS = ("net_after_costs_above_0", "sensitivity_k_of_m_months", "sensitivity_without_best")
+ENTRY_HOUR = {"regular": "10:00", "extended": "17:00"}  # 10:00 regular, 17:00 post-market (ET)
 
 
 def _days(first: date, last: date) -> set[date]:
     return {first + timedelta(days=i) for i in range((last - first).days + 1)
-            if TRADING_DAY(first + timedelta(days=i))}
+            if MARKET_DAY(first + timedelta(days=i)) is not None}
 
 
 ALL_DAYS = _days(START, END)
@@ -59,14 +61,14 @@ def _t(day: str, result: str, session: str = "regular", *, fees: str | None = "0
     def num(raw):
         return None if raw is None else Decimal(raw)
 
-    entry = datetime.fromisoformat(f"{day}T10:00:00-04:00")
+    entry = datetime.fromisoformat(f"{day}T{ENTRY_HOUR[session]}:00-04:00")
     return Trade(f"t{next(_ids)}", "ABC", session, entry, entry + timedelta(minutes=30),
                  Decimal(notional), units, Decimal(result), num(fees), num(slippage),
                  num(spread), in_result, provenance, "costs-v1")
 
 
 def _gate(trades, covered=None, start=START, end=END, settings=SETTINGS):
-    return gate(trades, ALL_DAYS if covered is None else covered, start, end, TRADING_DAY, CAP,
+    return gate(trades, ALL_DAYS if covered is None else covered, start, end, MARKET_DAY, CAP,
                 ALL, settings)
 
 
@@ -83,7 +85,8 @@ def test_descriptive_lines_checks_and_money():
     assert (main_line.earned, main_line.lost, main_line.net) == (45, 10, 35)
     assert (main_line.fees, main_line.slippage) == (2, 2)  # 4 x 0.05% of 1000, already in
     assert main_line.spread_in_results == 8 and main_line.spread_charged == 0
-    assert main_line.baseline_net == -8 and main_line.net_minus_baseline == 43
+    assert main_line.same_trade_matched == 4 and main_line.same_trade_spread_cost == 8
+    assert main_line.net_before_spread == 43
     assert main_line.dropped == 1 and main_line.net_without_best == 15  # best +20 removed
     assert all_line.sessions == "all"
     assert (all_line.earned, all_line.lost, all_line.net) == (180, 60, 120)
@@ -183,17 +186,26 @@ def test_spread_is_charged_once():
     assert _t("2026-08-03", "1", spread=None, in_result=False).net() is None
 
 
-def test_spread_only_baseline_is_paired_and_unknown_spread_is_inconclusive():
+def test_same_trade_spread_cost_is_a_diagnostic_not_a_baseline():
     trades = [_t("2026-08-03", "-0.1", spread="0.3"), _t("2026-09-01", "-0.1", spread="0.3"),
               _t("2026-10-05", "-0.1", spread="0.3")]
     line = _gate(trades).lines[0]
-    assert line.net == -3 and line.baseline_net == -9 and line.net_minus_baseline == 6
-    assert line.checks["net_above_spread_only_baseline"] == HOLDS
+    assert line.net == -3 and line.same_trade_spread_cost == 9 and line.net_before_spread == 6
+    assert "net_above_spread_only_baseline" not in line.checks
     assert line.checks["net_after_costs_above_0"] == NOT_HOLDS
     line = _gate([*trades, _t("2026-10-06", "1", spread=None)]).lines[0]
-    assert line.baseline_net is None
-    assert line.checks["net_above_spread_only_baseline"] == INCONCLUSIVE
-    assert line.checks["net_after_costs_above_0"] == HOLDS
+    assert line.same_trade_matched == 3 and line.net_before_spread is None
+
+
+def test_incomplete_delta_is_suppressed():
+    # Codex's case: two 1,000 USD trades, one with an unknown cost. The model makes 10 USD on the
+    # known one; the old comparator took -4 USD of spread over BOTH rows and printed +14.
+    known = _t("2026-08-03", "1", fees="0", slippage="0", spread="0.2")
+    unknown = _t("2026-08-04", "1", fees=None, slippage="0", spread="0.2")
+    line = _gate([known, unknown]).lines[0]
+    assert line.net == 10 and line.unknown_cost_trades == 1
+    assert line.same_trade_matched == 1 and line.same_trade_spread_cost == 2  # matched rows only
+    assert line.net_before_spread is None
 
 
 def test_usd_return_units_and_hypothetical_rescale():
@@ -242,6 +254,41 @@ def test_gate_refusals(trades, covered, cause):
     with pytest.raises(GateRefused) as info:
         _gate(trades, covered)
     assert info.value.cause == cause
+
+
+@pytest.mark.parametrize(
+    ("entry", "exit_", "session", "cause"),
+    [
+        # Entered inside the period, exited a year later, after a report ending 2026-10-31.
+        ("2026-10-05T10:00:00-04:00", "2027-10-05T10:00:00-04:00", "regular",
+         GateRefused.OUTSIDE_PERIOD),
+        ("2026-10-05T10:00:00-04:00", "2026-10-06T10:00:00-04:00", "regular",
+         GateRefused.NOT_SAME_DAY),
+        ("2026-10-05T10:00:00-04:00", "2026-10-05T20:30:00-04:00", "regular",
+         GateRefused.NOT_SAME_DAY),
+        ("2026-10-05T10:00:00-04:00", "2026-10-05T10:30:00-04:00", "extended",
+         GateRefused.SESSION_MISMATCH),
+        ("2026-10-05T17:00:00-04:00", "2026-10-05T17:30:00-04:00", "regular",
+         GateRefused.SESSION_MISMATCH),
+        ("2026-10-05T03:00:00-04:00", "2026-10-05T10:30:00-04:00", "extended",
+         GateRefused.SESSION_MISMATCH),
+    ],
+)
+def test_timing_refusals(entry, exit_, session, cause):
+    trade = dataclasses.replace(_t("2026-10-05", "1"), session=session,
+                                entry_time=datetime.fromisoformat(entry),
+                                exit_time=datetime.fromisoformat(exit_))
+    with pytest.raises(GateRefused) as info:
+        _gate([trade])
+    assert info.value.cause == cause
+
+
+def test_premarket_entry_is_extended():
+    trade = dataclasses.replace(
+        _t("2026-10-05", "1", "extended"),
+        entry_time=datetime.fromisoformat("2026-10-05T08:00:00-04:00"),
+        exit_time=datetime.fromisoformat("2026-10-05T09:45:00-04:00"))
+    assert _gate([trade]).lines[1].trades == 1
 
 
 def test_start_after_end_refused():
@@ -336,11 +383,12 @@ def test_cli_writes_descriptive_outputs(tmp_path, capsys):
     assert "passed" not in printed.lower()
     with open(out / "gate.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    assert [(r["line"], r["check"], r["kind"], r["outcome"]) for r in rows[:4]] == [
+    assert [(r["line"], r["check"], r["kind"], r["outcome"]) for r in rows[:3]] == [
         ("main_session", "net_after_costs_above_0", "descriptive", HOLDS),
         ("main_session", "sensitivity_k_of_m_months", "sensitivity", HOLDS),
-        ("main_session", "sensitivity_without_best", "sensitivity", HOLDS),  # 23 - 18
-        ("main_session", "net_above_spread_only_baseline", "paired baseline", HOLDS)]
+        ("main_session", "sensitivity_without_best", "sensitivity", HOLDS)]  # 23 - 18
+    assert [(r["check"], r["outcome"]) for r in rows if r["kind"] == "paired baseline"] == [
+        ("paired_baseline", UNAVAILABLE)]
     assert rows[0]["measured"] == "23.0000"  # 10 - 5 + (20 - 2 spread charged once)
     assert [r["check"] for r in rows if r["outcome"] == "checked by hand"] == list(MANUAL)
     summary = json.loads((out / "gate_summary.json").read_text())
@@ -355,6 +403,7 @@ def test_cli_writes_descriptive_outputs(tmp_path, capsys):
     assert [t["top_percent"] for t in summary["lines"]["main_session"]["tails"]] == \
         ["1.0000", "5.0000", "10.0000"]
     assert "passed" not in json.dumps(summary).lower()
+    assert summary["paired_baseline"]["status"] == UNAVAILABLE
     with open(out / "gate_trades.csv", newline="") as handle:
         audit = list(csv.DictReader(handle))
     assert [(a["trade_id"], a["spread_charged"], a["net_usd"]) for a in audit] == [

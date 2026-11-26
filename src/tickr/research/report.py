@@ -350,8 +350,8 @@ GATE_COLUMNS = ("label", "line", "line_label", "check", "kind", "outcome", "meas
                 "inconclusive_because")
 GATE_LINE_COLUMNS = ("label", "line", "line_label", "sizing", "sessions", "trades",
                      "unknown_cost_trades", "days", "days_in_plus", "earned", "lost", "net", "fees",
-                     "slippage", "spread_in_results", "spread_charged", "baseline_net",
-                     "net_minus_baseline")
+                     "slippage", "spread_in_results", "spread_charged", "same_trade_matched",
+                     "same_trade_spread_cost", "net_before_spread")
 GATE_MONTH_COLUMNS = ("label", "line", "month", "status", "trading_days", "period_days",
                       "period_fraction_pct", "covered_days", "coverage_pct", "trades", "net",
                       "in_plus")
@@ -359,11 +359,10 @@ GATE_TAIL_COLUMNS = ("label", "line", "top_percent", "trades", "net", "share_of_
 GATE_TRADE_COLUMNS = ("label", "trade_id", "symbol", "session", "day", "entry_time", "exit_time",
                       "notional_usd", "return_units", "result", "fees", "slippage", "spread",
                       "spread_in_result", "spread_charged", "cost_provenance", "cost_version",
-                      "net_usd", "spread_only_baseline_usd")
+                      "net_usd", "spread_usd")
 GATE_BY_HAND = "checked by hand"
 GATE_KIND = {"net_after_costs_above_0": "descriptive", "sensitivity_k_of_m_months": "sensitivity",
-             "sensitivity_without_best": "sensitivity",
-             "net_above_spread_only_baseline": "paired baseline"}
+             "sensitivity_without_best": "sensitivity"}
 GATE_NOTICE = ("Offline descriptive report. Nothing is promoted from it: binding promotion "
                "criteria are set with the owner on open development evidence (docs/promotion.md). "
                "Dollar "
@@ -377,8 +376,6 @@ def _gate_causes(line: gt.Line, check: str) -> str:
     causes = list(line.causes)
     if check == "sensitivity_k_of_m_months":
         causes += [f"{m.month} {m.status}" for m in line.months if m.status != gt.OBSERVED]
-    if check == "net_above_spread_only_baseline" and line.baseline_net is None:
-        causes.append("unknown spread")
     return "; ".join(causes)
 
 
@@ -395,17 +392,17 @@ def write_gate(result: gt.Gate, version: str, label: str, out_dir: Path, places:
     for line in result.lines:
         measured = {"net_after_costs_above_0": line.net,
                     "sensitivity_k_of_m_months": f"{line.months_in_plus} of {window}",
-                    "sensitivity_without_best": line.net_without_best,
-                    "net_above_spread_only_baseline": line.net_minus_baseline}
+                    "sensitivity_without_best": line.net_without_best}
         wanted = {"net_after_costs_above_0": "net above 0",
                   "sensitivity_k_of_m_months": f"at least {settings.gate_positive_months} of the "
                                                f"last {window} months to --end in plus",
                   "sensitivity_without_best": f"net above 0 without the best {line.dropped} of "
-                                              f"{line.trades - line.unknown_cost_trades} trades",
-                  "net_above_spread_only_baseline": "net above the spread-only baseline"}
+                                              f"{line.trades - line.unknown_cost_trades} trades"}
         rows.extend([label, line.name, line.label, name, GATE_KIND[name], outcome,
                      measured[name], wanted[name], _gate_causes(line, name)]
                     for name, outcome in line.checks.items())
+    rows.append([label, "both", "", "paired_baseline", "paired baseline", gt.UNAVAILABLE, "",
+                 "", gt.PAIRED_BASELINE_UNAVAILABLE])
     rows.extend([label, "both", "", item, "not a number", GATE_BY_HAND, "", "", ""]
                 for item in gt.MANUAL)
     _write_csv(out_dir / "gate.csv", GATE_COLUMNS, rows, places)
@@ -426,7 +423,7 @@ def write_gate(result: gt.Gate, version: str, label: str, out_dir: Path, places:
                ([label, t.trade_id, t.symbol, t.session, t.day, t.entry_time, t.exit_time,
                  t.notional_usd, t.return_units, t.result, t.fees, t.slippage, t.spread,
                  t.spread_in_result, t.spread_charged, t.cost_provenance, t.cost_version,
-                 t.net(), None if t.spread is None else -t.usd(t.spread)] for t in trades),
+                 t.net(), t.usd(t.spread)] for t in trades),
                places)
     body = {
         "label": label, "model_version": version, "report": "descriptive", "notice": GATE_NOTICE,
@@ -448,8 +445,10 @@ def write_gate(result: gt.Gate, version: str, label: str, out_dir: Path, places:
                                 for m in result.window]},
         "costs": {"sign": gt.COST_SIGN, "provenance_version_trades": result.provenance,
                   "unknown_cell": "empty = unknown (line inconclusive); 0 = a valid zero",
-                  "spread_only_baseline": "same trades, notionals and dates; each pays only its "
-                                          "spread (result = -spread)"},
+                  "same_trade_spread_cost": "diagnostic: spread paid on the model's own trades, "
+                                            "over trades with a known net and spread; "
+                                            "net_before_spread only when every trade matches"},
+        "paired_baseline": {"status": gt.UNAVAILABLE, "why": gt.PAIRED_BASELINE_UNAVAILABLE},
         "conclusive": result.conclusive,
         "checked_by_hand": {item: GATE_BY_HAND for item in gt.MANUAL},
         "lines": {line.name: {"line_label": line.label}

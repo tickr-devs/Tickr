@@ -218,7 +218,7 @@ def _gate(args: argparse.Namespace) -> dict:
               "calendar_coverage": [[a.isoformat(), b.isoformat()] for a, b in calendar.coverage]}
     trades = gate_report.load_trades(args.trades)
     result = gate_report.gate(trades, gate_report.load_covered_days(args.covered_days), start, end,
-                              gate_report.trading_day_test(calendar),
+                              gate_report.market_day_lookup(calendar),
                               cfg.risk.position_notional_cap_usd, all_sessions, settings)
     return report.write_gate(result, args.model_version, args.results, args.out, places, trades,
                              frozen, settings)

@@ -20,9 +20,15 @@ Inputs:
 Cost sign: every cost column is in the row's return units and positive when it reduced the result
 (fees and spread are never negative; slippage below 0 is a price improvement).
 
-Spread-only baseline (paired, same rows, notionals and dates): each trade replaced by a reference
-that enters and exits at the same midpoint and pays only the row's `spread`, so its result is
-`-spread`. `net - baseline` is what the model earned beyond paying the spread.
+Same-trade spread cost (a DIAGNOSTIC, not a baseline): the spread paid on the model's own trades,
+and the net before it, over the matched trades (known net and known spread); the net before spread
+is suppressed unless every trade on the line is matched. A paired baseline needs an independent
+selection from the same pre-outcome candidates each minute, which trade rows cannot reconstruct,
+so it is reported as unavailable.
+
+Timing: the trade's day is the New York date of its entry; the exit must be on that same day
+(same-day flatten) by its extended close, inside --start..--end; `session` must match where the
+entry falls in that day's calendar sessions.
 """
 
 from __future__ import annotations
@@ -37,7 +43,14 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from tickr.calendar import FILE_PATTERN, CalendarCause, CalendarRefused, SessionCalendar, ny_date_of
+from tickr.calendar import (
+    FILE_PATTERN,
+    CalendarCause,
+    CalendarRefused,
+    MarketDay,
+    SessionCalendar,
+    ny_date_of,
+)
 from tickr.research.errors import ResearchError
 from tickr.research.settings import ResearchSettings
 
@@ -55,6 +68,10 @@ MONTHS_PER_YEAR = 12  # calendar constant
 ZERO = Decimal(0)
 MANUAL = ("every feature available live (R33 parity)", "stop chosen", "decision frequency chosen")
 HOLDS, NOT_HOLDS, INCONCLUSIVE = "holds", "does not hold", "inconclusive"
+UNAVAILABLE = "unavailable"
+PAIRED_BASELINE_UNAVAILABLE = (
+    "a paired baseline needs an independent selection from the same pre-outcome candidates each "
+    "minute (same execution, dates, costs, quota, constraints); trade rows cannot reconstruct it")
 OBSERVED, INSUFFICIENT, OUTSIDE = "observed", "insufficient_coverage", "outside_period"
 
 
@@ -68,6 +85,8 @@ class GateRefused(ResearchError):
     NOT_COVERED = "not_covered"
     LIMIT = "limit_breach"
     DUPLICATE = "duplicate"
+    NOT_SAME_DAY = "not_same_day"
+    SESSION_MISMATCH = "session_mismatch"
 
     def __init__(self, cause: str, detail: str) -> None:
         super().__init__(f"gate report refused ({cause}): {detail}")
@@ -162,8 +181,9 @@ class Line:
     slippage: Decimal | None
     spread_in_results: Decimal | None  # spread already inside the results, not charged again
     spread_charged: Decimal | None  # spread this report charged (rows without it in the result)
-    baseline_net: Decimal | None
-    net_minus_baseline: Decimal | None
+    same_trade_matched: int  # trades with a known net AND a known spread
+    same_trade_spread_cost: Decimal | None  # spread paid on the matched trades, USD
+    net_before_spread: Decimal | None  # matched net + spread cost; None unless all trades match
     months: tuple[Month, ...]
     months_in_plus: int
     dropped: int
@@ -288,20 +308,47 @@ def load_covered_days(path: Path) -> set[date]:
     return out
 
 
-def trading_day_test(calendar: SessionCalendar) -> Callable[[date], bool]:
-    """True on a calendar trading day (half days included), False on a weekend or closure;
-    any other calendar refusal (out of coverage, invalid file) propagates."""
+def market_day_lookup(calendar: SessionCalendar) -> Callable[[date], MarketDay | None]:
+    """The day's sessions on a calendar trading day (half days included), None on a weekend or
+    closure; any other calendar refusal (out of coverage, invalid file) propagates."""
 
-    def is_trading_day(day: date) -> bool:
+    def market_day(day: date) -> MarketDay | None:
         try:
-            calendar.day(day)
+            return calendar.day(day)
         except CalendarRefused as refused:
             if refused.cause in (CalendarCause.WEEKEND, CalendarCause.HOLIDAY):
-                return False
+                return None
             raise
-        return True
 
-    return is_trading_day
+    return market_day
+
+
+def _check_timing(t: Trade, start: date, end: date,
+                  market_day: Callable[[date], MarketDay | None]) -> None:
+    exit_day = ny_date_of(t.exit_time)
+    if not start <= t.day <= end or not start <= exit_day <= end:
+        raise GateRefused(GateRefused.OUTSIDE_PERIOD, f"trade {t.trade_id} {t.day} to {exit_day} "
+                          f"is not inside {start}..{end}")
+    if exit_day != t.day:
+        raise GateRefused(GateRefused.NOT_SAME_DAY, f"trade {t.trade_id} exits on {exit_day}, "
+                          f"not on its entry day {t.day} (same-day flatten)")
+    day = market_day(t.day)
+    if day is None:
+        raise GateRefused(GateRefused.BAD_VALUE,
+                          f"trade {t.trade_id} on {t.day}, not a trading day")
+    if t.exit_time > day.extended_close:
+        raise GateRefused(GateRefused.NOT_SAME_DAY, f"trade {t.trade_id} exits after the "
+                          f"extended close of {t.day}")
+    if day.regular_open <= t.entry_time < day.regular_close:
+        actual = "regular"
+    elif day.premarket_open <= t.entry_time < day.extended_close:
+        actual = "extended"
+    else:
+        raise GateRefused(GateRefused.SESSION_MISMATCH, f"trade {t.trade_id} enters outside "
+                          f"the sessions of {t.day}")
+    if actual != t.session:
+        raise GateRefused(GateRefused.SESSION_MISMATCH, f"trade {t.trade_id} says {t.session} "
+                          f"but enters in the {actual} session")
 
 
 def calendar_fingerprint(directory: Path) -> dict[str, str]:
@@ -386,8 +433,9 @@ def _line(name: str, label: str, sizing: str, sessions: str,
         count, value = top(percent)
         tails.append(Tail(percent, count, value, value / net * PERCENT if net > 0 else None))
     dropped, best = top(settings.gate_drop_best_percent)
-    spreads = [t.usd(t.spread, s) for t, s in rows]
-    baseline = None if None in spreads else -sum(spreads, ZERO)
+    matched = [(t, s) for t, s in known if t.spread is not None]
+    spread_cost = sum((t.usd(t.spread, s) for t, s in matched), ZERO) if matched else None
+    complete = bool(rows) and len(matched) == len(rows)
     months = tuple(Month(m.month, m.status, len(per_month[m.month]), sum(per_month[m.month], ZERO),
                          sum(per_month[m.month], ZERO) > 0) for m in window)
     months_in_plus = sum(1 for m in months if m.in_plus)
@@ -405,9 +453,6 @@ def _line(name: str, label: str, sizing: str, sessions: str,
         "sensitivity_k_of_m_months": _outcome(
             months_in_plus >= settings.gate_positive_months, month_causes),
         "sensitivity_without_best": _outcome(net - best > 0, causes),
-        "net_above_spread_only_baseline": _outcome(
-            baseline is not None and net > baseline,
-            [*causes, *(["unknown spread"] if baseline is None else [])]),
     }
 
     def total(field: str, only_in_result: bool | None = None) -> Decimal | None:
@@ -421,21 +466,25 @@ def _line(name: str, label: str, sizing: str, sessions: str,
         days_in_plus=sum(1 for v in per_day.values() if v > 0), earned=earned, lost=lost,
         net=net, fees=total("fees"), slippage=total("slippage"),
         spread_in_results=total("spread", True), spread_charged=total("spread", False),
-        baseline_net=baseline, net_minus_baseline=None if baseline is None else net - baseline,
+        same_trade_matched=len(matched), same_trade_spread_cost=spread_cost,
+        net_before_spread=net + spread_cost if complete else None,
         months=months, months_in_plus=months_in_plus, dropped=dropped, net_without_best=net - best,
         tails=tuple(tails), checks=checks, causes=tuple(causes),
     )
 
 
 def gate(trades: list[Trade], covered: set[date], start: date, end: date,
-         is_trading_day: Callable[[date], bool], cap_usd: Decimal, all_sessions_usd: Decimal,
-         settings: ResearchSettings) -> Gate:
+         market_day: Callable[[date], MarketDay | None], cap_usd: Decimal,
+         all_sessions_usd: Decimal, settings: ResearchSettings) -> Gate:
     if start > end:
         raise GateRefused(GateRefused.BAD_VALUE, f"--start {start} is after --end {end}")
     if not all_sessions_usd.is_finite():
         raise GateRefused(GateRefused.NOT_FINITE, "the all-sessions size is not finite")
     if all_sessions_usd <= 0:
         raise GateRefused(GateRefused.BAD_VALUE, "the all-sessions size is not above 0")
+    def is_trading_day(day: date) -> bool:
+        return market_day(day) is not None
+
     period = [d for d in _days(start, end) if is_trading_day(d)]
     for day in sorted(covered):
         if not start <= day <= end:
@@ -444,9 +493,7 @@ def gate(trades: list[Trade], covered: set[date], start: date, end: date,
         if not is_trading_day(day):
             raise GateRefused(GateRefused.BAD_VALUE, f"covered day {day} is not a trading day")
     for t in trades:
-        if not start <= t.day <= end:
-            raise GateRefused(GateRefused.OUTSIDE_PERIOD,
-                              f"trade {t.trade_id} on {t.day} is outside {start}..{end}")
+        _check_timing(t, start, end, market_day)
         if t.day not in covered:
             raise GateRefused(GateRefused.NOT_COVERED,
                               f"trade {t.trade_id} on {t.day}, a day not in the covered days")
