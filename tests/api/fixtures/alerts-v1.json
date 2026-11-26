@@ -298,6 +298,16 @@
       }
     },
     {
+      "kind": "remote-auth-blocked",
+      "group": "critical",
+      "locked": true,
+      "channels": {
+        "mac": true,
+        "imessage": true,
+        "push": true
+      }
+    },
+    {
       "kind": "risk-command-used",
       "group": "critical",
       "locked": true,

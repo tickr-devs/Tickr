@@ -126,6 +126,10 @@ class AlertKind(StrEnum):
     # give it (any, while [chart] webull_enabled is false; any but the active environment's app
     # key and secret while it is true): its plist is stale or hand-edited (runtime/launchd.py).
     API_CREDENTIALS_UNEXPECTED = "api-credentials-unexpected"
+    # Raised by the API when a client address used up its failed-authentication budget on the
+    # remote port (device token or POST /pair), or every new address is refused because the
+    # address table is full of recent failures (api/authlimit.py).
+    REMOTE_AUTH_BLOCKED = "remote-auth-blocked"
     # Raised by the API for each accepted entry-stop "off" or start-bot: the device (by name),
     # the port and the time, so a stolen device token shows up at once.
     RISK_COMMAND_USED = "risk-command-used"
