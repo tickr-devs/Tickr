@@ -7,8 +7,8 @@
 # release, so the next start creates it from the new one); a missing one is created and
 # started; the image is never pulled or built here, a missing image fails the step; (3) log
 # the request to the journal. Step (2) holds the compose lock (`flock`, waiting for it;
-# shared with tickr-bot-restart.service and deploy-server.sh), so no other compose command
-# acts on the bot at the same time: {{COMPOSE_LOCK}}
+# shared with tickr-bot-restart.service, tickr-bot.service and deploy-server.sh), so no other
+# compose command acts on the bot at the same time: {{COMPOSE_LOCK}}
 # Never retried: no Restart=, no loop. A failed step stops the rest and stays visible in
 # `systemctl status tickr-bot-start.service`.
 # The env file is the path {{ENV_FILE}} on the host, written by tickr-secrets.service; only its

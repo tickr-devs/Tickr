@@ -24,8 +24,9 @@ Bot start on request: `tickr-bot-start.path` watches the start request the API's
 inside its container, and `tickr-bot-start.service` runs `up -d --no-recreate` for the compose
 service `bot` once: a running bot container is never touched, a stopped or missing one is
 started. The start request lives in the restart request's folder (the one control folder
-deploy-server.sh creates). Both units hold the lock file `COMPOSE_LOCK` in that folder around
-their compose command, so a restart and a start never run compose on the bot at once.
+deploy-server.sh creates). These two units and the scheduled bot unit hold the lock file
+`COMPOSE_LOCK` in that folder around their compose command, so no two of them run compose on the
+bot at once.
 
 Times are wall-clock times in a zone the caller names (an IANA name): the server's own zone is
 never assumed, so a host on UTC still starts the bot at 04:00 New York time.
@@ -48,9 +49,10 @@ PATH_SUFFIX = ".path.template"
 BOT_SERVICE = "bot"
 PORTS_ENV = "ports.env"
 COMPOSE_ENV = "limits.env"
-# The lock file, in the request files' control folder, that the restart and start units (and
-# deploy-server.sh's removal of a stopped bot container) hold with `flock` around their compose
-# command, so two compose commands never act on the bot at once.
+# The lock file, in the request files' control folder, that the bot, restart and start units
+# hold with `flock` around their compose command (and deploy-server.sh from its running-bot check
+# to its removal of a stopped bot container), so two compose commands never act on the bot at
+# once.
 COMPOSE_LOCK = "compose.lock"
 # systemd weekday names, indexed by the launchd number (0 and 7 are both Sunday).
 _WEEKDAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")

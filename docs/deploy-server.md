@@ -273,14 +273,24 @@ refuses (exit 1, nothing changed), in this order:
 
 It then creates only `DATA/control` (under the verified mount, owned by the image's uid:gid,
 mode 700) and, when missing, its compose lock `DATA/control/compose.lock` (same owner, mode
-600; never replaced, a unit may hold it), and installs the files (all or nothing, below).
-Then, with the new `limits.env` in place and under the compose lock, it removes a stopped bot
-container: `docker compose --env-file ETC/limits.env -f ETC/compose.yaml -p tickr --profile
+600; never replaced, a unit may hold it), and takes that lock (`flock`, held until the
+removal below: the bot, restart and start units wait for it). Still before anything is
+installed it refuses:
+
+- `bot-running`: the bot container runs (`docker compose ... -p tickr --profile jobs ps
+  --status running -q bot`, with the rendered `limits.env`). Flat is not enough: a running bot
+  keeps the image it started from, and after it ends a Start would start that stopped
+  container as it is, the previous release. Deploy after the bot has ended.
+- `bot-state-unknown`: that `ps` failed; `compose-lock-failed`: the lock could not be taken.
+
+Then it installs the files (all or nothing, below). With the new `limits.env` in place and
+still under the compose lock, it removes a stopped bot container: `docker compose --env-file ETC/limits.env -f ETC/compose.yaml -p tickr --profile
 jobs rm -f bot`, without `-s`. Compose's `rm` removes only service containers that are not
 running: `Remove` in `pkg/compose/remove.go` (2.24.6 and 2.40.3, the versions Ubuntu
 24.04 ships, differ there only in names) inspects each container and keeps for removal only those whose
-`State.Running` is false; only `-s` (`--stop`) stops containers first. A running bot is left
-as it is, and no container at all is "No stopped containers", exit 0. So the next Start or
+`State.Running` is false; only `-s` (`--stop`) stops containers first. A running bot is never
+removed (and was refused above under the same lock); no container at all is "No stopped
+containers", exit 0. So the next Start or
 scheduled start creates the bot from the new release image, never the stopped container of
 the previous one. When the removal fails it refuses with `bot-container-not-removed` (exit 1):
 the new files are in place, but systemd is not reloaded and nothing is enabled or restarted;
@@ -324,7 +334,7 @@ systemd, so the restart goes through a request file on the data folder:
    (`Type=oneshot`, user `tickr`), which runs each step once and stops at the first failure:
    (a) renames the request to `restart-request.taken`, so a request written during the restart
    is a new event; (b) under the compose lock (`flock /srv/tickr/data/control/compose.lock`,
-   shared with the start unit, "Bot start on the server") `docker compose -f
+   shared with the start and the scheduled bot unit, "Bot start on the server") `docker compose -f
    /srv/tickr/etc/compose.yaml -p tickr --profile jobs up -d --force-recreate --no-deps --pull never --no-build -t <grace> bot`: the
    same compose definition the scheduled `tickr-bot.service` starts. A running (hung) container
    is stopped within `<grace>` and recreated; a crashed or removed one is created again. The
@@ -378,14 +388,14 @@ and unit, which never touch a running bot:
    was created from (bot.toml and the data folder are bind mounts, so it reads today's files),
    so a stopped container must never outlive its release: `deploy-server.sh` removes a stopped
    bot container once it has installed the new `limits.env` (above, the server deploy), and the
-   next Start or scheduled start creates the container from the new release image. A bot that
-   was running during the deploy is left alone and keeps its image until it ends; its stopped
-   container is removed by the next deploy, or recreated by the next scheduled start (plain
-   `up -d` recreates a container whose image changed).
-4. The compose step of the restart and the start unit (and the deploy's removal) holds one lock,
-   `DATA/control/compose.lock` (`flock`, which waits for it; the file is created by
-   `deploy-server.sh`), so a restart that arrives while a start runs, or the other way round,
-   waits instead of running a second compose command on the bot at once.
+   next Start or scheduled start creates the container from the new release image. The deploy
+   refuses while the bot container runs (`bot-running`), so no container of the previous
+   release survives a deploy.
+4. The compose step of the restart, the start and the scheduled bot unit (`tickr-bot.service`)
+   holds one lock, `DATA/control/compose.lock` (`flock`, which waits for it; the file is created
+   by `deploy-server.sh`, which holds it from its running-bot check to its removal of a stopped
+   container), so a restart that arrives while a start runs, a scheduled start during a deploy,
+   and so on, waits instead of running a second compose command on the bot at once.
 5. Never retried, and the same failure modes as the restart unit: a failed step stays in
    `systemctl status tickr-bot-start.service`; a failed rename leaves the request, the path unit
    hits its trigger limit and later Starts are ignored until `systemctl reset-failed

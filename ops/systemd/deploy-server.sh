@@ -43,13 +43,14 @@
 # the mounts the jobs get; it never sends an order and any doubt refuses, nothing installed;
 # (4) refuse on a restart or start request left in the control folder (it would restart or
 # start the bot the moment its path unit starts), then create only the control folder under the
-# verified mount (owned by the image's uid:gid, mode 700) and its compose lock file; (5) install
-# the files (all or nothing); (5b) remove a stopped bot container (`docker compose rm -f bot`,
-# without -s: never a running one), under the units' compose lock, so the next Start or
-# scheduled start creates it from the new release (bot-container-not-removed: systemd is then
-# not reloaded and nothing is enabled), and reload systemd; (6) enable the timers, the restart
-# and start request watches and the API. The bot is never started or stopped here: a running
-# job keeps the image it started with, the next start uses the new release.
+# verified mount (owned by the image's uid:gid, mode 700) and its compose lock file, and take
+# that lock (held until 5b); (4b) refuse while the bot container runs (bot-running; it would keep
+# the previous release's image; bot-state-unknown when compose cannot say); (5) install the files
+# (all or nothing); (5b) remove a stopped bot container (`docker compose rm -f bot`, without -s:
+# never a running one), so the next Start or scheduled start creates it from the new release
+# (bot-container-not-removed: systemd is then not reloaded and nothing is enabled), and reload
+# systemd; (6) enable the timers, the restart and start request watches and the API. The bot is
+# never started or stopped here.
 #
 # Overrides (names only): TICKR_UNITS_DIR (default /etc/systemd/system), TICKR_SYSTEMCTL
 # (default systemctl), TICKR_DOCKER (default docker), TICKR_ENV_FILE_HOST (default
@@ -220,6 +221,32 @@ lock="$control/compose.lock"
 if [ ! -e "$lock" ]; then
   install -m 600 -o "$image_uid" -g "$image_gid" /dev/null "$lock"
 fi
+# Hold the compose lock from here to the removal of a stopped bot container: no start, restart
+# or scheduled start runs compose on the bot in between (each waits for the lock).
+exec 9<"$lock"
+if ! flock 9; then
+  echo "refused: compose-lock-failed: cannot take the compose lock $lock; nothing was installed" >&2
+  exit 1
+fi
+# compose with the paths it interpolates: limits.env (the rendered one until it is installed),
+# bot.toml and the env file by path only.
+bot_compose() { # LIMITS_ENV COMMAND...
+  env_limits=$1
+  shift
+  TICKR_CONFIG_HOST="$config" TICKR_ENV_FILE_HOST="$env_file" \
+    "$docker" compose --env-file "$env_limits" -f "$compose" -p tickr --profile jobs "$@"
+}
+# A running bot keeps the image it was started from: after it ends, Start would start its
+# stopped container as it is, the previous release. Flat is not enough: refuse while the bot
+# container runs, before anything is installed.
+if ! running=$(bot_compose "$scratch/limits.env" ps --status running -q bot); then
+  echo "refused: bot-state-unknown: cannot read whether the bot container runs (read the docker line above); nothing was installed" >&2
+  exit 1
+fi
+if [ -n "$running" ]; then
+  echo "refused: bot-running: the bot container runs (it would keep the previous release's image); deploy after it has ended; nothing was installed" >&2
+  exit 1
+fi
 
 # Install all or nothing: stage every file as a hidden temp file inside its target folder (a
 # copy that fails removes the staged files and installs nothing), then rename each into place
@@ -244,13 +271,13 @@ done
 # the new release, so the next Start or scheduled start creates the container from it.
 # `rm -f` without -s removes only service containers that are not running (compose
 # pkg/compose/remove.go, Remove: it inspects each container and keeps those whose
-# State.Running is true); a running bot is left as it is and keeps its image until it ends.
-# Under the units' compose lock, so no start or restart runs compose at the same time.
-if ! TICKR_CONFIG_HOST="$config" TICKR_ENV_FILE_HOST="$env_file" flock "$lock" \
-    "$docker" compose --env-file "$etc/limits.env" -f "$compose" -p tickr --profile jobs rm -f bot; then
+# State.Running is true); a running bot was refused above, under the same lock.
+# Still under the compose lock taken before the running-bot check.
+if ! bot_compose "$etc/limits.env" rm -f bot; then
   echo "refused: bot-container-not-removed: a stopped bot container of the previous release could not be removed (read the docker line above; Start would run that container as it is); the new units, ports.env and limits.env are in place but systemd was not reloaded and nothing was enabled or restarted; deploy again" >&2
   exit 1
 fi
+exec 9<&-  # release the compose lock
 "$systemctl" daemon-reload
 "$systemctl" enable tickr-preflight.timer tickr-bot.timer tickr-watchdog.timer tickr-nightly-fetch.timer \
   tickr-bot-restart.path tickr-bot-start.path tickr-api.service

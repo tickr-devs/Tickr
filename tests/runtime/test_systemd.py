@@ -142,7 +142,9 @@ def test_render_systemd_command(config_path, repo, tmp_path, capsys):
     bot = (out / "tickr-bot.service").read_text("utf-8")
     assert "Environment=TICKR_CONFIG_HOST=/srv/tickr/etc/bot.toml" in bot
     # The units run the compose file named by --compose, never a clone's ops/docker.
-    assert f"ExecStart=/usr/bin/docker compose -f {compose} --profile jobs up -d bot\n" in bot
+    lock = "/srv/tickr/data/control/" + systemd.COMPOSE_LOCK
+    assert (f"ExecStart=/usr/bin/flock {lock} /usr/bin/docker compose -f {compose} "
+            "--profile jobs up -d bot\n") in bot
     assert f"TICKR_IMAGE={IMAGE}\n" in (out / "limits.env").read_text("utf-8")
 
 
@@ -228,11 +230,12 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path]:
     # owner, this test's own ids; ID_FAILS makes it fail), `--entrypoint cat` prints the image's
     # compose.yaml (IMAGE_COMPOSE, default the etc copy), render-systemd writes the units of
     # the --data and --image it is given (RENDER_IMAGE overrides the image), require-flat
-    # answers the flat result. `compose ... -p tickr --profile jobs rm -f bot` (no -s) models
-    # compose's Remove (pkg/compose/remove.go): the bot container in the file bot-container
-    # ("STATE IMAGE") is removed unless its state is running; it fails unless the compose lock
-    # is held, the paths compose interpolates are set and --env-file names an installed
-    # limits.env of the release image (RM_FAILS makes it fail). Every call is logged.
+    # answers the flat result. The bot container is the file bot-container ("STATE IMAGE").
+    # `compose ... -p tickr --profile jobs ps --status running -q bot` prints an id when its
+    # state is running (PS_FAILS makes it fail); `... rm -f bot` (no -s) models compose's Remove
+    # (pkg/compose/remove.go): it is removed unless its state is running (RM_FAILS makes it
+    # fail). Both fail unless the compose lock is held, the paths compose interpolates are set
+    # and --env-file names a limits.env of the release image. Every call is logged.
     docker = tmp_path / "docker"
     docker.write_text(
         f'#!/bin/sh\necho "$@" >> {tmp_path}/docker.log\n'
@@ -240,13 +243,20 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path]:
         f'  for ref in ${{PRESENT-{IMAGE}}}; do [ "$ref" = "$3" ] && exit 0; done; exit 1\nfi\n'
         'if [ "$1" = compose ]; then\n'
         '  case " $* " in *" -s "*|*" --stop "*) exit 1 ;; esac\n'
-        '  case "$*" in *" -p tickr --profile jobs rm -f bot") ;; *) exit 1 ;; esac\n'
         '  [ -n "${TICKR_CONFIG_HOST:-}" ] && [ -n "${TICKR_ENV_FILE_HOST:-}" ] || exit 1\n'
         f'  ! flock -n {tmp_path}/data/control/compose.lock true || exit 1\n'
         f'  grep -qxF "TICKR_IMAGE={IMAGE}" "$3" || exit 1\n'
-        '  [ -z "${RM_FAILS:-}" ] || exit 1\n'
-        f'  ctr={tmp_path}/bot-container\n'
-        '  if [ -f "$ctr" ] && [ "$(cut -d" " -f1 "$ctr")" != running ]; then rm -f "$ctr"; fi\n'
+        f'  ctr={tmp_path}/bot-container; state=\n'
+        '  [ -f "$ctr" ] && state=$(cut -d" " -f1 "$ctr")\n'
+        '  case "$*" in\n'
+        '    *" -p tickr --profile jobs ps --status running -q bot")\n'
+        '      [ -z "${PS_FAILS:-}" ] || exit 1\n'
+        '      [ "$state" != running ] || echo 0123abcd ;;\n'
+        '    *" -p tickr --profile jobs rm -f bot")\n'
+        '      [ -z "${RM_FAILS:-}" ] || exit 1\n'
+        '      [ -z "$state" ] || [ "$state" = running ] || rm -f "$ctr" ;;\n'
+        '    *) exit 1 ;;\n'
+        '  esac\n'
         '  exit 0\n'
         'fi\n'
         '[ "$1" = run ] || exit 1\n'
@@ -408,7 +418,7 @@ def test_deploy_script_removes_a_stopped_bot_container_of_the_old_release(tmp_pa
     # Removed: the next Start or scheduled start creates the bot from the new release.
     assert not (tmp_path / "bot-container").exists()
     etc, data = tmp_path / "etc", tmp_path / "data"
-    [rm] = [c for c in _calls(tmp_path) if c.startswith("compose ")]
+    [rm] = [c for c in _calls(tmp_path) if c.startswith("compose ") and " rm " in c]
     assert rm == (f"compose --env-file {etc}/limits.env -f {etc}/compose.yaml -p tickr "
                   "--profile jobs rm -f bot")
     assert " -s" not in rm and "--stop" not in rm  # never stops a running container
@@ -417,11 +427,27 @@ def test_deploy_script_removes_a_stopped_bot_container_of_the_old_release(tmp_pa
     assert '"$control/' + systemd.COMPOSE_LOCK + '"' in SCRIPT.read_text("utf-8")
 
 
-def test_deploy_script_never_touches_a_running_bot_container(tmp_path):
+def test_deploy_script_refuses_while_the_bot_container_runs_and_never_touches_it(tmp_path):
+    # Flat is not enough: a running bot keeps the previous release's image, and Start would
+    # start its stopped container as it is after it ends.
     done = _deploy_with_bot(tmp_path, "running")
-    assert done.returncode == 0, done.stderr
+    assert done.returncode == 1 and "refused: bot-running:" in done.stderr
     assert (tmp_path / "bot-container").read_text("utf-8") == f"running {REGISTRY}:{'f' * 40}\n"
-    assert any(c.startswith("compose ") for c in _calls(tmp_path))
+    composes = [c for c in _calls(tmp_path) if c.startswith("compose ")]
+    assert len(composes) == 1 and composes[0].endswith(" ps --status running -q bot")
+    assert f" -f {tmp_path}/etc/compose.yaml -p tickr " in composes[0]
+    # Nothing installed: no unit, no limits.env, no systemctl call.
+    assert list((tmp_path / "units").iterdir()) == []
+    assert sorted(p.name for p in (tmp_path / "etc").iterdir()) == COPIED
+    assert not (tmp_path / "systemctl.log").exists()
+
+
+def test_deploy_script_refuses_when_it_cannot_read_whether_the_bot_runs(tmp_path):
+    done = _deploy_with_bot(tmp_path, "exited", PS_FAILS="1")
+    assert done.returncode == 1 and "refused: bot-state-unknown:" in done.stderr
+    assert (tmp_path / "bot-container").exists()
+    assert list((tmp_path / "units").iterdir()) == []
+    assert not (tmp_path / "systemctl.log").exists()
 
 
 def test_deploy_script_refuses_when_the_stopped_bot_container_cannot_be_removed(tmp_path):
@@ -690,10 +716,12 @@ def test_deploy_script_runs_every_python_step_in_the_release_image_and_never_pul
     assert calls[0] == f"image inspect {IMAGE}"
     # The fake docker fails every command that is not `run --pull never` of the release image:
     # the uid check, render-systemd and require-flat all ran in it; none may pull.
-    runs = calls[1:-1]
+    runs = calls[1:-2]
     assert len(runs) == 5 and all(c.startswith("run --rm --pull never ") for c in runs)
-    # Last, after the files are installed: the removal of a stopped bot container (no pull).
-    assert calls[-1].startswith("compose ") and " rm -f bot" in calls[-1]
+    # Last: the running-bot check, then (after the install) the removal of a stopped bot
+    # container; compose never pulls.
+    assert calls[-2].startswith("compose ") and calls[-2].endswith(" ps --status running -q bot")
+    assert calls[-1].startswith("compose ") and calls[-1].endswith(" rm -f bot")
     assert sum(f"--entrypoint id {IMAGE} -" in c for c in runs) == 2
     etc, data = tmp_path / "etc", tmp_path / "data"
     [render] = [c for c in runs if " render-systemd " in c]
