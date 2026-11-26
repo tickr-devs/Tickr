@@ -176,6 +176,7 @@ engineering_tables = [
   "market_data",
   "observers",
   "advisor",
+  "trailing_stop",
   "model",
   "massive",
   "runtime",
