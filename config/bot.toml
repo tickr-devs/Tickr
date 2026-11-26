@@ -404,6 +404,14 @@ open_orders_paging_orders = 90
 # Probe H2d: least minutes left in the extended session when the probe starts (placing, reading and cancelling 90 orders
 # takes about 20 min); read by tickr.engine.paging_probe.
 open_orders_end_margin_minutes = 30
+# Probe M3 (tickr probe-trade-events, read only): minutes the account's gRPC trade events are recorded when no
+# --minutes is given; how long the owner watches (one bot trade or one manual Sandbox order), not a market fact; read by
+# the probe-trade-events command.
+trade_events_minutes = 10
+# Probe M3: seconds before the probe subscribes again after the event stream ended or failed with a gRPC code the SDK
+# itself resubscribes on (SDK 3.0.3 DefaultSubscribeRetryPolicy: fixed delay 5000 ms); read by
+# tickr.engine.trade_events_probe.
+trade_events_reconnect_seconds = 5
 # Probe prev-day (tickr probe-prev-day): start of the overnight window, New York time HH:MM, in which it records when the
 # previous session's Massive files and splits become available before the bot's 04:00 ET start; read by
 # tickr.model.prevday_probe.
@@ -429,8 +437,10 @@ allowed_hosts = ["127.0.0.1", "localhost"]
 remote_hosts_file = "remote-hosts.txt"
 # Second loopback port, for remote access only: every request on it must carry the paired bearer token whatever its Host, and `tailscale serve` points here, never at `port`; read by the api server.
 remote_port = 8767
-# File holding the SHA-256 (hex) of the paired phone's bearer token, relative to data_dir; written by `python -m tickr.api pair`, never the token itself; read by the api server.
+# File that held the SHA-256 (hex) of the one paired phone's bearer token before several devices could be paired, relative to data_dir; no longer written: when found, the api server and `python -m tickr.api devices` move it once into remote_devices_file as the device "default" (so that phone keeps working) and delete it.
 remote_token_hash_file = "remote-token.sha256"
+# File listing the paired devices of the remote port (JSON: name, SHA-256 hex of the device's bearer token, created and last-used time to the minute), relative to data_dir, written 0600 and never holding a token; a device is added by `python -m tickr.api pair --name <device>` once its code is redeemed, listed by `devices` and revoked one by one by `revoke --name <device>`; read and written by the api server (last-used time) and those commands.
+remote_devices_file = "remote-devices.json"
 # File holding the SHA-256 (hex) of the iOS Simulator's own bearer token, relative to data_dir: a second token beside the phone's, so pairing one never revokes the other; written by `python -m tickr.api pair-simulator`, never the token itself; read by the api server, which then also answers the remote port on its loopback Host (host:remote_port) for the Simulator, and accepts that token there only; `unpair-simulator` deletes it.
 remote_simulator_token_hash_file = "remote-simulator-token.sha256"
 # File where `pair-simulator` leaves the Simulator's bearer token itself with the address it opens (JSON: address from host and remote_port, token), relative to data_dir, written 0600 and never printed, for a Simulator build of the iOS app on this Mac to read at launch (TICKR_SIMULATOR_TOKEN_FILE in apps/ios/Config/Local.xcconfig); deleted by `unpair-simulator`; read by the iOS app in the Simulator only.
@@ -814,6 +824,27 @@ bundles_dir = "models"
 # tickr.model.bundle.
 bundle = ""
 
+[exit_chase]
+# Limit-exit chase before a market exit (backlog X3): a close is sent as a SELL LIMIT priced through the bid,
+# re-priced by cancel-then-place (each cancel confirmed by a Detail read before the next order), and after the last
+# price a MARKET in the regular session (outside it: no MARKET, an alert and the stop rules). Read by tickr.engine.
+# Every number below is an old-tracker proposal (old Q22, Q110), not an owner decision: reconfirm before enabling.
+# Chase switch: false = every close is one MARKET order as before; config load refuses true until the chase is
+# wired to a live bid and ATR; read by tickr.engine.core.
+enabled = false
+# Ticks below the bid each chase price is set, count (one tick: 0.01 USD at or above 1 USD, 0.0001 below); old-tracker
+# proposal, reconfirm; read by tickr.engine.chase.
+ticks_through_bid = 1
+# Seconds a chase order works before it is cancelled and placed again at the new bid; old-tracker proposal,
+# reconfirm; read by tickr.engine.core.
+reprice_seconds = 10
+# Re-prices after the first chase order, count (0 = one LIMIT, then the market exit); old-tracker proposal,
+# reconfirm; read by tickr.engine.chase.
+max_reprices = 6
+# Worst chase price, in multiples of the symbol's ATR (USD per share) below the bid when the chase started: a price
+# below it ends the chase; old-tracker proposal, reconfirm; read by tickr.engine.chase.
+max_worse_atr = 0.5
+
 [massive]
 # Market data vendor of the model's inputs (owner 2026-11-20: the model's features come live from Massive, the same
 # source as its training; Webull stays for orders, positions and the bot's lists). Read by tickr.model.massive only.
@@ -1112,8 +1143,10 @@ http_port = 443
 mqtt_host = "data-api.sandbox.webull.com"
 # MQTT port (TLS); read by the market-data stream.
 mqtt_port = 1883
-# gRPC order-event host (not used in v1); read by the host allowlist.
+# gRPC order-event host (the bot does not subscribe; only probe M3 does); read by the host allowlist and the trade-events probe.
 events_host = "events-api.sandbox.webull.com"
+# gRPC order-event port (docs/webull-facts.md: gRPC 443); read by the trade-events probe (probe M3).
+events_port = 443
 # Name of the env variable holding the app key; read by the broker adapter (presence only elsewhere).
 app_key_variable = "WEBULL_SANDBOX_APP_KEY"
 # Name of the env variable holding the app secret; read by the broker adapter (presence only elsewhere).
@@ -1163,8 +1196,10 @@ http_port = 443
 mqtt_host = "data-api.webull.com"
 # MQTT port (TLS); read by the market-data stream.
 mqtt_port = 1883
-# gRPC order-event host (not used in v1); read by the host allowlist.
+# gRPC order-event host (the bot does not subscribe; only probe M3 does); read by the host allowlist and the trade-events probe.
 events_host = "events-api.webull.com"
+# gRPC order-event port (docs/webull-facts.md: gRPC 443); read by the trade-events probe (probe M3).
+events_port = 443
 # Name of the env variable holding the app key; read by the broker adapter (presence only elsewhere).
 app_key_variable = "WEBULL_APP_KEY"
 # Name of the env variable holding the app secret; read by the broker adapter (presence only elsewhere).
