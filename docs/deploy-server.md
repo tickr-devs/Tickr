@@ -97,6 +97,12 @@ mounts only `bot.toml` over the image's copy. Production only, later: the owner 
 file (`[environments.production] authorization_file`) and its mount in `compose.yaml` (step 7
 below); not needed in Sandbox.
 
+Never copy the Mac's alert routing file (`<data_dir>/alert-routing.json`, `[alerts]
+routing_file`) to the server. A file with `mac` or `imessage` cells is unusable there: every kind
+goes to every channel and PUT /alerts/routing is refused until the file is deleted
+(docs/api.md, "routing_cause"). On the server the routing starts with no file and the owner sets
+it from the apps.
+
 The exact SSM copy for a release `<commit>`, as root on the server (the files' contents come from
 the commit in the owner's checkout; never send the env file or any secret this way):
 
