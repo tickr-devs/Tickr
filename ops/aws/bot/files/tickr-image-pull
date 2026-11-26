@@ -17,16 +17,18 @@ fi
 for f in /srv/tickr/etc/registry.env /srv/tickr/etc/aws.env; do
   [ -r "$f" ] || { echo "tickr-image-pull: $f is missing" >&2; exit 1; }
 done
-. /srv/tickr/etc/registry.env
-. /srv/tickr/etc/aws.env
+# Read the one value, never source the file (same as deploy-server.sh).
+TICKR_IMAGE_REPOSITORY=$(sed -n 's/^TICKR_IMAGE_REPOSITORY=//p' /srv/tickr/etc/registry.env)
+AWS_DEFAULT_REGION=$(sed -n 's/^AWS_DEFAULT_REGION=//p' /srv/tickr/etc/aws.env)
 export AWS_DEFAULT_REGION
-: "${TICKR_IMAGE_REPOSITORY:?registry.env names no TICKR_IMAGE_REPOSITORY}"
+[ -n "$TICKR_IMAGE_REPOSITORY" ] || { echo "tickr-image-pull: registry.env names no TICKR_IMAGE_REPOSITORY" >&2; exit 1; }
 registry=${TICKR_IMAGE_REPOSITORY%%/*}
 repository=${TICKR_IMAGE_REPOSITORY#*/}
 
 trap 'docker logout "$registry" >/dev/null 2>&1 || true' EXIT
 aws ecr get-login-password | docker login --username AWS --password-stdin "$registry" >/dev/null
-docker pull "$TICKR_IMAGE_REPOSITORY:$commit"
+# Quiet: the registry host holds the account number, which no output repeats.
+docker pull -q "$TICKR_IMAGE_REPOSITORY:$commit" >/dev/null
 
 release="release-$commit"
 if aws ecr describe-images --repository-name "$repository" --image-ids imageTag="$release" >/dev/null 2>&1; then
@@ -40,4 +42,4 @@ else
     --image-manifest "$manifest" --image-manifest-media-type "$media" >/dev/null
   echo "tickr-image-pull: marked $repository:$release"
 fi
-echo "tickr-image-pull: $TICKR_IMAGE_REPOSITORY:$commit is on this server"
+echo "tickr-image-pull: $repository:$commit is on this server"
