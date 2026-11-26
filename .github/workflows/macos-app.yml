@@ -137,4 +137,6 @@ jobs:
           xcodebuild -version
           xcodebuild -workspace Tickr.xcworkspace -scheme "Tickr macOS" \
             -destination "platform=macOS" -derivedDataPath apps/macos/build/xcode \
-            CODE_SIGN_IDENTITY=- build-for-testing
+            CODE_SIGN_IDENTITY=- build-for-testing 2>&1 | tee "$RUNNER_TEMP/xcode-macos.log"
+          # Our own Swift warnings fail the job: the owner's Xcode stops on them (own-warnings.sh).
+          apps/scripts/own-warnings.sh "$RUNNER_TEMP/xcode-macos.log"
