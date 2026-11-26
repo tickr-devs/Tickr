@@ -174,7 +174,8 @@ class SessionCalendar:
     def load(cls, directory: Path) -> SessionCalendar:
         """Load and validate every `us-equity-<year>.json` in `directory`."""
         if not directory.is_dir():
-            raise CalendarRefused(CalendarCause.CALENDAR_INVALID, f"no directory {directory}")
+            raise CalendarRefused(CalendarCause.CALENDAR_INVALID,
+                                  "the calendar directory does not exist")
         files = []
         for path in sorted(directory.iterdir()):
             match = FILE_PATTERN.match(path.name)
