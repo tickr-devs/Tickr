@@ -1345,7 +1345,7 @@ enum L10n {
     /// What the blocked entries card counts, under its "i".
     static var refusalsInfo: LocalizedStringResource {
       LocalizedStringResource("lab.refusalsInfo",
-        defaultValue: "Times the model wanted to enter and the platform's limits said no.", bundle: L10n.bundle)
+        defaultValue: "Times the active version wanted to enter and the platform's limits said no.", bundle: L10n.bundle)
     }
     /// Beside today's number of blocked entries.
     static var refusalsToday: LocalizedStringResource {
