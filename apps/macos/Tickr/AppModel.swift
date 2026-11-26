@@ -1137,14 +1137,11 @@ public final class AppModel {
   /// the same step, and its own command (never another) goes to `send`, which checks again that
   /// commands are on. A withdrawn, replaced or already answered question sends nothing, so one
   /// question sends at most once. Returns the send, or nil when nothing is sent.
-  /// A Stop bot question asked with positions open is answered with one of its two choices
-  /// (`stopChoice`: Close and stop or Leave open); any other answer sends the question's command.
   @discardableResult
-  func accept(_ question: PendingConfirmation, stopChoice: OperatorCommand? = nil) -> Task<Void, Never>? {
+  func accept(_ question: PendingConfirmation) -> Task<Void, Never>? {
     guard confirming == question else { return nil }
-    let command = question.action.command(stopChoice: stopChoice)
     confirming = nil
-    return Task { await send(command, title: BotAction.title(of: command) ?? question.action.title) }
+    return Task { await send(question.action.command, title: question.action.title) }
   }
 
   /// Closes `question` unanswered (Cancel or Escape); a newer question stays.

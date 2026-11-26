@@ -608,16 +608,6 @@ struct AppModelTests {
     #expect(BotAction.emergency.command == .emergency)
   }
 
-  @Test("Stop bot asked with positions open sends the choice made; no other question takes one")
-  func stopChoicesAreStopBots() {
-    #expect(BotAction.stopBot.command(stopChoice: .closeAndStop) == .closeAndStop)
-    #expect(BotAction.stopBot.command(stopChoice: .stopLeavingOpen) == .stopLeavingOpen)
-    #expect(BotAction.stopBot.command(stopChoice: nil) == .stopBot)
-    #expect(BotAction.stopBot.command(stopChoice: .emergency) == .stopBot)
-    #expect(BotAction.flattenAll.command(stopChoice: .closeAndStop) == .flatten)
-    #expect(OperatorCommand.closeAndStop.kind == .stopBot && OperatorCommand.stopLeavingOpen.kind == .stopBot)
-  }
-
   @Test("Only the emergency stop is held before it asks; every other command is a click")
   func onlyTheEmergencyStopHolds() {
     let actions: [BotAction] = [.pauseEntries, .resumeEntries, .cancelOrders, .flatten(symbol: "ABCD"), .flattenAll,

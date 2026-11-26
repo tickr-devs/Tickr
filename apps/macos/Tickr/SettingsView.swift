@@ -573,7 +573,7 @@ private struct BotServiceCard: View {
         .buttonStyle(.command(.destructive, tag: model.demoDay ? Text(L10n.Bot.demoTag) : nil))
         .fixedSize()
         .disabled(!model.canStopBot)
-        .inFlight(model.inFlight.flatMap { $0.kind == .stopBot ? Text($0.inFlightTitle) : nil })
+        .inFlight(model.inFlight == .stopBot ? Text(OperatorCommand.stopBot.inFlightTitle) : nil)
         .hint(verbatim: BotAction.stopBot.explanation)
       }
       if let question {
@@ -603,16 +603,14 @@ private struct BotServiceCard: View {
   /// The design's question inside the card: what happens, then Cancel and the action.
   private func confirmation(_ asked: ServiceQuestion) -> some View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      Text(asked == .start ? L10n.Settings.startQuestion
-        : open.isEmpty ? L10n.Bot.stopQuestion : StopText.askTitle(open.count))
+      Text(asked == .start ? L10n.Settings.startQuestion : L10n.Bot.stopQuestion)
         .font(Tokens.Typography.body.weight(.semibold))
         .foregroundStyle(Palette.textPrimary)
       Group {
         if asked == .start {
           Text(L10n.Settings.startExplanation)
         } else {
-          // With positions open, the two choices and what each does (mockup Main).
-          Text(verbatim: StopText.message(symbols: open))
+          Text(verbatim: BotAction.stopBot.explanation)
         }
       }
       .font(Tokens.Typography.callout)
@@ -630,11 +628,13 @@ private struct BotServiceCard: View {
           } label: { Text(L10n.Settings.startQuestion) }
             .buttonStyle(.action(.primary, size: .compact))
             .disabled(!model.canStartBot)
-        } else if open.isEmpty {
-          stop(BotAction.stopBot.command, title: BotAction.stopBot.label)
         } else {
-          stop(.stopLeavingOpen, title: StopText.leaveOpen, role: nil)
-          stop(.closeAndStop, title: StopText.closeAndStop)
+          Button(role: .destructive) {
+            question = nil
+            Task { await model.send(BotAction.stopBot.command, title: BotAction.stopBot.title) }
+          } label: { Text(verbatim: BotAction.stopBot.title) }
+            .buttonStyle(.action(.destructive, size: .compact))
+            .disabled(!model.canStopBot)
         }
       }
     }
@@ -643,21 +643,6 @@ private struct BotServiceCard: View {
     .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous)
       .strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin))
     .transition(.opacity)
-  }
-
-  /// The symbols of the open positions, which the Stop bot question offers to close or leave.
-  private var open: [String] { model.positions.map(\.position.symbol) }
-
-  /// One answer to the Stop bot question: closes it and sends `command` once.
-  private func stop(
-    _ command: OperatorCommand, title: LocalizedStringResource, role: ButtonRole? = .destructive
-  ) -> some View {
-    Button(role: role) {
-      question = nil
-      Task { await model.send(command, title: String(localized: title)) }
-    } label: { Text(title) }
-      .buttonStyle(.action(role == nil ? .secondary : .destructive, size: .compact))
-      .disabled(!model.canStopBot)
   }
 
   private var stale: Bool { model.response?.stale == true }

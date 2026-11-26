@@ -3,9 +3,7 @@ import TickrDesign
 import TickrKit
 
 /// The bot actions behind the power button, in a sheet with a clear Cancel: Pause (or Resume)
-/// entries and Stop bot. Commands other than pausing ask for Face ID first. Stop bot with
-/// positions open turns the sheet into its two choices, Close and stop or Leave open (mockup
-/// IOSHome); with none it only confirms.
+/// entries and Stop bot. Commands other than pausing ask for Face ID first.
 struct BotControl: ViewModifier {
   @Environment(AppModel.self) private var model
   @Binding var isPresented: Bool
@@ -13,8 +11,6 @@ struct BotControl: ViewModifier {
   @State private var severe: OperatorCommand?
   /// The action chosen in the sheet, run once the sheet has gone so its alert can show.
   @State private var chosen: (() -> Void)?
-  /// The sheet shows Stop bot's two choices (positions were open when it was pressed).
-  @State private var choosingStop = false
 
   func body(content: Content) -> some View {
     content
@@ -23,12 +19,11 @@ struct BotControl: ViewModifier {
         Button(role: .destructive) { run(command) } label: { Text(L10n.Control.stopBot) }
         Button(role: .cancel) {} label: { Text(L10n.Common.cancel) }
       } message: { _ in
-        Text(Self.target(String(localized: StopText.flatDetail), demo: model.connection.demo))
+        Text(Self.target(String(localized: L10n.Control.stopWarning), demo: model.connection.demo))
       }
       // A sheet, not a confirmation dialog: on iOS 26 a dialog turns into a popover without its
       // Cancel button, pointing away from the power button.
       .sheet(isPresented: $isPresented, onDismiss: {
-        choosingStop = false
         chosen?()
         chosen = nil
       }, content: {
@@ -58,9 +53,7 @@ struct BotControl: ViewModifier {
           .font(.footnote)
           .foregroundStyle(Palette.textTertiary)
           .fixedSize(horizontal: false, vertical: true)
-        if choosingStop, let status = model.status, model.canCommand, !status.positions.isEmpty {
-          stopChoices(status.positions.map(\.symbol))
-        } else if let status = model.status, model.canCommand {
+        if let status = model.status, model.canCommand {
           // As on the board: pausing (or resuming) entries, then stopping the bot. Closing
           // positions lives on the Positions tab (Close position, Close all).
           VStack(spacing: Tokens.Space.s) {
@@ -74,18 +67,7 @@ struct BotControl: ViewModifier {
               }
             }
             if status.botState == .running {
-              Button(role: .destructive) {
-                if status.positions.isEmpty {
-                  chosen = { severe = .stopBot }
-                  isPresented = false
-                } else {
-                  withAnimation(Tokens.Motion.quick) { choosingStop = true }
-                }
-              } label: {
-                Label { Text(L10n.Control.stopBot) } icon: { Image(systemName: Self.stopSymbol) }
-              }
-              .buttonStyle(.command(.destructive, tag: tag))
-              .fixedSize(horizontal: false, vertical: true)
+              action(L10n.Control.stopBot, symbol: Self.stopSymbol, tier: .destructive) { severe = .stopBot }
             }
           }
         }
@@ -100,33 +82,6 @@ struct BotControl: ViewModifier {
     }
     .scrollEdgeHints()
     .background(Palette.background)
-  }
-
-  /// Stop bot's question with positions open: what it asks, then Close and stop and Leave open,
-  /// each with what it does under it. A choice closes the sheet, then Face ID confirms it.
-  private func stopChoices(_ symbols: [String]) -> some View {
-    let list = StopText.symbols(symbols)
-    return VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      Text(StopText.askTitle(symbols.count))
-        .font(.headline)
-        .foregroundStyle(Palette.textPrimary)
-        .fixedSize(horizontal: false, vertical: true)
-      Text(StopText.askBody(list))
-        .font(.subheadline)
-        .foregroundStyle(Palette.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
-      action(StopText.closeAndStop, symbol: Self.flattenSymbol, tier: .destructive) { run(.closeAndStop) }
-      choiceDetail(StopText.closeAndStopDetail(list))
-      action(StopText.leaveOpen, symbol: Self.stopSymbol, tier: .secondary(.warning)) { run(.stopLeavingOpen) }
-      choiceDetail(StopText.leaveOpenDetail)
-    }
-  }
-
-  private func choiceDetail(_ text: LocalizedStringResource) -> some View {
-    Text(text)
-      .font(.footnote)
-      .foregroundStyle(Palette.textTertiary)
-      .fixedSize(horizontal: false, vertical: true)
   }
 
   /// One action across the sheet, in its tier; it runs once the sheet has closed.
@@ -202,7 +157,7 @@ struct BotControl: ViewModifier {
   static func needsOwner(_ command: OperatorCommand) -> Bool {
     switch command {
     case .entryStop(let on): return !on
-    case .cancelOwnOrders, .flatten, .flattenSymbol, .stopBot, .closeAndStop, .stopLeavingOpen, .emergency: return true
+    case .cancelOwnOrders, .flatten, .flattenSymbol, .stopBot, .emergency: return true
     }
   }
 }

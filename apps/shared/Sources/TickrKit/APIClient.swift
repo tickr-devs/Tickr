@@ -11,12 +11,8 @@ public enum OperatorCommand: Hashable, Sendable {
   case flatten
   /// Close only the bot's position in one symbol.
   case flattenSymbol(String)
-  /// Graceful stop that sticks until the owner starts the bot again; refused while a trade is open.
+  /// Graceful stop that sticks until the owner starts the bot again.
   case stopBot
-  /// Stop-bot with trades open (backlog V4): close them all at market, then stop.
-  case closeAndStop
-  /// Stop-bot with trades open (backlog V4): stop at once and leave them open under their stops.
-  case stopLeavingOpen
   /// Entry stop on, cancel own orders, flatten everything.
   case emergency
 
@@ -28,8 +24,6 @@ public enum OperatorCommand: Hashable, Sendable {
   static let emergencyPath = "/commands/emergency"
   /// The flatten body's key for one symbol.
   static let symbolKey = "symbol"
-  /// The stop-bot body's key for what to do with open trades (`StopMode`).
-  static let modeKey = "mode"
   /// The entry-stop body's key and its two values.
   static let stateKey = "state"
   static let on = "on"
@@ -40,7 +34,7 @@ public enum OperatorCommand: Hashable, Sendable {
     case .entryStop: return Self.entryStopPath
     case .cancelOwnOrders: return Self.cancelOwnOrdersPath
     case .flatten, .flattenSymbol: return Self.flattenPath
-    case .stopBot, .closeAndStop, .stopLeavingOpen: return Self.stopBotPath
+    case .stopBot: return Self.stopBotPath
     case .emergency: return Self.emergencyPath
     }
   }
@@ -50,8 +44,6 @@ public enum OperatorCommand: Hashable, Sendable {
     switch self {
     case .entryStop(let on): return [Self.stateKey: on ? Self.on : Self.off]
     case .flattenSymbol(let symbol): return [Self.symbolKey: symbol]
-    case .closeAndStop: return [Self.modeKey: StopMode.closeAndStop.rawValue]
-    case .stopLeavingOpen: return [Self.modeKey: StopMode.leaveOpen.rawValue]
     case .cancelOwnOrders, .flatten, .stopBot, .emergency: return [:]
     }
   }
@@ -61,7 +53,7 @@ public enum OperatorCommand: Hashable, Sendable {
     case .entryStop(let on): return on ? .entryStopOn : .entryStopOff
     case .cancelOwnOrders: return .cancelOwnOrders
     case .flatten, .flattenSymbol: return .flatten
-    case .stopBot, .closeAndStop, .stopLeavingOpen: return .stopBot
+    case .stopBot: return .stopBot
     case .emergency: return .emergency
     }
   }

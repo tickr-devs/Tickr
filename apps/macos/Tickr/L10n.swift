@@ -272,7 +272,7 @@ enum L10n {
     static var stopExplanation: LocalizedStringResource {
       LocalizedStringResource("bot.stopExplanation",
         // swiftlint:disable:next line_length
-        defaultValue: "The bot stops and stays stopped, also tomorrow, until you press Start bot. With positions open you choose: close them at market first, or leave them open.",
+        defaultValue: "The bot stops and stays stopped, also tomorrow, until you press Start bot. Refused while a trade is open or entering: close it first.",
         bundle: L10n.bundle)
     }
     static var emergency: LocalizedStringResource {
