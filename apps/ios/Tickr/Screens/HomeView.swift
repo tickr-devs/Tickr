@@ -369,6 +369,9 @@ enum EntriesGlyph {
   static let fullStop = "."
   static let entriesNotNowSymbol = "moon.fill"
   static let entriesBlockedSymbol = "hand.raised.fill"
+  /// The full stop the "No entries now: …." and "Entries blocked: …." sentences end with: a
+  /// cause that is a sentence of its own already ends with one, which then is not doubled.
+  static let fullStop = "."
 
   /// Whether new entries can open, as on the board: allowed, paused by the owner, a calm
   /// "not now" (outside the session) or blocked; the gate, when closed, has its own glyph. The
