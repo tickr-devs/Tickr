@@ -50,8 +50,6 @@ def _table(**changes):
         ({"gate_tail_percents": []}, "non-empty list"),
         ({"gate_tail_percents": [5, 1]}, "strictly increase"),
         ({"gate_tail_percents": [0, 5]}, "gate_tail_percents must be in"),
-        ({"gate_min_coverage_percent": 0}, "gate_min_coverage_percent must be in"),
-        ({"gate_min_coverage_percent": 101}, "gate_min_coverage_percent must be in"),
     ],
 )
 def test_bad_settings_refused(changes, cause):

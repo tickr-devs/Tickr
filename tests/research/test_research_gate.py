@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import dataclasses
 import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -103,33 +102,39 @@ def test_month_window_anchored_to_end_includes_months_after_last_trade():
 
 
 def test_missing_coverage_is_not_a_zero_trade_month():
-    # September has no data at all: insufficient coverage, so the months check is inconclusive.
-    # The period is about 67% covered, so a 60% minimum keeps the period observed.
+    # September has no data at all: insufficient coverage, not a month with zero trades.
     covered = ALL_DAYS - _days(date(2026, 9, 1), date(2026, 9, 30))
     trades = [_t("2026-08-03", "1"), _t("2026-10-05", "1")]
-    loose = dataclasses.replace(SETTINGS, gate_min_coverage_percent=Decimal(60))
-    result = _gate(trades, covered, settings=loose)
+    result = _gate(trades, covered)
     sept = result.window[1]
     assert (sept.status, sept.covered_days, sept.coverage) == (INSUFFICIENT, 0, 0)
-    assert result.lines[0].checks["sensitivity_k_of_m_months"] == INCONCLUSIVE
-    assert result.lines[0].checks["net_after_costs_above_0"] == HOLDS
-    # At the 80% minimum the whole period is insufficient: every check is inconclusive.
-    assert set(_gate(trades, covered).lines[0].checks.values()) == {INCONCLUSIVE}
+    assert not result.conclusive
+    assert set(result.lines[0].checks.values()) == {INCONCLUSIVE}
 
 
-def test_partial_month_counts_by_coverage_fraction():
-    # --end on 2026-10-20: October counts its covered days over all October trading days.
+def test_one_missing_day_makes_the_month_and_period_inconclusive():
+    covered = ALL_DAYS - {date(2026, 9, 15)}
+    result = _gate([_t("2026-08-03", "1"), _t("2026-10-05", "1")], covered)
+    sept = result.window[1]
+    assert sept.status == INSUFFICIENT and sept.covered_days == sept.period_days - 1
+    assert [m.status for m in result.window] == [OBSERVED, INSUFFICIENT, OBSERVED]
+    assert "insufficient coverage of the period (a trading day without data)" in \
+        result.lines[0].causes
+
+
+def test_partial_month_reports_its_period_fraction():
+    # --end on 2026-10-20: October is cut by the period but fully covered inside it, so it is
+    # observed, and its period fraction shows how much of the month the period holds.
     end = date(2026, 10, 20)
     covered = _days(START, end)
     result = _gate([_t("2026-08-03", "1")], covered, end=end)
+    assert result.conclusive
     october = result.window[2]
     assert october.trading_days == len(_days(date(2026, 10, 1), date(2026, 10, 31)))
-    assert october.covered_days == len(_days(date(2026, 10, 1), end))
-    assert october.coverage == Decimal(october.covered_days) / Decimal(october.trading_days)
-    assert october.status == INSUFFICIENT  # 14 of 22 days, below 80%
-    loose = dataclasses.replace(SETTINGS, gate_min_coverage_percent=Decimal(60))
-    assert _gate([_t("2026-08-03", "1")], covered, end=end, settings=loose).window[2].status \
-        == OBSERVED
+    assert october.period_days == october.covered_days == len(_days(date(2026, 10, 1), end))
+    assert october.period_fraction == Decimal(october.period_days) / Decimal(october.trading_days)
+    assert october.period_fraction < 1 and october.coverage == 1
+    assert october.status == OBSERVED
 
 
 def test_window_month_before_start_is_outside_period():
@@ -140,11 +145,12 @@ def test_window_month_before_start_is_outside_period():
 
 
 def test_insufficient_period_coverage_is_inconclusive():
-    covered = _days(date(2026, 8, 3), date(2026, 8, 31))
+    covered = _days(date(2026, 8, 3), date(2026, 8, 31))  # September and October missing
     result = _gate([_t("2026-08-03", "1")], covered)
     assert not result.conclusive
     assert set(result.lines[0].checks.values()) == {INCONCLUSIVE}
-    assert "insufficient coverage of the period" in result.lines[0].causes
+    assert "insufficient coverage of the period (a trading day without data)" in \
+        result.lines[0].causes
 
 
 def test_zero_trades_is_inconclusive_not_refused():

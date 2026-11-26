@@ -20,7 +20,7 @@ from tickr.research.errors import ResearchSettingsError
 
 KEYS = frozenset({"horizons_minutes", "atr_period", "session_timezone", "calibration_buckets",
                   "gate_positive_months", "gate_window_months", "gate_drop_best_percent",
-                  "gate_tail_percents", "gate_min_coverage_percent"})
+                  "gate_tail_percents"})
 
 
 @dataclass(frozen=True)
@@ -42,9 +42,6 @@ class ResearchSettings:
     before the net is looked at again."""
     gate_tail_percents: tuple[Decimal, ...]
     """R23 gate report: top percents of trades whose share of the net is reported."""
-    gate_min_coverage_percent: Decimal
-    """R23 gate report: least percent of calendar trading days with data for a month (or the
-    period) to count as observed; less is insufficient coverage."""
 
 
 def _int(key: str, raw: Any, minimum: int) -> int:
@@ -55,15 +52,15 @@ def _int(key: str, raw: Any, minimum: int) -> int:
     return raw
 
 
-def _percent(key: str, raw: Any, *, zero_ok: bool, hundred_ok: bool = False) -> Decimal:
+def _percent(key: str, raw: Any, *, zero_ok: bool) -> Decimal:
     if isinstance(raw, bool) or not isinstance(raw, int | float):
         raise ResearchSettingsError(f"{key} must be a number")
     value = Decimal(str(raw))
     low_ok = value >= 0 if zero_ok else value > 0
-    high_ok = value <= 100 if hundred_ok else value < 100
+    high_ok = value < 100
     if not value.is_finite() or not low_ok or not high_ok:
         low = "0" if zero_ok else "0 (excluded)"
-        high = "100" if hundred_ok else "100 (excluded)"
+        high = "100 (excluded)"
         raise ResearchSettingsError(f"{key} must be in {low}..{high}: {raw}")
     return value
 
@@ -100,8 +97,6 @@ def settings_from_mapping(data: dict[str, Any]) -> ResearchSettings:
     tails = tuple(_percent("gate_tail_percents", t, zero_ok=False) for t in raw_tails)
     if any(b <= a for a, b in zip(tails, tails[1:], strict=False)):
         raise ResearchSettingsError(f"gate_tail_percents must strictly increase: {raw_tails}")
-    coverage = _percent("gate_min_coverage_percent", table["gate_min_coverage_percent"],
-                        zero_ok=False, hundred_ok=True)
     return ResearchSettings(
         horizons_minutes=horizons,
         atr_period=_int("atr_period", table["atr_period"], 1),
@@ -111,7 +106,6 @@ def settings_from_mapping(data: dict[str, Any]) -> ResearchSettings:
         gate_window_months=window,
         gate_drop_best_percent=drop,
         gate_tail_percents=tails,
-        gate_min_coverage_percent=coverage,
     )
 
 

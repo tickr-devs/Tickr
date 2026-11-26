@@ -344,12 +344,15 @@ months the model saw.
 count as one) on which the producer had data and ran the model. A calendar trading day missing from
 it is missing coverage; a covered day without a trade is an observed day with zero trades. A
 non-trading or repeated day is refused, and so is a trade on a day not in the file
-(`not_covered`). Coverage of a month = its covered days / the calendar trading days of the WHOLE
-calendar month, so a month cut by `--start` or `--end`, or with days lost, counts by that fraction.
-A month (or the whole period) is `observed` when its coverage is at least
-`gate_min_coverage_percent`, otherwise `insufficient_coverage`; a window month that ends before
-`--start` is `outside_period`. An observed month with zero trades has net 0 (not in plus);
-a month that is not observed makes the months check inconclusive.
+(`not_covered`). There is no coverage threshold, the rule is structural: a window month is
+`observed` only when EVERY calendar trading day of that month inside `--start..--end` is in
+`--covered-days`; otherwise it is `insufficient_coverage`; a window month that ends before
+`--start` is `outside_period`. The whole period follows the same rule: one in-period trading day
+without data makes every check inconclusive. A partial month stays visible: each window month
+reports its trading days, its in-period days and `period_fraction_pct` (in-period trading days /
+the whole month's trading days, e.g. a month cut by `--end`), its covered days and `coverage_pct`
+(covered / in-period trading days). An observed month with zero trades has net 0 (not in plus); a
+month that is not observed makes the months check inconclusive.
 
 **Trades CSV**, one row per actual sized trade; header required, other columns ignored:
 
@@ -404,7 +407,7 @@ any row makes the baseline unknown and its check inconclusive.
    so 1% of 150 trades removes 2);
 4. `net_above_spread_only_baseline` (paired baseline).
 
-A check is `inconclusive` when the period coverage is insufficient, the line has zero assessable
+A check is `inconclusive` when an in-period trading day has no data, the line has zero assessable
 trades, or a cost is unknown (and, for the months check, when a window month is not observed); an
 empty trades file is inconclusive, not refused. **Tail concentration** (`gate_tails.csv`): for each
 of `gate_tail_percents` (1, 5, 10), the top that percent of trades by after-cost result (count
@@ -418,7 +421,7 @@ time, session, unit, provenance or flag, a negative fee or spread, a notional no
 `--start` after `--end`), `duplicate`, `outside_period`, `not_covered`, `limit_breach`, and the
 calendar's causes. Outputs: `gate.csv` (line, check, kind, outcome, measured, wanted, why
 inconclusive; then the items checked by hand), `gate_lines.csv`, `gate_months.csv` (status,
-trading and covered days, coverage percent, trades and net per window month and line),
+trading, in-period and covered days, period fraction and coverage percent, trades and net per window month and line),
 `gate_tails.csv`, `gate_trades.csv` (the per-trade cost audit: identity, times, notional, units,
 every cost as given, the spread charged, net and baseline in dollars) and `gate_summary.json` (the
 frozen inputs, sensitivity parameters, coverage, cost provenance and versions with trade counts,
@@ -431,7 +434,7 @@ refused): `horizons_minutes`, `atr_period`, `session_timezone`
 (`latency` reads only the last), `calibration_buckets` (`calibration` reads it),
 `gate_positive_months`, `gate_window_months` and `gate_drop_best_percent` (`gate` reads them as
 SENSITIVITY parameters K, M and X, never pass or fail; the backlog R23 numbers: 2 of 3 months,
-best 1%), `gate_tail_percents` and `gate_min_coverage_percent` (`gate`).
+best 1%) and `gate_tail_percents` (`gate`).
 What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay. Every
 report also rounds to its `output_decimal_places` (`--replay-settings` with `--config`, default
 `config/replay.toml`): that number has one home.

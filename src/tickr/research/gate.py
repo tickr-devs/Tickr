@@ -13,7 +13,9 @@ Inputs:
   `0` is a valid zero; an unknown cost makes the line inconclusive, never a guessed zero.
 - covered-days CSV (`day`): the calendar trading days on which the producer had data and ran the
   model. A calendar trading day missing from it is missing coverage; a covered day without a
-  trade is an observed day with zero trades.
+  trade is an observed day with zero trades. No threshold: a month (or the period) is observed
+  only when every one of its trading days inside --start..--end is covered; otherwise the report
+  is inconclusive.
 
 Cost sign: every cost column is in the row's return units and positive when it reduced the result
 (fees and spread are never negative; slippage below 0 is a price improvement).
@@ -119,9 +121,11 @@ class Trade:
 class MonthCoverage:
     month: str  # YYYY-MM
     trading_days: int | None  # calendar trading days of the whole month; None outside the period
-    covered_days: int
-    coverage: Decimal  # covered / trading days of the whole month (a partial month counts so)
-    status: str  # OBSERVED, INSUFFICIENT or OUTSIDE
+    period_days: int  # of those, the days inside --start..--end
+    covered_days: int  # of those, the days in --covered-days
+    period_fraction: Decimal  # period_days / trading_days: how much of the month the period holds
+    coverage: Decimal  # covered_days / period_days
+    status: str  # OBSERVED (every in-period trading day covered), INSUFFICIENT or OUTSIDE
 
 
 @dataclass(frozen=True)
@@ -330,19 +334,25 @@ def _fraction(part: int, whole: int) -> Decimal:
     return Decimal(part) / Decimal(whole) if whole else ZERO
 
 
-def _coverage(start: date, end: date, covered: set[date], months: int, minimum: Decimal,
+def _complete(period: list[date], covered: set[date]) -> bool:
+    """Structural coverage rule, no threshold: every in-period trading day has data."""
+    return bool(period) and all(d in covered for d in period)
+
+
+def _coverage(start: date, end: date, covered: set[date], months: int,
               is_trading_day: Callable[[date], bool]) -> tuple[MonthCoverage, ...]:
     out = []
     for index in range(_month_index(end) - months + 1, _month_index(end) + 1):
         first, last = _month_days(index)
         if last < start:
-            out.append(MonthCoverage(_month_name(index), None, 0, ZERO, OUTSIDE))
+            out.append(MonthCoverage(_month_name(index), None, 0, 0, ZERO, ZERO, OUTSIDE))
             continue
         days = [d for d in _days(first, last) if is_trading_day(d)]
-        hits = sum(1 for d in days if d in covered)
-        share = _fraction(hits, len(days))
-        out.append(MonthCoverage(_month_name(index), len(days), hits, share,
-                                 OBSERVED if share * PERCENT >= minimum else INSUFFICIENT))
+        period = [d for d in days if start <= d <= end]
+        hits = sum(1 for d in period if d in covered)
+        out.append(MonthCoverage(_month_name(index), len(days), len(period), hits,
+                                 _fraction(len(period), len(days)), _fraction(hits, len(period)),
+                                 OBSERVED if _complete(period, covered) else INSUFFICIENT))
     return tuple(out)
 
 
@@ -384,7 +394,7 @@ def _line(name: str, label: str, sizing: str, sessions: str,
 
     causes = []
     if not period_ok:
-        causes.append("insufficient coverage of the period")
+        causes.append("insufficient coverage of the period (a trading day without data)")
     if not known:
         causes.append("zero assessable trades")
     if len(known) < len(rows):
@@ -444,9 +454,8 @@ def gate(trades: list[Trade], covered: set[date], start: date, end: date,
             raise GateRefused(GateRefused.LIMIT, f"trade {t.trade_id} notional {t.notional_usd} "
                               f"is above the position cap {cap_usd}")
     share = _fraction(len(covered), len(period))
-    period_ok = share * PERCENT >= settings.gate_min_coverage_percent
-    window = _coverage(start, end, covered, settings.gate_window_months,
-                       settings.gate_min_coverage_percent, is_trading_day)
+    period_ok = _complete(period, covered)
+    window = _coverage(start, end, covered, settings.gate_window_months, is_trading_day)
     extended = any(t.session != "regular" for t in trades)
     one = Decimal(1)
     lines = (

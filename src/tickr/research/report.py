@@ -352,8 +352,9 @@ GATE_LINE_COLUMNS = ("label", "line", "line_label", "sizing", "sessions", "trade
                      "unknown_cost_trades", "days", "days_in_plus", "earned", "lost", "net", "fees",
                      "slippage", "spread_in_results", "spread_charged", "baseline_net",
                      "net_minus_baseline")
-GATE_MONTH_COLUMNS = ("label", "line", "month", "status", "trading_days", "covered_days",
-                      "coverage_pct", "trades", "net", "in_plus")
+GATE_MONTH_COLUMNS = ("label", "line", "month", "status", "trading_days", "period_days",
+                      "period_fraction_pct", "covered_days", "coverage_pct", "trades", "net",
+                      "in_plus")
 GATE_TAIL_COLUMNS = ("label", "line", "top_percent", "trades", "net", "share_of_net_pct")
 GATE_TRADE_COLUMNS = ("label", "trade_id", "symbol", "session", "day", "entry_time", "exit_time",
                       "notional_usd", "return_units", "result", "fees", "slippage", "spread",
@@ -413,9 +414,10 @@ def write_gate(result: gt.Gate, version: str, label: str, out_dir: Path, places:
                 for line in result.lines), places)
     coverage = {m.month: m for m in result.window}
     _write_csv(out_dir / "gate_months.csv", GATE_MONTH_COLUMNS,
-               ([label, line.name, m.month, m.status, coverage[m.month].trading_days,
-                 coverage[m.month].covered_days, coverage[m.month].coverage * gt.PERCENT,
-                 m.trades, m.net, m.in_plus] for line in result.lines for m in line.months),
+               ([label, line.name, m.month, m.status, c.trading_days, c.period_days,
+                 c.period_fraction * gt.PERCENT, c.covered_days, c.coverage * gt.PERCENT,
+                 m.trades, m.net, m.in_plus]
+                for line in result.lines for m in line.months for c in (coverage[m.month],)),
                places)
     _write_csv(out_dir / "gate_tails.csv", GATE_TAIL_COLUMNS,
                ([label, line.name, t.percent, t.trades, t.net, t.share_pct]
@@ -434,11 +436,14 @@ def write_gate(result: gt.Gate, version: str, label: str, out_dir: Path, places:
             "m_window_months": settings.gate_window_months,
             "x_drop_best_percent": settings.gate_drop_best_percent},
         "tail_percents": list(settings.gate_tail_percents),
-        "min_coverage_percent": settings.gate_min_coverage_percent,
+        "coverage_rule": "observed only when every calendar trading day inside start..end "
+                         "is in --covered-days; otherwise inconclusive",
         "coverage": {"trading_days": result.trading_days, "covered_days": result.covered_days,
                      "coverage_pct": result.coverage * gt.PERCENT,
                      "window": [{"month": m.month, "status": m.status,
-                                 "trading_days": m.trading_days, "covered_days": m.covered_days,
+                                 "trading_days": m.trading_days, "period_days": m.period_days,
+                                 "period_fraction_pct": m.period_fraction * gt.PERCENT,
+                                 "covered_days": m.covered_days,
                                  "coverage_pct": m.coverage * gt.PERCENT}
                                 for m in result.window]},
         "costs": {"sign": gt.COST_SIGN, "provenance_version_trades": result.provenance,

@@ -17,5 +17,3 @@ gate_window_months = 3
 gate_drop_best_percent = 1
 # Top percents of trades whose share of the net is reported; read by research/gate.py.
 gate_tail_percents = [1, 5, 10]
-# Least percent of calendar trading days with data for a month to count as observed; read by research/gate.py.
-gate_min_coverage_percent = 80

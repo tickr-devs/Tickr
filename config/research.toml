@@ -20,5 +20,3 @@ gate_window_months = 3
 gate_drop_best_percent = 1
 # R23 gate report: tail concentration, the top percents of trades by after-cost result whose share of the net is reported (the model targets rare large gainers; Codex review of #851), percent each, increasing; read by research/gate.py.
 gate_tail_percents = [1, 5, 10]
-# R23 gate report: least percent of the calendar's trading days with data (--covered-days) for a month, or for the whole --start..--end period, to count as observed; below it the month or period is insufficient coverage and the report says inconclusive (set by the agent with #851, owner to confirm), percent; read by research/gate.py.
-gate_min_coverage_percent = 80
