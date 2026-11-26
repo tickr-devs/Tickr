@@ -17,10 +17,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from tickr import config as config_module
-from tickr.broker.base import Broker
+from tickr.broker.base import Broker, BrokerError
 from tickr.calendar import CalendarRefused, SessionCalendar, ny_date_of
 from tickr.data.base import MarketData
-from tickr.engine.core import ORDER_RESOLVED, Engine, EntryRefused
+from tickr.engine.core import ORDER_OBSERVED, ORDER_RESOLVED, Engine, EntryRefused
 from tickr.engine.manual import (
     CLOSE_WAITS,
     ManualRefused,
@@ -101,6 +101,34 @@ def _status(path: Path) -> int:
                   f" ({last['end_cause'] or 'no cause recorded'})")
     finally:
         store.close()
+    return 0
+
+
+def _diagnostics(args: argparse.Namespace) -> int:
+    """Write the secret-free diagnostics bundle (see `tickr.diagnostics`). Read-only; safe
+    while the bot runs."""
+    import contextlib
+    import io
+
+    from tickr import diagnostics
+
+    cfg = config_module.load(args.config)
+    days = cfg.run.diagnostics_days if args.days is None else args.days
+    try:
+        version = _code_version(cfg)
+    except CodeVersionUnknown as exc:
+        version = f"unknown: {exc}"
+    status = io.StringIO()
+    with contextlib.redirect_stdout(status):
+        _status(args.config)
+    try:
+        entries = diagnostics.build(cfg, args.config, args.out, now=NOW(), days=days,
+                                    version=version, status_text=status.getvalue())
+    except diagnostics.DiagnosticsRefused as exc:
+        raise ManualRefused(str(exc)) from exc
+    for entry in entries:
+        print(f"{entry['bytes']:>10}  {entry['path']}")
+    print(f"wrote {args.out} ({len(entries)} files)")
     return 0
 
 
@@ -508,6 +536,72 @@ def _probe_quote_sources(args: argparse.Namespace) -> int:
     code = quote_sources_probe.run(market, args.symbols, folder, print)
     print(f"answers: {folder / quote_sources_probe.SOURCES_FILE}")
     return code
+
+
+def _webull_trade_events_source(cfg: config_module.Config) -> Any:
+    from tickr.broker.webull import trade_events_source_from_config  # optional dependency
+    return trade_events_source_from_config(cfg)
+
+
+# Replaced in tests with a fake event source.
+TRADE_EVENTS_SOURCE: Callable[[config_module.Config], Any] = _webull_trade_events_source
+
+
+def _bot_journal_changes(cfg: config_module.Config, since: datetime) -> list[dict[str, Any]]:
+    """The running bot's `order-observed` journal rows since `since`: the time its own polling
+    saw each order change, read from a read-only connection."""
+    database, _ = data_paths(cfg)
+    if not database.exists():
+        return []
+    store = Store.open_readonly(database)
+    try:
+        rows = store.journal(ORDER_OBSERVED)
+    finally:
+        store.close()
+    return [{"at": row.at_utc, "source": "bot-journal", "client_order_id": row.key,
+             "raw_status": row.body.get("raw_status"),
+             "filled_quantity": row.body.get("filled_quantity")}
+            for row in rows if datetime.fromisoformat(row.at_utc) >= since]
+
+
+def _probe_trade_events(args: argparse.Namespace) -> int:
+    """Read-only probe M3 (docs/manual-trade.md): the account's gRPC trade events next to the
+    bot's polling. Sends no orders. Exit 0 a subscription was accepted, 4 none was."""
+    from tickr.engine import session_probe, trade_events_probe
+
+    cfg = config_module.load(args.config)
+    minutes = cfg.probe.trade_events_minutes if args.minutes is None else args.minutes
+    if minutes <= 0:
+        print("refused: --minutes must be above 0", file=sys.stderr)
+        return 2
+    settings = trade_events_probe.ProbeSettings(
+        timedelta(minutes=minutes).total_seconds(),
+        float(cfg.probe.trade_events_reconnect_seconds),
+        float(cfg.orders.detail_poll_seconds), cfg.orders.detail_reads_per_step)
+    _, lock_path = data_paths(cfg)
+    pid = recorded_holder(lock_path)
+    try:
+        source = TRADE_EVENTS_SOURCE(cfg)
+    except BrokerError as exc:  # a host off the allowlist, a credential variable not set
+        print(f"refused: {exc}", file=sys.stderr)
+        return 3
+
+    def run(reads: Any, journal: Any, mode: str) -> int:
+        folder = session_probe.evidence_folder(cfg, NOW(), "trade-events")
+        print(f"probe-trade-events for {minutes} min ({mode}); evidence in {folder}")
+        code = trade_events_probe.run(source, reads, journal, settings, folder, now=NOW,
+                                      sleep=SLEEP, out=print,
+                                      environment=cfg.environment_name)
+        print(f"summary: {folder / trade_events_probe.SUMMARY_FILE}")
+        return code
+
+    if pid is not None:
+        # The bot polls: no HTTP read from here (the route limits are per App Key, C2).
+        return run(None, lambda since: _bot_journal_changes(cfg, since),
+                   f"bot pid {pid} running: its journal is the polling side")
+    with SingleInstanceLock(lock_path):  # a bot starting meanwhile would share the routes
+        broker, _ = PROBE_ADAPTERS(cfg)
+        return run(broker, None, "bot stopped: the probe polls")
 
 
 def _probe_prev_day(args: argparse.Namespace) -> int:
@@ -1001,6 +1095,10 @@ def main(argv: list[str] | None = None) -> int:
                              "extended snapshot, top of book and newest trades, with the age "
                              "of each; sends no orders")
     sources.add_argument("symbols", nargs="+")
+    events = sub.add_parser("probe-trade-events", help="read-only probe M3: record the "
+                            "account's gRPC trade events next to the polling; sends no orders")
+    events.add_argument("--minutes", type=int, help="how long to listen (default [probe] "
+                        "trade_events_minutes)")
     prev_day = sub.add_parser("probe-prev-day", help="read-only, overnight ([probe] "
                               "prev_day_*): when the previous session's Massive day files and "
                               "splits appear before the 04:00 ET start; sends no orders")
@@ -1026,6 +1124,12 @@ def main(argv: list[str] | None = None) -> int:
     explain_parser = sub.add_parser("explain", help="read-only: the latest decision recorded "
                                     "today for a symbol, with every check")
     explain_parser.add_argument("symbol")
+    diag = sub.add_parser("diagnostics", help="read-only: a zip of config, recent logs and "
+                          "alerts, database row counts and status, with no secrets "
+                          "(docs/operations.md)")
+    diag.add_argument("--out", type=Path, required=True, help="the zip to write (must not exist)")
+    diag.add_argument("--days", type=int, default=None,
+                      help="days of logs and alerts; default [run] diagnostics_days")
     maint = sub.add_parser("maintain", help="with the bot stopped: gzip finished days' capture "
                            "and decision files, prune caches and old archives, checkpoint the "
                            "database (dry run by default)")
@@ -1082,10 +1186,14 @@ def main(argv: list[str] | None = None) -> int:
             return _check_quote(args)
         if args.command == "probe-quote-sources":
             return _probe_quote_sources(args)
+        if args.command == "probe-trade-events":
+            return _probe_trade_events(args)
         if args.command == "probe-prev-day":
             return _probe_prev_day(args)
         if args.command == "explain":
             return _explain(args)
+        if args.command == "diagnostics":
+            return _diagnostics(args)
         if args.command == "maintain":
             return _maintain(args)
         if args.command == "clear-fence":
