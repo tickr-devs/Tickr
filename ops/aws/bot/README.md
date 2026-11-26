@@ -125,6 +125,18 @@ terraform import aws_iam_openid_connect_provider.github \
   "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):oidc-provider/token.actions.githubusercontent.com"
 ```
 
-The registry keeps the newest `images_kept` images by count. Nothing pulls from it yet; before
-the server does, the deployed release gets a tag that the lifecycle rule never expires, so a
-rollback or a rebuilt server can always pull it.
+## Release on the server
+
+In an SSM session, with the full commit of main whose image CI pushed:
+
+```sh
+sudo tickr-image-pull <commit>     # pull it and mark it release-<commit> in the registry
+sudo /srv/tickr/repo/ops/systemd/deploy-server.sh ... <commit>   # refuses unless flat
+```
+
+`tickr-image-pull` reads the repository from `/srv/tickr/etc/registry.env` (written at first
+boot from the stack) and signs in to the registry only for that run. The registry keeps the newest
+`images_kept` commit images and, separately, the newest `releases_kept` deployed releases: an
+image tagged `release-…` is never expired by the commit-count rule, so a rollback or a rebuilt
+server can always pull it. The server role may add a tag to an image already in the registry,
+but cannot upload layers or delete; tags are immutable.

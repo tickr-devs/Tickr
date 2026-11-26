@@ -1,0 +1,43 @@
+#!/bin/bash
+# Pulls the release image of one commit onto the server and marks it as a release.
+#   sudo tickr-image-pull <40-character commit>
+# Reads the repository from /srv/tickr/etc/registry.env and the region from aws.env (both written
+# at first boot). Signs in to the registry with the server role for this run only: the short-lived
+# registry password goes through a pipe and the login is removed on exit. Then it adds the tag
+# release-<commit> to the same image in the registry, which the lifecycle rule never counts against
+# the newest-images limit, so a rollback or a rebuilt server can always pull a deployed release.
+# Never deploys: deploy-server.sh takes the commit next.
+set -euo pipefail
+
+commit=${1:-}
+if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "tickr-image-pull: give the full 40-character commit of main" >&2
+  exit 2
+fi
+for f in /srv/tickr/etc/registry.env /srv/tickr/etc/aws.env; do
+  [ -r "$f" ] || { echo "tickr-image-pull: $f is missing" >&2; exit 1; }
+done
+. /srv/tickr/etc/registry.env
+. /srv/tickr/etc/aws.env
+export AWS_DEFAULT_REGION
+: "${TICKR_IMAGE_REPOSITORY:?registry.env names no TICKR_IMAGE_REPOSITORY}"
+registry=${TICKR_IMAGE_REPOSITORY%%/*}
+repository=${TICKR_IMAGE_REPOSITORY#*/}
+
+trap 'docker logout "$registry" >/dev/null 2>&1 || true' EXIT
+aws ecr get-login-password | docker login --username AWS --password-stdin "$registry" >/dev/null
+docker pull "$TICKR_IMAGE_REPOSITORY:$commit"
+
+release="release-$commit"
+if aws ecr describe-images --repository-name "$repository" --image-ids imageTag="$release" >/dev/null 2>&1; then
+  echo "tickr-image-pull: $repository:$release already marked"
+else
+  manifest=$(aws ecr batch-get-image --repository-name "$repository" --image-ids imageTag="$commit" \
+    --query 'images[0].imageManifest' --output text)
+  media=$(aws ecr batch-get-image --repository-name "$repository" --image-ids imageTag="$commit" \
+    --query 'images[0].imageManifestMediaType' --output text)
+  aws ecr put-image --repository-name "$repository" --image-tag "$release" \
+    --image-manifest "$manifest" --image-manifest-media-type "$media" >/dev/null
+  echo "tickr-image-pull: marked $repository:$release"
+fi
+echo "tickr-image-pull: $TICKR_IMAGE_REPOSITORY:$commit is on this server"

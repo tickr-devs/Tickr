@@ -13,9 +13,21 @@ resource "aws_ecr_repository" "bot" {
 resource "aws_ecr_lifecycle_policy" "bot" {
   repository = aws_ecr_repository.bot.name
   policy = jsonencode({
+    # An image matched by a rule is never expired by a lower-priority one, so deployed releases
+    # (tag release-<commit>, added by tickr-image-pull) only ever count against releases_kept.
     rules = [{
       rulePriority = 1
-      description  = "keep the newest images only"
+      description  = "deployed releases: keep the newest"
+      selection = {
+        tagStatus      = "tagged"
+        tagPatternList = ["release-*"]
+        countType      = "imageCountMoreThan"
+        countNumber    = var.releases_kept
+      }
+      action = { type = "expire" }
+      }, {
+      rulePriority = 2
+      description  = "other images: keep the newest"
       selection = {
         tagStatus   = "any"
         countType   = "imageCountMoreThan"
@@ -84,7 +96,9 @@ resource "aws_iam_role_policy" "image_push" {
   policy = data.aws_iam_policy_document.image_push.json
 }
 
-# The server pulls the image; it cannot push or delete one.
+# The server pulls the image and may add a tag to an image already in the registry (PutImage with
+# an existing manifest: tickr-image-pull marks a deployed release). It cannot upload layers or
+# delete an image, and tags are immutable, so no existing tag can be moved.
 data "aws_iam_policy_document" "bot_pull" {
   statement {
     sid       = "Login"
@@ -94,6 +108,11 @@ data "aws_iam_policy_document" "bot_pull" {
   statement {
     sid       = "PullBotImage"
     actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability", "ecr:DescribeImages"]
+    resources = [aws_ecr_repository.bot.arn]
+  }
+  statement {
+    sid       = "MarkRelease"
+    actions   = ["ecr:PutImage"]
     resources = [aws_ecr_repository.bot.arn]
   }
 }
