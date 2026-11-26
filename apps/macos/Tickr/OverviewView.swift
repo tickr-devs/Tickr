@@ -480,22 +480,34 @@ private struct LiveFlowCard: View {
     let positions = status.map(Board.positions) ?? []
     // An open position whose stop is not verified outranks the day's count of verified stops.
     let unprotected = positions.first { !$0.stop.state.isProtected }
-    // The one stage rule of both apps (`StopState.stageTone`): neutral with no position, else the
+    // The one stage rule of both apps (`StopState.stageTone`): green with no position, else the
     // worst of the open and the day's stops.
     let stopTone = StopState.stageTone(open: positions.map(\.stop.state), day: (model.flow?.stops ?? []).map(\.state))
+    // Checked lime only while the broker agrees; red on a mismatch or a fence; quiet while nothing
+    // has been compared yet (never a healthy colour for an unknown state), as on iOS.
+    let reconcileFill: Color = switch reconcile.agrees {
+    case true?: PipelineStage.reconcile.fill
+    case false?: Palette.loss
+    case nil: Palette.textQuaternary
+    }
+    let reconcileText: Color = switch reconcile.agrees {
+    case true?: PipelineStage.reconcile.text
+    case false?: Palette.lossText
+    case nil: Palette.textQuaternary
+    }
     return [
       .init(id: .screeners, name: L10n.Flow.screeners, value: count(.screeners),
-        glyph: .screeners, color: Palette.accent, text: Palette.accentText),
+        glyph: .screeners, color: PipelineStage.screeners.fill, text: PipelineStage.screeners.text),
       .init(id: .universe, name: L10n.Flow.universe, value: count(.universe), drop: funnel[1],
-        glyph: .universe, color: Palette.seriesUniverse, text: Palette.seriesATRText),
+        glyph: .universe, color: PipelineStage.universe.fill, text: PipelineStage.universe.text),
       // Quote and bars come from GET /symbols only (the flow keeps its six stages for older apps).
       .init(id: .quote, name: L10n.Flow.quote, value: reached(.quote), note: model.symbolsError, drop: funnel[2],
-        glyph: .quote, color: Palette.accent, text: Palette.accentText),
+        glyph: .quote, color: PipelineStage.quote.fill, text: PipelineStage.quote.text),
       .init(id: .bars, name: L10n.Flow.bars, value: reached(.bars), note: model.symbolsError, drop: funnel[3],
-        glyph: .bars, color: Palette.info, text: Palette.infoText),
+        glyph: .bars, color: PipelineStage.bars.fill, text: PipelineStage.bars.text),
       .init(id: .strategy, name: L10n.Common.strategy,
         value: count(.strategy) ?? status.map { Format.strategy($0.strategy) },
-        glyph: .strategy, color: Palette.highlight, text: Palette.highlightText),
+        glyph: .strategy, color: PipelineStage.strategy.fill, text: PipelineStage.strategy.text),
       // The day's count, as in the design; only an entry block that needs the operator outranks
       // it. A calm pause ("not now") shows only when there is no count yet.
       .init(id: .risk, name: L10n.Common.risk,
@@ -504,17 +516,17 @@ private struct LiveFlowCard: View {
           ?? status?.entryBlock.map { _ in String(localized: L10n.Flow.waiting) }
           ?? status.map { _ in String(localized: L10n.Flow.entriesAllowed) },
         drop: refused > 0 ? String(localized: L10n.Flow.refusedCount(refused)) : nil,
-        glyph: .risk, color: Palette.warning, text: Palette.warningText),
+        glyph: .risk, color: PipelineStage.risk.fill, text: PipelineStage.risk.text),
       .init(id: .order, name: L10n.Flow.order,
         value: count(.order) ?? status.map { String(localized: L10n.Flow.closedCount($0.tradesToday.count)) },
-        glyph: .order, color: Palette.info, text: Palette.infoText),
+        glyph: .order, color: PipelineStage.order.fill, text: PipelineStage.order.text),
       .init(id: .stop, name: L10n.Flow.brokerStop,
         value: unprotected.map { $0.stop.state.title } ?? count(.stop)
           ?? positions.first.map { $0.stop.state.title }
           ?? status.map { _ in String(localized: L10n.Common.noPosition) },
         glyph: .brokerStop, color: stopTone.fill, text: stopTone.text),
       .init(id: .reconcile, name: L10n.Flow.reconcile, value: reconcile.value, note: reconcile.note,
-        glyph: .reconcile, color: Palette.infoText, text: Palette.infoText),
+        glyph: .reconcile, color: reconcileFill, text: reconcileText),
     ]
   }
 }

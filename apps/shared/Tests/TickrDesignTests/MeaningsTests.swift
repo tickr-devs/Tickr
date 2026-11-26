@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import TickrDesign
 import TickrKit
@@ -34,10 +35,10 @@ import TickrKit
     #expect(StopState.allProtected([]))
   }
 
-  @Test("The broker-stop stage: neutral with no position on every screen, unless a day's trade lost its stop")
+  @Test("The broker-stop stage: green with no position on every screen, unless a day's trade lost its stop")
   func stopStage() {
-    #expect(StopState.stageTone(open: []) == .neutral)
-    #expect(StopState.stageTone(open: [], day: [.verified, .pending]) == .neutral)
+    #expect(StopState.stageTone(open: []) == .profit)
+    #expect(StopState.stageTone(open: [], day: [.verified, .pending]) == .profit)
     #expect(StopState.stageTone(open: [], day: [.verified, .neverVerified]) == .loss)
     #expect(StopState.stageTone(open: [.verified], day: [.verified]) == .profit)
     #expect(StopState.stageTone(open: [.verified], day: [.pending]) == .warning)
@@ -129,5 +130,28 @@ import TickrKit
     #expect(Tone.result(d("-0.005")) == .series)
     // R results shown to one decimal: −0.04 R reads "0.0 R".
     #expect(Tone.result(d("-0.04"), fractionDigits: 1) == .neutral)
+  }
+}
+
+/// The live flow's stage colours (StageColour.swift).
+@Suite struct StageColourTests {
+  @Test("Nine stages, nine different hues, in the approved order")
+  func distinct() {
+    #expect(PipelineStage.allCases.count == 9)
+    // Compared as resolved colours in each appearance, not by their descriptions.
+    for scheme in [ColorScheme.light, .dark] {
+      var environment = EnvironmentValues()
+      environment.colorScheme = scheme
+      #expect(Set(PipelineStage.allCases.map { $0.fill.resolve(in: environment) }).count == 9)
+      #expect(Set(PipelineStage.allCases.map { $0.text.resolve(in: environment) }).count == 9)
+    }
+  }
+
+  @Test("Priced cyan, Bought orange and Checked lime are the new palette colours")
+  func newColours() {
+    #expect(PipelineStage.quote.fill == Palette.cyan)
+    #expect(PipelineStage.order.fill == Palette.orange)
+    #expect(PipelineStage.reconcile.fill == Palette.lime)
+    #expect(PipelineStage.stop.fill == Palette.profit)
   }
 }

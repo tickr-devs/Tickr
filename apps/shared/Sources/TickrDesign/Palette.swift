@@ -116,6 +116,18 @@ public enum Palette {
   public static let seriesATRText = Color(Swatch.seriesATRText)
   /// Universe filter stage in the live flow.
   public static let seriesUniverse = seriesATR
+  /// The live-flow stages that no meaning above colours (mockup v151: nine stages, nine hues). Each
+  /// has a fill (dots, rings, bars, glows) and a `Text` variant for words (4.5:1 on `surface`).
+  /// Priced.
+  public static let cyan = Color(light: 0x0891B2, dark: 0x22D3EE)
+  public static let cyanText = Color(Swatch.cyanText)
+  /// Bought.
+  public static let orange = Color(light: 0xEA580C, dark: 0xFB923C)
+  public static let orangeText = Color(Swatch.orangeText)
+  /// Checked (the broker matches our records).
+  public static let lime = Color(light: 0x65A30D, dark: 0xA3E635)
+  public static let limeText = Color(Swatch.limeText)
+
   /// A symbol the funnel dropped (mockup v100: pink; red stays for danger).
   public static let dropped = seriesATR
   public static let droppedText = seriesATRText
@@ -185,6 +197,9 @@ public struct Swatch: Sendable, Hashable {
   public static let infoText = Swatch(light: 0x1D4ED8, dark: 0x93C5FD)
   public static let highlightText = Swatch(light: 0x6D28D9, dark: 0xC4B5FD)
   public static let seriesATRText = Swatch(light: 0xBE185D, dark: 0xF9A8D4)
+  public static let cyanText = Swatch(light: 0x0E7490, dark: 0x22D3EE)
+  public static let orangeText = Swatch(light: 0xC2410C, dark: 0xFB923C)
+  public static let limeText = Swatch(light: 0x4D7C0F, dark: 0xA3E635)
   /// `info` itself, a fill: below 4.5:1 on `surface` in light mode, so never text (a test proves it).
   public static let info = Swatch(light: 0x3B82F6, dark: 0x60A5FA)
   public static let lossFill = Swatch(light: 0xB91C1C, dark: 0x991B1B)
