@@ -107,9 +107,12 @@ BOT_USES_OF_THE_CONVERTER = {"day", "TCOLS", "QCOLS", "RTH", "KB"}
 
 def test_the_bot_only_uses_day_and_constants_of_the_converter():
     seen = set()
+    # the file that binds the converter to `w` (tickr.model.ticks, the stream, has its own `w`)
+    converter_user = Path(ticks.__file__).resolve()
     for path in ticks.PINNED_DIR.parents[3].rglob("*.py"):
         if ticks.PINNED_DIR in path.parents:
             continue
+        path = path.resolve()
         tree = ast.parse(path.read_text("utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -119,7 +122,7 @@ def test_the_bot_only_uses_day_and_constants_of_the_converter():
                 base = node.value
                 is_converter = (isinstance(base, ast.Call) and getattr(
                     base.func, "id", getattr(base.func, "attr", None)) == "converter") or (
-                    path.name == "ticks.py" and isinstance(base, ast.Name) and base.id == "w")
+                    path == converter_user and isinstance(base, ast.Name) and base.id == "w")
                 if is_converter:
                     seen.add(node.attr)
             if isinstance(node, ast.Constant) and node.value in ("main", "creds"):
