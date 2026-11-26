@@ -32,9 +32,24 @@ never change a snapshot already taken.
 Initial state (codex-107 point 2): a symbol's day starts at New York midnight, as the day file
 does (the converter carries a pre-04:00 quote), so `TickBackfill.initial` fetches from 00:00
 America/New_York of the session date. `TickSnapshot.refusal` names why a symbol's ticks are not
-proven complete at the cutoff (not subscribed, no complete backfill from midnight up to its
-subscription, an incomplete backfill, an unfilled stream gap, a conflict); a decision that needs
-the symbol refuses with that cause.
+proven complete at the cutoff (not subscribed, no complete backfill from midnight, an incomplete
+backfill, stream coverage not verified yet, an unfilled stream gap, a conflict); a decision that
+needs the symbol refuses with that cause.
+
+Coverage in event time (Codex, codex-109 point 6). A subscription epoch of a key runs from its
+(re)subscription to its drop (`TickStore.epochs`, receipt times). What the stream verifiably
+covered is told by SIP times only: per symbol and kind, the SIP time of the first and the last
+stream event received in each epoch. The stream is taken as complete from an epoch's first
+event to its last (to the live edge while the epoch is open), and nothing else is: the SIP
+ranges before an epoch's first event, from day start (so current-day events before 04:00 count)
+or from the last event of the previous epoch, are holes (`TickSnapshot.recovery`). A hole is
+filled only by a complete REST window of that kind that overlaps both ends in SIP time (from at
+or before the hole's start, to after its end), so a REST page of a range that a drop cut is
+never trusted on the stream's word. A hole whose end is not known yet (no event of the new
+epoch) cannot be filled. Local receipt times (a drop, a reconnect, an acknowledgment) are never
+compared with SIP times as evidence of coverage. A reset by Massive (for example shortly after
+New York midnight) is such a drop: both kinds recover from the last verified event (or day
+start) through the first verified event after the reconnect.
 
 Measurement, no thresholds (owner rule): receipt time and lag per symbol, REST requests and
 rate-limit answers, late arrivals (a version received after a snapshot whose cutoff already
@@ -224,6 +239,10 @@ class TickStore:
         self.subscribed: dict[str, int] = {}  # symbol (or MARKET) -> first subscribe sent, ns
         # symbol (or MARKET) -> [down_ns, up_ns or None while down, cause]: rows sent then are lost
         self.gaps: dict[str, list[list[Any]]] = {}
+        # symbol (or MARKET) -> subscription epochs [start_ns, end_ns or None while open] (receipt)
+        self.epochs: dict[str, list[list[Any]]] = {}
+        # (kind, ticker) -> epoch index -> [first SIP ns, its receipt ns, last SIP ns] of the stream
+        self._cover: dict[tuple[str, str], dict[int, list[int]]] = {}
         # measurement counts: other_day, late, same_ms_trades / _quotes / _trade_quote
         self.counts: collections.Counter[str] = collections.Counter()
         self._cutoff = 0  # the latest cutoff a snapshot was taken at
@@ -248,6 +267,7 @@ class TickStore:
                     self.counts["late"] += 1
                 if source == STREAM:
                     self._same_ms(kind, row["ticker"], ts // NS_PER_MS)
+                    self._covered(kind, row["ticker"], ts, recv_ns)
                 versions = held.setdefault(key, [])
                 if not versions:
                     new += 1
@@ -269,6 +289,25 @@ class TickStore:
             self.counts["same_ms_trade_quote"] += 1
         self._last_ms[(kind, ticker)] = ms
 
+    def _key(self, ticker: str) -> str | None:
+        return ticker if ticker in self.epochs else (MARKET if MARKET in self.epochs else None)
+
+    def _covered(self, kind: str, ticker: str, sip_ns: int, recv_ns: int) -> None:
+        """A stream event received inside an epoch of its key extends that epoch's coverage."""
+        key = self._key(ticker)
+        if key is None:
+            return  # received before any subscription took: proves nothing
+        epochs = self.epochs[key]
+        for idx in range(len(epochs) - 1, -1, -1):
+            start, end = epochs[idx]
+            if start <= recv_ns and (end is None or recv_ns < end):
+                held = self._cover.setdefault((kind, ticker), {})
+                if idx in held:
+                    held[idx][2] = sip_ns
+                else:
+                    held[idx] = [sip_ns, recv_ns, sip_ns]
+                return
+
     def _differs(self, kind: str, a: tuple[Any, ...], b: tuple[Any, ...]) -> tuple[str, ...]:
         cols = self.cols[kind]
         va, vb = dict(zip(cols, a, strict=True)), dict(zip(cols, b, strict=True))
@@ -284,12 +323,16 @@ class TickStore:
         with self._lock:
             for key in keys:
                 self.subscribed.setdefault(key, at_ns)
+                self.epochs.setdefault(key, [[at_ns, None]])
 
     def down(self, keys: list[str], down_ns: int, cause: str) -> None:
         """The stream of `keys` dropped at `down_ns`; the gap stays open until `up`."""
         with self._lock:
             for key in keys:
                 self.gaps.setdefault(key, []).append([down_ns, None, cause])
+                epochs = self.epochs.get(key)
+                if epochs and epochs[-1][1] is None:
+                    epochs[-1][1] = down_ns
 
     def up(self, up_ns: int, keys: list[str] | None = None) -> None:
         """The subscription was sent again (or, on the shared stream, acknowledged): the open
@@ -301,6 +344,9 @@ class TickStore:
                 for gap in gaps:
                     if gap[1] is None:
                         gap[1] = up_ns
+                epochs = self.epochs.get(key)
+                if epochs and epochs[-1][1] is not None:
+                    epochs.append([up_ns, None])
 
     def window(self, window: Window) -> None:
         with self._lock:
@@ -328,6 +374,17 @@ class TickStore:
             gaps = {key: tuple((d, u if u is not None and u <= cutoff_ns else None, c)
                                for d, u, c in found if d <= cutoff_ns)
                     for key, found in self.gaps.items()}
+            epochs = {key: tuple((s, e if e is not None and e <= cutoff_ns else None)
+                                 for s, e in found if s <= cutoff_ns)
+                      for key, found in self.epochs.items()}
+            cover = {}
+            for (kind, ticker), held in self._cover.items():
+                key = self._key(ticker)
+                spans = epochs.get(key, ()) if key is not None else ()
+                cover[(kind, ticker)] = tuple(
+                    (idx, first, last if spans[idx][1] is not None else None)
+                    for idx, (first, first_recv, last) in held.items()
+                    if first_recv <= cutoff_ns and idx < len(spans))
             return TickSnapshot(
                 day=self.day, start_ns=self.start_ns, cutoff_ns=cutoff_ns,
                 rows=types.MappingProxyType(rows),
@@ -336,7 +393,9 @@ class TickStore:
                 subscribed=types.MappingProxyType(
                     {k: v for k, v in self.subscribed.items() if v <= cutoff_ns}),
                 gaps=types.MappingProxyType({k: v for k, v in gaps.items() if v}),
-                last=types.MappingProxyType(last))
+                last=types.MappingProxyType(last),
+                epochs=types.MappingProxyType({k: v for k, v in epochs.items() if v}),
+                cover=types.MappingProxyType({k: v for k, v in cover.items() if v}))
 
 
 @dataclass(frozen=True)
@@ -354,6 +413,10 @@ class TickSnapshot:
     subscribed: Mapping[str, int]
     gaps: Mapping[str, tuple[tuple[int, int | None, str], ...]]
     last: Mapping[str, tuple[int, int]]
+    # key -> epochs (start_ns, end_ns or None while open at the cutoff), receipt times
+    epochs: Mapping[str, tuple[tuple[int, int | None], ...]]
+    # (kind, ticker) -> (epoch index, first SIP ns, last SIP ns or None while the epoch is open)
+    cover: Mapping[tuple[str, str], tuple[tuple[int, int, int | None], ...]]
 
     def frame(self, kind: str, symbol: str | None = None) -> Any:
         """The rows of one kind (one symbol or all) in ticker, SIP time, sequence order, with the
@@ -372,24 +435,74 @@ class TickSnapshot:
         recv, sip = self.last[symbol]
         return recv, recv - sip
 
+    def _key(self, symbol: str) -> str | None:
+        return symbol if symbol in self.subscribed else (
+            MARKET if MARKET in self.subscribed else None)
+
+    def _holes(self, symbol: str, key: str) -> dict[str, list[tuple[int, int | None, bool]]]:
+        """Per kind, the SIP ranges [lo, hi] the stream has not proven (module text), with hi None
+        while the next verified event is not known, and True for the day's initial hole."""
+        out: dict[str, list[tuple[int, int | None, bool]]] = {}
+        for kind in KINDS:
+            cover = {idx: (first, last) for idx, first, last in self.cover.get((kind, symbol), ())}
+            lo: int | None = self.start_ns
+            initial = True
+            holes: list[tuple[int, int | None, bool]] = []
+            for idx, (_, end) in enumerate(self.epochs.get(key, ())):
+                first, last = cover.get(idx, (None, None))
+                if first is None:
+                    if end is None:
+                        break  # the open epoch has no event yet: its hole has no known end
+                    initial = False  # a closed epoch that proved nothing
+                    continue
+                if lo is not None:
+                    holes.append((lo, first, initial))
+                if end is None:
+                    lo = None  # the stream covers from its first event to the live edge
+                    break
+                lo, initial = last, False
+            if lo is not None:
+                holes.append((lo, None, initial))
+            out[kind] = holes
+        return out
+
+    @staticmethod
+    def _filled(windows: list[Window], kind: str, lo: int, hi: int | None) -> bool:
+        return hi is not None and any(w.kind == kind and w.cause is None and w.from_ns <= lo
+                                      and w.to_ns > hi for w in windows)
+
+    def recovery(self, symbol: str) -> tuple[tuple[str, int, int | None], ...]:
+        """The SIP ranges (kind, from_ns, through_ns inclusive or None while unknown) that still
+        need a complete REST window before the symbol's ticks are proven: backfill each with
+        `TickBackfill.backfill(symbol, from_ns, through_ns + 1)` once its end is known."""
+        key = self._key(symbol)
+        if key is None:
+            return ()
+        mine = [w for w in self.windows if w.symbol == symbol]
+        return tuple((kind, lo, hi) for kind, holes in self._holes(symbol, key).items()
+                     for lo, hi, _ in holes if not self._filled(mine, kind, lo, hi))
+
     def refusal(self, symbol: str) -> str | None:
         """Why the symbol's ticks are not proven complete from midnight to the cutoff (one
-        cause), or None. A stream gap (receipt times) is filled by complete windows of both
-        kinds whose SIP range spans it."""
-        since = min((self.subscribed[k] for k in (symbol, MARKET) if k in self.subscribed),
-                    default=None)
-        if since is None:
+        cause), or None. Every hole of the stream's SIP coverage (module text) must be filled by
+        a complete window of its kind that overlaps both its ends."""
+        key = self._key(symbol)
+        if key is None:
             return "tick_not_subscribed"
         mine = [w for w in self.windows if w.symbol == symbol]
-        complete = [w for w in mine if w.cause is None]
+        holes = self._holes(symbol, key)
         for kind in KINDS:
-            if not any(w.kind == kind and w.from_ns <= self.start_ns and w.to_ns >= since
-                       for w in complete):
+            for lo, hi, initial in holes[kind]:
+                if not initial or self._filled(mine, kind, lo, hi):
+                    continue
+                if hi is None and any(w.kind == kind and w.cause is None and w.from_ns <= lo
+                                      for w in mine):
+                    return "tick_coverage_unverified"  # no stream event proves the live edge
                 return ("tick_backfill_incomplete" if any(w.cause for w in mine)
                         else "tick_no_initial_state")
-        for down, up, _ in self.gaps.get(symbol, ()) + self.gaps.get(MARKET, ()):
-            if up is None or not all(any(w.kind == kind and w.from_ns <= down and w.to_ns >= up
-                                         for w in complete) for kind in KINDS):
+        for kind in KINDS:
+            if any(not initial and not self._filled(mine, kind, lo, hi)
+                   for lo, hi, initial in holes[kind]):
                 return "tick_gap"
         if any(c.ticker == symbol for c in self.conflicts):
             return "tick_conflict"
@@ -614,5 +727,7 @@ class TickBackfill:
     def initial(self, symbol: str) -> dict[str, Window]:
         """The symbol's day so far, from 00:00 America/New_York of the session date (the day
         file's start: the converter carries a pre-04:00 quote) to now. Subscribe the symbol
-        first, so the window reaches past its subscription and no row falls between them."""
+        first: the window counts only once it reaches past the SIP time of the first stream
+        event of each kind after the subscription (TickSnapshot.recovery), so no row falls
+        between them."""
         return self.backfill(symbol, self.store.start_ns, min(self.clock(), self.store.end_ns))

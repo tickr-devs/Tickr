@@ -13,8 +13,14 @@ WebSocket connection?").
   `{"ev":"status","status":"success","message":"subscribed to: T.AAPL"}`; a parameter without
   one has not taken. Every subscribe request is recorded with its send time and every parameter
   with its acknowledgment receipt, per connection (`acks`). A decision on a channel whose
-  parameter is not acknowledged at its cutoff refuses (`stream_not_acknowledged`). Nothing is
-  re-sent on a missing acknowledgment: the refusal stays until the next connection.
+  parameter is not acknowledged at its cutoff refuses (`stream_not_acknowledged`). A missing
+  acknowledgment (codex-109 point 6): after `[massive] stream_ack_timeout_seconds` (experimental,
+  unmeasured; 0 = off) the missing parameters are re-sent once on the same connection (logged,
+  recorded in `requests` as a resend); still missing that long after the resend, the stream
+  closes the connection itself and reconnects (cause `ack_timeout`, a gap like any drop) with
+  every subscription. Each send-to-acknowledgment wait is recorded on the monotonic clock
+  (`ack_waits`) so the timeout can be set from a measurement. A late acknowledgment is judged
+  only once the router has caught up, so a queued one is never taken as missing.
 - **Backpressure.** Massive drops a client that reads too slowly once its server-side buffer
   fills, and advises reading packets into a queue before parsing them. The socket thread only
   stamps the receipt time and queues the raw text; a router thread parses and hands each event
@@ -27,9 +33,23 @@ WebSocket connection?").
   every channel it carries: `DayBars.down` for the bars, `TickStore.down` for every tick key.
   The stream waits `[massive] stream_release_pause_seconds` (Massive's documented release
   window), connects, authenticates, re-sends every subscription, and closes each key's gap at
-  its new acknowledgment. Each closed gap is queued as a backfill request (`take_backfill`):
-  `TickBackfill.backfill` can fill a tick gap of a symbol; no backfill of a whole-market minute
-  exists, so a bar gap keeps refusing the day (`bars_gap`), as with `MinuteStream`.
+  its new acknowledgment. Each closed gap is queued as a notice (`take_backfill`, receipt times
+  for the record only). What to recover is told in event time, never by receipt times
+  (codex-109 point 6): `TickSnapshot.recovery` gives each tick hole from the last verified event
+  (or day start, so a reset after New York midnight recovers the events before 04:00) through
+  the first verified event after the reconnect, to fill with `TickBackfill.backfill` (complete
+  only when its paging was exhausted); `DayBars.needed` gives the bar minutes a complete-market
+  repair must cover. A cohort-only bar backfill cannot restore market-wide ranks, breadth or
+  membership: until a complete-market repair arrives the bars stay unavailable (`bars_gap`).
+- **Readiness.** A channel is ready at a cutoff only with all three: its acknowledgment, every
+  eligible message received by the cutoff drained to its consumer, and verified coverage
+  (`bars_refusal`, `tick_snapshot` + `tick_refusal`).
+- **Clocks (point 5).** Three things are kept apart: the wall-clock receipt of every message
+  (`clock`, ns, the receipt cutoffs compare with it), the monotonic durations (`mono`: lane lag,
+  send-to-acknowledgment wait, connection lifetimes) and the clock offset (`offset`: the local
+  wall clock minus a reference clock, ns, as a sync source reports it; None when no source is
+  wired, recorded as unknown, never 0). The offset is recorded at each connection and
+  acknowledgment, never used to correct a time.
 
 Decision side: `bars_refusal(cutoff)` and `tick_snapshot(cutoff)` + `tick_refusal(snapshot,
 symbol)` give one cause or None. A consumer that failed (an unreadable message) refuses its own
@@ -41,9 +61,12 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Protocol
 
 from tickr.config import Config
@@ -63,6 +86,49 @@ BARS = "AM"
 BARS_PARAM = "AM.*"
 ACK_PREFIX = "subscribed to: "  # protocol constant of Massive's subscribe acknowledgment
 STREAM_REFUSALS = ("auth_failed", "max_connections", "error")
+NS_PER_S = 10**9
+ACK_TIMEOUT = "ack_timeout"  # the cause of a controlled reconnect after a missing acknowledgment
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class Ack:
+    """One subscribe parameter sent on one connection: wall-clock times (`*_ns`) for the receipt
+    cutoffs, monotonic ones (`*_mono`) for durations, the clock offset at the acknowledgment."""
+
+    param: str
+    conn: int
+    sent_ns: int
+    sent_mono: int
+    acked_ns: int | None = None
+    acked_mono: int | None = None
+    offset_ns: int | None = None
+    resent_ns: int | None = None
+    resent_mono: int | None = None
+    dropped_ns: int | None = None
+
+    @property
+    def wait_ns(self) -> int | None:
+        """Monotonic ns from the first send to the acknowledgment; None while missing."""
+        return None if self.acked_mono is None else self.acked_mono - self.sent_mono
+
+
+@dataclass
+class Link:
+    """One connection: opened and closed on both clocks, the offset at opening, the cause."""
+
+    conn: int
+    opened_ns: int
+    opened_mono: int
+    offset_ns: int | None
+    closed_ns: int | None = None
+    closed_mono: int | None = None
+    cause: str | None = None
+
+
+class AckTimeout(Exception):
+    """A parameter stayed unacknowledged after its one resend: end the connection, reconnect."""
 
 
 class GapBarSink(Protocol):
@@ -84,11 +150,11 @@ class Lane:
     by `cutoff` was handed."""
 
     def __init__(self, name: str, handle: Callable[[Any, int], None],
-                 clock: Callable[[], int]) -> None:
+                 mono: Callable[[], int]) -> None:
         self.name = name
         self.handle = handle
-        self.clock = clock
-        self._items: collections.deque[tuple[Any, int]] = collections.deque()
+        self.mono = mono
+        self._items: collections.deque[tuple[Any, int, int]] = collections.deque()
         self._busy: int | None = None  # receipt of the item being handled
         self._closed = False
         self._cond = threading.Condition()
@@ -99,9 +165,10 @@ class Lane:
         self.max_lag_ns = 0
         self.thread = threading.Thread(target=self._run, name=f"stream-{name}", daemon=True)
 
-    def put(self, item: Any, recv_ns: int) -> None:
+    def put(self, item: Any, recv_ns: int, recv_mono: int) -> None:
+        """`recv_ns` is the wall-clock receipt (cutoffs), `recv_mono` the monotonic one (lag)."""
         with self._cond:
-            self._items.append((item, recv_ns))
+            self._items.append((item, recv_ns, recv_mono))
             self.max_depth = max(self.max_depth, len(self._items))
             self._cond.notify_all()
 
@@ -112,7 +179,7 @@ class Lane:
                     self._cond.wait()
                 if self._closed or self.failed is not None:
                     return
-                item, recv_ns = self._items.popleft()
+                item, recv_ns, recv_mono = self._items.popleft()
                 self._busy = recv_ns
             try:
                 self.handle(item, recv_ns)
@@ -130,7 +197,7 @@ class Lane:
                     self._cond.notify_all()
                     return
                 self.handed += 1
-                lag = self.clock() - recv_ns
+                lag = self.mono() - recv_mono  # monotonic: a wall-clock step is no lag
                 self.last_lag_ns = lag
                 self.max_lag_ns = max(self.max_lag_ns, lag)
                 self._cond.notify_all()
@@ -160,25 +227,31 @@ class Lane:
 class SharedStream:
     """Minute bars and trades/quotes on one connection (module text). `connect` is
     `websockets.sync.client.connect` (a stand-in in the tests); `clock` gives wall-clock ns, the
-    receipt stamp of every message, gap end and acknowledgment."""
+    receipt stamp of every message, gap end and acknowledgment; `mono` monotonic ns for
+    durations; `offset` the clock offset in ns or None when unknown (module text)."""
 
     def __init__(self, cfg: Config, bars: GapBarSink, ticks: TickStore,
                  connect: Callable[..., Any] | None = None,
-                 clock: Callable[[], int] = time.time_ns) -> None:
+                 clock: Callable[[], int] = time.time_ns,
+                 mono: Callable[[], int] = time.monotonic_ns,
+                 offset: Callable[[], int | None] = lambda: None) -> None:
         self.m = cfg.massive
         self.market = self.m.tick_subscription == "market"
         self.bars = bars
         self.ticks = ticks
         self.clock = clock
+        self.mono = mono
+        self.offset = offset
         if connect is None:
             from websockets.sync.client import connect as ws_connect
 
             connect = ws_connect
         self.connect = connect
         self.symbols: set[str] = set()
-        # param -> per connection [sent_ns, acked_ns or None, dropped_ns or None, connection]
-        self.acks: dict[str, list[list[Any]]] = {}
-        self.requests: list[tuple[int, int, tuple[str, ...]]] = []  # (connection, sent, params)
+        self.acks: dict[str, list[Ack]] = {}  # param -> one entry per connection it was sent on
+        # (connection, sent wall ns, params, "subscribe" or "resend")
+        self.requests: list[tuple[int, int, tuple[str, ...], str]] = []
+        self.links: list[Link] = []
         self.statuses: list[tuple[int, str, str]] = []  # (receipt, status, message)
         self.counts: collections.Counter[str] = collections.Counter()
         self._open: dict[str, tuple[int, str]] = {}  # gap key -> (down, cause) until re-acked
@@ -187,10 +260,10 @@ class SharedStream:
         self._live: tuple[int, Any] | None = None  # (connection, socket) while it is open
         self._ws: Any = None  # the socket once logged in
         self._lock = threading.RLock()
-        self.router = Lane("router", self._route, clock)
+        self.router = Lane("router", self._route, mono)
         self.lanes = {
-            BARS: Lane(BARS, lambda msg, recv: self.bars.add(msg, recv), clock),
-            **{CHANNELS[kind]: Lane(CHANNELS[kind], self._tick_handler(kind), clock)
+            BARS: Lane(BARS, lambda msg, recv: self.bars.add(msg, recv), mono),
+            **{CHANNELS[kind]: Lane(CHANNELS[kind], self._tick_handler(kind), mono)
                for kind in KINDS}}
 
     def _tick_handler(self, kind: str) -> Callable[[Any, int], None]:
@@ -207,12 +280,18 @@ class SharedStream:
     def _tick_params(keys: list[str]) -> list[str]:
         return [f"{CHANNELS[kind]}.{key}" for key in keys for kind in KINDS]
 
-    def _send(self, ws: Any, params: list[str]) -> None:
-        """One subscribe request, recorded before it is sent."""
-        sent = self.clock()
-        self.requests.append((self._conn, sent, tuple(params)))
-        for param in params:
-            self.acks.setdefault(param, []).append([sent, None, None, self._conn])
+    def _send(self, ws: Any, params: list[str], resend: list[Ack] | None = None) -> None:
+        """One subscribe request, recorded before it is sent; `resend` names the entries whose
+        parameters it sends again (once each)."""
+        sent, sent_mono = self.clock(), self.mono()
+        self.requests.append((self._conn, sent, tuple(params),
+                              "resend" if resend is not None else "subscribe"))
+        if resend is not None:
+            for entry in resend:
+                entry.resent_ns, entry.resent_mono = sent, sent_mono
+        else:
+            for param in params:
+                self.acks.setdefault(param, []).append(Ack(param, self._conn, sent, sent_mono))
         ws.send(json.dumps({"action": "subscribe", "params": ",".join(params)}))
 
     def add(self, symbol: str) -> bool:
@@ -232,14 +311,14 @@ class SharedStream:
         with self._lock:
             self._send(ws, [BARS_PARAM] + self._tick_params(self._tick_keys()))
 
-    def _acked(self, param: str, recv_ns: int) -> None:
+    def _acked(self, param: str, recv_ns: int, recv_mono: int) -> None:
         with self._lock:
             entry = next((e for e in reversed(self.acks.get(param, []))
-                          if e[3] == self._conn and e[1] is None), None)
+                          if e.conn == self._conn and e.acked_ns is None), None)
             if entry is None:
                 self.counts["unexpected_ack"] += 1
                 return
-            entry[1] = recv_ns
+            entry.acked_ns, entry.acked_mono, entry.offset_ns = recv_ns, recv_mono, self.offset()
             if param == BARS_PARAM:
                 if BARS_PARAM in self._open:
                     down, cause = self._open.pop(BARS_PARAM)
@@ -257,16 +336,53 @@ class SharedStream:
                 self._backfill.append(("ticks", key, down, recv_ns))
 
     def _acked_at(self, param: str, cutoff_ns: int) -> bool:
-        return any(a is not None and a <= cutoff_ns and (d is None or d > cutoff_ns)
-                   for _, a, d, _ in self.acks.get(param, []))
+        return any(e.acked_ns is not None and e.acked_ns <= cutoff_ns
+                   and (e.dropped_ns is None or e.dropped_ns > cutoff_ns)
+                   for e in self.acks.get(param, []))
+
+    def _check_acks(self, ws: Any, conn: int) -> None:
+        """A missing acknowledgment: one logged resend on this connection after the timeout,
+        then `AckTimeout` (a controlled reconnect) after the timeout again (module text)."""
+        timeout = Decimal(self.m.stream_ack_timeout_seconds)
+        if timeout <= 0 or not self.router.caught_up(self.clock()):
+            return  # off, or an acknowledgment may still wait in the router
+        limit = int(timeout * NS_PER_S)
+        now = self.mono()
+        with self._lock:
+            if self._ws is None:
+                return
+            missing = [e for entries in self.acks.values() for e in entries
+                       if e.conn == conn and e.acked_ns is None and e.dropped_ns is None]
+            expired = [e.param for e in missing
+                       if e.resent_mono is not None and now - e.resent_mono >= limit]
+            if expired:
+                log.warning("stream: %d parameter(s) still unacknowledged after one resend on "
+                            "connection %d (first %s); reconnecting", len(expired), conn,
+                            expired[0])
+                raise AckTimeout(",".join(expired))
+            due = [e for e in missing if e.resent_mono is None and now - e.sent_mono >= limit]
+            if due:
+                log.warning("stream: no acknowledgment of %d parameter(s) within %ss on "
+                            "connection %d (first %s); re-sending once", len(due), timeout,
+                            conn, due[0].param)
+                self.counts["ack_resends"] += 1
+                self._send(ws, [e.param for e in due], resend=due)
+
+    def ack_waits(self) -> list[tuple[str, int, int, bool]]:
+        """The measurement of the acknowledgment delay: (param, connection, monotonic ns from
+        the first send to the acknowledgment, whether it was re-sent) of every acknowledged
+        parameter. Recorded, no limit applied."""
+        with self._lock:
+            return [(e.param, e.conn, e.wait_ns, e.resent_mono is not None)
+                    for entries in self.acks.values() for e in entries if e.wait_ns is not None]
 
     def _dropped(self, down: int, cause: str) -> None:
         """Every channel of the connection that ended at `down` is gapped until re-acked."""
         with self._lock:
             for entries in self.acks.values():
                 for entry in entries:
-                    if entry[3] == self._conn and entry[2] is None:
-                        entry[2] = down
+                    if entry.conn == self._conn and entry.dropped_ns is None:
+                        entry.dropped_ns = down
             keys = self._tick_keys()
             self.bars.down(down, cause)
             self.ticks.down([k for k in keys if k not in self._open], down, cause)
@@ -282,8 +398,8 @@ class SharedStream:
 
     # --- the socket and the router -------------------------------------------------------
 
-    def _route(self, item: tuple[int, str], recv_ns: int) -> None:
-        conn, raw = item
+    def _route(self, item: tuple[int, str, int], recv_ns: int) -> None:
+        conn, raw, recv_mono = item
         try:
             batch = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -293,16 +409,17 @@ class SharedStream:
                 raise ModelRefused("stream_message_unreadable", "an event that is not an object")
             ev = message.get("ev")
             if ev == "status":
-                self._status(conn, message, recv_ns)
+                self._status(conn, message, recv_ns, recv_mono)
             elif ev in self.lanes:
                 if not self._current(conn) or self._ws is None:
                     self.counts["stale_or_early_events"] += 1
                     continue
-                self.lanes[ev].put(message, recv_ns)
+                self.lanes[ev].put(message, recv_ns, recv_mono)
             else:
                 self.counts["other_events"] += 1
 
-    def _status(self, conn: int, message: Mapping[str, Any], recv_ns: int) -> None:
+    def _status(self, conn: int, message: Mapping[str, Any], recv_ns: int,
+                recv_mono: int) -> None:
         status, text = str(message.get("status")), str(message.get("message"))
         self.statuses.append((recv_ns, status, text))
         if status in STREAM_REFUSALS:
@@ -315,7 +432,7 @@ class SharedStream:
                 if self._ws is not None:
                     self._login(self._ws)
         elif status == "success" and text.startswith(ACK_PREFIX):
-            self._acked(text[len(ACK_PREFIX):], recv_ns)
+            self._acked(text[len(ACK_PREFIX):], recv_ns, recv_mono)
 
     def _current(self, conn: int) -> bool:
         with self._lock:
@@ -330,6 +447,7 @@ class SharedStream:
                 self._conn += 1
                 conn = self._conn
                 self._live = (conn, ws)
+                self.links.append(Link(conn, self.clock(), self.mono(), self.offset()))
             try:
                 ws.send(json.dumps({"action": "auth",
                                     "params": credential(self.m.api_key_variable)}))
@@ -339,12 +457,17 @@ class SharedStream:
                     try:
                         raw = ws.recv(timeout=float(self.m.stream_reconnect_seconds))
                     except TimeoutError:
+                        self._check_acks(ws, conn)
                         continue
-                    self.router.put((conn, raw), self.clock())
+                    recv_ns, recv_mono = self.clock(), self.mono()
+                    self.router.put((conn, raw, recv_mono), recv_ns, recv_mono)
+                    self._check_acks(ws, conn)
             finally:
                 with self._lock:
                     self._ws = None
                     self._live = None
+                    self.links[-1].closed_ns, self.links[-1].closed_mono = (self.clock(),
+                                                                           self.mono())
 
     def run(self, stop: threading.Event) -> None:
         """Connect, and connect again after a drop until `stop`; every drop gaps both channel
@@ -358,10 +481,14 @@ class SharedStream:
                     self.session(stop)
                 except ModelRefused:
                     raise
+                except AckTimeout:
+                    cause = ACK_TIMEOUT
                 except Exception as exc:  # noqa: BLE001 - any transport end is a gap
                     cause = type(exc).__name__
                 if self.router.failed is not None:
                     raise self.router.failed
+                if self.links:
+                    self.links[-1].cause = "stopped" if stop.is_set() else cause
                 if stop.is_set():
                     return
                 self._dropped(self.clock(), cause)

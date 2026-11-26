@@ -316,6 +316,7 @@ def test_stream_and_rest_versions_with_a_field_conflict_are_typed_and_refuse_the
     store = ticks.TickStore(DAY)
     store.subscribe(["AAPL"], 10)
     store.add("trades", [ticks.stream_row("trades", trade(q=101))], 50, ticks.STREAM)
+    store.add("quotes", [ticks.stream_row("quotes", quote(q=201))], 50, ticks.STREAM)
     wire = Wire({"trades": [{"status": "OK", "results": [rest_trade(101, T0 + 7, size=99)]}],
                  "quotes": [{"status": "OK", "results": []}]})
     ticks.TickBackfill(CFG, store, wire, clock=lambda: 60).backfill("AAPL", START, END)
@@ -379,7 +380,13 @@ def test_a_symbol_entering_late_with_no_recent_quote_gets_its_state_from_midnigh
     stream = ticks.TickStream(CFG, store, lambda url, max_size: sock, clock=lambda: next(clock))
     stop = threading.Event()
     sock.stop = stop
-    sock.on_empty = lambda: stream.add("LATE")
+    first = at_1400 // MS  # its first stream events after the subscription (SIP ms)
+
+    def join():
+        stream.add("LATE")
+        sock.incoming.append(json.dumps([trade(sym="LATE", t=first), quote(sym="LATE", t=first)]))
+
+    sock.on_empty = join
     stream.session(stop)
     subscribed = store.subscribed["LATE"]
     assert store.snapshot(subscribed).refusal("LATE") == "tick_no_initial_state"
@@ -389,29 +396,70 @@ def test_a_symbol_entering_late_with_no_recent_quote_gets_its_state_from_midnigh
     windows = ticks.TickBackfill(CFG, store, wire, clock=lambda: next(clock)).initial("LATE")
     query = urllib.parse.parse_qs(urllib.parse.urlsplit(wire.requests[0].full_url).query)
     assert query["timestamp.gte"] == [str(START)]  # 00:00 New York, not 04:00
-    assert all(w.from_ns == START and w.to_ns > subscribed and w.cause is None
+    # the windows reach past the first stream event's SIP time, not just past a receipt time
+    assert all(w.from_ns == START and w.to_ns > first * MS and w.cause is None
                for w in windows.values())
     snap = store.snapshot(max(w.recv_ns for w in windows.values()))
     assert snap.refusal("LATE") is None
-    assert snap.frame("quotes", "LATE").sip_timestamp.tolist() == [q0355]
+    assert snap.frame("quotes", "LATE").sip_timestamp.tolist() == [q0355, first * MS]
     assert snap.refusal("OTHER") == "tick_not_subscribed"
 
 
-def test_a_stream_gap_refuses_until_a_complete_backfill_spans_it(creds):
+def stream_tick(store, kind, seq, sip_ns, recv_ns, sym="AAPL"):
+    make = trade if kind == "trades" else quote
+    store.add(kind, [ticks.stream_row(kind, make(sym=sym, q=seq, t=sip_ns // MS))], recv_ns,
+              ticks.STREAM)
+
+
+def windows(store, frm, to, recv, cause=None):
+    for kind in ticks.KINDS:
+        store.window(ticks.Window("AAPL", kind, frm, to, recv, 1, cause))
+
+
+def test_a_stream_gap_is_bounded_by_sip_times_and_refuses_until_an_overlapping_backfill(creds):
+    """codex-109 point 6: the hole runs from the last verified event before the drop through the
+    first verified event after it, in SIP time; receipt times of the drop prove nothing."""
     store = ticks.TickStore(DAY)
-    store.subscribe(["AAPL"], T0)
-    ok = {"status": "OK", "results": []}
-    ticks.TickBackfill(CFG, store, Wire({"trades": [ok], "quotes": [ok]}),
-                       clock=lambda: T0).backfill("AAPL", START, T0)
-    assert store.snapshot(T0).refusal("AAPL") is None
-    store.down(["AAPL"], T0 + 10, "ConnectionError")
-    assert store.snapshot(T0 + 15).refusal("AAPL") == "tick_gap"  # still down
-    store.up(T0 + 20)
-    assert store.snapshot(T0 + 25).refusal("AAPL") == "tick_gap"  # back, the hole not filled
-    ticks.TickBackfill(CFG, store, Wire({"trades": [ok], "quotes": [ok]}),
-                       clock=lambda: T0 + 30).backfill("AAPL", T0 + 10, T0 + 20)
-    assert store.snapshot(T0 + 25).refusal("AAPL") == "tick_gap"  # the fill arrived later
-    assert store.snapshot(T0 + 30).refusal("AAPL") is None
+    r = 10**15  # receipt times (local clock), unrelated to SIP times on purpose
+    store.subscribe(["AAPL"], r)
+    for i, kind in enumerate(ticks.KINDS):
+        stream_tick(store, kind, 1 + i, T0, r + 1)
+        stream_tick(store, kind, 3 + i, T0 + 2000 * MS, r + 2)  # the last before the drop
+    windows(store, START, T0 + MS, r + 3)  # the initial state reaches past the first event
+    assert store.snapshot(r + 3).refusal("AAPL") is None
+    store.down(["AAPL"], r + 10, "ConnectionError")
+    assert store.snapshot(r + 15).refusal("AAPL") == "tick_gap"  # still down
+    store.up(r + 20, ["AAPL"])
+    assert store.snapshot(r + 25).refusal("AAPL") == "tick_gap"  # back, no event proves it yet
+    assert store.snapshot(r + 25).recovery("AAPL") == (
+        ("trades", T0 + 2000 * MS, None), ("quotes", T0 + 2000 * MS, None))
+    for i, kind in enumerate(ticks.KINDS):
+        stream_tick(store, kind, 5 + i, T0 + 9000 * MS, r + 30)  # the first after the reconnect
+    snap = store.snapshot(r + 30)
+    assert snap.recovery("AAPL") == (("trades", T0 + 2000 * MS, T0 + 9000 * MS),
+                                     ("quotes", T0 + 2000 * MS, T0 + 9000 * MS))
+    windows(store, r + 10, r + 20, r + 31)  # the drop's receipt times as if they were SIP times
+    windows(store, T0 + 2001 * MS, T0 + 9001 * MS, r + 32)  # misses the last verified event
+    windows(store, T0 + 2000 * MS, T0 + 9000 * MS, r + 33)  # stops at the first, not past it
+    windows(store, T0, T0 + 10_000 * MS, r + 34, cause="backfill_no_progress")  # stalled
+    assert store.snapshot(r + 34).refusal("AAPL") == "tick_gap"
+    windows(store, T0 + 2000 * MS, T0 + 9000 * MS + 1, r + 35)  # overlaps both ends
+    assert store.snapshot(r + 34).refusal("AAPL") == "tick_gap"  # the fill arrived later
+    assert store.snapshot(r + 35).refusal("AAPL") is None
+    assert store.snapshot(r + 35).recovery("AAPL") == ()
+
+
+def test_stream_coverage_needs_an_event_after_the_subscription(creds):
+    store = ticks.TickStore(DAY)
+    store.add("trades", [ticks.stream_row("trades", trade())], 5, ticks.STREAM)  # before it took
+    store.subscribe(["AAPL"], 10)
+    windows(store, START, END, 11)
+    assert store.snapshot(11).refusal("AAPL") == "tick_coverage_unverified"
+    stream_tick(store, "trades", 7, T0, 12)
+    assert store.snapshot(12).refusal("AAPL") == "tick_coverage_unverified"  # no quote yet
+    stream_tick(store, "quotes", 8, T0, 13)
+    assert store.snapshot(12).refusal("AAPL") == "tick_coverage_unverified"  # immutable cutoff
+    assert store.snapshot(13).refusal("AAPL") is None
 
 
 def test_lag_and_same_millisecond_counts_are_recorded():
