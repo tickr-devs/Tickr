@@ -109,4 +109,15 @@ import TickrKit
     #expect(onScreen.height < Self.screenHeight)
     #expect(onScreen.width <= Self.screenWidth)
   }
+
+  @Test("The funnel's stop words: missing or unknown outranks pending; nothing when all verified")
+  func unprotectedWords() {
+    #expect(FunnelCard.unprotectedWords([.verified, .verified])?.key == nil)
+    #expect(FunnelCard.unprotectedWords([.pending])?.key == "flow.stopPending")
+    #expect(FunnelCard.unprotectedWords([.pending, .pending, .verified])?.key == "flow.stopsPending")
+    #expect(FunnelCard.unprotectedWords([.missing])?.key == "flow.stopMissing")
+    #expect(FunnelCard.unprotectedWords([.unknown])?.key == "flow.stopMissing")
+    #expect(FunnelCard.unprotectedWords([.pending, .missing])?.key == "flow.stopMissing")
+    #expect(FunnelCard.unprotectedWords([.missing, .unknown, .pending])?.key == "flow.stopsMissing")
+  }
 }

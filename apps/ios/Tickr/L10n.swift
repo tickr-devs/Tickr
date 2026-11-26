@@ -422,6 +422,15 @@ enum L10n {
     static func stopsPending(_ count: Int) -> LocalizedStringResource {
       LocalizedStringResource("flow.stopsPending", defaultValue: "\(count) stops pending", bundle: L10n.bundle)
     }
+    /// Under the funnel's summary: one open position has no stop at the broker, or one the bot
+    /// cannot confirm (missing or unknown); worse than pending, so it wins.
+    static var stopMissing: LocalizedStringResource {
+      LocalizedStringResource("flow.stopMissing", defaultValue: "1 stop missing", bundle: L10n.bundle)
+    }
+    /// Under the funnel's summary: several open positions have no stop the broker confirms.
+    static func stopsMissing(_ count: Int) -> LocalizedStringResource {
+      LocalizedStringResource("flow.stopsMissing", defaultValue: "\(count) stops missing", bundle: L10n.bundle)
+    }
     /// VoiceOver hint of the funnel row: a tap opens the funnel sheet.
     static var funnelHint: LocalizedStringResource {
       LocalizedStringResource("flow.funnelHint", defaultValue: "Shows each stage's count", bundle: L10n.bundle)
