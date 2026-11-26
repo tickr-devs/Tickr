@@ -117,3 +117,4 @@ jobs:
           TICKR_BOT_EXIT_TIMEOUT: "1"
           TICKR_NIGHTLY_OUT: data/nightly
           TICKR_NIGHTLY_SEED: data/nightly-seed
+          TICKR_DATA_HOST: /srv/tickr/data
