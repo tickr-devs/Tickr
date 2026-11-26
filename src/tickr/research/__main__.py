@@ -29,6 +29,7 @@ from tickr.research import (
     slippage,
 )
 from tickr.research.errors import ResearchError
+from tickr.research.gate import gate, load_trades
 from tickr.research.latency import latency_report
 from tickr.research.outcomes import outcomes
 from tickr.research.records import load_records, write_records
@@ -140,6 +141,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--settings", type=Path, required=True, help="research TOML (time zone)")
     places_source(p)
     p.add_argument("--out", type=Path, required=True, help="output directory")
+
+    p = sub.add_parser("gate", help="R23 Step 0: the gate's numeric criteria, both money lines")
+    p.add_argument("--trades", type=Path, required=True,
+                   help="CSV: day, session, result_pct, cost_pct (research/gate.py)")
+    p.add_argument("--all-sessions-usd", required=True,
+                   help="position size of the all-sessions money line, USD")
+    p.add_argument("--model-version", required=True, help="the model version's name")
+    p.add_argument("--results", choices=("simulated", "real"), required=True,
+                   help="what the trades are: simulated (exam) or real fills")
+    p.add_argument("--settings", type=Path, required=True, help="research TOML (gate keys)")
+    places_source(p)
+    p.add_argument("--out", type=Path, required=True, help="output directory")
     return parser
 
 
@@ -167,6 +180,20 @@ def _fill_quality(args: argparse.Namespace) -> dict:
                      slippage.stopped_trades(database, zone, environment)))
     return report.write_fill_quality(sets, {"slippage_percent": replay.slippage_percent},
                                      args.out, replay.output_decimal_places)
+
+
+def _gate(args: argparse.Namespace) -> dict:
+    settings = load_research_settings(args.settings)
+    places = load_settings(args.replay_settings, _history_sessions(args)).output_decimal_places
+    try:
+        all_sessions = Decimal(args.all_sessions_usd)
+    except InvalidOperation as exc:
+        raise ResearchError(f"--all-sessions-usd is not a number: {args.all_sessions_usd!r}") \
+            from exc
+    result = gate(load_trades(args.trades), bot_config.load(args.config).risk
+                  .position_notional_cap_usd, all_sessions, settings.gate_positive_months,
+                  settings.gate_window_months, settings.gate_drop_best_percent)
+    return report.write_gate(result, args.model_version, args.results, args.out, places)
 
 
 def _filter(records, spec: str | None):
@@ -217,6 +244,8 @@ def _run(args: argparse.Namespace) -> dict:
 
     if args.command == "fill-quality":
         return _fill_quality(args)
+    if args.command == "gate":
+        return _gate(args)
     if args.command == "slippage":
         settings = load_research_settings(args.settings)
         trades = slippage.stopped_trades(args.database, settings.session_timezone,

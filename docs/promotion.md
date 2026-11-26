@@ -51,7 +51,9 @@ Rung 1 may also run for a version that has passed rung 0 only in part; see the f
 Applied before rung 2 (v4), not before the Sandbox start. It is the backlog R23 text, not new
 criteria: plus after costs on the sealed period, plus in 2 of 3 months, plus without the best 1% of
 trades, every feature available live, stop and decision frequency chosen. Status today: decided, not
-passed. R33 (live feature parity) must hold first.
+passed. R33 (live feature parity) must hold first. The three numeric criteria are computed by
+`python -m tickr.research gate` on both money lines (`docs/research.md`); the other items stay
+checked by hand.
 
 ### Rung 2: real account at small size
 

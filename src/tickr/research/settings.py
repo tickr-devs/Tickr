@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from tickr.research.errors import ResearchSettingsError
 
-KEYS = frozenset({"horizons_minutes", "atr_period", "session_timezone", "calibration_buckets"})
+KEYS = frozenset({"horizons_minutes", "atr_period", "session_timezone", "calibration_buckets",
+                  "gate_positive_months", "gate_window_months", "gate_drop_best_percent"})
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,12 @@ class ResearchSettings:
     """Exchange time zone: a horizon never crosses the decision's session date in it."""
     calibration_buckets: int
     """Equal-width probability buckets of the calibration table (10 = tenths)."""
+    gate_positive_months: int
+    """R23 gate: months in plus needed (K of the last M)."""
+    gate_window_months: int
+    """R23 gate: the last M calendar months looked at."""
+    gate_drop_best_percent: Decimal
+    """R23 gate: percent of trades, best by result, removed before the net is checked again."""
 
 
 def _int(key: str, raw: Any, minimum: int) -> int:
@@ -63,11 +71,23 @@ def settings_from_mapping(data: dict[str, Any]) -> ResearchSettings:
         zone = ZoneInfo(zone_name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ResearchSettingsError(f"session_timezone is unknown: {zone_name!r}") from exc
+    positive = _int("gate_positive_months", table["gate_positive_months"], 1)
+    window = _int("gate_window_months", table["gate_window_months"], positive)
+    raw_drop = table["gate_drop_best_percent"]
+    if isinstance(raw_drop, bool) or not isinstance(raw_drop, int | float):
+        raise ResearchSettingsError("gate_drop_best_percent must be a number")
+    drop = Decimal(str(raw_drop))
+    if not drop.is_finite() or drop < 0 or drop >= 100:
+        raise ResearchSettingsError(f"gate_drop_best_percent must be in 0..100 (100 excluded): "
+                                    f"{raw_drop}")
     return ResearchSettings(
         horizons_minutes=horizons,
         atr_period=_int("atr_period", table["atr_period"], 1),
         session_timezone=zone,
         calibration_buckets=_int("calibration_buckets", table["calibration_buckets"], 1),
+        gate_positive_months=positive,
+        gate_window_months=window,
+        gate_drop_best_percent=drop,
     )
 
 

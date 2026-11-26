@@ -15,6 +15,7 @@ format (`records.py`), through the observers (`docs/observers.md`).
 | `calibration` | Does a model answer of 0.7 come true 70% of the time? | `measured` |
 | `slippage` | How far below the planned stop did stops fill? Planned against realized loss per day? | `measured` |
 | `fill-quality` | Entry, exit and stop slippage, fees and fill delay of real fills; one record set or two side by side | `measured` |
+| `gate` | Does a model version pass the numeric part of the R23 Step 0 gate before real money? | `simulated` or `real` |
 
 Live observers see only the symbols discovery kept, and discovery applies the active strategy's
 liquidity rules, so observer results are comparable only while the active strategy (and its
@@ -283,11 +284,58 @@ then `all`), `fill_quality_compare.csv` (metric, assumed, a column per set, and 
 second minus first when two sets are given, e.g. Sandbox now against the assumptions, Production
 against Sandbox later) and `fill_quality_summary.json`.
 
+## gate: R23 Step 0 before real money
+
+```
+python -m tickr.research gate --trades trades.csv --all-sessions-usd 4000 \
+  --model-version NAME --results simulated --settings config/research.toml --out out/gate
+```
+
+Checks the three numeric criteria of the gate in `docs/promotion.md` on one model version's
+closed trades, simulated (the exam on the sealed period) or real (`--results` labels which).
+Input: one CSV, the trades shape of the `sizing` report plus a cost column; header row, other
+columns (such as `outcome` and `p_<name>`) ignored. The caller picks the rows: the file is the
+sealed period, and the tool cannot tell which months the model saw.
+
+- `day`: trading day, YYYY-MM-DD; `session`: `regular` or `extended`;
+- `result_pct`: the trade's net result after costs, percent of its notional (signed);
+- `cost_pct`: the costs already taken off `result_pct`, percent of its notional (0 or more).
+
+The repository has no fee model (the replay and the backtest are gross), so the gate adds no cost
+of its own and never estimates one: the producer of the file applied them and `cost_pct` says how
+much, so the report shows the costs inside each net and a gross file cannot pass unseen. For real
+trades the costs are the broker's recorded fees (the ones `fill-quality` reports). Nothing writes
+this file yet: the exam job or a later export must.
+
+Both money lines, as everywhere: main session (`regular` rows, each position at
+`[risk] position_notional_cap_usd`, 1,000 USD) and all sessions (every row, each position at
+`--all-sessions-usd`; labelled "regular only" while the file has no extended trade). Each line
+shows earned on winners, lost on losers, net, costs and days in plus. Criteria, each checked on
+both lines (a criterion passes only when both pass):
+
+1. `net`: net after costs above 0 on the whole period;
+2. `months`: net above 0 in at least `gate_positive_months` of the last `gate_window_months`
+   calendar months, ending with the month of the last trade (a month without trades has net 0,
+   not in plus);
+3. `drop_best`: net still above 0 after the best `gate_drop_best_percent` percent of trades by
+   result are removed (the count is rounded up, so 1% of 150 trades removes 2).
+
+The other R23 items (every feature available live, stop chosen, decision frequency chosen) are not
+numbers: they are listed as "checked by hand" and never passed by the tool, so the summary's
+`numeric_criteria_passed` is never the gate's verdict. Refused with a typed cause: `empty_period`
+(no trades, or none on the main session line), `missing_column`, `not_finite`, `bad_value` (not a
+number, a bad day or session, a negative cost, a line size not above 0) and `too_few_months` (the
+trades span fewer than `gate_window_months` calendar months). Outputs: `gate.csv` (line,
+criterion, passed, measured, required; then the items checked by hand), `gate_lines.csv`,
+`gate_months.csv` (the window's months per line) and `gate_summary.json`.
+
 ## Settings
 
 `config/research.toml` `[research]` (one comment per key, tested; missing or unknown keys are
 refused): `horizons_minutes`, `atr_period`, `session_timezone`
-(`latency` reads only the last), `calibration_buckets` (`calibration` reads it).
+(`latency` reads only the last), `calibration_buckets` (`calibration` reads it),
+`gate_positive_months`, `gate_window_months` and `gate_drop_best_percent` (`gate` reads them; the
+backlog R23 numbers: 2 of 3 months, best 1%).
 What-if and `decide` use `config/replay.toml`, so they fill and replay exactly like the replay. Every
 report also rounds to its `output_decimal_places` (`--replay-settings` with `--config`, default
 `config/replay.toml`): that number has one home.

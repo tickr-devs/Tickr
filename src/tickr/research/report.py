@@ -17,6 +17,7 @@ from typing import Any
 from tickr.replay.measured import FORMAT as MEASURED_FORMAT
 from tickr.research import calibration as cal
 from tickr.research import fill_quality as fq
+from tickr.research import gate as gt
 from tickr.research import latency as lat
 from tickr.research import observer_report as orep
 from tickr.research import outcomes as oc
@@ -323,3 +324,54 @@ def write_fill_quality(sets: Sequence[tuple[str, Sequence[fq.TradeFill],
     body = {"sets": overall, "assumed": assumed, "fees_assumption": FEES_ASSUMPTION,
             "difference": "second set minus first set" if len(labels) == 2 else None}
     return _json(out_dir / "fill_quality_summary.json", body, places)
+
+
+GATE_COLUMNS = ("label", "line", "criterion", "passed", "measured", "required")
+GATE_LINE_COLUMNS = ("label", "line", "position_usd", "sessions", "trades", "days",
+                     "days_in_plus", "earned", "lost", "net", "costs")
+GATE_MONTH_COLUMNS = ("label", "line", "month", "trades", "net", "in_plus")
+GATE_BY_HAND = "checked by hand"
+
+
+def write_gate(result: gt.Gate, version: str, label: str, out_dir: Path,
+               places: int) -> dict[str, Any]:
+    """`gate.csv` (pass/fail per line and criterion, then the items checked by hand),
+    `gate_lines.csv` (the two money lines), `gate_months.csv` (the window's months per line) and
+    `gate_summary.json`."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    window = len(result.window)
+    rows: list[list[Any]] = []
+    for line in result.lines:
+        measured = {"net": line.net, "months": f"{line.months_in_plus} of {window}",
+                    "drop_best": line.net_without_best}
+        required = {"net": "net above 0",
+                    "months": f"at least {line.months_needed} of the last {window} months in plus",
+                    "drop_best": f"net above 0 without the best {line.dropped} of "
+                                 f"{line.trades} trades"}
+        rows.extend([label, line.name, name, passed, measured[name], required[name]]
+                    for name, passed in line.passed.items())
+    rows.extend([label, "both", item, GATE_BY_HAND, "", ""] for item in gt.MANUAL)
+    _write_csv(out_dir / "gate.csv", GATE_COLUMNS, rows, places)
+    _write_csv(out_dir / "gate_lines.csv", GATE_LINE_COLUMNS,
+               ([label, line.name, *(getattr(line, c) for c in GATE_LINE_COLUMNS[2:])]
+                for line in result.lines), places)
+    _write_csv(out_dir / "gate_months.csv", GATE_MONTH_COLUMNS,
+               ([label, line.name, m.month, m.trades, m.net, m.in_plus]
+                for line in result.lines for m in line.months), places)
+    body = {
+        "label": label, "model_version": version,
+        "period": {"first_day": result.first_day.isoformat(),
+                   "last_day": result.last_day.isoformat()},
+        "window_months": list(result.window),
+        "criteria": result.criteria,
+        "numeric_criteria_passed": result.numeric_passed,
+        "checked_by_hand": {item: GATE_BY_HAND for item in gt.MANUAL},
+        "gate": "not decided by this report: the items checked by hand are the owner's",
+        "lines": {line.name: {c: getattr(line, c) for c in GATE_LINE_COLUMNS[2:]}
+                  | {"months_in_plus": line.months_in_plus, "months_needed": line.months_needed,
+                     "dropped_best_trades": line.dropped,
+                     "net_without_best": line.net_without_best,
+                     "passed": line.passed}
+                  for line in result.lines},
+    }
+    return _json(out_dir / "gate_summary.json", body, places)

@@ -12,3 +12,9 @@ atr_period = 14
 session_timezone = "America/New_York"
 # Equal-width probability buckets of the calibration table (10 = tenths, the owner's wording, R29); read by research/calibration.py.
 calibration_buckets = 10
+# R23 gate before real money: months in plus needed out of the last gate_window_months (owner's backlog R23 text, "plus in 2 of 3 months"), count; read by research/gate.py.
+gate_positive_months = 2
+# R23 gate: how many calendar months, ending with the month of the last trade, the month criterion looks at (backlog R23, "2 of 3 months"), months; read by research/gate.py.
+gate_window_months = 3
+# R23 gate: percent of trades, best by result, removed before the net must still be in plus (backlog R23, "without the best 1% of trades"; the count is rounded up), percent; read by research/gate.py.
+gate_drop_best_percent = 1
