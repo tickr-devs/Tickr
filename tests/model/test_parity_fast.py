@@ -218,3 +218,16 @@ def test_an_event_file_out_of_order_is_refused(tmp_path):
         events.take(100)
     assert refused.value.cause == "tick_file_unordered"
     events.close()
+
+
+def test_no_table_equals_an_empty_table_but_never_a_table_with_rows():
+    """An engine without a table (None) has no rows: it equals the other engine's empty table
+    exactly (columns and types included), and differs from one with rows."""
+    keys = ["sym", "m"]
+    empty = pd.DataFrame({"sym": pd.Series([], dtype=object), "m": pd.Series([], dtype="int64"),
+                          "x": pd.Series([], dtype="float64")})
+    assert parity.exact_diff(None, empty, keys, "bars", [])["exact"]
+    assert parity.exact_diff(empty, None, keys, "bars", [])["exact"]
+    rows = pd.DataFrame({"sym": ["A"], "m": [1], "x": [1.0]})
+    assert not parity.exact_diff(None, rows, keys, "bars", [])["exact"]
+    assert not parity.exact_diff(rows, None, keys, "bars", [])["exact"]

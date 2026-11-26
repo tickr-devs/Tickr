@@ -868,9 +868,14 @@ def exact_diff(mine: Any, ref: Any, keys: list[str], table: str,
     import numpy as np
     import pandas as pd
 
+    # an engine that has no table (None) has no rows: it stands for an empty table of the
+    # other engine's columns and types when the other has one (the 2026-11-17 run reported a
+    # "types DIFFER" between None and an empty bar table at 19:59); rows always count
     empty = pd.DataFrame(columns=keys)
-    mine = empty if mine is None else mine
-    ref = empty if ref is None else ref
+    if mine is None:
+        mine = ref.iloc[:0] if ref is not None else empty
+    if ref is None:
+        ref = mine.iloc[:0] if len(mine) == 0 else empty
     out: dict[str, Any] = {"rows_incremental": len(mine), "rows_full_prefix": len(ref),
                            "columns_equal": list(mine.columns) == list(ref.columns),
                            "dtypes_equal": [str(t) for t in mine.dtypes]
