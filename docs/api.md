@@ -101,6 +101,32 @@ any other body; `503` when the code file is unreadable. Neither the code nor the
 an error or the log. A missing or empty `remote_hosts_file` (the default) turns remote access off; an unreadable
 one, or a name in it that is not a lowercase DNS name, stops the API at start.
 
+### Failed authentication limit
+
+The remote port counts failed checks per client address (`api/authlimit.py`): a `401` on any
+route (wrong, missing or unpaired token) counts against the token budget, `[api]
+remote_auth_failures` per `remote_auth_window_seconds`; a `401` at `POST /pair` (no pairing
+waiting, expired or wrong code) against the stricter pair budget, `remote_pair_failures` per
+`remote_pair_window_seconds` (at least the code's lifetime). A `400` (malformed body) tests no
+credential and counts nothing. An address over a budget gets `429 auth_rate_limited` with
+`Retry-After` (seconds until its oldest counted failure leaves the window) before its token or
+code is looked at, so neither the answer nor its timing says anything about it. A success resets
+no count, so an attacker behind the owner's address gains nothing from the owner's successes.
+Checks are taken one at a time, so parallel connections get no more guesses than sequential ones.
+
+The client address is the TCP peer, except when the peer is `[api] remote_auth_trusted_proxy`
+(127.0.0.1: Caddy on the bot server and `tailscale serve` on the Mac) and `X-Forwarded-For` is
+present: then it is the header's **last** entry, the one the proxy added (Caddy replaces what the
+caller sent; Go's proxy appends to it). A last entry that is not an IP address is `400
+bad_request` and counts as a failure of the peer. `X-Forwarded-For` from any other peer is
+ignored. An IPv6 address counts as its `remote_auth_ipv6_prefix_length` network.
+
+Memory is bounded: each budget tracks at most `remote_auth_max_addresses` addresses, dropping the
+one whose last failure is oldest once it no longer counts. When every tracked address still
+counts, a new address is refused `429` too (fail closed). The start of each block is one line in
+api.log (the address and the budget, never a token or code) and the `remote-auth-blocked` alert;
+a full table is one line and one alert per spell. The local port has no such limit (no token).
+
 The phone keeps the token in its Keychain (this device only) together with the address it was
 paired with, and sends it only over HTTPS to exactly that address; changing the address by hand
 drops the token.
@@ -166,6 +192,8 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | POST | `/settings/validate` | Body `{"changes": [{"owner", "key", "value"}, ...]}`. `200` `settings-draft-v1`: typed refusals and, per key, when the change would apply and whether it needs Face ID. Writes and applies nothing. `400` for any other body, `503` as GET /settings/values. |
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
 | GET | `/system` | `200` `system-v1`: the apps' System card: the Webull link, the latest preflight (the 03:30 morning check), model training progress, and the machine's own services (on a Mac the watchdog with its restarts and the no-sleep hold), read-only (see GET /system below). |
+| GET | `/alerts` | `200` `alerts-v1`: the notification settings: each owner-facing channel and whether the latest preflight proved it works, and every alert kind with its group, whether it is locked on, and the channels it goes to (see Notification settings below). |
+| PUT | `/alerts/routing` | Body `{"kind": "<alert kind>", "channel": "mac"\|"imessage"\|"push", "on": true\|false}`. Changes that one cell of the owner's alert routing: `200` `alerts-v1`; `400 bad_request` for an unknown kind or channel or another body; `409 conflict` for a locked kind turned off (cause `locked-kind: ...`) or a routing file that cannot be used. Not a bot command. |
 | GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
 | GET | `/advisor` | `200` `advisor-runs-v1`: the AI advisor's newest `[api] advisor_runs` runs with their proposals, ideas, hold-out verdicts and the owner's decision (read-only; see GET /advisor below). |
 | POST | `/advisor/decision` | Body `{"run": "<run id>", "verdict": "accepted"\|"rejected"}`. Records the owner's review of a proposal or idea (a note, nothing is deployed): `200` `advisor-runs-v1`; `404 not_found` without that run; `409 conflict` for a refused, no-change or unreadable run. Not a bot command. |
@@ -181,7 +209,7 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/symbols?date=<YYYY-MM-DD>` | `200` `symbols-v1`: every symbol the bot looked at that date (default today), with the furthest pipeline stage it reached and where and why it stands now (see GET /symbols below). |
 | GET | `/movers?date=<YYYY-MM-DD>` | `200` `movers-v1`: the fast movers of that date (default today), newest bar first, with the active strategy's thresholds (see GET /movers below). |
 | POST | `/commands/entry-stop` | Body `{"state": "on"}` or `{"state": "off"}`. `202` `command-accepted-v1`. |
-| POST | `/commands/cancel-own-orders` | Body `{}`. `202` `command-accepted-v1`. |
+| POST | `/commands/cancel-own-orders` | Body `{}` (every working entry) or `{"symbol": "<TICKER>"}` (only that symbol's, the apps' Cancel entry). `202` `command-accepted-v1`. |
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
 | POST | `/commands/stop-bot` | Body `{}`, `{"mode": "close_and_stop"}` or `{"mode": "leave_open"}` (what to do with open positions, see stop-bot below). Graceful stop that sticks. `202` `command-accepted-v1`. |
 | POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. The apps' "Close all" button. `202` `command-accepted-v1`. |
@@ -193,8 +221,10 @@ Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1, "cause_c
 `unauthorized` 401 (remote request without the paired token),
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
 `too_many_pending` 429, `rate_limited` 429 (GET /chart: its request budget is spent and cannot say when it refills),
+`auth_rate_limited` 429 with `Retry-After` (remote port: too many failed authentications from this address, see
+"Failed authentication limit"),
 `conflict` 409 (an `Idempotency-Key` already used for another command; a Lab replay that cannot
-start now),
+start now; an alert routing write refused),
 `internal` 500, `unavailable` 503 (history cannot be read now: database of another schema
 version, unreadable capture file).
 
@@ -391,6 +421,15 @@ the planned loss of every open trade, and `daily_room_usd` = `[risk] max_daily_l
 realized - reserved (may be negative). Entries are refused while the room is below
 `settings.risk.min_daily_room_usd`. `positions` lists every open position the bot tracks;
 `position` is its first element or `null`, kept for older clients.
+
+`working_entries` (added after version 1 shipped, 2026-11-26; a reader takes a status without it
+as empty) lists every own trade whose entry order is working with nothing filled yet, oldest
+first: `symbol`, `quantity` (the shares asked for), `limit_price`, `stop_price` (the stop placed
+once it fills), `planned_loss_usd` (1 R if it fills), `entry` and `entry_cause` as on a
+position, and `cancel_requested` (the bot asked the broker to cancel it: an operator
+cancel-own-orders, or the entry's own rest or the session's end). A fill of any part makes it a
+`positions` row instead; a cancel the broker confirms (a broker read shows it cancelled)
+removes it. It is the bot's records, as `positions` are.
 
 Fill prices and fees come from the bot's own records: once an order is finished, the loop
 records its fees (`fees[].actual_value`) from Detail, else the order history, and, where the
@@ -888,6 +927,41 @@ machine's own services follow under `host`, so a bot on a server keeps the rest 
 
 No part of this document is per user: a later bot or account identity is one more key.
 
+### Notification settings: GET /alerts and PUT /alerts/routing
+
+Which alert kinds go to which channel (backlog T14). Code: `src/tickr/api/alerts.py` and
+`src/tickr/runtime/alert_routing.py`. Alerts go through the channel interface of
+`runtime/alerts.py` (`Channels`); the routing only tells it which channels to skip for a kind.
+
+- `channels`: `mac` (the Mac notification), `imessage`, `push` (the iPhone app's push, not built
+  yet: always `configured` false, `cause` `not-built`). `configured` comes from the latest
+  preflight record's checks (`alert-channel` for `mac`; that and `alert-recipient` for
+  `imessage`); `cause` `no-preflight`, `preflight-unreadable` or `check-failed` when false.
+  The alerts feed file (`[alerts] feed_file`) is not a routable channel: it gets every alert.
+- `kinds`: every `AlertKind` value in code order, each with `group` (`critical`, `trading`,
+  `day`, `lab`), `locked` and `channels` `{mac, imessage, push}` (true: it goes there).
+  `locked` kinds need the owner now and are on everywhere whatever the file says: every kind an
+  alert-at-once fence raises (`runtime/watch.py` `ALERT_AT_ONCE`, which includes the operator
+  fences), plus unprotected position, unknown order status and order conflicts, foreign
+  exposure, failing broker reads, a lost stream with a position, not flat after the flatten,
+  every bot-down, crash, start and stop failure, preflight failed, the token waiting for
+  confirmation, every `watchdog-*` kind, `api-credentials-unexpected` and
+  `remote-auth-blocked`.
+- `routing_cause`: null, or why the routing file cannot be used (then every kind goes to every
+  channel and writes are refused until the owner deletes the file).
+
+The routing file is `<data_dir>/<[alerts] routing_file>`, an owner preference about where to be
+told, never a trading setting: `{"schema_version": 1, "off": {"<kind>": ["<channel>", ...]}}`,
+holding only the cells turned off, written atomically by PUT /alerts/routing (the API is its
+only writer). Every process that alerts (bot, watchdog, the supervisor's alerts) reads it on
+each alert, so a change applies at the next alert. A missing file means every kind on every
+channel; a file out of shape (an unknown or locked kind, an unknown channel, another
+`schema_version`) is not used at all, never partly. An alert skipped on a channel is journaled
+with `routed_off` naming the channels skipped; when every channel this process has is skipped,
+its `delivery` is `routed-off` (not shown, so not a repeat either). `push` cells are stored and
+shown, and take effect once a push channel exists. On the remote port PUT needs the paired
+token like every other request.
+
 ### GET /journal (read-only)
 
 The Overview's journal card and its "line #N". Code: `src/tickr/api/journal.py`. Reads the
@@ -1279,7 +1353,7 @@ Every refused minute is its own row: consecutive refusals are not merged.
 `{code, message, since, until, params}`, read from the recorded `CODE: detail` at the API (the
 decision file keeps the text):
 - `code`: the admission cause (`risk/causes.py`, in spec order: `GATE_CLOSED` ...
-  `STOP_BUDGET_UNAVAILABLE`), `ENGINE_REFUSED` when admission passed but the engine refused to
+  `STOP_BUDGET_UNAVAILABLE`, then the tradability causes `TRADABILITY_UNKNOWN` ... `INSTRUMENT_NOT_TRADABLE`), `ENGINE_REFUSED` when admission passed but the engine refused to
   open the trade, or `UNKNOWN` (see below). The schema lists the closed set.
 - `message`: the detail as a sentence without raw timestamps. For most codes it is the recorded
   detail itself (`1 own position(s) open`); `SYMBOL_COOLDOWN`, `AFTER_LAST_ENTRY`,
@@ -1525,6 +1599,14 @@ preconditions to every command.
 (added after version 1 shipped) is a stop-bot's mode, `close_and_stop` or `leave_open`, otherwise
 `null`; a reader takes a command without the key as `null`.
 
+- **cancel-own-orders**: asks the broker to cancel every own working entry order, or only
+  those of `symbol` (the apps' Cancel entry); never a stop or a closing order. Each cancel is
+  one send through the engine's cancel path; whether it took is what the next broker read
+  shows (`working_entries`), never assumed. A part that filled first stays a position under its
+  stop. With `symbol`, refused when no entry of it is working ("no working entry in XYZ");
+  `{"symbol": null}`, a lower-case ticker or any other key is `400`. A bot older than this
+  reads the command as a cancel of every working entry, so the bot and the API are released
+  together.
 - **flatten**: every open trade, or only the trades of `symbol`, gets an exit request through
   the normal exit path. Refused when `symbol` has no open position ("no open position in
   XYZ"), while a closing order of a chosen trade was refused before (fence
