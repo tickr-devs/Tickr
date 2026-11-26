@@ -483,7 +483,9 @@ def covered_tickers(inputs: ReplayInputs) -> set[str] | None:
 def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: Path,
                    room: headroom.Headroom | None = None) -> None:
     """One pass over each day file: the converter's columns of the events of `symbols` stamped
-    before `before` (ns), kept as the file's text in work/trades.parquet, work/quotes.parquet.
+    before `before` (ns), kept as the file's text in work/trades.parquet, work/quotes.parquet,
+    written in event order (SIP stamp, then sequence number) so the incremental walk streams
+    them without sorting again.
     With `room`, the engine runs within its limits and refuses to start below its reserves."""
     import duckdb
     import pandas as pd
@@ -497,7 +499,8 @@ def extract_events(inputs: ReplayInputs, symbols: set[str], before: int, work: P
             src, cols = _source(inputs, kind)
             out = work / f"{kind}.parquet"
             con.execute(f"COPY (SELECT {', '.join(cols)} FROM {src} WHERE ticker IN (SELECT sym "
-                        f"FROM syms) AND CAST(sip_timestamp AS BIGINT) < {int(before)}) TO "
+                        f"FROM syms) AND CAST(sip_timestamp AS BIGINT) < {int(before)} ORDER BY "
+                        "CAST(sip_timestamp AS BIGINT), CAST(sequence_number AS BIGINT)) TO "
                         f"'{out}' (FORMAT parquet)")
     except duckdb.Error as exc:
         raise ModelRefused("tick_file_unreadable", type(exc).__name__) from exc

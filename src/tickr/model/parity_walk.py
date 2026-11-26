@@ -61,16 +61,31 @@ class _Events:
             else:
                 casts.append(f"CAST({c} AS BIGINT) AS {c}")
         self.con = room.connect()
+        self.path = path
         try:
+            # the file is already in event order (`parity.extract_events`): read it in file
+            # order with one thread instead of sorting it again; `take` refuses any step back
             self.con.execute("SET threads=1")
-            self.con.execute(
-                f"SELECT {', '.join(casts)} FROM read_parquet(?) ORDER BY "
-                "CAST(sip_timestamp AS BIGINT), CAST(sequence_number AS BIGINT)", [str(path)])
+            self.con.execute("SET preserve_insertion_order=true")
+            self.con.execute(f"SELECT {', '.join(casts)} FROM read_parquet(?)", [str(path)])
         except duckdb.Error as exc:
             self.con.close()
             raise ModelRefused("tick_file_unreadable", type(exc).__name__) from exc
         self.buffer: Any = None
         self.done = False
+        self.last: tuple[int, int] | None = None  # (stamp, sequence) of the last event read
+
+    def _ordered(self, more: Any) -> None:
+        """Refuse `tick_file_unordered` unless `more` continues the event order."""
+        import numpy as np
+
+        stamp = more.sip_timestamp.to_numpy()
+        seq = more.sequence_number.to_numpy()
+        step = (stamp[1:] > stamp[:-1]) | ((stamp[1:] == stamp[:-1]) & (seq[1:] >= seq[:-1]))
+        first = (int(stamp[0]), int(seq[0]))
+        if not bool(np.all(step)) or (self.last is not None and first < self.last):
+            raise ModelRefused("tick_file_unordered", self.path.name)
+        self.last = (int(stamp[-1]), int(seq[-1]))
 
     def take(self, end: int) -> Any:
         """Every not yet taken event stamped before `end` (ns)."""
@@ -84,6 +99,7 @@ class _Events:
                 if self.buffer is None:
                     self.buffer = more
                 break
+            self._ordered(more)
             self.buffer = more if self.buffer is None or not len(self.buffer) else pd.concat(
                 [self.buffer, more], ignore_index=True)
         cut = int(self.buffer.sip_timestamp.searchsorted(end, side="left"))

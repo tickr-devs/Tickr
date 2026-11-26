@@ -196,3 +196,25 @@ def test_the_walk_stops_at_the_guard_and_a_resume_finishes_the_day(day, tmp_path
     again = _run(given, out, "--engine", "incremental", "--resume")
     assert again["stopped"] is None and again["complete"]
     assert _results(again) == _results(whole)
+
+
+def test_an_event_file_out_of_order_is_refused(tmp_path):
+    """The walk streams the extracted file in file order (extraction sorted it); a step back
+    in (stamp, sequence) refuses instead of converting events out of order."""
+    import duckdb
+
+    cols = ticks.trade_columns()
+    rows = pd.DataFrame({c: ["1"] * 3 for c in cols})
+    rows["ticker"] = "AAA"
+    rows["sip_timestamp"] = ["30", "20", "40"]
+    rows["sequence_number"] = ["1", "2", "3"]
+    path = tmp_path / "trades.parquet"
+    con = duckdb.connect()
+    con.register("r", rows)
+    con.execute(f"COPY (SELECT * FROM r) TO '{path}' (FORMAT parquet)")
+    con.close()
+    events = parity_walk._Events(path, cols, _room(tmp_path))
+    with pytest.raises(ModelRefused) as refused:
+        events.take(100)
+    assert refused.value.cause == "tick_file_unordered"
+    events.close()
