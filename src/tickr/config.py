@@ -754,10 +754,11 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[trailing_stop] enabled must stay false: stop replacement is not in "
                           "the trading loop yet (it waits for the Webull replace check, "
                           "docs/webull-facts.md F5)")
-    if (trailing.atr_multiple <= 0 or trailing.breakeven_after_r <= 0
-            or trailing.min_move_usd <= 0):
-        raise ConfigError("[trailing_stop] atr_multiple, breakeven_after_r and min_move_usd "
-                          "must be above 0")
+    if trailing.atr_multiple <= 0 or trailing.breakeven_after_r <= 0:
+        raise ConfigError("[trailing_stop] atr_multiple and breakeven_after_r must be above 0")
+    if trailing.min_move_usd < 0:
+        raise ConfigError("[trailing_stop] min_move_usd must be at least 0 (0 = no minimum "
+                          "step)")
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0

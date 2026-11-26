@@ -101,6 +101,16 @@ def test_a_move_below_min_move_is_kept():
     assert (decision.action, decision.stop_price) == (MOVE, D("9.90"))
 
 
+def test_min_move_zero_sends_a_one_cent_tightening():
+    """0 = no minimum step, the shipped value."""
+    no_minimum = replace(CONFIG, trailing_stop=replace(PARAMS, min_move_usd=D(0)))
+    decision = next_stop(_at(current_stop=D("9.89")), no_minimum)
+    assert (decision.action, decision.cause, decision.stop_price) == (
+        MOVE, TrailCause.TRAIL, D("9.90"))
+    decision = next_stop(_at(current_stop=D("9.90")), no_minimum)
+    assert (decision.action, decision.cause) == (KEEP, TrailCause.NOT_TIGHTER)
+
+
 def test_trail_rounds_down_to_whole_cents():
     decision = next_stop(_at(best_price=D("10.237")), CONFIG)  # 9.937
     assert decision.stop_price == D("9.93")
@@ -153,7 +163,8 @@ def test_inconsistent_inputs_are_refused(changes: dict, cause: TrailCause, field
 
 
 @pytest.mark.parametrize("changes", [{"atr_multiple": D(0)}, {"breakeven_after_r": D("-1")},
-                                     {"min_move_usd": D("NaN")}, {"min_move_usd": 0.05}])
+                                     {"min_move_usd": D("-0.01")}, {"min_move_usd": D("NaN")},
+                                     {"min_move_usd": 0.05}])
 def test_invalid_params_are_refused(changes: dict):
     decision = stop_by_rule(BASE, replace(PARAMS, **changes))
     assert (decision.action, decision.cause) == (REFUSED, TrailCause.PARAMS_INVALID)
@@ -177,8 +188,10 @@ def test_the_stop_follows_a_price_path_and_never_moves_down():
                                     "10.40", "10.40", "10.60", "10.60", "10.65"]]
 
 
+@pytest.mark.parametrize("min_move", [D(0), D("0.05")])
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_the_ratchet_never_moves_down_on_random_paths(seed: int):
+def test_the_ratchet_never_moves_down_on_random_paths(seed: int, min_move: Decimal):
+    params = replace(PARAMS, min_move_usd=min_move)
     rng = random.Random(seed)
     for _ in range(200):
         fill = D(rng.randint(50, 5000)) / 100
@@ -188,13 +201,13 @@ def test_the_ratchet_never_moves_down_on_random_paths(seed: int):
             price = max(D("0.01"), price + D(rng.randint(-20, 20)) / 100)
             best = max(best, price)
             atr = D(rng.randint(1, 60)) / 100
-            decision = next_stop(TrailInputs(Side.BUY, fill, initial, stop, best, atr, price),
-                                 CONFIG)
+            decision = stop_by_rule(TrailInputs(Side.BUY, fill, initial, stop, best, atr, price),
+                                    params)
             assert decision.action is not REFUSED, (seed, decision)
             if decision.action is MOVE:
                 new = decision.stop_price
                 assert new is not None, (seed, decision)
-                assert new - stop >= PARAMS.min_move_usd, (seed, stop, decision)
+                assert new > stop and new - stop >= min_move, (seed, stop, decision)
                 assert new < price, (seed, price, decision)
                 assert new == new.quantize(D("0.01") if new >= 1 else D("0.0001"))
                 stop = new

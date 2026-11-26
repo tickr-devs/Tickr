@@ -16,7 +16,8 @@ The rule, in this order (`[trailing_stop]`, config/bot.toml):
 6. A sell stop at or above the bid would trigger at once: a candidate at or above the bid
    is KEEP (NOT_BELOW_BID), never clipped to a lower price.
 7. A candidate less than `min_move_usd` above the current stop is KEEP (STEP_TOO_SMALL), so
-   tiny moves do not spend broker requests.
+   tiny moves do not spend broker requests (0 = no minimum step, the shipped value until the
+   owner sets a measured one).
 8. Otherwise MOVE to the candidate, with the part of the rule that set it as the cause.
 
 Ticks are the order path's (`risk.ticks.tick`: 0.01 at or above 1 USD, 0.0001 below).
@@ -24,7 +25,7 @@ Ticks are the order path's (`risk.ticks.tick`: 0.01 at or above 1 USD, 0.0001 be
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from enum import StrEnum
 
@@ -153,13 +154,11 @@ def _check(inputs: TrailInputs) -> _Checked | TrailDecision:
 
 
 def _params_valid(params: TrailingStopConfig) -> bool:
-    for f in fields(params):
-        value = getattr(params, f.name)
-        if isinstance(value, bool):
-            continue
-        if not isinstance(value, Decimal) or not value.is_finite() or value <= 0:
-            return False
-    return True
+    """`atr_multiple` and `breakeven_after_r` above 0, `min_move_usd` at least 0."""
+    numbers = (params.atr_multiple, params.breakeven_after_r, params.min_move_usd)
+    if not all(isinstance(v, Decimal) and v.is_finite() for v in numbers):
+        return False
+    return params.atr_multiple > 0 and params.breakeven_after_r > 0 and params.min_move_usd >= 0
 
 
 def next_stop(inputs: TrailInputs, config: Config) -> TrailDecision:

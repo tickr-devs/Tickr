@@ -710,14 +710,23 @@ def test_trailing_stop_ships_off_with_the_backlog_starting_values():
     trailing = config.load(BOT).trailing_stop
     assert trailing.enabled is False
     assert (trailing.atr_multiple, trailing.breakeven_after_r, trailing.min_move_usd) == (
-        Decimal("1.5"), Decimal("1.0"), Decimal("0.05"))
+        Decimal("1.5"), Decimal("1.0"), Decimal(0))
+
+
+@pytest.mark.parametrize("value", ["0", "0.05"])
+def test_trailing_stop_min_move_accepts_zero_and_a_positive_step(tmp_path: Path, value: str):
+    text = BOT.read_text("utf-8")
+    assert "min_move_usd = 0\n" in text
+    cfg = config.load(_copy(tmp_path, text.replace("min_move_usd = 0\n",
+                                                   f"min_move_usd = {value}\n", 1)))
+    assert cfg.trailing_stop.min_move_usd == Decimal(value)
 
 
 @pytest.mark.parametrize(("old", "new"), [
     ("[trailing_stop]\n", None),
     ("atr_multiple = 1.5", "atr_multiple = 0"),
     ("breakeven_after_r = 1.0", "breakeven_after_r = -1"),
-    ("min_move_usd = 0.05", "min_move_usd = 0"),
+    ("min_move_usd = 0\n", "min_move_usd = -0.01\n"),
 ])
 def test_trailing_stop_refuses_on_and_non_positive_values(tmp_path: Path, old: str,
                                                           new: str | None):
