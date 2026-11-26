@@ -1,5 +1,6 @@
 """The early-access list: double opt-in, limits, privacy promises, unsubscribe, import."""
 
+import hashlib
 import re
 from datetime import timedelta
 
@@ -20,9 +21,15 @@ def _fresh_limits():
     cache.clear()
 
 
-def _join(client, email="a@example.com", lang="en", origin=ORIGIN, **extra):
+def _join(client, email="a@example.com", lang="en", origin=ORIGIN, ip="203.0.113.9", **extra):
     data = {"email": email, "lang": lang, "website": "", **extra}
-    return client.post("/api/waitlist", data, HTTP_ORIGIN=origin, HTTP_ACCEPT="application/json")
+    return client.post(
+        "/api/waitlist",
+        data,
+        HTTP_ORIGIN=origin,
+        HTTP_ACCEPT="application/json",
+        HTTP_X_FORWARDED_FOR=ip,
+    )
 
 
 def _links(message):
@@ -134,3 +141,22 @@ def test_import_the_old_csv(tmp_path):
         "two@example.com": "es",
     }
     assert len(mail.outbox) == 2
+
+
+def test_one_confirmation_per_address_per_cooldown_from_any_ip(client, settings):
+    for n in range(3):
+        response = _join(client, ip=f"203.0.113.{n}")
+        assert response.json() == {"status": "confirm"}
+    assert len(mail.outbox) == 1
+    cache.delete("waitlist:sent:" + hashlib.sha256(b"a@example.com").hexdigest())
+    _join(client)
+    assert len(mail.outbox) == 2
+
+
+def test_a_resent_link_restarts_the_row_clock(client):
+    _join(client)
+    old = timezone.now() - timedelta(days=6)
+    Subscriber.objects.update(signed_up_at=old)
+    cache.clear()
+    _join(client)
+    assert Subscriber.objects.get().signed_up_at > old

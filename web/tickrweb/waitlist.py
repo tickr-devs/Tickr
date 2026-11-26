@@ -100,14 +100,24 @@ def join(request):
     existing = Subscriber.objects.filter(email=email).first()
     if existing is not None and existing.confirmed_at is not None:
         return _reply("confirm")
+    # One confirmation email per address per cooldown, whatever IP asks: nobody can use the form
+    # to flood a stranger's inbox. The answer stays "confirm", so it reveals nothing.
+    address_key = "waitlist:sent:" + hashlib.sha256(email.encode()).hexdigest()
+    if not cache.add(address_key, 1, settings.WAITLIST_RESEND_COOLDOWN_SECONDS):
+        return _reply("confirm")
     day = settings.WAITLIST_DAY_SECONDS
     if _over_limit("waitlist:new-per-day", settings.WAITLIST_NEW_PER_DAY, day):
         return _reply("rate", 429)
     try:
         with transaction.atomic():
-            subscriber, _ = Subscriber.objects.get_or_create(
+            subscriber, created = Subscriber.objects.get_or_create(
                 email=email, defaults={"lang": lang, "signed_up_at": timezone.now()}
             )
+            if not created:
+                # A new link: restart the row's clock, so prune never deletes it before the link
+                # expires.
+                subscriber.signed_up_at = timezone.now()
+                subscriber.save(update_fields=["signed_up_at"])
     except IntegrityError:
         return _reply("confirm")
     try:

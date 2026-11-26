@@ -214,6 +214,8 @@ WAITLIST_WINDOW_SECONDS = 3600
 WAITLIST_NEW_PER_DAY = 500
 # Length of that window, in seconds (1 day).
 WAITLIST_DAY_SECONDS = 86400
+# Seconds before the same unconfirmed address can be sent another confirmation email (1 hour).
+WAITLIST_RESEND_COOLDOWN_SECONDS = 3600
 # Seconds a confirmation link stays valid; unconfirmed rows older than this are pruned (7 days).
 WAITLIST_CONFIRM_MAX_AGE_SECONDS = 604800
 
