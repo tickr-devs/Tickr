@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import pwd
 import re
 import stat
 import subprocess
@@ -21,7 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = ROOT / "tests" / "golden" / "systemd"
 SCRIPT = ROOT / "ops" / "systemd" / "deploy-server.sh"
 PATHS = systemd.Paths(repo=Path("/srv/tickr/repo"), config_host=Path("/srv/tickr/etc/bot.toml"),
-                      env_file=Path("/run/tickr/env"), user="tickr")
+                      env_file=Path("/run/tickr/env"), data=Path("/srv/tickr/data"),
+                      user="tickr")
 ZONE = "America/New_York"
 # The values the golden files were made with: set in the test config, so the golden files do
 # not move when the owner edits config/bot.toml.
@@ -88,7 +91,8 @@ def test_every_job_requires_the_secrets_unit_and_holds_no_value(config_path, rep
 
 @pytest.mark.parametrize("field,value", [
     ("repo", "/srv/with space"), ("repo", "/srv/a$b"), ("config_host", "/srv/a%h"),
-    ("env_file", '/srv/"q"'), ("user", "a b"), ("repo", "relative/repo")])
+    ("env_file", '/srv/"q"'), ("user", "a b"), ("repo", "relative/repo"),
+    ("data", "relative/data"), ("data", "/srv/da ta")])
 def test_unsafe_or_relative_values_are_refused(config_path, repo, field, value):
     cfg = _pinned(config_path)
     bad = systemd.Paths(**{**vars(PATHS), field: value if field == "user" else Path(value)})
@@ -169,8 +173,10 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
     (repo / ".venv" / "bin").mkdir(parents=True)
     python = repo / ".venv" / "bin" / "python"
     python.write_text(
-        '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done\n'
+        '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do [ "$1" = --out ] && out=$2;'
+        ' [ "$1" = --data ] && data=$2; shift; done\n'
         'mkdir -p "$out"; : > "$out/tickr-bot.service"; : > "$out/tickr-bot.timer"\n'
+        'echo "PathExists=$data/control/restart-request" > "$out/tickr-bot-restart.path"\n'
         ': > "$out/ports.env"; echo TICKR_BOT_EXIT_TIMEOUT=1 > "$out/limits.env"\n', "utf-8")
     docker = tmp_path / "docker"
     docker.write_text(f"#!/bin/sh\nexit {0 if flat else 1}\n", "utf-8")
@@ -184,12 +190,19 @@ def _fake_server(tmp_path: Path, flat: bool) -> tuple[Path, Path, Path, Path, Pa
     return repo, docker, systemctl, units, etc
 
 
+def _script_env(units: Path, systemctl: Path, docker: Path) -> dict[str, str]:
+    return {"PATH": "/usr/bin:/bin", "TICKR_UNITS_DIR": str(units),
+            "TICKR_SYSTEMCTL": str(systemctl), "TICKR_DOCKER": str(docker),
+            "TICKR_SERVICE_USER": pwd.getpwuid(os.getuid()).pw_name}
+
+
 def _deploy(tmp_path: Path, flat: bool) -> subprocess.CompletedProcess:
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, flat)
+    data = tmp_path / "data"
+    data.mkdir(exist_ok=True)
     return subprocess.run(
-        [str(SCRIPT), str(repo), str(etc)], capture_output=True, text=True,
-        env={"PATH": "/usr/bin:/bin", "TICKR_UNITS_DIR": str(units),
-             "TICKR_SYSTEMCTL": str(systemctl), "TICKR_DOCKER": str(docker)}, check=False)
+        [str(SCRIPT), str(repo), str(etc), str(data)], capture_output=True, text=True,
+        env=_script_env(units, systemctl, docker), check=False)
 
 
 def test_deploy_script_refuses_when_not_flat(tmp_path):
@@ -203,10 +216,16 @@ def test_deploy_script_installs_the_units_when_flat(tmp_path):
     done = _deploy(tmp_path, flat=True)
     assert done.returncode == 0, done.stderr
     assert sorted(p.name for p in (tmp_path / "units").iterdir()) == [
-        "tickr-bot.service", "tickr-bot.timer"]
+        "tickr-bot-restart.path", "tickr-bot.service", "tickr-bot.timer"]
     assert (tmp_path / "etc" / "ports.env").exists() and (tmp_path / "etc" / "limits.env").exists()
     log = (tmp_path / "systemctl.log").read_text("utf-8")
     assert "daemon-reload" in log and "tickr-bot.timer" in log
+    assert re.search(r"(?m)^enable .*tickr-bot-restart\.path", log)
+    assert re.search(r"(?m)^start .*tickr-bot-restart\.path", log)
+    # The control folder: created by the deploy, the service account's only.
+    control = tmp_path / "data" / "control"
+    assert control.is_dir() and stat.S_IMODE(control.stat().st_mode) == 0o700
+    assert control.stat().st_uid == os.getuid()
     # The bot unit is never started or restarted by a deploy.
     assert not re.search(r"(start|restart) .*tickr-bot\.service", log)
 
@@ -218,7 +237,8 @@ def test_the_bots_grace_period_is_the_exit_timeout_from_config_only(config_path,
     rendered = (out / "limits.env").read_text("utf-8")
     assert rendered == (f"TICKR_BOT_EXIT_TIMEOUT={cfg.runtime.bot_exit_timeout_seconds}\n"
                         f"TICKR_NIGHTLY_OUT={cfg.runtime.nightly_fetch_out}\n"
-                        f"TICKR_NIGHTLY_SEED={cfg.runtime.nightly_fetch_seed}\n")
+                        f"TICKR_NIGHTLY_SEED={cfg.runtime.nightly_fetch_seed}\n"
+                        "TICKR_DATA_HOST=/srv/tickr/data\n")
     compose = (ROOT / "ops" / "docker" / "compose.yaml").read_text("utf-8")
     # compose reads the rendered value and holds no number of its own.
     assert re.findall(r"(?m)^\s*stop_grace_period: (.*)$", compose) == [
@@ -244,9 +264,97 @@ def test_deploy_script_installs_nothing_when_a_copy_fails(tmp_path):
     repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
     missing = tmp_path / "no-such-etc"  # the units stage fine, then the etc files cannot be copied
     done = subprocess.run(
-        [str(SCRIPT), str(repo), str(missing)], capture_output=True, text=True, check=False,
-        env={"PATH": "/usr/bin:/bin", "TICKR_UNITS_DIR": str(units),
-             "TICKR_SYSTEMCTL": str(systemctl), "TICKR_DOCKER": str(docker)})
+        [str(SCRIPT), str(repo), str(missing), str(tmp_path / "data")], capture_output=True,
+        text=True, check=False, env=_script_env(units, systemctl, docker))
     assert done.returncode == 1 and "nothing was installed" in done.stderr
     assert list(units.iterdir()) == []  # no unit, and no staged file left behind
     assert not (tmp_path / "systemctl.log").exists()  # no daemon-reload
+
+
+def test_deploy_script_refuses_over_a_waiting_restart_request(tmp_path):
+    repo, docker, systemctl, units, etc = _fake_server(tmp_path, True)
+    control = tmp_path / "data" / "control"
+    control.mkdir(parents=True)
+    (control / "restart-request").write_text("{}\n", "utf-8")
+    done = subprocess.run(
+        [str(SCRIPT), str(repo), str(etc), str(tmp_path / "data")], capture_output=True,
+        text=True, check=False, env=_script_env(units, systemctl, docker))
+    assert done.returncode == 1 and "restart request is waiting" in done.stderr
+    assert list(units.iterdir()) == [] and not (tmp_path / "systemctl.log").exists()
+    assert (control / "restart-request").exists()  # left for the owner to read
+
+
+def test_the_restart_unit_restarts_once_with_the_bots_grace_and_never_retries(
+        config_path, repo, tmp_path):
+    cfg = _pinned(config_path)
+    out = tmp_path / "out"
+    systemd.render_all(cfg, repo / "ops" / "systemd", out, systemd.values(cfg, PATHS, ZONE))
+    service = (out / "tickr-bot-restart.service").read_text("utf-8")
+    steps = re.findall(r"(?m)^ExecStart=(.*)$", service)
+    assert steps == [
+        "/bin/mv -fT /srv/tickr/data/control/restart-request "
+        "/srv/tickr/data/control/restart-request.taken",
+        "/usr/bin/docker compose -f /srv/tickr/repo/ops/docker/compose.yaml -p tickr "
+        f"--profile jobs restart -t {cfg.runtime.bot_exit_timeout_seconds} bot",
+        "/bin/cat /srv/tickr/data/control/restart-request.taken"]
+    assert "Type=oneshot\n" in service
+    assert not re.search(r"(?m)^(Restart|StartLimit|ExecStartPre|ExecStopPost)", service)
+    path = (out / "tickr-bot-restart.path").read_text("utf-8")
+    assert "PathExists=/srv/tickr/data/control/restart-request\n" in path
+    assert "Unit=tickr-bot-restart.service\n" in path
+
+
+def test_the_compose_project_name_is_tickr_and_data_is_the_host_folder():
+    compose = (ROOT / "ops" / "docker" / "compose.yaml").read_text("utf-8")
+    assert re.findall(r"(?m)^name: (.*)$", compose) == ["tickr"]
+    # No Docker named volume: the host units see the containers' data folder.
+    assert not re.search(r"(?m)^volumes:", compose)
+    assert compose.count("source: ${TICKR_DATA_HOST:?") == 2
+    assert compose.count("target: /app/data\n") == 2
+
+
+COMPOSE_BOT = """name: tickr
+services:
+  api:
+    stop_grace_period: 5s
+  bot:
+    image: tickr:local
+    # a comment
+{grace}    pid: host
+
+  watchdog:
+    stop_grace_period: 7s
+"""
+
+
+@pytest.mark.parametrize("grace,values,seconds", [
+    ("    stop_grace_period: ${TICKR_BOT_EXIT_TIMEOUT:?load limits.env}s\n",
+     {"TICKR_BOT_EXIT_TIMEOUT": "120"}, 120),
+    ("    stop_grace_period: 45s\n", {}, 45),
+    ('    stop_grace_period: "30"\n', {}, 30),
+])
+def test_the_bots_stop_grace_is_read_from_compose(grace, values, seconds):
+    assert systemd.bot_stop_grace(COMPOSE_BOT.format(grace=grace), values) == seconds
+
+
+@pytest.mark.parametrize("text,values", [
+    (COMPOSE_BOT.format(grace=""), {}),  # none on the bot (api and watchdog's do not count)
+    (COMPOSE_BOT.format(grace="    stop_grace_period: ${OTHER}s\n"), {}),  # not rendered
+    (COMPOSE_BOT.format(grace="    stop_grace_period: 1m30s\n"), {}),  # another form
+    (COMPOSE_BOT.format(grace="    stop_grace_period: 0s\n"), {}),
+    (COMPOSE_BOT.format(grace="    stop_grace_period: ${T}s\n"), {"T": "soon"}),
+    ("name: tickr\nservices:\n  api:\n    image: x\n", {}),  # no bot service
+    ("name: tickr\n", {}),
+])
+def test_a_missing_or_unreadable_stop_grace_is_refused(text, values):
+    with pytest.raises(config_module.ConfigError):
+        systemd.bot_stop_grace(text, values)
+
+
+def test_render_refuses_when_compose_gives_the_bot_no_grace(config_path, repo, tmp_path):
+    cfg = _pinned(config_path)
+    compose = repo / "ops" / "docker" / "compose.yaml"
+    text = compose.read_text("utf-8")
+    compose.write_text(re.sub(r"(?m)^\s*stop_grace_period: .*\n", "", text), "utf-8")
+    with pytest.raises(config_module.ConfigError, match="no stop_grace_period"):
+        systemd.values(cfg, PATHS, ZONE)
