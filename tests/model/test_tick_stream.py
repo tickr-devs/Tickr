@@ -101,7 +101,9 @@ def make_stream(sockets, cfg=CFG):
         made.append(sock)
         return sock
 
-    stream = ticks.TickStream(cfg, store, connect, clock=lambda: next(times))
+    monos = iter(range(10**9, 10**9 + 10**6))
+    stream = ticks.TickStream(cfg, store, connect, clock=lambda: next(times),
+                              mono=lambda: next(monos))
     return stream, stop, store, made
 
 
@@ -200,8 +202,10 @@ def test_a_drop_is_a_gap_of_every_subscribed_symbol_and_the_next_login_resubscri
     stream.run(stop)
     assert len(made) == 2
     assert sorted(store.gaps) == keys
-    down, up, cause = store.gaps[keys[0]][0]  # opened at the drop, closed by the resubscribe
-    assert down < up and cause == "ConnectionError"
+    gap = store.gaps[keys[0]][0]  # opened at the drop, its drop ended by the resubscribe
+    assert gap.down_ns < gap.up_ns and gap.cause == "ConnectionError"
+    assert gap.duration_ns is not None and gap.duration_ns > 0  # monotonic, kept apart
+    assert gap.before == {("trades", "AAPL"): T0}  # the SIP time of the last row seen
     assert second.sent[1] == first.sent[1]  # the same subscription again
     assert len(frame(store, "trades")) == 2
 
@@ -279,10 +283,12 @@ def test_backfill_pages_both_kinds_and_keeps_every_version_with_its_own_receipt(
         "quotes": [{"status": "OK", "results": [rest_quote(199, T0 - 9),
                                                 rest_quote(200, T0 + 456)]}]})
     times = iter([70, 80, 90])
-    back = ticks.TickBackfill(CFG, store, wire, clock=lambda: next(times))
+    monos = iter([1000, 1500, 2000, 2250])
+    back = ticks.TickBackfill(CFG, store, wire, clock=lambda: next(times),
+                              mono=lambda: next(monos))
     windows = back.backfill("AAPL", START, T0 + MS)
-    assert windows["trades"] == ticks.Window("AAPL", "trades", START, T0 + MS, 80, 2, None)
-    assert windows["quotes"] == ticks.Window("AAPL", "quotes", START, T0 + MS, 90, 1, None)
+    assert windows["trades"] == ticks.Window("AAPL", "trades", START, T0 + MS, 80, 2, None, 500)
+    assert windows["quotes"] == ticks.Window("AAPL", "quotes", START, T0 + MS, 90, 1, None, 250)
     assert store.windows == [windows["trades"], windows["quotes"]]
     assert back.requests == 3 and back.rate_limited == 0
     first = urllib.parse.urlsplit(wire.requests[0].full_url)
@@ -509,16 +515,69 @@ def test_a_stream_gap_refuses_until_a_complete_backfill_spans_it(creds):
     streamed(store, "AAPL", T0 + 1, q=1)
     fill(store, "AAPL", START, T0 + MS, T0 + 2)
     assert store.snapshot(T0 + 2).refusal("AAPL") is None
-    store.down(["AAPL"], T0 + 10, "ConnectionError")
+    streamed(store, "AAPL", T0 + 3, q=2, t=T0 // MS + 4)  # the last rows seen before the drop
+    store.down(["AAPL"], T0 + 10, "ConnectionError", 500)
     assert store.snapshot(T0 + 15).refusal("AAPL") == "tick_gap"  # still down
-    store.up(T0 + 20)
+    store.up(T0 + 20, 520)
+    assert store.gaps["AAPL"][0].duration_ns == 20
     # resubscribed, but delivery after it is not verified by the send
     assert store.snapshot(T0 + 25).refusal("AAPL") == "tick_coverage_unverified"
-    streamed(store, "AAPL", T0 + 26, q=2, t=T0 // MS + 1)
-    assert store.snapshot(T0 + 26).refusal("AAPL") == "tick_gap"  # delivering, the hole open
-    fill(store, "AAPL", T0 + 10, T0 + 2 * MS, T0 + 30)
+    streamed(store, "AAPL", T0 + 26, q=3, t=T0 // MS + 9)
+    snap = store.snapshot(T0 + 26)
+    assert snap.refusal("AAPL") == "tick_gap"  # delivering, the hole open
+    assert snap.repair_from("AAPL") == T0 + 4 * MS  # from the last row seen, in SIP time
+    # a window that starts after the last row seen before the drop leaves a hole
+    fill(store, "AAPL", T0 + 5 * MS, T0 + 10 * MS, T0 + 27)
+    assert store.snapshot(T0 + 27).refusal("AAPL") == "tick_gap"
+    # one that ends at the first row seen after it does not overlap it
+    fill(store, "AAPL", T0 + 4 * MS, T0 + 9 * MS, T0 + 28)
+    assert store.snapshot(T0 + 28).refusal("AAPL") == "tick_gap"
+    fill(store, "AAPL", T0 + 4 * MS, T0 + 10 * MS, T0 + 30)
     assert store.snapshot(T0 + 29).refusal("AAPL") == "tick_gap"  # the fill arrived later
     assert store.snapshot(T0 + 30).refusal("AAPL") is None
+
+
+def test_receipt_times_are_never_compared_with_sip_times_as_coverage(creds):
+    """codex-109 point 6: the local clock may run ahead of or behind SIP time; coverage is the
+    SIP time of rows seen, whatever the receipt times of the drop and the resubscription."""
+    store = ticks.TickStore(DAY)
+    ahead = 3600 * 10**9  # the local clock one hour ahead of SIP time
+    store.subscribe(["AAPL"], T0 + ahead)
+    streamed(store, "AAPL", T0 + ahead + 1, q=1)
+    fill(store, "AAPL", START, T0 + MS, T0 + ahead + 2)
+    streamed(store, "AAPL", T0 + ahead + 3, q=2, t=T0 // MS + 4)
+    store.down(["AAPL"], T0 + ahead + 10, "ConnectionError", 500)
+    store.up(T0 + ahead + 20, 520)
+    streamed(store, "AAPL", T0 + ahead + 21, q=3, t=T0 // MS + 9)
+    # a window spanning the drop's and the resubscription's receipt times proves nothing
+    fill(store, "AAPL", T0 + ahead + 10, T0 + ahead + 20 + MS, T0 + ahead + 22)
+    assert store.snapshot(T0 + ahead + 22).refusal("AAPL") == "tick_gap"
+    # the SIP span of the rows seen around the gap does
+    fill(store, "AAPL", T0 + 4 * MS, T0 + 10 * MS, T0 + ahead + 23)
+    snap = store.snapshot(T0 + ahead + 23)
+    assert snap.refusal("AAPL") is None
+    # the receipt-minus-SIP estimate is recorded (clock offset plus delay), not used as proof
+    assert snap.lag("AAPL") == (T0 + ahead + 21, ahead + 21 - 9 * MS)
+
+
+def test_a_reset_after_new_york_midnight_is_a_gap_repaired_from_midnight(creds):
+    """codex-109 point 6: Massive's reset just after 00:00 New York loses the date's first
+    events (before 04:00 too); the repair starts at midnight and must reach the first row."""
+    store = ticks.TickStore(DAY)
+    store.subscribe(["AAPL"], START + 1)  # subscribed at 00:00:00 on this date
+    store.down(["AAPL"], START + 5 * 10**9, "ConnectionClosed", 500)  # reset at 00:00:05
+    store.up(START + 30 * 10**9, 525)
+    first = START + 2 * 3600 * 10**9  # the first row seen after it, at 02:00
+    streamed(store, "AAPL", first + 1, q=9, t=first // MS)
+    assert store.snapshot(first + 1).repair_from("AAPL") == START
+    at_0400 = START + 4 * 3600 * 10**9
+    fill(store, "AAPL", at_0400, at_0400 + MS, first + 2)  # a session-hours repair is not one
+    assert store.snapshot(first + 2).refusal("AAPL") == "tick_no_initial_state"
+    q0100 = START + 3600 * 10**9
+    fill(store, "AAPL", START, first + MS, first + 3, quotes=[rest_quote(5, q0100)])
+    snap = store.snapshot(first + 3)
+    assert snap.refusal("AAPL") is None
+    assert snap.frame("quotes", "AAPL").sip_timestamp.tolist() == [q0100, first]
 
 
 def test_a_reconnect_acknowledgment_does_not_prove_the_gap_was_delivered(creds, monkeypatch):
@@ -530,9 +589,8 @@ def test_a_reconnect_acknowledgment_does_not_prove_the_gap_was_delivered(creds, 
     stream, stop, store, _ = make_stream([first, second])
     stream.add("AAPL")
     stream.run(stop)
-    fill(store, "AAPL", START, T0 + MS, 6)  # the day up to and past the first rows
-    ((down, up, _),) = store.gaps["AAPL"]
-    fill(store, "AAPL", down, END, up + 10)  # a complete window spanning the whole gap
+    up = store.gaps["AAPL"][0].up_ns
+    fill(store, "AAPL", START, END, up + 10)  # the whole date, complete
     assert store.snapshot(up + 10).refusal("AAPL") == "tick_coverage_unverified"
     # the first row delivered after the resubscription, inside that window: now verified
     streamed(store, "AAPL", up + 11, q=2, t=T0 // MS + 2)

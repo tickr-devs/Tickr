@@ -47,11 +47,23 @@ proven complete at the cutoff (not subscribed, no complete backfill from midnigh
 backfill, an unfilled stream gap, coverage not verified, an unresolved conflict); a decision that
 needs the symbol refuses with that cause.
 
-Coverage (codex-109 point 4): sending a subscription, or Massive acknowledging it, does not prove
-that the events after it are delivered. Each (re)subscription of a kind is verified by overlap:
-a complete REST window from midnight (or from the drop) must reach past the SIP millisecond of
-the first stream row of that kind received after the (re)subscription. Until a stream row of
-that kind arrives, the hand-over is unverified and the symbol refused.
+Coverage (codex-109 points 4 and 6): sending a subscription, or Massive acknowledging it, does
+not prove that the events after it are delivered. Coverage is reasoned in SIP event time of rows
+actually seen, never by comparing local receipt times with REST SIP times: per kind, a complete
+REST window (pagination proven exhausted) must start at or before the SIP millisecond of the
+last stream row received before the drop (midnight for the initial state, or when no row of
+that kind was seen before it in this session date) and reach past the SIP millisecond of the
+first stream row received after the (re)subscription, so the REST and stream event-time ranges
+overlap at both ends. Receipt times only order our own events (which row came before the drop,
+which after the resubscription). Until a stream row of that kind arrives after it, the
+hand-over is unverified and the symbol refused. A connection reset just after New York midnight
+is such a gap: with no row of the new date seen before it, its repair starts at 00:00 and holds
+the date's events before 04:00.
+
+Clocks (codex-109 point 6), kept as separate fields: `recv_ns` is local wall-clock receipt;
+`TickSnapshot.lag` gives receipt minus SIP time, an estimate of clock offset plus feed delay,
+recorded and never used as proof; `Gap.down_mono` / `up_mono` and `Window.elapsed_ns` are
+monotonic-clock nanoseconds, for durations only.
 
 Measurement, no thresholds (owner rule): receipt time and lag per symbol, REST requests and
 rate-limit answers, late arrivals (a version received after a snapshot whose cutoff already
@@ -69,6 +81,7 @@ per cluster with `MinuteStream` (both use `stream_host` / `stream_path`).
 from __future__ import annotations
 
 import collections
+import dataclasses
 import datetime
 import json
 import threading
@@ -248,6 +261,26 @@ class Window:
     recv_ns: int
     pages: int
     cause: str | None
+    elapsed_ns: int  # monotonic duration from its first request to its last answer
+
+
+@dataclass(frozen=True)
+class Gap:
+    """A dropped stream of one symbol (or MARKET): `down_ns` / `up_ns` are wall-clock receipt
+    times of the drop and of the resubscription (None while down), used only to order our own
+    receipts; `down_mono` / `up_mono` the same moments on the monotonic clock (durations);
+    `before` the SIP ns of the last stream row per (kind, ticker) received before the drop."""
+
+    cause: str
+    down_ns: int
+    down_mono: int
+    up_ns: int | None
+    up_mono: int | None
+    before: Mapping[tuple[str, str], int]
+
+    @property
+    def duration_ns(self) -> int | None:
+        return None if self.up_mono is None else self.up_mono - self.down_mono
 
 
 def _same(col: str, a: Any, b: Any) -> bool:
@@ -277,8 +310,9 @@ class TickStore:
         self._resumed: dict[str, int] = {}  # symbol (or MARKET) -> latest subscribe sent, ns
         # (kind, ticker) -> (resume ns, recv_ns, SIP ns) of the first stream row after each resume
         self.first: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
-        # symbol (or MARKET) -> [down_ns, up_ns or None while down, cause]: rows sent then are lost
-        self.gaps: dict[str, list[list[Any]]] = {}
+        # symbol (or MARKET) -> its gaps in drop order: rows sent while down are lost
+        self.gaps: dict[str, list[Gap]] = {}
+        self._last_sip: dict[tuple[str, str], int] = {}  # (kind, ticker) -> latest stream SIP ns
         # measurement counts: other_day, late, same_ms_trades / _quotes / _trade_quote
         self.counts: collections.Counter[str] = collections.Counter()
         self._cutoff = 0  # the latest cutoff a snapshot was taken at
@@ -304,6 +338,8 @@ class TickStore:
                 if source == STREAM:
                     self._same_ms(kind, row["ticker"], ts // NS_PER_MS)
                     self._first(kind, row["ticker"], recv_ns, ts)
+                    held_sip = self._last_sip.get((kind, row["ticker"]), ts)
+                    self._last_sip[(kind, row["ticker"])] = max(held_sip, ts)
                 versions = held.setdefault(key, [])
                 if not versions:
                     new += 1
@@ -360,19 +396,24 @@ class TickStore:
                 self.subscribed.setdefault(key, at_ns)
                 self._resumed[key] = at_ns
 
-    def down(self, keys: list[str], down_ns: int, cause: str) -> None:
-        """The stream of `keys` dropped at `down_ns`; the gap stays open until `up`."""
+    def down(self, keys: list[str], down_ns: int, cause: str, mono_ns: int) -> None:
+        """The stream of `keys` dropped at wall-clock `down_ns` (monotonic `mono_ns`); the gap
+        stays open until `up`. It keeps the SIP time of the last row seen before it."""
         with self._lock:
             for key in keys:
-                self.gaps.setdefault(key, []).append([down_ns, None, cause])
+                before = types.MappingProxyType(
+                    {k: v for k, v in self._last_sip.items() if key in (MARKET, k[1])})
+                self.gaps.setdefault(key, []).append(
+                    Gap(cause, down_ns, mono_ns, None, None, before))
 
-    def up(self, up_ns: int) -> None:
-        """The subscription was sent again: every open gap closes at `up_ns`."""
+    def up(self, up_ns: int, mono_ns: int) -> None:
+        """The subscription was sent again: every open gap ends its drop at `up_ns`; whether
+        the events of the gap are covered is a question of SIP time (TickSnapshot.refusal)."""
         with self._lock:
             for key, gaps in self.gaps.items():
-                for gap in gaps:
-                    if gap[1] is None:
-                        gap[1] = up_ns
+                for i, gap in enumerate(gaps):
+                    if gap.up_ns is None:
+                        gaps[i] = dataclasses.replace(gap, up_ns=up_ns, up_mono=mono_ns)
                         self._resumed[key] = up_ns
 
     def window(self, window: Window) -> None:
@@ -398,9 +439,10 @@ class TickStore:
                             last[v[0]] = (v[-2], v[ts])
                 chosen.sort(key=lambda v: (v[0], v[ts], v[seq]))
                 rows[kind] = tuple(chosen)
-            gaps = {key: tuple((d, u if u is not None and u <= cutoff_ns else None, c)
-                               for d, u, c in found if d <= cutoff_ns)
-                    for key, found in self.gaps.items()}
+            gaps = {key: tuple(
+                g if g.up_ns is not None and g.up_ns <= cutoff_ns
+                else dataclasses.replace(g, up_ns=None, up_mono=None)
+                for g in found if g.down_ns <= cutoff_ns) for key, found in self.gaps.items()}
             return TickSnapshot(
                 day=self.day, start_ns=self.start_ns, cutoff_ns=cutoff_ns,
                 rows=types.MappingProxyType(rows),
@@ -428,7 +470,7 @@ class TickSnapshot:
     conflicts: tuple[Conflict, ...]
     windows: tuple[Window, ...]
     subscribed: Mapping[str, int]
-    gaps: Mapping[str, tuple[tuple[int, int | None, str], ...]]
+    gaps: Mapping[str, tuple[Gap, ...]]
     last: Mapping[str, tuple[int, int]]
     first: Mapping[tuple[str, str], tuple[tuple[int, int, int], ...]]
 
@@ -457,20 +499,37 @@ class TickSnapshot:
         return pd.DataFrame(rows, columns=[*columns(kind), "provisional"], dtype=object)
 
     def lag(self, symbol: str) -> tuple[int, int] | None:
-        """(receipt ns, receipt minus SIP ns) of the symbol's latest stream version by the
-        cutoff; None when none arrived. Recorded for measurement, no limit applied."""
+        """(wall-clock receipt ns, receipt minus SIP ns) of the symbol's latest stream version by
+        the cutoff; None when none arrived. The difference estimates clock offset plus feed
+        delay: recorded for measurement, never a limit and never coverage evidence."""
         if symbol not in self.last:
             return None
         recv, sip = self.last[symbol]
         return recv, recv - sip
 
-    def _coverage(self, symbol: str, from_ns: int, mark: int) -> str | None:
-        """None when, for both kinds, a complete window from `from_ns` reaches past the SIP
+    def _from(self, symbol: str, kind: str, gap: Gap | None) -> int:
+        """SIP ns a repair of `gap` (None: the initial state) must start by: the millisecond of
+        the last stream row of the kind seen before the drop, else New York midnight."""
+        sip = None if gap is None else gap.before.get((kind, symbol))
+        return self.start_ns if sip is None else sip // NS_PER_MS * NS_PER_MS
+
+    def repair_from(self, symbol: str) -> int | None:
+        """The earliest SIP ns a backfill must start at to repair the symbol's gaps by this
+        cutoff, or None when it has none."""
+        return min((self._from(symbol, kind, g) for g in self._gaps(symbol) for kind in KINDS),
+                   default=None)
+
+    def _gaps(self, symbol: str) -> tuple[Gap, ...]:
+        return self.gaps.get(symbol, ()) + self.gaps.get(MARKET, ())
+
+    def _coverage(self, symbol: str, gap: Gap | None, mark: int) -> str | None:
+        """None when, for both kinds, a complete window from `_from` reaches past the SIP
         millisecond of the first stream row received after the (re)subscription at `mark`;
         "unverified" when no such stream row arrived yet (a send or an acknowledgment proves no
-        delivery); "missing" when no complete window from `from_ns` (reaching past it) arrived."""
+        delivery); "missing" when no complete window from `_from` (reaching past it) arrived."""
         for kind in KINDS:
-            complete = [w for w in self._complete(symbol, kind) if w.from_ns <= from_ns]
+            start = self._from(symbol, kind, gap)
+            complete = [w for w in self._complete(symbol, kind) if w.from_ns <= start]
             if not complete:
                 return "missing"
             sip = next((s for m, _, s in self.first.get((kind, symbol), ()) if m >= mark), None)
@@ -482,24 +541,24 @@ class TickSnapshot:
 
     def refusal(self, symbol: str) -> str | None:
         """Why the symbol's ticks are not proven complete from midnight to the cutoff (one
-        cause), or None. A stream gap (receipt times) is filled by complete windows of both
-        kinds from its start past the first stream row after the resubscription; a conflict
+        cause), or None. A stream gap is filled by complete windows of both kinds from the last
+        row seen before it past the first row seen after it, in SIP time; a conflict
         refuses while it touches an input and is unresolved (module text)."""
         since = min((self.subscribed[k] for k in (symbol, MARKET) if k in self.subscribed),
                     default=None)
         if since is None:
             return "tick_not_subscribed"
-        initial = self._coverage(symbol, self.start_ns, since)
+        initial = self._coverage(symbol, None, since)
         if initial == "missing":
             return ("tick_backfill_incomplete"
                     if any(w.cause for w in self.windows if w.symbol == symbol)
                     else "tick_no_initial_state")
         if initial is not None:
             return "tick_coverage_unverified"
-        for down, up, _ in self.gaps.get(symbol, ()) + self.gaps.get(MARKET, ()):
-            gap = "missing" if up is None else self._coverage(symbol, down, up)
-            if gap is not None:
-                return "tick_gap" if gap == "missing" else "tick_coverage_unverified"
+        for gap in self._gaps(symbol):
+            found = "missing" if gap.up_ns is None else self._coverage(symbol, gap, gap.up_ns)
+            if found is not None:
+                return "tick_gap" if found == "missing" else "tick_coverage_unverified"
         if any(c.ticker == symbol and c.inputs and r is None for c, r in self.resolutions):
             return "tick_conflict"
         return None
@@ -524,15 +583,18 @@ class TickStream:
     """Trades and quotes from the real-time stream into a TickStore: per symbol (a set that
     grows during the day, `add`) or the full market, by `[massive] tick_subscription`.
     `connect` is `websockets.sync.client.connect` (a stand-in in the tests); `clock` gives
-    wall-clock ns, comparable with the SIP timestamps. A subscription is recorded when it is
-    sent; neither the send nor an acknowledgment proves delivery (TickSnapshot.refusal)."""
+    wall-clock ns (receipt times), `mono` monotonic ns (durations). A subscription is recorded
+    when it is sent; neither the send nor an acknowledgment proves delivery
+    (TickSnapshot.refusal)."""
 
     def __init__(self, cfg: Config, store: TickStore, connect: Callable[..., Any] | None = None,
-                 clock: Callable[[], int] = time.time_ns) -> None:
+                 clock: Callable[[], int] = time.time_ns,
+                 mono: Callable[[], int] = time.monotonic_ns) -> None:
         self.m = cfg.massive
         self.market = self.m.tick_subscription == "market"
         self.store = store
         self.clock = clock
+        self.mono = mono
         if connect is None:
             from websockets.sync.client import connect as ws_connect
 
@@ -572,7 +634,7 @@ class TickStream:
                 ws.send(json.dumps({"action": "subscribe", "params": self._params(keys)}))
                 now = self.clock()
                 self.store.subscribe(keys, now)
-                self.store.up(now)
+                self.store.up(now, self.mono())
 
     def session(self, stop: threading.Event) -> None:
         """One connection: auth, subscribe, read until it closes or `stop` is set."""
@@ -627,7 +689,7 @@ class TickStream:
                 return
             with self._lock:
                 keys = self._keys()
-            self.store.down(keys, self.clock(), cause)
+            self.store.down(keys, self.clock(), cause, self.mono())
             stop.wait(float(self.m.stream_reconnect_seconds))
 
 
@@ -646,11 +708,13 @@ class TickBackfill:
     request and every 429 answer (measurement)."""
 
     def __init__(self, cfg: Config, store: TickStore, opener: Opener = _open,
-                 clock: Callable[[], int] = time.time_ns) -> None:
+                 clock: Callable[[], int] = time.time_ns,
+                 mono: Callable[[], int] = time.monotonic_ns) -> None:
         self.m = cfg.massive
         self.store = store
         self.opener = opener
         self.clock = clock
+        self.mono = mono
         self.requests = 0
         self.rate_limited = 0
 
@@ -710,20 +774,23 @@ class TickBackfill:
                 or isinstance(to_ns, bool) or not isinstance(from_ns, int)
                 or not isinstance(to_ns, int) or from_ns >= to_ns):
             raise ModelRefused("backfill_range", f"{symbol!r} {from_ns!r}..{to_ns!r}")
-        fetched: dict[str, tuple[list[tuple[list[dict[str, Any]], int]], str | None]] = {}
+        fetched: dict[str, tuple[list[tuple[list[dict[str, Any]], int]], str | None, int]] = {}
         for kind in KINDS:
             pages: list[tuple[list[dict[str, Any]], int]] = []
+            began = self.mono()
             try:
-                fetched[kind] = (pages, self._pages(kind, symbol, from_ns, to_ns, pages))
+                cause = self._pages(kind, symbol, from_ns, to_ns, pages)
             except ModelRefused as exc:
                 self.store.window(Window(symbol, kind, from_ns, to_ns, self.clock(),
-                                         len(pages), exc.cause))
+                                         len(pages), exc.cause, self.mono() - began))
                 raise
+            fetched[kind] = (pages, cause, self.mono() - began)
         windows = {}
-        for kind, (pages, cause) in fetched.items():
+        for kind, (pages, cause, elapsed) in fetched.items():
             for rows, recv_ns in pages:
                 self.store.add(kind, rows, recv_ns, REST)
-            windows[kind] = Window(symbol, kind, from_ns, to_ns, pages[-1][1], len(pages), cause)
+            windows[kind] = Window(symbol, kind, from_ns, to_ns, pages[-1][1], len(pages), cause,
+                                   elapsed)
             self.store.window(windows[kind])
         return windows
 
