@@ -782,8 +782,9 @@ tick_groups = 24
 # Live features (tickr.model.live, not wired into the bot loop): true = before a closed minute's ticks go through the
 # frozen converter, one synthetic marker quote per stock at the first nanosecond of the next minute lets the minute's
 # last quote weigh to the minute end, as in the training's whole-day tick file whenever the stock quotes again that
-# day; false = the plain prefix (that quote weighs 0). Off until Codex decides (model-live-features findings 3,
-# question 1); read by tickr.model.live.
+# day; false = the plain prefix (that quote weighs 0). Codex (codex-108 point 1) uses it in the parity experiment and
+# keeps it out of the raw capture, carried state, counts and next minute; the open-day report measures the final-quote
+# approximation before any activation, so it stays off here with the model; read by tickr.model.live.
 live_marker_quote = false
 # Seconds after a minute's end before tickr.model.live may close that minute (late bars, trades, quotes and REST pages
 # still arriving), written as text, e.g. "2.5". Not measured yet: it awaits the arrival measurement of PR #796, so it
