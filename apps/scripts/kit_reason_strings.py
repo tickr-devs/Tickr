@@ -1807,6 +1807,17 @@ def line_length_exemption(line):
     return ["      // swiftlint:disable:next line_length", line] if len(line) > LINE else [line]
 
 
+def wrapped_sentence(part):
+    """One ReasonSentence inside a wrapped case, as lines ending in a newline. A sentence too
+    long for one line puts its key and each value name on a line of its own."""
+    line = f"      {part},"
+    if len(line) <= LINE:
+        return line + "\n"
+    key, names = part[len("ReasonSentence("):-len("])")].split(", [", 1)
+    inner = "".join(f"          {name.strip()},\n" for name in names.split(","))
+    return f"      ReasonSentence(\n        {key},\n        [\n{inner}        ]\n      ),\n"
+
+
 def entries():
     """(enum, key, code, variant, names, english, spanish, doc) for every sentence. A code with
     several shapes (api/reasons.py) has a sentence per shape, told apart by `variant`."""
@@ -1912,7 +1923,8 @@ def reason_swift(part):
             ]
             line = f"    case .{camel(code)}: [{', '.join(parts)}]"
             if len(line) > LINE:
-                line = f"    case .{camel(code)}: [\n      " + ",\n      ".join(parts) + ",\n    ]"
+                body = "".join(wrapped_sentence(part) for part in parts)
+                line = f"    case .{camel(code)}: [\n{body}    ]"
             sentences.append(line)
         sentences += [
             "    }",

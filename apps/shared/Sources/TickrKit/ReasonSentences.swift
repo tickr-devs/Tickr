@@ -116,7 +116,18 @@ extension RefusalReason {
     case .quoteStale: [ReasonSentence(L10n.refusalReasonQuoteStale, [.age, .limit])]
     case .priceOutsideWindow: [ReasonSentence(L10n.refusalReasonPriceOutsideWindow, [.ask, .entryLow, .limit])]
     case .priceCollarBreach: [
-      ReasonSentence(L10n.refusalReasonPriceCollarBreach, [.limit, .barDistance, .barClose, .barMax, .quoteDistance, .previousAsk, .quoteMax]),
+      ReasonSentence(
+        L10n.refusalReasonPriceCollarBreach,
+        [
+          .limit,
+          .barDistance,
+          .barClose,
+          .barMax,
+          .quoteDistance,
+          .previousAsk,
+          .quoteMax,
+        ]
+      ),
     ]
     case .quantityNotWhole: [ReasonSentence(L10n.refusalReasonQuantityNotWhole, [.quantity])]
     case .quantityBelowOne: [ReasonSentence(L10n.refusalReasonQuantityBelowOne, [.quantity, .maximum])]
