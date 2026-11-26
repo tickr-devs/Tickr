@@ -4,7 +4,9 @@
 # On Linux preflight refuses with `alert-channel-missing`, so the bot job never starts the bot.
 # A Linux alert channel is an open owner decision.
 #
-# Run from the repo root on the server, with these host variables set (paths only, no values):
+# On the server this file is the host copy /srv/tickr/etc/compose.yaml (deploy-server.sh refuses
+# one that differs from the release image's /app/ops/docker/compose.yaml). Run with these host
+# variables set (paths only, no values):
 #   TICKR_ENV_FILE_HOST  absolute path of the env file (chmod 600, owned by the image's uid)
 #   TICKR_CONFIG_HOST    absolute path of the bot.toml to run with
 # and render-systemd's limits.env loaded (TICKR_IMAGE, TICKR_DATA_HOST, the host data folder,
