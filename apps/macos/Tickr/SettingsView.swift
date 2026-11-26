@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import SwiftUI
 import TickrDesign
@@ -1140,3 +1141,4 @@ struct BackupSection: View {
     DayText.day(WireDate(newYorkDateOf: date)) + dayTimeSeparator + Format.marketMinute(date)
   }
 }
+#endif
