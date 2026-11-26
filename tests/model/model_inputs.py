@@ -196,3 +196,84 @@ def market_day(day: str) -> MarketDay:
         return datetime.datetime(d.year, d.month, d.day, h, m, tzinfo=NEW_YORK)
 
     return MarketDay(d, at(4), at(9, 30), at(16), at(20), False, "test: open archive day")
+
+
+RECEIPT_LAG_NS = 10**9  # the fixtures' receipts: one second after a tick or bar minute ends
+NS_PER_MINUTE = 60 * 10**9
+
+
+def early(day: str) -> datetime.datetime:
+    """The fixtures' receipt of a record known before the session: 04:00 New York the day
+    before."""
+    d = datetime.date.fromisoformat(day) - datetime.timedelta(days=1)
+    return datetime.datetime(d.year, d.month, d.day, 4, tzinfo=NEW_YORK)
+
+
+def _text(instant: datetime.datetime) -> str:
+    return instant.astimezone(datetime.UTC).isoformat()
+
+
+def _ns(instant: datetime.datetime) -> int:
+    return int(pd.Timestamp(instant).value)
+
+
+def received_bars(bars: pd.DataFrame, late: dict | None = None) -> pd.DataFrame:
+    """The bars with their receipt: one second after the bar's minute ends; `late` maps
+    (ticker, window_start) to another receipt."""
+    out = bars.copy()
+    out[full.RECEIPT_COLUMN] = out.window_start + NS_PER_MINUTE + RECEIPT_LAG_NS
+    for (ticker, start), when in (late or {}).items():
+        hit = (out.ticker == ticker) & (out.window_start == start)
+        assert hit.sum() == 1
+        out.loc[hit, full.RECEIPT_COLUMN] = _ns(when)
+    return out
+
+
+def capture(given: full.FullInputs, day: str, root: Path, late=None,
+            omit=None) -> full.FullInputs:
+    """`given` as the bot would capture it: every record with its receipt. Tick rows one second
+    after their minute ends, every other record `early(day)`; `late(source, record)` may return
+    another receipt, and a record for which `omit(source, record)` is true is left out (source:
+    "tk", "bz", "ref", "fl")."""
+    import duckdb
+
+    late = late or (lambda _source, _record: None)
+    omit = omit or (lambda _source, _record: False)
+    root.mkdir()
+    con = duckdb.connect()
+    frame = con.execute(f"SELECT * FROM read_parquet('{given.tick_file}')").df()
+    frame = frame[[not omit("tk", r) for r in frame.to_dict("records")]].reset_index(drop=True)
+    start = pd.Timestamp(day, tz="America/New_York").value
+    stamps = start + (frame.m.astype(np.int64) + 1) * NS_PER_MINUTE + RECEIPT_LAG_NS
+    frame[full.RECEIPT_COLUMN] = [
+        _ns(w) if (w := late("tk", r)) else s for r, s in
+        zip(frame.to_dict("records"), stamps.tolist(), strict=True)]
+    frame[full.RECEIPT_COLUMN] = frame[full.RECEIPT_COLUMN].astype(np.int64)
+    con.register("frame", frame)
+    con.execute(f"COPY (SELECT * FROM frame) TO '{root / 'tk.parquet'}' (FORMAT parquet)")
+    con.close()
+
+    def stamped(source: str, record: dict) -> str:
+        return json.dumps({**record, full.RECEIPT_FIELD: _text(late(source, record)
+                                                               or early(day))}) + "\n"
+
+    (root / "bz").mkdir()
+    for path in sorted(Path(given.benzinga).glob("*.jsonl.gz")):
+        rows = [json.loads(x) for x in gzip.open(path, "rt") if x.strip()]
+        with gzip.open(root / "bz" / path.name, "wt") as f:
+            f.write("".join(stamped("bz", r) for r in rows if not omit("bz", r)))
+    (root / "ref").mkdir()
+    manifest = json.loads((Path(given.reference) / "manifest.json").read_text())
+    for name in manifest["files"]:
+        rows = [json.loads(x) for x in (Path(given.reference) / name).read_text().splitlines()
+                if x.strip()]
+        (root / "ref" / name).write_text("".join(stamped("ref", r) for r in rows
+                                                 if not omit("ref", r)))
+        manifest["files"][name] = _ident(root / "ref" / name)
+    (root / "ref" / "manifest.json").write_text(json.dumps(manifest, sort_keys=True))
+    lines = Path(given.fl_facts).read_text().splitlines()
+    head = lines[0].split(",")
+    facts = [(x, dict(zip(head, x.split(","), strict=True))) for x in lines[1:]]
+    body = [f"{x},{_text(late('fl', r) or early(day))}" for x, r in facts if not omit("fl", r)]
+    (root / "fl.csv").write_text("\n".join([f"{lines[0]},{full.RECEIPT_FIELD}", *body]) + "\n")
+    return full.FullInputs(root / "tk.parquet", root / "ref", root / "bz", root / "fl.csv")
