@@ -322,7 +322,8 @@ def _tick_value_columns() -> list[str]:
             t, q = Path(tmp) / "t.csv", Path(tmp) / "q.csv"
             t.write_text(",".join(ticks.trade_columns()) + "\n", "utf-8")
             q.write_text(",".join(ticks.quote_columns()) + "\n", "utf-8")
-            _CACHE["_tk"] = [c for c in ticks.tick_rows(t, q, "2024-03-06", 0).columns
+            _CACHE["_tk"] = [c for c in ticks.tick_rows(t, q, "2024-03-06", 0,
+                                                         groups=ticks.default_groups()).columns
                              if c not in ("sym", "m")]
     return list(_CACHE["_tk"])
 
@@ -505,8 +506,8 @@ def minute_ticks(room: headroom.Headroom, day: str, minute: int, marker: bool | 
             wrote += con.execute(f"COPY ({qs}) TO '{q}' (HEADER, DELIMITER ',')").fetchone()[0]
         finally:
             con.close()
-        return ticks.tick_rows(t, q, day, through, tmp_dir=folder,
-                               memory=room.duckdb_memory()), int(wrote)
+        return ticks.tick_rows(t, q, day, through, groups=ticks.default_groups(),
+                               tmp_dir=folder, memory=room.duckdb_memory()), int(wrote)
 
     con = room.connect()
     try:

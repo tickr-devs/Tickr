@@ -217,7 +217,8 @@ def test_a_perturbed_trade_gives_a_located_difference(day, tmp_path):
 
 
 def _whole_day(given):
-    t = ticks.tick_rows(given.trades, given.quotes, DAY, 24 * 60 - 1)
+    t = ticks.tick_rows(given.trades, given.quotes, DAY, 24 * 60 - 1,
+                        groups=ticks.default_groups())
     return t[t.sym != NO_BARS]
 
 
