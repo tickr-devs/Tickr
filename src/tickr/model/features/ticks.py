@@ -12,7 +12,8 @@ stock filter is off, and the converter's variables that change its table must be
 (`OUTPUT_VARIABLES`). Two engine settings are the bot's, never the environment's (Codex,
 codex-108 point 2): one engine thread (`SERIAL_THREADS`: with several, the floating sums are
 added in a varying order and two runs of the same files differ in the last bit), and the group
-count, the converter's default or one group as `[model] tick_groups` says. With one thread a
+count, the converter's default (24, pinned: codex-109 point 1 withdrew one group for the bot; it
+stays only for the measurement tool, `experiment_groups`). With one thread a
 run is repeatable, but the group count changes where the engine's 2048-row chunks fall, so a
 floating sum may come out in another order: equal on the test day and at 500 synthetic stocks,
 one stock-minute of 724,062 differing in the last bit at 1,000 (`tests/model/tick_memory.py`,
@@ -99,7 +100,8 @@ SERIAL_THREADS = "1"
 # The converter's stock group count (read once, at import, into its KB): the bot sets it from
 # `[model] tick_groups` on the module; any inherited value is refused.
 GROUPS_VARIABLE = "TICK_GROUPS"
-# The one group count allowed besides the converter's own default (codex-108 point 2).
+# One group: withdrawn for the bot (codex-109 point 1: 24 groups pinned); allowed only to the
+# measurement tool tests/model/tick_memory.py and its tests, through `experiment_groups`.
 ONE_GROUP = 1
 # Read by the converter's engine connection only: the memory cap. Allowed.
 RESOURCE_VARIABLES = ("TICK_MEM",)
@@ -164,9 +166,10 @@ def default_groups() -> int:
     return int(_CODE["groups"])
 
 
-def _set_groups(w: Any, groups: int) -> None:
-    """Set the converter's group count: its default or one group, nothing else."""
-    if groups not in (_CODE["groups"], ONE_GROUP):
+def _set_groups(w: Any, groups: int, experiment: bool = False) -> None:
+    """Set the converter's group count: its default (24, pinned for the bot); one group only in
+    an experiment (`tick_rows(experiment_groups=True)`)."""
+    if groups != _CODE["groups"] and not (experiment and groups == ONE_GROUP):
         raise ModelRefused("tick_groups_invalid", str(groups))
     w.KB = groups
 
@@ -195,7 +198,7 @@ def _bounds(day: str, through: int) -> tuple[int, int]:
 
 
 def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, through: int, *,
-              groups: int) -> Any:
+              groups: int, experiment_groups: bool = False) -> Any:
     """The converter's table of `day` from the day's trades and quotes so far: files in the
     flat-file layout (header row, at least the converter's columns, csv or csv.gz). Every event
     must lie on New York `day` and before the end of minute `through` (minute of the New York
@@ -224,7 +227,7 @@ def tick_rows(trades_file: str | Path, quotes_file: str | Path, day: str, throug
     with _LOCK, tempfile.TemporaryDirectory(prefix="tickr-ticks-") as tmp:
         out = os.path.join(tmp, "tk.parquet")
         _check_variables()
-        _set_groups(w, groups)
+        _set_groups(w, groups, experiment_groups)
         try:
             w.day(str(trades_file), str(quotes_file), out, tmp)
         except SystemExit as exc:  # the converter's own refusal (a missing column)
