@@ -52,6 +52,7 @@ from tickr.runtime.alerts import (
     FEED,
     Alerter,
     AlertKind,
+    AlertOutcome,
     Channels,
     FeedNotifier,
     Notifier,
@@ -137,6 +138,30 @@ def _api_notifier(cfg: config_module.Config) -> Notifier | None:
     return Channels((), ((FEED, FeedNotifier(feed_path(cfg.root, cfg.run.data_dir, cfg.alerts))),))
 
 
+def _log_outcomes(outcomes: list[AlertOutcome]) -> None:
+    for outcome in outcomes:
+        body = outcome.journal_body()
+        print(f"tickr api: alert {body['kind']} {body['delivery']}"
+              + (f" ({body['error']})" if body["error"] else ""), file=sys.stderr)
+
+
+def auth_alert(cfg: config_module.Config,
+               notifier: Callable[[config_module.Config], Notifier | None] = _api_notifier,
+               ) -> Callable[[str], None]:
+    """The remote port's `remote-auth-blocked` alert (ApiServer.auth_alert): its channels run in
+    the background, so the request never waits for them; each outcome is one line in api.log.
+    The text names the client address and the budget, never a token or code."""
+    alerter = Alerter(cfg.alerts, f"{ALERT_TITLE} {cfg.environment_name}", notifier(cfg))
+    lock = threading.Lock()  # request threads share one alerter
+
+    def send(text: str) -> None:
+        with lock:
+            _log_outcomes([*alerter.completed(),
+                           alerter.alert(AlertKind.REMOTE_AUTH_BLOCKED, text)])
+
+    return send
+
+
 def check_credentials(cfg: config_module.Config, environ: Mapping[str, str] = os.environ,
                       notifier: Callable[[config_module.Config], Notifier | None] = _api_notifier,
                       ) -> threading.Thread | None:
@@ -152,11 +177,8 @@ def check_credentials(cfg: config_module.Config, environ: Mapping[str, str] = os
     alerter = Alerter(cfg.alerts, f"{ALERT_TITLE} {cfg.environment_name}", notifier(cfg))
 
     def send() -> None:
-        outcomes = [alerter.alert(AlertKind.API_CREDENTIALS_UNEXPECTED, text), *alerter.flush()]
-        for outcome in outcomes:
-            body = outcome.journal_body()
-            print(f"tickr api: alert {body['kind']} {body['delivery']}"
-                  + (f" ({body['error']})" if body["error"] else ""), file=sys.stderr)
+        _log_outcomes([alerter.alert(AlertKind.API_CREDENTIALS_UNEXPECTED, text),
+                       *alerter.flush()])
 
     thread = threading.Thread(target=send, name="credentials-alert", daemon=True)
     thread.start()
@@ -242,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     remote = None
     if settings.remote_hosts:
         remote = make_remote_server(server)
+        remote.auth_alert = auth_alert(cfg)
         threading.Thread(target=remote.serve_forever, daemon=True).start()
         print(f"tickr api for the phone on http://{settings.host}:{remote.server_port}/ "
               "(bearer token required; point tailscale serve here)", file=sys.stderr)
