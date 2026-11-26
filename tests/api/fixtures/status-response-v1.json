@@ -134,6 +134,8 @@
     "result_today_broker_usd": "-1.64",
     "realized_loss_week_usd": "41.20",
     "stop_out_streak": 1,
+    "stop_progress": null,
+    "working_entries": [],
     "schema_version": 1
   },
   "age_seconds": "2.000",

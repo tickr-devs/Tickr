@@ -165,6 +165,10 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let realizedLossWeekUsd: DecimalString?
   /// Stop-outs in a row today, as the stop-out streak lock counts them; nil from an older bot.
   public let stopOutStreak: Int?
+  /// The stop-bot this run obeyed or is carrying out; nil while none (and from an older bot).
+  public let stopProgress: StopProgress?
+  /// Every own entry working at the broker with nothing filled yet; empty from an older bot.
+  public let workingEntries: [WorkingEntry]
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -187,6 +191,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case resultTodayBrokerUsd = "result_today_broker_usd"
     case realizedLossWeekUsd = "realized_loss_week_usd"
     case stopOutStreak = "stop_out_streak"
+    case stopProgress = "stop_progress"
+    case workingEntries = "working_entries"
     case schemaVersion = "schema_version"
   }
 
@@ -218,6 +224,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
     realizedLossWeekUsd = try c.decodeIfPresent(DecimalString.self, forKey: .realizedLossWeekUsd)
     stopOutStreak = try c.decodeIfPresent(Int.self, forKey: .stopOutStreak)
+    stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
+    workingEntries = try c.decodeIfPresent([WorkingEntry].self, forKey: .workingEntries) ?? []
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -247,43 +255,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
     try c.encodeNullable(realizedLossWeekUsd, forKey: .realizedLossWeekUsd)
     try c.encodeNullable(stopOutStreak, forKey: .stopOutStreak)
-  }
-}
-
-public struct CommandV1: Codable, Hashable, Sendable {
-  public let commandId: String
-  public let kind: CommandKind
-  public let requestedAt: WireTime
-  public let source: String
-  /// The one symbol a flatten closes; nil for every other command and for a flatten of everything.
-  public let symbol: String?
-  public let schemaVersion: Int
-
-  enum CodingKeys: String, CodingKey {
-    case kind, source, symbol
-    case commandId = "command_id"
-    case requestedAt = "requested_at"
-    case schemaVersion = "schema_version"
-  }
-
-  public init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    schemaVersion = try c.decodeVersion(forKey: .schemaVersion, expected: Wire.commandSchemaVersion)
-    commandId = try c.decode(String.self, forKey: .commandId)
-    kind = try c.decode(CommandKind.self, forKey: .kind)
-    requestedAt = try c.decode(WireTime.self, forKey: .requestedAt)
-    source = try c.decode(String.self, forKey: .source)
-    symbol = try c.decodeNullable(String.self, forKey: .symbol)
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var c = encoder.container(keyedBy: CodingKeys.self)
-    try c.encode(commandId, forKey: .commandId)
-    try c.encode(kind, forKey: .kind)
-    try c.encode(requestedAt, forKey: .requestedAt)
-    try c.encode(source, forKey: .source)
-    try c.encodeNullable(symbol, forKey: .symbol)
-    try c.encode(schemaVersion, forKey: .schemaVersion)
+    try c.encodeNullable(stopProgress, forKey: .stopProgress)
+    try c.encode(workingEntries, forKey: .workingEntries)
   }
 }
 
