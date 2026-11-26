@@ -27,7 +27,7 @@ jobs:
         stack: [ops/aws/training, ops/aws/bot]
     steps:
       - uses: actions/checkout@v7
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           # The version the stacks are validated with; the owner's Mac applies with the same minor.
           terraform_version: "1.9.8"

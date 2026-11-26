@@ -7,6 +7,8 @@ set -eu
 
 apt-get update -q
 apt-get install -y -q docker.io docker-compose-v2 chrony unzip curl caddy python3
+# Caddy stays off until the API is exposed (README, "Expose the API"); the package starts it.
+systemctl disable --now caddy.service
 
 # Clock: Amazon Time Sync, the link-local NTP server of every EC2 host. The bot refuses quotes
 # more than [risk] max_clock_skew_seconds away from its clock.
@@ -56,12 +58,19 @@ install -d /etc/systemd/system/caddy.service.d
 put /etc/systemd/system/caddy.service.d/tickr.conf '${files["caddy-tickr.conf"]}' 644
 echo "TICKR_DOMAIN=${bot_domain}" > /srv/tickr/etc/domain.env
 chmod 644 /srv/tickr/etc/domain.env
+# Region for the AWS CLI in tickr-secrets and tickr-heartbeat, so it never depends on a lookup.
+echo "AWS_DEFAULT_REGION=${region}" > /srv/tickr/etc/aws.env
+chmod 644 /srv/tickr/etc/aws.env
 
 systemctl daemon-reload
-systemctl enable --now tickr-secrets.service
 # The heartbeat needs /srv/tickr/etc/ports.env, written by the first deploy (render-systemd);
 # until then it fails and the heartbeat alarm stays on, as it should. It runs on the host,
 # not in a container, so it reaches the instance role with the metadata hop limit of 1.
 systemctl enable --now tickr-heartbeat.timer
-# Caddy stays off until the API is exposed (README, "Expose the API"); the package starts it.
-systemctl disable --now caddy.service
+# On the first boot the secret is still empty (the owner fills it after the apply), so
+# tickr-secrets fails and the bot's jobs refuse to start (Requires=). That must not end this
+# script: it is started last and its failure only noted. After filling the secret the owner
+# runs `sudo systemctl restart tickr-secrets` once (README).
+systemctl enable tickr-secrets.service
+systemctl start tickr-secrets.service || echo "tickr-secrets: secret not filled yet"
+

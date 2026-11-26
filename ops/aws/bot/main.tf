@@ -224,6 +224,7 @@ resource "aws_instance" "bot" {
     aws_cli_version = var.installers.aws_cli_version
     aws_cli_sha256  = var.installers.aws_cli_sha256
     bot_domain      = var.bot_domain
+    region          = var.region
     # Runtime files (files/), passed as base64 so the template never interprets their text.
     files = { for name in local.runtime_files : name => filebase64("${path.module}/files/${name}") }
   })

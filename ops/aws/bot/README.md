@@ -53,6 +53,10 @@ rm -P bot-env.json
 
 Never paste a value into a chat, a commit or a shell history.
 
+If the server already runs (the usual case: the apply creates the secret empty), load the new
+value once in an SSM session: `sudo systemctl restart tickr-secrets` (a reboot does the same).
+Until then the bot's jobs refuse to start, as they require `tickr-secrets.service`.
+
 ## Changes on a running server
 
 Terraform ignores a new Ubuntu image and changes to `user-data.sh` on the existing server, so an
