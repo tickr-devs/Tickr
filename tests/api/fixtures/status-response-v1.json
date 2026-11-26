@@ -145,6 +145,7 @@
       }
     ],
     "stop_progress": null,
+    "working_entries": [],
     "schema_version": 1
   },
   "age_seconds": "2.000",

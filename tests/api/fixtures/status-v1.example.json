@@ -143,5 +143,6 @@
     }
   ],
   "stop_progress": null,
+  "working_entries": [],
   "schema_version": 1
 }

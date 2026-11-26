@@ -50,6 +50,7 @@ from typing import Any
 from tickr import config
 from tickr import settings_schema as schema
 from tickr.api import contract
+from tickr.api.causes import safe_cause
 from tickr.api.contract import (
     BotState,
     SettingChangeState,
@@ -211,7 +212,7 @@ def read_history(path: Path) -> tuple[SettingsVersionV1, ...]:
     try:
         return contract.loads(SettingsHistoryV1, raw).versions
     except (UnicodeDecodeError, ValueError) as exc:
-        raise SettingsUnavailable(f"settings history unreadable: {exc}") from exc
+        raise SettingsUnavailable(f"settings history unreadable: {safe_cause(exc)}") from exc
 
 
 def _save(path: Path, versions: tuple[SettingsVersionV1, ...]) -> None:
@@ -311,7 +312,8 @@ def edited(text: str, key: str, value: str) -> str:
         after = schema.flatten(tomllib.loads(new, parse_float=Decimal))
         expected = {**before, key: _toml_value(value)}
     except tomllib.TOMLDecodeError as exc:
-        raise SettingsUnavailable(f"{key}: the edited file does not parse ({exc})") from exc
+        raise SettingsUnavailable(
+            f"{key}: the edited file does not parse ({type(exc).__name__})") from exc
     if after != expected:
         raise SettingsUnavailable(f"{key}: the edit would change more than its value")
     return new
@@ -543,7 +545,8 @@ def promote_at_start(cfg: Config, config_file: Path, now: datetime) -> tuple[str
     try:
         version = promote(SettingsPaths.from_config(cfg, config_file), now)
     except (ApplyRefused, SettingsUnavailable, OSError) as exc:
-        return f"settings: pending changes not written: {exc}", False
+        cause = exc.cause if isinstance(exc, ApplyRefused) else safe_cause(exc)
+        return f"settings: pending changes not written: {cause}", False
     if version is None:
         return None, False
     keys = ", ".join(f"{c.owner} {c.key} {c.before} -> {c.after}" for c in version.changes)

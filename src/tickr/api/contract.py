@@ -276,6 +276,26 @@ class Position:
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
+
+@dataclass(frozen=True)
+class WorkingEntry:
+    """A trade whose entry order is working with nothing filled yet: the apps' Cancel entry row
+    (added after version 1 shipped). A fill of any part makes it a `Position` instead."""
+
+    symbol: str
+    quantity: Decimal  # shares the entry asks for
+    limit_price: Decimal  # the entry's limit
+    stop_price: Decimal  # the stop the bot places once it fills
+    planned_loss_usd: Decimal  # 1 R if it fills, as recorded when the trade was opened
+    entry: EntrySend
+    entry_cause: str | None  # why a field of `entry` is null; null when none is
+    # The bot asked the broker to cancel it (an operator cancel, or the entry's own rest or
+    # session end); it stays listed until a broker read shows it cancelled or filled.
+    cancel_requested: bool
+
+    entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
+
+
 @dataclass(frozen=True)
 class Trade:
     symbol: str
@@ -390,6 +410,9 @@ class StatusV1:
     # Added after v1 shipped (2026-11-25, backlog V4): the stop-bot this run obeyed or is
     # carrying out; null while none. Stays in the last status a stopped bot wrote.
     stop_progress: StopProgress | None = _added_later(None)
+    # Added after v1 shipped (2026-11-26, Cancel entry): every own entry working at the broker
+    # with nothing filled yet, oldest first; a reader takes a status without it as none.
+    working_entries: tuple[WorkingEntry, ...] = _added_later(())
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
 
 
@@ -484,7 +507,9 @@ class CommandV1:
     kind: CommandKind
     requested_at: datetime
     source: str
-    symbol: str | None = None  # flatten only: close just this symbol; null = everything
+    # flatten: close just this symbol; cancel-own-orders: cancel just this symbol's working
+    # entries (added 2026-11-26); null = everything; null for every other kind.
+    symbol: str | None = None
     # stop-bot only (added after version 1 shipped, backlog V4): what to do with open
     # positions; null = the old rule (refused while any trade is open).
     mode: StopMode | None = _added_later(None)
@@ -1699,6 +1724,75 @@ class SystemV1:
     morning_check_cause_codes: tuple[ReasonV1, ...] = _reasons_of("morning_check_cause")
     training_cause_codes: tuple[ReasonV1, ...] = _reasons_of("training_cause")
     host_cause_codes: tuple[ReasonV1, ...] = _reasons_of("host_cause")
+
+# ---------------------------------------------------------------- alerts (notification settings)
+
+
+class AlertChannel(StrEnum):
+    """An owner-facing alert channel the routing switches (runtime/alert_routing.py)."""
+
+    MAC = "mac"  # the Mac notification (the Tickr app, else osascript)
+    IMESSAGE = "imessage"  # an iMessage to the owner's phone
+    PUSH = "push"  # the iPhone app's push: needs the Apple Developer Program and APNs (backlog)
+
+
+class AlertGroup(StrEnum):
+    """How the apps group alert kinds."""
+
+    CRITICAL = "critical"  # needs the owner now: locked on every channel
+    TRADING = "trading"  # the day's trading or money, nothing at risk
+    DAY = "day"  # the machine and the bot's own housekeeping
+    LAB = "lab"  # research and the advisor (no such alert kind yet)
+
+
+class AlertChannelCause(StrEnum):
+    """Why a channel is not known to work on this machine."""
+
+    NO_PREFLIGHT = "no-preflight"  # no preflight record yet
+    PREFLIGHT_UNREADABLE = "preflight-unreadable"  # the record cannot be read
+    CHECK_FAILED = "check-failed"  # the latest preflight's alert-channel or alert-recipient check
+    NOT_BUILT = "not-built"  # no delivery in the bot yet (push)
+
+
+@dataclass(frozen=True)
+class AlertChannelV1:
+    """One channel: `configured` from the latest preflight's checks (null `cause` when true)."""
+
+    channel: AlertChannel
+    configured: bool
+    cause: AlertChannelCause | None
+
+
+@dataclass(frozen=True)
+class AlertRoutesV1:
+    """Whether one kind goes to each channel (a locked kind: true everywhere)."""
+
+    mac: bool
+    imessage: bool
+    push: bool
+
+
+@dataclass(frozen=True)
+class AlertKindV1:
+    """One alert kind (`runtime/alerts.py` AlertKind value) and where it goes. `locked`: it
+    needs the owner now and cannot be turned off (PUT /alerts/routing answers 409)."""
+
+    kind: str
+    group: AlertGroup
+    locked: bool
+    channels: AlertRoutesV1
+
+
+@dataclass(frozen=True)
+class AlertsV1:
+    """GET /alerts and PUT /alerts/routing: the notification settings. `routing_cause` is set
+    when the routing file cannot be used: then every kind goes to every channel and writes are
+    refused until the file is deleted."""
+
+    channels: tuple[AlertChannelV1, ...]
+    kinds: tuple[AlertKindV1, ...]
+    routing_cause: str | None
+    api_version: int = _const(API_VERSION)
 
 # ---------------------------------------------------------------- lab replay
 
@@ -2915,6 +3009,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "jobs-v1": JobsV1,
     "journal-v1": JournalV1,
     "system-v1": SystemV1,
+    "alerts-v1": AlertsV1,
     "day-events-v1": DayEventsV1,
     "advisor-runs-v1": AdvisorRunsV1,
     "lab-replay-v1": LabReplayV1,
@@ -3108,7 +3203,7 @@ def parse_json(text: str | bytes) -> Any:
     try:
         return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise ContractError(f"not valid JSON: {exc}") from exc
+        raise ContractError(f"not valid JSON ({type(exc).__name__})") from exc
 
 
 def loads(cls: type, text: str | bytes) -> Any:
@@ -3284,7 +3379,9 @@ def read_commands(inbox: Path | str, now: datetime, max_age_seconds: Decimal) ->
         try:
             command: CommandV1 = loads(CommandV1, path.read_bytes())
         except (ContractError, OSError) as exc:
-            refused.append(InboxItem(path, None, f"unreadable command file: {exc}"))
+            refused.append(InboxItem(path, None, "unreadable command file: "
+                                           + (str(exc) if isinstance(exc, ContractError)
+                                              else type(exc).__name__)))
             continue
         age = seconds_between(command.requested_at, now)
         if path.name != f"{command.command_id}.json":

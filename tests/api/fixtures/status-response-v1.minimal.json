@@ -37,6 +37,7 @@
     "result_today_broker_usd": "-1.64",
     "protection_in_force": [],
     "stop_progress": null,
+    "working_entries": [],
     "schema_version": 1
   },
   "age_seconds": "0.250",

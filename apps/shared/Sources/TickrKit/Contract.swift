@@ -164,6 +164,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let protectionInForce: [ProtectionValue]
   /// The stop-bot this run obeyed or is carrying out; nil while none (and from an older bot).
   public let stopProgress: StopProgress?
+  /// Every own entry working at the broker with nothing filled yet; empty from an older bot.
+  public let workingEntries: [WorkingEntry]
   public let schemaVersion: Int
 
   enum CodingKeys: String, CodingKey {
@@ -186,6 +188,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case resultTodayBrokerUsd = "result_today_broker_usd"
     case protectionInForce = "protection_in_force"
     case stopProgress = "stop_progress"
+    case workingEntries = "working_entries"
     case schemaVersion = "schema_version"
   }
 
@@ -217,6 +220,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
     protectionInForce = try c.decodeIfPresent([ProtectionValue].self, forKey: .protectionInForce) ?? []
     stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
+    workingEntries = try c.decodeIfPresent([WorkingEntry].self, forKey: .workingEntries) ?? []
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -246,6 +250,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
     try c.encode(protectionInForce, forKey: .protectionInForce)
     try c.encodeNullable(stopProgress, forKey: .stopProgress)
+    try c.encode(workingEntries, forKey: .workingEntries)
   }
 }
 

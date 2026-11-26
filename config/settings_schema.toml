@@ -177,6 +177,7 @@ engineering_tables = [
   "observers",
   "advisor",
   "trailing_stop",
+  "exit_chase",
   "model",
   "massive",
   "runtime",

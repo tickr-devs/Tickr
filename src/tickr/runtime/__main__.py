@@ -16,6 +16,8 @@
 - `render-launchd`: write filled-in plists from ops/launchd into a folder; installs nothing.
 - `render-systemd`: write the systemd units and timers from ops/systemd (Linux server); installs
   nothing.
+- `request-restart --cause <word>`: the server's watchdog restart command: write the restart
+  request file the host's tickr-bot-restart.path watches (runtime/restartrequest.py).
 - `release [--commit REF]` / `rollback`: switch what the launchd jobs run to a pinned release
   (runtime/release.py); refused unless the bot is flat.
 
@@ -41,14 +43,17 @@ from tickr import config as config_module
 from tickr.api import contract
 from tickr.broker.base import Broker, BrokerError
 from tickr.calendar import CalendarRefused
-from tickr.runtime import launchd, systemd, watchdog
+from tickr.runtime import launchd, restartrequest, systemd, watchdog
 from tickr.runtime import release as release_module
+from tickr.runtime.alert_routing import routing_path, skipped_by
 from tickr.runtime.alerts import (
     Alerter,
     AlertKind,
+    Routing,
     default_notifier,
     feed_path,
     recipient_missing,
+    route_all,
     token_pending_text,
 )
 from tickr.runtime.preflight import (
@@ -68,11 +73,13 @@ from tickr.store import DATABASE_FILE
 TITLE = "Tickr"
 TEMPLATE_DIR = Path("ops") / "launchd"
 SYSTEMD_TEMPLATE_DIR = Path("ops") / "systemd"
-# The server's file layout (docs/deploy-server.md): the clone, the folder of the config and
-# ports.env, and the env file the secrets unit writes (a path only, never read here).
-SERVER_REPO = Path("/srv/tickr/repo")
+# The server's file layout (docs/deploy-server.md): no clone; the folder of bot.toml,
+# compose.yaml and ports.env, and the env file the secrets unit writes (a path only, never read
+# here).
 SERVER_ETC = Path("/srv/tickr/etc")
+SERVER_COMPOSE = SERVER_ETC / "compose.yaml"
 SERVER_ENV_FILE = Path("/run/tickr/env")
+SERVER_DATA = Path("/srv/tickr/data")
 SERVER_CONFIG = "bot.toml"
 SERVER_USER = "tickr"
 # The zone of the [runtime] times: the exchange's.
@@ -93,15 +100,28 @@ def _alerts_config(config_path: Path) -> config_module.AlertsConfig | None:
         return None
 
 
-def _feed(config_path: Path, alerts: config_module.AlertsConfig) -> Path | None:
-    """The alerts feed file even when the rest of the config is invalid; None when [run]
-    itself is not readable (the Mac notification and iMessage still go out)."""
+def _data_dir(config_path: Path) -> Path | None:
+    """[run] data_dir even when the rest of the config is invalid; None when [run] itself is
+    not readable."""
     try:
         data = tomllib.loads(config_path.read_text("utf-8"))
         run = config_module.build_section("run", data.get("run"), config_module.RunConfig)
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, config_module.ConfigError):
         return None
-    return feed_path(config_path.resolve().parent.parent, run.data_dir, alerts)
+    return config_path.resolve().parent.parent / run.data_dir
+
+
+def _feed(config_path: Path, alerts: config_module.AlertsConfig) -> Path | None:
+    """The alerts feed file even when the rest of the config is invalid; None when [run]
+    itself is not readable (the Mac notification and iMessage still go out)."""
+    data = _data_dir(config_path)
+    return None if data is None else data / alerts.feed_file
+
+
+def _routing(config_path: Path, alerts: config_module.AlertsConfig) -> Routing:
+    """The owner's alert routing; every kind on every channel when [run] is not readable."""
+    data = _data_dir(config_path)
+    return route_all if data is None else skipped_by(data / alerts.routing_file)
 
 
 def _alert(config_path: Path, environment: str | None, kind: AlertKind, text: str) -> None:
@@ -111,7 +131,8 @@ def _alert(config_path: Path, environment: str | None, kind: AlertKind, text: st
                         "error": None, "at": datetime.now(UTC).isoformat()})
         return
     title = f"{TITLE} {environment}" if environment else TITLE
-    alerter = Alerter(alerts, title, default_notifier(alerts, feed=_feed(config_path, alerts)))
+    alerter = Alerter(alerts, title, default_notifier(alerts, feed=_feed(config_path, alerts)),
+                      routing=_routing(config_path, alerts))
     _emit("alert", alerter.alert(kind, text).journal_body())
     for outcome in alerter.flush():  # background channels (iMessage) before this process exits
         _emit("alert", outcome.journal_body())
@@ -255,7 +276,7 @@ def _watchdog(config_path: Path) -> int:
     notifier = default_notifier(cfg.alerts,
                                 feed=feed_path(cfg.root, cfg.run.data_dir, cfg.alerts))
     alerter = Alerter(cfg.alerts, f"{TITLE} {cfg.environment_name}", notifier,
-                      clock=WATCHDOG_NOW)
+                      clock=WATCHDOG_NOW, routing=skipped_by(routing_path(cfg)))
     if notifier is None:
         # No channel on this machine (not macOS): every alert is journaled "no-notifier" only.
         # Recorded once at the start so the journal says why nobody was told; the exit code is
@@ -338,11 +359,36 @@ def _render_systemd(args: argparse.Namespace) -> int:
     cfg = config_module.load(args.config)
     launchd.check_timings(cfg)
     launchd.check_lab_folder(cfg)
-    paths = systemd.Paths(repo=args.repo, config_host=args.etc / SERVER_CONFIG,
-                          env_file=args.env_file, user=args.user)
-    filled = systemd.values(cfg, paths, args.timezone)
+    paths = systemd.Paths(compose=args.compose, config_host=args.etc / SERVER_CONFIG,
+                          env_file=args.env_file, data=args.data, user=args.user,
+                          image=args.image)
+    try:
+        compose_text = args.compose.read_text("utf-8")
+    except OSError as exc:
+        raise config_module.ConfigError(
+            f"cannot read the compose file {args.compose}: {type(exc).__name__}") from exc
+    filled = systemd.values(cfg, paths, args.timezone, compose_text)
     for path in systemd.render_all(cfg, cfg.root / SYSTEMD_TEMPLATE_DIR, args.out, filled):
         print(path)
+    return 0
+
+
+REQUEST_RESTART = "request-restart"
+
+
+def _request_restart(config_path: Path, cause: str) -> int:
+    """The server's watchdog restart command: write the restart request file for the host's
+    tickr-bot-restart.path (runtime/restartrequest.py). Exit 0 when written, 1 with the one
+    cause when refused (nothing written)."""
+    cfg = config_module.load(config_path)
+    at = datetime.now(UTC)
+    try:
+        restartrequest.write_request(restartrequest.request_path(cfg), at, cause)
+    except restartrequest.RestartRequestRefused as exc:
+        _emit(REQUEST_RESTART, {"requested": False, "cause": exc.cause.value,
+                                "detail": exc.detail})
+        return int(ExitCode.FAILED)
+    _emit(REQUEST_RESTART, {"requested": True, "requested_at": at.isoformat(), "why": cause})
     return 0
 
 
@@ -447,13 +493,23 @@ def main(argv: list[str] | None = None) -> int:
     units = sub.add_parser("render-systemd", help="write systemd units for a Linux server")
     units.add_argument("--out", type=Path, required=True,
                        help="output folder: the units, the timers and ports.env")
-    units.add_argument("--repo", type=Path, default=SERVER_REPO, help="clone with ops/docker")
+    units.add_argument("--compose", type=Path, default=SERVER_COMPOSE,
+                       help="absolute host path of the compose.yaml the units run (read here "
+                            "for the bot's stop grace)")
     units.add_argument("--etc", type=Path, default=SERVER_ETC,
                        help="server folder of bot.toml (and of ports.env once installed)")
     units.add_argument("--env-file", type=Path, default=SERVER_ENV_FILE,
                        help="host path of the credentials file compose mounts (path only)")
+    units.add_argument("--data", type=Path, default=SERVER_DATA,
+                       help="host data folder compose mounts as the containers' data folder")
     units.add_argument("--user", default=SERVER_USER, help="service account of the units")
+    units.add_argument("--image", required=True,
+                       help="image reference every compose service runs (TICKR_IMAGE in "
+                            "limits.env): the release image <registry>/tickr-bot:<commit>")
     units.add_argument("--timezone", default=SERVER_ZONE, help="IANA zone of the [runtime] times")
+    request = sub.add_parser(REQUEST_RESTART,
+                             help="server: ask the host to restart the bot container once")
+    request.add_argument("--cause", required=True, help="one word, logged by the host unit")
     for name, text in (("release", "run a commit of origin/main from now on (flat only)"),
                        ("rollback", "run the previous release again (flat only)")):
         cmd = sub.add_parser(name, help=text)
@@ -484,6 +540,8 @@ def main(argv: list[str] | None = None) -> int:
             return _render(args)
         if args.command == "render-systemd":
             return _render_systemd(args)
+        if args.command == REQUEST_RESTART:
+            return _request_restart(args.config, args.cause)
         if args.command in ("release", "rollback"):
             return _release(args)
     except config_module.ConfigError as exc:
