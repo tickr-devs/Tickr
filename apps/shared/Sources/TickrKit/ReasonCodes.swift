@@ -193,6 +193,7 @@ public enum RefusalReason: String, CaseIterable, Sendable {
   case plannedLossOverLimit = "PLANNED_LOSS_OVER_LIMIT"
   case dailyCeiling = "DAILY_CEILING"
   case weeklyCeiling = "WEEKLY_CEILING"
+  case equityUnknown = "EQUITY_UNKNOWN"
   case buyingPowerUnknown = "BUYING_POWER_UNKNOWN"
   case buyingPowerShort = "BUYING_POWER_SHORT"
 }

@@ -105,6 +105,9 @@ class RiskConfig:
     """0 = the weekly loss ceiling is off (backlog T11)."""
     stop_out_streak_limit: int
     """0 = the stop-out streak lock is off (backlog T11)."""
+    planned_loss_percent: Decimal
+    position_notional_cap_percent: Decimal
+    max_daily_loss_percent: Decimal
     tradability_check_enabled: bool
     tradability_entry_profile_statuses: tuple[str, ...]
     tradability_blocked_profile_statuses: tuple[str, ...]
@@ -276,6 +279,7 @@ class ApiConfig:
     idempotency_key_ttl_seconds: int
     replay_settings_file: str
     settings_schema_file: str
+    settings_history_file: str
     observer_trades_max_rows: int
     journal_rows: int
     start_bot_command: tuple[str, ...]
@@ -410,6 +414,17 @@ class ModelConfig:
     enabled: bool
     bundles_dir: str
     bundle: str
+    tick_groups: int
+    live_marker_quote: bool
+    live_wait_after_minute_seconds: str
+    live_table_workers: int
+
+
+@dataclass(frozen=True)
+class SizingConfig:
+    by_confidence: bool
+    min_usd: Decimal
+    max_usd: Decimal
 
 
 @dataclass(frozen=True)
@@ -421,6 +436,16 @@ class ExitChaseConfig:
     reprice_seconds: Decimal
     max_reprices: int
     max_worse_atr: Decimal
+
+
+@dataclass(frozen=True)
+class ParityConfig:
+    disk_reserve_gb: int
+    memory_reserve_gb: int
+    duckdb_memory_gb: int
+    probe_rows: int
+    disk_poll_seconds: Decimal
+    engine_diagnostics: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -442,7 +467,14 @@ class MassiveConfig:
     max_pages: int
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
+    stream_release_pause_seconds: Decimal
+    stream_ack_timeout_seconds: Decimal
     calendar_lookback_days: int
+    revision_poll_enabled: bool
+    revision_store_dir: str
+    revision_poll_overlap_seconds: int
+    tick_subscription: str
+    tick_page_limit: int
     massive_news_path: str
     benzinga_news_path: str
     benzinga_earnings_path: str
@@ -456,6 +488,7 @@ class MassiveConfig:
     arrival_tail_seconds: int
     arrival_report_points_seconds: tuple[Decimal, ...]
     stream_day_dir: str
+    revision_report_quantiles: tuple[Decimal, ...]
 
 
 @dataclass(frozen=True)
@@ -487,10 +520,12 @@ class RuntimeConfig:
     watchdog_restart_file: str
     watchdog_entry_restart_file: str
     server_restart_request_file: str
+    server_start_request_file: str
     evaluation_budget_seconds: Decimal
     discovery_stop_seconds: Decimal
     stop_marker_file: str
     preflight_result_file: str
+    run_facts_file: str
     release_step_timeout_seconds: int
     release_stop_wait_seconds: int
     release_poll_seconds: Decimal
@@ -501,11 +536,11 @@ class AlertsConfig:
     dedupe_window_seconds: Decimal
     notification_timeout_seconds: Decimal
     fence_alert_after_seconds: Decimal
-    imessage_recipient_variable: str
-    mac_app: str
-    mac_app_timeout_seconds: Decimal
     feed_file: str
     routing_file: str
+    bot_token_variable: str
+    chat_id_variable: str
+    telegram_host: str
 
 
 @dataclass(frozen=True)
@@ -557,9 +592,11 @@ class Config:
     observers: ObserversConfig
     advisor: AdvisorConfig
     model: ModelConfig
+    confidence_sizing: SizingConfig
     massive: MassiveConfig
     exit_chase: ExitChaseConfig
     trailing_stop: TrailingStopConfig
+    parity: ParityConfig
     environments: dict[str, EnvironmentConfig]
     root: Path
     digest: str
@@ -590,9 +627,11 @@ _SECTIONS: dict[str, type] = {
     "observers": ObserversConfig,
     "advisor": AdvisorConfig,
     "model": ModelConfig,
+    "confidence_sizing": SizingConfig,
     "massive": MassiveConfig,
     "exit_chase": ExitChaseConfig,
     "trailing_stop": TrailingStopConfig,
+    "parity": ParityConfig,
 }
 
 
@@ -649,6 +688,16 @@ def _coerce(where: str, value: Any, target: Any) -> Any:
     raise ConfigError(f"{where}: unsupported type {target!r}")  # pragma: no cover
 
 
+def live_wait_seconds(model: ModelConfig) -> Decimal | None:
+    """The measured wait after a minute's end before the live features close it, or None when
+    the key is empty (not measured) or not a number of at least 0."""
+    try:
+        value = Decimal(model.live_wait_after_minute_seconds)
+    except ArithmeticError:
+        return None
+    return value if value.is_finite() and value >= 0 else None
+
+
 def build_section(name: str, table: Any, cls: type) -> Any:
     """Build a frozen dataclass from a TOML table, refusing unknown and missing keys."""
     if not isinstance(table, dict):
@@ -702,7 +751,12 @@ def check_extended_sessions(session: SessionConfig) -> None:
 def load(path: Path | str, root: Path | str | None = None) -> Config:
     """Load and validate `config/bot.toml`. `root` is the repo root for relative paths."""
     path = Path(path)
-    raw_bytes = path.read_bytes()
+    return loads(path.read_bytes(), path, root)
+
+
+def loads(raw_bytes: bytes, path: Path, root: Path | str | None = None) -> Config:
+    """`load` on bytes already read from `path` (one read, so the digest and the values come
+    from the same bytes: the running bot's live protection check, runtime/liveprotection.py)."""
     try:
         data = tomllib.loads(raw_bytes.decode("utf-8"))
     except tomllib.TOMLDecodeError as exc:
@@ -792,6 +846,14 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[model] enabled must stay false: the trained model is not wired into "
                           "the trading loop yet (the bundle loader and the shared feature code "
                           "are; the live data feed and the decision path follow)")
+    if model.tick_groups < 1:
+        raise ConfigError("[model] tick_groups must be at least 1")
+    if model.live_wait_after_minute_seconds != "" and live_wait_seconds(model) is None:
+        raise ConfigError("[model] live_wait_after_minute_seconds must be empty (not measured "
+                          "yet) or a number of seconds of at least 0 written as text")
+    if model.live_table_workers < 1:
+        raise ConfigError("[model] live_table_workers must be at least 1")
+    check_sizing(built["confidence_sizing"], built["risk"], model)
     trailing: TrailingStopConfig = built["trailing_stop"]
     if trailing.enabled:
         raise ConfigError("[trailing_stop] enabled must stay false: stop replacement is not in "
@@ -802,13 +864,26 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if trailing.min_move_usd < 0:
         raise ConfigError("[trailing_stop] min_move_usd must be at least 0 (0 = no minimum "
                           "step)")
+    parity: ParityConfig = built["parity"]
+    if (min(parity.disk_reserve_gb, parity.memory_reserve_gb, parity.duckdb_memory_gb,
+            parity.probe_rows) < 1 or parity.disk_poll_seconds <= 0):
+        raise ConfigError("[parity] reserves, duckdb_memory_gb and probe_rows must be at least "
+                          "1, disk_poll_seconds above 0")
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
+            or massive.stream_release_pause_seconds < 0 or massive.stream_ack_timeout_seconds < 0
             or massive.calendar_lookback_days < 1
-            or not massive.stock_types):
+            or not all(0 < q < 1 for q in massive.revision_report_quantiles)
+            or massive.revision_poll_overlap_seconds < 0 or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
-                          "1, stream_reconnect_seconds above 0, stock_types not empty")
+                          "1, stream_reconnect_seconds above 0, stream_release_pause_seconds and "
+                          "stream_ack_timeout_seconds not below 0, stock_types not empty, "
+                          "revision_report_quantiles each above 0 and below 1, "
+                          "revision_poll_overlap_seconds at least 0")
+    if massive.tick_subscription not in ("symbols", "market") or massive.tick_page_limit < 1:
+        raise ConfigError("[massive] tick_subscription must be \"symbols\" or \"market\", "
+                          "tick_page_limit at least 1")
     points = massive.arrival_report_points_seconds
     if (massive.arrival_flush_seconds <= 0 or massive.arrival_loop_seconds <= 0
             or massive.arrival_tail_seconds < 0 or points[0] < 0
@@ -886,6 +961,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     if risk.max_weekly_loss_usd < 0 or risk.stop_out_streak_limit < 0:
         raise ConfigError("[risk] max_weekly_loss_usd and stop_out_streak_limit must be at "
                           "least 0 (0 = that lock is off)")
+    for name in ("planned_loss_percent", "position_notional_cap_percent",
+                 "max_daily_loss_percent"):
+        if not 0 <= getattr(risk, name) <= 100:
+            raise ConfigError(f"[risk] {name} must be between 0 (off) and 100")
     if built["orders"].detail_unreadable_seconds <= 0:
         raise ConfigError("[orders] detail_unreadable_seconds must be above 0")
     if built["orders"].stop_held_proof_seconds <= 0:
@@ -971,6 +1050,12 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[api] quotes_file must name a file")
     if not built["alerts"].feed_file.strip():
         raise ConfigError("[alerts] feed_file must name a file")
+    alerts_cfg = built["alerts"]
+    if bool(alerts_cfg.bot_token_variable.strip()) != bool(alerts_cfg.chat_id_variable.strip()):
+        raise ConfigError("[alerts] bot_token_variable and chat_id_variable must both name a "
+                          "variable or both be empty")
+    if alerts_cfg.bot_token_variable and not alerts_cfg.telegram_host.strip():
+        raise ConfigError("[alerts] telegram_host must name a host while Telegram has variables")
     strategy: StrategySelection = built["strategy"]
     if strategy.active in strategy.observers:
         raise ConfigError("[strategy] the active strategy cannot also be an observer")
@@ -985,6 +1070,19 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         digest=hashlib.sha256(raw_bytes).hexdigest(),
         renamed_keys=tuple(renamed),
     )
+
+
+def check_sizing(sizing: SizingConfig, risk: RiskConfig, model: ModelConfig) -> None:
+    """Size by confidence (backlog R30): refuse ON unless its inputs and bounds are sound. While
+    it is off the bounds are not read. The cap is `[risk] position_notional_cap_usd`, not a copy."""
+    if not sizing.by_confidence:
+        return
+    if not model.enabled:
+        raise ConfigError("[confidence_sizing] by_confidence cannot be on: the model probability "
+                          "is not available ([model] enabled is false)")
+    if not 0 < sizing.min_usd <= sizing.max_usd <= risk.position_notional_cap_usd:
+        raise ConfigError("[confidence_sizing] min_usd and max_usd must satisfy "
+                          "0 < min_usd <= max_usd <= [risk] position_notional_cap_usd")
 
 
 def check_history_share(orders: OrdersConfig, name: str, env: EnvironmentConfig) -> None:
@@ -1088,9 +1186,10 @@ def _authorization_valid(config: Config, env: EnvironmentConfig) -> GateResult:
 def credential_variables(config: Config) -> frozenset[str]:
     """The NAMES of every environment variable the configuration says holds a credential or a
     private detail (rule 4): processes that need none of them are started without them."""
-    names = {config.advisor.api_key_variable, config.alerts.imessage_recipient_variable,
-             config.massive.api_key_variable, config.massive.files_key_id_variable,
-             config.massive.files_secret_variable}
+    names = {config.advisor.api_key_variable, config.massive.api_key_variable,
+             config.massive.files_key_id_variable, config.massive.files_secret_variable}
+    names |= {name for name in (config.alerts.bot_token_variable,
+                                config.alerts.chat_id_variable) if name}
     for env in config.environments.values():
         names |= {env.app_key_variable, env.app_secret_variable, env.account_variable}
     return frozenset(names)

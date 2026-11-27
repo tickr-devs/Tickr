@@ -510,6 +510,23 @@ GROUPS = [
                 "USD, por encima del límite semanal de {ceiling} USD",
             ),
             (
+                "EQUITY_UNKNOWN",
+                "No equity read yet",
+                "Aún no se ha leído el capital",
+            ),
+            (
+                "EQUITY_UNKNOWN",
+                "Equity read {age} s ago, limit {limit} s",
+                "Capital leído hace {age} s, límite {limit} s",
+                "age",
+            ),
+            (
+                "EQUITY_UNKNOWN",
+                "Equity figure {value} is not usable",
+                "La cifra de capital {value} no es utilizable",
+                "value",
+            ),
+            (
                 "BUYING_POWER_UNKNOWN",
                 "No balance read yet",
                 "Aún no se ha leído el saldo",

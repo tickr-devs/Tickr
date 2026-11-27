@@ -64,6 +64,8 @@ from tickr.api.contract import (
     QuotesResponseV1,
     RiskSettings,
     SessionSettings,
+    SettingsDevice,
+    SettingsHistoryV1,
     SettingsV1,
     StatusResponseV1,
 )
@@ -73,10 +75,22 @@ from tickr.api.jobs import JobsSettings, jobs_document
 from tickr.api.journal import day_events, journal_document
 from tickr.api.lab_replay import LabReplay, LabReplayRefused, LabReplaySettings
 from tickr.api.observer_results import ObserverResults, SimulationPaths
+from tickr.api.settingsapply import (
+    ApplyRefused,
+    SettingsPaths,
+    applied_document,
+    bot_may_run,
+    not_flat,
+    parse_apply,
+    parse_rollback,
+    read_history,
+)
+from tickr.api.settingsapply import apply as apply_settings
 from tickr.api.settingsview import (
     BadDraft,
     SettingsUnavailable,
     draft_document,
+    load_classes,
     load_schema,
     parse_draft,
     schema_document,
@@ -95,6 +109,7 @@ from tickr.observers.log import DecisionLog
 from tickr.research.errors import RecordFileError
 from tickr.research.records import DecisionRecord
 from tickr.runtime.alert_routing import RefusalCause, RoutingRefused
+from tickr.runtime.alerts import Alerter, AlertKind
 from tickr.strategy.base import Role
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -102,6 +117,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 WARM_ERRORS = (HistoryUnavailable, CaptureError, RecordFileError, ObserverError, OSError)
 COMMAND_SOURCE = "api"
 JSON_TYPE = "application/json"
+LOCAL_DEVICE = "local"  # the device name of a request on the local port (no token there)
+SIMULATOR_DEVICE = "simulator"  # the iOS Simulator's token on the remote port's loopback address
+LOCAL_PORT, REMOTE_PORT = "local", "remote"  # the port named in a risk-command-used alert
 ENTRY_STOP_STATES = {"on": CommandKind.ENTRY_STOP_ON, "off": CommandKind.ENTRY_STOP_OFF}
 STOP_MODES = {m.value: m for m in contract.StopMode}  # POST /commands/stop-bot {"mode": ...}
 COMMAND_ROUTES = {
@@ -157,6 +175,7 @@ class ApiSettings:
     auth_max_addresses: int  # addresses each budget tracks; full of live ones = fail closed
     auth_ipv6_prefix_length: int  # an IPv6 client counts as its network of this length
     status_path: Path
+    run_facts_path: Path  # the bot's run-facts-v1 file, shown with a status of its run
     inbox: Path
     idempotency: Path  # <commands_dir>/idempotency: remembered Idempotency-Key answers
     idempotency_ttl_seconds: int
@@ -195,6 +214,7 @@ class ApiSettings:
     config_root: Path  # GET /config shows the file's path relative to this
     config_digest: str  # sha256 of the file when this API loaded it
     settings_schema_file: Path  # [api] settings_schema_file: GET /settings/schema and siblings
+    settings_history: Path  # <data_dir>/<[api] settings_history_file>: the settings journal
     settled_dir: Path  # <data_dir>/<[api] settled_cache_dir>/<environment>: past days' answers
     settled_memory_days: int  # [api] settled_memory_days
     settled_disk_days: int  # [api] settled_disk_days
@@ -318,6 +338,7 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         auth_max_addresses=api.remote_auth_max_addresses,
         auth_ipv6_prefix_length=api.remote_auth_ipv6_prefix_length,
         status_path=data / api.status_file,
+        run_facts_path=data / cfg.runtime.run_facts_file,
         inbox=data / api.commands_dir / contract.INBOX,
         idempotency=data / api.commands_dir / IDEMPOTENCY,
         idempotency_ttl_seconds=api.idempotency_key_ttl_seconds,
@@ -357,6 +378,7 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         config_root=cfg.root,
         config_digest=cfg.digest,
         settings_schema_file=cfg.root / api.settings_schema_file,
+        settings_history=data / api.settings_history_file,
         settled_dir=data / api.settled_cache_dir / cfg.environment_name,
         settled_memory_days=api.settled_memory_days,
         settled_disk_days=api.settled_disk_days,
@@ -364,8 +386,14 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
 
 
 def shown_settings(cfg: Config) -> SettingsV1:
-    """The config numbers clients show, exactly as loaded."""
+    """The config numbers clients show, exactly as loaded, and the active strategy's identity
+    as its strategy.toml declares it (null with a cause code when that file is unreadable)."""
     risk, session = cfg.risk, cfg.session
+    try:
+        decider, decider_cause = (contract.strategy_decider(
+            *read_identity(cfg.root, cfg.strategy.active)), None)
+    except ObserverError:
+        decider, decider_cause = None, contract.DECIDER_UNREADABLE
     return SettingsV1(
         environment=cfg.environment_name,
         active_strategy=cfg.strategy.active,
@@ -391,6 +419,8 @@ def shown_settings(cfg: Config) -> SettingsV1:
         live_quote_max_age_seconds=cfg.api.live_quote_max_age_seconds,
         quotes_poll_seconds=cfg.api.quotes_poll_seconds,
         command_max_age_seconds=cfg.api.command_max_age_seconds,
+        decider=decider,
+        decider_cause=decider_cause,
     )
 
 
@@ -428,6 +458,10 @@ class ApiServer(ThreadingHTTPServer):
         self.start_lock = start_lock or threading.Lock()
         # One redemption at a time, so a pairing code can never yield two tokens.
         self.pair_lock = threading.Lock()
+        # The alert for a command that raises risk (see _risk_used); one Alerter for both
+        # listeners (set by python -m tickr.api; None = no alert, as in most tests).
+        self.alerter: Alerter | None = shared.alerter if shared is not None else None
+        self.alert_lock = threading.Lock()
         # The remote port's failed-authentication budgets per client address (api/authlimit.py).
         self.auth_limits = {
             TOKEN_ROUTE_KIND: authlimit.AuthLimiter(
@@ -550,7 +584,7 @@ class ApiServer(ThreadingHTTPServer):
         stale = age is not None and age > self.settings.status_stale_seconds
         return StatusResponseV1(
             served_at=now,
-            status=status,
+            status=None if status is None else contract.served_status(status, self._run_facts()),
             age_seconds=age,
             stale=stale,
             unavailable_cause=cause,
@@ -558,6 +592,14 @@ class ApiServer(ThreadingHTTPServer):
             poll_seconds=self.settings.poll_seconds,
             api_started_at=self.started_at,
         )
+
+    def _run_facts(self) -> contract.RunFactsV1 | None:
+        """The bot's run facts; None when the file is missing or unreadable (display only: the
+        status then shows none of them)."""
+        try:
+            return contract.read_run_facts(self.settings.run_facts_path)
+        except (ContractError, OSError):
+            return None
 
     def account_response(self) -> AccountResponseV1 | ErrorV1:
         """The bot's account-v1 document with its age; an `unavailable` error when the file
@@ -847,14 +889,14 @@ _ERROR_CODES = {
     "method_not_allowed": 405, "length_required": 411, "payload_too_large": 413,
     "unsupported_media_type": 415, "bad_request": 400, "too_many_pending": 429,
     "internal": 500, "unavailable": 503, "unauthorized": 401, "conflict": 409,
-    "rate_limited": 429, "auth_rate_limited": 429,
+    "rate_limited": 429, "auth_rate_limited": 429, "biometric_required": 403,
 }
 GET_ROUTES = ("/", "/status", "/commands/pending", RECEIPT_ROUTE, "/schema", "/days", "/bars",
               "/settings",
               "/explain", "/observers", "/decisions", "/skipped", "/account", "/flow",
               "/watching", "/performance", "/chart", "/jobs", "/system", "/journal", "/config",
               "/trades/whatif", "/advisor", "/symbols", "/movers", "/quotes", "/events",
-              "/settings/schema", "/settings/values", "/alerts")
+              "/settings/schema", "/settings/values", "/settings/history", "/alerts")
 MAX_NICENESS = 19  # POSIX nice: 19 is the lowest priority (protocol constant)
 MAX_PORT = 65535  # TCP ports are 16-bit (protocol constant)
 HTML_TYPE = "text/html; charset=utf-8"
@@ -874,6 +916,9 @@ TRADE_WHATIF = "/trades/whatif"  # GET: another version on one trade's day, simu
 FOLDER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 ADVISOR_DECISION = "/advisor/decision"  # POST only: the owner's note on a run, never a command
 SETTINGS_VALIDATE = "/settings/validate"  # POST only: checks a draft, writes nothing
+SETTINGS_APPLY = "/settings/apply"  # POST only: applies a draft (api/settingsapply.py)
+SETTINGS_ROLLBACK = "/settings/rollback"  # POST only: applies an earlier version's values
+SETTINGS_HISTORY = "/settings/history"  # GET: every journaled settings version
 ALERT_ROUTING = "/alerts/routing"  # PUT only: one cell of the owner's alert routing
 DAY_PREFIX = "/days/"
 # Headers a proxy adds to a request it forwards (Go's ReverseProxy, which `tailscale serve` is,
@@ -956,6 +1001,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(_ERROR_CODES[error], body, f"{JSON_TYPE}; charset=utf-8", extra or {})
 
     def _guard(self) -> bool:
+        self.device_name = ""  # who the token belongs to; set once the request is authorized
         host = self.headers.get("Host")
         origin = self.headers.get("Origin")
         if self.server.remote:
@@ -992,6 +1038,7 @@ class Handler(BaseHTTPRequestHandler):
             if origin is not None and origin not in self.server.allowed_origins:
                 self._error("forbidden_origin", f"Origin {origin!r} is not allowed")
                 return False
+            self.device_name = LOCAL_DEVICE
             return True
         self._error("forbidden_host", f"Host {host!r} is not allowed")
         return False
@@ -1060,6 +1107,7 @@ class Handler(BaseHTTPRequestHandler):
         if device is None:
             self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
+        self.device_name = device.name
         return True
 
     def _match_device(self, header: str) -> tuple[tuple[devices.Device, ...] | Exception,
@@ -1124,6 +1172,7 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(presented, expected):
             self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
+        self.device_name = SIMULATOR_DEVICE
         return True
 
     def _path(self) -> str:
@@ -1173,9 +1222,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, self.server.settings.shown)
             elif path == "/config":
                 self._config()
-            elif path in ("/settings/schema", "/settings/values"):
+            elif path in ("/settings/schema", "/settings/values", SETTINGS_HISTORY):
                 self._owner_settings(path)
-            elif path == SETTINGS_VALIDATE:
+            elif path in (SETTINGS_VALIDATE, SETTINGS_APPLY, SETTINGS_ROLLBACK):
                 self._error("method_not_allowed", "use POST", {"Allow": "POST"})
             elif path == "/jobs":
                 self._json(200, jobs_document(self.server.settings.jobs,
@@ -1238,6 +1287,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == SETTINGS_VALIDATE:
                 self._validate_settings()
                 return
+            if path in (SETTINGS_APPLY, SETTINGS_ROLLBACK):
+                self._apply_settings(path)
+                return
             if path == ALERT_ROUTING:
                 self._error("method_not_allowed", "use PUT", {"Allow": "PUT"})
                 return
@@ -1287,7 +1339,10 @@ class Handler(BaseHTTPRequestHandler):
             result = self.server.enqueue(kind, symbol, key, mode)
             if isinstance(result, ErrorV1):
                 self._error(result.error, result.cause)
-            elif isinstance(result, bytes):
+                return
+            if kind is CommandKind.ENTRY_STOP_OFF:
+                self._risk_used("entry-stop off (entries allowed again)")
+            if isinstance(result, bytes):
                 self._send(202, result, f"{JSON_TYPE}; charset=utf-8", {})
             else:
                 self._json(202, result)
@@ -1313,7 +1368,31 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(result, ErrorV1):
             self._error(result.error, result.cause)
         else:
+            self._risk_used("start-bot")
             self._json(202, result)
+
+    def _risk_used(self, command: str) -> None:
+        """One `risk-command-used` alert for an accepted command that raises risk: the device
+        (its name from the device list, never its token or hash), the port and the time. A
+        stolen token shows up at once. Never raises: the command is already accepted."""
+        alerter = self.server.alerter
+        if alerter is None:
+            return
+        port = REMOTE_PORT if self.server.remote else LOCAL_PORT
+        text = (f"{command} by device {self.device_name!r} on the {port} port at "
+                f"{contract.format_time(self.server.clock())}; if this was not you, revoke the "
+                "device (docs/operations.md, risk-command-used)")
+        try:
+            with self.server.alert_lock:
+                outcomes = [alerter.alert(AlertKind.RISK_COMMAND_USED, text), *alerter.completed()]
+            for outcome in outcomes:
+                body = outcome.journal_body()
+                if body["error"]:
+                    sys.stderr.write(f"api: alert {body['kind']} {body['delivery']} "
+                                     f"({body['error']})\n")
+        except Exception as exc:  # noqa: BLE001 - a failing alert never undoes the command
+            sys.stderr.write(f"api: alert {AlertKind.RISK_COMMAND_USED.value} failed "
+                             f"({type(exc).__name__})\n")
 
     def _advisor_decision(self) -> None:
         """POST /advisor/decision with {"run": "<id>", "verdict": "accepted"|"rejected"}:
@@ -1350,7 +1429,7 @@ class Handler(BaseHTTPRequestHandler):
             self._error("internal", type(exc).__name__)
 
     def _alert_routing(self) -> None:
-        """PUT /alerts/routing with {"kind": "<alert kind>", "channel": "mac"|"imessage"|"push",
+        """PUT /alerts/routing with {"kind": "<alert kind>", "channel": "telegram"|"push",
         "on": true|false}: change that one cell of the owner's alert routing, 200 alerts-v1;
         400 for an unknown kind or channel, 409 for a critical kind turned off or a routing
         file that cannot be used. A preference about where to be told, never a bot command."""
@@ -1360,7 +1439,7 @@ class Handler(BaseHTTPRequestHandler):
         if (set(body) != {"kind", "channel", "on"} or not isinstance(body["kind"], str)
                 or not isinstance(body["channel"], str) or not isinstance(body["on"], bool)):
             self._error("bad_request", 'body must be exactly {"kind": "<alert kind>", '
-                        '"channel": "mac" | "imessage" | "push", "on": true | false}')
+                        '"channel": "telegram" | "push", "on": true | false}')
             return
         settings = self.server.settings.alerts
         try:
@@ -1523,6 +1602,9 @@ class Handler(BaseHTTPRequestHandler):
             self._error("bad_request", safe_cause(exc))
             return
         try:
+            if path == SETTINGS_HISTORY:
+                self._json(200, SettingsHistoryV1(read_history(settings.settings_history)))
+                return
             specs = load_schema(settings.settings_schema_file)
             if path == "/settings/schema":
                 self._json(200, schema_document(specs))
@@ -1551,9 +1633,49 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             self._json(200, draft_document(load_schema(settings.settings_schema_file), changes,
-                                           settings.config_file, settings.config_root))
+                                           settings.config_file, settings.config_root,
+                                           load_classes(settings.settings_schema_file)))
         except SettingsUnavailable as exc:
             self._error("unavailable", safe_cause(exc))
+
+    def _device(self) -> SettingsDevice:
+        """The device a settings change came from, by the listener and the token's Host."""
+        if not self.server.remote:
+            return SettingsDevice.LOCAL
+        host = self.headers.get("Host")
+        return (SettingsDevice.PHONE if host in self.server.settings.remote_hosts
+                else SettingsDevice.SIMULATOR)
+
+    def _apply_settings(self, path: str) -> None:
+        """POST /settings/apply or /settings/rollback (api/settingsapply.py): 200
+        settings-applied-v1 with the journaled version, or the error with one cause and
+        nothing changed."""
+        body = self._read_json_body()
+        if body is None:
+            return
+        settings = self.server.settings
+        try:
+            request = (parse_apply(body) if path == SETTINGS_APPLY else parse_rollback(body))
+        except BadDraft as exc:
+            self._error("bad_request", safe_cause(exc))
+            return
+        if settings.config_file is None:
+            self._error("unavailable", "this API was started without a config file path")
+            return
+        paths = SettingsPaths(settings.settings_schema_file, settings.config_file,
+                              settings.config_root, settings.settings_history)
+        lock = settings.start.lock_file
+        try:
+            version = apply_settings(paths, request, self._device(), self.server.clock(),
+                                     lambda: not_flat(self.server.status_response(), lock))
+        except ApplyRefused as exc:
+            self._error(exc.error, exc.cause)
+            return
+        except SettingsUnavailable as exc:
+            self._error("unavailable", safe_cause(exc))
+            return
+        self._json(200, applied_document(version,
+                                         bot_may_run(self.server.status_response(), lock)))
 
     def _account(self) -> None:
         """GET /account: the bot's latest broker read of positions and open orders."""

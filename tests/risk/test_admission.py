@@ -191,13 +191,14 @@ def test_each_refusal_has_its_cause(lim, cause, make):
 # the extended windows' own (test_extended_window_*), WORKING_ENTRY_LIMIT_REACHED (several slots:
 # test_an_entry_beyond_the_working_entries_limit_is_refused), the tradability causes (the
 # check on: tests/risk/test_tradability.py), the price collar's (shipped off:
-# tests/risk/test_price_collar.py) and the loss locks, which ship off (tests/risk/test_locks.py).
+# tests/risk/test_price_collar.py), the loss locks, which ship off (tests/risk/test_locks.py),
+# and EQUITY_UNKNOWN (a percent limit on: tests/risk/test_equity_limits.py).
 OTHER_LIMITS = {C.SESSION_TIMES_INVALID, C.BEFORE_FIRST_ENTRY, C.STRATEGY_NOT_EXTENDED,
                 C.SPREAD_TOO_WIDE, C.WORKING_ENTRY_LIMIT_REACHED, C.TRADABILITY_UNKNOWN,
                 C.INSTRUMENT_HALTED, C.INSTRUMENT_CLOSE_ONLY, C.INSTRUMENT_DENIED,
                 C.INSTRUMENT_NOT_TRADABLE, C.TRADABILITY_BUDGET_UNAVAILABLE,
                 C.PRICE_COLLAR_UNKNOWN, C.PRICE_COLLAR_BREACH, C.WEEKLY_MONEY_UNKNOWN,
-                C.WEEKLY_MONEY_INVALID, C.WEEKLY_CEILING, C.STOP_OUT_STREAK}
+                C.WEEKLY_MONEY_INVALID, C.WEEKLY_CEILING, C.STOP_OUT_STREAK, C.EQUITY_UNKNOWN}
 
 
 def test_every_cause_is_exercised():
