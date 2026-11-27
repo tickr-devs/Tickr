@@ -52,6 +52,17 @@ position_notional_cap_usd = 1000
 # Daily loss ceiling in USD: today's NET realized loss (wins offset losses) + open reservations + new planned loss (owner
 # 2026-11-17: 5000, so the reservations of 20 trades at planned_loss_usd fit); read by safety.
 max_daily_loss_usd = 5000
+# Optional percent-of-equity limits (backlog X2), 0 = off (as shipped: behavior is exactly the USD limits above; the owner
+# picks the values). Unit: percent of the account's net liquidation value (cash plus positions at market) as the broker
+# reported it. When a percent is above 0 its effective limit is the SMALLER of the USD limit and percent / 100 x equity, so
+# a percent can only tighten, never loosen. With any of them on, an entry is refused (EQUITY_UNKNOWN) when the equity is
+# unread, older than buying_power_max_age_seconds or not a positive number: never a fallback to the USD limit. Read by
+# admission (risk.admission) and runtime.entries. Planned loss per trade, percent of equity:
+planned_loss_percent = 0
+# Maximum notional per position, percent of equity (same rules as planned_loss_percent); read by admission.
+position_notional_cap_percent = 0
+# Daily loss ceiling, percent of equity (same rules as planned_loss_percent); read by admission.
+max_daily_loss_percent = 0
 # Smallest daily-loss room a new trade is sized into, USD: near the ceiling a trade is sized down to the room left
 # (owner 2026-11-14), but below this room entries stop and status says "daily ceiling" (a smaller trade is not worth
 # its costs; owner confirmed 2026-11-14); read by runtime.entries (strategy loss budget and status).
@@ -576,10 +587,14 @@ settings_schema_file = "config/settings_schema.toml"
 observer_trades_max_rows = 100
 # Latest journal rows GET /journal returns (oldest first; `last_seq` is the newest row's number); read by the api server.
 journal_rows = 40
-# Command POST /commands/start-bot runs to start the bot job through launchd ("{uid}" = this user's id); kickstart
-# without -k never restarts a job that is already running. Empty = start-bot answers 503 (no launchd: Docker, the
-# demo); read by the api server.
-start_bot_command = ["/bin/launchctl", "kickstart", "gui/{uid}/local.tickr.bot"]
+# Command POST /commands/start-bot runs to start the bot job ("{uid}" = this user's id); on a Mac launchd's
+# `launchctl kickstart gui/{uid}/local.tickr.bot` (without -k it never restarts a job that is already running).
+# Empty = start-bot answers 503 (no start path: the demo); read by the api server.
+# Server (2026-11-26 cutover): `request-start` inside the API's container writes [runtime] server_start_request_file and
+# the host unit tickr-bot-start runs `docker compose up -d --no-recreate` for the bot (docs/deploy-server.md, "Bot start
+# on the server"): a running bot container is never touched, so Start is safe although the API container (no host pid
+# namespace) cannot see the bot's live pid in its lock file; the cause word "start-bot" is logged by that unit.
+start_bot_command = ["python", "-m", "tickr.runtime", "--config", "/app/config/bot.toml", "request-start", "--cause", "start-bot"]
 # Seconds POST /commands/start-bot waits for start_bot_command to return before answering 503; read by the api server.
 start_bot_timeout_seconds = 10
 # Newest AI advisor runs GET /advisor returns (folders under [advisor] proposals_dir, newest first; its
@@ -620,11 +635,13 @@ trade_whatif_outside_session_only = true
 next_session_search_days = 10
 # Machine services GET /system reports under `host`: "mac" (the launchd watchdog's journal and restarts, and
 # caffeinate's no-sleep hold read with sleep_check_command) or "none" (a machine without them: `host` is null with a
-# cause); read by the api server.
-system_services = "mac"
+# cause); read by the api server. Server (2026-11-26 cutover): "none", the Linux server has neither launchd nor
+# caffeinate.
+system_services = "none"
 # Command GET /system runs to list the Mac's power assertions (its output is parsed for caffeinate's no-sleep holds,
-# nothing else is kept); used only when system_services = "mac"; read by the api server.
-sleep_check_command = ["/usr/bin/pmset", "-g", "assertions"]
+# nothing else is kept; on a Mac `["/usr/bin/pmset", "-g", "assertions"]`); used only when system_services = "mac",
+# where it must name a command; empty = none (the server: system_services = "none"); read by the api server.
+sleep_check_command = []
 # Seconds GET /system waits for sleep_check_command before reporting the hold as unknown; read by the api server.
 sleep_check_timeout_seconds = 2
 # Newest watchdog restart records GET /system returns (newest first; the apps show a few and the rest on demand);
@@ -633,8 +650,10 @@ system_restart_rows = 50
 # Training progress file a model training job writes (training-progress-v1, docs/api.md "GET /system"): relative to
 # data_dir, or an absolute or ~/ path outside the release (research jobs never write into it); missing = no job
 # reporting; read by the api server.
-# Owner 2026-11-19: the research folder on the Mac, where the training scripts write it.
-training_progress_file = "~/Development/Trading/.scratch/massive/results/feat/wide/training-progress.json"
+# Owner 2026-11-19 set the research folder on the Mac (~/Development/Trading/.scratch/massive/results/feat/wide/
+# training-progress.json), where the training scripts write it. Server (2026-11-26 cutover): no training job runs
+# there, so a file under data_dir that nothing writes: GET /system reports "no training job is reporting".
+training_progress_file = "training-progress.json"
 # Folder, relative to data_dir, where the API keeps the built answers of past days (GET /flow, /watching, /symbols,
 # /movers, /observers, /skipped; one folder per environment and NY date), so a past day picked in the apps shows at
 # once; rebuilt whenever an input file, the config or the code changes; read and written by the api server
@@ -891,6 +910,26 @@ bundles_dir = "models"
 # Bundle folder name <name>-<version> under bundles_dir that the bot loads when enabled; empty = none chosen; read by
 # tickr.model.bundle.
 bundle = ""
+# Stock groups the frozen tick converter v11 works one after another (its TICK_GROUPS, set by the bot, never
+# inherited): 24 = the converter's default, as in the training's runs, pinned (codex-109 point 1 withdrew one group:
+# with one engine thread 1 and 24 gave equal tables on the test day and at 500 synthetic stocks, but one stock-minute
+# differed in the last bit at 1,000, tests/model/tick_memory.py); any other value is refused; read by config.load,
+# passed to tickr.model.features.ticks.tick_rows.
+tick_groups = 24
+
+[confidence_sizing]
+# Size by model confidence (backlog R30): true = a position's USD size scales linearly with the model's probability from
+# min_usd (probability 0) to max_usd (probability 1), never above [risk] position_notional_cap_usd; false = every
+# position is sized as before. Shipped off and not wired into the order path yet. Config load refuses true unless the
+# model probability is available ([model] enabled), 0 < min_usd <= max_usd and max_usd <= the position cap. Read by
+# config.load and tickr.risk.confidence_sizing.
+by_confidence = false
+# Smallest position size in USD, at probability 0. The owner picks it (0 = not chosen); unused while by_confidence is
+# false. Read by config.load and tickr.research.__main__ (sizing what-if default).
+min_usd = 0
+# Largest position size in USD, at probability 1. The owner picks it (0 = not chosen); unused while by_confidence is
+# false. Read by config.load and tickr.research.__main__ (sizing what-if default).
+max_usd = 0
 
 [exit_chase]
 # Limit-exit chase before a market exit (backlog X3): a close is sent as a SELL LIMIT priced through the bid,
@@ -960,11 +999,48 @@ max_pages = 100
 stream_max_message_bytes = 16777216
 # Seconds before the stream connects again after it dropped (the day is marked gapped either way), also the longest
 # wait of one read before the stop flag is checked again; a convenience pause, not a measured value, no decision
-# depends on it; read by tickr.model.massive.
+# depends on it; read by tickr.model.massive (tickr.model.stream reads it as its read wait only).
 stream_reconnect_seconds = 5
+# Seconds the shared stream (tickr.model.stream: minute bars AM.* and trades/quotes T/Q on one connection) waits after
+# a drop before it connects again. Documented, not invented: Massive's knowledge base ("Why do Massive WebSocket
+# disconnects happen?", read 2026-11-25) says the server takes roughly 10 to 30 seconds to release a dropped connection
+# and a client that retries at once can be refused for the allowance it just lost (max_connections); 30 is the top of
+# that window. Every second of it is inside the gap the decisions see; read by tickr.model.stream.
+stream_release_pause_seconds = 30
+# Seconds the shared stream (tickr.model.stream) waits for Massive's acknowledgment of a subscribe parameter before it
+# re-sends that parameter once on the same connection (logged), and again after the re-send before it closes the
+# connection and reconnects with every subscription (a controlled reconnect: the gap is recorded like any drop).
+# EXPERIMENTAL, UNMEASURED: no acknowledgment delay has been measured on the real feed yet; 0 turns the resend and the
+# controlled reconnect off (an unacknowledged channel then stays refused until the next connection). The stream records
+# every send-to-acknowledgment wait on the monotonic clock (SharedStream.ack_waits) so this can be set from a
+# measurement; read by tickr.model.stream.
+stream_ack_timeout_seconds = 0
 # Calendar days searched back from today for the history sessions (20 sessions span about 28 calendar days with weekends
 # and holidays; a search that finds fewer refuses); read by tickr.model.massive.
 calendar_lookback_days = 60
+# Whether `tickr poll-revisions` may run: it polls Massive's Benzinga earnings (by last_updated) and news (by published
+# window) and keeps every version it receives (with coverage) for the live er_surp and bz features; false = the command
+# refuses to start, and nothing else reads this key; read by tickr.model.revpoll.
+revision_poll_enabled = false
+# Folder, relative to [run] data_dir, of the revision store: one append-only JSON-lines file per New York receipt day
+# under <folder>/earnings and <folder>/news, and the poll coverage log under <folder>/coverage; read by
+# tickr.model.revpoll.
+revision_store_dir = "massive/revisions"
+# EXPERIMENTAL, UNMEASURED setting (codex-109 point 7): seconds the last_updated.gte of an earnings poll reaches back
+# before the update watermark (the largest last_updated of the complete polls so far; ties at it are listed again in any
+# case). A margin for versions that become visible late with an older last_updated (patchy delivery) and for vendor
+# clock offset; a record listed twice is stored once, so it costs only a longer answer. Not sized yet: size it from
+# `python -m tickr.model.revisions report` (receipt - last_updated), the poll cadence (news_probe_poll_seconds) and
+# observed outages before relying on it. News polls re-list a published window instead
+# (news_probe_news_lookback_seconds); read by tickr.model.revpoll.
+revision_poll_overlap_seconds = 300
+# Trades and quotes stream (channels T and Q, tickr.model.ticks): "symbols" subscribes each symbol as it joins the
+# day's set, "market" subscribes every symbol (T.*, Q.*). Which one runs is a measurement decision (stream capacity is
+# not measured yet); read by tickr.model.ticks.
+tick_subscription = "symbols"
+# Rows asked per REST page of a symbol's trades or quotes backfill (Massive's documented largest page for /v3/trades
+# and /v3/quotes); read by tickr.model.ticks.
+tick_page_limit = 50000
 # Path of Massive's general news listing on api_host, the training's own fetch of the nw_* news (owner's fetch_ref2.py
 # and reftopup.py: GET /v2/reference/news); read by tickr.model.newsprobe.
 massive_news_path = "/v2/reference/news"
@@ -1013,6 +1089,10 @@ arrival_report_points_seconds = [1, 2, 5, 10, 15, 30, 60]
 # (can a stream-built previous session replace the published file at 04:00?); measurement only; read by
 # tickr.model.streamday.
 stream_day_dir = "massive/stream_days"
+# Quantiles (fractions, strictly increasing, each above 0 and below 1) the revision report prints of every observed
+# Benzinga delay (receipt - last_updated, receipt - report time, receipt - published); a description of the measured
+# distribution, never a guard (`--out` writes every value); read by tickr.model.revisions.
+revision_report_quantiles = [0.5, 0.9, 0.99]
 
 [runtime]
 # Minimum free disk space on the data_dir volume, megabytes; below it preflight fails and the running bot takes no new
@@ -1086,8 +1166,12 @@ watchdog_relaunch_seconds = 300
 # by watchdog-started, so it cannot either); read by runtime.watchdog.
 watchdog_restart_before_flatten_seconds = 300
 # Command the watchdog runs to start the bot job (the same job the schedule starts: preflight, then the supervised bot);
-# "{uid}" is replaced by the user id; kickstart without -k never touches a running job; read by runtime.watchdog.
-watchdog_restart_command = ["/bin/launchctl", "kickstart", "gui/{uid}/local.tickr.bot"]
+# "{uid}" is replaced by the user id; read by runtime.watchdog. On a Mac launchd's
+# `launchctl kickstart gui/{uid}/local.tickr.bot` (without -k it never touches a running job). Server (2026-11-26
+# cutover): `request-restart` inside the watchdog's container writes server_restart_request_file and the host unit
+# tickr-bot-restart restarts the bot container once (docs/deploy-server.md, "Bot restart on the server"); the cause
+# word "watchdog" is logged by that unit.
+watchdog_restart_command = ["python", "-m", "tickr.runtime", "--config", "/app/config/bot.toml", "request-restart", "--cause", "watchdog"]
 # Seconds the watchdog waits for the restart command to return before calling the attempt failed; read by runtime.watchdog.
 watchdog_restart_timeout_seconds = 10
 # Record of the watchdog's one restart a day (New York date), relative to data_dir; written before the command runs and
@@ -1104,6 +1188,13 @@ watchdog_entry_restart_file = "watchdog-entry-restart.json"
 # tickr-bot-restart.service restarts the bot container once. Its folder must already exist (deploy-server.sh creates
 # it); read by runtime.restartrequest and runtime.systemd.
 server_restart_request_file = "control/restart-request"
+# Server only (docs/deploy-server.md, "Bot start on the server"): the start request file, relative to data_dir, in the
+# same folder as server_restart_request_file under another name. The API's Start ([api] start_bot_command, `python -m
+# tickr.runtime request-start`, inside the API's container) writes it atomically with the request time (UTC) and cause;
+# the host unit tickr-bot-start.path watches it and tickr-bot-start.service runs `docker compose up -d --no-recreate`
+# for the bot once (a running bot container is never touched; a stopped or missing one is started); read by
+# runtime.restartrequest and runtime.systemd.
+server_start_request_file = "control/start-request"
 # Seconds one loop pass may spend on market upkeep and the strategy before an evaluation-slow journal row (the next
 # Detail read waits for it; keep it near [orders] detail_poll_seconds). Discovery runs on its own thread and is not part
 # of it: its duration is the `seconds` of each discovery journal row; read by runtime.service.
@@ -1140,9 +1231,10 @@ fence_alert_after_seconds = 30
 # NAME of the environment variable holding the owner's iMessage address (phone number or Apple ID email); the value is
 # personal data, set only in the owner's env file, never here; presence checked by preflight; read by runtime.alerts.
 imessage_recipient_variable = "TICKR_IMESSAGE_TO"
-# The Tickr Mac app that shows the Mac notification with its own icon (path to the .app; empty = none). When it is
-# missing, not allowed to notify or fails, the notification goes through osascript instead; read by runtime.alerts.
-mac_app = "/Applications/Tickr.app"
+# The Tickr Mac app that shows the Mac notification with its own icon (path to the .app, on a Mac
+# "/Applications/Tickr.app"; empty = none). When it is missing, not allowed to notify or fails, the notification goes
+# through osascript instead; read by runtime.alerts (macOS only). Server (2026-11-26 cutover): empty, no Mac app.
+mac_app = ""
 # Seconds to wait for the Tickr app to hand the notification over before osascript shows it instead (the alert is sent
 # on a background thread, so the bot's loop does not wait for it); read by runtime.alerts.
 mac_app_timeout_seconds = 2

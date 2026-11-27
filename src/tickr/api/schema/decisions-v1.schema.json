@@ -194,6 +194,7 @@
                       "QUANTITY_NOT_WHOLE",
                       "NOTIONAL_OVER_CAP",
                       "PLANNED_LOSS_OVER_LIMIT",
+                      "EQUITY_UNKNOWN",
                       "DAILY_MONEY_UNKNOWN",
                       "DAILY_MONEY_INVALID",
                       "DAILY_CEILING",
@@ -249,6 +250,37 @@
                   "since",
                   "until",
                   "params"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decider": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "strategy",
+                      "model"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name",
+                  "version"
                 ],
                 "additionalProperties": false
               },

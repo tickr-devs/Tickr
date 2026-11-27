@@ -77,6 +77,7 @@ from tickr.api.settingsview import (
     BadDraft,
     SettingsUnavailable,
     draft_document,
+    load_classes,
     load_schema,
     parse_draft,
     schema_document,
@@ -95,6 +96,7 @@ from tickr.observers.log import DecisionLog
 from tickr.research.errors import RecordFileError
 from tickr.research.records import DecisionRecord
 from tickr.runtime.alert_routing import RefusalCause, RoutingRefused
+from tickr.runtime.alerts import Alerter, AlertKind
 from tickr.strategy.base import Role
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -102,6 +104,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 WARM_ERRORS = (HistoryUnavailable, CaptureError, RecordFileError, ObserverError, OSError)
 COMMAND_SOURCE = "api"
 JSON_TYPE = "application/json"
+LOCAL_DEVICE = "local"  # the device name of a request on the local port (no token there)
+SIMULATOR_DEVICE = "simulator"  # the iOS Simulator's token on the remote port's loopback address
+LOCAL_PORT, REMOTE_PORT = "local", "remote"  # the port named in a risk-command-used alert
 ENTRY_STOP_STATES = {"on": CommandKind.ENTRY_STOP_ON, "off": CommandKind.ENTRY_STOP_OFF}
 STOP_MODES = {m.value: m for m in contract.StopMode}  # POST /commands/stop-bot {"mode": ...}
 COMMAND_ROUTES = {
@@ -364,8 +369,14 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
 
 
 def shown_settings(cfg: Config) -> SettingsV1:
-    """The config numbers clients show, exactly as loaded."""
+    """The config numbers clients show, exactly as loaded, and the active strategy's identity
+    as its strategy.toml declares it (null with a cause code when that file is unreadable)."""
     risk, session = cfg.risk, cfg.session
+    try:
+        decider, decider_cause = (contract.strategy_decider(
+            *read_identity(cfg.root, cfg.strategy.active)), None)
+    except ObserverError:
+        decider, decider_cause = None, contract.DECIDER_UNREADABLE
     return SettingsV1(
         environment=cfg.environment_name,
         active_strategy=cfg.strategy.active,
@@ -389,6 +400,8 @@ def shown_settings(cfg: Config) -> SettingsV1:
         live_quote_max_age_seconds=cfg.api.live_quote_max_age_seconds,
         quotes_poll_seconds=cfg.api.quotes_poll_seconds,
         command_max_age_seconds=cfg.api.command_max_age_seconds,
+        decider=decider,
+        decider_cause=decider_cause,
     )
 
 
@@ -426,6 +439,10 @@ class ApiServer(ThreadingHTTPServer):
         self.start_lock = start_lock or threading.Lock()
         # One redemption at a time, so a pairing code can never yield two tokens.
         self.pair_lock = threading.Lock()
+        # The alert for a command that raises risk (see _risk_used); one Alerter for both
+        # listeners (set by python -m tickr.api; None = no alert, as in most tests).
+        self.alerter: Alerter | None = shared.alerter if shared is not None else None
+        self.alert_lock = threading.Lock()
         # The remote port's failed-authentication budgets per client address (api/authlimit.py).
         self.auth_limits = {
             TOKEN_ROUTE_KIND: authlimit.AuthLimiter(
@@ -954,6 +971,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(_ERROR_CODES[error], body, f"{JSON_TYPE}; charset=utf-8", extra or {})
 
     def _guard(self) -> bool:
+        self.device_name = ""  # who the token belongs to; set once the request is authorized
         host = self.headers.get("Host")
         origin = self.headers.get("Origin")
         if self.server.remote:
@@ -990,6 +1008,7 @@ class Handler(BaseHTTPRequestHandler):
             if origin is not None and origin not in self.server.allowed_origins:
                 self._error("forbidden_origin", f"Origin {origin!r} is not allowed")
                 return False
+            self.device_name = LOCAL_DEVICE
             return True
         self._error("forbidden_host", f"Host {host!r} is not allowed")
         return False
@@ -1058,6 +1077,7 @@ class Handler(BaseHTTPRequestHandler):
         if device is None:
             self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
+        self.device_name = device.name
         return True
 
     def _match_device(self, header: str) -> tuple[tuple[devices.Device, ...] | Exception,
@@ -1122,6 +1142,7 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(presented, expected):
             self._error("unauthorized", "the bearer token is not the paired one", challenge)
             return False
+        self.device_name = SIMULATOR_DEVICE
         return True
 
     def _path(self) -> str:
@@ -1285,7 +1306,10 @@ class Handler(BaseHTTPRequestHandler):
             result = self.server.enqueue(kind, symbol, key, mode)
             if isinstance(result, ErrorV1):
                 self._error(result.error, result.cause)
-            elif isinstance(result, bytes):
+                return
+            if kind is CommandKind.ENTRY_STOP_OFF:
+                self._risk_used("entry-stop off (entries allowed again)")
+            if isinstance(result, bytes):
                 self._send(202, result, f"{JSON_TYPE}; charset=utf-8", {})
             else:
                 self._json(202, result)
@@ -1311,7 +1335,31 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(result, ErrorV1):
             self._error(result.error, result.cause)
         else:
+            self._risk_used("start-bot")
             self._json(202, result)
+
+    def _risk_used(self, command: str) -> None:
+        """One `risk-command-used` alert for an accepted command that raises risk: the device
+        (its name from the device list, never its token or hash), the port and the time. A
+        stolen token shows up at once. Never raises: the command is already accepted."""
+        alerter = self.server.alerter
+        if alerter is None:
+            return
+        port = REMOTE_PORT if self.server.remote else LOCAL_PORT
+        text = (f"{command} by device {self.device_name!r} on the {port} port at "
+                f"{contract.format_time(self.server.clock())}; if this was not you, revoke the "
+                "device (docs/operations.md, risk-command-used)")
+        try:
+            with self.server.alert_lock:
+                outcomes = [alerter.alert(AlertKind.RISK_COMMAND_USED, text), *alerter.completed()]
+            for outcome in outcomes:
+                body = outcome.journal_body()
+                if body["error"]:
+                    sys.stderr.write(f"api: alert {body['kind']} {body['delivery']} "
+                                     f"({body['error']})\n")
+        except Exception as exc:  # noqa: BLE001 - a failing alert never undoes the command
+            sys.stderr.write(f"api: alert {AlertKind.RISK_COMMAND_USED.value} failed "
+                             f"({type(exc).__name__})\n")
 
     def _advisor_decision(self) -> None:
         """POST /advisor/decision with {"run": "<id>", "verdict": "accepted"|"rejected"}:
@@ -1549,7 +1597,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             self._json(200, draft_document(load_schema(settings.settings_schema_file), changes,
-                                           settings.config_file, settings.config_root))
+                                           settings.config_file, settings.config_root,
+                                           load_classes(settings.settings_schema_file)))
         except SettingsUnavailable as exc:
             self._error("unavailable", safe_cause(exc))
 

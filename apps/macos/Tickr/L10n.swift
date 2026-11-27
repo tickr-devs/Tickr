@@ -257,7 +257,7 @@ enum L10n {
     static var stopExplanation: LocalizedStringResource {
       LocalizedStringResource("bot.stopExplanation",
         // swiftlint:disable:next line_length
-        defaultValue: "The bot stops and stays stopped until you run tickr clear-stop on this Mac; the app cannot start it again. Working entry orders are cancelled. Open positions stay open under their broker stop, a DAY order: nothing closes them at the session's end. Close the positions first to be flat.",
+        defaultValue: "The bot stops and stays stopped, also tomorrow, until you press Start bot. Refused while a trade is open or entering: close it first.",
         bundle: L10n.bundle)
     }
     /// The pill on every command while commands go to the demo day.
@@ -284,6 +284,16 @@ enum L10n {
       LocalizedStringResource("bot.silentOpen",
         // swiftlint:disable:next line_length
         defaultValue: "Open positions: \(count). The bot's status is stale: it may have stopped. Each position stays under its broker stop, a DAY order: nothing closes it at the session's end. Check the bot on this Mac or close the positions in Webull.",
+        bundle: L10n.bundle)
+    }
+    static var ownerNotConfirmed: LocalizedStringResource {
+      LocalizedStringResource("bot.ownerNotConfirmed",
+        defaultValue: "not sent: Face ID or the passcode did not confirm the owner",
+        bundle: L10n.bundle)
+    }
+    static var alreadySending: LocalizedStringResource {
+      LocalizedStringResource("bot.alreadySending",
+        defaultValue: "not sent: this command is already being sent",
         bundle: L10n.bundle)
     }
     static var notSentUntrusted: LocalizedStringResource {
@@ -356,6 +366,10 @@ enum L10n {
   }
 
   enum Toolbar {
+    /// The iPad navigation bar's gear: the iPad's settings (connection, pairing, notifications).
+    static var settings: LocalizedStringResource {
+      LocalizedStringResource("toolbar.settings", defaultValue: "Settings", bundle: L10n.bundle)
+    }
     /// The title bar's line before the first status.
     static var windowLineEmpty: LocalizedStringResource {
       LocalizedStringResource("toolbar.windowLineEmpty", defaultValue: "tickr", bundle: L10n.bundle)
