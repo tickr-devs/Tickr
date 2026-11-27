@@ -2364,6 +2364,8 @@ enum L10n {
         defaultValue: "Buying power not read", bundle: L10n.bundle)
       case .buyingPowerShort: LocalizedStringResource("cause.buyingPowerShort",
         defaultValue: "Not enough buying power", bundle: L10n.bundle)
+      case .equityUnknown: LocalizedStringResource("cause.equityUnknown",
+        defaultValue: "Equity not read", bundle: L10n.bundle)
       case .entryBudget: LocalizedStringResource("cause.entryBudget",
         defaultValue: "No request budget for the entry", bundle: L10n.bundle)
       case .stopBudget: LocalizedStringResource("cause.stopBudget",

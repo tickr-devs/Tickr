@@ -51,6 +51,8 @@ public enum RefusalCode: String, Sendable, CaseIterable {
   case dailyCeiling = "DAILY_CEILING"
   case buyingPowerUnknown = "BUYING_POWER_UNKNOWN"
   case buyingPowerShort = "BUYING_POWER_SHORT"
+  /// The account equity the percent-of-equity limits need (`[risk]`, off unless configured).
+  case equityUnknown = "EQUITY_UNKNOWN"
   case entryBudget = "ENTRY_BUDGET_UNAVAILABLE"
   case stopBudget = "STOP_BUDGET_UNAVAILABLE"
   case tradabilityBudget = "TRADABILITY_BUDGET_UNAVAILABLE"
@@ -85,7 +87,7 @@ public enum RefusalCode: String, Sendable, CaseIterable {
   public var symbol: String {
     switch self {
     case .gateClosed, .entryStop, .engineRefused: return Self.gateSymbol
-    case .clockInvalid, .notReconciled, .brokerReadMissing, .brokerReadStale, .buyingPowerUnknown,
+    case .clockInvalid, .notReconciled, .brokerReadMissing, .brokerReadStale, .buyingPowerUnknown, .equityUnknown,
       .tradabilityUnknown, .instrumentHalted, .instrumentCloseOnly, .instrumentDenied, .instrumentNotTradable:
       return Self.brokerSymbol
     case .unresolvedExposure, .foreignExposure: return Self.exposureSymbol

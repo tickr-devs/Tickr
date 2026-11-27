@@ -1242,6 +1242,23 @@
         }
       }
     },
+    "cause.equityUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Equity not read"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capital no leído"
+          }
+        }
+      }
+    },
     "cause.foreignExposure" : {
       "extractionState" : "manual",
       "localizations" : {
