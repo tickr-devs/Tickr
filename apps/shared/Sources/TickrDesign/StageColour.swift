@@ -8,32 +8,38 @@ import TickrKit
 public extension PipelineStage {
   /// Found teal, Stocks pink, Priced cyan, Liquid blue, Model violet, Risk amber, Bought orange,
   /// Protected green, Checked lime.
-  var fill: Color {
+  var fill: Color { Color(fillSwatch) }
+
+  /// The same hue for words (the stage's name), 4.5:1 on `surface`.
+  var text: Color { Color(textSwatch) }
+
+  /// The fill's light and dark values: the one place a stage's colour is chosen.
+  var fillSwatch: Swatch {
     switch self {
-    case .screeners: Palette.accent
-    case .universe: Palette.seriesUniverse
-    case .quote: Palette.cyan
-    case .bars: Palette.info
-    case .strategy: Palette.highlight
-    case .risk: Palette.warning
-    case .order: Palette.orange
-    case .stop: Palette.profit
-    case .reconcile: Palette.lime
+    case .screeners: .accent
+    case .universe: .seriesATR
+    case .quote: .cyan
+    case .bars: .info
+    case .strategy: .highlight
+    case .risk: .warning
+    case .order: .orange
+    case .stop: .profit
+    case .reconcile: .lime
     }
   }
 
-  /// The same hue for words (the stage's name), 4.5:1 on `surface`.
-  var text: Color {
+  /// The words' light and dark values.
+  var textSwatch: Swatch {
     switch self {
-    case .screeners: Palette.accentText
-    case .universe: Palette.seriesATRText
-    case .quote: Palette.cyanText
-    case .bars: Palette.infoText
-    case .strategy: Palette.highlightText
-    case .risk: Palette.warningText
-    case .order: Palette.orangeText
-    case .stop: Palette.profitText
-    case .reconcile: Palette.limeText
+    case .screeners: .accentText
+    case .universe: .seriesATRText
+    case .quote: .cyanText
+    case .bars: .infoText
+    case .strategy: .highlightText
+    case .risk: .warningText
+    case .order: .orangeText
+    case .stop: .profitText
+    case .reconcile: .limeText
     }
   }
 }

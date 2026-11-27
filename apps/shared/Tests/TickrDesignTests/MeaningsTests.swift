@@ -133,25 +133,25 @@ import TickrKit
   }
 }
 
-/// The live flow's stage colours (StageColour.swift).
+/// The live flow's stage colours (StageColour.swift), compared by their light and dark values:
+/// no SwiftUI colour is resolved off the main thread (a `Color.resolve(in:)` here hung the whole
+/// test run on CI, #853 and #855, 2026-11-27).
 @Suite struct StageColourTests {
   @Test("Nine stages, nine different hues, in the approved order")
   func distinct() {
-    #expect(PipelineStage.allCases.count == 9)
-    // Compared as resolved colours in each appearance, not by their descriptions.
-    for scheme in [ColorScheme.light, .dark] {
-      var environment = EnvironmentValues()
-      environment.colorScheme = scheme
-      #expect(Set(PipelineStage.allCases.map { $0.fill.resolve(in: environment) }).count == 9)
-      #expect(Set(PipelineStage.allCases.map { $0.text.resolve(in: environment) }).count == 9)
+    let stages = PipelineStage.allCases
+    #expect(stages.count == 9)
+    for value in [\Swatch.light, \Swatch.dark] {
+      #expect(Set(stages.map { $0.fillSwatch[keyPath: value] }).count == stages.count)
+      #expect(Set(stages.map { $0.textSwatch[keyPath: value] }).count == stages.count)
     }
   }
 
   @Test("Priced cyan, Bought orange and Checked lime are the new palette colours")
   func newColours() {
-    #expect(PipelineStage.quote.fill == Palette.cyan)
-    #expect(PipelineStage.order.fill == Palette.orange)
-    #expect(PipelineStage.reconcile.fill == Palette.lime)
-    #expect(PipelineStage.stop.fill == Palette.profit)
+    #expect(PipelineStage.quote.fillSwatch == .cyan)
+    #expect(PipelineStage.order.fillSwatch == .orange)
+    #expect(PipelineStage.reconcile.fillSwatch == .lime)
+    #expect(PipelineStage.stop.fillSwatch == .profit)
   }
 }
