@@ -196,7 +196,8 @@ def _iso(text: str) -> datetime:
 def _status_trade(t: api.DayTrade) -> api.Trade:
     return api.Trade(t.symbol, t.quantity, t.entry_price, t.exit_price, t.opened_at,
                      t.closed_at, t.exit_reason, t.result_gross_usd, t.planned_loss_usd,
-                     t.stop_confirmed_after_seconds, t.entry, t.entry_cause, t.strategy,
+                     t.stop_confirmed_after_seconds, t.entry, t.entry_cause,
+                     None if t.strategy is None else api.strategy_name(t.strategy),
                      t.code_version)
 
 
@@ -249,6 +250,10 @@ class Service:
         self._progress: tuple[str, api.StopMode | None, api.StopStep, datetime] | None = None
         self._account_failing = False  # the last account file write failed (journaled once)
         self._run_facts_failing = False  # the last run facts write failed (journaled once)
+        # The settings versions of the trades the latest status shows, and those the latest run
+        # facts write held (None before the start write): a change writes the run facts again.
+        self._trade_versions: tuple[api.TradeSettingsVersion, ...] = ()
+        self._facts_trades: tuple[api.TradeSettingsVersion, ...] | None = None
         # Balances, account kind and today's fills, read on their own thread (display only).
         self.account_reads = account_reads
         # The live quotes file, written on its own thread (display only); the loop journals its
@@ -970,8 +975,12 @@ class Service:
     def _trades_today(self, closed: list[api.DayTrade]) -> tuple[api.Trade, ...]:
         """For status only: today's trades with their stop confirmation time and, once the
         broker's fees on every fill are recorded, their result after fees."""
-        return tuple(replace(_status_trade(self._shown(t)), result_exact_usd=t.result_net_usd)
-                     for t in closed)
+        shown = [self._shown(t) for t in closed]
+        self._trade_versions = tuple(
+            api.TradeSettingsVersion(t.entry.client_order_id, t.strategy.settings_version)
+            for t in shown if t.entry.client_order_id is not None and t.strategy is not None
+            and t.strategy.settings_version is not None)
+        return tuple(replace(_status_trade(t), result_exact_usd=t.result_net_usd) for t in shown)
 
     def _broker_result_today(self, closed: list[api.DayTrade]) -> Decimal | None:
         """Today's realized result as the broker counts it: its day profit or loss less the
@@ -1061,7 +1070,8 @@ class Service:
         return api.StatusV1(
             written_at=self.now(), bot_state=self.state, run_id=self.engine.run_id,
             environment=self.config.environment_name,
-            trading_gate=self._gate(gate.open, gate.cause), strategy=self.strategy,
+            trading_gate=self._gate(gate.open, gate.cause),
+            strategy=api.strategy_name(self.strategy),
             entry_stop=any(name == Fence.ENTRY_STOP for name, _, _ in fences),
             entry_block=self._entry_block(gate.open, gate.cause, fences),
             fences=tuple(self._fence(name, cause, set_at) for name, cause, set_at in fences),
@@ -1101,20 +1111,27 @@ class Service:
 
     def write_status(self) -> None:
         api.write_status(self.paths.status, self.status())
+        # A trade's settings version is a run fact: written when the trades shown change.
+        if self._facts_trades is not None and self._trade_versions != self._facts_trades:
+            self.write_run_facts()
         if self.quote_file is not None:
             self.quote_file.journal_failures(self.engine)
 
     def run_facts(self) -> api.RunFactsV1:
         return api.RunFactsV1(written_at=self.now(), run_id=self.engine.run_id,
-                              protection_in_force=self._protection_in_force())
+                              protection_in_force=self._protection_in_force(),
+                              settings_version=self.strategy.settings_version,
+                              trade_settings_versions=self._trade_versions)
 
     def write_run_facts(self) -> None:
-        """At the start and after each change of what it holds (an adoption), never per pass.
+        """At the start and after each change of what it holds (an adoption, a change of the
+        settings versions of the trades the status shows), never per pass.
         Display only: a failed write never ends the loop nor undoes what changed, is never
         retried, and is journaled once per stretch of failures; the API then shows the facts of
         no run (an older file names another run id)."""
         if self.paths.run_facts is None:
             return
+        self._facts_trades = self._trade_versions  # tried once, never again for the same
         try:
             api.write_run_facts(self.paths.run_facts, self.run_facts())
         except OSError as exc:

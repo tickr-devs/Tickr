@@ -476,7 +476,9 @@ enabled = true` the verified bundle's identity and manifest SHA-256, otherwise t
 strategy's resolved values without its `[strategy] version` name (an observer: its own values).
 For a trade it is what the `trade-opened` row journaled (also stored on
 `trades.settings_version`); for a decision, what its decision record holds; for the status, the
-one the running bot's entry desk records (`null` while entries are off). `null` when not
+one the running bot's entry desk records (`null` while entries are off). In GET /status both the
+active strategy's and each `trades_today` trade's come from the run facts file (see "Run facts"),
+never from status.json, whose `strategy` objects stay `{name, version}`. `null` when not
 recorded (a trade or decision from before S3, a manual trade, research or replay records). It
 was added after version 1 shipped: a reader takes a `strategy` without it as `null`. The bot
 keeps each version's canonical text in table `settings_versions`. A version it cannot compute
@@ -1949,16 +1951,18 @@ again).
 - Account: after each successful reconciliation the bot calls
   `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way. Before
   that it journals `reconcile-checked` when due (`record_reconcile`, see "Clean day").
-- Run facts: facts of the running bot that change seldom (`protection_in_force`) live in their
+- Run facts: facts of the running bot that change seldom (`protection_in_force`, the active
+  strategy's `settings_version` and those of the trades the status shows) live in their
   own `run-facts-v1` file (`[runtime] run_facts_file`), not in status.json, which keeps the shape a
   reader from before them accepts (it refuses unknown keys, and the watchdog takes an unreadable
   status file as a bot not running). The bot calls `contract.write_run_facts` (temp file + fsync +
-  rename, like status) at its start and after each adoption of a tightening (journal row, then
-  the adoption, then the file), never per pass. A failed write never stops the loop nor undoes the
+  rename, like status) at its start, after each adoption of a tightening (journal row, then
+  the adoption, then the file) and when the settings versions of the trades the status shows
+  change (a trade closed today first shows), never per pass. A failed write never stops the loop nor undoes the
   adoption and is never retried: it is journaled once per stretch of failures
   (`run-facts-write-failed`). The file carries `run_id`; GET /status shows its facts only when it
   matches the `run_id` of status.json, so a stale (previous run), missing or unreadable file shows
-  an empty `protection_in_force`.
+  an empty `protection_in_force` and null settings versions.
 - Commands: the bot calls `contract.read_commands(inbox, now, command_max_age_seconds)`. Each item
   is a command or a refusal (unreadable file, expired, dated in the future). For each item the bot
   journals it in one transaction, acts if it is a command, then calls `contract.retire_command`
