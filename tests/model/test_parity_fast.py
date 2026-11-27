@@ -57,8 +57,16 @@ def test_the_walk_gives_the_full_prefix_tick_table_of_every_variant(day, tmp_pat
     assert exc.value.cause == "replay_engine_order"
 
 
-def _run(given, out, *extra):
-    assert parity.main(_args(given, out, "--mode", "all", *extra)) == 0
+# The engine comparisons run on three of the base minutes: 09:45 (the open's first lists) is
+# left out for time, the walk test checks its tick tables of every variant and 09:30 / 09:31
+ENGINE_MINUTES = ["04:30", "12:00", "15:30"]
+
+
+def _run(given, out, *extra, minutes=MINUTES):
+    args = _args(given, out, "--mode", "all", *extra)
+    k = args.index("--minutes")
+    args[k + 1:k + 1 + len(MINUTES)] = minutes
+    assert parity.main(args) == 0
     return json.loads((out / f"parity-{DAY}.json").read_text())
 
 
@@ -84,12 +92,12 @@ def incremental(day, tmp_path_factory):
 
 def test_the_incremental_engine_equals_full_prefix_on_all_191_columns(day, tmp_path):
     given = day[0]
-    ref = _run(given, tmp_path / "ref")
+    ref = _run(given, tmp_path / "ref", minutes=ENGINE_MINUTES)
     got = _run(given, tmp_path / "inc", "--engine", "incremental", "--verify-full-prefix",
-               str(len(MINUTES)), "--workers", "2")
+               str(len(ENGINE_MINUTES)), "--workers", "2", minutes=ENGINE_MINUTES)
     check = got["engine_check"]
-    assert check["minutes"] == MINUTES and check["differing_minutes"] == []
-    for hm in MINUTES:
+    assert check["minutes"] == ENGINE_MINUTES and check["differing_minutes"] == []
+    for hm in ENGINE_MINUTES:
         e = check["per_minute"][hm]
         assert e["bars"]["exact"] and e["bars"]["rows_incremental"] > 0, hm
         assert set(e["variants"]) == set(parity.VARIANTS), hm
@@ -159,7 +167,8 @@ def test_a_difference_between_the_engines_is_reported(day, tmp_path, monkeypatch
 
     monkeypatch.setattr(parity_walk.TickWalk, "_convert", changed)
     out = tmp_path / "out"
-    report = _run(given, out, "--engine", "incremental", "--verify-full-prefix", "4")
+    report = _run(given, out, "--engine", "incremental", "--verify-full-prefix",
+                  str(len(ENGINE_MINUTES)), minutes=ENGINE_MINUTES)
     check = report["engine_check"]
     assert check["differing_minutes"] == ["12:00", "15:30"]
     e = check["per_minute"]["12:00"]

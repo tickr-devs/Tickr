@@ -35,10 +35,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
 DAY = tp.DAY
 MS = 10**6
-# 12:00 (QUIET's stale quote) is checked against the training in
-# test_the_marker_stays_inside_the_weighting, on a day whose closes start at 11:48; pre-market
-# (04:30) only by the replay (test_parity, test_parity_fast), for time: its cohort needs 21 closes
-MINUTES = ["09:44", "09:45", "15:30"]
+# The live parity minutes are checked on three days, each warmed up once: 09:44 and 09:45 in
+# test_a_close_uses_only_what_had_arrived_by_its_cutoff, 12:00 (QUIET's stale quote) in
+# test_the_marker_stays_inside_the_weighting, 15:30 here; pre-market (04:30) only by the replay
+# (test_parity, test_parity_fast), for time: its cohort needs 21 closes
+MINUTES = ["15:30"]
 LATER_RECORDS = (10, 11, 12)  # correction codes the stream is not documented to send
 # Every cohort symbol has ticks here: a symbol enters the conversion only once its snapshot
 # proves a stream row of each kind after its subscription (TickSnapshot.refusal), so the day is
@@ -324,29 +325,37 @@ def harness(world, tmp_path):
 # each parity minute closes after the closes that let its cohort enter (Harness.warm): on this
 # day the cohort's symbols join until 09:43 and 11:50 when the closes start at 09:35 and 11:40.
 # Each start here is the latest measured on this day with no refused row in the checked minutes
-# (15:30 after 09:45: 15:26; 11:58 to 12:01: 11:48, not 11:49): each
-# close runs the pinned converter, so a warm-up close costs most of a second
-WARM = {"09:44": "09:35", "09:45": "09:45", "15:30": "15:26"}
+# (15:30: 15:22, not 15:23; 11:58 to 12:01: 11:48, not 11:49): each close runs the pinned
+# converter, so a warm-up close costs most of a second
 OPEN_WARM = ("09:35", "09:44")  # a fresh day's closes before a 09:45 with every symbol entered
 NOON_START = "11:48"  # the first close of a fresh day whose cohort is all entered from 11:58
+LATE_START = "15:22"  # the first close of a fresh day whose cohort is all entered at 15:30
+WARM = {"15:30": LATE_START}
+
+
+def _equals_training(world, got, m):
+    """A close of table minute `m` (with `wanted=[tp.NO_BARS]`) gives the training's rows."""
+    hm = _label(m)
+    want = world.table[world.table.m == m]
+    assert got.refused == {tp.NO_BARS: live.Refusal("not_in_cohort")}, hm
+    r = parity.compare(got.rows, want, full.full_groups(), None)
+    assert r["rows_compared"] == len(want) == len(got.rows) > 0, hm
+    assert r["columns"] == {} and r["bar_groups_exact"], hm
+    assert list(got.rows.columns) == ["sym", *full.full_features()]
 
 
 def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
+    """15:30 on a day whose closes start at LATE_START; 09:44 and 09:45 are checked the same way
+    in test_a_close_uses_only_what_had_arrived_by_its_cutoff, 12:00 in
+    test_the_marker_stays_inside_the_weighting (one warm-up per day)."""
     h = harness(cfg=with_model(live_marker_quote=True))
-    groups = full.full_groups()
     closed = []
     for hm in MINUTES:
         m = parity.table_minutes([hm])[0]
         if WARM[hm] != hm:
             h.warm(WARM[hm], _label(m - 1))
         closed.extend(range(_minute(WARM[hm]), m + 1))
-        got = h.close(m, wanted=[tp.NO_BARS])
-        want = world.table[world.table.m == m]
-        assert got.refused == {tp.NO_BARS: live.Refusal("not_in_cohort")}, hm
-        r = parity.compare(got.rows, want, groups, None)
-        assert r["rows_compared"] == len(want) == len(got.rows) > 0, hm
-        assert r["columns"] == {} and r["bar_groups_exact"], hm
-        assert list(got.rows.columns) == ["sym", *full.full_features()]
+        _equals_training(world, h.close(m, wanted=[tp.NO_BARS]), m)
     # the parts are the training's whole-day tick file up to the last close, row for row, each
     # with the receipt of the close that wrote it (the instant that close took the clock)
     import duckdb
@@ -472,9 +481,10 @@ def test_a_close_uses_only_what_had_arrived_by_its_cutoff(world, harness, monkey
     that arrives while the close runs and a later REST correction of a print it converted stay
     out of it, the snapshot it read never changes, and the next close refuses the symbols whose
     converted minute they would change (`tick_late`; the correction: #793's `tick_conflict`)."""
-    h = harness()
-    h.warm(*OPEN_WARM)
-    assert not h.close(_minute("09:45")).refused
+    h = harness(cfg=with_model(live_marker_quote=True))
+    h.warm(OPEN_WARM[0], "09:43")
+    for hm in ("09:44", "09:45"):  # the training's rows (test_a_live_day_equals_...)
+        _equals_training(world, h.close(_minute(hm), wanted=[tp.NO_BARS]), _minute(hm))
     m = _minute("09:46")
     lo, hi = h.live._end(m - 1), h.live._end(m)
     h.feed_to(m)
