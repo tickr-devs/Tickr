@@ -889,6 +889,7 @@ def _run(path: Path) -> int:
     """The launchd bot job (via `tickr.runtime run-bot`): run until SIGTERM, then drain.
     Exit 0 after a clean drain (SIGTERM or a stop-bot command), 3 refused while the operator's
     stop marker exists, 5 when the drain hit its deadline."""
+    from tickr.api.settingsapply import promote_at_start
     from tickr.data.capture import BOT_START, BOT_STOP, CaptureError, CaptureWriter
     from tickr.data.health import StreamHealth
     from tickr.data.todaybars import TodayBars
@@ -898,6 +899,7 @@ def _run(path: Path) -> int:
     from tickr.runtime.account import AccountReads
     from tickr.runtime.alert_routing import routing_path, skipped_by
     from tickr.runtime.alerts import Alerter, AlertKind, token_pending_text
+    from tickr.runtime.liveprotection import LiveProtection
     from tickr.runtime.market import (
         IGNITION_NOT_LOADED,
         MarketRuntime,
@@ -913,10 +915,17 @@ def _run(path: Path) -> int:
     if stopped is not None:
         print(f"refused: {stopped}", file=sys.stderr)
         return 3
-    strategy = service.strategy_id(cfg)
-    version = _code_version(cfg)
     database, lock_path = data_paths(cfg)
     with SingleInstanceLock(lock_path):
+        # Loosening settings changes wait for the next session (backlog S5): the first start
+        # on a later New York date writes them, then the config is loaded again.
+        note, written = promote_at_start(cfg, path, NOW())
+        if note is not None:
+            print(note, file=sys.stderr, flush=True)
+        if written:
+            cfg = config_module.load(path)
+        strategy = service.strategy_id(cfg)
+        version = _code_version(cfg)
         store = Store.open(database, busy_timeout_seconds=cfg.run.database_busy_timeout_seconds,
                            now=NOW)
         _require_environment(store, cfg)
@@ -1003,7 +1012,8 @@ def _run(path: Path) -> int:
                                   evaluator=evaluator, entries_off=entries_off,
                                   observers=observers, watch=watch,
                                   account_reads=account_reads, quote_file=quote_file,
-                                  disk_free=DISK_FREE)
+                                  disk_free=DISK_FREE,
+                                  protection=LiveProtection(cfg, Path(path)))
             market.bind()
             adapters.start_stream()
             quote_file.start()
@@ -1173,6 +1183,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("probe-news-delay", help="read-only, runs until Ctrl-C: polls Massive news, "
                    "Benzinga news and earnings and records each record's receipt time "
                    "(docs/operations.md)")
+    sub.add_parser("poll-revisions", help="runs until Ctrl-C, only when [massive] "
+                   "revision_poll_enabled: polls Benzinga earnings and news and keeps every "
+                   "version received, with the poll coverage (docs/operations.md)")
     demo_parser = sub.add_parser("demo", help="a made-up trading day in its own folder "
                                  "(config/demo.toml) served on [api] demo_port; never talks to "
                                  "Webull")
@@ -1239,6 +1252,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "probe-news-delay":
             from tickr.model import newsprobe
             return newsprobe.main(config_module.load(args.config))
+        if args.command == "poll-revisions":
+            from tickr.model import revpoll
+            return revpoll.main(config_module.load(args.config))
         if args.command == "demo":
             from tickr.demo.run import main as demo_main
             repo = config_module.load(args.config).root
