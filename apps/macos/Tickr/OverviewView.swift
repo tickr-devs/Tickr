@@ -39,6 +39,9 @@ struct OverviewView: View {
   static let bottomRowMinHeight: CGFloat = 150
   /// Padding around the cards on each side: the screen's widths above are the grid's plus twice this.
   static let padding = Tokens.Space.l
+  /// Name of the cards' own coordinate space inside the scroll view: a card's place in it moves
+  /// only when the cards above it change, never with the scroll offset.
+  static let contentSpace = "overview-content"
   /// Narrowest grid, in points, with the cards in two columns: two of the least grid column
   /// (`Tokens.Size.gridColumnMin`) and the gap between. Narrower (a window capped to a small
   /// display, `WindowFit`), the cards stack in one column, the Safety · bot card first after the
@@ -132,10 +135,17 @@ struct OverviewView: View {
             LiveFlowCard().rise(step: Order.flow.rawValue)
             WatchingCard().filling().rise(step: Order.watching.rawValue)
             PositionsCard().filling().rise(step: Order.positions.rawValue).id(PositionsCard.id)
+              .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { _ in
+                showSafetyFirstIfAsked(proxy)
+              }
             SafetyCard().filling().rise(step: Order.middle.rawValue).id(SafetyCard.id)
               // Also when a card above it changes height while the page's height stays the same
-              // (the bottom row fills the rest), which moves it without a content-size change.
-              .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
+              // (the bottom row fills the rest), which moves it without a content-size change. Its
+              // place among the cards, not on screen: measured in the scroll view's space, the
+              // scroll to the Positions card moved the Safety card, which scrolled again, a layout
+              // pass after each until AppKit aborted the app ("bot.tickr.mac crashed" in the UI
+              // tests, -[NSWindow _postWindowNeedsLayout] raising inside a layout pass).
+              .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { _ in
                 showSafetyFirstIfAsked(proxy)
               }
             Group {
@@ -146,6 +156,7 @@ struct OverviewView: View {
             .rise(step: Order.right.rawValue)
           }
           .padding(Self.padding)
+          .coordinateSpace(.named(Self.contentSpace))
           // The cards that change with the board (the day's result, Watching closely) read it
           // from the same width the grid picks its arrangement from.
           .environment(\.overviewLayout,
