@@ -221,9 +221,11 @@ def _watchdog(cfg, day: str) -> None:
 @pytest.mark.parametrize(("day", "state"), [(None, FAIL), ("2026-11-13", UNKNOWN),
                                             (T0.date().isoformat(), PASS)])
 def test_unattended_safeguard_is_the_watchdog_started_today(cfg, day, state):
+    # The shipped config names no host services (the server); this case is a Mac.
+    mac = replace(cfg, api=replace(cfg.api, system_services=config.SYSTEM_SERVICES_MAC))
     if day is not None:
-        _watchdog(cfg, day)
-    check = _check(_doc(cfg), ReadinessCode.UNATTENDED_SAFEGUARD)
+        _watchdog(mac, day)
+    check = _check(_doc(mac), ReadinessCode.UNATTENDED_SAFEGUARD)
     assert check.state is state and check.value == day
 
 
