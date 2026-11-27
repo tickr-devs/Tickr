@@ -618,7 +618,7 @@ private struct ReplayCard: View {
   }
 }
 
-/// "Why did the model decide that?": what the active strategy last decided on a symbol on the
+/// "Why did the bot decide that?": what the active strategy last decided on a symbol on the
 /// shown day, the decision big, then check by check, from the decisions the bot recorded
 /// (GET /decisions). Opens on the day's latest traded symbol.
 private struct ExplainCard: View {

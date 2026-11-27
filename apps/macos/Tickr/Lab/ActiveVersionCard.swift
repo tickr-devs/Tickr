@@ -88,7 +88,7 @@ struct LabInfoButton: View {
     }
     .buttonStyle(.plain)
     .linkPointer()
-    .help(Text(label))
+    .tip(Text(label))
     .accessibilityLabel(Text(label))
     .popover(isPresented: $open, arrowEdge: .bottom) {
       VStack(alignment: .leading, spacing: Tokens.Space.s) {

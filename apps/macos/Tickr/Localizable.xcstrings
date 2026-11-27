@@ -6407,6 +6407,23 @@
         }
       }
     },
+    "menuBar.moreInApp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To close positions or stop the bot, open Tickr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para cerrar posiciones o detener el bot, abre Tickr."
+          }
+        }
+      }
+    },
     "menuBar.now" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6437,23 +6454,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Margen de pérdida %1$@ de %2$@"
-          }
-        }
-      }
-    },
-    "menuBar.moreInApp" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "To close positions or stop the bot, open Tickr."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Para cerrar posiciones o detener el bot, abre Tickr."
           }
         }
       }
