@@ -20,11 +20,6 @@ public enum CommandKind: String, Codable, Sendable, CaseIterable {
 
 public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 
-public struct StrategyId: Codable, Hashable, Sendable {
-  public let name: String
-  public let version: String
-}
-
 public struct EntryBlock: Codable, Hashable, Sendable {
   public let cause: String
   public let text: String
@@ -167,9 +162,11 @@ public struct StatusV1: Codable, Hashable, Sendable {
   /// Every own entry working at the broker with nothing filled yet; empty from an older bot.
   public let workingEntries: [WorkingEntry]
   public let schemaVersion: Int
+  /// Who decides this run's entries (docs/api.md, "Decider"); nil from an older API.
+  public let decider: DeciderV1?
 
   enum CodingKeys: String, CodingKey {
-    case environment, strategy, fences, position, freshness, positions
+    case environment, strategy, fences, position, freshness, positions, decider
     case codeVersion = "code_version"
     case writtenAt = "written_at"
     case botState = "bot_state"
@@ -221,6 +218,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     protectionInForce = try c.decodeIfPresent([ProtectionValue].self, forKey: .protectionInForce) ?? []
     stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
     workingEntries = try c.decodeIfPresent([WorkingEntry].self, forKey: .workingEntries) ?? []
+    decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -251,6 +249,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encode(protectionInForce, forKey: .protectionInForce)
     try c.encodeNullable(stopProgress, forKey: .stopProgress)
     try c.encode(workingEntries, forKey: .workingEntries)
+    // Only the API's answer carries `decider`; the bot's status file has none (docs/api.md, "Decider").
+    try c.encodeIfPresent(decider, forKey: .decider)
   }
 }
 

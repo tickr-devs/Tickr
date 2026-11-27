@@ -152,8 +152,8 @@ All checks are reported; the first failure is the recorded cause.
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m tickr.runtime alert preflight-failed "test"` once. You should get a
    notification on the Mac and an iMessage on the phone. The Mac notification comes from the
-   Tickr app, with its icon, when the app is at `[alerts] mac_app` (default
-   `/Applications/Tickr.app`: in Xcode, Product > Archive, then Distribute App > Copy App, and
+   Tickr app, with its icon, when the app is at `[alerts] mac_app` (on a Mac
+   `/Applications/Tickr.app`, shipped empty since the server cutover: in Xcode, Product > Archive, then Distribute App > Copy App, and
    put it there under that name). Open it once and allow notifications when it asks. When the
    app is missing, notifications for it are off, or it fails, the same notification comes from
    `osascript` instead, under "Script Editor" (allow those in System Settings > Notifications
@@ -452,6 +452,12 @@ earnings and appends each new or changed record, with its published / last_updat
 receipt time, to `<data_dir>/massive/news-probe/<New York date>.jsonl`. Delay of a `new` record =
 `received_utc - published` (at most; it arrived after `previous_poll_sent_utc`). Lines of the
 first poll are `baseline` and time nothing.
+
+Revision poller (Codex 108 point 7; off): with `[massive] revision_poll_enabled = true`, `tickr
+poll-revisions` (same environment as the probe) keeps every version of each Benzinga earnings report
+and news article it receives under `<data_dir>/<revision_store_dir>`, with the poll coverage in
+`coverage/`. A failed poll or a restart leaves a typed gap there; `revisions.write_l1bz` refuses a
+range that touches one.
 
 The demo day had a launchd job of its own (`local.tickr.demo`) until the apps carried the day
 themselves. If it is still installed on this Mac, remove it once:
@@ -959,8 +965,9 @@ recovers (no live pid, or a status file not yet rewritten); if the next check is
 From `[runtime] watchdog_restart_before_flatten_seconds` before the flatten time (300 s:
 15:40 ET on a normal day, 12:40 ET on a half day) until its last check, a watchdog bot check
 that finds the bot down while its database shows an open trade starts the bot job once:
-`[runtime] watchdog_restart_command`, by default `launchctl kickstart gui/<uid>/local.tickr.bot`
-(without `-k`, so a job launchd still sees running is left alone). That is the same job the
+`[runtime] watchdog_restart_command`, on a Mac `launchctl kickstart gui/<uid>/local.tickr.bot`
+(without `-k`, so a job launchd still sees running is left alone; shipped since the server
+cutover: the server's restart request, docs/deploy-server.md "Bot restart on the server"). That is the same job the
 schedule starts: preflight again (a failure alerts `bot-did-not-start`), the supervisor, the
 single-instance lock, then the normal startup: recovery, reconciliation, the stop verified.
 Config refuses a restart time at or before the last entry time, so the restarted bot can never
