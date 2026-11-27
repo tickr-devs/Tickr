@@ -72,8 +72,8 @@ def world(tmp_path_factory):
     folder.mkdir()
     closes: dict[str, float] = {}
     for k, d in enumerate(cal[i - labels.HIST:i + 1]):
-        bars_maker.day_bars(d, k, closes, d == DAY).to_csv(folder / f"{d}.csv.gz", index=False,
-                                                           compression="gzip")
+        bars_maker.day_bars(d, k, closes, d == DAY).to_csv(  # level 1: same text, faster setup
+            folder / f"{d}.csv.gz", index=False, compression={"method": "gzip", "compresslevel": 1})
     trades, quotes = tick_maker.day_events(DAY, len(bars_maker.TICKERS) + 1, TRADES, QUOTES)
     trades, quotes = _names(trades), _names(quotes)
     quiet = ((quotes.ticker == tp.QUIET)
@@ -315,11 +315,14 @@ def harness(world, tmp_path):
 
 
 # each parity minute closes after the closes that let its cohort enter (Harness.warm): on this
-# day the cohort's symbols join until 09:43 and 11:50 when the closes start at 09:35 and 11:40
-WARM = {"04:30": "04:00", "09:44": "09:40", "09:45": "09:45", "12:00": "11:50",
+# day the cohort's symbols join until 09:43 and 11:50 when the closes start at 09:35 and 11:40.
+# Every start here is the latest of those measured on this day (04:05/04:10/04:15 for 04:30,
+# 11:43/11:46/11:50 for 11:58 to 12:01) with no refused row in the checked minutes: each close
+# runs the pinned converter, so a warm-up close costs most of a second
+WARM = {"04:30": "04:10", "09:44": "09:40", "09:45": "09:45", "12:00": "11:50",
         "15:30": "15:28"}
 OPEN_WARM = ("09:35", "09:44")  # a fresh day's closes before a 09:45 with every symbol entered
-NOON_WARM = ("11:40", "11:50")  # the same before 11:51
+NOON_START = "11:46"  # the first close of a fresh day whose cohort is all entered from 11:58
 
 
 def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
@@ -392,7 +395,7 @@ def test_the_marker_stays_inside_the_weighting(world, harness, monkeypatch):
     monkeypatch.setattr(ticks, "marker_quotes", spy)
     q = world.quotes
     served = {}
-    for m in range(_minute(NOON_WARM[0]), _minute("12:01") + 1):
+    for m in range(_minute(NOON_START), _minute("12:01") + 1):
         hm = _label(m)
         before = mark.entered()
         got = {"plain": plain.close(m), "marker": mark.close(m)}
