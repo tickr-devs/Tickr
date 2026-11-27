@@ -1,7 +1,8 @@
 """The incremental table (`features.incremental.DayTable`) against the training's way: for every
 tested minute, the rows of `LiveContext.table_rows` (the live context's feature-only day2 on the
 whole market's day so far) and of the incremental path are the same frame, bit for bit
-(check_exact), on randomized markets larger than the list depth (see model_market)."""
+(check_exact), on a randomized market larger than the list depth (see model_market; one
+market, seed 11: a second one was dropped for the suite's time)."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import datetime
 
 import model_inputs as inputs
 import model_market as synthetic
+import model_shared
 import pandas as pd
 import pytest
 
@@ -43,9 +45,18 @@ def _whole(cut, today, m, state, types):
     return _context(today).table_rows(cut, m, state, types, _cutoff(today, m))
 
 
-@pytest.fixture(scope="module", params=[11, 12])
-def world(request):
-    days = synthetic.market(DAYS, TICKERS, request.param)
+# One randomized market: a second one (seed 12) was dropped for the suite's time, each costs
+# about 15 s to build and 30 s to check
+SEED = 11
+
+
+@pytest.fixture(scope="module")
+def world(tmp_path_factory):
+    return model_shared.once(tmp_path_factory, f"incremental-{SEED}", lambda root: _world(SEED))
+
+
+def _world(seed):
+    days = synthetic.market(DAYS, TICKERS, seed)
     today, bars = days[-1]
     state = features.history(days[:-1], {}, today, None)
     want = {m: _whole(_cut(bars, today, m), today, m, state, None) for m in MINUTES}

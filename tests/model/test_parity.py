@@ -15,6 +15,7 @@ import sys
 
 import model_bars as bars_maker
 import model_inputs as inputs
+import model_shared
 import model_ticks as tick_maker
 import numpy as np
 import pandas as pd
@@ -93,7 +94,10 @@ def _training_table(root, given, tick_file):
 
 @pytest.fixture(scope="module")
 def day(tmp_path_factory):
-    root = tmp_path_factory.mktemp("parity")
+    return model_shared.once(tmp_path_factory, "parity-day", _day)
+
+
+def _day(root):
     labels = inputs.research().labels
     cal = labels.calendar()
     i = cal.index(DAY)

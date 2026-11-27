@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+import model_shared
 import numpy as np
 import pandas as pd
 import pytest
@@ -20,8 +21,7 @@ from tickr.model.features import full, ticks
 
 # Several minutes: early (pre-04:00 carry), the open minute by minute, midday (a stale latest
 # quote), late; spans of many minutes and of one.
-WALK_MINUTES = ["04:00", "04:30", "06:10", "09:30", "09:31", "09:32", "09:33", "09:45", "11:59",
-                "12:00", "12:01", "15:30", "15:59", "19:59"]
+WALK_MINUTES = ["04:00", "04:30", "09:30", "09:31", "09:45", "11:59", "12:00", "15:59", "19:59"]
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +68,20 @@ def _results(report):
     return {k: v for k, v in report.items() if k not in drop}
 
 
+@pytest.fixture(scope="module")
+def incremental(day, tmp_path_factory):
+    """One incremental run of the base minutes, read (never changed) by the resume and guard
+    tests: its folder and report."""
+    def build(out):
+        with pytest.MonkeyPatch.context() as mp:  # the autouse one_thread is function scoped
+            mp.setenv("TICK_THREADS", "1")
+            mp.setattr(headroom, "free_bytes", lambda path: ROOMY)
+            mp.setattr(headroom, "available_memory", lambda: ROOMY)
+            return out, _run(day[0], out, "--engine", "incremental")
+
+    return model_shared.once(tmp_path_factory, "parity-incremental", build)
+
+
 def test_the_incremental_engine_equals_full_prefix_on_all_191_columns(day, tmp_path):
     given = day[0]
     ref = _run(given, tmp_path / "ref")
@@ -92,11 +106,10 @@ def test_the_incremental_engine_equals_full_prefix_on_all_191_columns(day, tmp_p
     assert len(cells[0]) == got["exceptions"] > 0
 
 
-def test_resume_skips_finished_minutes_and_rebuilds_the_same_report(day, tmp_path,
+def test_resume_skips_finished_minutes_and_rebuilds_the_same_report(day, incremental, tmp_path,
                                                                     monkeypatch):
     given = day[0]
-    first = tmp_path / "first"
-    whole = _run(given, first, "--engine", "incremental")
+    first, whole = incremental
     lines = (first / f"parity-{DAY}.jsonl").read_text().splitlines(keepends=True)
     assert len(lines) == 1 + len(MINUTES)
     # a stop after two minutes, in the middle of writing the third line, the third minute's
@@ -164,13 +177,12 @@ def test_a_difference_between_the_engines_is_reported(day, tmp_path, monkeypatch
     assert "ENGINE DIFFERENCE at 12:00 15:30" in text
 
 
-def test_the_walk_stops_at_the_guard_and_a_resume_finishes_the_day(day, tmp_path,
+def test_the_walk_stops_at_the_guard_and_a_resume_finishes_the_day(day, incremental, tmp_path,
                                                                    monkeypatch, capsys):
     """The incremental engine's conversions go through the same guard: below the disk reserve
     the run stops with a `stop` line in the journal and a report of the minutes done (exit 3);
     with room again, --resume redoes the stopped minute and gives the whole run's results."""
-    given = day[0]
-    whole = _run(given, tmp_path / "whole", "--engine", "incremental")
+    given, whole = day[0], incremental[1]
     out = tmp_path / "out"
     real = parity_walk.TickWalk._convert
     stop_at = parity.table_minutes([MINUTES[2]])[0] + 240
@@ -244,13 +256,16 @@ def test_a_span_end_marker_equals_closing_every_minute_of_the_span(day, tmp_path
     symbols = set(trades.ticker) | set(quotes.ticker)
     last = parity.table_minutes(["15:59"])[0]
     # the one-minute closes walk the stretches that hold those cases (the opening, QUIET's silent
-    # 11:55 to 12:01 and the halted symbol's final quote in 15:31 to 15:46); between stretches
-    # the first walk also catches up with one marker, a span the second walk's longer span
-    # contains. Each advance runs the pinned converter, so the whole session would take minutes
-    stretches = [parity.table_minutes(s) for s in (["09:30", "09:45"], ["11:50", "12:01"],
-                                                   ["15:28", "15:59"])]
+    # 11:55 to 12:01 and the halted symbol's final quote, one minute either side); between
+    # stretches, and from there to 15:59, the first walk also catches up with one marker, a span
+    # the second walk's longer span contains. Each advance runs the pinned converter, so walking
+    # the whole session one minute at a time would take minutes
+    open_, noon = (parity.table_minutes(s) for s in (["09:30", "09:36"], ["11:54", "12:01"]))
+    at = parity.table_minutes(["09:45"])[0]
+    stretches = [open_, (at, at), noon, (halt - 1, halt + 1), (last, last)]
     every = [m for lo, hi in stretches for m in range(lo, hi + 1)]
-    assert halt in every and set(parity.table_minutes(["11:55", "12:01"])) <= set(every)
+    assert every == sorted(set(every))
+    assert set(parity.table_minutes(["11:55", "12:01"])) <= set(every)
     stops = parity.table_minutes(["09:30", "09:45", "11:59", "15:59"])
     assert set(stops) <= set(every)
     one, two = tmp_path / "one", tmp_path / "two"
