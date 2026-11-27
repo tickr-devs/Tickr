@@ -171,6 +171,23 @@
         }
       }
     },
+    "bot.alreadySending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not sent: this command is already being sent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no enviado: este comando ya se está enviando"
+          }
+        }
+      }
+    },
     "bot.checksCount" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -545,6 +562,23 @@
         }
       }
     },
+    "bot.ownerNotConfirmed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not sent: Face ID or the passcode did not confirm the owner"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no enviado: Face ID o el código no confirmaron al propietario"
+          }
+        }
+      }
+    },
     "bot.pauseEntries" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -704,13 +738,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The bot stops and stays stopped until you run tickr clear-stop on this Mac; the app cannot start it again. Working entry orders are cancelled. Open positions stay open under their broker stop, a DAY order: nothing closes them at the session's end. Close the positions first to be flat."
+            "value" : "The bot stops and stays stopped, also tomorrow, until you press Start bot. Refused while a trade is open or entering: close it first."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El bot se detiene y sigue detenido hasta que ejecutes tickr clear-stop en esta Mac; la app no puede volver a iniciarlo. Se cancelan las órdenes de entrada activas. Las posiciones abiertas siguen abiertas bajo su stop del bróker, una orden DAY: nada las cierra al final de la sesión. Cierra primero las posiciones para quedar sin posiciones."
+            "value" : "El bot se detiene y sigue detenido, también mañana, hasta que pulses Iniciar bot. Se rechaza mientras haya una operación abierta o entrando: ciérrala primero."
           }
         }
       }
@@ -12547,6 +12581,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Día de trading anterior (⌘[)"
+          }
+        }
+      }
+    },
+    "toolbar.settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes"
           }
         }
       }
