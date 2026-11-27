@@ -101,6 +101,9 @@ class RiskConfig:
     symbol_cooldown_minutes_after_loss: int
     max_entry_rest_bars: int
     entry_snapshot_interval_seconds: Decimal
+    planned_loss_percent: Decimal
+    position_notional_cap_percent: Decimal
+    max_daily_loss_percent: Decimal
     tradability_check_enabled: bool
     tradability_entry_profile_statuses: tuple[str, ...]
     tradability_blocked_profile_statuses: tuple[str, ...]
@@ -406,6 +409,7 @@ class ModelConfig:
     enabled: bool
     bundles_dir: str
     bundle: str
+    tick_groups: int
 
 
 @dataclass(frozen=True)
@@ -445,7 +449,14 @@ class MassiveConfig:
     max_pages: int
     stream_max_message_bytes: int
     stream_reconnect_seconds: Decimal
+    stream_release_pause_seconds: Decimal
+    stream_ack_timeout_seconds: Decimal
     calendar_lookback_days: int
+    revision_poll_enabled: bool
+    revision_store_dir: str
+    revision_poll_overlap_seconds: int
+    tick_subscription: str
+    tick_page_limit: int
     massive_news_path: str
     benzinga_news_path: str
     benzinga_earnings_path: str
@@ -459,6 +470,7 @@ class MassiveConfig:
     arrival_tail_seconds: int
     arrival_report_points_seconds: tuple[Decimal, ...]
     stream_day_dir: str
+    revision_report_quantiles: tuple[Decimal, ...]
 
 
 @dataclass(frozen=True)
@@ -797,6 +809,8 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[model] enabled must stay false: the trained model is not wired into "
                           "the trading loop yet (the bundle loader and the shared feature code "
                           "are; the live data feed and the decision path follow)")
+    if model.tick_groups < 1:
+        raise ConfigError("[model] tick_groups must be at least 1")
     check_sizing(built["confidence_sizing"], built["risk"], model)
     trailing: TrailingStopConfig = built["trailing_stop"]
     if trailing.enabled:
@@ -811,10 +825,18 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
     massive: MassiveConfig = built["massive"]
     if (massive.http_timeout_seconds < 1 or massive.page_limit < 1 or massive.max_pages < 1
             or massive.stream_max_message_bytes < 1 or massive.stream_reconnect_seconds <= 0
+            or massive.stream_release_pause_seconds < 0 or massive.stream_ack_timeout_seconds < 0
             or massive.calendar_lookback_days < 1
-            or not massive.stock_types):
+            or not all(0 < q < 1 for q in massive.revision_report_quantiles)
+            or massive.revision_poll_overlap_seconds < 0 or not massive.stock_types):
         raise ConfigError("[massive] timeouts, page sizes and the message limit must be at least "
-                          "1, stream_reconnect_seconds above 0, stock_types not empty")
+                          "1, stream_reconnect_seconds above 0, stream_release_pause_seconds and "
+                          "stream_ack_timeout_seconds not below 0, stock_types not empty, "
+                          "revision_report_quantiles each above 0 and below 1, "
+                          "revision_poll_overlap_seconds at least 0")
+    if massive.tick_subscription not in ("symbols", "market") or massive.tick_page_limit < 1:
+        raise ConfigError("[massive] tick_subscription must be \"symbols\" or \"market\", "
+                          "tick_page_limit at least 1")
     points = massive.arrival_report_points_seconds
     if (massive.arrival_flush_seconds <= 0 or massive.arrival_loop_seconds <= 0
             or massive.arrival_tail_seconds < 0 or points[0] < 0
@@ -889,6 +911,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     if risk.buying_power_max_age_seconds <= 0:
         raise ConfigError("[risk] buying_power_max_age_seconds must be above 0")
+    for name in ("planned_loss_percent", "position_notional_cap_percent",
+                 "max_daily_loss_percent"):
+        if not 0 <= getattr(risk, name) <= 100:
+            raise ConfigError(f"[risk] {name} must be between 0 (off) and 100")
     if built["orders"].detail_unreadable_seconds <= 0:
         raise ConfigError("[orders] detail_unreadable_seconds must be above 0")
     if built["orders"].stop_held_proof_seconds <= 0:
