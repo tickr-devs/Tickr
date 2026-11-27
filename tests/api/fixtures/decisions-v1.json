@@ -26,7 +26,12 @@
       "stop_price": null,
       "admission": "not_applicable",
       "refusal_cause": null,
-      "refusal": null
+      "refusal": null,
+      "decider": {
+        "kind": "strategy",
+        "name": "price-action-v1",
+        "version": "1"
+      }
     },
     {
       "at": "2026-11-16T15:01:00.000Z",
@@ -52,7 +57,12 @@
       "stop_price": "12.10",
       "admission": "not_evaluated",
       "refusal_cause": null,
-      "refusal": null
+      "refusal": null,
+      "decider": {
+        "kind": "strategy",
+        "name": "price-action-v1",
+        "version": "2"
+      }
     },
     {
       "at": "2026-11-16T15:02:00.000Z",
@@ -87,6 +97,11 @@
           "open": "1",
           "limit": "1"
         }
+      },
+      "decider": {
+        "kind": "strategy",
+        "name": "price-action-v1",
+        "version": "1"
       }
     }
   ],

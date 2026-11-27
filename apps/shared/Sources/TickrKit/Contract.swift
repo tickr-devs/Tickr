@@ -20,42 +20,6 @@ public enum CommandKind: String, Codable, Sendable, CaseIterable {
 
 public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 
-public struct StrategyId: Codable, Hashable, Sendable {
-  public let name: String
-  public let version: String
-  /// The settings version the decision or trade was made under (backlog S3, docs/api.md): the
-  /// platform settings plus the model's bundle, or this strategy's values while the model is
-  /// off. Nil when not recorded.
-  public let settingsVersion: String?
-
-  enum CodingKeys: String, CodingKey {
-    case name
-    case version
-    case settingsVersion = "settings_version"
-  }
-
-  public init(name: String, version: String, settingsVersion: String? = nil) {
-    self.name = name
-    self.version = version
-    self.settingsVersion = settingsVersion
-  }
-
-  public init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    name = try c.decode(String.self, forKey: .name)
-    version = try c.decode(String.self, forKey: .version)
-    // Added after version 1 shipped: an older bot's strategy has no such key.
-    settingsVersion = try c.decodeIfPresent(String.self, forKey: .settingsVersion)
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var c = encoder.container(keyedBy: CodingKeys.self)
-    try c.encode(name, forKey: .name)
-    try c.encode(version, forKey: .version)
-    try c.encodeNullable(settingsVersion, forKey: .settingsVersion)
-  }
-}
-
 public struct EntryBlock: Codable, Hashable, Sendable {
   public let cause: String
   public let text: String
@@ -191,14 +155,20 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let feesTodayUsd: DecimalString?
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
+  /// Every live protection setting with the value new entries are admitted under now; empty from an older bot.
+  /// Only the API's answer carries it, from the bot's run facts file; status.json has none (docs/api.md, "Run facts").
+  public var protectionInForce: [ProtectionValue] { protectionInForceShown ?? [] }
+  private let protectionInForceShown: [ProtectionValue]?
   /// The stop-bot this run obeyed or is carrying out; nil while none (and from an older bot).
   public let stopProgress: StopProgress?
   /// Every own entry working at the broker with nothing filled yet; empty from an older bot.
   public let workingEntries: [WorkingEntry]
   public let schemaVersion: Int
+  /// Who decides this run's entries (docs/api.md, "Decider"); nil from an older API.
+  public let decider: DeciderV1?
 
   enum CodingKeys: String, CodingKey {
-    case environment, strategy, fences, position, freshness, positions
+    case environment, strategy, fences, position, freshness, positions, decider
     case codeVersion = "code_version"
     case writtenAt = "written_at"
     case botState = "bot_state"
@@ -215,6 +185,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case feesTodayUsd = "fees_today_usd"
     case resultTodayNetUsd = "result_today_net_usd"
     case resultTodayBrokerUsd = "result_today_broker_usd"
+    case protectionInForce = "protection_in_force"
     case stopProgress = "stop_progress"
     case workingEntries = "working_entries"
     case schemaVersion = "schema_version"
@@ -246,8 +217,10 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
+    protectionInForceShown = try c.decodeIfPresent([ProtectionValue].self, forKey: .protectionInForce)
     stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
     workingEntries = try c.decodeIfPresent([WorkingEntry].self, forKey: .workingEntries) ?? []
+    decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -275,8 +248,38 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
+    try c.encodeIfPresent(protectionInForceShown, forKey: .protectionInForce)
     try c.encodeNullable(stopProgress, forKey: .stopProgress)
     try c.encode(workingEntries, forKey: .workingEntries)
+    // Only the API's answer carries `decider`; the bot's status file has none (docs/api.md, "Decider").
+    try c.encodeIfPresent(decider, forKey: .decider)
+  }
+}
+
+/// A protection setting new entries are admitted under now (backlog S5). `adoptedAt` is when the running bot
+/// adopted a tightening of it; nil when it holds the value the bot started with.
+public struct ProtectionValue: Codable, Hashable, Sendable {
+  public let key: String
+  public let value: String
+  public let adoptedAt: WireTime?
+
+  enum CodingKeys: String, CodingKey {
+    case key, value
+    case adoptedAt = "adopted_at"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    key = try c.decode(String.self, forKey: .key)
+    value = try c.decode(String.self, forKey: .value)
+    adoptedAt = try c.decodeNullable(WireTime.self, forKey: .adoptedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(key, forKey: .key)
+    try c.encode(value, forKey: .value)
+    try c.encodeNullable(adoptedAt, forKey: .adoptedAt)
   }
 }
 

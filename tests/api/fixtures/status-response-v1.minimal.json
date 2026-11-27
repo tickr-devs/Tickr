@@ -38,7 +38,13 @@
     "result_today_broker_usd": "-1.64",
     "stop_progress": null,
     "working_entries": [],
-    "schema_version": 1
+    "schema_version": 1,
+    "decider": {
+      "kind": "strategy",
+      "name": "price-action-v1",
+      "version": "1"
+    },
+    "protection_in_force": []
   },
   "age_seconds": "0.250",
   "stale": false,

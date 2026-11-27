@@ -185,13 +185,16 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | GET | `/performance?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>` | `200` `performance-v1`: gross results in R and USD of the trades closed from `from` to `to` (New York dates, both included): counts, win rate, expectancy, averages, profit factor, max drawdown, a per-day series. |
 | GET | `/account` | `200` `account-response-v1`: positions and open orders from the bot's latest successful broker read, whether they matched its records, and the latest balances. `503 unavailable` when the file is missing, invalid or dated in the future. |
 | GET | `/quotes` | `200` `quotes-response-v1`: the newest valid L1 quote of every symbol on the bot's quote stream (`quotes-v1`, see "GET /quotes" below); `503` `unavailable` while the bot has written no quotes file or it is invalid. |
-| GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. `live_quote_max_age_seconds` is how long after the stream's last delivery (`/quotes` `stream_received_at`) clients still show its quotes as live prices, and `quotes_poll_seconds` how often they read `/quotes`; both `null` from an older API, and then nothing is live. `command_max_age_seconds` is the age past which the bot refuses a command as expired: the apps keep a lost send's `Idempotency-Key` at most this long (`null` from an older API, and then they keep none). |
+| GET | `/settings` | `200` `settings-v1`: risk limits, session times, active strategy and observers from `config/bot.toml`, as the API process loaded them at its start (read-only; change the file and restart). `broker_read_max_age_seconds` is the age of `status.freshness.last_broker_read_at` past which entries are blocked; `broker_read_warn_seconds` (always below it) is where clients start showing a warning. `live_quote_max_age_seconds` is how long after the stream's last delivery (`/quotes` `stream_received_at`) clients still show its quotes as live prices, and `quotes_poll_seconds` how often they read `/quotes`; both `null` from an older API, and then nothing is live. `command_max_age_seconds` is the age past which the bot refuses a command as expired: the apps keep a lost send's `Idempotency-Key` at most this long (`null` from an older API, and then they keep none). `decider` / `decider_cause`: see Decider below. |
 | GET | `/config` | `200` `config-v1`: the configuration file the API was started with, as it is on disk now, read-only. Every `[section]` in file order, each key with its value as written (TOML text) and the comment above it. `valid`/`error`: whether the file loads now, as the next start would. `changed_since_start`: the file differs from the one this API loaded (running processes keep the old values until restarted). The file holds credential variable names only, never values. `503 unavailable` when the API was started without a file path (the demo) or the file is unreadable. |
 | GET | `/settings/schema` | `200` `settings-schema-v1`: every owner setting of the settings schema with its kind, unit, bounds, step, group, words in English and Spanish, when a change applies, the direction that needs Face ID and whether it needs retraining, plus the rules across settings (read-only; see Owner settings below). `503 unavailable` when `[api] settings_schema_file` cannot be read. |
 | GET | `/settings/values` | `200` `settings-values-v1`: each schema setting's value in its owner's file as it is on disk now (TOML text), with each file's SHA-256. `503 unavailable` without a config file path (the demo) or when a file cannot be read. |
 | POST | `/settings/validate` | Body `{"changes": [{"owner", "key", "value"}, ...]}`. `200` `settings-draft-v1`: typed refusals and, per key, when the change would apply and whether it needs Face ID. Writes and applies nothing. `400` for any other body, `503` as GET /settings/values. |
+| POST | `/settings/apply` | Body `{"changes": [...], "base": [{"owner", "digest"}, ...], "biometric_confirmed": true\|false}`. Applies a draft under the apply rules (see Owner settings: apply, history, rollback): `200` `settings-applied-v1` with the journaled version; `400` for a bad body or a refused draft; `403 biometric_required` for a loosening without `biometric_confirmed`; `409 conflict` for a file changed since `base`, another write in progress, nothing to change, a when-flat setting while the bot is not shown flat, or a setting that needs retraining; `503` as GET /settings/values. Nothing changes on any refusal. |
+| POST | `/settings/rollback` | Body `{"version": <n>, "base": [...], "biometric_confirmed": true\|false}`. Sets every key changed after version `n` (0: before the first) back to its value at `n`, through the same rules and answers as apply; `404` without version `n`. |
+| GET | `/settings/history` | `200` `settings-history-v1`: every journaled settings version, oldest first; `503` when the history file is unreadable. |
 | GET | `/jobs` | `200` `jobs-v1`: the bot's scheduled work for the Settings jobs strip (read-only; see GET /jobs below). |
-| GET | `/system` | `200` `system-v1`: the apps' System card: the Webull link, the latest preflight (the 03:30 morning check), model training progress, and the machine's own services (on a Mac the watchdog with its restarts and the no-sleep hold), read-only (see GET /system below). |
+| GET | `/system` | `200` `system-v1`: the apps' System card: the Webull link, the latest preflight (the 03:30 morning check), model training progress, the trained model's switch and state (`model`), and the machine's own services (on a Mac the watchdog with its restarts and the no-sleep hold), read-only (see GET /system below). |
 | GET | `/alerts` | `200` `alerts-v1`: the notification settings: each owner-facing channel and whether the latest preflight proved it works, and every alert kind with its group, whether it is locked on, and the channels it goes to (see Notification settings below). |
 | PUT | `/alerts/routing` | Body `{"kind": "<alert kind>", "channel": "mac"\|"imessage"\|"push", "on": true\|false}`. Changes that one cell of the owner's alert routing: `200` `alerts-v1`; `400 bad_request` for an unknown kind or channel or another body; `409 conflict` for a locked kind turned off (cause `locked-kind: ...`) or a routing file that cannot be used. Not a bot command. |
 | GET | `/journal` | `200` `journal-v1`: the latest `[api] journal_rows` rows of the bot's journal with their numbers (read-only; see GET /journal below). |
@@ -213,12 +216,13 @@ in its Swift tests, so a contract change it does not model fails its CI job.
 | POST | `/commands/flatten` | Body `{}` (everything) or `{"symbol": "<TICKER>"}` (only that position). `202` `command-accepted-v1`. |
 | POST | `/commands/stop-bot` | Body `{}`, `{"mode": "close_and_stop"}` or `{"mode": "leave_open"}` (what to do with open positions, see stop-bot below). Graceful stop that sticks. `202` `command-accepted-v1`. |
 | POST | `/commands/emergency` | Body `{}`. Entry-stop on, cancel own orders, flatten all. The apps' "Close all" button. `202` `command-accepted-v1`. |
-| POST | `/commands/start-bot` | Body `{}`. Starts the bot job through launchd (not a bot command, see "Start-bot"). `202` `bot-start-v1`; `409 conflict` while a fresh status says the bot is starting, running or stopping, or a live process holds the bot's lock; `503 unavailable` when no start command is configured, the stop marker cannot be removed, or the command fails. |
+| POST | `/commands/start-bot` | Body `{}`. Starts the bot job through launchd on a Mac, through the start request on the server (not a bot command, see "Start-bot"). `202` `bot-start-v1`; `409 conflict` while a fresh status says the bot is starting, running or stopping, or a live process holds the bot's lock; `503 unavailable` when no start command is configured, the stop marker cannot be removed, or the command fails. |
 
 Errors are `error-v1` `{"error": code, "cause": text, "api_version": 1, "cause_codes": [...]}`
 (`cause_codes`, added after version 1 shipped, as under "Reason codes" below):
 `forbidden_host` / `forbidden_origin` 403, `not_found` 404, `method_not_allowed` 405,
 `unauthorized` 401 (remote request without the paired token),
+`biometric_required` 403 (a settings change that loosens protection without `biometric_confirmed`),
 `length_required` 411, `payload_too_large` 413, `unsupported_media_type` 415, `bad_request` 400,
 `too_many_pending` 429, `rate_limited` 429 (GET /chart: its request budget is spent and cannot say when it refills),
 `auth_rate_limited` 429 with `Retry-After` (remote port: too many failed authentications from this address, see
@@ -823,7 +827,7 @@ kinds, units, words, apply timing, rules) and `[api] settings_schema_file` (each
 and any maximum), read on every request, so a bad edit of it answers `503` with its cause.
 These routes pass the same guard as every other route: on the remote port they need the paired
 bearer token (`401` without it), on the local port the `Host` rule. Nothing here writes a file,
-a journal row or a database row; applying a draft, its history and rollback come later.
+a journal row or a database row; applying a draft, its history and rollback are below.
 
 - An owner is `platform` (the config file this API was started with) or a strategy folder
   under `strategies/`; a `key` is the dotted `table.key` inside that owner's file.
@@ -846,13 +850,102 @@ a journal row or a database row; applying a draft, its history and rollback come
   (no refusal), `refusals[]` (`owner`, `key`, `cause`, `detail`) and `changes[]`. Causes:
   `UNKNOWN_KEY` (not a schema setting, or no such owner), `WRONG_TYPE` (the text is not of the
   setting's kind), `BELOW_MINIMUM`, `ABOVE_MAXIMUM`, `OFF_STEP`, `RULE_BROKEN` (the draft over
-  the file breaks a rule; named on the rule's left key), `VALUE_MISSING` (the file has no present
+  the file breaks a rule; named on the rule's left key), `ENGINEERING_KEY` (the key is in the file but is file-only), `CLOSED_KEY` (the key is, or lies at
+  any depth under, a closed table or key in any spelling of its path, in the file or not:
+  environment, Production authorization, secrets; refused whatever its value, even when a schema
+  record names it, backlog S2),
+  `VALUE_MISSING` (the file has no present
   value to compare with, or a rule needs a key the file lacks). `changes[]` holds every draft key
   of the right kind with a present value: `current` and `draft` (TOML text), `changed` (false
   when the draft repeats the present value), `applies`, `needs_face_id` and
   `requires_retraining`. A change that loosens protection applies at `next_session` and needs
   Face ID; any other change follows the setting's `applies` (owner decisions 2026-11-15 and
   2026-11-19, backlog S5).
+
+### Owner settings: apply, history, rollback
+
+The rest of backlog S4 with the apply rules of S5. Code: `src/tickr/api/settingsapply.py`. The
+owner files (the config file this API was started with, `strategies/<folder>/strategy.toml`)
+stay the single source of truth; the journal is `<data_dir>/<[api] settings_history_file>`,
+a `settings-history-v1` document.
+
+- POST /settings/apply takes the validate body plus `base` (each owner file's `digest` from GET
+  /settings/values: every owner the draft changes must be listed) and `biometric_confirmed`.
+  The draft is checked as POST /settings/validate checks it (`400` with the refusals); then, per
+  changed key:
+  - a change that tightens protection (`applies` `at_once`) is written to its file now; a
+    running bot adopts it for new entries at its next loop pass (below, "Protection tightened
+    while running");
+  - a change that loosens protection (`next_session`) needs `biometric_confirmed: true`
+    (else `403 biometric_required`) and is journaled `pending` with `effective_after` (today's
+    New York date): the bot writes it at its first start on a later date, before it loads its
+    config, so a restart on the same day never takes it;
+  - a model or strategy setting (`when_flat`) is written only while the bot is shown flat:
+    its status lists no position and no open reservation (a working entry reserves its planned
+    loss), and it is fresh, or the bot is stopped with no process holding its lock. Otherwise
+    `409 conflict` with the cause. It reaches the bot through a safe restart (stop-bot, then
+    start-bot: normal startup and reconciliation); nothing is reloaded in a running bot. So a
+    `when_flat` strategy setting is written while the bot is flat, but a bot that keeps running
+    trades with its old values until it restarts;
+  - a setting that needs retraining is refused (`409`): it applies only with a newly trained
+    model.
+  A change of a key that has a pending change replaces it (the old one becomes `superseded`),
+  also when the new value is the file's present value.
+- `biometric_confirmed` is the app's word that the owner passed Face ID (Touch ID on the Mac)
+  for this change; the server cannot check it. The protection is the paired device token on
+  the remote port plus this flag; the local port has no token, as for every other route.
+  The loopback port is therefore trusted for loosening: there, `biometric_confirmed` is whatever
+  the caller says.
+- Writes are atomic and journaled first: under an exclusive lock (`<history file>.lock`; held by
+  another writer: `409 conflict`, nothing changed) every listed owner file must still have its
+  `base` digest (else `409`: read GET /settings/values again); each candidate file must load
+  with the bot's own loaders (`config.load` on a temp copy beside `bot.toml`; a strategy file
+  through its strategy's `create` and history check from a temp folder beside its folder),
+  else `400` `<file> would not load: <the loader's cause>` with nothing written or journaled
+  (also for the bot's start writing pending changes, which then stay pending); the version is
+  recorded `writing`, each file is replaced in one rename with only the value of its key's line changed
+  (comments and every other line stay; an edit that would change anything else is refused),
+  then the version is `done`. A writer that stopped in between is settled by the next one from
+  the file digests: `done`, `not_written` (pending changes it settled become pending again) or
+  `unknown` (a file holds neither digest).
+- `settings-applied-v1`: `version` (as below) and `restart_needed`: a change other than a
+  tightening of protection was written to a file while the bot may be running (its last status
+  is not `stopped`, or a process holds its lock). The bot reads those settings at its start.
+- Protection tightened while running (`src/tickr/runtime/liveprotection.py`): once per loop
+  pass, before any strategy work, the bot reads `config/bot.toml` and compares its SHA-256 with
+  the last one it examined. A new version is validated exactly as at startup, from the same
+  bytes it digested (a file caught half-written is invalid, never a torn mix). It is adopted
+  only when it differs from the last valid version it examined (at first: the config it started
+  with) in live protection settings alone
+  (the platform settings whose `applies` is `at_once` and that have a loosening direction) and
+  every one of them that moved is stricter than the value in force; then all of them take
+  effect together for new entries (journal `protection-adopted` with each key's `before` and
+  `after`). Anything else (a looser value, an invalid or unreadable file, a change of any other
+  key) is ignored for the rest of the run: journal `protection-change-ignored` with its `cause`
+  (`loosens`, `invalid`, `unreadable`, `other_keys`) and alert `protection-change-ignored`;
+  nothing of it is applied. A change of another key is reported once and keeps its started value
+  until the next start (`restart_needed`); a later version that differs from it in live
+  protection alone (the next tightening) is adopted. A tightening never touches what is
+  already placed: an open trade keeps its broker stop and a working entry its order. GET /status
+  `status.protection_in_force` lists every live protection setting with the value new entries are
+  admitted under now and `adopted_at` (null: the value the bot started with). It comes from the
+  run facts file, not status.json (see "Run facts").
+- POST /settings/rollback `{"version": n, "base", "biometric_confirmed"}`: every key changed by
+  a version after `n` is set back to its value at `n` (the last change at or before `n`, else the
+  value before the first later change; `0` = before version 1), as a draft through the same
+  rules, so a rollback that loosens needs Face ID and waits for the next session. `404` without
+  version `n`, `409` for the latest version or one that never applied.
+- `settings-history-v1`: `versions[]`, oldest first, each with `version` (1, 2, ...), `kind`
+  (`apply`, `rollback`, `promote`: the bot's start wrote pending changes), `at`, `device`
+  (`local`, `phone`, `simulator`, `bot`: decided by the listener and the paired token's Host,
+  never by the request), `biometric_confirmed`, `rollback_to`, `state`, `files[]` (`owner`,
+  `file`, `digest_before`, `digest_after`) and `changes[]` (`owner`, `key`, `before`, `after`,
+  `applies`, `state`: `written`, `pending`, `promoted`, `superseded`; `effective_after`;
+  `settled_by`: the version that promoted or superseded a pending change).
+- The bot (`tickr.runtime run-bot`) writes due pending changes after taking its lock and
+  loads its config again; on any refusal (another writer, a draft the schema now refuses, an
+  unreadable file) it starts with the files as they are and logs why. Every change of a running
+  bot's values, including a tightening, reaches it at its next start.
 
 ### GET /jobs (read-only)
 
@@ -945,6 +1038,15 @@ machine's own services follow under `host`, so a bot on a server keeps the rest 
     PreventUserIdleSystemSleep or PreventSystemSleep (`held` or `not_held`; nothing else of the
     output is kept). `unknown` with `cause` when the command fails. A hold is expected while
     the bot runs.
+- `model` (added after version 1 shipped; null from an older API): the trained model.
+  `enabled` is `[model] enabled` and `bundle` `[model] bundle` (null when none is chosen), as
+  the API loaded them. `state`: `off` while `enabled` is false (nothing is loaded, the strategy
+  decides). `not_loaded` (enabled, no bundle loaded yet) and `refused` (the load was refused,
+  `cause` the loader's ModelRefused code, e.g. `bundle_file_sha256`) are reserved for when the
+  bot records its loads; until then an enabled model is `state` null with `cause`
+  `model_load_not_recorded`, because the API process never loads a bundle itself. Config load
+  refuses `enabled = true` today, so the API sends `off`. The model's live data feed is not
+  part of this block yet: it comes as its own key once the feed is wired (R24).
 
 No part of this document is per user: a later bot or account identity is one more key.
 
@@ -967,7 +1069,8 @@ Which alert kinds go to which channel (backlog T14). Code: `src/tickr/api/alerts
   exposure, failing broker reads, a lost stream with a position, not flat after the flatten,
   every bot-down, crash, start and stop failure, preflight failed, the token waiting for
   confirmation, every `watchdog-*` kind, `api-credentials-unexpected`,
-  `remote-auth-blocked`, `risk-command-used` and `strategy-not-loaded`.
+  `remote-auth-blocked`, `risk-command-used`, `protection-change-ignored` and
+  `strategy-not-loaded`.
 - `routing_cause`: null, or why the routing file cannot be used (then every kind goes to every
   channel and writes are refused until the owner deletes the file).
 
@@ -1221,6 +1324,25 @@ and drawdowns are `0` for a range without trades, never `null`.
 counted), a missing, repeated, extra or malformed parameter is `400 bad_request`. An
 unreadable database is `503 unavailable`, as for `/days`.
 
+### Decider
+
+Who made a decision, so a client can show a strategy and later the trained model the same way:
+`decider` `{kind, name, version}`, `kind` `strategy` (a module under `strategies/`) or `model` (a
+trained bundle, backlog R26). It sits next to the strategy identity it comes from: GET /status
+top level (`status.decider`, who decides this run's entries) and each `trades_today[]` (who
+decided its entry; null with a null `strategy`, a manual trade), each `/decisions` row, each
+`/skipped` signal, and `/explain`. Today every decision is a strategy's, so it is always `kind`
+`strategy` with the `strategy` name and version beside it; it is built from them when the
+document is served, and `model` is never sent
+until the model decides and the decision records say so. GET /settings has it too (the active
+strategy's `[strategy]` name and version from its strategy.toml, read when the API starts), null
+with `decider_cause` `strategy_file_unreadable` when that file cannot be read. Added after
+version 1 shipped: a reader takes a document without it as null; the existing `strategy` keys
+stay. It is only in API responses, never in a file the bot writes: status.json has no `decider`
+(a reader from before it refuses unknown keys, and the watchdog takes an unreadable status file
+as a bot not running), so a rollback or a mixed-version run still reads the file; the API adds
+it when it serves the status.
+
 ### GET /explain (read-only)
 
 Answers "why did the bot do (or not do) this?" for one symbol, from the decision file the bot
@@ -1403,7 +1525,7 @@ decision file keeps the text):
   `DAILY_MONEY_UNKNOWN` `{missing}`; `DAILY_CEILING` `{room, ceiling, realized, reserved,
   min_room}` (room below the minimum) or `{realized, reserved, new, total, ceiling}` (the new
   trade would cross the ceiling); `BUYING_POWER_UNKNOWN` `{}` (no balance read) or `{age,
-  limit}`; `BUYING_POWER_SHORT` `{value, buying_power, committed, free}`; `GATE_CLOSED` `{gate, ...}` (the gate's code and params, as
+  limit}`; `BUYING_POWER_SHORT` `{value, buying_power, committed, free}`; `EQUITY_UNKNOWN` `{}` (no equity read), `{age, limit}` or `{value}` (a percent-of-equity limit is on and the equity is unusable); `GATE_CLOSED` `{gate, ...}` (the gate's code and params, as
   `trading_gate` above). Every other code: `{}`.
 - A cause that is not exactly one of the shapes admission and the entry path write (no `: `,
   an unknown code, a detail of a timed code that does not match, or a detail of any other code
@@ -1742,12 +1864,22 @@ preconditions to every command.
 #### Start-bot
 
 `POST /commands/start-bot` is the one command the bot does not read: a stopped bot cannot.
-The API runs `[api] start_bot_command` (shipped: `launchctl kickstart gui/<uid>/local.tickr.bot`,
-without `-k`, so a job that already runs is never restarted) and answers `202 bot-start-v1`
-(`requested_at`, `stop_marker_cleared`) when it exits 0. The bot job then runs exactly as a
-scheduled start: preflight first, which may still refuse (no session today, token, disk);
-follow `GET /status` and the job log. Nothing runs inside the API process, and nothing talks
-to the broker.
+The API runs `[api] start_bot_command` and answers `202 bot-start-v1`
+(`requested_at`, `stop_marker_cleared`) when it exits 0:
+
+- on a Mac: `launchctl kickstart gui/<uid>/local.tickr.bot`, without `-k`, so a job that
+  already runs is never restarted;
+- shipped (the server, since the cutover): `python -m tickr.runtime --config
+  /app/config/bot.toml request-start --cause start-bot`, which only writes the start request
+  file `[runtime] server_start_request_file` under the data folder. The host's
+  `tickr-bot-start.service` then runs `docker compose up -d --no-recreate` for the bot: a running
+  bot container is never touched, a stopped one is started, a missing one is created
+  (docs/deploy-server.md, "Bot start on the server"). On the server `202` means "request
+  written", not "bot started": the host unit's status says whether the container started.
+
+The bot job then runs exactly as a scheduled start: preflight first, which may still refuse
+(no session today, token, disk); follow `GET /status` and the job log. Nothing runs inside the
+API process, and nothing talks to the broker.
 
 - Refused `409 conflict` (nothing changed) while a fresh status says the bot is `starting`,
   `running` or `stopping`. A stale or missing status proves nothing, so the start goes ahead;
@@ -1755,7 +1887,10 @@ to the broker.
 - Refused `409 conflict` (nothing changed) while a live process is recorded in the bot's lock
   file (`tickr.lock` under `data_dir`): a fresh `stopped` is written before the process has
   ended, and `tickr trade` holds the same lock. The kickstart would do nothing, or the job
-  would end on `AlreadyRunning`, with the owner's stop already gone.
+  would end on `AlreadyRunning`, with the owner's stop already gone. On the server the API's
+  container does not share the bot's pid namespace, so this check cannot see the bot's pid
+  there; the start request is still safe because its host unit never touches a running bot
+  container.
   A crashed bot leaves its pid in the file; should macOS reuse that pid for another process,
   Start answers `409` until that process ends. A lock file that cannot be read is `503`.
 - The operator stop marker left by stop-bot is removed first (pressing Start is the decision
@@ -1766,8 +1901,9 @@ to the broker.
   runs. Removing it is written to the API log (`api.log` under launchd) with the time.
 - Starts run one at a time across both listeners, under their own lock, so a slow start
   command never holds back a queued command such as emergency or flatten.
-- `503 unavailable` without running anything when `start_bot_command` is empty (Docker, the
-  demo, which sets it empty so it can never start the real bot job).
+- `503 unavailable` without running anything when `start_bot_command` is empty (the demo,
+  which sets it empty so it can never start the real bot job). On the server a missing control
+  folder makes `request-start` exit 1 (`control-folder-missing`): `503` with the exit code.
 - An `Idempotency-Key` is checked for its form only: a repeat is harmless.
 
 Stopping stays `POST /commands/stop-bot`: the bot drains itself and is refused while any trade
@@ -1813,6 +1949,16 @@ again).
 - Account: after each successful reconciliation the bot calls
   `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way. Before
   that it journals `reconcile-checked` when due (`record_reconcile`, see "Clean day").
+- Run facts: facts of the running bot that change seldom (`protection_in_force`) live in their
+  own `run-facts-v1` file (`[runtime] run_facts_file`), not in status.json, which keeps the shape a
+  reader from before them accepts (it refuses unknown keys, and the watchdog takes an unreadable
+  status file as a bot not running). The bot calls `contract.write_run_facts` (temp file + fsync +
+  rename, like status) at its start and after each adoption of a tightening (journal row, then
+  the adoption, then the file), never per pass. A failed write never stops the loop nor undoes the
+  adoption and is never retried: it is journaled once per stretch of failures
+  (`run-facts-write-failed`). The file carries `run_id`; GET /status shows its facts only when it
+  matches the `run_id` of status.json, so a stale (previous run), missing or unreadable file shows
+  an empty `protection_in_force`.
 - Commands: the bot calls `contract.read_commands(inbox, now, command_max_age_seconds)`. Each item
   is a command or a refusal (unreadable file, expired, dated in the future). For each item the bot
   journals it in one transaction, acts if it is a command, then calls `contract.retire_command`
