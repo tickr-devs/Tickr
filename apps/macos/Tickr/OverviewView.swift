@@ -41,7 +41,7 @@ struct OverviewView: View {
   static let padding = Tokens.Space.l
   /// Name of the cards' own coordinate space inside the scroll view: a card's place in it moves
   /// only when the cards above it change, never with the scroll offset.
-  static let contentSpace = "overview-content"
+  nonisolated static let contentSpace = "overview-content"
   /// Narrowest grid, in points, with the cards in two columns: two of the least grid column
   /// (`Tokens.Size.gridColumnMin`) and the gap between. Narrower (a window capped to a small
   /// display, `WindowFit`), the cards stack in one column, the Safety · bot card first after the
