@@ -11225,6 +11225,40 @@
         }
       }
     },
+    "settings.startExplanation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "launchd starts the bot job as on a scheduled morning: preflight first, then trading if every check passes. An earlier Stop is cleared, so scheduled starts run again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "launchd inicia el trabajo del bot como en una mañana programada: primero la verificación previa y luego el trading si pasan todas las comprobaciones. Se borra un Detener anterior, así que los inicios programados vuelven a ejecutarse."
+          }
+        }
+      }
+    },
+    "settings.startQuestion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start the bot?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Iniciar el bot?"
+          }
+        }
+      }
+    },
     "settings.startRefused" : {
       "extractionState" : "manual",
       "localizations" : {

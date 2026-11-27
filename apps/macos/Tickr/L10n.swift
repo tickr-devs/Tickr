@@ -799,6 +799,17 @@ enum L10n {
         defaultValue: "Start requested: the bot runs its preflight first.",
         bundle: L10n.bundle)
     }
+    /// The question Overview's Start bot asks first (`OverviewStartButton`).
+    static var startQuestion: LocalizedStringResource {
+      LocalizedStringResource("settings.startQuestion", defaultValue: "Start the bot?", bundle: L10n.bundle)
+    }
+    /// Its explanation.
+    static var startExplanation: LocalizedStringResource {
+      LocalizedStringResource("settings.startExplanation",
+        // swiftlint:disable:next line_length
+        defaultValue: "launchd starts the bot job as on a scheduled morning: preflight first, then trading if every check passes. An earlier Stop is cleared, so scheduled starts run again.",
+        bundle: L10n.bundle)
+    }
     static var startBotHint: LocalizedStringResource {
       LocalizedStringResource("settings.startBotHint",
         defaultValue: "Runs the morning check, then starts the bot",
