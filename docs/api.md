@@ -1962,7 +1962,11 @@ again).
   adoption and is never retried: it is journaled once per stretch of failures
   (`run-facts-write-failed`). The file carries `run_id`; GET /status shows its facts only when it
   matches the `run_id` of status.json, so a stale (previous run), missing or unreadable file shows
-  an empty `protection_in_force` and null settings versions.
+  an empty `protection_in_force` and null settings versions. Limitation: when the write after an
+  adoption fails, the file this run wrote earlier stays, so GET /status keeps showing the values
+  from before that adoption as in force (with their old `adopted_at`) until a later write
+  succeeds; new entries are already admitted under the adopted values, and the journal
+  (`protection-adopted`, then `run-facts-write-failed`) is the record of what is in force.
 - Commands: the bot calls `contract.read_commands(inbox, now, command_max_age_seconds)`. Each item
   is a command or a refusal (unreadable file, expired, dated in the future). For each item the bot
   journals it in one transaction, acts if it is a command, then calls `contract.retire_command`

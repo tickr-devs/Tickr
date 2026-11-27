@@ -1127,8 +1127,11 @@ class Service:
         """At the start and after each change of what it holds (an adoption, a change of the
         settings versions of the trades the status shows), never per pass.
         Display only: a failed write never ends the loop nor undoes what changed, is never
-        retried, and is journaled once per stretch of failures; the API then shows the facts of
-        no run (an older file names another run id)."""
+        retried, and is journaled once per stretch of failures. The last file written stays: a
+        failed write at the start leaves the previous run's file (the API shows no facts), but a
+        failed write after an adoption leaves this run's earlier file, so the API keeps showing
+        the values from before the adoption as in force until a later write succeeds; the
+        journal (`protection-adopted`, `run-facts-write-failed`) is what holds."""
         if self.paths.run_facts is None:
             return
         self._facts_trades = self._trade_versions  # tried once, never again for the same
