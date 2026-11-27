@@ -239,12 +239,20 @@ def test_a_span_end_marker_equals_closing_every_minute_of_the_span(day, tmp_path
     """codex-109 point 5: catching up over a span with one marker at its end gives, for every
     minute of the span and the later windows, the rows that closing each minute on its own
     gives. The synthetic day holds silent minutes, a halted symbol and a symbol's final real
-    quote, all inside the spans walked here."""
-    given, trades, quotes = day[0], day[1], day[2]
+    quote, all inside the stretches walked one minute at a time here."""
+    given, trades, quotes, halt = day[0], day[1], day[2], day[4]
     symbols = set(trades.ticker) | set(quotes.ticker)
-    first, last = parity.table_minutes(["09:30", "15:59"])
-    every = list(range(first, last + 1))
+    last = parity.table_minutes(["15:59"])[0]
+    # the one-minute closes walk the stretches that hold those cases (the opening, QUIET's silent
+    # 11:55 to 12:01 and the halted symbol's final quote in 15:31 to 15:46); between stretches
+    # the first walk also catches up with one marker, a span the second walk's longer span
+    # contains. Each advance runs the pinned converter, so the whole session would take minutes
+    stretches = [parity.table_minutes(s) for s in (["09:30", "09:45"], ["11:50", "12:01"],
+                                                   ["15:28", "15:59"])]
+    every = [m for lo, hi in stretches for m in range(lo, hi + 1)]
+    assert halt in every and set(parity.table_minutes(["11:55", "12:01"])) <= set(every)
     stops = parity.table_minutes(["09:30", "09:45", "11:59", "15:59"])
+    assert set(stops) <= set(every)
     one, two = tmp_path / "one", tmp_path / "two"
     for work in (one, two):
         work.mkdir()
