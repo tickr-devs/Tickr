@@ -131,7 +131,7 @@ struct OverviewView: View {
             DayResult().rise(step: Order.result.rawValue)
             LiveFlowCard().rise(step: Order.flow.rawValue)
             WatchingCard().filling().rise(step: Order.watching.rawValue)
-            PositionsCard().filling().rise(step: Order.positions.rawValue)
+            PositionsCard().filling().rise(step: Order.positions.rawValue).id(PositionsCard.id)
             SafetyCard().filling().rise(step: Order.middle.rawValue).id(SafetyCard.id)
               // Also when a card above it changes height while the page's height stays the same
               // (the bottom row fills the rest), which moves it without a content-size change.
@@ -167,11 +167,16 @@ struct OverviewView: View {
     .jumps(on: model.shownDay)
   }
 
-  /// UI tests (`LayoutSweep.safetyFirst`): the Safety · bot card at the top of the screen, kept
-  /// there while the cards above it load, so a test clicks its commands without a scroll.
+  /// UI tests (`LayoutSweep.safetyFirst`, `LayoutSweep.positionsFirst`): the Safety · bot card
+  /// or the Positions card at the top of the screen, kept there while the cards above it load, so
+  /// a test clicks its commands without a scroll.
   private func showSafetyFirstIfAsked(_ proxy: ScrollViewProxy) {
-    #if DEBUG
-    if LayoutSweep.safetyFirst { proxy.scrollTo(SafetyCard.id, anchor: .top) }
+    #if DEBUG && os(macOS)
+    if LayoutSweep.positionsFirst {
+      proxy.scrollTo(PositionsCard.id, anchor: .top)
+    } else if LayoutSweep.safetyFirst {
+      proxy.scrollTo(SafetyCard.id, anchor: .top)
+    }
     #endif
   }
 }
@@ -679,7 +684,7 @@ private struct Pipeline: View {
         .contentShape(RoundedRectangle(cornerRadius: Tokens.Radius.medium))
     }
     .buttonStyle(.plain)
-    .pointerStyle(.link)
+    .linkPointer()
     .onHover { inside in
       if inside {
         hovered = stage.id
@@ -729,7 +734,7 @@ private struct Pipeline: View {
         Text(verbatim: Format.missing)
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-          .help(stage.note.map { Text(verbatim: $0) } ?? Text(L10n.Flow.notReported))
+          .tip(stage.note.map { Text(verbatim: $0) } ?? Text(L10n.Flow.notReported))
       }
       // How many the stage dropped or refused, small; the symbols left out and why on hover.
       if let drop = stage.drop {
@@ -852,24 +857,37 @@ private struct PositionsCard: View {
   @Environment(AppModel.self) private var model
   @AppStorage(ChartView.Keys.symbol) private var chartSymbol = ""
   @State private var selected: String?
+  /// The working entry whose chip is chosen (mockup v162), by symbol; nil shows a position.
+  @State private var selectedEntry: String?
 
   var body: some View {
     let rows = model.positions
-    let shown = rows.first(where: { $0.id == selected }) ?? rows.first
+    let entries = model.entryRows
+    // A chosen entry's chip wins; with no position open the first entry is shown.
+    let entry = entries.first(where: { $0.symbol == selectedEntry }) ?? (rows.isEmpty ? entries.first : nil)
+    let shown = entry == nil ? rows.first(where: { $0.id == selected }) ?? rows.first : nil
     Card(title) {
       HStack(spacing: Tokens.Space.s) {
-        // One tab per open position with its result, as in the design; a single position needs none.
+        // One tab per open position with its result, as in the design, then one dashed chip per
+        // working entry (mockup v162); a single position or entry alone needs none.
         // A tab never wraps or cuts its words (owner report 2026-11-18: five positions stacked
         // "+$17.42" one character per line): when the results do not fit, the tabs show the
         // symbols alone, tinted by their result; when even those do not, they scroll sideways.
-        if rows.count > 1 {
+        if rows.count + entries.count > 1 && model.stoppedPositions == nil {
           ViewThatFits(in: .horizontal) {
-            tabs(rows, shown: shown, results: true)
-            tabs(rows, shown: shown, results: false)
-            ScrollView(.horizontal) { tabs(rows, shown: shown, results: false) }
+            tabs(rows, entries, shown: shown, entry: entry, results: true)
+            tabs(rows, entries, shown: shown, entry: entry, results: false)
+            ScrollView(.horizontal) { tabs(rows, entries, shown: shown, entry: entry, results: false) }
               .withoutScrollIndicators()
           }
         }
+        // Cancel entry for the entry shown (mockups v160, v162), beside Close all.
+        if let entry, entry.phase != .cancelled, model.stoppedPositions == nil {
+          CancelEntryButton(row: entry)
+        }
+        // Close all beside the tabs (mockup Main): it pauses entries, cancels the working entry
+        // orders and closes every position; shown only while one is open.
+        CloseAllButton()
         HeaderLink(L10n.Position.openChart, systemImage: AppSection.chartSymbol) {
           if let shown { chartSymbol = shown.position.symbol }
           model.section = .chart
@@ -878,7 +896,15 @@ private struct PositionsCard: View {
         .disabled(rows.isEmpty)
       }
     } content: {
-      if let row = rows.first(where: { $0.id == selected }) ?? rows.first {
+      if model.isLive, let stopped = model.stoppedPositions {
+        // Bot stopped with positions open (boards Main, MainNarrow): the stopped bot's last
+        // knowledge of them, in place of the live position view, with Start bot.
+        StoppedPositionsPanel(stopped) { OverviewStartButton() }
+      } else if let entry {
+        WorkingEntryPanel(row: entry)
+          .id(WorkingEntryPanel.idPrefix + entry.symbol)
+          .transition(.opacity.combined(with: .scale(scale: PositionsCard.switchScale)))
+      } else if let row = shown {
         PositionDetail(row: row)
           .id(row.id)
           .transition(.opacity.combined(with: .scale(scale: PositionsCard.switchScale)))
@@ -887,16 +913,32 @@ private struct PositionsCard: View {
       }
     }
     .animation(Tokens.Motion.standard, value: selected)
+    .animation(Tokens.Motion.standard, value: selectedEntry)
+    .animation(Tokens.Motion.standard, value: entries)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier(Self.id)
   }
+
+  /// Accessibility id of the card, for the UI tests.
+  static let id = "overview-positions"
 
   /// Scale a position's detail starts from when the selection changes.
   static let switchScale = 0.98
 
-  /// The positions' tabs in one row at their own width, with or without their results.
-  private func tabs(_ rows: [PositionRow], shown: PositionRow?, results: Bool) -> some View {
+  /// The positions' tabs then the working entries' chips, in one row at their own width, the
+  /// tabs with or without their results.
+  private func tabs(
+    _ rows: [PositionRow], _ entries: [EntryRow], shown: PositionRow?, entry: EntryRow?, results: Bool
+  ) -> some View {
     HStack(spacing: Tokens.Space.s) {
       ForEach(rows) { row in
-        PositionTab(row: row, selected: row.id == shown?.id, showsResult: results) { selected = row.id }
+        PositionTab(row: row, selected: row.id == shown?.id, showsResult: results) {
+          selected = row.id
+          selectedEntry = nil
+        }
+      }
+      ForEach(entries) { row in
+        EntryTab(row: row, selected: row.symbol == entry?.symbol) { selectedEntry = row.symbol }
       }
     }
     .fixedSize()
@@ -940,14 +982,40 @@ private struct PositionTab: View {
     // narrow tab may not write.
     .accessibilityValue(Text(verbatim: [Board.stopStateTitle(row.position.stop.state),
       row.unrealized.map(Money.signedUSD)].compactMap { $0 }.joined(separator: Format.itemSeparator)))
-    .help(Text(verbatim: row.unrealized.map(Money.signedUSD) ?? row.position.symbol))
+    .tip(Text(verbatim: row.unrealized.map(Money.signedUSD) ?? row.position.symbol))
   }
+}
+
+/// A working entry's chip beside the positions' tabs (mockup v162): dashed, its dot pulsing while
+/// the order works, "QRST · entry".
+private struct EntryTab: View {
+  let row: EntryRow
+  let selected: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: Tokens.Space.xs) {
+        EntryDot(row.phase)
+        SymbolText(row.symbol).foregroundStyle(Palette.textPrimary)
+        Text(verbatim: Format.itemSeparator.trimmingCharacters(in: .whitespaces))
+          .foregroundStyle(Palette.textTertiary)
+        Text(EntryText.chipWord).foregroundStyle(Palette.textTertiary)
+      }
+      .fixedSize()
+    }
+    .buttonStyle(.chip(selected: selected, dashed: true))
+    .accessibilityLabel(Text(EntryText.chipLabel(row.symbol)))
+    .accessibilityIdentifier(Self.idPrefix + row.symbol)
+  }
+
+  /// Accessibility id prefix of an entry's chip, for the UI tests.
+  static let idPrefix = "entry-tab-"
 }
 
 /// The selected position (mockup Main): its price line beside the symbol, the open result in
 /// large, the stop with the broker's confirmation, the size, the price now with its R, the most
-/// it can lose, and "Close ABCD", the Bot card's close command for this position with the same
-/// confirmation.
+/// it can lose, and "Close ABCD", the close command for this position, which asks first.
 private struct PositionDetail: View {
   let row: PositionRow
 
@@ -955,8 +1023,7 @@ private struct PositionDetail: View {
   static let chartMinWidth: CGFloat = 160
   static let chartMinHeight: CGFloat = 210
   static let figuresWidth: CGFloat = 200
-  /// Accessibility id prefix of the position's close button: the Bot card keeps the action's own
-  /// id (`BotAction.flattenPrefix`) for its button of the same command.
+  /// Accessibility id prefix of the position's close button.
   static let closePrefix = "position-close-"
 
   var body: some View {
@@ -1005,7 +1072,7 @@ private struct PositionDetail: View {
       now
       line(Text(L10n.Position.maxLoss), value: Risk.plannedLoss(entry: row.entry, stop: row.stop,
         quantity: row.quantity).map(Money.usd) ?? Format.missing)
-        .help(Text(L10n.Position.maxLossHelp))
+        .tip(Text(L10n.Position.maxLossHelp))
       Spacer(minLength: Tokens.Space.s)
       BotCommandButton(action: .flatten(symbol: symbol), place: .window, size: .regular,
         title: L10n.Bot.closeSymbol(symbol), identifier: Self.closePrefix + symbol)
@@ -1040,7 +1107,7 @@ private struct PositionDetail: View {
     let label = stale ? row.lastBarAt.map { Text(L10n.Position.lastBarCloseAt(Format.marketMinute($0))) }
       ?? Text(L10n.Position.lastBarClose) : Text(L10n.Position.now)
     return line(label, value: [price, result].joined(separator: Format.itemSeparator), muted: stale)
-      .help(stale ? row.lastBarAt.map { Text(L10n.Position.staleHelp(Format.marketMinute($0))) }
+      .tip(stale ? row.lastBarAt.map { Text(L10n.Position.staleHelp(Format.marketMinute($0))) }
         ?? Text(L10n.Position.lastBarClose) : Text(L10n.Position.now))
   }
 
@@ -1188,6 +1255,64 @@ private struct EmptyPositions: View {
   }
 }
 
+/// An own entry order working with nothing filled (mockups v160, v162), the one shown: in place
+/// of the empty state, or of a position's detail when its chip is chosen. A ring with the order's
+/// state (a clock while it works, a spinner while its cancel is on its way, a tick once the broker
+/// cancelled it) beside its words; its Cancel entry sits in the card's header.
+private struct WorkingEntryPanel: View {
+  let row: EntryRow
+
+  /// Size of the ring and its inner dashed ring's inset, in points.
+  static let ring: CGFloat = 120
+  static let ringInset: CGFloat = 20
+  /// Size of the inner ring's dashes, in points.
+  static let dash: [CGFloat] = [4, 4]
+
+  var body: some View {
+    HStack(spacing: Tokens.Space.xl) {
+      ring(row)
+      VStack(alignment: .leading, spacing: Tokens.Space.s) {
+        HStack(spacing: Tokens.Space.s) {
+          EntryDot(row.phase)
+          SymbolText(row.symbol)
+            .font(Tokens.Typography.figure)
+            .foregroundStyle(Palette.textPrimary)
+        }
+        EntryFacts(row)
+      }
+      Spacer(minLength: 0)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier(Self.idPrefix + row.symbol)
+    // Fills the card the row stretches, centred in it, as the empty state does.
+    .frame(maxWidth: .infinity, minHeight: EmptyPositions.minHeight, maxHeight: .infinity)
+  }
+
+  /// Accessibility id prefix of an entry's row, for the UI tests.
+  static let idPrefix = "working-entry-"
+
+  private func ring(_ row: EntryRow) -> some View {
+    let color = EntryLook.color(row.phase)
+    return ZStack {
+      Circle().fill(Palette.surfaceSunken)
+      Circle().strokeBorder(Palette.separatorStrong, lineWidth: Tokens.Stroke.thin)
+      Circle()
+        .stroke(color.opacity(Tokens.Opacity.border), style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Self.dash))
+        .padding(Self.ringInset)
+      switch row.phase {
+      case .working:
+        Image(systemName: EntryLook.workingSymbol).font(.largeTitle).foregroundStyle(color)
+      case .cancelling:
+        Spinner()
+      case .cancelled:
+        Image(systemName: EntryLook.doneSymbol).font(.largeTitle).foregroundStyle(Palette.profitText)
+      }
+    }
+    .frame(width: Self.ring, height: Self.ring)
+    .accessibilityHidden(true)
+  }
+}
+
 /// A radar sweep with two blips while the bot scans for setups (ornament, as on the design).
 private struct Radar: View {
   @Environment(AppModel.self) private var model
@@ -1227,24 +1352,11 @@ private struct SafetyCard: View {
   static let id = "overview-safety"
 
   var body: some View {
-    // One card as in the design (mockup Main): "Bot" with the bot's state and Stop bot, one status
-    // line that opens every safety check, then the commands, always in reach.
+    // One card as in the design (mockup Main): "Bot" with the bot's state, one status line that
+    // opens every safety check, then Pause entries and Stop bot, always in reach.
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
-      // Stop bot beside the bot's state; under the header when the card is too narrow for both.
-      // The state is a few words, always on one line: a pill that may wrap was squeezed by the
-      // header's spacer to one letter per line instead of the button moving down.
-      ViewThatFits(in: .horizontal) {
-        SectionHeader(L10n.Common.bot) {
-          HStack(spacing: Tokens.Space.s) {
-            BotPill().fixedSize()
-            BotStopButton()
-          }
-        }
-        VStack(alignment: .leading, spacing: Tokens.Space.s) {
-          SectionHeader(L10n.Common.bot) { BotPill().fixedSize() }
-          BotStopButton()
-        }
-      }
+      // The state is a few words, always on one line.
+      SectionHeader(L10n.Common.bot) { BotPill().fixedSize() }
       BotStatusLine()
       Spacer(minLength: 0)
       BotSection()
@@ -1265,8 +1377,17 @@ private struct BotSection: View {
     VStack(alignment: .leading, spacing: Tokens.Space.s) {
       // While the link is down the controls are off and quiet grey, and the connection banner
       // says "commands off": no red line repeats it here (owner, 2026-11-18).
-      BotControls()
-        .grayscale(linkDown ? 1 : 0)
+      // A close-and-stop shows its steps in place of the buttons (boards Main, MainNarrow),
+      // driven only by the bot's status; a refusal brings the buttons back with its cause.
+      if model.isLive, let rows = model.stopSteps {
+        StopStepsSection(rows: rows)
+      } else {
+        BotControls()
+          .grayscale(linkDown ? 1 : 0)
+      }
+      if model.isLive, let refusal = model.stopRefusal {
+        Footnote(verbatim: refusal, color: Palette.lossText)
+      }
       if !model.isLive {
         Footnote(L10n.Safety.offWhileRecorded)
       } else if model.response?.stale == true && !linkDown {
@@ -1299,8 +1420,7 @@ private struct RiskRoomCard: View {
             color: Palette.result(model.shownResult)),
           RiskFact(.reservations, RiskRoomText.reservations, value: reservations.map(Money.usd) ?? Format.missing,
             color: reservations.map { Tone.amount($0, .warning).text } ?? Palette.textQuaternary),
-          RiskFact(.positions, RiskRoomText.positions,
-            value: String(localized: L10n.Common.countOf(model.positions.count, risk.maxOpenPositions))),
+          RiskFact(.positions, RiskRoomText.positions, value: model.slotsText(risk.maxOpenPositions)),
         ], sizing: model.watching.map { watching in
           EntrySizing(size: watching.latestSize, configured: SizingLimits(
             plannedLossUsd: risk.plannedLossUsd.value, notionalCapUsd: risk.positionNotionalCapUsd.value,
@@ -1328,7 +1448,7 @@ private struct RiskRoomCard: View {
         let records = model.shownReconcile
         StatLine(L10n.RiskRoom.recordsAgree, value: records.value ?? Format.missing,
           color: records.agrees.map { $0 ? Palette.profitText : Palette.warningText } ?? Palette.textQuaternary)
-          .help(records.note.map { Text(verbatim: $0) } ?? Text(L10n.RiskRoom.recordsAgree))
+          .tip(records.note.map { Text(verbatim: $0) } ?? Text(L10n.RiskRoom.recordsAgree))
       }
       if let size = model.watching?.latestSize {
         EntrySizingSummary(sizing: EntrySizing(size: size, configured: nil, text: .money))

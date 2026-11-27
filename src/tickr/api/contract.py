@@ -22,7 +22,7 @@ import os
 import re
 import types
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR, Decimal, InvalidOperation
@@ -127,6 +127,16 @@ def _codes_for(document: Any, source: str, otherwise: str | None) -> tuple[Reaso
 # The code of a reason the bot wrote before it recorded codes; clients show the text.
 UNRECORDED = "unrecorded"
 
+DERIVED_FROM = "derived_from"
+
+
+def _derived(of: Callable[[Any], Any]) -> Any:
+    """A key computed from the document's own fields (`of(document)`) when it is encoded, like
+    `_reasons_of`: never written by hand, skipped on read and rebuilt. Added after version 1
+    shipped, so an older document without it still reads. Only API responses carry it: files
+    are written without it (`stored`), so an older reader still reads them."""
+    return field(init=False, default=None, metadata={DERIVED_FROM: of, ADDED_AFTER_V1: True})
+
 
 # ---------------------------------------------------------------- enums
 
@@ -179,6 +189,23 @@ class CommandOutcome(StrEnum):
     REFUSED = "refused"
 
 
+class StopMode(StrEnum):
+    """What a stop-bot does with the bot's open positions (owner 2026-11-18, backlog V4). A
+    stop-bot without a mode keeps the old rule: refused while any trade is open."""
+
+    CLOSE_AND_STOP = "close_and_stop"  # close every own position (the flatten path), then stop
+    LEAVE_OPEN = "leave_open"  # stop at once; nothing (bot or watchdog) closes them later
+
+
+class StopStep(StrEnum):
+    """Where an obeyed or running stop-bot is (`StatusV1.stop_progress`)."""
+
+    CLOSING_POSITIONS = "closing_positions"  # close_and_stop: exit requests sent, not flat yet
+    POSITIONS_CLOSED = "positions_closed"  # close_and_stop: every own trade closed
+    STOPPING = "stopping"  # the stop marker is written and the command done; the bot drains
+    STOPPED = "stopped"  # the drain ended: the last status this run writes
+
+
 # ---------------------------------------------------------------- status written by the bot
 
 
@@ -196,6 +223,38 @@ class Gate:
 class StrategyId:
     name: str
     version: str
+
+
+class DeciderKind(StrEnum):
+    STRATEGY = "strategy"  # a hand-written strategy module (strategies/<folder>)
+    MODEL = "model"  # a trained model bundle (backlog R26); not sent before the model decides
+
+
+@dataclass(frozen=True)
+class DeciderV1:
+    """Who made a decision: its kind, name and version (docs/api.md, "Decider"). Today every
+    decision is a strategy's, so it is the strategy identity next to it; a model decider will be
+    recorded with the decision when the model decides, never inferred."""
+
+    kind: DeciderKind
+    name: str
+    version: str
+
+
+def strategy_decider(name: str | None, version: str | None) -> DeciderV1 | None:
+    """The decider of a strategy-tagged record; null when the record names no strategy."""
+    if name is None or version is None:
+        return None
+    return DeciderV1(DeciderKind.STRATEGY, name, version)
+
+
+def _decider_of_id(document: Any) -> DeciderV1 | None:
+    strategy: StrategyId | None = document.strategy
+    return None if strategy is None else strategy_decider(strategy.name, strategy.version)
+
+
+def _decider_of_names(document: Any) -> DeciderV1 | None:
+    return strategy_decider(document.strategy, document.version)
 
 
 # EntryBlock cause while the bot's own open trades take every slot of `[risk] max_open_positions`.
@@ -259,6 +318,26 @@ class Position:
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
+
+@dataclass(frozen=True)
+class WorkingEntry:
+    """A trade whose entry order is working with nothing filled yet: the apps' Cancel entry row
+    (added after version 1 shipped). A fill of any part makes it a `Position` instead."""
+
+    symbol: str
+    quantity: Decimal  # shares the entry asks for
+    limit_price: Decimal  # the entry's limit
+    stop_price: Decimal  # the stop the bot places once it fills
+    planned_loss_usd: Decimal  # 1 R if it fills, as recorded when the trade was opened
+    entry: EntrySend
+    entry_cause: str | None  # why a field of `entry` is null; null when none is
+    # The bot asked the broker to cancel it (an operator cancel, or the entry's own rest or
+    # session end); it stays listed until a broker read shows it cancelled or filled.
+    cancel_requested: bool
+
+    entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
+
+
 @dataclass(frozen=True)
 class Trade:
     symbol: str
@@ -284,6 +363,8 @@ class Trade:
     # (exact fill prices where recorded) less the fees recorded on its orders; null until
     # every filled order's fees are recorded. Added after version 1 shipped.
     result_exact_usd: Decimal | None = _added_later(None)
+    # Who decided the entry, from `strategy` (null with it). Added after version 1 shipped.
+    decider: DeciderV1 | None = _derived(_decider_of_id)
 
     entry_cause_codes: tuple[ReasonV1, ...] = _reasons_of("entry_cause")
 
@@ -306,6 +387,19 @@ class CommandRecord:
     cause: str | None
 
     cause_codes: tuple[ReasonV1, ...] = _reasons_of("cause")
+
+@dataclass(frozen=True)
+class StopProgress:
+    """A stop-bot the bot obeyed or is carrying out (added after version 1 shipped). The
+    command's own record appears in `recent_commands` once it is done or refused; a refused
+    close_and_stop leaves no progress (the bot keeps running)."""
+
+    command_id: str
+    mode: StopMode | None  # null: a stop-bot without a mode (obeyed only when flat)
+    step: StopStep
+    since: datetime  # when this step began
+    open_trades: int  # the bot's own trades not closed when the status was written
+
 
 @dataclass(frozen=True)
 class StatusV1:
@@ -343,7 +437,15 @@ class StatusV1:
     # the order rows round sub-dollar fill prices; null until a balance read made after the
     # last of today's trades closed. For the whole account, so it includes manual trades.
     result_today_broker_usd: Decimal | None = _added_later(None)
+    # Added after v1 shipped (2026-11-25, backlog V4): the stop-bot this run obeyed or is
+    # carrying out; null while none. Stays in the last status a stopped bot wrote.
+    stop_progress: StopProgress | None = _added_later(None)
+    # Added after v1 shipped (2026-11-26, Cancel entry): every own entry working at the broker
+    # with nothing filled yet, oldest first; a reader takes a status without it as none.
+    working_entries: tuple[WorkingEntry, ...] = _added_later(())
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
+    # Who decides this run's entries, from `strategy`. Added after version 1 shipped.
+    decider: DeciderV1 | None = _derived(_decider_of_id)
 
 
 # ---------------------------------------------------------------- account written by the bot
@@ -437,7 +539,12 @@ class CommandV1:
     kind: CommandKind
     requested_at: datetime
     source: str
-    symbol: str | None = None  # flatten only: close just this symbol; null = everything
+    # flatten: close just this symbol; cancel-own-orders: cancel just this symbol's working
+    # entries (added 2026-11-26); null = everything; null for every other kind.
+    symbol: str | None = None
+    # stop-bot only (added after version 1 shipped, backlog V4): what to do with open
+    # positions; null = the old rule (refused while any trade is open).
+    mode: StopMode | None = _added_later(None)
     schema_version: int = _const(COMMAND_SCHEMA_VERSION)
 
 
@@ -1046,6 +1153,15 @@ class SettingsV1:
     # queued under it can no longer run after that. Added after v1 shipped (2026-11-25); null
     # from an older API, and then the apps keep no key.
     command_max_age_seconds: Decimal | None = _added_later(None)
+    # Who decides entries: the active strategy's name and version from its strategy.toml, as the
+    # API read it at its start; null with `decider_cause` (a code) when that file cannot be read.
+    # Added after v1 shipped (2026-11-25); null from an older API.
+    decider: DeciderV1 | None = _added_later(None)
+    decider_cause: str | None = _added_later(None)
+
+
+# Settings `decider_cause` when the active strategy's strategy.toml cannot be read.
+DECIDER_UNREADABLE = "strategy_file_unreadable"
 
 
 # ---------------------------------------------------------------- jobs (read-only)
@@ -1532,6 +1648,29 @@ class HostV1:
     sleep: SleepV1
 
 
+class ModelState(StrEnum):
+    OFF = "off"  # [model] enabled = false: nothing is loaded, the strategy decides
+    NOT_LOADED = "not_loaded"  # enabled, no bundle loaded yet (sent once the bot records loads)
+    REFUSED = "refused"  # enabled, the load was refused: `cause` is the ModelRefused cause
+
+
+# Model `cause` while `[model] enabled` is true: the bot records no bundle load the API could
+# read yet, so the API does not know the state (rule 7: null with a cause, never a guess).
+MODEL_LOAD_NOT_RECORDED = "model_load_not_recorded"
+
+
+@dataclass(frozen=True)
+class ModelV1:
+    """The trained model as GET /system sees it (docs/api.md). `enabled` and `bundle` are the
+    API's config (`[model]`, `bundle` null when none is chosen); `state` null with `cause` when
+    the API cannot know it."""
+
+    enabled: bool
+    bundle: str | None
+    state: ModelState | None
+    cause: str | None
+
+
 @dataclass(frozen=True)
 class SystemV1:
     """GET /system: the System card. Portable parts first (the Webull link, the latest
@@ -1550,10 +1689,82 @@ class SystemV1:
     host: HostV1 | None
     host_cause: str | None
     api_version: int = _const(API_VERSION)
+    # The trained model's switch and state. Added after v1 shipped (2026-11-25); null from an
+    # older API.
+    model: ModelV1 | None = _added_later(None)
 
     morning_check_cause_codes: tuple[ReasonV1, ...] = _reasons_of("morning_check_cause")
     training_cause_codes: tuple[ReasonV1, ...] = _reasons_of("training_cause")
     host_cause_codes: tuple[ReasonV1, ...] = _reasons_of("host_cause")
+
+# ---------------------------------------------------------------- alerts (notification settings)
+
+
+class AlertChannel(StrEnum):
+    """An owner-facing alert channel the routing switches (runtime/alert_routing.py)."""
+
+    MAC = "mac"  # the Mac notification (the Tickr app, else osascript)
+    IMESSAGE = "imessage"  # an iMessage to the owner's phone
+    PUSH = "push"  # the iPhone app's push: needs the Apple Developer Program and APNs (backlog)
+
+
+class AlertGroup(StrEnum):
+    """How the apps group alert kinds."""
+
+    CRITICAL = "critical"  # needs the owner now: locked on every channel
+    TRADING = "trading"  # the day's trading or money, nothing at risk
+    DAY = "day"  # the machine and the bot's own housekeeping
+    LAB = "lab"  # research and the advisor (no such alert kind yet)
+
+
+class AlertChannelCause(StrEnum):
+    """Why a channel is not known to work on this machine."""
+
+    NO_PREFLIGHT = "no-preflight"  # no preflight record yet
+    PREFLIGHT_UNREADABLE = "preflight-unreadable"  # the record cannot be read
+    CHECK_FAILED = "check-failed"  # the latest preflight's alert-channel or alert-recipient check
+    NOT_BUILT = "not-built"  # no delivery in the bot yet (push)
+
+
+@dataclass(frozen=True)
+class AlertChannelV1:
+    """One channel: `configured` from the latest preflight's checks (null `cause` when true)."""
+
+    channel: AlertChannel
+    configured: bool
+    cause: AlertChannelCause | None
+
+
+@dataclass(frozen=True)
+class AlertRoutesV1:
+    """Whether one kind goes to each channel (a locked kind: true everywhere)."""
+
+    mac: bool
+    imessage: bool
+    push: bool
+
+
+@dataclass(frozen=True)
+class AlertKindV1:
+    """One alert kind (`runtime/alerts.py` AlertKind value) and where it goes. `locked`: it
+    needs the owner now and cannot be turned off (PUT /alerts/routing answers 409)."""
+
+    kind: str
+    group: AlertGroup
+    locked: bool
+    channels: AlertRoutesV1
+
+
+@dataclass(frozen=True)
+class AlertsV1:
+    """GET /alerts and PUT /alerts/routing: the notification settings. `routing_cause` is set
+    when the routing file cannot be used: then every kind goes to every channel and writes are
+    refused until the file is deleted."""
+
+    channels: tuple[AlertChannelV1, ...]
+    kinds: tuple[AlertKindV1, ...]
+    routing_cause: str | None
+    api_version: int = _const(API_VERSION)
 
 # ---------------------------------------------------------------- lab replay
 
@@ -1746,6 +1957,8 @@ class ExplainV1:
     first_failed_check: str | None
     checks: tuple[CheckV1, ...]
     api_version: int = _const(API_VERSION)
+    # Who decided, from `strategy` and `version`. Added after version 1 shipped.
+    decider: DeciderV1 | None = _derived(_decider_of_names)
 
 
 # Rules the strategies record as a price measured against their setup's trigger, the
@@ -1909,6 +2122,8 @@ class DecisionV1:
     admission: Admission
     refusal_cause: str | None
     refusal: RefusalV1 | None
+    # Who decided, from `strategy`. Added after version 1 shipped.
+    decider: DeciderV1 | None = _derived(_decider_of_id)
 
 
 @dataclass(frozen=True)
@@ -2118,6 +2333,8 @@ class SkippedSignalV1:
     prices_after: tuple[PriceAfterV1, ...]
     prices_after_cause: str | None
     what_if: WhatIfV1
+    # Who decided, from `strategy`. Added after version 1 shipped.
+    decider: DeciderV1 | None = _derived(_decider_of_id)
 
     prices_after_cause_codes: tuple[ReasonV1, ...] = _reasons_of("prices_after_cause")
 
@@ -2768,6 +2985,7 @@ SCHEMA_TYPES: dict[str, type] = {
     "jobs-v1": JobsV1,
     "journal-v1": JournalV1,
     "system-v1": SystemV1,
+    "alerts-v1": AlertsV1,
     "day-events-v1": DayEventsV1,
     "advisor-runs-v1": AdvisorRunsV1,
     "lab-replay-v1": LabReplayV1,
@@ -2808,12 +3026,19 @@ def parse_time(text: str) -> datetime:
     return _decode("time", text, datetime)
 
 
-def to_jsonable(value: Any) -> Any:
+def to_jsonable(value: Any, *, derived: bool = True) -> Any:
+    """`value` as JSON values. `derived` False leaves out every `_derived` key: the form of a
+    file the bot writes (status.json, account.json, quotes, commands), which an older reader of
+    the same version 1 still reads strictly (unknown keys refused), so a rollback or a mixed
+    run never makes it unreadable. API responses carry them (`derived` True)."""
     if is_dataclass(value) and not isinstance(value, type):
         return {f.name: to_jsonable(_codes_for(value, f.metadata[REASONS_OF],
                                                f.metadata[REASONS_OTHERWISE])
-                                    if REASONS_OF in f.metadata else getattr(value, f.name))
-                for f in fields(value)}
+                                    if REASONS_OF in f.metadata else
+                                    f.metadata[DERIVED_FROM](value)
+                                    if DERIVED_FROM in f.metadata else getattr(value, f.name),
+                                    derived=derived)
+                for f in fields(value) if derived or DERIVED_FROM not in f.metadata}
     if isinstance(value, StrEnum):
         return value.value
     if isinstance(value, bool | int | str) or value is None:
@@ -2827,9 +3052,9 @@ def to_jsonable(value: Any) -> Any:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, tuple | list):
-        return [to_jsonable(v) for v in value]
+        return [to_jsonable(v, derived=derived) for v in value]
     if isinstance(value, dict):
-        return {str(k): to_jsonable(v) for k, v in value.items()}
+        return {str(k): to_jsonable(v, derived=derived) for k, v in value.items()}
     raise ContractError(f"cannot encode {type(value).__name__}")
 
 
@@ -2844,8 +3069,16 @@ def seconds_between(earlier: datetime, later: datetime) -> Decimal:
     return (Decimal(micro) / _MICROSECONDS_PER_SECOND).quantize(_MILLISECOND)
 
 
-def dumps(value: Any) -> str:
-    return json.dumps(to_jsonable(value), ensure_ascii=False, separators=(",", ":"))
+def dumps(value: Any, *, derived: bool = True) -> str:
+    """An API response body; `derived=False` for a file the bot writes (see `to_jsonable`)."""
+    return json.dumps(to_jsonable(value, derived=derived), ensure_ascii=False,
+                      separators=(",", ":"))
+
+
+def stored(value: Any) -> str:
+    """The text of a file the bot or the API writes for another process to read: no derived
+    keys, so a reader of any version 1 accepts it; the reader rebuilds them."""
+    return dumps(value, derived=False)
 
 
 # ---------------------------------------------------------------- strict decoding
@@ -2961,7 +3194,7 @@ def parse_json(text: str | bytes) -> Any:
     try:
         return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise ContractError(f"not valid JSON: {exc}") from exc
+        raise ContractError(f"not valid JSON ({type(exc).__name__})") from exc
 
 
 def loads(cls: type, text: str | bytes) -> Any:
@@ -3067,7 +3300,7 @@ def write_atomic(path: Path, text: str) -> None:
 
 def write_status(path: Path | str, status: StatusV1) -> None:
     """Called by the bot after each loop step that changes what /status shows."""
-    write_atomic(Path(path), dumps(status))
+    write_atomic(Path(path), stored(status))
 
 
 def read_status(path: Path | str) -> StatusV1:
@@ -3077,12 +3310,12 @@ def read_status(path: Path | str) -> StatusV1:
 
 def write_account(path: Path | str, account: AccountV1) -> None:
     """Called by the bot after each successful broker read of positions and open orders."""
-    write_atomic(Path(path), dumps(account))
+    write_atomic(Path(path), stored(account))
 
 
 def write_quotes(path: Path | str, quotes: QuotesV1) -> None:
     """Called by the bot's quotes file thread when a quote changed."""
-    write_atomic(Path(path), dumps(quotes))
+    write_atomic(Path(path), stored(quotes))
 
 
 def read_quotes(path: Path | str) -> QuotesV1:
@@ -3096,9 +3329,9 @@ def read_account(path: Path | str) -> AccountV1:
 
 
 def new_command(kind: CommandKind, now: datetime, source: str,
-                symbol: str | None = None) -> CommandV1:
+                symbol: str | None = None, mode: StopMode | None = None) -> CommandV1:
     return CommandV1(command_id=str(uuid.uuid4()), kind=kind, requested_at=now, source=source,
-                     symbol=symbol)
+                     symbol=symbol, mode=mode)
 
 
 def write_command(inbox: Path | str, command: CommandV1) -> Path:
@@ -3106,7 +3339,7 @@ def write_command(inbox: Path | str, command: CommandV1) -> Path:
     if not _UUID.match(command.command_id):
         raise ContractError(f"command_id {command.command_id!r} is not a lowercase uuid")
     path = Path(inbox) / f"{command.command_id}.json"
-    write_atomic(path, dumps(command))
+    write_atomic(path, stored(command))
     return path
 
 
@@ -3137,7 +3370,9 @@ def read_commands(inbox: Path | str, now: datetime, max_age_seconds: Decimal) ->
         try:
             command: CommandV1 = loads(CommandV1, path.read_bytes())
         except (ContractError, OSError) as exc:
-            refused.append(InboxItem(path, None, f"unreadable command file: {exc}"))
+            refused.append(InboxItem(path, None, "unreadable command file: "
+                                           + (str(exc) if isinstance(exc, ContractError)
+                                              else type(exc).__name__)))
             continue
         age = seconds_between(command.requested_at, now)
         if path.name != f"{command.command_id}.json":

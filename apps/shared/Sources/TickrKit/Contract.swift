@@ -20,11 +20,6 @@ public enum CommandKind: String, Codable, Sendable, CaseIterable {
 
 public enum CommandOutcome: String, Codable, Sendable { case done, refused }
 
-public struct StrategyId: Codable, Hashable, Sendable {
-  public let name: String
-  public let version: String
-}
-
 public struct EntryBlock: Codable, Hashable, Sendable {
   public let cause: String
   public let text: String
@@ -160,10 +155,16 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let feesTodayUsd: DecimalString?
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
+  /// The stop-bot this run obeyed or is carrying out; nil while none (and from an older bot).
+  public let stopProgress: StopProgress?
+  /// Every own entry working at the broker with nothing filled yet; empty from an older bot.
+  public let workingEntries: [WorkingEntry]
   public let schemaVersion: Int
+  /// Who decides this run's entries (docs/api.md, "Decider"); nil from an older API.
+  public let decider: DeciderV1?
 
   enum CodingKeys: String, CodingKey {
-    case environment, strategy, fences, position, freshness, positions
+    case environment, strategy, fences, position, freshness, positions, decider
     case codeVersion = "code_version"
     case writtenAt = "written_at"
     case botState = "bot_state"
@@ -180,6 +181,8 @@ public struct StatusV1: Codable, Hashable, Sendable {
     case feesTodayUsd = "fees_today_usd"
     case resultTodayNetUsd = "result_today_net_usd"
     case resultTodayBrokerUsd = "result_today_broker_usd"
+    case stopProgress = "stop_progress"
+    case workingEntries = "working_entries"
     case schemaVersion = "schema_version"
   }
 
@@ -209,6 +212,9 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
+    stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
+    workingEntries = try c.decodeIfPresent([WorkingEntry].self, forKey: .workingEntries) ?? []
+    decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -236,43 +242,10 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
-  }
-}
-
-public struct CommandV1: Codable, Hashable, Sendable {
-  public let commandId: String
-  public let kind: CommandKind
-  public let requestedAt: WireTime
-  public let source: String
-  /// The one symbol a flatten closes; nil for every other command and for a flatten of everything.
-  public let symbol: String?
-  public let schemaVersion: Int
-
-  enum CodingKeys: String, CodingKey {
-    case kind, source, symbol
-    case commandId = "command_id"
-    case requestedAt = "requested_at"
-    case schemaVersion = "schema_version"
-  }
-
-  public init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    schemaVersion = try c.decodeVersion(forKey: .schemaVersion, expected: Wire.commandSchemaVersion)
-    commandId = try c.decode(String.self, forKey: .commandId)
-    kind = try c.decode(CommandKind.self, forKey: .kind)
-    requestedAt = try c.decode(WireTime.self, forKey: .requestedAt)
-    source = try c.decode(String.self, forKey: .source)
-    symbol = try c.decodeNullable(String.self, forKey: .symbol)
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var c = encoder.container(keyedBy: CodingKeys.self)
-    try c.encode(commandId, forKey: .commandId)
-    try c.encode(kind, forKey: .kind)
-    try c.encode(requestedAt, forKey: .requestedAt)
-    try c.encode(source, forKey: .source)
-    try c.encodeNullable(symbol, forKey: .symbol)
-    try c.encode(schemaVersion, forKey: .schemaVersion)
+    try c.encodeNullable(stopProgress, forKey: .stopProgress)
+    try c.encode(workingEntries, forKey: .workingEntries)
+    // Only the API's answer carries `decider`; the bot's status file has none (docs/api.md, "Decider").
+    try c.encodeIfPresent(decider, forKey: .decider)
   }
 }
 

@@ -99,10 +99,13 @@
                       "QUOTE_STALE",
                       "SPREAD_TOO_WIDE",
                       "PRICE_OUTSIDE_WINDOW",
+                      "PRICE_COLLAR_UNKNOWN",
+                      "PRICE_COLLAR_BREACH",
                       "QUANTITY_BELOW_ONE",
                       "QUANTITY_NOT_WHOLE",
                       "NOTIONAL_OVER_CAP",
                       "PLANNED_LOSS_OVER_LIMIT",
+                      "EQUITY_UNKNOWN",
                       "DAILY_MONEY_UNKNOWN",
                       "DAILY_MONEY_INVALID",
                       "DAILY_CEILING",
@@ -110,6 +113,12 @@
                       "BUYING_POWER_SHORT",
                       "ENTRY_BUDGET_UNAVAILABLE",
                       "STOP_BUDGET_UNAVAILABLE",
+                      "TRADABILITY_BUDGET_UNAVAILABLE",
+                      "TRADABILITY_UNKNOWN",
+                      "INSTRUMENT_HALTED",
+                      "INSTRUMENT_CLOSE_ONLY",
+                      "INSTRUMENT_DENIED",
+                      "INSTRUMENT_NOT_TRADABLE",
                       "ENGINE_REFUSED",
                       "UNKNOWN"
                     ]
@@ -404,6 +413,37 @@
               "cause"
             ],
             "additionalProperties": false
+          },
+          "decider": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "strategy",
+                      "model"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "prices_after_cause_codes": {
             "type": "array",

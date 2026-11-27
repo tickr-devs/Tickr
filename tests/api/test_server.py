@@ -17,7 +17,8 @@ import pytest
 from tickr import config
 from tickr.api import contract
 from tickr.api.contract import CommandKind
-from tickr.api.server import ApiSettings, make_server, settings_from_config
+from tickr.api.server import ApiSettings, make_server, settings_from_config, shown_settings
+from tickr.runtime.service import strategy_id
 
 from .samples import T0, status
 from .schema_check import errors
@@ -177,6 +178,11 @@ def test_status_served_with_age(api, settings):
     # The API's own start, so the apps read /settings again after a restart.
     assert body["api_started_at"] == contract.to_jsonable(server.started_at)
     assert errors(schema("status-response-v1"), body) == []
+    # The file holds no derived key (an older reader refuses unknown keys); the API adds it.
+    assert "decider" not in json.loads(settings.status_path.read_text("utf-8"))
+    assert body["status"]["decider"] == {"kind": "strategy", "name": "price-action-v1",
+                                         "version": "1"}
+    assert [t["decider"] for t in body["status"]["trades_today"]] == [body["status"]["decider"]]
 
 
 def test_status_stale(api, settings):
@@ -214,7 +220,10 @@ def test_invalid_status_file_is_reported_not_guessed(api, settings):
     ("/commands/cancel-own-orders", {}, CommandKind.CANCEL_OWN_ORDERS),
     ("/commands/flatten", {}, CommandKind.FLATTEN),
     ("/commands/flatten", {"symbol": "ABCD"}, CommandKind.FLATTEN),
+    ("/commands/cancel-own-orders", {"symbol": "ABCD"}, CommandKind.CANCEL_OWN_ORDERS),
     ("/commands/stop-bot", {}, CommandKind.STOP_BOT),
+    ("/commands/stop-bot", {"mode": "close_and_stop"}, CommandKind.STOP_BOT),
+    ("/commands/stop-bot", {"mode": "leave_open"}, CommandKind.STOP_BOT),
     ("/commands/emergency", {}, CommandKind.EMERGENCY),
 ])
 def test_command_is_queued_for_the_bot(api, settings, path, body, kind):
@@ -232,6 +241,8 @@ def test_command_is_queued_for_the_bot(api, settings, path, body, kind):
     assert item.command.source == "api"
     assert item.command.symbol == body.get("symbol")
     assert answer["command"]["symbol"] == body.get("symbol")
+    assert item.command.mode == body.get("mode")
+    assert answer["command"]["mode"] == body.get("mode")
     pending = doc(request(server, "GET", "/commands/pending")[1])
     assert errors(schema("pending-commands-v1"), pending) == []
     assert [c["command_id"] for c in pending["commands"]] == [answer["command"]["command_id"]]
@@ -259,8 +270,16 @@ def test_command_warns_when_bot_looks_down(api, settings):
     ("/commands/flatten", {"symbol": "ABCD", "x": 1}),
     ("/commands/stop-bot", {"now": True}),
     ("/commands/stop-bot", {"symbol": "ABCD"}),
+    ("/commands/stop-bot", {"mode": None}),  # never read as "no mode"
+    ("/commands/stop-bot", {"mode": "close"}),
+    ("/commands/stop-bot", {"mode": "CLOSE_AND_STOP"}),
+    ("/commands/stop-bot", {"mode": "leave_open", "x": 1}),
+    ("/commands/flatten", {"mode": "leave_open"}),
+    ("/commands/emergency", {"mode": "close_and_stop"}),
     ("/commands/emergency", {"symbol": "ABCD"}),
-    ("/commands/cancel-own-orders", {"symbol": "ABCD"}),
+    ("/commands/cancel-own-orders", {"symbol": None}),  # never read as "everything"
+    ("/commands/cancel-own-orders", {"symbol": "abcd"}),
+    ("/commands/cancel-own-orders", {"symbol": "ABCD", "mode": "leave_open"}),
 ])
 def test_bad_command_body_refused(api, settings, path, body):
     server, _ = api
@@ -342,7 +361,18 @@ def test_settings_endpoint_shows_the_loaded_config(api, settings):
     assert body["session"]["flatten_minutes_before_close"] == (
         cfg.session.flatten_minutes_before_close)
     assert body["active_strategy"] == cfg.strategy.active
+    # This test's root holds no strategies/: the identity is unknown, never guessed.
+    assert (body["decider"], body["decider_cause"]) == (None, contract.DECIDER_UNREADABLE)
     assert request(server, "POST", "/settings", {})[0].status == 405
+
+
+def test_settings_decider_is_the_active_strategy_the_bot_reports():
+    cfg = config.load(ROOT / "config" / "bot.toml")
+    shown = shown_settings(cfg)
+    bot = strategy_id(cfg)  # what the bot writes as status `strategy`
+    assert shown.decider == contract.DeciderV1(contract.DeciderKind.STRATEGY, bot.name,
+                                               bot.version)
+    assert shown.decider_cause is None
 
 
 def test_schema_endpoint(api):
@@ -396,6 +426,14 @@ def test_repeated_key_returns_the_same_answer_and_queues_nothing(api, settings):
     assert contract.count_inbox(settings.inbox) == 1
 
 
+def test_repeated_key_with_the_same_stop_mode_queues_nothing(api, settings):
+    server, _ = api
+    first, body = keyed(server, "/commands/stop-bot", {"mode": "close_and_stop"}, "k-mode")
+    again, repeat = keyed(server, "/commands/stop-bot", {"mode": "close_and_stop"}, "k-mode")
+    assert (first.status, again.status) == (202, 202) and repeat == body
+    assert contract.count_inbox(settings.inbox) == 1
+
+
 def test_keys_are_case_sensitive(api, settings):
     server, _ = api
     a = doc(keyed(server, "/commands/stop-bot", {}, "Key")[1])
@@ -409,6 +447,9 @@ def test_keys_are_case_sensitive(api, settings):
     (("/commands/flatten", {}), ("/commands/flatten", {"symbol": "ABCD"})),
     (("/commands/flatten", {"symbol": "ABCD"}), ("/commands/flatten", {"symbol": "WXYZ"})),
     (("/commands/entry-stop", {"state": "on"}), ("/commands/entry-stop", {"state": "off"})),
+    (("/commands/stop-bot", {}), ("/commands/stop-bot", {"mode": "leave_open"})),
+    (("/commands/stop-bot", {"mode": "close_and_stop"}),
+     ("/commands/stop-bot", {"mode": "leave_open"})),
 ])
 def test_same_key_for_another_command_is_a_conflict(api, settings, first, second):
     server, _ = api

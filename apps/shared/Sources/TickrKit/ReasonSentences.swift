@@ -115,6 +115,20 @@ extension RefusalReason {
     case .quoteTimeInvalid: [ReasonSentence(L10n.refusalReasonQuoteTimeInvalid, [.seconds, .limit])]
     case .quoteStale: [ReasonSentence(L10n.refusalReasonQuoteStale, [.age, .limit])]
     case .priceOutsideWindow: [ReasonSentence(L10n.refusalReasonPriceOutsideWindow, [.ask, .entryLow, .limit])]
+    case .priceCollarBreach: [
+      ReasonSentence(
+        L10n.refusalReasonPriceCollarBreach,
+        [
+          .limit,
+          .barDistance,
+          .barClose,
+          .barMax,
+          .quoteDistance,
+          .previousAsk,
+          .quoteMax,
+        ]
+      ),
+    ]
     case .quantityNotWhole: [ReasonSentence(L10n.refusalReasonQuantityNotWhole, [.quantity])]
     case .quantityBelowOne: [ReasonSentence(L10n.refusalReasonQuantityBelowOne, [.quantity, .maximum])]
     case .notionalOverCap: [ReasonSentence(L10n.refusalReasonNotionalOverCap, [.notional, .cap])]
@@ -122,6 +136,11 @@ extension RefusalReason {
     case .dailyCeiling: [
       ReasonSentence(L10n.refusalReasonDailyCeiling, [.room, .minRoom, .ceiling, .realized, .reserved]),
       ReasonSentence(L10n.refusalReasonDailyCeilingTotal, [.realized, .reserved, .new, .total, .ceiling]),
+    ]
+    case .equityUnknown: [
+      ReasonSentence(L10n.refusalReasonEquityUnknown, []),
+      ReasonSentence(L10n.refusalReasonEquityUnknownAge, [.age, .limit]),
+      ReasonSentence(L10n.refusalReasonEquityUnknownValue, [.value]),
     ]
     case .buyingPowerUnknown: [
       ReasonSentence(L10n.refusalReasonBuyingPowerUnknown, []),

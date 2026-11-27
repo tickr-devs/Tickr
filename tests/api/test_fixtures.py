@@ -16,6 +16,7 @@ import pytest
 
 from tickr.advisor_files import OwnerVerdict
 from tickr.advisor_files import Verdict as HoldoutVerdict
+from tickr.api import alerts as alerts_api
 from tickr.api import contract
 from tickr.api.advisor import NO_FOLDER as NO_ADVISOR_FOLDER
 from tickr.api.contract import (
@@ -123,6 +124,8 @@ from tickr.api.performance import performance
 from tickr.data.base import ScreenerKind
 from tickr.replay.engine import ExitReason
 from tickr.research.records import Admission
+from tickr.runtime.alert_routing import Routing
+from tickr.runtime.alerts import AlertKind
 from tickr.settings_schema import Applies, Cause, Compare, Kind, Loosens, Unit
 from tickr.strategy.base import Verdict
 
@@ -183,6 +186,30 @@ def documents() -> dict[str, object]:
         "status-response-v1": _response(status(), Decimal("2.000"), False),
         "status-response-v1.minimal": _response(minimal, Decimal("0.250"), False),
         "status-response-v1.stale": _response(status(), Decimal("42.500"), True),
+        # A close_and_stop in progress: exit requests sent, one trade not closed yet.
+        "status-response-v1.closing": _response(status(stop_progress=contract.StopProgress(
+            "5d2a7c9e-1b3f-4a6d-8e0c-7f9b2d4a6c8e", contract.StopMode.CLOSE_AND_STOP,
+            contract.StopStep.CLOSING_POSITIONS, T0, 1)), Decimal("2.000"), False),
+        # Stopped with a position left open (mode leave_open): the last status the bot wrote,
+        # stale now, still lists the position as of the last broker read.
+        "status-response-v1.stopped-left-open": _response(status(
+            bot_state=BotState.STOPPED, entry_block=contract.EntryBlock(
+                "bot_stopped", "The bot is stopped."),
+            recent_commands=(contract.CommandRecord(
+                "6e3b8d0f-2c4a-4b7e-9f1d-8a0c3e5b7d9f", CommandKind.STOP_BOT, T0, T0,
+                contract.CommandOutcome.DONE, "1 trade(s) left open: nothing closes them; "
+                "their broker stops are DAY orders"),),
+            stop_progress=contract.StopProgress(
+                "6e3b8d0f-2c4a-4b7e-9f1d-8a0c3e5b7d9f", contract.StopMode.LEAVE_OPEN,
+                contract.StopStep.STOPPED, T0, 1)), Decimal("3600.000"), True),
+        # Cancel entry: one entry working at the broker with nothing filled yet (2026-11-26).
+        "status-response-v1.working-entry": _response(status(working_entries=(
+            contract.WorkingEntry("KLMN", Decimal("15"), Decimal("9.02"), Decimal("8.78"),
+                                  Decimal("3.60"), EntrySend(
+                                      "ap-0002-e", T0, T0 + timedelta(milliseconds=2),
+                                      contract.SendOutcome.ACKNOWLEDGED,
+                                      contract.SendOutcome.ACKNOWLEDGED, 1, None),
+                                  None, False),)), Decimal("2.000"), False),
         "status-response-v1.unavailable": _response(
             None, None, False, "the bot has not written a status file"),
         "command-accepted-v1": CommandAcceptedV1(command=command, warning=None),
@@ -193,6 +220,10 @@ def documents() -> dict[str, object]:
         "command-accepted-v1.warning": CommandAcceptedV1(
             command=command, warning="the bot does not look alive; the command runs only if "
                                      "the bot reads it before it expires"),
+        # Stop bot with open positions: close them first, then stop (backlog V4).
+        "command-accepted-v1.stop-close-and-stop": CommandAcceptedV1(
+            command=CommandV1("5d2a7c9e-1b3f-4a6d-8e0c-7f9b2d4a6c8e", CommandKind.STOP_BOT,
+                              T0, "api", mode=contract.StopMode.CLOSE_AND_STOP), warning=None),
         "command-accepted-v1.flatten-symbol": CommandAcceptedV1(
             command=CommandV1("8b1e4d2c-6a3f-4e9b-8c7d-2f1a0b9c8d7e", CommandKind.FLATTEN,
                               T0, "api", "ABCD"), warning=None),
@@ -324,7 +355,8 @@ def documents() -> dict[str, object]:
                          Decimal("10")),
             SessionSettings("America/New_York", 15, 5, False), Decimal("15"), POLL,
             Decimal("30"), Decimal("15"), live_quote_max_age_seconds=Decimal("60"),
-            quotes_poll_seconds=Decimal("1"), command_max_age_seconds=Decimal("60")),
+            quotes_poll_seconds=Decimal("1"), command_max_age_seconds=Decimal("60"),
+            decider=contract.strategy_decider("price-action", "1")),
         # 10:00 New York on a Monday: the bot runs, its last broker read was 4 s ago.
         "jobs-v1": JobsV1(
             T0, BotState.RUNNING, False, T0.replace(hour=13, minute=12, second=4),
@@ -401,7 +433,8 @@ def documents() -> dict[str, object]:
                                                "stop marker stopped-by-operator.json exists; "
                                                "the watchdog never starts a bot the operator "
                                                "stopped")), 2, None),
-                contract.SleepV1(contract.SleepState.HELD, 2, None)), None),
+                contract.SleepV1(contract.SleepState.HELD, 2, None)), None,
+            model=contract.ModelV1(False, None, contract.ModelState.OFF, None)),
         # Before the open with problems: no broker read in 2 minutes, the token needed
         # confirmation, no training job, the watchdog's restart command failed once.
         "system-v1.attention": contract.SystemV1(
@@ -420,14 +453,36 @@ def documents() -> dict[str, object]:
                     contract.WatchdogRestartV1(T0 - timedelta(days=3, minutes=15),
                                                contract.RestartOutcome.FAILED, True, 1,
                                                "restart command exited 113"),), 1, None),
-                contract.SleepV1(contract.SleepState.NOT_HELD, 0, None)), None),
+                contract.SleepV1(contract.SleepState.NOT_HELD, 0, None)), None,
+            model=contract.ModelV1(False, "l1-2026-12-01a", contract.ModelState.OFF, None)),
         # A server without the Mac's services, before any preflight record or status file.
         "system-v1.server": contract.SystemV1(
             T0, None, False,
             contract.BrokerLinkV1(None, Decimal("30"), Decimal("90"), contract.LinkState.UNKNOWN,
                                   None, "the bot has not written a status file"),
             None, "no preflight recorded yet", None, "no training job is reporting",
-            None, "no machine services on this host ([api] system_services = none)"),
+            None, "no machine services on this host ([api] system_services = none)",
+            # [model] enabled is refused by config load today; were it on, the API would not
+            # know the bot's load: null with its cause.
+            model=contract.ModelV1(True, None, None, contract.MODEL_LOAD_NOT_RECORDED)),
+        # The notification settings: disk-low kept off iMessage; push not built yet.
+        "alerts-v1": contract.AlertsV1((
+            contract.AlertChannelV1(contract.AlertChannel.MAC, True, None),
+            contract.AlertChannelV1(contract.AlertChannel.IMESSAGE, False,
+                                    contract.AlertChannelCause.CHECK_FAILED),
+            contract.AlertChannelV1(contract.AlertChannel.PUSH, False,
+                                    contract.AlertChannelCause.NOT_BUILT)),
+            alerts_api._kinds(Routing(frozenset({(AlertKind.DISK_LOW,
+                                                  contract.AlertChannel.IMESSAGE)}))), None),
+        "alerts-v1.unreadable": contract.AlertsV1((
+            contract.AlertChannelV1(contract.AlertChannel.MAC, False,
+                                    contract.AlertChannelCause.NO_PREFLIGHT),
+            contract.AlertChannelV1(contract.AlertChannel.IMESSAGE, False,
+                                    contract.AlertChannelCause.NO_PREFLIGHT),
+            contract.AlertChannelV1(contract.AlertChannel.PUSH, False,
+                                    contract.AlertChannelCause.NOT_BUILT)),
+            alerts_api._kinds(Routing(frozenset())),
+            "routing-file-unreadable: Expecting value: line 1 column 1 (char 0)"),
         # The Overview's journal card: the latest rows, oldest first; "line #731".
         "journal-v1": JournalV1(731, (
             JournalRowV1(728, T0 - timedelta(seconds=9), "order-intent", "ABCD"),
@@ -875,19 +930,28 @@ _LAUNCHD = (LaunchdJobV1("preflight", "08:30", (1, 2, 3, 4, 5)),
             LaunchdJobV1("nightly-fetch", "19:00", (1, 2, 3, 4, 5)))
 
 
-def _text(document: object) -> str:
-    return json.dumps(contract.to_jsonable(document), indent=2, ensure_ascii=False) + "\n"
+# Fixtures of files the bot writes (not API responses): encoded as stored, without derived keys.
+STORED = ("status-v1",)
+
+
+def _derived(name: str) -> bool:
+    return name.split(".", 1)[0] not in STORED
+
+
+def _text(name: str, document: object) -> str:
+    return json.dumps(contract.to_jsonable(document, derived=_derived(name)), indent=2,
+                      ensure_ascii=False) + "\n"
 
 
 def test_fixtures_are_current():
     docs = documents()
     if os.environ.get("TICKR_WRITE_FIXTURES") == "1":
         for name, document in docs.items():
-            (FIXTURES / f"{name}.json").write_text(_text(document), "utf-8")
+            (FIXTURES / f"{name}.json").write_text(_text(name, document), "utf-8")
     on_disk = {p.stem for p in FIXTURES.glob("*.json")}
     assert on_disk == set(docs), "fixtures on disk differ from documents()"
     for name, document in docs.items():
-        assert (FIXTURES / f"{name}.json").read_text("utf-8") == _text(document), (
+        assert (FIXTURES / f"{name}.json").read_text("utf-8") == _text(name, document), (
             f"{name}: regenerate with TICKR_WRITE_FIXTURES=1 and review the diff")
 
 
@@ -897,4 +961,5 @@ def test_fixture_matches_schema_and_parses(path):
     cls = contract.SCHEMA_TYPES[schema_name]
     raw = json.loads(path.read_text("utf-8"))
     assert errors(contract.json_schema(cls), raw) == []
-    assert contract.to_jsonable(contract.from_jsonable(cls, raw)) == raw
+    assert contract.to_jsonable(contract.from_jsonable(cls, raw),
+                                derived=_derived(path.stem)) == raw

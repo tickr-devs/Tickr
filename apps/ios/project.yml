@@ -4,7 +4,6 @@
 # needs no project change.
 name: Tickr
 options:
-  bundleIdPrefix: local.tickr
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
@@ -19,6 +18,10 @@ attributes:
 packages:
   TickrShared:
     path: ../shared
+  # The Mac screens (apps/macos, library TickrScreens): an iPad or an unfolded iPhone in regular
+  # width shows them (mockup v156, boards IPadLandscape, IPadPortrait, IPadSplit).
+  TickrApp:
+    path: ../macos
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -45,6 +48,8 @@ targets:
         product: TickrKit
       - package: TickrShared
         product: TickrDesign
+      - package: TickrApp
+        product: TickrScreens
     info:
       path: Support/Info.plist
       properties:
@@ -62,6 +67,13 @@ targets:
           UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # iPad: every orientation, which Split View and Slide Over need (mockup v156, boards
+        # IPadLandscape, IPadPortrait, IPadSplit).
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: Confirms commands that cancel orders or close positions.
         # The API address the app starts with before pairing: the Simulator's or the iPhone's,
         # set per destination in Config/Signing.xcconfig.
@@ -70,21 +82,22 @@ targets:
         TickrSimulatorTokenFile: $(TICKR_SIMULATOR_FILE)
         # tickr://pair?... links from `python -m tickr.api pair` open the app to pair.
         CFBundleURLTypes:
-          - CFBundleURLName: local.tickr.pair
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER).pair
             CFBundleURLSchemes: [tickr]
         # Plain HTTP is allowed only to local addresses (the Simulator reaches the Mac's API on
         # 127.0.0.1). Remote access goes through HTTPS (Tailscale serve).
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-    # The team id and the API address come from Config/Signing.xcconfig and the git-ignored
-    # Config/Local.xcconfig.
+    # The bundle id prefix, the team id and the API address come from Config/Signing.xcconfig
+    # (which includes apps/Config/Identity.xcconfig) and the git-ignored Config/Local.xcconfig.
     configFiles:
       Debug: Config/Signing.xcconfig
       Release: Config/Signing.xcconfig
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: local.tickr.ios
-        TARGETED_DEVICE_FAMILY: "1"
+        PRODUCT_BUNDLE_IDENTIFIER: $(TICKR_BUNDLE_ID_PREFIX).ios
+        # iPhone and iPad (one app; the iPad in regular width shows the Mac screens).
+        TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
         ENABLE_PREVIEWS: YES
@@ -97,9 +110,13 @@ targets:
       - path: Tests/TickrTests
     dependencies:
       - target: Tickr
+    # The bundle id prefix (apps/Config/Identity.xcconfig, through Config/Signing.xcconfig).
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: local.tickr.ios.tests
+        PRODUCT_BUNDLE_IDENTIFIER: $(TICKR_BUNDLE_ID_PREFIX).ios.tests
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
@@ -111,9 +128,13 @@ targets:
       - path: Tests/TickrUITests
     dependencies:
       - target: Tickr
+    # The bundle id prefix (apps/Config/Identity.xcconfig, through Config/Signing.xcconfig).
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: local.tickr.ios.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: $(TICKR_BUNDLE_ID_PREFIX).ios.uitests
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES

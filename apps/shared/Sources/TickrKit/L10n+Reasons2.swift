@@ -13,6 +13,12 @@ extension L10n {
     LocalizedStringResource("kit.refusal.PRICE_OUTSIDE_WINDOW",
       defaultValue: "Ask {ask} outside the entry range {entry_low}–{limit}", bundle: bundle)
   }
+  /// A refused entry's detail (`refusal.params`), after the rule's title. PRICE_COLLAR_BREACH (values: limit, bar_distance, bar_close, bar_max, quote_distance, previous_ask, quote_max)
+  static var refusalReasonPriceCollarBreach: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.PRICE_COLLAR_BREACH",
+      // swiftlint:disable:next line_length
+      defaultValue: "Limit {limit} is {bar_distance} from the last bar's close {bar_close} (maximum {bar_max}) and {quote_distance} from the previous ask {previous_ask} (maximum {quote_max}); a maximum of 0 is off", bundle: bundle)
+  }
   /// A refused entry's detail (`refusal.params`), after the rule's title. QUANTITY_NOT_WHOLE (values: quantity)
   static var refusalReasonQuantityNotWhole: LocalizedStringResource {
     LocalizedStringResource("kit.refusal.QUANTITY_NOT_WHOLE",
@@ -44,6 +50,21 @@ extension L10n {
     LocalizedStringResource("kit.refusal.DAILY_CEILING.total",
       // swiftlint:disable:next line_length
       defaultValue: "Realized {realized} + reserved {reserved} + this trade {new} = {total} USD, over the daily limit of {ceiling} USD", bundle: bundle)
+  }
+  /// A refused entry's detail (`refusal.params`), after the rule's title. EQUITY_UNKNOWN
+  static var refusalReasonEquityUnknown: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.EQUITY_UNKNOWN",
+      defaultValue: "No equity read yet", bundle: bundle)
+  }
+  /// A refused entry's detail (`refusal.params`), after the rule's title. EQUITY_UNKNOWN age (values: age, limit)
+  static var refusalReasonEquityUnknownAge: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.EQUITY_UNKNOWN.age",
+      defaultValue: "Equity read {age} s ago, limit {limit} s", bundle: bundle)
+  }
+  /// A refused entry's detail (`refusal.params`), after the rule's title. EQUITY_UNKNOWN value (values: value)
+  static var refusalReasonEquityUnknownValue: LocalizedStringResource {
+    LocalizedStringResource("kit.refusal.EQUITY_UNKNOWN.value",
+      defaultValue: "Equity figure {value} is not usable", bundle: bundle)
   }
   /// A refused entry's detail (`refusal.params`), after the rule's title. BUYING_POWER_UNKNOWN
   static var refusalReasonBuyingPowerUnknown: LocalizedStringResource {

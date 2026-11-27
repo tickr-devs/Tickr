@@ -60,6 +60,8 @@ cause. Each blocks that one entry only; the bot tries again at the next signal.
 | `QUOTE_STALE` | The quote is too old. | Nothing. |
 | `SPREAD_TOO_WIDE` | The gap between bid and ask is wider than allowed. | Nothing. |
 | `PRICE_OUTSIDE_WINDOW` | The current price left the entry price window. | Nothing. |
+| `PRICE_COLLAR_UNKNOWN` | The price collar is on, but the last bar's close or the previous quote it compares the limit with is missing or too old. | Nothing; it waits for fresh prices. |
+| `PRICE_COLLAR_BREACH` | The limit price is too far from the last bar's close or from the previous quote, more than the price collar allows. | Nothing, or review the collar settings. |
 | `QUANTITY_BELOW_ONE` | The size works out to less than one share. | Nothing, or review the risk settings. |
 | `QUANTITY_NOT_WHOLE` | The size is not a whole number of shares. | Report it. |
 | `NOTIONAL_OVER_CAP` | The trade would cost more than the per-trade limit. | Nothing, or raise the limit. |
@@ -67,10 +69,17 @@ cause. Each blocks that one entry only; the bot tries again at the next signal.
 | `DAILY_MONEY_UNKNOWN` | Today's profit and loss is not known (for example the broker fees are missing). | See the `fees-unknown` alert. |
 | `DAILY_MONEY_INVALID` | A money figure for the day is not a valid amount. | Report it. |
 | `DAILY_CEILING` | The most the bot may lose today is reached (or would be). | Nothing; trading resumes the next day. |
+| `EQUITY_UNKNOWN` | A percent-of-equity limit is on, but the account's equity (net liquidation) has no fresh, positive broker read. | Nothing; the next balance read usually fixes it. If it stays, check the broker connection. |
 | `BUYING_POWER_UNKNOWN` | The broker did not say how much buying power there is. | Nothing; it retries. |
 | `BUYING_POWER_SHORT` | There is not enough buying power for the trade. | Nothing, or add funds. |
 | `ENTRY_BUDGET_UNAVAILABLE` | The broker request budget has no room for the entry order. | Nothing. |
 | `STOP_BUDGET_UNAVAILABLE` | There is no request room left for the protective stops, so no entry is allowed. | Nothing. |
+| `TRADABILITY_BUDGET_UNAVAILABLE` | The tradability check is on, but the broker request budget has no room for its two reads. | Nothing. |
+| `TRADABILITY_UNKNOWN` | The tradability check is on, but the broker did not say clearly whether the stock can be traded now (an answer was missing, unknown or not read). | Nothing; if it stays, check that `tickr probe-tradability` has run and the settings match its answers. |
+| `INSTRUMENT_HALTED` | The broker says trading in this stock is halted. | Nothing. |
+| `INSTRUMENT_CLOSE_ONLY` | The broker allows only closing trades in this stock, so no new entry. | Nothing. |
+| `INSTRUMENT_DENIED` | The broker does not allow trading this stock. | Nothing. |
+| `INSTRUMENT_NOT_TRADABLE` | The broker's profile of this stock has a status the settings list as not tradable. | Nothing, or review that list in the settings. |
 | `ENGINE_REFUSED` | The checks passed but the trading engine refused to open the trade; its own text says why. | Read the recorded text. |
 
 ### Entry fences: `tickr.engine.core.Fence`
@@ -213,6 +222,8 @@ Why a settings change from the app or the site was declined. Nothing was changed
 | `OFF_STEP` | The value is not one of the allowed steps. | Use a multiple of the step. |
 | `RULE_BROKEN` | The value breaks a rule that links it to another setting. | Change the related setting too. |
 | `VALUE_MISSING` | A required value was not given. | Enter a value. |
+| `ENGINEERING_KEY` | The setting is changed only in the configuration file, not from the app. | Ask the engineer to change the file. |
+| `CLOSED_KEY` | The setting is never changed from an app: the environment, the Production authorization or a secret's name. | Leave it; it is set on the Mac by its owner. |
 
 ## Alerts
 
@@ -254,4 +265,6 @@ risk). **Today** means look before the next session. **Info** means no action is
 | `flatten-after-close` | Now | A close was due while the market was shut; no order was sent. See [operations.md](operations.md#flatten-after-close). |
 | `fees-unknown` | Today | An order's broker fees are not known, so today's money is unknown and entries are refused. Wait for the fees to appear; if they do not, report it. |
 | `fees-corrected` | Info | The account's cash activity showed the recorded fees were wrong, and they were replaced. |
+| `remote-auth-blocked` | Today | The API's remote port refuses an address (or, with a full table, every new address) after too many failed token or pairing-code checks. If it is not one of your devices, nothing to do: the limit holds. If it is yours, wait the time in the alert, then re-pair the device (or revoke a stale one sharing its address). Always sent on every channel: it cannot be switched off. See [api.md](api.md#failed-authentication-limit). |
 | `api-credentials-unexpected` | Today | The local API holds a credential variable it must not have. See [operations.md](operations.md#the-api-job-and-the-webull-keys). |
+| `risk-command-used` | Today | A paired device (or the local port) turned entries back on or started the bot. If you did not do this, revoke that device. Always sent on every channel: it cannot be switched off. See [operations.md](operations.md#risk-command-used). |

@@ -86,7 +86,7 @@ private struct PlannedCard: View {
     Card(title, tone: .highlight, trailing: {
       Badge.backlog
     }, content: {
-      (Text(L10n.Risk.notServed) + Text(verbatim: Format.itemSeparator) + Text(note))
+      Text.joined(Text(L10n.Risk.notServed), Text(verbatim: Format.itemSeparator), Text(note))
         .font(Tokens.Typography.caption)
         .foregroundStyle(Palette.textTertiary)
         .fixedSize(horizontal: false, vertical: true)
@@ -203,15 +203,15 @@ private struct LossRoomCard: View {
       Image(systemName: Self.infoSymbol)
         .font(Tokens.Typography.annotation)
         .foregroundStyle(Palette.textQuaternary)
-        .help(Text(L10n.Risk.lossRoomNote))
+        .tip(Text(L10n.Risk.lossRoomNote))
         .accessibilityLabel(Text(L10n.Risk.lossRoomNote))
       if let status = model.status {
         // Why entries wait or are blocked, in the bot's words, on hover.
         StatusPill(gate.entriesTitle, tone: gate.tone, live: gate == .allowed, event: gate)
-          .help(Text(verbatim: Self.gateCause(status)))
+          .tip(Text(verbatim: Self.gateCause(status)))
       } else {
         StatusPill(L10n.Risk.entriesUnknown, tone: .warning)
-          .help(Text(verbatim: model.fetchError ?? model.response?.unavailableCauseText ?? String()))
+          .tip(Text(verbatim: model.fetchError ?? model.response?.unavailableCauseText ?? String()))
       }
     }, content: {
       VStack(spacing: Tokens.Space.m) {
@@ -604,7 +604,7 @@ private struct ReconciliationCard: View {
       .foregroundStyle(on ? Palette.warningText : switched ? Palette.textQuaternary : Palette.profitText)
     }
     // What each active fence says, and since when, on hover: it often says what to do.
-    .help(Text(verbatim: active.map(detail).joined(separator: Format.lineSeparator)))
+    .tip(Text(verbatim: active.map(detail).joined(separator: Format.lineSeparator)))
     .accessibilityElement(children: .combine)
   }
 
@@ -615,14 +615,19 @@ private struct ReconciliationCard: View {
   }
 }
 
-/// "Positions · 2 of 3": one tile per slot the config allows (`PositionSlots`).
+/// "Positions · 2 of 3": one tile per slot the config allows (`PositionSlots`); a working entry
+/// holds one, as the engine counts it.
 private struct SlotsCard: View {
   @Environment(AppModel.self) private var model
 
+  /// The working entries, each holding a slot (one just cancelled no longer does).
+  private var entries: [EntryRow] { model.entryRows.filter { $0.phase != .cancelled } }
+
   var body: some View {
-    Card(L10n.Risk.slots(model.positions.count, model.settings.map { String($0.risk.maxOpenPositions) } ?? Format.missing)) {
+    Card(L10n.Risk.slots(model.positions.count + entries.count,
+      model.settings.map { String($0.risk.maxOpenPositions) } ?? Format.missing)) {
       if let risk = model.settings?.risk {
-        PositionSlots(limit: risk.maxOpenPositions, positions: model.positions)
+        PositionSlots(limit: risk.maxOpenPositions, positions: model.positions, entries: entries)
       } else {
         Footnote(model.settingsError == nil ? L10n.Common.unavailable : L10n.Risk.settingsUnavailable)
       }
@@ -672,6 +677,7 @@ private struct LimitsCard: View {
 private struct PositionSlots: View {
   let limit: Int
   let positions: [PositionRow]
+  let entries: [EntryRow]
 
   /// Tiles in a row, as the design draws three slots across the card.
   static let columns = 3
@@ -680,7 +686,7 @@ private struct PositionSlots: View {
   /// Symbol after a confirmed stop.
   static let confirmedSymbol = "checkmark"
 
-  private var free: Int { max(0, limit - positions.count) }
+  private var free: Int { max(0, limit - positions.count - entries.count) }
 
   var body: some View {
     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Tokens.Space.s, alignment: .top),
@@ -688,12 +694,15 @@ private struct PositionSlots: View {
       ForEach(positions) { row in
         taken(row)
       }
+      ForEach(entries) { row in
+        pending(row)
+      }
       ForEach(0..<free, id: \.self) { _ in
         freeTile
       }
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(Text(L10n.Risk.slots(positions.count, String(limit))))
+    .accessibilityLabel(Text(L10n.Risk.slots(positions.count + entries.count, String(limit))))
   }
 
   /// Colours of a stop state: its tone (`StopState.tone`): green verified, amber pending, red missing.
@@ -724,9 +733,23 @@ private struct PositionSlots: View {
       .foregroundStyle(colors.text)
     }
     // The state in words too, not only in colour: read by VoiceOver and shown on hover.
-    .help(Text(verbatim: state.title))
+    .tip(Text(verbatim: state.title))
     .accessibilityElement(children: .combine)
     .accessibilityValue(Text(verbatim: state.title))
+  }
+
+  /// A slot a working entry holds: its symbol and label, framed in the entry's colour.
+  private func pending(_ row: EntryRow) -> some View {
+    tile(frame: EntryLook.color(row.phase)) {
+      HStack(spacing: Tokens.Space.xs) {
+        EntryDot(row.phase)
+        SymbolText(row.symbol)
+          .font(Tokens.Typography.bodyMono.bold())
+          .foregroundStyle(Palette.textPrimary)
+      }
+      EntryBadge(row)
+    }
+    .accessibilityElement(children: .combine)
   }
 
   private var freeTile: some View {
@@ -869,7 +892,7 @@ private struct AccountCard: View {
           .joined(separator: Format.itemSeparator))
           .font(Tokens.Typography.annotation)
           .foregroundStyle(Palette.textQuaternary)
-          .help(Text(L10n.Risk.accountKindHelp))
+          .tip(Text(L10n.Risk.accountKindHelp))
       }
     }, content: {
       if let response = model.account {

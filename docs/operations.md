@@ -58,7 +58,10 @@ a trade and status shows `entries_not_wired`.
 From the apps, `POST /commands/stop-bot` stops the bot the same way and makes the stop stick,
 but only when the bot is flat: with a position open, an entry working, or a close in progress,
 it is refused and the bot keeps running (send emergency or flatten first, wait for every trade
-to close, then stop-bot). A
+to close, then stop-bot). With positions open the apps ask "Close and stop / Leave open":
+mode `close_and_stop` closes them in the bot and stops once flat (refused, bot running, if a
+close fails), mode `leave_open` stops at once and nothing closes them afterwards (docs/api.md,
+stop-bot "Modes"). A
 SIGTERM does not have this check: it leaves an open position under its DAY stop, and nothing
 flattens it while the bot is down. When obeyed, the bot writes `data/<[runtime] stop_marker_file>` and every later start is refused (preflight
 cause `stopped-by-operator`, with an alert) until you run `tickr clear-stop`, or press Start in the app (`POST /commands/start-bot`,
@@ -149,8 +152,8 @@ All checks are reported; the first failure is the recorded cause.
    with an Apple ID, then, after loading the env file as above, run
    `.venv/bin/python -m tickr.runtime alert preflight-failed "test"` once. You should get a
    notification on the Mac and an iMessage on the phone. The Mac notification comes from the
-   Tickr app, with its icon, when the app is at `[alerts] mac_app` (default
-   `/Applications/Tickr.app`: in Xcode, Product > Archive, then Distribute App > Copy App, and
+   Tickr app, with its icon, when the app is at `[alerts] mac_app` (on a Mac
+   `/Applications/Tickr.app`, shipped empty since the server cutover: in Xcode, Product > Archive, then Distribute App > Copy App, and
    put it there under that name). Open it once and allow notifications when it asks. When the
    app is missing, notifications for it are off, or it fails, the same notification comes from
    `osascript` instead, under "Script Editor" (allow those in System Settings > Notifications
@@ -450,6 +453,12 @@ receipt time, to `<data_dir>/massive/news-probe/<New York date>.jsonl`. Delay of
 `received_utc - published` (at most; it arrived after `previous_poll_sent_utc`). Lines of the
 first poll are `baseline` and time nothing.
 
+Revision poller (Codex 108 point 7; off): with `[massive] revision_poll_enabled = true`, `tickr
+poll-revisions` (same environment as the probe) keeps every version of each Benzinga earnings report
+and news article it receives under `<data_dir>/<revision_store_dir>`, with the poll coverage in
+`coverage/`. A failed poll or a restart leaves a typed gap there; `revisions.write_l1bz` refuses a
+range that touches one.
+
 The demo day had a launchd job of its own (`local.tickr.demo`) until the apps carried the day
 themselves. If it is still installed on this Mac, remove it once:
 
@@ -596,13 +605,18 @@ straight to the supervisor. Limits:
 `broker-reads-failing`, `stream-lost-with-position`, `daily-ceiling-reached`, `bot-crashed`,
 `bot-did-not-start`, `bot-did-not-stop` (added in review), `preflight-failed`, `token-needs-confirmation`,
 `exit-refused`, `observers-stopped`, `not-flat-after-flatten`, `exit-not-filled`,
-`flatten-after-close`, from the API `api-credentials-unexpected` (Mac notification and feed only, see
-"The API job and the Webull keys"), and from
+`flatten-after-close`, from the API `api-credentials-unexpected` and `risk-command-used` (Mac notification and feed only, see
+"The API job and the Webull keys") and `remote-auth-blocked` (an address used up its
+failed-authentication budget on the remote port, docs/api.md; Mac notification and feed, feed only
+off macOS), and from
 the watchdog `watchdog-not-flat`, `watchdog-cannot-check`, `bot-down-with-open-trade`,
 `watchdog-restarted-bot`, `watchdog-restart-refused`, `watchdog-restart-failed`, `bot-down`,
 `disk-low`. Every alert goes to
 the Mac notification, to iMessage (`[alerts] imessage_recipient_variable`, see setup step 4) and to
-the alerts feed below.
+the alerts feed below, unless the owner's routing turned its kind off on a channel (PUT
+/alerts/routing, file `[alerts] routing_file` under `data_dir`; docs/api.md, "Notification
+settings"). Critical kinds cannot be turned off, the feed always gets every alert, and deleting
+the routing file turns everything back on.
 The iMessage is sent on a background thread, so the bot's loop never waits for Messages.app; its
 result is journaled as its own `alert` record (`"channel": "imessage"`) once known. An alert
 counts as shown, for repeat suppression, when either channel delivered it.
@@ -628,6 +642,16 @@ It reads only that file (no credentials, no environment). After each wake it rep
 lines and starts waiting again. The feed works only while that session runs; the Mac notification
 and iMessage do not depend on it. A feed line that cannot be written (a full disk) is recorded as
 a failed `feed` channel like any other.
+
+### `risk-command-used`
+
+The API raises one of these for every accepted command that raises risk: `entry-stop` with
+`off` (entries allowed again) and `start-bot`. The alert names the paired device (the name
+`python -m tickr.api devices` lists, or `local` for the local port), the port (local or
+remote) and the time; never a token. If you did not do this, the device's token is stolen or
+the phone is not yours: revoke that device now (`python -m tickr.api revoke --name <device>`),
+then pair again. Refused commands raise nothing. It goes to the Mac notification (macOS only)
+and the alerts feed.
 
 ### `broker-reads-failing`
 
@@ -941,8 +965,9 @@ recovers (no live pid, or a status file not yet rewritten); if the next check is
 From `[runtime] watchdog_restart_before_flatten_seconds` before the flatten time (300 s:
 15:40 ET on a normal day, 12:40 ET on a half day) until its last check, a watchdog bot check
 that finds the bot down while its database shows an open trade starts the bot job once:
-`[runtime] watchdog_restart_command`, by default `launchctl kickstart gui/<uid>/local.tickr.bot`
-(without `-k`, so a job launchd still sees running is left alone). That is the same job the
+`[runtime] watchdog_restart_command`, on a Mac `launchctl kickstart gui/<uid>/local.tickr.bot`
+(without `-k`, so a job launchd still sees running is left alone; shipped since the server
+cutover: the server's restart request, docs/deploy-server.md "Bot restart on the server"). That is the same job the
 schedule starts: preflight again (a failure alerts `bot-did-not-start`), the supervisor, the
 single-instance lock, then the normal startup: recovery, reconciliation, the stop verified.
 Config refuses a restart time at or before the last entry time, so the restarted bot can never
@@ -972,8 +997,8 @@ normal exit path. The watchdog itself never places, cancels or replaces anything
   entry that day until you look and clear it (`tickr clear-fence watchdog-started`). It is set
   once per record, so a later start the same day after you cleared it is not fenced again.
 - To keep the bot down on purpose with a position open (a manual trade), unload the bot job, or
-  keep a stop marker left from an earlier stop made while flat. A new `stop-bot` is refused while
-  any trade is open, so it cannot create the marker then. See docs/manual-trade.md.
+  keep a stop marker left from an earlier stop made while flat, or send `stop-bot` with mode
+  `leave_open` (without a mode it is refused while any trade is open). See docs/manual-trade.md.
 - Owner check, once on the Mac: the exit code of `launchctl kickstart gui/$(id -u)/local.tickr.bot`
   (no `-k`) for a job launchd still sees running, and for a booted-out job. Record both here.
 
