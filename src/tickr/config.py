@@ -101,6 +101,9 @@ class RiskConfig:
     symbol_cooldown_minutes_after_loss: int
     max_entry_rest_bars: int
     entry_snapshot_interval_seconds: Decimal
+    planned_loss_percent: Decimal
+    position_notional_cap_percent: Decimal
+    max_daily_loss_percent: Decimal
     tradability_check_enabled: bool
     tradability_entry_profile_statuses: tuple[str, ...]
     tradability_blocked_profile_statuses: tuple[str, ...]
@@ -413,6 +416,13 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class SizingConfig:
+    by_confidence: bool
+    min_usd: Decimal
+    max_usd: Decimal
+
+
+@dataclass(frozen=True)
 class ExitChaseConfig:
     """Limit-exit chase before a market exit (backlog X3; tickr.engine.chase)."""
 
@@ -505,6 +515,7 @@ class RuntimeConfig:
     watchdog_restart_file: str
     watchdog_entry_restart_file: str
     server_restart_request_file: str
+    server_start_request_file: str
     evaluation_budget_seconds: Decimal
     discovery_stop_seconds: Decimal
     stop_marker_file: str
@@ -575,6 +586,7 @@ class Config:
     observers: ObserversConfig
     advisor: AdvisorConfig
     model: ModelConfig
+    confidence_sizing: SizingConfig
     massive: MassiveConfig
     exit_chase: ExitChaseConfig
     trailing_stop: TrailingStopConfig
@@ -609,6 +621,7 @@ _SECTIONS: dict[str, type] = {
     "observers": ObserversConfig,
     "advisor": AdvisorConfig,
     "model": ModelConfig,
+    "confidence_sizing": SizingConfig,
     "massive": MassiveConfig,
     "exit_chase": ExitChaseConfig,
     "trailing_stop": TrailingStopConfig,
@@ -829,6 +842,7 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
                           "yet) or a number of seconds of at least 0 written as text")
     if model.live_table_workers < 1:
         raise ConfigError("[model] live_table_workers must be at least 1")
+    check_sizing(built["confidence_sizing"], built["risk"], model)
     trailing: TrailingStopConfig = built["trailing_stop"]
     if trailing.enabled:
         raise ConfigError("[trailing_stop] enabled must stay false: stop replacement is not in "
@@ -933,6 +947,10 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         raise ConfigError("[risk] min_daily_room_usd must be >= 0 and below max_daily_loss_usd")
     if risk.buying_power_max_age_seconds <= 0:
         raise ConfigError("[risk] buying_power_max_age_seconds must be above 0")
+    for name in ("planned_loss_percent", "position_notional_cap_percent",
+                 "max_daily_loss_percent"):
+        if not 0 <= getattr(risk, name) <= 100:
+            raise ConfigError(f"[risk] {name} must be between 0 (off) and 100")
     if built["orders"].detail_unreadable_seconds <= 0:
         raise ConfigError("[orders] detail_unreadable_seconds must be above 0")
     if built["orders"].stop_held_proof_seconds <= 0:
@@ -1032,6 +1050,19 @@ def load(path: Path | str, root: Path | str | None = None) -> Config:
         digest=hashlib.sha256(raw_bytes).hexdigest(),
         renamed_keys=tuple(renamed),
     )
+
+
+def check_sizing(sizing: SizingConfig, risk: RiskConfig, model: ModelConfig) -> None:
+    """Size by confidence (backlog R30): refuse ON unless its inputs and bounds are sound. While
+    it is off the bounds are not read. The cap is `[risk] position_notional_cap_usd`, not a copy."""
+    if not sizing.by_confidence:
+        return
+    if not model.enabled:
+        raise ConfigError("[confidence_sizing] by_confidence cannot be on: the model probability "
+                          "is not available ([model] enabled is false)")
+    if not 0 < sizing.min_usd <= sizing.max_usd <= risk.position_notional_cap_usd:
+        raise ConfigError("[confidence_sizing] min_usd and max_usd must satisfy "
+                          "0 < min_usd <= max_usd <= [risk] position_notional_cap_usd")
 
 
 def check_history_share(orders: OrdersConfig, name: str, env: EnvironmentConfig) -> None:
