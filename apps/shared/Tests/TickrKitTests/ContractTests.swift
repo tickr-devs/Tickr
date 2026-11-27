@@ -15,9 +15,10 @@ func fixture(_ name: String) throws -> Data {
   try Data(contentsOf: fixturesDir.appendingPathComponent(name))
 }
 
-/// Schemas of endpoints the apps no longer call, so they keep no Swift model of them: the shadow
-/// strategies' day and the AI advisor's runs (re-scoped to the trained model, docs/backlog.md).
-let unmirroredSchemas: Set<String> = ["observers-v1", "advisor-runs-v1"]
+/// Schemas the apps never read, so they keep no Swift model of them: the shadow strategies' day and the AI
+/// advisor's runs (endpoints the apps no longer call, re-scoped to the trained model, docs/backlog.md), and the
+/// bot's run facts file, which only the API reads (GET /status serves its facts inside `status`).
+let unmirroredSchemas: Set<String> = ["observers-v1", "advisor-runs-v1", "run-facts-v1"]
 
 /// Decode with the Swift model, encode again, and compare as JSON values.
 /// Equality proves every key and value of the fixture is modelled, including nulls.

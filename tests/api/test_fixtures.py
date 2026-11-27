@@ -134,7 +134,7 @@ from tickr.runtime.alerts import AlertKind
 from tickr.settings_schema import Applies, Cause, Compare, Kind, Loosens, Unit
 from tickr.strategy.base import Verdict
 
-from .samples import T0, account, entry, status
+from .samples import T0, account, entry, run_facts, served, status
 from .schema_check import errors
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -158,7 +158,8 @@ LAB_DAYS = tuple(DAY - timedelta(days=d) for d in (3, 4, 5, 6, 7, 10, 11))
 
 
 def _response(st, age, stale, cause=None) -> StatusResponseV1:
-    return StatusResponseV1(served_at=T0 + timedelta(seconds=2), status=st, age_seconds=age,
+    return StatusResponseV1(served_at=T0 + timedelta(seconds=2),
+                            status=None if st is None else served(st), age_seconds=age,
                             stale=stale, unavailable_cause=cause,
                             summary=contract.summarize(st, age, stale, cause), poll_seconds=POLL,
                             api_started_at=T0 - timedelta(hours=1))
@@ -182,8 +183,7 @@ def documents() -> dict[str, object]:
     minimal = status(entry_block=None, fences=(), position=None, trades_today=(),
                      recent_commands=(), run_id=None, result_today_gross_usd=Decimal("0"),
                      realized_loss_today_usd=None, open_reservations_usd=Decimal("0"),
-                     daily_room_usd=None, positions=(), code_version=None,
-                     protection_in_force=())
+                     daily_room_usd=None, positions=(), code_version=None)
     mismatch = account(
         positions=(AccountPosition("ABCD", Decimal("10"), Decimal("12.34")),
                    AccountPosition("EFGH", Decimal("5"), None)),
@@ -203,6 +203,7 @@ def documents() -> dict[str, object]:
                         T0, "api")
     return {
         "status-v1.example": status(),
+        "run-facts-v1": run_facts(),
         "status-response-v1": _response(status(), Decimal("2.000"), False),
         "status-response-v1.minimal": _response(minimal, Decimal("0.250"), False),
         "status-response-v1.stale": _response(status(), Decimal("42.500"), True),

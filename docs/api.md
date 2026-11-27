@@ -905,9 +905,10 @@ a `settings-history-v1` document.
   nothing of it is applied. A change of another key is reported once and keeps its started value
   until the next start (`restart_needed`); a later version that differs from it in live
   protection alone (the next tightening) is adopted. A tightening never touches what is
-  already placed: an open trade keeps its broker stop and a working entry its order. Status `protection_in_force` lists every
-  live protection setting with the value new entries are admitted under now and `adopted_at`
-  (null: the value the bot started with).
+  already placed: an open trade keeps its broker stop and a working entry its order. GET /status
+  `status.protection_in_force` lists every live protection setting with the value new entries are
+  admitted under now and `adopted_at` (null: the value the bot started with). It comes from the
+  run facts file, not status.json (see "Run facts").
 - POST /settings/rollback `{"version": n, "base", "biometric_confirmed"}`: every key changed by
   a version after `n` is set back to its value at `n` (the last change at or before `n`, else the
   value before the first later change; `0` = before version 1), as a draft through the same
@@ -1926,6 +1927,16 @@ again).
 - Account: after each successful reconciliation the bot calls
   `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way. Before
   that it journals `reconcile-checked` when due (`record_reconcile`, see "Clean day").
+- Run facts: facts of the running bot that change seldom (`protection_in_force`) live in their
+  own `run-facts-v1` file (`[runtime] run_facts_file`), not in status.json, which keeps the shape a
+  reader from before them accepts (it refuses unknown keys, and the watchdog takes an unreadable
+  status file as a bot not running). The bot calls `contract.write_run_facts` (temp file + fsync +
+  rename, like status) at its start and after each adoption of a tightening (journal row, then
+  the adoption, then the file), never per pass. A failed write never stops the loop nor undoes the
+  adoption and is never retried: it is journaled once per stretch of failures
+  (`run-facts-write-failed`). The file carries `run_id`; GET /status shows its facts only when it
+  matches the `run_id` of status.json, so a stale (previous run), missing or unreadable file shows
+  an empty `protection_in_force`.
 - Commands: the bot calls `contract.read_commands(inbox, now, command_max_age_seconds)`. Each item
   is a command or a refusal (unreadable file, expired, dated in the future). For each item the bot
   journals it in one transaction, acts if it is a command, then calls `contract.retire_command`

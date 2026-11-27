@@ -175,6 +175,7 @@ class ApiSettings:
     auth_max_addresses: int  # addresses each budget tracks; full of live ones = fail closed
     auth_ipv6_prefix_length: int  # an IPv6 client counts as its network of this length
     status_path: Path
+    run_facts_path: Path  # the bot's run-facts-v1 file, shown with a status of its run
     inbox: Path
     idempotency: Path  # <commands_dir>/idempotency: remembered Idempotency-Key answers
     idempotency_ttl_seconds: int
@@ -337,6 +338,7 @@ def settings_from_config(cfg: Config, config_path: Path | None = None) -> ApiSet
         auth_max_addresses=api.remote_auth_max_addresses,
         auth_ipv6_prefix_length=api.remote_auth_ipv6_prefix_length,
         status_path=data / api.status_file,
+        run_facts_path=data / cfg.runtime.run_facts_file,
         inbox=data / api.commands_dir / contract.INBOX,
         idempotency=data / api.commands_dir / IDEMPOTENCY,
         idempotency_ttl_seconds=api.idempotency_key_ttl_seconds,
@@ -580,7 +582,7 @@ class ApiServer(ThreadingHTTPServer):
         stale = age is not None and age > self.settings.status_stale_seconds
         return StatusResponseV1(
             served_at=now,
-            status=status,
+            status=None if status is None else contract.served_status(status, self._run_facts()),
             age_seconds=age,
             stale=stale,
             unavailable_cause=cause,
@@ -588,6 +590,14 @@ class ApiServer(ThreadingHTTPServer):
             poll_seconds=self.settings.poll_seconds,
             api_started_at=self.started_at,
         )
+
+    def _run_facts(self) -> contract.RunFactsV1 | None:
+        """The bot's run facts; None when the file is missing or unreadable (display only: the
+        status then shows none of them)."""
+        try:
+            return contract.read_run_facts(self.settings.run_facts_path)
+        except (ContractError, OSError):
+            return None
 
     def account_response(self) -> AccountResponseV1 | ErrorV1:
         """The bot's account-v1 document with its age; an `unavailable` error when the file

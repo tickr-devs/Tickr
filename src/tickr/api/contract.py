@@ -4,6 +4,8 @@ Two files on disk decouple the bot from the API process:
 - the bot writes `StatusV1` to `<data_dir>/<status_file>` with `write_status` (temp file + rename);
 - the bot writes `AccountV1` to `<data_dir>/<account_file>` with `write_account` after each
   successful broker read of positions and open orders (reconciliation), the same way;
+- the bot writes `RunFactsV1` to `<data_dir>/<run_facts_file>` with `write_run_facts` at its
+  start and after each change of what it holds, never per pass, the same way;
 - the API writes one `CommandV1` per operator command into `<data_dir>/<commands_dir>/inbox/`
   with `write_command`; the bot reads them with `read_commands`, journals each one, then moves it
   out of the inbox with `retire_command`.
@@ -59,6 +61,7 @@ STATUS_SCHEMA_VERSION = 1
 COMMAND_SCHEMA_VERSION = 1
 ACCOUNT_SCHEMA_VERSION = 1
 QUOTES_SCHEMA_VERSION = 1
+RUN_FACTS_SCHEMA_VERSION = 1
 
 INBOX = "inbox"
 PROCESSED = "processed"
@@ -448,9 +451,6 @@ class StatusV1:
     # the order rows round sub-dollar fill prices; null until a balance read made after the
     # last of today's trades closed. For the whole account, so it includes manual trades.
     result_today_broker_usd: Decimal | None = _added_later(None)
-    # Added after v1 shipped (backlog S5): every live protection setting with the value in
-    # force for new entries; empty from a bot that does not report them.
-    protection_in_force: tuple[ProtectionValue, ...] = _added_later(())
     # Added after v1 shipped (2026-11-25, backlog V4): the stop-bot this run obeyed or is
     # carrying out; null while none. Stays in the last status a stopped bot wrote.
     stop_progress: StopProgress | None = _added_later(None)
@@ -460,6 +460,40 @@ class StatusV1:
     schema_version: int = _const(STATUS_SCHEMA_VERSION)
     # Who decides this run's entries, from `strategy`. Added after version 1 shipped.
     decider: DeciderV1 | None = _derived(_decider_of_id)
+
+
+@dataclass(frozen=True)
+class RunFactsV1:
+    """Facts of one bot run that change seldom, in their own file so status.json keeps the shape
+    a reader from before them accepts (it refuses unknown keys, and the watchdog takes an
+    unreadable status file as a bot not running). Written by the bot at its start and after each
+    change of what it holds, never per pass; never by the API. The API shows them only beside a
+    status of the same `run_id`."""
+
+    written_at: datetime
+    run_id: str
+    # Every live protection setting with the value in force for new entries (backlog S5).
+    protection_in_force: tuple[ProtectionValue, ...]
+    schema_version: int = _const(RUN_FACTS_SCHEMA_VERSION)
+
+
+@dataclass(frozen=True)
+class ServedStatusV1(StatusV1):
+    """The bot's status as GET /status serves it: status.json with the facts of the same run
+    from the run facts file."""
+
+    # Added after v1 shipped (backlog S5): every live protection setting with the value in
+    # force for new entries; empty when the run facts file is missing, unreadable or of
+    # another run, and from a bot that does not report them.
+    protection_in_force: tuple[ProtectionValue, ...] = _added_later(())
+
+
+def served_status(status: StatusV1, facts: RunFactsV1 | None) -> ServedStatusV1:
+    """`status` with the facts of its own run: none when `facts` is missing or of another run."""
+    same = facts is not None and status.run_id is not None and facts.run_id == status.run_id
+    return ServedStatusV1(**{f.name: getattr(status, f.name) for f in fields(StatusV1)
+                             if f.init},
+                          protection_in_force=facts.protection_in_force if same else ())
 
 
 # ---------------------------------------------------------------- account written by the bot
@@ -570,7 +604,7 @@ class StatusResponseV1:
     """GET /status. Always this shape; `status` is null when the bot's file is missing or bad."""
 
     served_at: datetime
-    status: StatusV1 | None
+    status: ServedStatusV1 | None
     age_seconds: Decimal | None
     stale: bool
     unavailable_cause: str | None
@@ -3074,6 +3108,7 @@ class PerformanceV1:
 
 SCHEMA_TYPES: dict[str, type] = {
     "status-v1": StatusV1,
+    "run-facts-v1": RunFactsV1,
     "command-v1": CommandV1,
     "status-response-v1": StatusResponseV1,
     "command-accepted-v1": CommandAcceptedV1,
@@ -3417,6 +3452,16 @@ def write_status(path: Path | str, status: StatusV1) -> None:
 def read_status(path: Path | str) -> StatusV1:
     """Raises FileNotFoundError when the bot has not written a status yet, else ContractError."""
     return loads(StatusV1, Path(path).read_bytes())
+
+
+def write_run_facts(path: Path | str, facts: RunFactsV1) -> None:
+    """Called by the bot at its start and after each change of its run facts, never per pass."""
+    write_atomic(Path(path), stored(facts))
+
+
+def read_run_facts(path: Path | str) -> RunFactsV1:
+    """Raises FileNotFoundError when the bot has not written one yet, else ContractError."""
+    return loads(RunFactsV1, Path(path).read_bytes())
 
 
 def write_account(path: Path | str, account: AccountV1) -> None:

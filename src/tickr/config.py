@@ -508,6 +508,7 @@ class RuntimeConfig:
     discovery_stop_seconds: Decimal
     stop_marker_file: str
     preflight_result_file: str
+    run_facts_file: str
     release_step_timeout_seconds: int
     release_stop_wait_seconds: int
     release_poll_seconds: Decimal

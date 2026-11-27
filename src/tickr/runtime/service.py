@@ -118,6 +118,7 @@ EVALUATION_SLOW = "evaluation-slow"
 LATENCY_FAILED = "protection-latency-failed"
 STRATEGY_NOT_LOADED = "strategy-not-loaded"
 ACCOUNT_WRITE_FAILED = "account-write-failed"  # one row per stretch of failed writes
+RUN_FACTS_WRITE_FAILED = "run-facts-write-failed"  # one row per stretch of failed writes
 STOP_TIMING_FAILED = "stop-timing-failed"  # one row per trade whose stop timing is unreadable
 ENTRY_SEND_FAILED = "entry-send-failed"  # one row per trade whose entry send is unreadable
 RESTART_ENTRY_CANCEL = "bot restarted: a working entry is never resumed"
@@ -156,6 +157,8 @@ class ServicePaths:
     watchdog_entry_restart: Path | None = None
     # The data folder whose free disk space each loop pass checks; None: not checked.
     data: Path | None = None
+    # The run facts file (contract.RunFactsV1); None: never written (tools, some tests).
+    run_facts: Path | None = None
 
     @classmethod
     def from_config(cls, config: Config) -> ServicePaths:
@@ -163,7 +166,7 @@ class ServicePaths:
         commands = data / config.api.commands_dir
         return cls(data / config.api.status_file, commands / api.INBOX,
                    commands / api.PROCESSED, data / config.api.account_file,
-                   entry_restart_file(config), data)
+                   entry_restart_file(config), data, data / config.runtime.run_facts_file)
 
 
 def _no_quote(symbol: str) -> Quote | None:  # noqa: ARG001 - no market: no quote for any
@@ -244,6 +247,7 @@ class Service:
         # The stop-bot this run obeyed or is carrying out (status `stop_progress`).
         self._progress: tuple[str, api.StopMode | None, api.StopStep, datetime] | None = None
         self._account_failing = False  # the last account file write failed (journaled once)
+        self._run_facts_failing = False  # the last run facts write failed (journaled once)
         # Balances, account kind and today's fills, read on their own thread (display only).
         self.account_reads = account_reads
         # The live quotes file, written on its own thread (display only); the loop journals its
@@ -591,6 +595,7 @@ class Service:
                 store.append(PROTECTION_ADOPTED, found.journal_body(), run_id=self.engine.run_id)
             if self.evaluator is not None:
                 self.evaluator.desk.adopt(self.protection.risk)
+            self.write_run_facts()  # after the journal row and the adoption, never before
             return
         with store.transaction():
             store.append(PROTECTION_IGNORED, found.journal_body(), run_id=self.engine.run_id)
@@ -1070,7 +1075,6 @@ class Service:
             code_version=self.engine.store.run_code_version(self.engine.run_id),
             fees_today_usd=fees, result_today_net_usd=total_net(closed),
             result_today_broker_usd=self._broker_result_today(closed),
-            protection_in_force=self._protection_in_force(),
             stop_progress=self.stop_progress(), working_entries=self._working_entries())
 
     def check_disk(self) -> None:
@@ -1098,6 +1102,29 @@ class Service:
         api.write_status(self.paths.status, self.status())
         if self.quote_file is not None:
             self.quote_file.journal_failures(self.engine)
+
+    def run_facts(self) -> api.RunFactsV1:
+        return api.RunFactsV1(written_at=self.now(), run_id=self.engine.run_id,
+                              protection_in_force=self._protection_in_force())
+
+    def write_run_facts(self) -> None:
+        """At the start and after each change of what it holds (an adoption), never per pass.
+        Display only: a failed write never ends the loop nor undoes what changed, is never
+        retried, and is journaled once per stretch of failures; the API then shows the facts of
+        no run (an older file names another run id)."""
+        if self.paths.run_facts is None:
+            return
+        try:
+            api.write_run_facts(self.paths.run_facts, self.run_facts())
+        except OSError as exc:
+            if not self._run_facts_failing:
+                with self.engine.store.transaction():
+                    self.engine.store.append(RUN_FACTS_WRITE_FAILED,
+                                             {"error": type(exc).__name__, "detail": str(exc)},
+                                             run_id=self.engine.run_id)
+            self._run_facts_failing = True
+            return
+        self._run_facts_failing = False
 
     def write_account(self) -> None:
         """After a successful reconciliation: what it read from the broker (docs/api.md)."""
@@ -1188,6 +1215,7 @@ class Service:
         alerts."""
         orders = self.config.orders
         self.write_status()
+        self.write_run_facts()
         self.engine.recover()
         # A working entry is never resumed after a restart: its decision is stale and nothing
         # watched it while the bot was down. Cancelled now; a fill that races the cancel is

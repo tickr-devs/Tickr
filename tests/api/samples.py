@@ -21,13 +21,16 @@ from tickr.api.contract import (
     Gate,
     Position,
     ProtectionValue,
+    RunFactsV1,
     SendOutcome,
+    ServedStatusV1,
     StatusV1,
     Stop,
     StopState,
     StrategyId,
     StreamHealth,
     Trade,
+    served_status,
 )
 
 T0 = datetime(2026, 11, 16, 15, 0, 0, 123000, tzinfo=UTC)
@@ -81,12 +84,23 @@ def status(written_at: datetime = T0, **overrides) -> StatusV1:
         fees_today_usd=Decimal("0.07"),
         result_today_net_usd=Decimal("-1.67"),
         result_today_broker_usd=Decimal("-1.64"),
-        protection_in_force=(ProtectionValue("risk.max_daily_loss_usd", "300", None),
-                             ProtectionValue("risk.max_open_positions", "1",
-                                             T0 - timedelta(minutes=5))),
     )
     values.update(overrides)
     return StatusV1(**values)
+
+
+PROTECTION = (ProtectionValue("risk.max_daily_loss_usd", "300", None),
+              ProtectionValue("risk.max_open_positions", "1", T0 - timedelta(minutes=5)))
+
+
+def run_facts(run_id: str = "run-1", written_at: datetime = T0,
+              protection: tuple[ProtectionValue, ...] = PROTECTION) -> RunFactsV1:
+    return RunFactsV1(written_at=written_at, run_id=run_id, protection_in_force=protection)
+
+
+def served(st: StatusV1) -> ServedStatusV1:
+    """`st` as GET /status serves it, with the run facts of its run."""
+    return served_status(st, run_facts(st.run_id or "", st.written_at))
 
 
 def account(read_at: datetime = T0, **overrides) -> AccountV1:

@@ -156,7 +156,9 @@ public struct StatusV1: Codable, Hashable, Sendable {
   public let resultTodayNetUsd: DecimalString?
   public let resultTodayBrokerUsd: DecimalString?
   /// Every live protection setting with the value new entries are admitted under now; empty from an older bot.
-  public let protectionInForce: [ProtectionValue]
+  /// Only the API's answer carries it, from the bot's run facts file; status.json has none (docs/api.md, "Run facts").
+  public var protectionInForce: [ProtectionValue] { protectionInForceShown ?? [] }
+  private let protectionInForceShown: [ProtectionValue]?
   /// The stop-bot this run obeyed or is carrying out; nil while none (and from an older bot).
   public let stopProgress: StopProgress?
   /// Every own entry working at the broker with nothing filled yet; empty from an older bot.
@@ -215,7 +217,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     feesTodayUsd = try c.decodeIfPresent(DecimalString.self, forKey: .feesTodayUsd)
     resultTodayNetUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayNetUsd)
     resultTodayBrokerUsd = try c.decodeIfPresent(DecimalString.self, forKey: .resultTodayBrokerUsd)
-    protectionInForce = try c.decodeIfPresent([ProtectionValue].self, forKey: .protectionInForce) ?? []
+    protectionInForceShown = try c.decodeIfPresent([ProtectionValue].self, forKey: .protectionInForce)
     stopProgress = try c.decodeIfPresent(StopProgress.self, forKey: .stopProgress)
     workingEntries = try c.decodeIfPresent([WorkingEntry].self, forKey: .workingEntries) ?? []
     decider = try c.decodeIfPresent(DeciderV1.self, forKey: .decider)
@@ -246,7 +248,7 @@ public struct StatusV1: Codable, Hashable, Sendable {
     try c.encodeNullable(feesTodayUsd, forKey: .feesTodayUsd)
     try c.encodeNullable(resultTodayNetUsd, forKey: .resultTodayNetUsd)
     try c.encodeNullable(resultTodayBrokerUsd, forKey: .resultTodayBrokerUsd)
-    try c.encode(protectionInForce, forKey: .protectionInForce)
+    try c.encodeIfPresent(protectionInForceShown, forKey: .protectionInForce)
     try c.encodeNullable(stopProgress, forKey: .stopProgress)
     try c.encode(workingEntries, forKey: .workingEntries)
     // Only the API's answer carries `decider`; the bot's status file has none (docs/api.md, "Decider").
