@@ -248,6 +248,8 @@ class Service:
         self._progress: tuple[str, api.StopMode | None, api.StopStep, datetime] | None = None
         self._account_failing = False  # the last account file write failed (journaled once)
         self._run_facts_failing = False  # the last run facts write failed (journaled once)
+        # The loss locks' counts the last run facts write carried (None: none written yet).
+        self._loss_locks_written: tuple[Decimal | None, int] | None = None
         # Balances, account kind and today's fills, read on their own thread (display only).
         self.account_reads = account_reads
         # The live quotes file, written on its own thread (display only); the loop journals its
@@ -898,7 +900,7 @@ class Service:
             stop_out_streak,
         )
 
-        risk, now = self.config.risk, self.now()
+        risk, now = self._entry_config().risk, self.now()  # as tightened while running
         if risk.max_weekly_loss_usd != ZERO:
             loss = realized_loss_week(self.engine, now)
             if loss is None:
@@ -1097,7 +1099,6 @@ class Service:
         fees = self._fees_today(closed)
         positions = self._positions()
         loss, reserved, room = self._daily_money()
-        week_loss, streak = self._loss_locks()
         return api.StatusV1(
             written_at=self.now(), bot_state=self.state, run_id=self.engine.run_id,
             environment=self.config.environment_name,
@@ -1116,7 +1117,6 @@ class Service:
             code_version=self.engine.store.run_code_version(self.engine.run_id),
             fees_today_usd=fees, result_today_net_usd=total_net(closed),
             result_today_broker_usd=self._broker_result_today(closed),
-            realized_loss_week_usd=week_loss, stop_out_streak=streak,
             stop_progress=self.stop_progress(), working_entries=self._working_entries())
 
     def check_disk(self) -> None:
@@ -1144,13 +1144,21 @@ class Service:
         api.write_status(self.paths.status, self.status())
         if self.quote_file is not None:
             self.quote_file.journal_failures(self.engine)
+        # The loss locks' counts live in the run facts (status.json keeps its older shape):
+        # written when they change (a trade closed, a new day or week), never per pass.
+        if (self._loss_locks_written is not None
+                and self._loss_locks() != self._loss_locks_written):
+            self.write_run_facts()
 
     def run_facts(self) -> api.RunFactsV1:
+        week_loss, streak = self._loss_locks_written = self._loss_locks()
         return api.RunFactsV1(written_at=self.now(), run_id=self.engine.run_id,
-                              protection_in_force=self._protection_in_force())
+                              protection_in_force=self._protection_in_force(),
+                              realized_loss_week_usd=week_loss, stop_out_streak=streak)
 
     def write_run_facts(self) -> None:
-        """At the start and after each change of what it holds (an adoption), never per pass.
+        """At the start and after each change of what it holds (an adoption, a change of the
+        loss locks' counts), never per pass.
         Display only: a failed write never ends the loop nor undoes what changed, is never
         retried, and is journaled once per stretch of failures. The last file written stays: a
         failed write at the start leaves the previous run's file (the API shows no facts), but a

@@ -144,8 +144,6 @@
     "fees_today_usd": "0.07",
     "result_today_net_usd": "-1.67",
     "result_today_broker_usd": "-1.64",
-    "realized_loss_week_usd": "41.20",
-    "stop_out_streak": 1,
     "stop_progress": {
       "command_id": "6e3b8d0f-2c4a-4b7e-9f1d-8a0c3e5b7d9f",
       "mode": "leave_open",
@@ -171,7 +169,9 @@
         "value": "1",
         "adopted_at": "2026-11-16T14:55:00.123Z"
       }
-    ]
+    ],
+    "realized_loss_week_usd": "41.20",
+    "stop_out_streak": 1
   },
   "age_seconds": "3600.000",
   "stale": true,

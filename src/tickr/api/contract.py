@@ -451,12 +451,6 @@ class StatusV1:
     # the order rows round sub-dollar fill prices; null until a balance read made after the
     # last of today's trades closed. For the whole account, so it includes manual trades.
     result_today_broker_usd: Decimal | None = _added_later(None)
-    # Added after v1 shipped (backlog T11): the loss locks' counts as admission reads them,
-    # whether or not the lock is on (settings `risk.max_weekly_loss_usd`,
-    # `risk.stop_out_streak_limit`; 0 = off). This New York week's net realized loss after
-    # fees (Monday to today, >= 0; null = unknown), and the stop-outs in a row today.
-    realized_loss_week_usd: Decimal | None = _added_later(None)
-    stop_out_streak: int | None = _added_later(None)
     # Added after v1 shipped (2026-11-25, backlog V4): the stop-bot this run obeyed or is
     # carrying out; null while none. Stays in the last status a stopped bot wrote.
     stop_progress: StopProgress | None = _added_later(None)
@@ -480,6 +474,13 @@ class RunFactsV1:
     run_id: str
     # Every live protection setting with the value in force for new entries (backlog S5).
     protection_in_force: tuple[ProtectionValue, ...]
+    # Added after run-facts-v1 shipped (backlog T11): the loss locks' counts as admission reads
+    # them, whether or not the lock is on (settings `risk.max_weekly_loss_usd`,
+    # `risk.stop_out_streak_limit`; 0 = off). This New York week's net realized loss after
+    # fees (Monday to today, >= 0; null = unknown), and the stop-outs in a row today. Written
+    # when either changes, not per pass.
+    realized_loss_week_usd: Decimal | None = _added_later(None)
+    stop_out_streak: int | None = _added_later(None)
     schema_version: int = _const(RUN_FACTS_SCHEMA_VERSION)
 
 
@@ -492,6 +493,10 @@ class ServedStatusV1(StatusV1):
     # force for new entries; empty when the run facts file is missing, unreadable or of
     # another run, and from a bot that does not report them.
     protection_in_force: tuple[ProtectionValue, ...] = _added_later(())
+    # Added after v1 shipped (backlog T11): the loss locks' counts (RunFactsV1); null when the
+    # run facts file is missing, unreadable or of another run, and from an older bot.
+    realized_loss_week_usd: Decimal | None = _added_later(None)
+    stop_out_streak: int | None = _added_later(None)
 
 
 def served_status(status: StatusV1, facts: RunFactsV1 | None) -> ServedStatusV1:
@@ -499,7 +504,9 @@ def served_status(status: StatusV1, facts: RunFactsV1 | None) -> ServedStatusV1:
     same = facts is not None and status.run_id is not None and facts.run_id == status.run_id
     return ServedStatusV1(**{f.name: getattr(status, f.name) for f in fields(StatusV1)
                              if f.init},
-                          protection_in_force=facts.protection_in_force if same else ())
+                          protection_in_force=facts.protection_in_force if same else (),
+                          realized_loss_week_usd=facts.realized_loss_week_usd if same else None,
+                          stop_out_streak=facts.stop_out_streak if same else None)
 
 
 # ---------------------------------------------------------------- account written by the bot

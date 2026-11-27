@@ -5,6 +5,7 @@ block an exit or a stop."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal as D
@@ -319,7 +320,8 @@ def test_a_working_entry_is_cancelled_once_a_lock_refuses_new_entries(tmp_path):
 
 def _service(rig: Rig) -> service.Service:
     paths = service.ServicePaths(rig.path.parent / "status.json", rig.path.parent / "inbox",
-                                 rig.path.parent / "processed")
+                                 rig.path.parent / "processed",
+                                 run_facts=rig.path.parent / "run-facts.json")
     svc = service.Service(rig.engine, now=rig.clock, calendar=CALENDAR,
                           strategy=service.strategy_id(rig.cfg), paths=paths)
     svc.evaluator = object()  # type: ignore[assignment]  # entries wired
@@ -327,18 +329,18 @@ def _service(rig: Rig) -> service.Service:
     return svc
 
 
-def test_status_shows_both_counts_and_says_which_lock_blocks(tmp_path):
+def test_run_facts_show_both_counts_and_status_says_which_lock_blocks(tmp_path):
     rig = Rig(tmp_path, ny(MON, 10), locked("6", streak=2))
     svc = _service(rig)
     rig.clock.at = ny(MON, 11)
-    status = svc.status()
-    assert (status.realized_loss_week_usd, status.stop_out_streak, status.entry_block) == (
+    facts = svc.run_facts()
+    assert (facts.realized_loss_week_usd, facts.stop_out_streak, svc.status().entry_block) == (
         0, 0, None)
     rig.trip("AAA", ny(MON, 11), ny(MON, 11, 1))
     rig.trip("BBB", ny(MON, 11, 2), ny(MON, 11, 3))
     rig.clock.at = ny(MON, 11, 4)
-    status = svc.status()
-    assert (status.realized_loss_week_usd, status.stop_out_streak) == (2 * LOSS, 2)
+    facts, status = svc.run_facts(), svc.status()
+    assert (facts.realized_loss_week_usd, facts.stop_out_streak) == (2 * LOSS, 2)
     # The week's 6 lost leaves no room under 6: the weekly lock is named first.
     assert status.entry_block is not None and status.entry_block.cause == "weekly_ceiling"
     assert status.entry_block.params == {"limit_usd": "6"}
@@ -347,3 +349,26 @@ def test_status_shows_both_counts_and_says_which_lock_blocks(tmp_path):
     block = _service(rig).status().entry_block
     assert block is not None and block.cause == "stop_out_streak"
     assert block.params == {"count": "2", "limit": "2"}
+
+
+def test_the_counts_reach_the_run_facts_file_when_they_change_not_status_json(tmp_path):
+    rig = Rig(tmp_path, ny(MON, 10), locked("100", streak=5))
+    svc = _service(rig)
+    rig.clock.at = ny(MON, 11)
+    svc.write_status()
+    assert not svc.paths.run_facts.exists()  # the start writes it first (Service.run)
+    svc.write_run_facts()
+    first = api.read_run_facts(svc.paths.run_facts)
+    assert (first.realized_loss_week_usd, first.stop_out_streak) == (0, 0)
+    rig.clock.at = ny(MON, 11, 1)
+    svc.write_status()  # nothing changed: the file is not rewritten
+    assert api.read_run_facts(svc.paths.run_facts) == first
+    rig.trip("AAA", ny(MON, 11, 1), ny(MON, 11, 2))
+    rig.clock.at = ny(MON, 11, 3)
+    svc.write_status()
+    facts = api.read_run_facts(svc.paths.run_facts)
+    assert (facts.realized_loss_week_usd, facts.stop_out_streak) == (LOSS, 1)
+    raw = json.loads(svc.paths.status.read_text("utf-8"))
+    assert "realized_loss_week_usd" not in raw and "stop_out_streak" not in raw
+    served = api.served_status(api.read_status(svc.paths.status), facts)
+    assert (served.realized_loss_week_usd, served.stop_out_streak) == (LOSS, 1)

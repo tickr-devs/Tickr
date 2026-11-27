@@ -428,7 +428,9 @@ realized - reserved (may be negative). Entries are refused while the room is bel
 `position` is its first element or `null`, kept for older clients.
 
 Loss locks (backlog T11; added after version 1 shipped, absent from an older bot), counted from
-the bot's stored trades whether or not a lock is on: `realized_loss_week_usd` is this New York
+the bot's stored trades whether or not a lock is on. Only GET /status carries the two counts, from
+the run facts file (see "Run facts"); status.json has neither, and they are `null` when that file
+is missing, unreadable or of another run: `realized_loss_week_usd` is this New York
 week's net realized loss after fees (Monday to today, counted as the daily loss counts a day;
 `null` = unknown), `stop_out_streak` the trades in a row closed today by their stop at a loss (a
 winning or flat exit resets it; a losing exit that was not a stop fill leaves it as it is). With
@@ -1943,12 +1945,14 @@ again).
 - Account: after each successful reconciliation the bot calls
   `contract.write_account(path, AccountV1(...))` (`runtime/account.py`), the same way. Before
   that it journals `reconcile-checked` when due (`record_reconcile`, see "Clean day").
-- Run facts: facts of the running bot that change seldom (`protection_in_force`) live in their
+- Run facts: facts of the running bot that change seldom (`protection_in_force`, the loss locks'
+  `realized_loss_week_usd` and `stop_out_streak`) live in their
   own `run-facts-v1` file (`[runtime] run_facts_file`), not in status.json, which keeps the shape a
   reader from before them accepts (it refuses unknown keys, and the watchdog takes an unreadable
   status file as a bot not running). The bot calls `contract.write_run_facts` (temp file + fsync +
-  rename, like status) at its start and after each adoption of a tightening (journal row, then
-  the adoption, then the file), never per pass. A failed write never stops the loop nor undoes the
+  rename, like status) at its start, after each adoption of a tightening (journal row, then
+  the adoption, then the file) and when a loss lock count changes (checked as status.json is
+  written), never per pass. A failed write never stops the loop nor undoes the
   adoption and is never retried: it is journaled once per stretch of failures
   (`run-facts-write-failed`). The file carries `run_id`; GET /status shows its facts only when it
   matches the `run_id` of status.json, so a stale (previous run), missing or unreadable file shows
