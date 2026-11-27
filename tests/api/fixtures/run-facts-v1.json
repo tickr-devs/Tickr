@@ -15,5 +15,7 @@
   ],
   "realized_loss_week_usd": "41.20",
   "stop_out_streak": 1,
-  "schema_version": 1
+  "schema_version": 1,
+  "settings_version": null,
+  "trade_settings_versions": []
 }
