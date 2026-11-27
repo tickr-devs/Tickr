@@ -163,9 +163,13 @@ struct OverviewView: View {
             Self.layout(gridWidth: viewport.size.width - Self.padding * CardArrangement.paddedEdges))
         }
         .scrollEdgeHints()
-        // Also when the cards below grow: until they load, the page can be too short to bring the
-        // card to the top.
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
+        // Also when the cards below grow (until they load, the page can be too short to bring the
+        // card to the top) and when the window or its toolbar inset changes size (a display-sized
+        // window lays the cards out again). Never on the scroll offset, so a scroll cannot ask
+        // for another.
+        .onScrollGeometryChange(for: [CGFloat].self) {
+          [$0.contentSize.height, $0.containerSize.width, $0.containerSize.height, $0.contentInsets.top]
+        } action: { _, _ in
           showSafetyFirstIfAsked(proxy)
         }
       }
@@ -180,14 +184,14 @@ struct OverviewView: View {
 
   /// UI tests (`LayoutSweep.safetyFirst`, `LayoutSweep.positionsFirst`): the Safety · bot card
   /// or the Positions card at the top of the screen, kept there while the cards above it load, so
-  /// a test clicks its commands without a scroll.
+  /// a test clicks its commands without a scroll. The scroll runs after the layout pass that
+  /// noticed the change, on the settled cards: asked inside that pass, it scrolled to where the
+  /// card was before the pass (the card above the window on a display-sized window).
   private func showSafetyFirstIfAsked(_ proxy: ScrollViewProxy) {
     #if DEBUG && os(macOS)
-    if LayoutSweep.positionsFirst {
-      proxy.scrollTo(PositionsCard.id, anchor: .top)
-    } else if LayoutSweep.safetyFirst {
-      proxy.scrollTo(SafetyCard.id, anchor: .top)
-    }
+    guard LayoutSweep.positionsFirst || LayoutSweep.safetyFirst else { return }
+    let target = LayoutSweep.positionsFirst ? PositionsCard.id : SafetyCard.id
+    Task { proxy.scrollTo(target, anchor: .top) }
     #endif
   }
 }
