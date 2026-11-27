@@ -438,8 +438,7 @@ change ends hosting on the Mac (its launchd jobs no longer work with it):
   server");
 - `[api] system_services = "none"` with `sleep_check_command = []` (no launchd, no caffeinate);
 - `[api] training_progress_file = "training-progress.json"` under the data folder (no training
-  job runs on the server: "no training job is reporting");
-- `[alerts] mac_app = ""`.
+  job runs on the server: "no training job is reporting").
 
 Then run `deploy-server.sh` (creates `/srv/tickr/data/control`, installs and starts the path
 units) and check `systemctl status tickr-bot-restart.path tickr-bot-start.path` shows both
