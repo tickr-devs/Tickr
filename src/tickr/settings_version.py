@@ -43,6 +43,9 @@ from tickr.settings_schema import PLATFORM, RECORDS
 
 IDENTITY_TABLE = "strategy"  # [strategy]: name and version
 NAME_KEY = "version"  # the owner's name for a strategy's values, outside the version
+# The refusal word for a version recorded before with other contents
+# (store.SettingsVersionConflict).
+CONFLICT = "settings_version_conflict"
 
 
 class SettingsVersionRefused(Exception):

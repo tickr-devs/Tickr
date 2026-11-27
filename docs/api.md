@@ -485,7 +485,16 @@ keeps each version's canonical text in table `settings_versions`. A version it c
 (a value with no canonical form, a missing or unverified bundle) or one recorded before with
 other contents is refused: for the active strategy no entries this run, journaled as
 `strategy-not-loaded` with `settings_version_refused` (the cause word) and alerted
-(`strategy-not-loaded`); an observer is left out (`observers-stopped` alert).
+(`strategy-not-loaded`); an observer is left out (`observers-stopped` alert). When a running bot
+adopts a tightening of live protection (see POST /settings/apply), it computes the version again
+from the config now in force, records it, and from then on new entries and the active strategy's
+decisions carry it (the run facts' `settings_version` too); a trade opened before keeps the
+version it was opened under. If that version cannot be computed or conflicts with its record, the
+tightening is still adopted and never undone, `settings_version` becomes `null` for the rest of
+the run (the version from before is never kept), and the refusal word is journaled
+(`settings-version-refused` with `settings_version_refused` and `detail`). Observers keep the
+version they started with: their values and the platform part they were given at start do not
+change.
 
 `code_version` (in `trades_today` and in `day-v1` `trades`) is the bot code version the trade was
 opened by: the full git commit SHA of the run that opened it, with `-dirty` when a tracked file

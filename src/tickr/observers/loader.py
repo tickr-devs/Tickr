@@ -20,7 +20,7 @@ from typing import Any
 
 from tickr.config import Config
 from tickr.observers.errors import ObserverError
-from tickr.settings_version import SettingsVersion, SettingsVersionRefused
+from tickr.settings_version import CONFLICT, SettingsVersion, SettingsVersionRefused
 from tickr.store import SettingsVersionConflict, Store
 from tickr.strategy.base import Strategy
 
@@ -134,7 +134,7 @@ def with_settings_version(loaded: LoadedStrategy, compute: Callable[[], Settings
     except SettingsVersionRefused as exc:
         raise SettingsVersionError(loaded.folder, exc.cause, exc.detail) from exc
     except SettingsVersionConflict as exc:
-        raise SettingsVersionError(loaded.folder, "settings_version_conflict", str(exc)) from exc
+        raise SettingsVersionError(loaded.folder, CONFLICT, str(exc)) from exc
     return replace(loaded, settings_version=version.value)
 
 

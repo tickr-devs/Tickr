@@ -59,6 +59,8 @@ from tickr.runtime.liveprotection import IGNORED as PROTECTION_IGNORED
 from tickr.runtime.liveprotection import Adoption, LiveProtection, toml_text
 from tickr.runtime.protection import LatencyLog, busy
 from tickr.runtime.watchdog import BYTES_PER_MB, DiskFree, disk_free, entry_restart_file
+from tickr.settings_version import CONFLICT, SettingsVersion, SettingsVersionRefused
+from tickr.store import SettingsVersionConflict
 
 if TYPE_CHECKING:
     from tickr.observers.runner import ObserverSet
@@ -119,6 +121,8 @@ LATENCY_FAILED = "protection-latency-failed"
 STRATEGY_NOT_LOADED = "strategy-not-loaded"
 ACCOUNT_WRITE_FAILED = "account-write-failed"  # one row per stretch of failed writes
 RUN_FACTS_WRITE_FAILED = "run-facts-write-failed"  # one row per stretch of failed writes
+# An adopted tightening whose settings version was refused: new entries record none.
+SETTINGS_VERSION_REFUSED = "settings-version-refused"
 STOP_TIMING_FAILED = "stop-timing-failed"  # one row per trade whose stop timing is unreadable
 ENTRY_SEND_FAILED = "entry-send-failed"  # one row per trade whose entry send is unreadable
 RESTART_ENTRY_CANCEL = "bot restarted: a working entry is never resumed"
@@ -589,7 +593,10 @@ class Service:
     def check_protection(self) -> None:
         """Once per loop pass, before any strategy work: adopt protection the owner tightened
         in the config file, for new entries only (runtime/liveprotection.py). Anything else is
-        ignored for this run, journaled and alerted."""
+        ignored for this run, journaled and alerted. An adoption is journaled, then its
+        settings version is computed and recorded, then the desk takes the limits and the
+        version together, then the run facts are written. Observers keep the settings version
+        they started with: their values and the platform part they were given do not change."""
         if self.protection is None:
             return
         found = self.protection.check(self.now())
@@ -600,13 +607,38 @@ class Service:
             with store.transaction():  # journaled before admission uses it
                 store.append(PROTECTION_ADOPTED, found.journal_body(), run_id=self.engine.run_id)
             if self.evaluator is not None:
-                self.evaluator.desk.adopt(self.protection.risk)
+                version = self._adopted_version(self.evaluator.desk.versions)
+                self.evaluator.desk.adopt(self.protection.risk, version)
+                self.strategy = replace(self.strategy, settings_version=version)
             self.write_run_facts()  # after the journal row and the adoption, never before
             return
         with store.transaction():
             store.append(PROTECTION_IGNORED, found.journal_body(), run_id=self.engine.run_id)
         if self.watch is not None:
             self.watch.alert(AlertKind.PROTECTION_CHANGE_IGNORED, found.alert_text())
+
+    def _adopted_version(self, versions: Callable[[Config], SettingsVersion] | None) -> str | None:
+        """The settings version of the config new entries are now admitted under, recorded.
+        None when it cannot be computed or was recorded before with other contents: the
+        adoption stands, never undone, and the version from before it is never kept; the
+        refusal word is journaled (`settings-version-refused`). None without a way to compute
+        one (tests)."""
+        if versions is None or self.protection is None:
+            return None
+        try:
+            version = versions(self.protection.config)
+            self.engine.store.record_settings_version(version.value, version.contents)
+        except SettingsVersionRefused as exc:
+            cause, detail = exc.cause, exc.detail
+        except SettingsVersionConflict as exc:
+            cause, detail = CONFLICT, str(exc)
+        else:
+            return version.value
+        with self.engine.store.transaction():
+            self.engine.store.append(SETTINGS_VERSION_REFUSED,
+                                     {"settings_version_refused": cause, "detail": detail},
+                                     run_id=self.engine.run_id)
+        return None
 
     def _protection_in_force(self) -> tuple[api.ProtectionValue, ...]:
         if self.protection is None:

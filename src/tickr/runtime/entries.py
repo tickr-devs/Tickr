@@ -49,6 +49,7 @@ from tickr.risk.admission import (
 )
 from tickr.risk.causes import ENGINE_REFUSED
 from tickr.risk.ticks import round_to_tick
+from tickr.settings_version import SettingsVersion
 from tickr.strategy.base import Decision, Role, Verdict
 from tickr.types import Bar, Quote, Tradability
 
@@ -343,12 +344,17 @@ def session_at(calendar: SessionCalendar | None, now: datetime) -> MarketDay | C
 class EntryDesk:
     def __init__(self, engine: Engine, config: Config, *, calendar: SessionCalendar | None,
                  last_broker_read_at: Callable[[], datetime | None],
-                 log: DecisionLog, settings_version: str | None = None) -> None:
+                 log: DecisionLog, settings_version: str | None = None,
+                 versions: Callable[[Config], SettingsVersion] | None = None) -> None:
         self.engine = engine
         # The settings version entries are decided under (tickr.settings_version), recorded
         # with each of the active strategy's decisions and on each trade it opens; None only
-        # in tests.
+        # in tests, or after an adoption whose version was refused (Service.check_protection).
         self.settings_version = settings_version
+        # The settings version of a config with the active strategy's values
+        # (settings_version.for_active), computed again when protection is adopted; None only
+        # in tests.
+        self.versions = versions
         self.config = config
         self.calendar = calendar
         self.last_broker_read_at = last_broker_read_at
@@ -359,10 +365,13 @@ class EntryDesk:
         # When the desk last tried to read the balance, whatever the outcome.
         self._balance_tried_at: datetime | None = None
 
-    def adopt(self, risk: RiskConfig) -> None:
-        """Admit new entries under these [risk] values from now on: protection a running bot
-        tightened (runtime/liveprotection.py). Nothing already placed is touched."""
+    def adopt(self, risk: RiskConfig, settings_version: str | None) -> None:
+        """Admit new entries under these [risk] values and record them with this settings
+        version from now on, both together: protection a running bot tightened
+        (runtime/liveprotection.py). Nothing already placed is touched: a trade opened before
+        keeps the version it was opened under."""
         self.limits = AdmissionLimits.from_config(replace(self.config, risk=risk))
+        self.settings_version = settings_version
 
     # --- money -----------------------------------------------------------------------------
 

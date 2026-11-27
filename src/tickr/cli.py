@@ -862,7 +862,8 @@ def _evaluator(cfg: config_module.Config, engine: Engine, source: MarketData,
     platform = settings_version.platform_part(cfg)
     log = DecisionLog.from_config(cfg)
     desk = EntryDesk(engine, cfg, calendar=calendar, last_broker_read_at=last_broker_read_at,
-                     log=log, settings_version=loaded.settings_version)
+                     log=log, settings_version=loaded.settings_version,
+                     versions=lambda c: settings_version.for_active(c, loaded.values))
     evaluator = Evaluator(engine, cfg, source, strategy=loaded.strategy, desk=desk,
                           history=HistoryReader.from_config(cfg, source, calendar),
                           inbox=inbox, calendar=calendar, today_bars=today_bars, now=NOW)
