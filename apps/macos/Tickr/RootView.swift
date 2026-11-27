@@ -2,11 +2,12 @@ import SwiftUI
 import TickrDesign
 import TickrKit
 
-/// Sidebar sections, ordered by how often they are used during a trading day.
-enum AppSection: String, CaseIterable, Identifiable {
+/// Sidebar sections, ordered by how often they are used during a trading day. Public for the iOS
+/// app, which keeps the shown section across its two layouts (`RegularScreens(section:)`).
+public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   case overview, chart, trades, risk, lab
 
-  var id: String { rawValue }
+  public var id: String { rawValue }
 
   var title: LocalizedStringResource {
     switch self {
@@ -130,9 +131,19 @@ struct RootView: View {
     .botCommandQuestions(in: .window)
   }
 
-  /// The shown screen under the event strip and the connection banner, with the unattended
-  /// banner and the command toast over it.
-  private var screen: some View {
+  /// The shown screen (`ScreenColumn`).
+  private var screen: some View { ScreenColumn() }
+}
+
+/// The shown section's screen under the event strip and the connection banner, with the
+/// unattended banner and the command toast over it: the Mac window's detail column, and the
+/// iPad's (`RegularScreens`).
+struct ScreenColumn: View {
+  @Environment(AppModel.self) private var model
+
+  private var section: AppSection { model.section }
+
+  var body: some View {
     ZStack(alignment: .bottom) {
       TickrBackground()
       // The strip stacked above the screen rather than a top safe-area inset whose content
@@ -187,7 +198,7 @@ struct RootView: View {
   /// included, needs the screens' least size (`screenMinWidth`, `screenMinHeight`).
   private var screenLeast: CGSize {
     if section == .overview && model.symbolsTab == nil { return OverviewView.leastSize }
-    return CGSize(width: Self.screenMinWidth, height: Self.screenMinHeight)
+    return CGSize(width: RootView.screenMinWidth, height: RootView.screenMinHeight)
   }
 
   @ViewBuilder private var detail: some View {
@@ -209,7 +220,7 @@ struct RootView: View {
 
 /// The sidebar as the design draws it: the "OPERATOR" label, the sections and the bot's state at
 /// the bottom, on the sidebar's own fill. Settings opens the standard way (⌘, and the app menu).
-private struct Sidebar: View {
+struct Sidebar: View {
   @Environment(AppModel.self) private var model
   @Binding var selection: AppSection
   /// Whether the section rows have the keyboard focus (the arrow keys then move the selection).
@@ -305,14 +316,14 @@ private struct SidebarRail: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(Text(item.title))
+        .tip(Text(item.title))
         .accessibilityLabel(Text(item.title))
         .accessibilityIdentifier(item.rowID)
         .accessibilityAddTraits(selection == item ? .isSelected : [])
       }
       Spacer(minLength: 0)
       PulseDot(BotStateCard.color(model), pulsing: model.isLive, event: model.status?.botState)
-        .help(Text(verbatim: BotStateCard.stateText(model)))
+        .tip(Text(verbatim: BotStateCard.stateText(model)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: BotStateCard.stateText(model)))
     }
@@ -407,7 +418,7 @@ private struct BotStateCard: View {
       // The run's id is a code for the logs, not for reading here (owner, 2026-11-18): it stays
       // on hover only.
     }
-    .help(model.status?.runId.map { Text(L10n.Root.run($0)) } ?? Text(verbatim: String()))
+    .tip(model.status?.runId.map { Text(L10n.Root.run($0)) } ?? Text(verbatim: String()))
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
     .tickrCard(radius: Tokens.Radius.large)
@@ -531,7 +542,7 @@ struct SidebarButton: View {
       }
     }
     .buttonStyle(.titleBar(square: true))
-    .help(Text(hidden ? L10n.Toolbar.showSidebar : L10n.Toolbar.hideSidebar))
+    .tip(Text(hidden ? L10n.Toolbar.showSidebar : L10n.Toolbar.hideSidebar))
     .accessibilityIdentifier(Self.id)
   }
 }
@@ -650,7 +661,7 @@ struct DayControls: View {
           .font(Tokens.Typography.dayStepper)
           .foregroundStyle(Palette.textPrimary)
           .fixedSize()
-          .help(Text(L10n.Toolbar.demoHelp))
+          .tip(Text(L10n.Toolbar.demoHelp))
       } else if arrows.visible {
         stepper
       } else {
@@ -696,7 +707,7 @@ struct DayControls: View {
       }
       .buttonStyle(.titleBar(square: true))
       .disabled(!arrows.canGoBack)
-      .help(Text(L10n.Toolbar.previousDayHelp))
+      .tip(Text(L10n.Toolbar.previousDayHelp))
       Menu {
         Button(String(localized: L10n.Common.today)) { model.showToday() }
           .disabled(model.isLive)
@@ -724,17 +735,17 @@ struct DayControls: View {
       .buttonStyle(.plain)
       .menuIndicator(.hidden)
       .fixedSize()
-      .help(Text(L10n.Toolbar.pickDayHelp))
+      .tip(Text(L10n.Toolbar.pickDayHelp))
       Button { model.showNextDay() } label: {
         Label { Text(L10n.Toolbar.nextDay) } icon: { Image(systemName: Symbols.next) }
       }
       .buttonStyle(.titleBar(square: true))
       .disabled(!arrows.canGoForward)
-      .help(Text(L10n.Toolbar.nextDayHelp))
+      .tip(Text(L10n.Toolbar.nextDayHelp))
       // Today is where the day already is while it is live: dimmed then, as ⌘T in the menu.
       TodayButton(L10n.Common.today) { model.showToday() }
         .disabled(model.isLive)
-        .help(Text(L10n.Toolbar.todayHelp))
+        .tip(Text(L10n.Toolbar.todayHelp))
     }
   }
 }
@@ -762,7 +773,7 @@ struct ConnectionStatus: View {
     if compact {
       // The text as of the latest status read: no ticking clock redraws the title bar.
       dot
-        .help(Text(verbatim: text(now: model.botTime(.now))))
+        .tip(Text(verbatim: text(now: model.botTime(.now))))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: text(now: model.botTime(.now))))
         .accessibilityIdentifier(Self.id)
@@ -787,9 +798,15 @@ struct ConnectionStatus: View {
           .multilineTextAlignment(.trailing)
           .fixedSize(horizontal: false, vertical: true)
       }
+      #if os(macOS)
       .frame(width: Self.width, alignment: .trailing)
+      #else
+      // The iPad's navigation bar lays its items out itself and draws iOS's larger type: the
+      // text keeps one line at its own width ("actualizado hace 1 s" wrapped in the Mac's width).
+      .fixedSize()
+      #endif
     }
-    .help(Text(verbatim: model.headline.text))
+    .tip(Text(verbatim: model.headline.text))
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier(Self.id)
   }

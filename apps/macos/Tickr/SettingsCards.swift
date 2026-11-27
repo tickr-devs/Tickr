@@ -146,7 +146,7 @@ struct SettingsCard<Content: View, Trailing: View>: View {
             Image(systemName: Self.infoSymbol)
               .font(Tokens.Typography.annotation)
               .foregroundStyle(Palette.textQuaternary)
-              .help(Text(info))
+              .tip(Text(info))
               .accessibilityLabel(Text(info))
           }
         }

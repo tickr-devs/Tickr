@@ -106,6 +106,9 @@ public struct ListCap: Equatable, Sendable {
   /// Accessibility ids of the "Show all" link and of its sheet, for the UI tests.
   public static let linkID = "capped-list-show-all"
   public static let sheetID = "capped-list-all"
+  /// Accessibility id of the close button of every `CardSheet` (this list's, a card's footer
+  /// sheet, the iPhone's day and funnel sheets), for the UI tests.
+  public static let closeID = "card-sheet.close"
   /// SF Symbol of the sheet's close button.
   static let closeSymbol = "xmark"
 

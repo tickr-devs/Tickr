@@ -286,6 +286,16 @@ enum L10n {
         defaultValue: "Open positions: \(count). The bot's status is stale: it may have stopped. Each position stays under its broker stop, a DAY order: nothing closes it at the session's end. Check the bot on this Mac or close the positions in Webull.",
         bundle: L10n.bundle)
     }
+    static var ownerNotConfirmed: LocalizedStringResource {
+      LocalizedStringResource("bot.ownerNotConfirmed",
+        defaultValue: "not sent: Face ID or the passcode did not confirm the owner",
+        bundle: L10n.bundle)
+    }
+    static var alreadySending: LocalizedStringResource {
+      LocalizedStringResource("bot.alreadySending",
+        defaultValue: "not sent: this command is already being sent",
+        bundle: L10n.bundle)
+    }
     static var notSentUntrusted: LocalizedStringResource {
       LocalizedStringResource("bot.notSentUntrusted",
         defaultValue: "not sent: the app cannot trust the bot's status right now",
@@ -328,7 +338,7 @@ enum L10n {
       LocalizedStringResource("section.risk", defaultValue: "Risk & account", bundle: L10n.bundle)
     }
     static var lab: LocalizedStringResource {
-      LocalizedStringResource("section.lab", defaultValue: "Strategy lab", bundle: L10n.bundle)
+      LocalizedStringResource("section.lab", defaultValue: "Model lab", bundle: L10n.bundle)
     }
   }
 
@@ -356,6 +366,10 @@ enum L10n {
   }
 
   enum Toolbar {
+    /// The iPad navigation bar's gear: the iPad's settings (connection, pairing, notifications).
+    static var settings: LocalizedStringResource {
+      LocalizedStringResource("toolbar.settings", defaultValue: "Settings", bundle: L10n.bundle)
+    }
     /// The title bar's line before the first status.
     static var windowLineEmpty: LocalizedStringResource {
       LocalizedStringResource("toolbar.windowLineEmpty", defaultValue: "tickr", bundle: L10n.bundle)
@@ -2617,19 +2631,15 @@ enum L10n {
   }
 
   enum Lab {
-    /// Card: refused signals of the shown day, counted by cause.
+    /// Card: the entries the platform's limits refused on the shown day, counted by cause.
     static var refusals: LocalizedStringResource {
-      LocalizedStringResource("lab.refusals", defaultValue: "Why signals were refused", bundle: L10n.bundle)
+      LocalizedStringResource("lab.refusals", defaultValue: "Blocked by safety rules", bundle: L10n.bundle)
     }
     static var noRefusals: LocalizedStringResource {
       LocalizedStringResource("lab.noRefusals", defaultValue: "No signal was refused.", bundle: L10n.bundle)
     }
     static var noCause: LocalizedStringResource {
       LocalizedStringResource("lab.noCause", defaultValue: "No cause recorded", bundle: L10n.bundle)
-    }
-    /// Trades with wins and losses.
-    static func closedWinsLosses(_ trades: Int, _ wins: Int, _ losses: Int) -> LocalizedStringResource {
-      LocalizedStringResource("lab.closedWinsLosses", defaultValue: "\(trades) · \(wins) W · \(losses) L", bundle: L10n.bundle)
     }
     /// How strategies are swapped.
     static var swapNote: LocalizedStringResource {
@@ -2658,9 +2668,9 @@ enum L10n {
     static var verdictExit: LocalizedStringResource {
       LocalizedStringResource("lab.verdictExit", defaultValue: "exit", bundle: L10n.bundle)
     }
-    /// Card title: replaying recorded days.
+    /// Card title: the replay that compares two versions.
     static var replay: LocalizedStringResource {
-      LocalizedStringResource("lab.replay", defaultValue: "Replay · compare versions", bundle: L10n.bundle)
+      LocalizedStringResource("lab.replay", defaultValue: "Compare two versions", bundle: L10n.bundle)
     }
     /// Replay card before any run.
     static var replayIdle: LocalizedStringResource {
@@ -2774,9 +2784,9 @@ enum L10n {
     static var replayDifference: LocalizedStringResource {
       LocalizedStringResource("lab.replayDifference", defaultValue: "difference", bundle: L10n.bundle)
     }
-    /// Comparison row: the result under the bot's risk limits, USD.
+    /// Comparison row: the net result under the bot's risk limits, USD.
     static var replayWithBotLimits: LocalizedStringResource {
-      LocalizedStringResource("lab.replayWithBotLimits", defaultValue: "with bot limits", bundle: L10n.bundle)
+      LocalizedStringResource("lab.replayWithBotLimits", defaultValue: "net with bot limits", bundle: L10n.bundle)
     }
     /// A difference of two percentages, in points.
     static func replayPoints(_ value: String) -> LocalizedStringResource {
@@ -2793,9 +2803,9 @@ enum L10n {
         defaultValue: "Replays a strategy version over the data fetched on the Mac, at low priority. Simulated: the bot never reads it.",
         bundle: L10n.bundle)
     }
-    /// Card: every strategy version and its role.
+    /// Card: every model version and its role.
     static var versions: LocalizedStringResource {
-      LocalizedStringResource("lab.versions", defaultValue: "Strategy versions", bundle: L10n.bundle)
+      LocalizedStringResource("lab.versions", defaultValue: "Model versions", bundle: L10n.bundle)
     }
     /// Role tag: the version that trades.
     static var tagActive: LocalizedStringResource {
@@ -2805,27 +2815,13 @@ enum L10n {
     static var tagCandidate: LocalizedStringResource {
       LocalizedStringResource("lab.tagCandidate", defaultValue: "Candidate", bundle: L10n.bundle)
     }
-    /// Candidate version: only the replay runs it.
-    static var candidateNote: LocalizedStringResource {
-      LocalizedStringResource("lab.candidateNote", defaultValue: "candidate · replay only", bundle: L10n.bundle)
-    }
     /// After a version name: its version.
     static func versionSuffix(_ version: String) -> LocalizedStringResource {
       LocalizedStringResource("lab.versionSuffix", defaultValue: " · v\(version)", bundle: L10n.bundle)
     }
-    /// Card: refused signals of today, counted by cause.
+    /// Beside the refusals' total on the live day.
     static var refusalsToday: LocalizedStringResource {
-      LocalizedStringResource("lab.refusalsToday", defaultValue: "Why signals were refused today", bundle: L10n.bundle)
-    }
-    /// Refusals card: planned research matrix (BACKLOG).
-    static var screenerBacklog: LocalizedStringResource {
-      LocalizedStringResource("lab.screenerBacklog",
-        defaultValue: "screener source × rank → move after 15 min",
-        bundle: L10n.bundle)
-    }
-    /// Replay card: the run is simulated on fetched data.
-    static var replaySimulated: LocalizedStringResource {
-      LocalizedStringResource("lab.replaySimulated", defaultValue: "simulated · fetched data", bundle: L10n.bundle)
+      LocalizedStringResource("lab.refusalsToday", defaultValue: "today", bundle: L10n.bundle)
     }
     /// How the replay runs.
     static var replayPriority: LocalizedStringResource {
@@ -2850,9 +2846,9 @@ enum L10n {
     static var replayNoDays: LocalizedStringResource {
       LocalizedStringResource("lab.replayNoDays", defaultValue: "No fetched day to replay yet.", bundle: L10n.bundle)
     }
-    /// Card: one symbol decision, check by check.
+    /// Card: one symbol's decision, check by check.
     static var explain: LocalizedStringResource {
-      LocalizedStringResource("lab.explain", defaultValue: "Explain a symbol", bundle: L10n.bundle)
+      LocalizedStringResource("lab.explain", defaultValue: "Why did the model decide that?", bundle: L10n.bundle)
     }
     /// Placeholder of the symbol field.
     static var explainPrompt: LocalizedStringResource {
@@ -2874,12 +2870,6 @@ enum L10n {
     static var explainReading: LocalizedStringResource {
       LocalizedStringResource("lab.explainReading", defaultValue: "Reading decisions", bundle: L10n.bundle)
     }
-    /// Explain card: planned detail (BACKLOG).
-    static var explainBacklog: LocalizedStringResource {
-      LocalizedStringResource("lab.explainBacklog",
-        defaultValue: "strategy blocks behind each check",
-        bundle: L10n.bundle)
-    }
     /// No decision recorded for the symbol.
     static var explainNone: LocalizedStringResource {
       LocalizedStringResource("lab.explainNone",
@@ -2891,10 +2881,6 @@ enum L10n {
       LocalizedStringResource("lab.explainHint",
         defaultValue: "Type a symbol to see why the strategy decided what it did.",
         bundle: L10n.bundle)
-    }
-    /// Decision line with its cause.
-    static func explainHeadline(_ head: String, _ cause: String) -> LocalizedStringResource {
-      LocalizedStringResource("lab.explainHeadline", defaultValue: "\(head) · cause: \(cause)", bundle: L10n.bundle)
     }
     /// Decision line without a cause.
     static func explainHead(_ head: String) -> LocalizedStringResource {
@@ -2920,17 +2906,60 @@ enum L10n {
     static var admissionNotReached: LocalizedStringResource {
       LocalizedStringResource("lab.admissionNotReached", defaultValue: "not reached", bundle: L10n.bundle)
     }
-    /// Active version: it trades, set in config.
-    static var activeRole: LocalizedStringResource {
-      LocalizedStringResource("lab.activeRole", defaultValue: "trades · set in the bot config", bundle: L10n.bundle)
+    /// Card: the version that trades and its day.
+    static var active: LocalizedStringResource {
+      LocalizedStringResource("lab.active", defaultValue: "Which version trades", bundle: L10n.bundle)
     }
-    /// The shown day trades of the active version.
-    static var shownDayTrades: LocalizedStringResource {
-      LocalizedStringResource("lab.shownDayTrades", defaultValue: "Trades", bundle: L10n.bundle)
+    /// Under the active version's day result: the day, then its closed trades, won and lost.
+    static func daySummary(_ day: String, _ closed: Int, _ won: Int, _ lost: Int) -> LocalizedStringResource {
+      LocalizedStringResource("lab.daySummary", defaultValue: "\(day) · \(closed) closed, \(won) won, \(lost) lost",
+        bundle: L10n.bundle)
     }
-    /// The shown day's result of the active version, after the broker's fees.
-    static var shownDayResult: LocalizedStringResource {
-      LocalizedStringResource("lab.shownDayResult", defaultValue: "Result", bundle: L10n.bundle)
+    /// The active version's latest replay over the last sessions, before its net with the bot's limits.
+    static func testedOn(_ sessions: Int) -> LocalizedStringResource {
+      LocalizedStringResource("lab.testedOn", defaultValue: "Tested on the last \(sessions) sessions", bundle: L10n.bundle)
+    }
+    /// The versions card's "i": how versions swap.
+    static var versionsAbout: LocalizedStringResource {
+      LocalizedStringResource("lab.versionsAbout", defaultValue: "How versions swap", bundle: L10n.bundle)
+    }
+    /// The compare card's "i": how the comparison runs.
+    static var compareAbout: LocalizedStringResource {
+      LocalizedStringResource("lab.compareAbout", defaultValue: "How the comparison runs", bundle: L10n.bundle)
+    }
+    /// Footer link of the compare card: every figure of the run, with the difference.
+    static var replayAllFigures: LocalizedStringResource {
+      LocalizedStringResource("lab.replayAllFigures", defaultValue: "All figures", bundle: L10n.bundle)
+    }
+    /// The second version earned more over the last sessions, with how much.
+    static func verdictMore(_ name: String, _ amount: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.verdictMore", defaultValue: "\(name) earned \(amount) more · not proven yet",
+        bundle: L10n.bundle)
+    }
+    /// The second version earned less over the last sessions, with how much.
+    static func verdictLess(_ name: String, _ amount: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.verdictLess", defaultValue: "\(name) earned \(amount) less", bundle: L10n.bundle)
+    }
+    /// Both versions earned the same over the last sessions.
+    static var verdictSame: LocalizedStringResource {
+      LocalizedStringResource("lab.verdictSame", defaultValue: "Both earned the same", bundle: L10n.bundle)
+    }
+    /// The refusals card's "i": what it counts.
+    static var refusalsAbout: LocalizedStringResource {
+      LocalizedStringResource("lab.refusalsAbout", defaultValue: "What this counts", bundle: L10n.bundle)
+    }
+    /// What the refusals card counts.
+    static var refusalsInfo: LocalizedStringResource {
+      LocalizedStringResource("lab.refusalsInfo",
+        defaultValue: "Times the model wanted to enter and the platform's limits said no.", bundle: L10n.bundle)
+    }
+    /// Under the decision: why it was decided.
+    static func explainCause(_ cause: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.explainCause", defaultValue: "Cause: \(cause)", bundle: L10n.bundle)
+    }
+    /// At the end of the explained decision: the version that decided.
+    static func decidedBy(_ name: String) -> LocalizedStringResource {
+      LocalizedStringResource("lab.decidedBy", defaultValue: "Decided by \(name)", bundle: L10n.bundle)
     }
   }
   enum MenuBar {
@@ -2979,6 +3008,12 @@ enum L10n {
     /// A position's last price.
     static func now(_ price: String) -> LocalizedStringResource {
       LocalizedStringResource("menuBar.now", defaultValue: "Now \(price)", bundle: L10n.bundle)
+    }
+    /// Under the panel's one command: where the others are.
+    static var moreHint: LocalizedStringResource {
+      LocalizedStringResource("menuBar.moreHint",
+        defaultValue: "To close positions or stop the bot, open Tickr.",
+        bundle: L10n.bundle)
     }
   }
   enum Screener {

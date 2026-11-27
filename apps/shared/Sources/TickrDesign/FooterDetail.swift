@@ -58,15 +58,16 @@ public struct FooterDetail<Content: View>: View {
 /// first"), the round close button, then the rows, scrolling when they are many. On the iPhone a
 /// sheet as tall as the rows (full height when they are more than a screen), with its own
 /// navigation for rows that open a page; on the Mac a sheet of `Size.allRowsWidth` or, from a
-/// `FooterDetail`, a popover of `Size.popover`. Esc closes it.
-struct CardSheet<Rows: View>: View {
+/// `FooterDetail`, a popover of `Size.popover`. Esc closes it. Any other sheet of a card (the
+/// iPhone's day picker, Home's funnel) is one too.
+public struct CardSheet<Rows: View>: View {
   let title: LocalizedStringResource
   let subtitle: LocalizedStringResource?
   let close: @MainActor @Sendable () -> Void
   let rows: Rows
   var popover = false
 
-  init(
+  public init(
     title: LocalizedStringResource, subtitle: LocalizedStringResource?, close: @escaping @MainActor @Sendable () -> Void,
     @ViewBuilder rows: () -> Rows
   ) {
@@ -83,7 +84,7 @@ struct CardSheet<Rows: View>: View {
     return sheet
   }
 
-  var body: some View {
+  public var body: some View {
     #if os(iOS)
     NavigationStack { content.toolbar(.hidden, for: .navigationBar) }
       .sheetFitsContent()
@@ -141,6 +142,7 @@ struct CardSheet<Rows: View>: View {
       .keyboardShortcut(.cancelAction)
       .help(Text(ListWords.closeHelp))
       .accessibilityLabel(Text(ListWords.close))
+      .accessibilityIdentifier(ListCap.closeID)
     }
   }
 }

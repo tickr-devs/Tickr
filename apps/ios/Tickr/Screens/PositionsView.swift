@@ -2,10 +2,10 @@ import SwiftUI
 import TickrDesign
 import TickrKit
 
-/// Open positions (IOSPosition board): Close all in the title row, one picker chip per position,
+/// Open positions (IOS2Position board): Close all in the title row, one picker chip per position,
 /// then the selected one with its result big, its price against entry and stop, its protection
-/// (the broker stop, three figures, the steps behind a disclosure) and Close position. Prices come
-/// from the captured bars (`PositionsModel`), for display only.
+/// (the broker stop, three figures, the steps behind "How it was protected ›") and Close position.
+/// Prices come from the captured bars (`PositionsModel`), for display only.
 struct PositionsView: View {
   @Environment(AppModel.self) private var model
   @State private var prices = Container.shared.positionsModel()
@@ -212,16 +212,20 @@ private struct PositionChips: View {
         .transition(.scale.combined(with: .opacity))
       }
       ForEach(0..<freeSlots, id: \.self) { _ in
-        // Plain text, not a control: a free slot does nothing when tapped.
-        Text(L10n.Positions.freeSlot)
-          .font(.footnote.bold())
-          .fixedSize()
-          .padding(.horizontal, Tokens.Space.s)
-          .frame(maxWidth: stretch ? .infinity : nil, minHeight: Self.chipHeight)
-          .foregroundStyle(Palette.textQuaternary)
-          .overlay(
-            RoundedRectangle(cornerRadius: Tokens.Radius.large, style: .continuous)
-              .strokeBorder(Palette.separatorStrong, style: StrokeStyle(lineWidth: Tokens.Stroke.thin, dash: Tokens.Stroke.dash)))
+        // Plain text beside the chips, not a chip (IOS2Position): a hollow dot, where a position's
+        // tab has its stop's dot, and "Free". A free slot does nothing when tapped.
+        HStack(spacing: Tokens.Space.xs) {
+          Circle()
+            .strokeBorder(Palette.textQuaternary, lineWidth: Tokens.Stroke.regular)
+            .frame(width: Tokens.Size.dotSmall, height: Tokens.Size.dotSmall)
+          Text(L10n.Positions.freeSlot)
+        }
+        .font(.footnote)
+        .fixedSize()
+        .padding(.horizontal, Tokens.Space.s)
+        .frame(maxWidth: stretch ? .infinity : nil, minHeight: Self.chipHeight)
+        .foregroundStyle(Palette.textQuaternary)
+        .accessibilityElement(children: .combine)
       }
       ForEach(0..<empty, id: \.self) { _ in
         Color.clear.frame(maxWidth: .infinity).accessibilityHidden(true)
