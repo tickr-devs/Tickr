@@ -34,7 +34,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CFG = config.load(ROOT / "config" / "bot.toml")
 DAY = tp.DAY
 MS = 10**6
-MINUTES = ["04:30", "09:44", "09:45", "12:00", "15:30"]
+# 12:00 (QUIET's stale quote) is checked against the training in
+# test_the_marker_stays_inside_the_weighting, on a day whose closes start at 11:46
+MINUTES = ["04:30", "09:44", "09:45", "15:30"]
 LATER_RECORDS = (10, 11, 12)  # correction codes the stream is not documented to send
 # Every cohort symbol has ticks here: a symbol enters the conversion only once its snapshot
 # proves a stream row of each kind after its subscription (TickSnapshot.refusal), so the day is
@@ -316,13 +318,12 @@ def harness(world, tmp_path):
 
 # each parity minute closes after the closes that let its cohort enter (Harness.warm): on this
 # day the cohort's symbols join until 09:43 and 11:50 when the closes start at 09:35 and 11:40.
-# Every start here is the latest of those measured on this day (04:05/04:10/04:15 for 04:30,
-# 11:43/11:46/11:50 for 11:58 to 12:01) with no refused row in the checked minutes: each close
-# runs the pinned converter, so a warm-up close costs most of a second
-WARM = {"04:30": "04:10", "09:44": "09:40", "09:45": "09:45", "12:00": "11:50",
-        "15:30": "15:28"}
+# Each start here is the latest measured on this day with no refused row in the checked minutes
+# (04:30: 04:10, not 04:15; 15:30 after 09:45: 15:26; 11:58 to 12:01: 11:48, not 11:49): each
+# close runs the pinned converter, so a warm-up close costs most of a second
+WARM = {"04:30": "04:10", "09:44": "09:40", "09:45": "09:45", "15:30": "15:26"}
 OPEN_WARM = ("09:35", "09:44")  # a fresh day's closes before a 09:45 with every symbol entered
-NOON_START = "11:46"  # the first close of a fresh day whose cohort is all entered from 11:58
+NOON_START = "11:48"  # the first close of a fresh day whose cohort is all entered from 11:58
 
 
 def test_a_live_day_equals_the_training_run_with_the_marker(world, harness):
@@ -429,6 +430,12 @@ def test_the_marker_stays_inside_the_weighting(world, harness, monkeypatch):
                                full.full_groups(), None)
             assert r["bar_groups_exact"] and r["columns"] and tp.QUIET in r["symbols"]
             assert {c["group"] for c in r["columns"].values()} <= tp.TICK_GROUPS
+            # with the marker: the training's rows, exactly
+            want = world.table[world.table.m == m]
+            r = parity.compare(got["marker"].rows, want, full.full_groups(), None)
+            assert r["rows_compared"] == len(want) == len(got["marker"].rows) > 0
+            assert r["columns"] == {} and r["bar_groups_exact"]
+            assert list(got["marker"].rows.columns) == ["sym", *full.full_features()]
     # counts and the next minute: the stored parts differ only in the weighted columns, and
     # nothing after the last closed minute is stored
     a, b = _parts(plain), _parts(mark)
