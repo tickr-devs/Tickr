@@ -984,6 +984,7 @@ private struct SkippedRow: View {
           .transition(.opacity)
       }
     }
+    .tint(Palette.textTertiary)
     .padding(Tokens.Space.m)
     .frame(maxWidth: .infinity, alignment: .leading)
     // Inside the card, inset from its rounded edge.
